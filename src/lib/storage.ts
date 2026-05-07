@@ -1,0 +1,18 @@
+import { supabase } from "./supabase";
+
+export async function uploadBuffer(path: string, buffer: ArrayBuffer, contentType: string): Promise<string> {
+  const { error, data } = await supabase.storage
+    .from("media")
+    .upload(path, new Uint8Array(buffer), { contentType, upsert: true });
+
+  if (error) throw error;
+  const { data: url } = supabase.storage.from("media").getPublicUrl(path);
+  return url.publicUrl;
+}
+
+export async function uploadFromUrl(path: string, url: string, contentType: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to download ${url}`);
+  const buffer = await res.arrayBuffer();
+  return uploadBuffer(path, buffer, contentType);
+}
