@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -20,13 +19,14 @@ export default function ForgotPasswordPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const supabase = createSupabaseBrowserClient();
     try {
-      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent("/set-password?reset=true")}`;
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-        redirectTo,
+      const res = await fetch("http://localhost:3001/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
       });
-      if (resetError) throw resetError;
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error ?? `Request failed (${res.status})`);
       setSent(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send reset email");

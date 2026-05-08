@@ -26,7 +26,9 @@ function LoginForm() {
       const params = new URLSearchParams(hash.slice(1));
       const type = params.get("type");
       const accessToken = params.get("access_token");
-      if ((type === "recovery" || type === "invite") && accessToken) {
+      if (type === "recovery" && accessToken) {
+        router.replace(`/set-password?reset=true${hash}`);
+      } else if (type === "invite" && accessToken) {
         router.replace(`/set-password${hash}`);
       }
     });
