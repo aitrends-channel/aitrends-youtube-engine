@@ -13,7 +13,6 @@ function SetPasswordForm() {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [sessionReady, setSessionReady] = useState(false);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -23,7 +22,7 @@ function SetPasswordForm() {
       const code = new URLSearchParams(window.location.search).get("code");
       if (code) {
         const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-        if (!error && data.session) { setSessionReady(true); return; }
+        if (!error && data.session) return;
       }
 
       // Implicit flow: tokens in hash (from admin.generateLink or site-URL fallback)
@@ -37,13 +36,13 @@ function SetPasswordForm() {
             access_token: accessToken,
             refresh_token: refreshToken ?? "",
           });
-          if (!error && data.session) { setSessionReady(true); return; }
+          if (!error && data.session) return;
         }
       }
 
       // Already signed in
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) { setSessionReady(true); return; }
+      if (session) return;
 
       router.replace("/login");
     }

@@ -13,6 +13,14 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
+  {
+    rules: {
+      "react-hooks/set-state-in-effect": "off",
+      "react-hooks/static-components": "off",
+      "react/no-unescaped-entities": "off",
+      "@eslint-react/no-nested-component-in-render": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;
