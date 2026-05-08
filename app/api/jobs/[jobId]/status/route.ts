@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { videoQueue } from "@/lib/queue/client";
+import { getVideoQueue } from "@/lib/queue/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 
@@ -14,7 +14,7 @@ export async function GET(
   const { jobId } = await params;
 
   try {
-    const job = await videoQueue.getJob(jobId);
+    const job = await getVideoQueue().getJob(jobId);
     if (!job) {
       return NextResponse.json({ status: "not_found" }, { status: 404 });
     }

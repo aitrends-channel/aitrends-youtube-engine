@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { Worker } from "bullmq";
-import { queueConnection } from "../lib/queue/client";
+import { getQueueConnection } from "../lib/queue/client";
 import { submitVideoJob, pollVideoJob } from "../lib/kie/videos";
 import { uploadFromUrl } from "../lib/supabase/storage";
 import { supabase } from "../lib/supabase/client";
@@ -81,7 +81,7 @@ const worker = new Worker(
     return { url: publicUrl, beatNumber };
   },
   {
-    connection: queueConnection,
+    connection: getQueueConnection(),
     concurrency: 3,
   }
 );
