@@ -1,0 +1,427 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import Image from "next/image";
+import { toast } from "sonner";
+import { Settings, LogOut, BarChart3, FileText, Wand2, ScrollText, Mic, Sparkles, Film, Download, ChevronRight, Image as ImageIcon } from "lucide-react";
+import useSWR from "swr";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { ThemeToggle } from "@/components/ThemeToggle";
+
+const ADMIN_EMAIL = "prioritylearn@gmail.com";
+
+const PIPELINE_STEPS = [
+  { label: "Transcript", Icon: FileText },
+  { label: "Style DNA", Icon: Wand2 },
+  { label: "Script", Icon: ScrollText },
+  { label: "Voiceover", Icon: Mic },
+  { label: "AI Images", Icon: Sparkles },
+  { label: "Thumbnail", Icon: ImageIcon },
+  { label: "Video Clips", Icon: Film },
+  { label: "Export", Icon: Download },
+];
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+interface Project {
+  id: string;
+  channel_name?: string;
+  channel_url?: string;
+  current_state: number;
+  created_at: string;
+  selected_topic?: string;
+}
+
+interface ChannelGroup {
+  channelName: string;
+  channelUrl?: string;
+  projects: Project[];
+  lastActive: string;
+}
+
+const PHASE_LABELS: Record<number, string> = {
+  1: "Setup", 2: "Setup", 3: "Setup", 4: "Analyzing", 5: "Analyzing",
+  6: "Topic", 7: "Visuals", 8: "Visuals", 9: "Prompts", 10: "Prompts",
+  11: "Visuals", 12: "Visuals", 13: "Prompts", 14: "Generate", 15: "Complete",
+};
+
+const PHASE_PATHS: Record<number, string> = {
+  1: "channel", 2: "channel", 3: "channel", 4: "channel", 5: "channel",
+  6: "topic", 7: "visuals", 8: "visuals", 9: "prompts", 10: "prompts",
+  11: "visuals", 12: "visuals", 13: "prompts", 14: "generate", 15: "assemble",
+};
+
+function timeAgo(date: string) {
+  const diff = Date.now() - new Date(date).getTime();
+  const m = Math.floor(diff / 60000);
+  const h = Math.floor(m / 60);
+  const d = Math.floor(h / 24);
+  if (d > 0) return `${d}d ago`;
+  if (h > 0) return `${h}h ago`;
+  if (m > 0) return `${m}m ago`;
+  return "just now";
+}
+
+export default function HomePage() {
+  const router = useRouter();
+  const [creating, setCreating] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user?.email === ADMIN_EMAIL) setIsAdmin(true);
+    });
+  }, []);
+
+  async function handleSignOut() {
+    const supabase = createSupabaseBrowserClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
+  const [creatingFor, setCreatingFor] = useState<string | null>(null);
+  const { data: projects } = useSWR<Project[]>("/api/projects", fetcher);
+
+  const channelGroups = useMemo<ChannelGroup[]>(() => {
+    if (!Array.isArray(projects)) return [];
+    const map = new Map<string, ChannelGroup>();
+    for (const p of projects) {
+      const key = p.channel_name ?? "Untitled Channel";
+      if (!map.has(key)) {
+        map.set(key, { channelName: key, channelUrl: p.channel_url, projects: [], lastActive: p.created_at });
+      }
+      const group = map.get(key)!;
+      group.projects.push(p);
+      if (p.created_at > group.lastActive) group.lastActive = p.created_at;
+    }
+    return Array.from(map.values()).sort((a, b) => b.lastActive.localeCompare(a.lastActive));
+  }, [projects]);
+
+  async function createProject() {
+    setCreating(true);
+    try {
+      const res = await fetch("/api/projects", { method: "POST" });
+      const project = await res.json();
+      if (project.id) {
+        router.push(`/projects/${project.id}/channel`);
+      } else {
+        toast.error("Failed to create project");
+      }
+    } catch {
+      toast.error("Failed to create project");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function createVideoForChannel(group: ChannelGroup) {
+    if (creatingFor) return;
+    // Pick the project with the most progress as the data source
+    const source = [...group.projects].sort((a, b) => b.current_state - a.current_state)[0];
+    setCreatingFor(group.channelName);
+    try {
+      const fullRes = await fetch(`/api/projects/${source.id}`);
+      const full = await fullRes.json();
+
+      const forkRes = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fork: {
+            channelUrl:        full.channel_url,
+            channelName:       full.channel_name,
+            channelAnalysis:   full.channel_analysis,
+            channelInfo:       full.channel_info,
+            transcripts:       full.transcripts,
+            visualProfile:     full.visual_profile,
+            thumbnailAnalysis: full.thumbnail_analysis,
+            videoIdeas:        full.video_ideas,
+          },
+        }),
+      });
+      const project = await forkRes.json();
+      if (project.id) {
+        router.push(`/projects/${project.id}/topic`);
+      } else {
+        toast.error("Failed to create video");
+      }
+    } catch {
+      toast.error("Failed to create video");
+    } finally {
+      setCreatingFor(null);
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-page)" }}>
+      {/* Header */}
+      <header className="flex items-center justify-between px-8 py-4 sticky top-0 z-10"
+        style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 shrink-0 rounded-full overflow-hidden flex items-center justify-center">
+            <Image src="/logo.png" alt="aiTrends" width={32} height={32} className="object-cover w-full h-full" />
+          </div>
+          <div>
+            <span className="font-bold text-sm tracking-tight text-foreground">aiTrends</span>
+            <span className="text-sm tracking-tight ml-1" style={{ color: "var(--c-50)" }}>YT Workflow</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80"
+              style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}
+            >
+              <BarChart3 size={15} />
+              <span>Admin</span>
+            </Link>
+          )}
+          <Link
+            href="/settings"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80"
+            style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+          >
+            <Settings size={15} />
+            <span>Settings</span>
+          </Link>
+          <button
+            onClick={handleSignOut}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80 cursor-pointer"
+            style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+          >
+            <LogOut size={15} />
+            <span>Sign Out</span>
+          </button>
+          <ThemeToggle />
+          <button
+            onClick={createProject}
+            disabled={creating}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
+          >
+            {creating ? "Creating…" : "+ New Project"}
+          </button>
+        </div>
+      </header>
+
+      <main className="flex-1 w-full px-24 py-20 space-y-24">
+
+        {/* Hero */}
+        <div className="text-center space-y-7 max-w-3xl mx-auto">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium"
+            style={{ background: "oklch(0.72 0.25 285 / 0.1)", border: "1px solid oklch(0.72 0.25 285 / 0.25)", color: "oklch(0.72 0.25 285)" }}>
+            <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+            Welcome to aiTrends
+          </div>
+
+          <h1 className="text-5xl font-black tracking-tight leading-[1.08]">
+            <span style={{ color: "var(--c-96)" }}>aiTrends</span>
+            <span style={{ color: "var(--c-45)" }}> YT Workflow</span>
+            <br />
+            <span style={{
+              background: "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+            }}>
+              Clone any YouTube Niche
+            </span>
+          </h1>
+
+          <p className="text-lg max-w-xl mx-auto leading-relaxed" style={{ color: "var(--c-55)" }}>
+            Paste a channel URL. Get a style-matched script, voiceover, AI images, and video clips — fully automated.
+          </p>
+
+          <button
+            onClick={createProject}
+            disabled={creating}
+            className="px-8 py-3.5 rounded-xl text-base font-bold transition-all hover:scale-105 active:scale-95 disabled:cursor-not-allowed cursor-pointer"
+            style={{
+              background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+              color: "var(--c-98)",
+              boxShadow: "0 0 36px oklch(0.72 0.25 285 / 0.35), 0 4px 20px oklch(0 0 0 / 0.5)",
+            }}
+          >
+            {creating ? "Creating…" : "Start New Project →"}
+          </button>
+        </div>
+
+        {/* Pipeline flow */}
+        <div className="space-y-4">
+          <p className="text-center text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--c-35)" }}>
+            Full Automation Pipeline
+          </p>
+          <div className="overflow-x-auto pb-1">
+            <div className="flex items-center gap-1 mx-auto" style={{ width: "fit-content" }}>
+              {PIPELINE_STEPS.flatMap((step, i) => {
+                const nodes = [
+                  <div key={step.label}
+                    className="flex flex-col items-center gap-2 px-4 py-3.5 rounded-xl"
+                    style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)", minWidth: 88 }}>
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center"
+                      style={{ background: "oklch(0.72 0.25 285 / 0.1)", border: "1px solid oklch(0.72 0.25 285 / 0.15)" }}>
+                      <step.Icon size={16} style={{ color: "oklch(0.72 0.25 285)" }} />
+                    </div>
+                    <span className="text-xs font-medium text-center leading-tight whitespace-nowrap"
+                      style={{ color: "var(--c-50)" }}>
+                      {step.label}
+                    </span>
+                  </div>,
+                ];
+                if (i < PIPELINE_STEPS.length - 1) {
+                  nodes.push(
+                    <ChevronRight key={`arrow-${i}`} size={14} style={{ color: "var(--c-28)", flexShrink: 0 }} />
+                  );
+                }
+                return nodes;
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* Channel groups */}
+        {channelGroups.length > 0 && (
+          <div className="space-y-12">
+            {channelGroups.map((group) => {
+              const isCreatingThis = creatingFor === group.channelName;
+              return (
+                <div key={group.channelName}>
+                  {/* Channel header */}
+                  <div className="flex items-center justify-between mb-5">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-bold shrink-0"
+                        style={{
+                          background: "oklch(0.72 0.25 285 / 0.15)",
+                          color: "oklch(0.72 0.25 285)",
+                          border: "1px solid oklch(0.72 0.25 285 / 0.25)",
+                        }}>
+                        {group.channelName.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <h2 className="text-base font-bold text-foreground">{group.channelName}</h2>
+                        {group.channelUrl && (
+                          <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>
+                            {group.channelUrl}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-xs px-3 py-1 rounded-full"
+                      style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}>
+                      {group.projects.length} {group.projects.length === 1 ? "video" : "videos"}
+                    </span>
+                  </div>
+
+                  {/* Project cards — auto-fill grid */}
+                  <div className="grid gap-7"
+                    style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
+                    {group.projects.map((p) => {
+                      const path = (p.current_state === 6 && p.selected_topic)
+                        ? "script"
+                        : (PHASE_PATHS[p.current_state] ?? "channel");
+                      const stateLabel = (p.current_state === 6 && p.selected_topic)
+                        ? "Script"
+                        : (PHASE_LABELS[p.current_state] ?? "Setup");
+                      const progress = Math.min(100, Math.round((p.current_state / 15) * 100));
+                      const isComplete = p.current_state >= 15;
+
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => router.push(`/projects/${p.id}/${path}`)}
+                          className="text-left p-6 rounded-2xl transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                          style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)"; }}
+                        >
+                          <div className="flex items-start justify-between mb-3">
+                            <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
+                              style={isComplete ? {
+                                background: "oklch(0.55 0.15 145 / 0.15)",
+                                color: "oklch(0.65 0.15 145)",
+                                border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                              } : {
+                                background: "oklch(0.72 0.25 285 / 0.1)",
+                                color: "oklch(0.72 0.25 285)",
+                                border: "1px solid oklch(0.72 0.25 285 / 0.2)",
+                              }}>
+                              {stateLabel}
+                            </span>
+                            <span className="text-xs" style={{ color: "var(--c-38)" }}>
+                              {timeAgo(p.created_at)}
+                            </span>
+                          </div>
+
+                          <p className="text-lg font-semibold leading-snug mb-5"
+                            style={{ color: p.selected_topic ? "var(--c-88)" : "var(--c-40)" }}>
+                            {p.selected_topic ?? "No topic selected"}
+                          </p>
+
+                          <div className="space-y-1.5">
+                            <div className="flex justify-between text-xs" style={{ color: "var(--c-38)" }}>
+                              <span>Progress</span>
+                              <span>{progress}%</span>
+                            </div>
+                            <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
+                              <div className="h-full rounded-full transition-all"
+                                style={{
+                                  width: `${progress}%`,
+                                  background: isComplete
+                                    ? "oklch(0.55 0.15 145)"
+                                    : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+
+                    {/* New video — pre-loaded with this channel's data */}
+                    <button
+                      onClick={() => createVideoForChannel(group)}
+                      disabled={!!creatingFor}
+                      className="text-left p-10 rounded-2xl transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                      style={{ background: "var(--bg-card-subtle)", border: "1px dashed var(--bd-9)" }}
+                      onMouseEnter={(e) => {
+                        if (!creatingFor) (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.3)";
+                      }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-9)"; }}
+                    >
+                      <div className="flex flex-col items-center justify-center min-h-[160px] gap-3">
+                        {isCreatingThis ? (
+                          <>
+                            <span className="text-xl animate-spin" style={{ color: "oklch(0.72 0.25 285)" }}>◌</span>
+                            <span className="text-sm" style={{ color: "var(--c-50)" }}>Setting up…</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-3xl" style={{ color: "var(--c-28)" }}>+</span>
+                            <span className="text-sm font-medium" style={{ color: "var(--c-42)" }}>New video</span>
+                            <span className="text-xs" style={{ color: "var(--c-30)" }}>
+                              {group.channelName}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Empty state */}
+        {channelGroups.length === 0 && projects !== undefined && (
+          <div className="text-center py-20 space-y-3">
+            <p className="text-sm" style={{ color: "var(--c-38)" }}>No projects yet.</p>
+            <p className="text-xs" style={{ color: "var(--c-28)" }}>Click "Start New Project" to get started.</p>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}

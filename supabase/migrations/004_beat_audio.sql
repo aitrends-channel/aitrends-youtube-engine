@@ -1,0 +1,1 @@
+ALTER TABLE project_beats ADD COLUMN IF NOT EXISTS audio_url TEXT;

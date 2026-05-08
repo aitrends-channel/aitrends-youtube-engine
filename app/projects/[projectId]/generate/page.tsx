@@ -1,0 +1,949 @@
+﻿"use client";
+
+import { useState, use, useEffect, useRef } from "react";
+import { WizardNav } from "@/components/wizard/WizardNav";
+import { useProject } from "@/hooks/useProject";
+import { toast } from "sonner";
+import useSWR from "swr";
+import type { KieModel, Beat } from "@/lib/types";
+import { getModelConfig } from "@/lib/kie/imageModels";
+import { getVideoModelConfig } from "@/lib/kie/videoModels";
+import { removeLongPauses, encodeMp3 } from "@/lib/audio/silenceRemover";
+
+const fetcher = (url: string) =>
+  fetch(url).then((r) => {
+    if (!r.ok) return r.json().then((e: { error?: string }) => { throw new Error(e.error ?? "Failed to load"); });
+    return r.json();
+  });
+
+interface PageProps {
+  params: Promise<{ projectId: string }>;
+}
+
+function VoiceOption({ model, selected, onSelect, isPlaying, onPlayToggle }: {
+  model: KieModel; selected: boolean; onSelect: () => void;
+  isPlaying: boolean; onPlayToggle: (id: string | null) => void;
+}) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (!isPlaying && audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+  }, [isPlaying]);
+
+  useEffect(() => () => { audioRef.current?.pause(); }, []);
+
+  function togglePreview(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!model.previewUrl) return;
+    if (isPlaying) {
+      onPlayToggle(null);
+    } else {
+      onSelect(); // previewing a voice should also select it
+      const audio = new Audio(model.previewUrl);
+      audioRef.current = audio;
+      audio.onended = () => onPlayToggle(null);
+      audio.onerror = () => onPlayToggle(null);
+      audio.play().catch(() => onPlayToggle(null));
+      onPlayToggle(model.id);
+    }
+  }
+
+  return (
+    <div
+      role="button"
+      onClick={onSelect}
+      className="cursor-pointer p-3 rounded-xl transition-all select-none"
+      style={selected ? {
+        background: "oklch(0.72 0.25 285 / 0.1)",
+        border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+        color: "var(--c-90)",
+      } : {
+        background: "var(--bg-input)",
+        border: "1px solid var(--bd-7)",
+        color: "var(--c-60)",
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <p className="font-medium text-xs flex-1 truncate">{model.name}</p>
+        {model.previewUrl && (
+          <button
+            onClick={togglePreview}
+            title={isPlaying ? "Stop preview" : "Preview voice"}
+            className="w-6 h-6 rounded flex items-center justify-center shrink-0 transition-colors"
+            style={{
+              background: isPlaying ? "oklch(0.72 0.25 285 / 0.15)" : "oklch(0.2 0 0)",
+              color: isPlaying ? "oklch(0.72 0.25 285)" : "var(--c-45)",
+              border: "1px solid var(--bd-10)",
+            }}
+          >
+            {isPlaying ? (
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+                <rect x="0.5" y="0" width="2.5" height="8" rx="0.5" />
+                <rect x="5" y="0" width="2.5" height="8" rx="0.5" />
+              </svg>
+            ) : (
+              <svg width="7" height="9" viewBox="0 0 7 9" fill="currentColor">
+                <path d="M0 0.5L7 4.5L0 8.5V0.5Z" />
+              </svg>
+            )}
+          </button>
+        )}
+      </div>
+      {model.tags && model.tags.length > 0 && (
+        <div className="flex gap-1 mt-1.5 flex-wrap">
+          {model.tags.map((tag) => (
+            <span key={tag} className="px-1.5 py-0.5 rounded text-xs"
+              style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModelOption({ model, selected, onSelect }: { model: KieModel; selected: boolean; onSelect: () => void }) {
+  return (
+    <button
+      onClick={onSelect}
+      className="w-full text-left p-3 rounded-xl transition-all"
+      style={selected ? {
+        background: "oklch(0.72 0.25 285 / 0.1)",
+        border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+        color: "var(--c-90)",
+      } : {
+        background: "var(--bg-input)",
+        border: "1px solid var(--bd-7)",
+        color: "var(--c-60)",
+      }}
+    >
+      <p className="font-medium text-xs">{model.name}</p>
+      {model.description && <p className="text-xs mt-0.5 opacity-60">{model.description}</p>}
+      {(model.tags?.length || model.costPerUnit) && (
+        <div className="flex gap-1 mt-2 flex-wrap">
+          {model.tags?.map((tag) => (
+            <span key={tag} className="px-1.5 py-0.5 rounded text-xs"
+              style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>
+              {tag}
+            </span>
+          ))}
+          {model.costPerUnit && (
+            <span className="px-1.5 py-0.5 rounded text-xs"
+              style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" }}>
+              {model.costPerUnit}/s
+            </span>
+          )}
+        </div>
+      )}
+    </button>
+  );
+}
+
+function SectionHeader({ icon, title, subtitle }: { icon: string; title: string; subtitle: string }) {
+  return (
+    <div className="flex items-center gap-3 mb-4">
+      <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base"
+        style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
+        {icon}
+      </div>
+      <div>
+        <p className="font-semibold text-sm">{title}</p>
+        <p className="text-xs" style={{ color: "var(--c-45)" }}>{subtitle}</p>
+      </div>
+    </div>
+  );
+}
+
+function ProgressBar({ value, total }: { value: number; total: number }) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  return (
+    <div className="space-y-1.5">
+      <div className="flex justify-between text-xs" style={{ color: "var(--c-45)" }}>
+        <span>{value} / {total}</span>
+        <span>{pct}%</span>
+      </div>
+      <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
+        <div className="h-full rounded-full transition-all"
+          style={{ width: `${pct}%`, background: "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))" }} />
+      </div>
+    </div>
+  );
+}
+
+export default function GeneratePage({ params }: PageProps) {
+  const { projectId } = use(params);
+  const { project, mutate } = useProject(projectId);
+
+  const { data: ttsModels, error: ttsError } = useSWR<KieModel[]>("/api/kie/models?type=tts", fetcher);
+  const { data: imageModels } = useSWR<KieModel[]>("/api/kie/models?type=image", fetcher);
+  const { data: videoModels } = useSWR<KieModel[]>("/api/kie/models?type=video", fetcher);
+
+  const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
+  const [selectedTtsModel, setSelectedTtsModel] = useState<string | null>(null);
+  const [selectedImageModel, setSelectedImageModel] = useState<string | null>(null);
+  const [selectedAspectRatio, setSelectedAspectRatio] = useState("16:9");
+  const [selectedResolution, setSelectedResolution] = useState<string | null>(null);
+  const [selectedVideoModel, setSelectedVideoModel] = useState<string | null>(null);
+  const [selectedVideoAspectRatio, setSelectedVideoAspectRatio] = useState("16:9");
+  const [selectedDuration, setSelectedDuration] = useState<string | number | null>(null);
+
+  const initialTtsSelected = useRef(false);
+
+  const [generatingTts, setGeneratingTts] = useState(false);
+  const [ttsProgress, setTtsProgress] = useState<{ current: number; total: number } | null>(null);
+  const [ttsStatusMsg, setTtsStatusMsg] = useState<string>("");
+  const [removingPauses, setRemovingPauses] = useState(false);
+  const [removePausesStatus, setRemovePausesStatus] = useState("");
+  const [generatingImages, setGeneratingImages] = useState(false);
+  const [queuingVideos, setQueuingVideos] = useState(false);
+  const [imagesProgress, setImagesProgress] = useState(0);
+  // Pending URLs are only set during active generation; otherwise fall back to DB values via project
+  const [pendingTtsUrl, setPendingTtsUrl] = useState<string | null>(null);
+  const [pendingTtsCleanedUrl, setPendingTtsCleanedUrl] = useState<string | null>(null);
+  const [cleanedUrlInvalidated, setCleanedUrlInvalidated] = useState(false);
+  const [videosSubmitted, setVideosSubmitted] = useState(false);
+  const [regenBeats, setRegenBeats] = useState<Set<number>>(new Set());
+  const [clearingImages, setClearingImages] = useState(false);
+  const [hoveredImageBeat, setHoveredImageBeat] = useState<Beat | null>(null);
+  const [hoveredVideoBeat, setHoveredVideoBeat] = useState<Beat | null>(null);
+  const videoHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const beats: Beat[] = project?.beats ?? [];
+  const script: string = project?.script ?? "";
+  const totalBeats = beats.length;
+  const generatedImages = beats.filter((b) => b.imageUrl).length;
+  const generatedVideos = beats.filter((b) => b.videoUrl).length;
+  const videoBeats = beats.filter((b) => b.videoPrompt).length;
+
+  // Derive display URLs from DB data; use pending state only during active operations
+  const ttsUrl = generatingTts ? null : (pendingTtsUrl ?? project?.tts_url ?? null);
+  const ttsCleanedUrl = removingPauses || cleanedUrlInvalidated ? null : (pendingTtsCleanedUrl ?? project?.tts_cleaned_url ?? null);
+
+  useEffect(() => {
+    if (!generatingImages && project?.images_progress) setImagesProgress(project.images_progress);
+  }, [project?.images_progress, generatingImages]);
+
+  useEffect(() => {
+    if (ttsModels?.length && !initialTtsSelected.current) {
+      initialTtsSelected.current = true;
+      setSelectedTtsModel(ttsModels[0].id);
+    }
+  }, [ttsModels]);
+  useEffect(() => { if (imageModels?.length && !selectedImageModel) setSelectedImageModel(imageModels[0].id); }, [imageModels]);
+
+  useEffect(() => {
+    if (!selectedImageModel) return;
+    const config = getModelConfig(selectedImageModel);
+    if (!config.aspectRatios.includes(selectedAspectRatio)) {
+      setSelectedAspectRatio(config.aspectRatios[0]);
+    }
+    if (!config.resolutions) {
+      setSelectedResolution(null);
+    } else if (!selectedResolution || !config.resolutions.includes(selectedResolution)) {
+      setSelectedResolution(config.resolutions[0]);
+    }
+  }, [selectedImageModel]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (videoModels?.length && !selectedVideoModel) setSelectedVideoModel(videoModels[0].id); }, [videoModels]);
+
+  useEffect(() => {
+    if (!selectedVideoModel) return;
+    const config = getVideoModelConfig(selectedVideoModel);
+    if (config.durations.length === 0) {
+      setSelectedDuration(null);
+    } else {
+      setSelectedDuration(config.durations[0].value);
+    }
+    if (!config.aspectRatios.includes(selectedVideoAspectRatio)) {
+      setSelectedVideoAspectRatio(config.aspectRatios[0]);
+    }
+  }, [selectedVideoModel]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const hasRenderingVideos = beats.some((b) => b.videoStatus === "rendering");
+
+  useEffect(() => {
+    if (!hasRenderingVideos) return;
+    const poll = () => fetch(`/api/generate/videos/poll?projectId=${projectId}`);
+    poll();
+    const id = setInterval(poll, 10000);
+    return () => clearInterval(id);
+  }, [hasRenderingVideos, projectId]);
+
+  async function generateVoiceover(voiceId = selectedTtsModel) {
+    if (!voiceId || !script) return;
+    setGeneratingTts(true);
+    setPendingTtsUrl(null);
+    setPendingTtsCleanedUrl(null);
+    setCleanedUrlInvalidated(true);
+    setTtsProgress(null);
+    setTtsStatusMsg("Starting...");
+    try {
+      const res = await fetch("/api/generate/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, script, voiceId }),
+      });
+      if (!res.ok || !res.body) throw new Error("Failed to start TTS");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const event = JSON.parse(line.slice(6));
+          if (event.type === "progress") {
+            setTtsProgress({ current: event.current, total: event.total });
+            setTtsStatusMsg(`Generating part ${event.current + 1} of ${event.total}...`);
+          } else if (event.type === "status") {
+            setTtsStatusMsg(event.message);
+          } else if (event.type === "done") {
+            setPendingTtsUrl(event.url);
+            toast.success("Voiceover generated!");
+          } else if (event.type === "error") {
+            throw new Error(event.message);
+          }
+        }
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "TTS failed");
+    } finally {
+      setGeneratingTts(false);
+      setTtsProgress(null);
+      setTtsStatusMsg("");
+    }
+  }
+
+  async function removePauses() {
+    if (!ttsUrl || removingPauses) return;
+    setRemovingPauses(true);
+    setPendingTtsCleanedUrl(null);
+    setRemovePausesStatus("Fetching audio...");
+    try {
+      const res = await fetch(ttsUrl);
+      if (!res.ok) throw new Error("Failed to fetch audio");
+      const audioBytes = await res.arrayBuffer();
+
+      setRemovePausesStatus("Decoding audio...");
+      const ctx = new AudioContext();
+      const audioBuffer = await ctx.decodeAudioData(audioBytes);
+      ctx.close();
+
+      setRemovePausesStatus("Removing pauses...");
+      const { channels, sampleRate, originalDuration, newDuration } = removeLongPauses(audioBuffer);
+
+      setRemovePausesStatus("Encoding audio...");
+      const mp3Bytes = encodeMp3(channels, sampleRate);
+
+      setRemovePausesStatus("Uploading...");
+      const uploadRes = await fetch(`/api/generate/tts/clean?projectId=${projectId}`, {
+        method: "POST",
+        body: mp3Bytes,
+        headers: { "Content-Type": "audio/mpeg" },
+      });
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json() as { error?: string };
+        throw new Error(err.error ?? "Upload failed");
+      }
+      const { url } = await uploadRes.json() as { url: string };
+      setPendingTtsCleanedUrl(url);
+      setCleanedUrlInvalidated(false);
+      const savedSec = Math.round(originalDuration - newDuration);
+      toast.success(savedSec > 0 ? `Removed ${savedSec}s of silence` : "No long pauses found");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove pauses");
+    } finally {
+      setRemovingPauses(false);
+      setRemovePausesStatus("");
+    }
+  }
+
+  async function generateImages() {
+    if (!selectedImageModel || !beats.length) return;
+    const isRegen = generatedImages > 0;
+    setGeneratingImages(true);
+    setImagesProgress(0);
+    if (isRegen) setClearingImages(true);
+    try {
+      const res = await fetch("/api/generate/images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          beats: beats.map((b) => ({ beatNumber: b.beatNumber, imagePrompt: b.imagePrompt })),
+          modelId: selectedImageModel,
+          aspectRatio: selectedAspectRatio,
+          clearFirst: isRegen,
+          ...(selectedResolution ? { resolution: selectedResolution } : {}),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setImagesProgress(data.success);
+      await mutate();
+      toast.success(`${data.success}/${data.total} images generated`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Image generation failed");
+    } finally {
+      setGeneratingImages(false);
+      setClearingImages(false);
+    }
+  }
+
+  async function regenerateImage(beat: Beat) {
+    if (!selectedImageModel) return;
+    setRegenBeats((prev) => new Set(prev).add(beat.beatNumber));
+    try {
+      const res = await fetch("/api/generate/images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          beats: [{ beatNumber: beat.beatNumber, imagePrompt: beat.imagePrompt }],
+          modelId: selectedImageModel,
+          aspectRatio: selectedAspectRatio,
+          ...(selectedResolution ? { resolution: selectedResolution } : {}),
+        }),
+      });
+      const data = await res.json() as { success: number; failures?: { beatNumber: number; error: string }[]; error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Request failed");
+      if (data.success === 0) {
+        const reason = data.failures?.[0]?.error ?? "Image generation failed";
+        throw new Error(reason);
+      }
+      toast.success(`Beat ${beat.beatNumber} regenerated`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Regeneration failed");
+    } finally {
+      await mutate();
+      setRegenBeats((prev) => { const next = new Set(prev); next.delete(beat.beatNumber); return next; });
+    }
+  }
+
+  async function queueVideos() {
+    if (!selectedVideoModel || !beats.length) return;
+    setQueuingVideos(true);
+    try {
+      const beatsWithVideos = beats.filter((b) => b.videoPrompt);
+      const res = await fetch("/api/generate/videos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          beats: beatsWithVideos.map((b) => ({ beatNumber: b.beatNumber, videoPrompt: b.videoPrompt, imageUrl: b.imageUrl })),
+          modelId: selectedVideoModel,
+          aspectRatio: selectedVideoAspectRatio,
+          ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
+        }),
+      });
+      const data = await res.json() as { submitted: number; failures?: { beatNumber: number; error: string }[]; error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Request failed");
+      setVideosSubmitted(true);
+      if (data.submitted > 0) toast.success(`${data.submitted} video clips submitted`);
+      if (data.failures?.length) {
+        const firstErr = data.failures[0].error;
+        toast.error(`${data.failures.length} clip(s) failed: ${firstErr}`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to queue videos");
+    } finally {
+      setQueuingVideos(false);
+    }
+  }
+
+  async function exportDocx() {
+    try {
+      const res = await fetch("/api/export/docx", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project?.channel_name ?? "export"}_content.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export failed");
+    }
+  }
+
+  return (
+    <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
+      <WizardNav projectId={projectId} currentState={14} highestState={project?.current_state} channelName={project?.channel_name} />
+
+      <main className="flex-1 overflow-y-auto">
+        {/* Header */}
+        <div className="px-8 py-5"
+          style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="font-bold text-lg">Generate Assets</h1>
+              <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                Select a model for each service, then generate your final content
+              </p>
+            </div>
+            <button
+              onClick={exportDocx}
+              className="px-4 py-2 rounded-lg text-xs font-medium transition-all"
+              style={{ background: "var(--bg-control)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
+            >
+              Export Word Doc
+            </button>
+          </div>
+        </div>
+
+        <div className="p-8 grid grid-cols-1 xl:grid-cols-3 gap-6">
+          {/* TTS Panel */}
+          <div className="rounded-2xl flex flex-col overflow-hidden"
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+            <div className="p-5" style={{ borderBottom: "1px solid var(--bd-6)" }}>
+              <SectionHeader icon="♪" title="Voiceover" subtitle="Text-to-speech from your script" />
+              <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
+                Select Voice
+              </p>
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                {ttsError ? (
+                  <p className="text-xs px-1" style={{ color: "oklch(0.65 0.15 25)" }}>
+                    {ttsError instanceof Error ? ttsError.message : "Failed to load voices"}
+                  </p>
+                ) : !ttsModels ? (
+                  <p className="text-xs px-1" style={{ color: "var(--c-40)" }}>Loading voices...</p>
+                ) : ttsModels.length === 0 ? (
+                  <p className="text-xs px-1" style={{ color: "var(--c-40)" }}>No voices available</p>
+                ) : (
+                  ttsModels.map((m) => (
+                    <VoiceOption key={m.id} model={m} selected={selectedTtsModel === m.id} onSelect={() => setSelectedTtsModel(m.id)}
+                      isPlaying={playingVoiceId === m.id} onPlayToggle={setPlayingVoiceId} />
+                  ))
+                )}
+              </div>
+            </div>
+            <div className="p-5 mt-auto space-y-3">
+              {ttsUrl ? (
+                <div className="space-y-3">
+                  {/* Original voiceover */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Original</span>
+                      <a href={ttsUrl} download="voiceover-original.mp3"
+                        className="text-xs" style={{ color: "var(--c-45)" }}>
+                        ↓ Download
+                      </a>
+                    </div>
+                    <audio controls src={ttsUrl} className="w-full h-8" />
+                  </div>
+
+                  {/* Trimmed voiceover */}
+                  {ttsCleanedUrl && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Trimmed</span>
+                        <a href={ttsCleanedUrl} download="voiceover-trimmed.mp3"
+                          className="text-xs" style={{ color: "var(--c-45)" }}>
+                          ↓ Download
+                        </a>
+                      </div>
+                      <audio controls src={ttsCleanedUrl} className="w-full h-8" />
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  {removingPauses ? (
+                    <p className="text-xs text-center py-1" style={{ color: "var(--c-55)" }}>
+                      {removePausesStatus}
+                    </p>
+                  ) : (
+                    <div className="flex gap-2">
+                      <button onClick={removePauses} disabled={removingPauses || generatingTts}
+                        className="flex-1 py-2 rounded-lg text-xs font-medium disabled:opacity-40 transition-all"
+                        style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
+                        {ttsCleanedUrl ? "Re-trim" : "Trim Pauses"}
+                      </button>
+                      <button onClick={() => generateVoiceover(selectedTtsModel)} disabled={generatingTts}
+                        className="px-3 py-2 rounded-lg text-xs disabled:opacity-40"
+                        style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
+                        Regen
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {generatingTts && (
+                    <div className="space-y-1.5">
+                      <p className="text-xs text-center" style={{ color: "var(--c-55)" }}>{ttsStatusMsg}</p>
+                      {ttsProgress && ttsProgress.total > 1 && (
+                        <ProgressBar value={ttsProgress.current} total={ttsProgress.total} />
+                      )}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => generateVoiceover(selectedTtsModel)}
+                    disabled={generatingTts || !selectedTtsModel || !script}
+                    className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                  >
+                    {generatingTts ? "Generating..." : "Generate Voiceover"}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Image Gen Panel */}
+          <div className="rounded-2xl flex flex-col overflow-hidden"
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+            <div className="p-5" style={{ borderBottom: "1px solid var(--bd-6)" }}>
+              <SectionHeader icon="◈" title="AI Images" subtitle={`${totalBeats} images from script beats`} />
+              <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
+                Select Model
+              </p>
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                {(imageModels ?? []).map((m) => (
+                  <ModelOption key={m.id} model={m} selected={selectedImageModel === m.id} onSelect={() => setSelectedImageModel(m.id)} />
+                ))}
+                {!imageModels && <p className="text-xs" style={{ color: "var(--c-40)" }}>Loading models...</p>}
+              </div>
+              {(() => {
+                const config = selectedImageModel ? getModelConfig(selectedImageModel) : null;
+                return config ? (
+                  <>
+                    <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
+                      Aspect Ratio
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {config.aspectRatios.map((r) => (
+                        <button
+                          key={r}
+                          onClick={() => setSelectedAspectRatio(r)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                          style={selectedAspectRatio === r ? {
+                            background: "oklch(0.72 0.25 285 / 0.15)",
+                            border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                            color: "oklch(0.88 0.12 285)",
+                          } : {
+                            background: "var(--bg-input)",
+                            border: "1px solid var(--bd-7)",
+                            color: "var(--c-50)",
+                          }}
+                        >
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                    {config.resolutions && (
+                      <>
+                        <p className="text-xs font-semibold uppercase tracking-wider mt-3 mb-2" style={{ color: "var(--c-40)" }}>
+                          Resolution
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {config.resolutions.map((res) => (
+                            <button
+                              key={res}
+                              onClick={() => setSelectedResolution(res)}
+                              className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                              style={selectedResolution === res ? {
+                                background: "oklch(0.72 0.25 285 / 0.15)",
+                                border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                                color: "oklch(0.88 0.12 285)",
+                              } : {
+                                background: "var(--bg-input)",
+                                border: "1px solid var(--bd-7)",
+                                color: "var(--c-50)",
+                              }}
+                            >
+                              {res}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </>
+                ) : null;
+              })()}
+            </div>
+
+            {/* Image gallery */}
+            {(beats.some((b) => b.imageUrl || b.imageStatus) || regenBeats.size > 0) && (
+              <div className="px-5 pt-4">
+                <ProgressBar value={clearingImages ? 0 : generatedImages} total={totalBeats} />
+                <div className="grid grid-cols-4 gap-1.5 mt-3 max-h-36 overflow-y-auto">
+                  {beats.map((b) => {
+                    const isRegening = regenBeats.has(b.beatNumber);
+                    return (
+                      <div
+                        key={b.beatNumber}
+                        className="relative aspect-video rounded-lg overflow-hidden group"
+                        style={{ background: "var(--bg-progress)" }}
+                        onMouseEnter={() => { if (b.imageUrl && !clearingImages) setHoveredImageBeat(b); }}
+                        onMouseLeave={() => setHoveredImageBeat(null)}
+                      >
+                        {b.imageUrl && !clearingImages ? (
+                          <img src={b.imageUrl} alt={`Beat ${b.beatNumber}`} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <span className="text-[9px]" style={{ color: "var(--c-35)" }}>{b.beatNumber}</span>
+                          </div>
+                        )}
+
+                        {/* Regen overlay */}
+                        {isRegening ? (
+                          <div className="absolute inset-0 flex items-center justify-center"
+                            style={{ background: "oklch(0 0 0 / 0.55)" }}>
+                            <span className="text-[9px]" style={{ color: "var(--c-55)" }}>…</span>
+                          </div>
+                        ) : (
+                          <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${b.imageUrl ? "opacity-0 group-hover:opacity-100" : "opacity-100"}`}
+                            style={{ background: b.imageUrl ? "oklch(0 0 0 / 0.45)" : "transparent" }}>
+                            <button
+                              onClick={() => regenerateImage(b)}
+                              disabled={!selectedImageModel || generatingImages}
+                              title={`Regenerate beat ${b.beatNumber}`}
+                              className="w-5 h-5 rounded flex items-center justify-center disabled:opacity-40 transition-transform hover:scale-110"
+                              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)", fontSize: "11px", lineHeight: 1 }}
+                            >
+                              ↺
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="p-5 mt-auto">
+              <button
+                onClick={generateImages}
+                disabled={generatingImages || !selectedImageModel || !beats.length}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+              >
+                {generatingImages
+                  ? `Generating... ${clearingImages ? 0 : generatedImages}/${totalBeats}`
+                  : generatedImages > 0
+                  ? `Regenerate All (${totalBeats})`
+                  : `Generate ${totalBeats} Images`}
+              </button>
+            </div>
+          </div>
+
+          {/* Video Gen Panel */}
+          <div className="rounded-2xl flex flex-col overflow-hidden"
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+            <div className="p-5" style={{ borderBottom: "1px solid var(--bd-6)" }}>
+              <SectionHeader icon="⚡" title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
+              <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
+                Select Model
+              </p>
+              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                {(videoModels ?? []).map((m) => (
+                  <ModelOption key={m.id} model={m} selected={selectedVideoModel === m.id} onSelect={() => setSelectedVideoModel(m.id)} />
+                ))}
+                {!videoModels && <p className="text-xs" style={{ color: "var(--c-40)" }}>Loading models...</p>}
+              </div>
+              {(() => {
+                if (!selectedVideoModel) return null;
+                const config = getVideoModelConfig(selectedVideoModel);
+                return (
+                  <>
+                    {config.aspectRatios.length > 0 && (
+                      <>
+                        <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
+                          Aspect Ratio
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {config.aspectRatios.map((r) => (
+                            <button
+                              key={r}
+                              onClick={() => setSelectedVideoAspectRatio(r)}
+                              className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                              style={selectedVideoAspectRatio === r ? {
+                                background: "oklch(0.72 0.25 285 / 0.15)",
+                                border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                                color: "oklch(0.88 0.12 285)",
+                              } : {
+                                background: "var(--bg-input)",
+                                border: "1px solid var(--bd-7)",
+                                color: "var(--c-50)",
+                              }}
+                            >
+                              {r}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {config.durations.length > 0 && (
+                      <>
+                        <p className="text-xs font-semibold uppercase tracking-wider mt-3 mb-2" style={{ color: "var(--c-40)" }}>
+                          Duration
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {config.durations.map((d) => (
+                            <button
+                              key={String(d.value)}
+                              onClick={() => setSelectedDuration(d.value)}
+                              className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                              style={selectedDuration === d.value ? {
+                                background: "oklch(0.72 0.25 285 / 0.15)",
+                                border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                                color: "oklch(0.88 0.12 285)",
+                              } : {
+                                background: "var(--bg-input)",
+                                border: "1px solid var(--bd-7)",
+                                color: "var(--c-50)",
+                              }}
+                            >
+                              {d.label}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+
+            {/* Video clip grid */}
+            {beats.some((b) => b.videoUrl || b.videoStatus) && (
+              <div className="px-5 pt-4">
+                <ProgressBar value={generatedVideos} total={videoBeats} />
+                <div className="grid grid-cols-4 gap-1.5 mt-3 max-h-36 overflow-y-auto">
+                  {beats.filter((b) => b.videoPrompt).map((b) => (
+                    <div
+                      key={b.beatNumber}
+                      className="aspect-video rounded-lg overflow-hidden flex items-center justify-center"
+                      style={{ background: "var(--bg-progress)" }}
+                      onMouseEnter={() => {
+                        if (!b.videoUrl) return;
+                        if (videoHideTimer.current) clearTimeout(videoHideTimer.current);
+                        setHoveredVideoBeat(b);
+                      }}
+                      onMouseLeave={() => {
+                        videoHideTimer.current = setTimeout(() => setHoveredVideoBeat(null), 200);
+                      }}
+                    >
+                      {b.videoUrl ? (
+                        <video src={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
+                      ) : (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded"
+                          style={{
+                            background: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285 / 0.1)" : b.videoStatus === "done" ? "oklch(0.55 0.15 145 / 0.1)" : b.videoStatus === "failed" ? "oklch(0.6 0.22 25 / 0.1)" : "var(--bg-track)",
+                            color: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285)" : b.videoStatus === "done" ? "oklch(0.7 0.15 145)" : b.videoStatus === "failed" ? "oklch(0.7 0.2 25)" : "var(--c-35)",
+                          }}>
+                          {b.videoStatus ?? "—"}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="p-5 mt-auto space-y-3">
+              <p className="text-xs" style={{ color: "var(--c-40)" }}>
+                Runs in background — clips appear as each job completes.
+              </p>
+              {videosSubmitted && (
+                <ProgressBar value={generatedVideos} total={videoBeats} />
+              )}
+              <button
+                onClick={queueVideos}
+                disabled={queuingVideos || !selectedVideoModel || !videoBeats}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+              >
+                {queuingVideos ? "Queuing..." : `Queue ${videoBeats} Video Clips`}
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      {/* Video hover preview */}
+      {hoveredVideoBeat?.videoUrl && (
+        <div
+          className="fixed z-50 rounded-xl overflow-hidden shadow-2xl"
+          style={{
+            bottom: "2rem",
+            right: "2rem",
+            width: "320px",
+            border: "1px solid var(--bd-10)",
+            background: "var(--bg-page-2)",
+          }}
+          onMouseEnter={() => {
+            if (videoHideTimer.current) clearTimeout(videoHideTimer.current);
+          }}
+          onMouseLeave={() => {
+            videoHideTimer.current = setTimeout(() => setHoveredVideoBeat(null), 200);
+          }}
+        >
+          <video
+            key={hoveredVideoBeat.videoUrl}
+            src={hoveredVideoBeat.videoUrl}
+            className="w-full"
+            style={{ aspectRatio: "16/9", display: "block" }}
+            autoPlay
+            loop
+            playsInline
+            controls
+          />
+          <div className="px-3 py-2">
+            <p className="text-xs font-semibold mb-0.5" style={{ color: "var(--c-55)" }}>
+              Beat {hoveredVideoBeat.beatNumber}
+            </p>
+            <p className="text-xs leading-relaxed line-clamp-3" style={{ color: "var(--c-45)" }}>
+              {hoveredVideoBeat.videoPrompt}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Image hover preview */}
+      {hoveredImageBeat?.imageUrl && (
+        <div
+          className="fixed z-50 pointer-events-none rounded-xl overflow-hidden shadow-2xl"
+          style={{
+            bottom: "2rem",
+            right: "2rem",
+            width: "280px",
+            border: "1px solid var(--bd-10)",
+            background: "var(--bg-panel)",
+          }}
+        >
+          <img
+            src={hoveredImageBeat.imageUrl}
+            alt={`Beat ${hoveredImageBeat.beatNumber}`}
+            className="w-full object-cover"
+            style={{ aspectRatio: "16/9" }}
+          />
+          <div className="px-3 py-2">
+            <p className="text-xs font-semibold mb-0.5" style={{ color: "var(--c-55)" }}>
+              Beat {hoveredImageBeat.beatNumber}
+            </p>
+            <p className="text-xs leading-relaxed line-clamp-3" style={{ color: "var(--c-45)" }}>
+              {hoveredImageBeat.imagePrompt}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

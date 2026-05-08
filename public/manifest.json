@@ -1,0 +1,25 @@
+{
+  "name": "aiTrends YT Workflow",
+  "short_name": "aiTrends",
+  "description": "Analyze channels, generate scripts, create voiceovers, images, and video clips",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f0a0f",
+  "theme_color": "#0f0a0f",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
