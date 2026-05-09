@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { submitVideoJob } from "@/lib/kie/videos";
+import { getVideoQueue } from "@/lib/queue/client";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
@@ -25,20 +25,32 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "projectId, beats, and modelId are required" }, { status: 400 });
     }
 
+    const queue = getVideoQueue();
     let submitted = 0;
     const failures: { beatNumber: number; error: string }[] = [];
 
     for (const beat of beats) {
       try {
-        await supabase.from("project_beats").update({ video_status: "rendering", video_url: null, video_job_id: null }).eq("project_id", projectId).eq("beat_number", beat.beatNumber);
+        await supabase
+          .from("project_beats")
+          .update({ video_status: "queued", video_url: null, video_job_id: null })
+          .eq("project_id", projectId)
+          .eq("beat_number", beat.beatNumber);
 
-        const taskId = await submitVideoJob(beat.videoPrompt, modelId, beat.imageUrl, duration, aspectRatio, user.id);
-
-        await supabase.from("project_beats").update({ video_job_id: `${modelId}::${taskId}` }).eq("project_id", projectId).eq("beat_number", beat.beatNumber);
+        await queue.add("generate-video", {
+          projectId,
+          beatNumber: beat.beatNumber,
+          videoPrompt: beat.videoPrompt,
+          imageUrl: beat.imageUrl,
+          modelId,
+          duration,
+          aspectRatio,
+          userId: user.id,
+        });
 
         submitted++;
       } catch (err) {
-        const error = err instanceof Error ? err.message : "Failed to submit";
+        const error = err instanceof Error ? err.message : "Failed to queue";
         console.error(`[video-submit] beat ${beat.beatNumber} failed:`, error);
         failures.push({ beatNumber: beat.beatNumber, error });
         await supabase.from("project_beats").update({ video_status: "failed" }).eq("project_id", projectId).eq("beat_number", beat.beatNumber);

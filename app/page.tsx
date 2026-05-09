@@ -9,6 +9,7 @@ import { Settings, LogOut, BarChart3, FileText, Wand2, ScrollText, Mic, Sparkles
 import useSWR from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { SubscriptionModal } from "@/components/SubscriptionModal";
 
 const ADMIN_EMAIL = "prioritylearn@gmail.com";
 
@@ -68,11 +69,19 @@ export default function HomePage() {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isPaid, setIsPaid] = useState<boolean | null>(null);
+  const [userEmail, setUserEmail] = useState("");
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user?.email === ADMIN_EMAIL) setIsAdmin(true);
+      const user = data.user;
+      if (!user) return;
+      if (user.email === ADMIN_EMAIL) setIsAdmin(true);
+      setUserEmail(user.email ?? "");
+      setIsPaid(user.app_metadata?.paid === true);
     });
   }, []);
 
@@ -99,7 +108,25 @@ export default function HomePage() {
     return Array.from(map.values()).sort((a, b) => b.lastActive.localeCompare(a.lastActive));
   }, [projects]);
 
-  async function createProject() {
+  function requireSubscription(action: () => void) {
+    if (isPaid) {
+      action();
+    } else {
+      setPendingAction(() => action);
+      setShowSubscriptionModal(true);
+    }
+  }
+
+  function handleSubscriptionSuccess() {
+    setIsPaid(true);
+    setShowSubscriptionModal(false);
+    if (pendingAction) {
+      pendingAction();
+      setPendingAction(null);
+    }
+  }
+
+  async function doCreateProject() {
     setCreating(true);
     try {
       const res = await fetch("/api/projects", { method: "POST" });
@@ -116,9 +143,12 @@ export default function HomePage() {
     }
   }
 
-  async function createVideoForChannel(group: ChannelGroup) {
+  function createProject() {
+    requireSubscription(doCreateProject);
+  }
+
+  async function doCreateVideoForChannel(group: ChannelGroup) {
     if (creatingFor) return;
-    // Pick the project with the most progress as the data source
     const source = [...group.projects].sort((a, b) => b.current_state - a.current_state)[0];
     setCreatingFor(group.channelName);
     try {
@@ -152,6 +182,10 @@ export default function HomePage() {
     } finally {
       setCreatingFor(null);
     }
+  }
+
+  function createVideoForChannel(group: ChannelGroup) {
+    requireSubscription(() => doCreateVideoForChannel(group));
   }
 
   return (
@@ -422,6 +456,14 @@ export default function HomePage() {
           </div>
         )}
       </main>
+
+      {showSubscriptionModal && (
+        <SubscriptionModal
+          email={userEmail}
+          onClose={() => { setShowSubscriptionModal(false); setPendingAction(null); }}
+          onSuccess={handleSubscriptionSuccess}
+        />
+      )}
     </div>
   );
 }
