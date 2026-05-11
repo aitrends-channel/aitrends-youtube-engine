@@ -8,10 +8,8 @@ const nextConfig: NextConfig = {
     ],
   },
   serverExternalPackages: ["bullmq", "fluent-ffmpeg", "ffmpeg-static", "ffprobe-static"],
-  experimental: {
-    serverActions: {
-      bodySizeLimit: "10mb",
-    },
+  serverActions: {
+    bodySizeLimit: "10mb",
   },
 };
 
