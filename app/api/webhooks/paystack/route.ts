@@ -69,7 +69,7 @@ export async function POST(request: Request) {
       const { origin } = new URL(request.url);
       const appUrl = process.env.APP_URL ?? origin;
       const { data: invite, error: inviteError } = await supabase.auth.admin.inviteUserByEmail(email, {
-        redirectTo: `${appUrl}/set-password`,
+        redirectTo: `${appUrl}/auth/callback?next=/set-password`,
       });
 
       if (invite?.user) {

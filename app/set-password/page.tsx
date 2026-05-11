@@ -52,7 +52,10 @@ function SetPasswordForm() {
       setChecking(false);
     }
 
-    setup();
+    setup().catch(() => {
+      setError("Something went wrong verifying your link. Please try again.");
+      setChecking(false);
+    });
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
