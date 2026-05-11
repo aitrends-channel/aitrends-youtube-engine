@@ -78,12 +78,12 @@ export default function HomePage() {
     const supabase = createSupabaseBrowserClient();
     supabase.auth.getUser().then(({ data }) => {
       const user = data.user;
-      if (!user) return;
+      if (!user) { router.replace("/login"); return; }
       if (user.email === ADMIN_EMAIL) setIsAdmin(true);
       setUserEmail(user.email ?? "");
       setIsPaid(user.app_metadata?.paid === true);
     });
-  }, []);
+  }, [router]);
 
   async function handleSignOut() {
     const supabase = createSupabaseBrowserClient();
