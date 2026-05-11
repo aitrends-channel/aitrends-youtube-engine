@@ -17,10 +17,34 @@ function SetPasswordForm() {
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session) router.replace("/login");
-      else setChecking(false);
-    });
+
+    async function setupSession() {
+      // PKCE: exchange code if present in URL
+      const code = new URLSearchParams(window.location.search).get("code");
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (!error) { setChecking(false); return; }
+      }
+
+      // Implicit: access_token in URL hash (admin-generated invite/recovery links)
+      if (window.location.hash) {
+        const hp = new URLSearchParams(window.location.hash.slice(1));
+        const accessToken = hp.get("access_token");
+        const refreshToken = hp.get("refresh_token") ?? "";
+        if (accessToken) {
+          const { error } = await supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+          if (!error) { setChecking(false); return; }
+        }
+      }
+
+      // Already signed in (e.g. navigated back)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) { setChecking(false); return; }
+
+      router.replace("/login");
+    }
+
+    setupSession();
   }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
