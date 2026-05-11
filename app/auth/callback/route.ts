@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 import { supabase as serviceClient } from "@/lib/supabase/client";
 
 export async function GET(request: Request) {
@@ -8,18 +9,38 @@ export async function GET(request: Request) {
   const next = searchParams.get("next") ?? "/";
   const reset = searchParams.get("reset") === "true";
 
-  // Build the final redirect URL, forwarding the reset param if present
   const destination = new URL(`${origin}${next}`);
   if (reset) destination.searchParams.set("reset", "true");
 
-  const isSetPasswordFlow = next.startsWith("/set-password");
+  const response = NextResponse.redirect(destination.toString());
 
   if (code) {
-    const supabase = await createSupabaseServerClient();
+    const cookieStore = await cookies();
+
+    // Write session cookies directly onto the redirect response so they
+    // survive the redirect (next/headers cookies() does not carry through
+    // NextResponse.redirect automatically).
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+          setAll(cookiesToSet) {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              response.cookies.set(name, value, options);
+            });
+          },
+        },
+      }
+    );
+
     const { data: { user } } = await supabase.auth.exchangeCodeForSession(code);
 
-    // Invite and password-reset flows land here before the user has paid —
-    // skip the access check and let them reach /set-password.
+    const isSetPasswordFlow = next.startsWith("/set-password");
+
     if (user && !isSetPasswordFlow) {
       const isPaid = user.app_metadata?.paid === true;
       if (!isPaid) {
@@ -37,5 +58,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(destination.toString());
+  return response;
 }
