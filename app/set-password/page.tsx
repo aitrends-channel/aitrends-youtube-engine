@@ -18,16 +18,42 @@ function SetPasswordForm() {
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
 
-    // Session is established by /auth/callback before we land here.
-    // Just confirm it exists; redirect to login if not.
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setChecking(false);
-      } else {
-        router.replace("/login");
+    async function setup() {
+      // 1. Already have a valid session (navigated back, or /auth/callback set one)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) { setChecking(false); return; }
+
+      // 2. Implicit flow: admin invite/recovery links land here with
+      //    #access_token=xxx in the hash. @supabase/ssr in PKCE mode does NOT
+      //    auto-process hash tokens, so we do it manually.
+      const hash = window.location.hash;
+      if (hash) {
+        const p = new URLSearchParams(hash.slice(1));
+        const accessToken = p.get("access_token");
+        const refreshToken = p.get("refresh_token") ?? "";
+        if (accessToken) {
+          const { error: sessionError } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (!sessionError) { setChecking(false); return; }
+        }
       }
-    });
-  }, [router]);
+
+      // 3. PKCE flow: some paths (e.g. user-initiated reset) may land with ?code=
+      const code = new URLSearchParams(window.location.search).get("code");
+      if (code) {
+        const { error: codeError } = await supabase.auth.exchangeCodeForSession(code);
+        if (!codeError) { setChecking(false); return; }
+      }
+
+      // 4. Nothing worked — link is expired or invalid
+      setError("This link has expired or is invalid. Request a new one.");
+      setChecking(false);
+    }
+
+    setup();
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -80,74 +106,66 @@ function SetPasswordForm() {
             <div className="flex items-center justify-center py-8">
               <span className="text-sm" style={{ color: "var(--c-45)" }}>Verifying your link…</span>
             </div>
+          ) : error ? (
+            <p className="text-xs px-3 py-2 rounded-lg"
+              style={{ background: "oklch(0.6 0.22 25 / 0.1)", color: "oklch(0.7 0.2 25)", border: "1px solid oklch(0.6 0.22 25 / 0.2)" }}>
+              {error}
+            </p>
           ) : (
             <>
-              {error && (
-                <p className="text-xs px-3 py-2 rounded-lg mb-4"
-                  style={{ background: "oklch(0.6 0.22 25 / 0.1)", color: "oklch(0.7 0.2 25)", border: "1px solid oklch(0.6 0.22 25 / 0.2)" }}>
-                  {error}
-                </p>
-              )}
+              <p className="text-sm mb-5" style={{ color: "var(--c-50)" }}>
+                {isReset ? "Set a new password for your account" : "Complete your account setup"}
+              </p>
 
-              {!error && (
-                <>
-                  <p className="text-sm mb-5" style={{ color: "var(--c-50)" }}>
-                    {isReset ? "Set a new password for your account" : "Complete your account setup"}
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Password</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoComplete="new-password"
+                    placeholder="At least 8 characters"
+                    className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all"
+                    style={inputStyle}
+                    onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
+                    onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Confirm Password</label>
+                  <input
+                    type="password"
+                    value={confirm}
+                    onChange={(e) => setConfirm(e.target.value)}
+                    required
+                    autoComplete="new-password"
+                    placeholder="Repeat your password"
+                    className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all"
+                    style={inputStyle}
+                    onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
+                    onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
+                  />
+                </div>
+
+                {error && (
+                  <p className="text-xs px-3 py-2 rounded-lg"
+                    style={{ background: "oklch(0.6 0.22 25 / 0.1)", color: "oklch(0.7 0.2 25)", border: "1px solid oklch(0.6 0.22 25 / 0.2)" }}>
+                    {error}
                   </p>
+                )}
 
-                  <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="space-y-2">
-                      <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>
-                        Password
-                      </label>
-                      <input
-                        type="password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        required
-                        autoComplete="new-password"
-                        placeholder="At least 8 characters"
-                        className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all"
-                        style={inputStyle}
-                        onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
-                        onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Confirm Password</label>
-                      <input
-                        type="password"
-                        value={confirm}
-                        onChange={(e) => setConfirm(e.target.value)}
-                        required
-                        autoComplete="new-password"
-                        placeholder="Repeat your password"
-                        className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all"
-                        style={inputStyle}
-                        onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
-                        onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
-                      />
-                    </div>
-
-                    {error && (
-                      <p className="text-xs px-3 py-2 rounded-lg"
-                        style={{ background: "oklch(0.6 0.22 25 / 0.1)", color: "oklch(0.7 0.2 25)", border: "1px solid oklch(0.6 0.22 25 / 0.2)" }}>
-                        {error}
-                      </p>
-                    )}
-
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
-                      style={{ background: "oklch(0.72 0.25 285)", color: "oklch(0.08 0 0)" }}
-                    >
-                      {loading ? "…" : isReset ? "Set new password" : "Set Password & Continue"}
-                    </button>
-                  </form>
-                </>
-              )}
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "oklch(0.08 0 0)" }}
+                >
+                  {loading ? "…" : isReset ? "Set new password" : "Set Password & Continue"}
+                </button>
+              </form>
             </>
           )}
 

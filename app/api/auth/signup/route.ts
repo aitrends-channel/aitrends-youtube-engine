@@ -21,7 +21,7 @@ export async function POST(request: Request) {
       last_name: lastName,
       full_name: `${firstName ?? ""} ${lastName ?? ""}`.trim(),
     },
-    redirectTo: `${appUrl}/auth/callback?next=/set-password`,
+    redirectTo: `${appUrl}/set-password`,
   });
 
   if (error) {
