@@ -9,6 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus,
 } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import useSWR from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -217,7 +218,11 @@ export default function AdminPage() {
     }
   }
 
-  if (!authChecked) return null;
+  if (!authChecked) return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-page)" }}>
+      <Spinner size={28} className="text-purple-400" />
+    </div>
+  );
 
   const stats = data?.stats;
   const users = data?.users ?? [];
@@ -298,7 +303,10 @@ export default function AdminPage() {
           <AddUserForm onSuccess={mutate} />
 
           {isLoading ? (
-            <div className="text-sm py-4" style={{ color: "var(--c-40)" }}>Loading users…</div>
+            <div className="flex items-center gap-2 py-4" style={{ color: "var(--c-40)" }}>
+              <Spinner size={14} />
+              <span className="text-sm">Loading users…</span>
+            </div>
           ) : users.length === 0 ? (
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No users yet.</div>
           ) : (
@@ -354,14 +362,14 @@ export default function AdminPage() {
                           <button
                             onClick={() => handleRemoveUser(u.email)}
                             disabled={removing === u.email}
-                            className="text-xs px-2.5 py-1 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                            className="text-xs px-2.5 py-1 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
                             style={{
                               background: "oklch(0.6 0.22 25 / 0.1)",
                               color: "oklch(0.7 0.22 25)",
                               border: "1px solid oklch(0.6 0.22 25 / 0.2)",
                             }}
                           >
-                            {removing === u.email ? "Removing…" : "Remove"}
+                            {removing === u.email ? <><Spinner size={11} />Removing…</> : "Remove"}
                           </button>
                         )}
                       </td>
@@ -388,7 +396,10 @@ export default function AdminPage() {
           </div>
 
           {isLoading ? (
-            <div className="text-sm py-4" style={{ color: "var(--c-40)" }}>Loading projects…</div>
+            <div className="flex items-center gap-2 py-4" style={{ color: "var(--c-40)" }}>
+              <Spinner size={14} />
+              <span className="text-sm">Loading projects…</span>
+            </div>
           ) : projects.length === 0 ? (
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No projects yet.</div>
           ) : (

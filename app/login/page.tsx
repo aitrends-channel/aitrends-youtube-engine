@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { Spinner } from "@/components/ui/spinner";
 
 function LoginForm() {
   const router = useRouter();
@@ -54,10 +55,21 @@ function LoginForm() {
       router.refresh();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Authentication failed";
+      const lower = msg.toLowerCase();
       setError(
-        msg === "Failed to fetch" || msg.toLowerCase().includes("network")
+        msg === "Failed to fetch" || lower.includes("network") || lower.includes("failed to fetch")
           ? "Unable to reach the server. Check your internet connection and try again."
-          : msg
+          : lower.includes("invalid login") || lower.includes("invalid credentials") || lower.includes("wrong password")
+          ? "Incorrect email or password. Please try again."
+          : lower.includes("email not confirmed") || lower.includes("not confirmed")
+          ? "Please verify your email address before signing in. Check your inbox for a confirmation link."
+          : lower.includes("too many requests") || lower.includes("rate limit")
+          ? "Too many sign-in attempts. Please wait a few minutes and try again."
+          : lower.includes("user not found") || lower.includes("no user")
+          ? "No account found with that email address."
+          : lower.includes("disabled") || lower.includes("banned")
+          ? "This account has been disabled. Contact support for help."
+          : "Sign-in failed. Please check your details and try again."
       );
     } finally {
       setLoading(false);
@@ -125,10 +137,10 @@ function LoginForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+        className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
         style={{ background: "oklch(0.72 0.25 285)", color: "oklch(0.08 0 0)" }}
       >
-        {loading ? "…" : "Sign In"}
+        {loading ? <><Spinner size={14} />Signing in…</> : "Sign In"}
       </button>
 
       <p className="text-center text-xs" style={{ color: "var(--c-40)" }}>

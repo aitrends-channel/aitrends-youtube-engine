@@ -448,6 +448,42 @@ export default function HomePage() {
           </div>
         )}
 
+        {/* Loading skeleton */}
+        {projects === undefined && (
+          <div className="space-y-12">
+            {[0, 1].map((g) => (
+              <div key={g}>
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="w-11 h-11 rounded-xl animate-pulse" style={{ background: "var(--bg-card)" }} />
+                  <div className="space-y-2">
+                    <div className="h-4 w-36 rounded animate-pulse" style={{ background: "var(--bg-card)" }} />
+                    <div className="h-3 w-52 rounded animate-pulse" style={{ background: "var(--bg-card)" }} />
+                  </div>
+                </div>
+                <div className="grid gap-7" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="p-6 rounded-2xl space-y-4"
+                      style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+                      <div className="flex items-start justify-between">
+                        <div className="h-5 w-20 rounded-full animate-pulse" style={{ background: "var(--bg-elevated)" }} />
+                        <div className="h-4 w-14 rounded animate-pulse" style={{ background: "var(--bg-elevated)" }} />
+                      </div>
+                      <div className="h-6 w-4/5 rounded animate-pulse" style={{ background: "var(--bg-elevated)" }} />
+                      <div className="space-y-2">
+                        <div className="flex justify-between">
+                          <div className="h-3 w-14 rounded animate-pulse" style={{ background: "var(--bg-elevated)" }} />
+                          <div className="h-3 w-8 rounded animate-pulse" style={{ background: "var(--bg-elevated)" }} />
+                        </div>
+                        <div className="h-1 w-full rounded-full animate-pulse" style={{ background: "var(--bg-elevated)" }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Empty state */}
         {channelGroups.length === 0 && projects !== undefined && (
           <div className="text-center py-20 space-y-3">

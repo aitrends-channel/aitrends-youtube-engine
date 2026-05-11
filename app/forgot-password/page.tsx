@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { Spinner } from "@/components/ui/spinner";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -29,7 +30,19 @@ export default function ForgotPasswordPage() {
       if (!res.ok) throw new Error(data?.error ?? `Request failed (${res.status})`);
       setSent(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send reset email");
+      const msg = err instanceof Error ? err.message : "Failed to send reset email";
+      const lower = msg.toLowerCase();
+      setError(
+        msg === "Failed to fetch" || lower.includes("network") || lower.includes("failed to fetch")
+          ? "Unable to reach the server. Check your connection and try again."
+          : lower.includes("rate limit") || lower.includes("email rate") || lower.includes("too many")
+          ? "Too many reset emails sent. Please wait a few minutes before requesting another."
+          : lower.includes("user not found") || lower.includes("no user")
+          ? "If that email is registered, you'll receive a reset link shortly."
+          : lower.includes("invalid email")
+          ? "Please enter a valid email address."
+          : "Failed to send reset email. Please try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -112,10 +125,10 @@ export default function ForgotPasswordPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+                className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
                 style={{ background: "oklch(0.72 0.25 285)", color: "oklch(0.08 0 0)" }}
               >
-                {loading ? "…" : "Send reset link"}
+                {loading ? <><Spinner size={14} />Sending…</> : "Send reset link"}
               </button>
 
               <p className="text-center text-xs" style={{ color: "var(--c-40)" }}>

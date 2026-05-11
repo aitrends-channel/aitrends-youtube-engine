@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import Image from "next/image";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -247,7 +248,10 @@ export default function SettingsPage() {
 
         {/* Form */}
         {loading ? (
-          <div className="text-sm" style={{ color: "var(--c-40)" }}>Loading…</div>
+          <div className="flex items-center gap-2 py-6" style={{ color: "var(--c-40)" }}>
+            <Spinner size={16} />
+            <span className="text-sm">Loading settings…</span>
+          </div>
         ) : (
           <form onSubmit={handleSave} className="space-y-4">
             {KEY_FIELDS.map((field) => {
@@ -316,7 +320,7 @@ export default function SettingsPage() {
                 color: "var(--c-98)",
                 boxShadow: "0 0 24px oklch(0.72 0.25 285 / 0.25)",
               }}>
-              <Save size={15} />
+              {saving ? <Spinner size={15} /> : <Save size={15} />}
               {saving ? "Saving…" : "Save API Keys"}
             </button>
           </form>

@@ -8,6 +8,7 @@ const PUBLIC_PREFIXES = [
   "/forgot-password",
   "/set-password",
   "/auth/",
+  "/api/auth/",
   "/api/webhooks/",
   "/api/gumroad/",
 ];

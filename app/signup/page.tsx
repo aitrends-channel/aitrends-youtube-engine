@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { Spinner } from "@/components/ui/spinner";
 
 function SignupForm() {
   const [firstName, setFirstName] = useState("");
@@ -23,14 +24,21 @@ function SignupForm() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error(data?.message ?? `Request failed (${res.status})`);
+        throw new Error(data?.error ?? data?.message ?? `Request failed (${res.status})`);
       }
       setSuccess(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Signup failed";
+      const lower = msg.toLowerCase();
       setError(
-        msg === "Failed to fetch" || msg.toLowerCase().includes("network")
+        msg === "Failed to fetch" || lower.includes("network") || lower.includes("failed to fetch")
           ? "Unable to reach the server. Check your connection and try again."
+          : lower.includes("already registered") || lower.includes("already been registered") || lower.includes("already exists") || lower.includes("email already")
+          ? "An account with this email already exists. Try signing in instead."
+          : lower.includes("invalid email")
+          ? "Please enter a valid email address."
+          : lower.includes("rate limit") || lower.includes("too many")
+          ? "Too many sign-up attempts. Please wait a few minutes and try again."
           : msg
       );
     } finally {
@@ -134,10 +142,10 @@ function SignupForm() {
       <button
         type="submit"
         disabled={loading}
-        className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+        className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
         style={{ background: "oklch(0.72 0.25 285)", color: "oklch(0.08 0 0)" }}
       >
-        {loading ? "…" : "Create account"}
+        {loading ? <><Spinner size={14} />Creating account…</> : "Create account"}
       </button>
 
       <p className="text-center text-xs" style={{ color: "var(--c-40)" }}>

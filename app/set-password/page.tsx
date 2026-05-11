@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { Spinner } from "@/components/ui/spinner";
 
 function SetPasswordForm() {
   const router = useRouter();
@@ -106,7 +107,8 @@ function SetPasswordForm() {
           style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}>
 
           {checking ? (
-            <div className="flex items-center justify-center py-8">
+            <div className="flex flex-col items-center justify-center py-8 gap-3">
+              <Spinner size={22} className="text-purple-400" />
               <span className="text-sm" style={{ color: "var(--c-45)" }}>Verifying your link…</span>
             </div>
           ) : error ? (
@@ -163,10 +165,10 @@ function SetPasswordForm() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+                  className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
                   style={{ background: "oklch(0.72 0.25 285)", color: "oklch(0.08 0 0)" }}
                 >
-                  {loading ? "…" : isReset ? "Set new password" : "Set Password & Continue"}
+                  {loading ? <><Spinner size={14} />Saving…</> : isReset ? "Set new password" : "Set Password & Continue"}
                 </button>
               </form>
             </>
