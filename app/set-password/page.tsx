@@ -17,39 +17,16 @@ function SetPasswordForm() {
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
-    let settled = false;
 
-    function resolve() {
-      if (settled) return;
-      settled = true;
-      setChecking(false);
-    }
-
-    function reject() {
-      if (settled) return;
-      settled = true;
-      setError("This link has expired or is invalid. Please request a new one.");
-      setChecking(false);
-    }
-
-    // @supabase/ssr auto-detects auth tokens in the URL (?code= for PKCE,
-    // #access_token= for implicit). Listen for the result instead of manually
-    // exchanging — manual calls race with the auto-exchange and cause hangs.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    // Session is established by /auth/callback before we land here.
+    // Just confirm it exists; redirect to login if not.
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
-        resolve();
+        setChecking(false);
+      } else {
+        router.replace("/login");
       }
-      // INITIAL_SESSION with null = exchange still in progress; keep waiting.
-      // SIGNED_OUT shouldn't happen here but the timeout below covers it.
     });
-
-    // If no valid session arrives within 10 s the token is expired/invalid.
-    const timeout = setTimeout(reject, 10_000);
-
-    return () => {
-      subscription.unsubscribe();
-      clearTimeout(timeout);
-    };
   }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
