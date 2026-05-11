@@ -142,7 +142,8 @@ function SetPasswordForm() {
                   {loading ? "…" : isReset ? "Set new password" : "Set Password & Continue"}
                 </button>
               </form>
-            )}
+            </>
+          )}
 
         </div>
       </div>
