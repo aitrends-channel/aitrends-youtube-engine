@@ -6,13 +6,21 @@ export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const next = searchParams.get("next") ?? "/";
+  const reset = searchParams.get("reset") === "true";
+
+  // Build the final redirect URL, forwarding the reset param if present
+  const destination = new URL(`${origin}${next}`);
+  if (reset) destination.searchParams.set("reset", "true");
+
+  const isSetPasswordFlow = next.startsWith("/set-password");
 
   if (code) {
     const supabase = await createSupabaseServerClient();
     const { data: { user } } = await supabase.auth.exchangeCodeForSession(code);
 
-    if (user) {
-      // Paid users carry app_metadata.paid; allowed_emails covers admin/comped accounts
+    // Invite and password-reset flows land here before the user has paid —
+    // skip the access check and let them reach /set-password.
+    if (user && !isSetPasswordFlow) {
       const isPaid = user.app_metadata?.paid === true;
       if (!isPaid) {
         const { data: allowed } = await serviceClient
@@ -29,5 +37,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(`${origin}${next}`);
+  return NextResponse.redirect(destination.toString());
 }

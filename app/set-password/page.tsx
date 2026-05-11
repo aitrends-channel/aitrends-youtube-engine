@@ -13,41 +13,14 @@ function SetPasswordForm() {
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
-
-    async function setupSession() {
-      // PKCE flow: code in search params
-      const code = new URLSearchParams(window.location.search).get("code");
-      if (code) {
-        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-        if (!error && data.session) return;
-      }
-
-      // Implicit flow: tokens in hash (from admin.generateLink or site-URL fallback)
-      const hash = window.location.hash;
-      if (hash) {
-        const hp = new URLSearchParams(hash.slice(1));
-        const accessToken = hp.get("access_token");
-        const refreshToken = hp.get("refresh_token");
-        if (accessToken) {
-          const { data, error } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken ?? "",
-          });
-          if (!error && data.session) return;
-        }
-      }
-
-      // Already signed in
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) return;
-
-      router.replace("/login");
-    }
-
-    setupSession();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) router.replace("/login");
+      else setChecking(false);
+    });
   }, [router]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -97,14 +70,22 @@ function SetPasswordForm() {
         <div className="rounded-2xl p-6"
           style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}>
 
-          {error && (
+          {checking ? (
+            <div className="flex items-center justify-center py-8">
+              <span className="text-sm" style={{ color: "var(--c-45)" }}>Verifying your link…</span>
+            </div>
+          ) : (
+            <></>
+          )}
+
+          {!checking && error && (
             <p className="text-xs px-3 py-2 rounded-lg mb-4"
               style={{ background: "oklch(0.6 0.22 25 / 0.1)", color: "oklch(0.7 0.2 25)", border: "1px solid oklch(0.6 0.22 25 / 0.2)" }}>
               {error}
             </p>
           )}
 
-
+          {!checking && (
             <>
               <p className="text-sm mb-5" style={{ color: "var(--c-50)" }}>
                 {isReset ? "Set a new password for your account" : "Complete your account setup"}
@@ -161,7 +142,7 @@ function SetPasswordForm() {
                   {loading ? "…" : isReset ? "Set new password" : "Set Password & Continue"}
                 </button>
               </form>
-            </>
+            )}
 
         </div>
       </div>

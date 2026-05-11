@@ -11,7 +11,7 @@ export async function POST(request: Request) {
   }
 
   const appUrl = process.env.APP_URL ?? new URL(request.url).origin;
-  const redirectTo = `${appUrl}/set-password?reset=true`;
+  const redirectTo = `${appUrl}/auth/callback?next=/set-password&reset=true`;
 
   const { data, error } = await supabase.auth.admin.generateLink({
     type: "recovery",
