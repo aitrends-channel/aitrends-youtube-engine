@@ -3,6 +3,8 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 
+export const dynamic = "force-dynamic";
+
 const ADMIN_EMAIL = "prioritylearn@gmail.com";
 
 const PHASE_LABELS: Record<number, string> = {

@@ -2,9 +2,17 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createSupabaseProxyClient } from "@/lib/supabase/proxy-client";
 
-const PUBLIC_PREFIXES = ["/login", "/set-password", "/auth/", "/api/gumroad/"];
+const PUBLIC_PREFIXES = [
+  "/login",
+  "/signup",
+  "/forgot-password",
+  "/set-password",
+  "/auth/",
+  "/api/webhooks/",
+  "/api/gumroad/",
+];
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))) {
@@ -15,12 +23,11 @@ export async function proxy(request: NextRequest) {
   const supabase = createSupabaseProxyClient(request, response);
 
   let user = null;
-
   try {
     const { data } = await supabase.auth.getUser();
     user = data.user;
   } catch {
-    // Network error
+    // network error — fail open so the page can handle it
   }
 
   if (!user) {
