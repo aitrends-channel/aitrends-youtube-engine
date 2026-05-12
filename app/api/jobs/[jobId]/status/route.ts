@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getVideoQueue } from "@/lib/queue/client";
 import { getRequiredUser } from "@/lib/supabase/auth";

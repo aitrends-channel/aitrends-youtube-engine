@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { listTTSVoices } from "@/lib/kie/tts";
 import { listImageModels } from "@/lib/kie/images";
