@@ -6,8 +6,8 @@ const nextConfig = {
       { protocol: "https", hostname: "**" },
     ],
   },
-  serverExternalPackages: ["bullmq", "fluent-ffmpeg", "ffmpeg-static", "ffprobe-static"],
   experimental: {
+    serverComponentsExternalPackages: ["bullmq", "fluent-ffmpeg", "ffmpeg-static", "ffprobe-static"],
     serverActions: {
       bodySizeLimit: "10mb",
     },
