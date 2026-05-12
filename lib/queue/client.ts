@@ -1,19 +1,4 @@
 import { Queue } from "bullmq";
-import { Redis } from "@upstash/redis";
-
-// Lazy singletons — connections are only opened inside request handlers,
-// never at module load time (which would crash the Next.js build).
-
-let _redis: Redis | null = null;
-export function getRedis(): Redis {
-  if (!_redis) {
-    _redis = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL!,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-    });
-  }
-  return _redis;
-}
 
 export function getQueueConnection() {
   return {
