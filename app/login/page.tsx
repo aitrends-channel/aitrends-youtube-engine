@@ -18,7 +18,7 @@ function LoginForm() {
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) { router.replace("/"); return; }
+      if (data.session) { router.replace("/dashboard"); return; }
 
       // Supabase recovery/invite links may land here if the project Site URL points to /login.
       // Detect the tokens and forward to /set-password before showing the login form.
@@ -50,7 +50,7 @@ function LoginForm() {
         return;
       }
 
-      const next = searchParams.get("next") ?? "/";
+      const next = searchParams.get("next") ?? "/dashboard";
       router.push(next);
       router.refresh();
     } catch (err) {
