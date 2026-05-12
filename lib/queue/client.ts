@@ -1,5 +1,3 @@
-import { Queue } from "bullmq";
-
 export function getQueueConnection() {
   return {
     host: process.env.UPSTASH_REDIS_HOST ?? "localhost",
@@ -9,18 +7,24 @@ export function getQueueConnection() {
   };
 }
 
-let _videoQueue: Queue | null = null;
-export function getVideoQueue(): Queue {
+let _videoQueue: Awaited<ReturnType<typeof createQueue>> | null = null;
+
+async function createQueue() {
+  const { Queue } = await import("bullmq");
+  return new Queue("video-generation", {
+    connection: getQueueConnection(),
+    defaultJobOptions: {
+      attempts: 3,
+      backoff: { type: "exponential", delay: 5000 },
+      removeOnComplete: 100,
+      removeOnFail: 100,
+    },
+  });
+}
+
+export async function getVideoQueue() {
   if (!_videoQueue) {
-    _videoQueue = new Queue("video-generation", {
-      connection: getQueueConnection(),
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: "exponential", delay: 5000 },
-        removeOnComplete: 100,
-        removeOnFail: 100,
-      },
-    });
+    _videoQueue = await createQueue();
   }
   return _videoQueue;
 }

@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     }
 
     const { getVideoQueue } = await import("@/lib/queue/client");
-    const queue = getVideoQueue();
+    const queue = await getVideoQueue();
     let submitted = 0;
     const failures: { beatNumber: number; error: string }[] = [];
 

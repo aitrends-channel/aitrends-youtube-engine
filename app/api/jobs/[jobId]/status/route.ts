@@ -15,7 +15,7 @@ export async function GET(
 
   try {
     const { getVideoQueue } = await import("@/lib/queue/client");
-    const job = await getVideoQueue().getJob(jobId);
+    const job = await (await getVideoQueue()).getJob(jobId);
     if (!job) {
       return NextResponse.json({ status: "not_found" }, { status: 404 });
     }
