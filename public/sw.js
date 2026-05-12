@@ -1,4 +1,4 @@
-const CACHE = "aitrends-v1";
+const CACHE = "aitrends-v2";
 const PRECACHE = ["/", "/login"];
 
 self.addEventListener("install", (e) => {
