@@ -9,6 +9,7 @@ export async function POST(request: Request) {
   const firstName = body.first_name?.trim();
   const lastName = body.last_name?.trim();
 
+  // if email is missing or not a string, return an error
   if (!email) {
     return NextResponse.json({ error: "Email is required" }, { status: 400 });
   }
