@@ -17,7 +17,8 @@ function SignupForm() {
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch("/api/auth/signup", {
+      const base = process.env.NEXT_PUBLIC_APP_URL ?? "";
+      const res = await fetch(`${base}/api/auth/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ first_name: firstName, last_name: lastName, email }),
