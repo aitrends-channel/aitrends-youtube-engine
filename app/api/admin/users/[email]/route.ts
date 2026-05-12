@@ -7,7 +7,7 @@ const ADMIN_EMAIL = "prioritylearn@gmail.com";
 
 export async function DELETE(
   _req: Request,
-  { params }: { params: Promise<{ email: string }> }
+  { params }: { params: { email: string } }
 ) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
@@ -16,7 +16,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { email } = await params;
+  const { email } = params;
   const decoded = decodeURIComponent(email).toLowerCase().trim();
 
   if (decoded === ADMIN_EMAIL) {

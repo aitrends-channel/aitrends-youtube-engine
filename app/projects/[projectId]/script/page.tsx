@@ -15,11 +15,11 @@ import {
 } from "@/components/ui/dialog";
 
 interface PageProps {
-  params: Promise<{ projectId: string }>;
+  params: { projectId: string };
 }
 
 export default function ScriptPage({ params }: PageProps) {
-  const { projectId } = use(params);
+  const { projectId } = params;
   const router = useRouter();
   const { project } = useProject(projectId);
   const { script, setScript, isStreaming, streamingRef, wordCount, error, startStreaming } =

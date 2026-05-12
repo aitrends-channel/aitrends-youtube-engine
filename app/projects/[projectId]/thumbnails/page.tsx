@@ -9,7 +9,7 @@ import type { ThumbnailConcept, KieModel } from "@/lib/types";
 import { getModelConfig } from "@/lib/kie/imageModels";
 
 interface PageProps {
-  params: Promise<{ projectId: string }>;
+  params: { projectId: string };
 }
 
 type StepStatus = "idle" | "running" | "done" | "error";
@@ -323,7 +323,7 @@ async function streamStep(url: string, body: object, onUpdate: (s: StepState) =>
 }
 
 export default function ThumbnailsPage({ params }: PageProps) {
-  const { projectId } = use(params);
+  const { projectId } = params;
   const { project, mutate } = useProject(projectId);
 
   const { data: imageModels } = useSWR<KieModel[]>("/api/kie/models?type=image", fetcher);

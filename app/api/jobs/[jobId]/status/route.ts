@@ -6,13 +6,13 @@ import type { User } from "@supabase/supabase-js";
 
 export async function GET(
   req: Request,
-  { params }: { params: Promise<{ jobId: string }> }
+  { params }: { params: { jobId: string } }
 ) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
   void user;
 
-  const { jobId } = await params;
+  const { jobId } = params;
 
   try {
     const job = await getVideoQueue().getJob(jobId);

@@ -6,12 +6,12 @@ import type { User } from "@supabase/supabase-js";
 
 export async function GET(
   _req: Request,
-  { params }: { params: Promise<{ projectId: string }> }
+  { params }: { params: { projectId: string } }
 ) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
-  const { projectId } = await params;
+  const { projectId } = params;
 
   const [projectRes, beatsRes, thumbsRes] = await Promise.all([
     supabase.from("projects").select("*").eq("id", projectId).eq("user_id", user.id).single(),
@@ -56,12 +56,12 @@ export async function GET(
 
 export async function PATCH(
   req: Request,
-  { params }: { params: Promise<{ projectId: string }> }
+  { params }: { params: { projectId: string } }
 ) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
-  const { projectId } = await params;
+  const { projectId } = params;
   const body = await req.json();
 
   const { data, error } = await supabase

@@ -8,7 +8,7 @@ import { useProject } from "@/hooks/useProject";
 import type { ChannelInfo, TranscriptResult } from "@/lib/types";
 
 interface PageProps {
-  params: Promise<{ projectId: string }>;
+  params: { projectId: string };
 }
 
 type StepStatus = "idle" | "running" | "done" | "error";
@@ -57,7 +57,7 @@ function StepIndicator({ step }: { step: AnalysisStep }) {
 }
 
 export default function ChannelPage({ params }: PageProps) {
-  const { projectId } = use(params);
+  const { projectId } = params;
   const router = useRouter();
   const { project } = useProject(projectId);
 

@@ -7,7 +7,7 @@ import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 
 interface PageProps {
-  params: Promise<{ projectId: string }>;
+  params: { projectId: string };
 }
 
 type Mode = "auto" | "manual";
@@ -77,7 +77,7 @@ function SelectableImage({
 }
 
 export default function VisualsPage({ params }: PageProps) {
-  const { projectId } = use(params);
+  const { projectId } = params;
   const router = useRouter();
   const { project } = useProject(projectId);
 

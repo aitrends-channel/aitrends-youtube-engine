@@ -17,7 +17,7 @@ const fetcher = (url: string) =>
   });
 
 interface PageProps {
-  params: Promise<{ projectId: string }>;
+  params: { projectId: string };
 }
 
 function VoiceOption({ model, selected, onSelect, isPlaying, onPlayToggle }: {
@@ -176,7 +176,7 @@ function ProgressBar({ value, total }: { value: number; total: number }) {
 }
 
 export default function GeneratePage({ params }: PageProps) {
-  const { projectId } = use(params);
+  const { projectId } = params;
   const { project, mutate } = useProject(projectId);
 
   const { data: ttsModels, error: ttsError } = useSWR<KieModel[]>("/api/kie/models?type=tts", fetcher);

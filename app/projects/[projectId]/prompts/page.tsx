@@ -292,13 +292,13 @@ async function streamStep(
 type Tab = "beats" | "video";
 
 interface PageProps {
-  params: Promise<{ projectId: string }>;
+  params: { projectId: string };
 }
 
 const IDLE: StepState = { status: "idle", message: "" };
 
 export default function PromptsPage({ params }: PageProps) {
-  const { projectId } = use(params);
+  const { projectId } = params;
   const router = useRouter();
   const { project, mutate } = useProject(projectId);
 

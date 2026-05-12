@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import type { Beat } from "@/lib/types";
 
 interface PageProps {
-  params: Promise<{ projectId: string }>;
+  params: { projectId: string };
 }
 
 function ProgressBar({ value, total }: { value: number; total: number }) {
@@ -61,7 +61,7 @@ const CAPTION_SIZES    = [{ id: "small", label: "S" }, { id: "medium", label: "M
 const CAPTION_POSITIONS = [{ id: "bottom", label: "Bottom" }, { id: "top", label: "Top" }] as const;
 
 export default function AssemblePage({ params }: PageProps) {
-  const { projectId } = use(params);
+  const { projectId } = params;
   const router = useRouter();
   const { project } = useProject(projectId);
 

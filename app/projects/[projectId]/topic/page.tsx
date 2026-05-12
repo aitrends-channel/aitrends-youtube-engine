@@ -7,11 +7,11 @@ import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 
 interface PageProps {
-  params: Promise<{ projectId: string }>;
+  params: { projectId: string };
 }
 
 export default function TopicPage({ params }: PageProps) {
-  const { projectId } = use(params);
+  const { projectId } = params;
   const router = useRouter();
   const { project } = useProject(projectId);
 
