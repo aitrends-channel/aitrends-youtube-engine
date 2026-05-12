@@ -78,7 +78,7 @@ export async function generateImage(
   const DONE = ["succeed", "success", "completed", "done", "finish", "finished", "complete"];
   const FAIL = ["failed", "error", "fail"];
 
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 15; i++) {
     await sleep(3000);
 
     const statusRes = await kieRequest<KieRecordResponse>(

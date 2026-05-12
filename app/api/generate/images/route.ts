@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 interface Beat {
   beatNumber: number;

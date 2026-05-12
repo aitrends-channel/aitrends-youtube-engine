@@ -183,7 +183,7 @@ export default function SignupPage() {
           style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.08)" }}
         >
           <h1 className="text-sm font-semibold mb-5" style={{ color: "var(--c-75)" }}>
-            Create your account
+            Email sent to your inbox, follow the link to complete your account setup.
           </h1>
           <SignupForm />
         </div>
