@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { getVideoQueue } from "@/lib/queue/client";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
@@ -25,6 +24,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "projectId, beats, and modelId are required" }, { status: 400 });
     }
 
+    const { getVideoQueue } = await import("@/lib/queue/client");
     const queue = getVideoQueue();
     let submitted = 0;
     const failures: { beatNumber: number; error: string }[] = [];
