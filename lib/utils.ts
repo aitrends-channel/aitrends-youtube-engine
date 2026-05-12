@@ -13,3 +13,10 @@ export function getAppUrl(request: Request): string {
   if (host) return `${proto}://${host}`;
   return new URL(request.url).origin;
 }
+
+// Client-side: picks local or production URL based on NODE_ENV.
+export function getClientAppUrl(): string {
+  return process.env.NODE_ENV === "production"
+    ? (process.env.NEXT_PUBLIC_APP_URL_PRODUCTION ?? "")
+    : (process.env.NEXT_PUBLIC_APP_URL_LOCAL ?? "");
+}

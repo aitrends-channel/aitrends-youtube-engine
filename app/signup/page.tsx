@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { Spinner } from "@/components/ui/spinner";
+import { getClientAppUrl } from "@/lib/utils";
 
 function SignupForm() {
   const [firstName, setFirstName] = useState("");
@@ -17,8 +18,7 @@ function SignupForm() {
     setError(null);
     setLoading(true);
     try {
-      const base = process.env.NEXT_PUBLIC_APP_URL ?? "";
-      const res = await fetch(`${base}/api/auth/signup`, {
+      const res = await fetch(`${getClientAppUrl()}/api/auth/signup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ first_name: firstName, last_name: lastName, email }),
