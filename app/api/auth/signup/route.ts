@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
+import { getAppUrl } from "@/lib/utils";
 
 export async function POST(request: Request) {
   const body = await request.json();
@@ -12,8 +13,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Email is required" }, { status: 400 });
   }
 
-  const { origin } = new URL(request.url);
-  const appUrl = process.env.APP_URL ?? origin;
+  const appUrl = getAppUrl(request);
 
   const { error } = await supabase.auth.admin.inviteUserByEmail(email, {
     data: {
