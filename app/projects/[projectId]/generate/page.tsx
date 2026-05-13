@@ -386,27 +386,34 @@ export default function GeneratePage({ params }: PageProps) {
         setClearingImages(false);
       }
 
-      // Submit all beats to kie.ai (fast — just creates the task, returns taskId)
+      // Submit all beats in parallel (browser caps at ~6 concurrent, which is fine)
+      const submitResults = await Promise.allSettled(
+        beats.map(async (beat) => {
+          const res = await fetch("/api/generate/images/submit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              projectId,
+              beatNumber: beat.beatNumber,
+              imagePrompt: beat.imagePrompt,
+              modelId: selectedImageModel,
+              aspectRatio: selectedAspectRatio,
+              ...(selectedResolution ? { resolution: selectedResolution } : {}),
+            }),
+          });
+          const data = await res.json().catch(() => ({})) as { taskId?: string; error?: string };
+          if (!res.ok || !data.taskId) throw new Error(data.error ?? `HTTP ${res.status}`);
+          return { beatNumber: beat.beatNumber, taskId: data.taskId };
+        })
+      );
+
       const pending: { beatNumber: number; taskId: string }[] = [];
       let firstSubmitError: string | null = null;
-      for (const beat of beats) {
-        const res = await fetch("/api/generate/images/submit", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            projectId,
-            beatNumber: beat.beatNumber,
-            imagePrompt: beat.imagePrompt,
-            modelId: selectedImageModel,
-            aspectRatio: selectedAspectRatio,
-            ...(selectedResolution ? { resolution: selectedResolution } : {}),
-          }),
-        });
-        const data = await res.json().catch(() => ({})) as { taskId?: string; error?: string };
-        if (res.ok && data.taskId) {
-          pending.push({ beatNumber: beat.beatNumber, taskId: data.taskId });
+      for (const r of submitResults) {
+        if (r.status === "fulfilled") {
+          pending.push(r.value);
         } else if (!firstSubmitError) {
-          firstSubmitError = data.error ?? `HTTP ${res.status}`;
+          firstSubmitError = r.reason instanceof Error ? r.reason.message : "Unknown error";
         }
       }
 
@@ -417,26 +424,30 @@ export default function GeneratePage({ params }: PageProps) {
         toast.warning(`${pending.length}/${beats.length} tasks submitted. Some failed: ${firstSubmitError}`);
       }
 
-      // Poll until all tasks complete
+      // Poll all pending tasks in parallel every 3s until all complete
       const remaining = [...pending];
-      const MAX_POLLS = 40; // ~2.7 min max (40 × 4s)
+      const MAX_POLLS = 50; // ~2.5 min max
       for (let attempt = 0; attempt < MAX_POLLS && remaining.length > 0; attempt++) {
-        await new Promise((r) => setTimeout(r, 4000));
+        await new Promise((r) => setTimeout(r, 3000));
+
+        const pollResults = await Promise.allSettled(
+          remaining.map(async ({ beatNumber, taskId }) => {
+            const res = await fetch("/api/generate/images/poll", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ projectId, beatNumber, taskId }),
+            });
+            const data = await res.json().catch(() => ({})) as { status?: string; error?: string };
+            return { beatNumber, taskId, status: data.status ?? "pending" };
+          })
+        );
+
         const toRemove: number[] = [];
-        for (let i = 0; i < remaining.length; i++) {
-          const { beatNumber, taskId } = remaining[i];
-          const res = await fetch("/api/generate/images/poll", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ projectId, beatNumber, taskId }),
-          });
-          const data = await res.json().catch(() => ({})) as { status?: string; error?: string };
-          if (data.status === "done") {
-            successCount++;
-            setImagesProgress(successCount);
-            toRemove.push(i);
-          } else if (data.status === "failed") {
-            toRemove.push(i);
+        for (let i = 0; i < pollResults.length; i++) {
+          if (pollResults[i].status === "fulfilled") {
+            const { status } = (pollResults[i] as PromiseFulfilledResult<{ beatNumber: number; taskId: string; status: string }>).value;
+            if (status === "done") { successCount++; setImagesProgress(successCount); toRemove.push(i); }
+            else if (status === "failed") { toRemove.push(i); }
           }
         }
         for (let i = toRemove.length - 1; i >= 0; i--) remaining.splice(toRemove[i], 1);
