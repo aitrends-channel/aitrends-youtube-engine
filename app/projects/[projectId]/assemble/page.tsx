@@ -159,10 +159,16 @@ export default function AssemblePage({ params }: PageProps) {
     setAssembleProgress(null);
     setAssembleStatus("Starting…");
     try {
-      const res = await fetch("/api/generate/assemble", {
+      // Get a short-lived auth token + worker URL from the Vercel API
+      const tokenRes = await fetch("/api/generate/assemble", { method: "POST" });
+      if (!tokenRes.ok) throw new Error("Failed to get assembly token");
+      const { workerUrl, token } = await tokenRes.json() as { workerUrl: string; token: string };
+
+      // Stream assembly directly from the worker (bypasses Vercel's 60s timeout)
+      const res = await fetch(`${workerUrl}/api/assemble`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, aspectRatio, voiceoverType, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition }),
+        body: JSON.stringify({ token, projectId, aspectRatio, voiceoverType, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition }),
       });
       if (!res.ok || !res.body) throw new Error("Failed to start assembly");
 
