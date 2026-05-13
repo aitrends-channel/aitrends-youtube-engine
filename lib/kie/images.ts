@@ -33,6 +33,89 @@ export async function listImageModels(): Promise<KieModel[]> {
   return IMAGE_MODELS;
 }
 
+export async function submitImageTask(
+  prompt: string,
+  modelId: string,
+  aspectRatio = "16:9",
+  resolution?: string,
+  userId?: string
+): Promise<string> {
+  if (modelId.startsWith("flux-kontext")) {
+    const res = await kieRequest<KieTaskResponse>("/api/v1/flux/kontext/generate", {
+      method: "POST",
+      body: JSON.stringify({ prompt, model: modelId, aspectRatio, outputFormat: "jpeg" }),
+    }, userId);
+    if (res.code !== 200) throw new Error(res.msg ?? "Failed to create image task");
+    if (!res.data?.taskId) throw new Error("No task ID returned from image API");
+    return res.data.taskId;
+  } else if (IMAGE_SIZE_MODELS.has(modelId)) {
+    const image_size = IMAGE_SIZE_MAP[aspectRatio] ?? "landscape_16_9";
+    const input: Record<string, unknown> = { prompt, image_size };
+    if (modelId === "bytedance/seedream-v4-text-to-image" && resolution) {
+      input.image_resolution = resolution;
+    }
+    const res = await kieRequest<KieTaskResponse>("/api/v1/jobs/createTask", {
+      method: "POST",
+      body: JSON.stringify({ model: modelId, input }),
+    }, userId);
+    if (res.code !== 200) throw new Error(res.msg ?? "Failed to create image task");
+    if (!res.data?.taskId) throw new Error("No task ID returned from image API");
+    return res.data.taskId;
+  } else {
+    const input: Record<string, unknown> = { prompt, aspect_ratio: aspectRatio };
+    if (resolution) input.resolution = resolution;
+    const res = await kieRequest<KieTaskResponse>("/api/v1/jobs/createTask", {
+      method: "POST",
+      body: JSON.stringify({ model: modelId, input }),
+    }, userId);
+    if (res.code !== 200) throw new Error(res.msg ?? "Failed to create image task");
+    if (!res.data?.taskId) throw new Error("No task ID returned from image API");
+    return res.data.taskId;
+  }
+}
+
+export async function checkImageTask(
+  taskId: string,
+  userId?: string
+): Promise<{ status: "pending" | "done" | "failed"; url?: string; error?: string }> {
+  const DONE = ["succeed", "success", "completed", "done", "finish", "finished", "complete"];
+  const FAIL = ["failed", "error", "fail"];
+
+  const statusRes = await kieRequest<KieRecordResponse>(
+    `/api/v1/jobs/recordInfo?taskId=${taskId}`,
+    {},
+    userId
+  );
+
+  if (!statusRes.data) return { status: "pending" };
+  const d = statusRes.data;
+  const normalized = (d.state ?? d.status ?? "").toLowerCase();
+
+  if (DONE.includes(normalized)) {
+    let url: string | undefined;
+    if (typeof d.resultJson === "string") {
+      if (d.resultJson.startsWith("http")) {
+        url = d.resultJson;
+      } else {
+        try {
+          const parsed = JSON.parse(d.resultJson) as { url?: string; resultUrls?: string[] };
+          url = parsed.url ?? parsed.resultUrls?.[0];
+        } catch { /* fall through */ }
+      }
+    }
+    if (!url && typeof d.output === "string") url = d.output;
+    if (!url && d.output && typeof d.output === "object") url = d.output.url ?? d.output.image_url;
+    if (!url) return { status: "failed", error: "Image task completed but no URL in response" };
+    return { status: "done", url };
+  }
+
+  if (FAIL.includes(normalized)) {
+    return { status: "failed", error: d.failReason ?? d.error ?? "Image generation failed" };
+  }
+
+  return { status: "pending" };
+}
+
 export async function generateImage(
   prompt: string,
   modelId: string,

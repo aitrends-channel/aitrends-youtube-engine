@@ -384,24 +384,53 @@ export default function GeneratePage({ params }: PageProps) {
         });
         setClearingImages(false);
       }
+
+      // Submit all beats to kie.ai (fast — just creates the task, returns taskId)
+      const pending: { beatNumber: number; taskId: string }[] = [];
       for (const beat of beats) {
-        const res = await fetch("/api/generate/images", {
+        const res = await fetch("/api/generate/images/submit", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             projectId,
-            beats: [{ beatNumber: beat.beatNumber, imagePrompt: beat.imagePrompt }],
+            beatNumber: beat.beatNumber,
+            imagePrompt: beat.imagePrompt,
             modelId: selectedImageModel,
             aspectRatio: selectedAspectRatio,
             ...(selectedResolution ? { resolution: selectedResolution } : {}),
           }),
         });
-        const data = await res.json().catch(() => ({})) as { success?: number; error?: string };
-        if (res.ok && (data.success ?? 0) > 0) {
-          successCount++;
-          setImagesProgress(successCount);
+        const data = await res.json().catch(() => ({})) as { taskId?: string; error?: string };
+        if (res.ok && data.taskId) {
+          pending.push({ beatNumber: beat.beatNumber, taskId: data.taskId });
         }
       }
+
+      // Poll until all tasks complete
+      const remaining = [...pending];
+      const MAX_POLLS = 40; // ~2.7 min max (40 × 4s)
+      for (let attempt = 0; attempt < MAX_POLLS && remaining.length > 0; attempt++) {
+        await new Promise((r) => setTimeout(r, 4000));
+        const toRemove: number[] = [];
+        for (let i = 0; i < remaining.length; i++) {
+          const { beatNumber, taskId } = remaining[i];
+          const res = await fetch("/api/generate/images/poll", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId, beatNumber, taskId }),
+          });
+          const data = await res.json().catch(() => ({})) as { status?: string; error?: string };
+          if (data.status === "done") {
+            successCount++;
+            setImagesProgress(successCount);
+            toRemove.push(i);
+          } else if (data.status === "failed") {
+            toRemove.push(i);
+          }
+        }
+        for (let i = toRemove.length - 1; i >= 0; i--) remaining.splice(toRemove[i], 1);
+      }
+
       await mutate();
       toast.success(`${successCount}/${beats.length} images generated`);
     } catch (err) {
@@ -416,24 +445,34 @@ export default function GeneratePage({ params }: PageProps) {
     if (!selectedImageModel) return;
     setRegenBeats((prev) => new Set(prev).add(beat.beatNumber));
     try {
-      const res = await fetch("/api/generate/images", {
+      const submitRes = await fetch("/api/generate/images/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
-          beats: [{ beatNumber: beat.beatNumber, imagePrompt: beat.imagePrompt }],
+          beatNumber: beat.beatNumber,
+          imagePrompt: beat.imagePrompt,
           modelId: selectedImageModel,
           aspectRatio: selectedAspectRatio,
           ...(selectedResolution ? { resolution: selectedResolution } : {}),
         }),
       });
-      const data = await res.json().catch(() => ({})) as { success: number; failures?: { beatNumber: number; error: string }[]; error?: string };
-      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
-      if (data.success === 0) {
-        const reason = data.failures?.[0]?.error ?? "Image generation failed";
-        throw new Error(reason);
+      const submitData = await submitRes.json().catch(() => ({})) as { taskId?: string; error?: string };
+      if (!submitRes.ok || !submitData.taskId) throw new Error(submitData.error ?? "Failed to submit image task");
+
+      const taskId = submitData.taskId;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        await new Promise((r) => setTimeout(r, 4000));
+        const pollRes = await fetch("/api/generate/images/poll", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId, beatNumber: beat.beatNumber, taskId }),
+        });
+        const pollData = await pollRes.json().catch(() => ({})) as { status?: string; error?: string };
+        if (pollData.status === "done") { toast.success(`Beat ${beat.beatNumber} regenerated`); return; }
+        if (pollData.status === "failed") throw new Error(pollData.error ?? "Image generation failed");
       }
-      toast.success(`Beat ${beat.beatNumber} regenerated`);
+      throw new Error("Image generation timed out");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Regeneration failed");
     } finally {
