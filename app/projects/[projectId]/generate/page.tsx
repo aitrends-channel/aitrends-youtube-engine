@@ -274,7 +274,7 @@ export default function GeneratePage({ params }: PageProps) {
       if (data.firstError && data.firstError !== lastError) {
         lastError = data.firstError;
         const msg = data.firstError.toLowerCase().includes("insufficient") || data.firstError.toLowerCase().includes("balance")
-          ? `KIE credits insufficient — top up your account to continue generating videos`
+          ? `Not enough KIE credits for this model. Switch to a cheaper model (e.g. Wan 2.7) or top up your balance.`
           : `Video generation error: ${data.firstError}`;
         toast.error(msg);
       }
