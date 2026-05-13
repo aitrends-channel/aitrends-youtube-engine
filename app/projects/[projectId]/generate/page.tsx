@@ -12,8 +12,8 @@ import { removeLongPauses, encodeMp3 } from "@/lib/audio/silenceRemover";
 
 const fetcher = (url: string) =>
   fetch(url).then((r) => {
-    if (!r.ok) return r.json().then((e: { error?: string }) => { throw new Error(e.error ?? "Failed to load"); });
-    return r.json();
+    if (!r.ok) return r.json().catch(() => ({})).then((e: { error?: string }) => { throw new Error(e.error ?? `Failed to load (${r.status})`); });
+    return r.json().catch(() => ({}));
   });
 
 interface PageProps {
@@ -458,10 +458,10 @@ export default function GeneratePage({ params }: PageProps) {
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
         }),
       });
-      const data = await res.json() as { submitted: number; failures?: { beatNumber: number; error: string }[]; error?: string };
+      const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Request failed");
       setVideosSubmitted(true);
-      if (data.submitted > 0) toast.success(`${data.submitted} video clips submitted`);
+      if ((data.submitted ?? 0) > 0) toast.success(`${data.submitted ?? 0} video clips submitted`);
       if (data.failures?.length) {
         const firstErr = data.failures[0].error;
         toast.error(`${data.failures.length} clip(s) failed: ${firstErr}`);
