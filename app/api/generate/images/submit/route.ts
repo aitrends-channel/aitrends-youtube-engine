@@ -16,8 +16,12 @@ export async function POST(req: Request) {
       aspectRatio?: string; resolution?: string;
     };
 
-    if (!projectId || !beatNumber || !imagePrompt || !modelId) {
-      return NextResponse.json({ error: "projectId, beatNumber, imagePrompt, and modelId are required" }, { status: 400 });
+    if (!projectId || !beatNumber || !modelId) {
+      return NextResponse.json({ error: "projectId, beatNumber, and modelId are required" }, { status: 400 });
+    }
+    if (!imagePrompt) {
+      console.error(`[images/submit] Beat ${beatNumber} has no imagePrompt`);
+      return NextResponse.json({ error: `Beat ${beatNumber} has no image prompt` }, { status: 400 });
     }
 
     await supabase.from("project_beats")
@@ -30,6 +34,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ taskId, beatNumber });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to submit image task";
+    console.error("[images/submit] Error:", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

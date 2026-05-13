@@ -387,6 +387,7 @@ export default function GeneratePage({ params }: PageProps) {
 
       // Submit all beats to kie.ai (fast — just creates the task, returns taskId)
       const pending: { beatNumber: number; taskId: string }[] = [];
+      let firstSubmitError: string | null = null;
       for (const beat of beats) {
         const res = await fetch("/api/generate/images/submit", {
           method: "POST",
@@ -403,7 +404,16 @@ export default function GeneratePage({ params }: PageProps) {
         const data = await res.json().catch(() => ({})) as { taskId?: string; error?: string };
         if (res.ok && data.taskId) {
           pending.push({ beatNumber: beat.beatNumber, taskId: data.taskId });
+        } else if (!firstSubmitError) {
+          firstSubmitError = data.error ?? `HTTP ${res.status}`;
         }
+      }
+
+      if (pending.length === 0) {
+        throw new Error(`Failed to submit any image tasks. First error: ${firstSubmitError ?? "Unknown error"}`);
+      }
+      if (firstSubmitError) {
+        toast.warning(`${pending.length}/${beats.length} tasks submitted. Some failed: ${firstSubmitError}`);
       }
 
       // Poll until all tasks complete
@@ -432,7 +442,11 @@ export default function GeneratePage({ params }: PageProps) {
       }
 
       await mutate();
-      toast.success(`${successCount}/${beats.length} images generated`);
+      if (successCount === 0) {
+        toast.error(`0/${beats.length} images generated. Check that your KIE API key is set in Settings.`);
+      } else {
+        toast.success(`${successCount}/${beats.length} images generated`);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Image generation failed");
     } finally {
