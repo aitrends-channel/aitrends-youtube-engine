@@ -180,6 +180,7 @@ export default function AssemblePage({ params }: PageProps) {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let receivedTerminal = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -198,15 +199,18 @@ export default function AssemblePage({ params }: PageProps) {
             setAssembleProgress({ current: event.current ?? 0, total: event.total ?? 0 });
             setAssembleStatus(event.message ?? "");
           } else if (event.type === "done") {
+            receivedTerminal = true;
             setAssembledUrl(event.url ?? null);
             toast.success("Video assembled!");
           } else if (event.type === "caption_warn") {
             toast.warning(event.message ?? "Captions could not be applied");
           } else if (event.type === "error") {
+            receivedTerminal = true;
             throw new Error(event.message);
           }
         }
       }
+      if (!receivedTerminal) throw new Error("Assembly connection was dropped — please try again");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Assembly failed");
     } finally {
