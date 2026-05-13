@@ -109,7 +109,7 @@ export default function HomePage() {
   }, [projects]);
 
   function requireSubscription(action: () => void) {
-    if (isPaid) {
+    if (isPaid || isAdmin) {
       action();
     } else {
       setPendingAction(() => action);
