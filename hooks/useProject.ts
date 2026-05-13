@@ -8,7 +8,7 @@ export function useProject(projectId: string | null) {
   const { data, error, isLoading, mutate } = useSWR(
     projectId ? `/api/projects/${projectId}` : null,
     fetcher,
-    { refreshInterval: 5000 }
+    { refreshInterval: 30000 }
   );
 
   return {
