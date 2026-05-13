@@ -386,35 +386,37 @@ export default function GeneratePage({ params }: PageProps) {
         setClearingImages(false);
       }
 
-      // Submit all beats in parallel (browser caps at ~6 concurrent, which is fine)
-      const submitResults = await Promise.allSettled(
-        beats.map(async (beat) => {
-          const res = await fetch("/api/generate/images/submit", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              projectId,
-              beatNumber: beat.beatNumber,
-              imagePrompt: beat.imagePrompt,
-              modelId: selectedImageModel,
-              aspectRatio: selectedAspectRatio,
-              ...(selectedResolution ? { resolution: selectedResolution } : {}),
-            }),
-          });
-          const data = await res.json().catch(() => ({})) as { taskId?: string; error?: string };
-          if (!res.ok || !data.taskId) throw new Error(data.error ?? `HTTP ${res.status}`);
-          return { beatNumber: beat.beatNumber, taskId: data.taskId };
-        })
-      );
-
+      // Submit beats in batches of 3 with a 1.5s gap to avoid kie.ai rate limits
+      const SUBMIT_BATCH = 3;
       const pending: { beatNumber: number; taskId: string }[] = [];
       let firstSubmitError: string | null = null;
-      for (const r of submitResults) {
-        if (r.status === "fulfilled") {
-          pending.push(r.value);
-        } else if (!firstSubmitError) {
-          firstSubmitError = r.reason instanceof Error ? r.reason.message : "Unknown error";
+
+      for (let i = 0; i < beats.length; i += SUBMIT_BATCH) {
+        const batch = beats.slice(i, i + SUBMIT_BATCH);
+        const batchResults = await Promise.allSettled(
+          batch.map(async (beat) => {
+            const res = await fetch("/api/generate/images/submit", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                projectId,
+                beatNumber: beat.beatNumber,
+                imagePrompt: beat.imagePrompt,
+                modelId: selectedImageModel,
+                aspectRatio: selectedAspectRatio,
+                ...(selectedResolution ? { resolution: selectedResolution } : {}),
+              }),
+            });
+            const data = await res.json().catch(() => ({})) as { taskId?: string; error?: string };
+            if (!res.ok || !data.taskId) throw new Error(data.error ?? `HTTP ${res.status}`);
+            return { beatNumber: beat.beatNumber, taskId: data.taskId };
+          })
+        );
+        for (const r of batchResults) {
+          if (r.status === "fulfilled") pending.push(r.value);
+          else if (!firstSubmitError) firstSubmitError = r.reason instanceof Error ? r.reason.message : "Unknown error";
         }
+        if (i + SUBMIT_BATCH < beats.length) await new Promise((r) => setTimeout(r, 1500));
       }
 
       if (pending.length === 0) {
