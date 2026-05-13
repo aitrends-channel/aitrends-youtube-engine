@@ -164,7 +164,12 @@ export default function AssemblePage({ params }: PageProps) {
       if (!tokenRes.ok) throw new Error("Failed to get assembly token");
       const { workerUrl, token } = await tokenRes.json() as { workerUrl: string; token: string };
 
+      // Wake up the worker (Render free tier sleeps after inactivity)
+      setAssembleStatus("Waking up worker…");
+      try { await fetch(`${workerUrl}/health`, { signal: AbortSignal.timeout(30000) }); } catch { /* ignore */ }
+
       // Stream assembly directly from the worker (bypasses Vercel's 60s timeout)
+      setAssembleStatus("Starting assembly…");
       const res = await fetch(`${workerUrl}/api/assemble`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
