@@ -387,8 +387,8 @@ export default function GeneratePage({ params }: PageProps) {
           ...(selectedResolution ? { resolution: selectedResolution } : {}),
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+      if (!res.ok) throw new Error((data.error as string) ?? `Request failed (${res.status})`);
       setImagesProgress(data.success);
       await mutate();
       toast.success(`${data.success}/${data.total} images generated`);
@@ -415,8 +415,8 @@ export default function GeneratePage({ params }: PageProps) {
           ...(selectedResolution ? { resolution: selectedResolution } : {}),
         }),
       });
-      const data = await res.json() as { success: number; failures?: { beatNumber: number; error: string }[]; error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Request failed");
+      const data = await res.json().catch(() => ({})) as { success: number; failures?: { beatNumber: number; error: string }[]; error?: string };
+      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
       if (data.success === 0) {
         const reason = data.failures?.[0]?.error ?? "Image generation failed";
         throw new Error(reason);
