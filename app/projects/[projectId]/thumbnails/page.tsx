@@ -16,7 +16,11 @@ type StepStatus = "idle" | "running" | "done" | "error";
 interface StepState { status: StepStatus; message: string; error?: string }
 const IDLE: StepState = { status: "idle", message: "" };
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+const fetcher = (url: string) =>
+  fetch(url).then((r) => {
+    if (!r.ok) return r.json().catch(() => ({})).then((e: { error?: string }) => { throw new Error(e.error ?? `Request failed (${r.status})`); });
+    return r.json().catch(() => ({}));
+  });
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);

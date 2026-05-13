@@ -352,10 +352,11 @@ export default function GeneratePage({ params }: PageProps) {
         headers: { "Content-Type": "audio/mpeg" },
       });
       if (!uploadRes.ok) {
-        const err = await uploadRes.json() as { error?: string };
+        const err = await uploadRes.json().catch(() => ({})) as { error?: string };
         throw new Error(err.error ?? "Upload failed");
       }
-      const { url } = await uploadRes.json() as { url: string };
+      const { url } = await uploadRes.json().catch(() => ({})) as { url?: string };
+      if (!url) throw new Error("Upload succeeded but no URL returned");
       setPendingTtsCleanedUrl(url);
       setCleanedUrlInvalidated(false);
       const savedSec = Math.round(originalDuration - newDuration);
