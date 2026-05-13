@@ -938,7 +938,7 @@ export default function GeneratePage({ params }: PageProps) {
                       }}
                     >
                       {b.videoUrl ? (
-                        <video src={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
+                        <video src={b.videoUrl} title={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
                       ) : (
                         <span className="text-[9px] px-1.5 py-0.5 rounded"
                           title={b.videoStatus === "failed" && b.videoError ? b.videoError : undefined}
