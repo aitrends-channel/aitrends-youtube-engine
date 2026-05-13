@@ -30,6 +30,7 @@ export async function POST(req: Request) {
       .eq("beat_number", beatNumber);
 
     const taskId = await submitImageTask(imagePrompt, modelId, aspectRatio, resolution, user.id);
+    console.log(`[images/submit] beat=${beatNumber} model=${modelId} taskId=${taskId}`);
 
     return NextResponse.json({ taskId, beatNumber });
   } catch (err) {

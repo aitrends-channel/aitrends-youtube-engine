@@ -21,6 +21,7 @@ export async function POST(req: Request) {
     }
 
     const result = await checkImageTask(taskId, user.id);
+    console.log(`[images/poll] beat=${beatNumber} taskId=${taskId} status=${result.status}${result.error ? ` error=${result.error}` : ""}`);
 
     if (result.status === "done" && result.url) {
       const storagePath = `${projectId}/images/beat-${beatNumber}_${Date.now()}.png`;
@@ -46,6 +47,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ status: "pending" });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to poll image task";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[images/poll] Error:", message);
+    return NextResponse.json({ status: "error", error: message }, { status: 500 });
   }
 }

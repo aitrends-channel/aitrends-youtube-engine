@@ -426,6 +426,7 @@ export default function GeneratePage({ params }: PageProps) {
 
       // Poll all pending tasks in parallel every 3s until all complete
       const remaining = [...pending];
+      let firstPollError: string | null = null;
       const MAX_POLLS = 50; // ~2.5 min max
       for (let attempt = 0; attempt < MAX_POLLS && remaining.length > 0; attempt++) {
         await new Promise((r) => setTimeout(r, 3000));
@@ -438,16 +439,20 @@ export default function GeneratePage({ params }: PageProps) {
               body: JSON.stringify({ projectId, beatNumber, taskId }),
             });
             const data = await res.json().catch(() => ({})) as { status?: string; error?: string };
-            return { beatNumber, taskId, status: data.status ?? "pending" };
+            const status = !res.ok ? "error" : (data.status ?? "pending");
+            return { beatNumber, taskId, status, error: data.error };
           })
         );
 
         const toRemove: number[] = [];
         for (let i = 0; i < pollResults.length; i++) {
           if (pollResults[i].status === "fulfilled") {
-            const { status } = (pollResults[i] as PromiseFulfilledResult<{ beatNumber: number; taskId: string; status: string }>).value;
+            const { status, error } = (pollResults[i] as PromiseFulfilledResult<{ beatNumber: number; taskId: string; status: string; error?: string }>).value;
             if (status === "done") { successCount++; setImagesProgress(successCount); toRemove.push(i); }
-            else if (status === "failed") { toRemove.push(i); }
+            else if (status === "failed" || status === "error") {
+              if (!firstPollError) firstPollError = error ?? "Unknown error";
+              toRemove.push(i);
+            }
           }
         }
         for (let i = toRemove.length - 1; i >= 0; i--) remaining.splice(toRemove[i], 1);
@@ -455,7 +460,8 @@ export default function GeneratePage({ params }: PageProps) {
 
       await mutate();
       if (successCount === 0) {
-        toast.error(`0/${beats.length} images generated. Check that your KIE API key is set in Settings.`);
+        const reason = firstPollError ?? firstSubmitError ?? "Check that your KIE API key is set in Settings";
+        toast.error(`0/${beats.length} images generated — ${reason}`);
       } else {
         toast.success(`${successCount}/${beats.length} images generated`);
       }
