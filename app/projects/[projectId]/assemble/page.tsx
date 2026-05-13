@@ -87,18 +87,14 @@ export default function AssemblePage({ params }: PageProps) {
       setAssembling(true);
       setAssembleStatus((project?.assembly_progress as string | undefined) ?? "Assembling…");
     } else if (status === "done") {
-      if (assembling) {
-        setAssembledUrl(project?.assembled_url as string ?? null);
-        toast.success("Video assembled!");
-        setAssembling(false);
-        setAssembleStatus("");
-      }
+      setAssembledUrl(project?.assembled_url as string ?? null);
+      if (assembling) toast.success("Video assembled!");
+      setAssembling(false);
+      setAssembleStatus("");
     } else if (status === "failed") {
-      if (assembling) {
-        toast.error((project?.assembly_error as string | undefined) ?? "Assembly failed");
-        setAssembling(false);
-        setAssembleStatus("");
-      }
+      if (assembling) toast.error((project?.assembly_error as string | undefined) ?? "Assembly failed");
+      setAssembling(false);
+      setAssembleStatus("");
     }
   }, [project?.assembly_status, project?.assembly_progress]);
 
@@ -449,8 +445,15 @@ export default function AssemblePage({ params }: PageProps) {
           {/* Assembly controls */}
           <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
             {assembling && (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <p className="text-xs text-center" style={{ color: "var(--c-55)" }}>{assembleStatus}</p>
+                <button
+                  onClick={() => { setAssembling(false); setAssembleStatus(""); }}
+                  className="w-full py-2 rounded-xl text-xs font-medium transition-all"
+                  style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-45)" }}
+                >
+                  Cancel / Restart
+                </button>
               </div>
             )}
 
