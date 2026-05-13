@@ -387,9 +387,9 @@ export default function GeneratePage({ params }: PageProps) {
           ...(selectedResolution ? { resolution: selectedResolution } : {}),
         }),
       });
-      const data = await res.json().catch(() => ({})) as Record<string, unknown>;
-      if (!res.ok) throw new Error((data.error as string) ?? `Request failed (${res.status})`);
-      setImagesProgress(data.success);
+      const data = await res.json().catch(() => ({})) as { success?: number; total?: number; error?: string };
+      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
+      setImagesProgress(data.success ?? 0);
       await mutate();
       toast.success(`${data.success}/${data.total} images generated`);
     } catch (err) {
