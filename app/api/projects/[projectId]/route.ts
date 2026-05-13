@@ -39,6 +39,7 @@ export async function GET(
       imageStatus: b.image_status,
       videoStatus: b.video_status,
       videoJobId: b.video_job_id,
+      videoError: b.video_error ?? undefined,
       audioUrl: b.audio_url ?? undefined,
     })),
     thumbnails: (thumbsRes.data ?? []).map((t) => ({

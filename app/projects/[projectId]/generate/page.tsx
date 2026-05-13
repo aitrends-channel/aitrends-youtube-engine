@@ -941,9 +941,11 @@ export default function GeneratePage({ params }: PageProps) {
                         <video src={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
                       ) : (
                         <span className="text-[9px] px-1.5 py-0.5 rounded"
+                          title={b.videoStatus === "failed" && b.videoError ? b.videoError : undefined}
                           style={{
                             background: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285 / 0.1)" : b.videoStatus === "done" ? "oklch(0.55 0.15 145 / 0.1)" : b.videoStatus === "failed" ? "oklch(0.6 0.22 25 / 0.1)" : "var(--bg-track)",
                             color: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285)" : b.videoStatus === "done" ? "oklch(0.7 0.15 145)" : b.videoStatus === "failed" ? "oklch(0.7 0.2 25)" : "var(--c-35)",
+                            cursor: b.videoStatus === "failed" && b.videoError ? "help" : undefined,
                           }}>
                           {b.videoStatus ?? "—"}
                         </span>

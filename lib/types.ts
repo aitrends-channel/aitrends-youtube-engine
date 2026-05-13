@@ -85,6 +85,7 @@ export interface Beat {
   imageStatus?: "pending" | "generating" | "done" | "failed";
   videoStatus?: "pending" | "queued" | "rendering" | "done" | "failed";
   videoJobId?: string;
+  videoError?: string;
   audioUrl?: string;
 }
 
