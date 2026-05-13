@@ -5,12 +5,11 @@ import Image from "next/image";
 import { Spinner } from "@/components/ui/spinner";
 import { getClientAppUrl } from "@/lib/utils";
 
-function SignupForm() {
+function SignupForm({ onSuccess }: { onSuccess: (email: string) => void }) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -27,7 +26,7 @@ function SignupForm() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data?.error ?? data?.message ?? `Request failed (${res.status})`);
       }
-      setSuccess(true);
+      onSuccess(email);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Signup failed";
       const lower = msg.toLowerCase();
@@ -45,19 +44,6 @@ function SignupForm() {
     } finally {
       setLoading(false);
     }
-  }
-
-  if (success) {
-    return (
-      <div className="text-center space-y-2 py-2">
-        <p className="text-sm font-semibold" style={{ color: "oklch(0.72 0.25 285)" }}>
-          You&apos;re on the list!
-        </p>
-        <p className="text-xs" style={{ color: "var(--c-45)" }}>
-          We&apos;ll be in touch at <span style={{ color: "var(--c-70)" }}>{email}</span>.
-        </p>
-      </div>
-    );
   }
 
   const inputStyle = {
@@ -160,6 +146,14 @@ function SignupForm() {
 }
 
 export default function SignupPage() {
+  const [success, setSuccess] = useState(false);
+  const [invitedEmail, setInvitedEmail] = useState("");
+
+  function handleSuccess(email: string) {
+    setInvitedEmail(email);
+    setSuccess(true);
+  }
+
   return (
     <div
       className="min-h-screen flex items-center justify-center px-4"
@@ -182,10 +176,23 @@ export default function SignupPage() {
           className="rounded-2xl p-6"
           style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.08)" }}
         >
-          <h1 className="text-sm font-semibold mb-5" style={{ color: "var(--c-75)" }}>
-            Email sent to your inbox, follow the link to complete your account setup.
-          </h1>
-          <SignupForm />
+          {success ? (
+            <div className="text-center space-y-2 py-2">
+              <p className="text-sm font-semibold" style={{ color: "oklch(0.72 0.25 285)" }}>
+                Email sent to your inbox, follow the link to complete your account setup.
+              </p>
+              <p className="text-xs" style={{ color: "var(--c-45)" }}>
+                We sent a link to <span style={{ color: "var(--c-70)" }}>{invitedEmail}</span>.
+              </p>
+            </div>
+          ) : (
+            <>
+              <h1 className="text-sm font-semibold mb-5" style={{ color: "var(--c-75)" }}>
+                Create your account
+              </h1>
+              <SignupForm onSuccess={handleSuccess} />
+            </>
+          )}
         </div>
       </div>
     </div>
