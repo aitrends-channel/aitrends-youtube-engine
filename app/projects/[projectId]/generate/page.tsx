@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useState, use, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
@@ -177,6 +178,7 @@ function ProgressBar({ value, total }: { value: number; total: number }) {
 
 export default function GeneratePage({ params }: PageProps) {
   const { projectId } = params;
+  const router = useRouter();
   const { project, mutate } = useProject(projectId);
 
   const { data: ttsModels, error: ttsError } = useSWR<KieModel[]>("/api/kie/models?type=tts", fetcher);
@@ -970,6 +972,16 @@ export default function GeneratePage({ params }: PageProps) {
                 style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
               >
                 {queuingVideos ? "Queuing..." : `Queue ${videoBeats} Video Clips`}
+              </button>
+              <button
+                onClick={() => router.push(`/projects/${projectId}/assemble`)}
+                disabled={generatedVideos < 2}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-30 transition-all"
+                style={{ background: "var(--bg-panel)", color: generatedVideos >= 2 ? "var(--c-75)" : "var(--c-40)", border: "1px solid var(--bd-10)" }}
+              >
+                {generatedVideos >= 2
+                  ? `Proceed to Assemble (${generatedVideos}/${videoBeats} clips ready)`
+                  : `Need at least 2 clips to proceed (${generatedVideos}/${videoBeats})`}
               </button>
             </div>
           </div>
