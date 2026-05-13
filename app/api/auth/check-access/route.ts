@@ -2,11 +2,16 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { isAdminEmail } from "@/lib/admin";
 import type { User } from "@supabase/supabase-js";
 
 export async function POST() {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+
+  if (isAdminEmail(user.email)) {
+    return NextResponse.json({ allowed: true });
+  }
 
   // Paid users (created via Gumroad webhook) carry paid=true in app_metadata
   if (user.app_metadata?.paid === true) {

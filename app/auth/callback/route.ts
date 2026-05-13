@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { supabase as serviceClient } from "@/lib/supabase/client";
+import { isAdminEmail } from "@/lib/admin";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -42,7 +43,7 @@ export async function GET(request: Request) {
     const isSetPasswordFlow = next.startsWith("/set-password");
 
     if (user && !isSetPasswordFlow) {
-      const isPaid = user.app_metadata?.paid === true;
+      const isPaid = user.app_metadata?.paid === true || isAdminEmail(user.email);
       if (!isPaid) {
         const { data: allowed } = await serviceClient
           .from("allowed_emails")
