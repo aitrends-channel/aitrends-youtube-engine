@@ -266,7 +266,7 @@ export default function GeneratePage({ params }: PageProps) {
   const hasActiveVideos = beats.some((b) => b.videoStatus === "queued" || b.videoStatus === "rendering");
 
   useEffect(() => {
-    if (!hasActiveVideos) return;
+    if (!videosSubmitted) return;
     let lastError: string | null = null;
     const poll = async () => {
       const res = await fetch(`/api/generate/videos/poll?projectId=${projectId}`);
@@ -283,7 +283,7 @@ export default function GeneratePage({ params }: PageProps) {
     poll();
     const id = setInterval(poll, 10000);
     return () => clearInterval(id);
-  }, [hasActiveVideos, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [videosSubmitted, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function generateVoiceover(voiceId = selectedTtsModel) {
     if (!voiceId || !script) return;
