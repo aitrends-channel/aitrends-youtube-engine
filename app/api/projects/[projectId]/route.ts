@@ -64,6 +64,12 @@ export async function PATCH(
   const { projectId } = params;
   const body = await req.json();
 
+  if (body.clear_images) {
+    await supabase.from("project_beats").update({ image_url: null, image_status: null }).eq("project_id", projectId);
+    await supabase.from("projects").update({ images_progress: 0 }).eq("id", projectId).eq("user_id", user.id);
+    return NextResponse.json({ success: true });
+  }
+
   const { data, error } = await supabase
     .from("projects")
     .update(body)

@@ -374,24 +374,36 @@ export default function GeneratePage({ params }: PageProps) {
     setGeneratingImages(true);
     setImagesProgress(0);
     if (isRegen) setClearingImages(true);
+    let successCount = 0;
     try {
-      const res = await fetch("/api/generate/images", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId,
-          beats: beats.map((b) => ({ beatNumber: b.beatNumber, imagePrompt: b.imagePrompt })),
-          modelId: selectedImageModel,
-          aspectRatio: selectedAspectRatio,
-          clearFirst: isRegen,
-          ...(selectedResolution ? { resolution: selectedResolution } : {}),
-        }),
-      });
-      const data = await res.json().catch(() => ({})) as { success?: number; total?: number; error?: string };
-      if (!res.ok) throw new Error(data.error ?? `Request failed (${res.status})`);
-      setImagesProgress(data.success ?? 0);
+      if (isRegen) {
+        await fetch(`/api/projects/${projectId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clear_images: true }),
+        });
+        setClearingImages(false);
+      }
+      for (const beat of beats) {
+        const res = await fetch("/api/generate/images", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId,
+            beats: [{ beatNumber: beat.beatNumber, imagePrompt: beat.imagePrompt }],
+            modelId: selectedImageModel,
+            aspectRatio: selectedAspectRatio,
+            ...(selectedResolution ? { resolution: selectedResolution } : {}),
+          }),
+        });
+        const data = await res.json().catch(() => ({})) as { success?: number; error?: string };
+        if (res.ok && (data.success ?? 0) > 0) {
+          successCount++;
+          setImagesProgress(successCount);
+        }
+      }
       await mutate();
-      toast.success(`${data.success}/${data.total} images generated`);
+      toast.success(`${successCount}/${beats.length} images generated`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Image generation failed");
     } finally {
