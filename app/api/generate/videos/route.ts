@@ -24,8 +24,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "projectId, beats, and modelId are required" }, { status: 400 });
     }
 
+    const redisHost = process.env.UPSTASH_REDIS_HOST;
+    if (!redisHost || redisHost === "localhost") {
+      console.error("[video-submit] Redis env vars not configured");
+      return NextResponse.json({ error: "Redis not configured — set UPSTASH_REDIS_HOST, UPSTASH_REDIS_PASSWORD, UPSTASH_REDIS_TLS in Vercel environment variables" }, { status: 500 });
+    }
+
+    console.log(`[video-submit] Connecting to Redis: ${redisHost}`);
     const { getVideoQueue } = await import("@/lib/queue/client");
     const queue = await getVideoQueue();
+    console.log(`[video-submit] Queue ready, submitting ${beats.length} jobs`);
     let submitted = 0;
     const failures: { beatNumber: number; error: string }[] = [];
 

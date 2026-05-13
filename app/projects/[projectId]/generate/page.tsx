@@ -532,7 +532,7 @@ export default function GeneratePage({ params }: PageProps) {
         }),
       });
       const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Request failed");
+      if (!res.ok) throw new Error(data.error ?? `Request failed (HTTP ${res.status})`);
       setVideosSubmitted(true);
       if ((data.submitted ?? 0) > 0) toast.success(`${data.submitted ?? 0} video clips submitted`);
       if (data.failures?.length) {
