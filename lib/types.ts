@@ -120,6 +120,11 @@ export interface Project {
   thumbnails?: ThumbnailConcept[];
   ttsUrl?: string;
   ttsVoiceId?: string;
+  ttsCleanedUrl?: string;
+  assembledUrl?: string;
+  assemblyStatus?: "processing" | "done" | "failed";
+  assemblyProgress?: string;
+  assemblyError?: string;
   imagesProgress?: number;
   videosProgress?: number;
 }

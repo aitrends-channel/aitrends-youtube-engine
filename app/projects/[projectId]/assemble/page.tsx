@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, use, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
@@ -11,21 +11,6 @@ interface PageProps {
   params: { projectId: string };
 }
 
-function ProgressBar({ value, total }: { value: number; total: number }) {
-  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
-  return (
-    <div className="space-y-1.5">
-      <div className="flex justify-between text-xs" style={{ color: "var(--c-45)" }}>
-        <span>{value} / {total}</span>
-        <span>{pct}%</span>
-      </div>
-      <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
-        <div className="h-full rounded-full transition-all"
-          style={{ width: `${pct}%`, background: "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))" }} />
-      </div>
-    </div>
-  );
-}
 
 const ASPECT_RATIOS = ["16:9", "9:16", "1:1"] as const;
 type AspectRatio = typeof ASPECT_RATIOS[number];
@@ -84,15 +69,38 @@ export default function AssemblePage({ params }: PageProps) {
   const [creatingNext, setCreatingNext] = useState(false);
 
   const [assembling, setAssembling] = useState(false);
-  const [assembleProgress, setAssembleProgress] = useState<{ current: number; total: number } | null>(null);
   const [assembleStatus, setAssembleStatus] = useState("");
   const [assembledUrl, setAssembledUrl] = useState<string | null>(null);
 
+  // Pick up assembled_url from project on load
   useEffect(() => {
     if (!assembling && project?.assembled_url && !assembledUrl) {
-      setAssembledUrl(project.assembled_url);
+      setAssembledUrl(project.assembled_url as string);
     }
   }, [project, assembling, assembledUrl]);
+
+  // Watch Supabase-polled project for assembly progress/completion
+  useEffect(() => {
+    const status = project?.assembly_status as string | undefined;
+    if (!status) return;
+    if (status === "processing") {
+      setAssembling(true);
+      setAssembleStatus((project?.assembly_progress as string | undefined) ?? "Assembling…");
+    } else if (status === "done") {
+      if (assembling) {
+        setAssembledUrl(project?.assembled_url as string ?? null);
+        toast.success("Video assembled!");
+        setAssembling(false);
+        setAssembleStatus("");
+      }
+    } else if (status === "failed") {
+      if (assembling) {
+        toast.error((project?.assembly_error as string | undefined) ?? "Assembly failed");
+        setAssembling(false);
+        setAssembleStatus("");
+      }
+    }
+  }, [project?.assembly_status, project?.assembly_progress]);
 
   // Default to original if no cleaned version exists
   useEffect(() => {
@@ -156,66 +164,31 @@ export default function AssemblePage({ params }: PageProps) {
     if (assembling) return;
     setAssembling(true);
     setAssembledUrl(null);
-    setAssembleProgress(null);
-    setAssembleStatus("Starting…");
+    setAssembleStatus("Contacting worker…");
     try {
-      // Get a short-lived auth token + worker URL from the Vercel API
       const tokenRes = await fetch("/api/generate/assemble", { method: "POST" });
       if (!tokenRes.ok) throw new Error("Failed to get assembly token");
       const { workerUrl, token } = await tokenRes.json() as { workerUrl: string; token: string };
 
-      // Wake up the worker (Render free tier sleeps after inactivity)
+      // Wake up Render free-tier instance
       setAssembleStatus("Waking up worker…");
       try { await fetch(`${workerUrl}/health`, { signal: AbortSignal.timeout(30000) }); } catch { /* ignore */ }
 
-      // Stream assembly directly from the worker (bypasses Vercel's 60s timeout)
-      setAssembleStatus("Starting assembly…");
+      // Fire-and-forget: worker updates Supabase, client polls via useProject (5s interval)
+      setAssembleStatus("Starting…");
       const res = await fetch(`${workerUrl}/api/assemble`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, projectId, aspectRatio, voiceoverType, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition }),
       });
-      if (!res.ok || !res.body) throw new Error("Failed to start assembly");
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let receivedTerminal = false;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.startsWith("data: ")) continue;
-          const event = JSON.parse(line.slice(6)) as {
-            type: string; message?: string; current?: number; total?: number; url?: string;
-          };
-          if (event.type === "status") {
-            setAssembleStatus(event.message ?? "");
-          } else if (event.type === "progress") {
-            setAssembleProgress({ current: event.current ?? 0, total: event.total ?? 0 });
-            setAssembleStatus(event.message ?? "");
-          } else if (event.type === "done") {
-            receivedTerminal = true;
-            setAssembledUrl(event.url ?? null);
-            toast.success("Video assembled!");
-          } else if (event.type === "caption_warn") {
-            toast.warning(event.message ?? "Captions could not be applied");
-          } else if (event.type === "error") {
-            receivedTerminal = true;
-            throw new Error(event.message);
-          }
-        }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to start assembly");
       }
-      if (!receivedTerminal) throw new Error("Assembly connection was dropped — please try again");
+      // assembling stays true; useEffect above watches project.assembly_status
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Assembly failed");
-    } finally {
       setAssembling(false);
-      setAssembleProgress(null);
       setAssembleStatus("");
     }
   }
@@ -478,9 +451,6 @@ export default function AssemblePage({ params }: PageProps) {
             {assembling && (
               <div className="space-y-2">
                 <p className="text-xs text-center" style={{ color: "var(--c-55)" }}>{assembleStatus}</p>
-                {assembleProgress && (
-                  <ProgressBar value={assembleProgress.current} total={assembleProgress.total} />
-                )}
               </div>
             )}
 
@@ -531,9 +501,9 @@ export default function AssemblePage({ params }: PageProps) {
               </>
             )}
 
-            {assembling && !assembleProgress && (
+            {assembling && (
               <p className="text-xs text-center" style={{ color: "var(--c-35)" }}>
-                Transcribing voiceover for frame-accurate sync…
+                Progress updates every ~5 seconds…
               </p>
             )}
           </div>
