@@ -11,11 +11,19 @@ export async function GET(req: Request) {
 
   if (!projectId) return NextResponse.json({ error: "projectId required" }, { status: 400 });
 
-  const { data: beats } = await supabase
-    .from("project_beats")
-    .select("beat_number, video_status")
-    .eq("project_id", projectId)
-    .in("video_status", ["queued", "rendering"]);
+  const [pendingRes, failedRes] = await Promise.all([
+    supabase.from("project_beats")
+      .select("beat_number")
+      .eq("project_id", projectId)
+      .in("video_status", ["queued", "rendering"]),
+    supabase.from("project_beats")
+      .select("video_error")
+      .eq("project_id", projectId)
+      .eq("video_status", "failed")
+      .not("video_error", "is", null)
+      .limit(1),
+  ]);
 
-  return NextResponse.json({ pending: beats?.length ?? 0 });
+  const firstError = failedRes.data?.[0]?.video_error ?? null;
+  return NextResponse.json({ pending: pendingRes.data?.length ?? 0, firstError });
 }

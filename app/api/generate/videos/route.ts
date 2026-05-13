@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     for (const beat of beats) {
       const { error } = await supabase
         .from("project_beats")
-        .update({ video_status: "queued", video_url: null, video_job_id: null })
+        .update({ video_status: "queued", video_url: null, video_job_id: null, video_error: null })
         .eq("project_id", projectId)
         .eq("beat_number", beat.beatNumber);
 

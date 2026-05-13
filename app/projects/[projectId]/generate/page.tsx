@@ -263,15 +263,27 @@ export default function GeneratePage({ params }: PageProps) {
     }
   }, [selectedVideoModel]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const hasRenderingVideos = beats.some((b) => b.videoStatus === "rendering");
+  const hasActiveVideos = beats.some((b) => b.videoStatus === "queued" || b.videoStatus === "rendering");
 
   useEffect(() => {
-    if (!hasRenderingVideos) return;
-    const poll = () => fetch(`/api/generate/videos/poll?projectId=${projectId}`);
+    if (!hasActiveVideos) return;
+    let lastError: string | null = null;
+    const poll = async () => {
+      const res = await fetch(`/api/generate/videos/poll?projectId=${projectId}`);
+      const data = await res.json().catch(() => ({})) as { pending?: number; firstError?: string | null };
+      if (data.firstError && data.firstError !== lastError) {
+        lastError = data.firstError;
+        const msg = data.firstError.toLowerCase().includes("insufficient") || data.firstError.toLowerCase().includes("balance")
+          ? `KIE credits insufficient — top up your account to continue generating videos`
+          : `Video generation error: ${data.firstError}`;
+        toast.error(msg);
+      }
+      await mutate();
+    };
     poll();
     const id = setInterval(poll, 10000);
     return () => clearInterval(id);
-  }, [hasRenderingVideos, projectId]);
+  }, [hasActiveVideos, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function generateVoiceover(voiceId = selectedTtsModel) {
     if (!voiceId || !script) return;
