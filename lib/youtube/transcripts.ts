@@ -1,18 +1,18 @@
 import type { TranscriptResult } from "@/lib/types";
 
-const INNERTUBE_BASE = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
+const INNERTUBE_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
 const FETCH_DELAY_MS = 600;
 
 const CLIENTS = [
   {
-    name: "WEB",
-    version: "2.20240726.00.00",
-    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
-  },
-  {
     name: "ANDROID",
     version: "20.10.38",
     ua: "com.google.android.youtube/20.10.38 (Linux; U; Android 14)",
+  },
+  {
+    name: "WEB",
+    version: "2.20240726.00.00",
+    ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
   },
   {
     name: "TVHTML5",
@@ -61,24 +61,17 @@ async function tryClient(
   videoId: string,
   clientName: string,
   clientVersion: string,
-  userAgent: string,
-  apiKey?: string
+  userAgent: string
 ): Promise<string | null> {
-  const url = apiKey ? `${INNERTUBE_BASE}&key=${encodeURIComponent(apiKey)}` : INNERTUBE_BASE;
   try {
-    const playerResp = await fetch(url, {
+    const playerResp = await fetch(INNERTUBE_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "User-Agent": userAgent,
-        "Accept-Language": "en-US,en;q=0.9",
-        "X-YouTube-Client-Name": clientName === "WEB" ? "1" : clientName === "ANDROID" ? "3" : "7",
-        "X-YouTube-Client-Version": clientVersion,
-        "Origin": "https://www.youtube.com",
-        "Referer": "https://www.youtube.com/",
       },
       body: JSON.stringify({
-        context: { client: { clientName, clientVersion, hl: "en" } },
+        context: { client: { clientName, clientVersion } },
         videoId,
       }),
       signal: AbortSignal.timeout(15_000),
@@ -102,7 +95,6 @@ async function tryClient(
     if (!captionUrl.hostname.endsWith(".youtube.com")) return null;
 
     const xmlResp = await fetch(captionUrl.toString(), {
-      headers: { "Accept-Language": "en-US,en;q=0.9" },
       signal: AbortSignal.timeout(10_000),
     });
     if (!xmlResp.ok) return null;
@@ -112,9 +104,9 @@ async function tryClient(
   }
 }
 
-async function fetchSingleTranscript(videoId: string, apiKey?: string): Promise<string> {
+async function fetchSingleTranscript(videoId: string): Promise<string> {
   for (const client of CLIENTS) {
-    const xml = await tryClient(videoId, client.name, client.version, client.ua, apiKey);
+    const xml = await tryClient(videoId, client.name, client.version, client.ua);
     if (xml) {
       const text = parseTranscriptXml(xml);
       if (text) return text;
@@ -124,8 +116,7 @@ async function fetchSingleTranscript(videoId: string, apiKey?: string): Promise<
 }
 
 export async function fetchTranscripts(
-  videos: { videoId: string; title: string }[],
-  apiKey?: string
+  videos: { videoId: string; title: string }[]
 ): Promise<TranscriptResult[]> {
   const results: TranscriptResult[] = [];
 
@@ -134,7 +125,7 @@ export async function fetchTranscripts(
     if (i > 0) await new Promise((r) => setTimeout(r, FETCH_DELAY_MS));
 
     try {
-      const text = await fetchSingleTranscript(video.videoId, apiKey);
+      const text = await fetchSingleTranscript(video.videoId);
       results.push({ videoId: video.videoId, title: video.title, text, success: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to fetch transcript";
