@@ -1,6 +1,6 @@
 import type { TranscriptResult } from "@/lib/types";
 
-const INNERTUBE_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
+const INNERTUBE_BASE = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
 const FETCH_DELAY_MS = 600;
 
 const CLIENTS = [
@@ -61,15 +61,21 @@ async function tryClient(
   videoId: string,
   clientName: string,
   clientVersion: string,
-  userAgent: string
+  userAgent: string,
+  apiKey?: string
 ): Promise<string | null> {
+  const url = apiKey ? `${INNERTUBE_BASE}&key=${encodeURIComponent(apiKey)}` : INNERTUBE_BASE;
   try {
-    const playerResp = await fetch(INNERTUBE_URL, {
+    const playerResp = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "User-Agent": userAgent,
         "Accept-Language": "en-US,en;q=0.9",
+        "X-YouTube-Client-Name": clientName === "WEB" ? "1" : clientName === "ANDROID" ? "3" : "7",
+        "X-YouTube-Client-Version": clientVersion,
+        "Origin": "https://www.youtube.com",
+        "Referer": "https://www.youtube.com/",
       },
       body: JSON.stringify({
         context: { client: { clientName, clientVersion, hl: "en" } },
@@ -106,9 +112,9 @@ async function tryClient(
   }
 }
 
-async function fetchSingleTranscript(videoId: string): Promise<string> {
+async function fetchSingleTranscript(videoId: string, apiKey?: string): Promise<string> {
   for (const client of CLIENTS) {
-    const xml = await tryClient(videoId, client.name, client.version, client.ua);
+    const xml = await tryClient(videoId, client.name, client.version, client.ua, apiKey);
     if (xml) {
       const text = parseTranscriptXml(xml);
       if (text) return text;
@@ -118,7 +124,8 @@ async function fetchSingleTranscript(videoId: string): Promise<string> {
 }
 
 export async function fetchTranscripts(
-  videos: { videoId: string; title: string }[]
+  videos: { videoId: string; title: string }[],
+  apiKey?: string
 ): Promise<TranscriptResult[]> {
   const results: TranscriptResult[] = [];
 
@@ -127,7 +134,7 @@ export async function fetchTranscripts(
     if (i > 0) await new Promise((r) => setTimeout(r, FETCH_DELAY_MS));
 
     try {
-      const text = await fetchSingleTranscript(video.videoId);
+      const text = await fetchSingleTranscript(video.videoId, apiKey);
       results.push({ videoId: video.videoId, title: video.title, text, success: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to fetch transcript";
