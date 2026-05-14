@@ -137,9 +137,10 @@ export default function ChannelPage({ params }: PageProps) {
       }
       setManualOverrides(overrides);
       setStep("transcripts", "done");
-    } catch {
+    } catch (err) {
       setStep("transcripts", "error");
-      toast.error("Transcript extraction failed — you can paste transcripts manually below");
+      const msg = err instanceof Error ? err.message : "Transcript extraction failed";
+      toast.error(`Transcripts: ${msg}`);
     }
 
     // Save channel to project
@@ -163,18 +164,10 @@ export default function ChannelPage({ params }: PageProps) {
 
     if (!readyTranscripts.length) {
       setIsWorking(false);
-      const allFailed = fetchedTranscripts.length > 0 && fetchedTranscripts.every((t) => !t.success);
-      if (allFailed) {
-        const sampleError = fetchedTranscripts[0]?.error ?? "";
-        const isRateLimit = sampleError.toLowerCase().includes("captcha") || sampleError.toLowerCase().includes("too many");
-        toast.error(
-          isRateLimit
-            ? "YouTube is rate-limiting transcript access. Please paste them manually."
-            : "No captions are enabled on these videos. Please paste transcripts manually."
-        );
-      } else {
-        toast.error("No transcripts available. Please paste them manually.");
-      }
+      const firstError = fetchedTranscripts.find((t) => !t.success)?.error;
+      toast.error(firstError
+        ? `Transcripts failed: ${firstError}`
+        : "No transcripts available. Please paste them manually.");
       return;
     }
 
