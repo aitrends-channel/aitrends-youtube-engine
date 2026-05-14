@@ -128,15 +128,14 @@ export default function ChannelPage({ params }: PageProps) {
         body: JSON.stringify({ videos: fetchedInfo!.topVideos }),
       });
       const data = await res.json();
-      if (res.ok) {
-        fetchedTranscripts = data.transcripts;
-        setTranscripts(data.transcripts);
-        const overrides: Record<string, string> = {};
-        for (const t of data.transcripts) {
-          if (!t.success) overrides[t.videoId] = "";
-        }
-        setManualOverrides(overrides);
+      if (!res.ok) throw new Error(data?.error ?? `Transcript fetch failed (${res.status})`);
+      fetchedTranscripts = data.transcripts;
+      setTranscripts(data.transcripts);
+      const overrides: Record<string, string> = {};
+      for (const t of data.transcripts) {
+        if (!t.success) overrides[t.videoId] = "";
       }
+      setManualOverrides(overrides);
       setStep("transcripts", "done");
     } catch {
       setStep("transcripts", "error");
@@ -164,7 +163,18 @@ export default function ChannelPage({ params }: PageProps) {
 
     if (!readyTranscripts.length) {
       setIsWorking(false);
-      toast.error("No transcripts available. Please paste them manually.");
+      const allFailed = fetchedTranscripts.length > 0 && fetchedTranscripts.every((t) => !t.success);
+      if (allFailed) {
+        const sampleError = fetchedTranscripts[0]?.error ?? "";
+        const isRateLimit = sampleError.toLowerCase().includes("captcha") || sampleError.toLowerCase().includes("too many");
+        toast.error(
+          isRateLimit
+            ? "YouTube is rate-limiting transcript access. Please paste them manually."
+            : "No captions are enabled on these videos. Please paste transcripts manually."
+        );
+      } else {
+        toast.error("No transcripts available. Please paste them manually.");
+      }
       return;
     }
 

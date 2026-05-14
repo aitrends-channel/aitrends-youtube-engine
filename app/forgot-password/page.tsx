@@ -41,6 +41,8 @@ export default function ForgotPasswordPage() {
           ? "If that email is registered, you'll receive a reset link shortly."
           : lower.includes("invalid email")
           ? "Please enter a valid email address."
+          : msg.length < 200
+          ? msg
           : "Failed to send reset email. Please try again."
       );
     } finally {
