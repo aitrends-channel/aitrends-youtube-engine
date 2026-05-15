@@ -3,6 +3,8 @@ import { resolveChannel } from "@/lib/youtube/channel";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }

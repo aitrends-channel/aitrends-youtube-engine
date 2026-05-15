@@ -20,6 +20,8 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 
+export const maxDuration = 120;
+
 function assertComplete(stopReason: string | null | undefined, label: string) {
   if (stopReason === "max_tokens") {
     throw new Error(`Response was cut off during "${label}". Please try again.`);
