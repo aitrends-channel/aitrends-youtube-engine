@@ -1,4 +1,5 @@
 import { YoutubeTranscript } from "youtube-transcript";
+import { Innertube } from "youtubei.js";
 import type { TranscriptResult } from "@/lib/types";
 
 const INNERTUBE_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
@@ -129,6 +130,21 @@ async function fetchTranscriptFallback(videoId: string): Promise<string> {
 
 
 
+async function fetchTranscriptYoutubeJs(videoId: string): Promise<string> {
+  const yt = await Innertube.create({ generate_session_locally: true });
+  const info = await yt.getInfo(videoId);
+  const transcriptInfo = await info.getTranscript();
+  const segments = transcriptInfo.transcript.content?.body?.initial_segments ?? [];
+  const text = segments
+    .filter((s): s is typeof s & { snippet: { toString(): string } } => "snippet" in s)
+    .map((s) => s.snippet.toString())
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text.length === 0) throw new Error("No transcript text returned");
+  return text;
+}
+
 export async function fetchTranscripts(
   videos: { videoId: string; title: string }[]
 ): Promise<TranscriptResult[]> {
@@ -148,15 +164,21 @@ export async function fetchTranscripts(
       try {
         text = await fetchTranscriptFallback(video.videoId);
       } catch {
-        results.push({
-          videoId: video.videoId,
-          title: video.title,
-          text: "",
-          success: false,
-          error: "No captions available for this video. Please paste the transcript manually.",
-        });
-        await new Promise((r) => setTimeout(r, 300));
-        continue;
+        try {
+          text = await fetchTranscriptYoutubeJs(video.videoId);
+          console.log(`[transcript] youtubei.js succeeded for ${video.videoId}`);
+        } catch (ytjsErr) {
+          console.warn(`[transcript] youtubei.js failed for ${video.videoId}: ${ytjsErr instanceof Error ? ytjsErr.message : String(ytjsErr)}`);
+          results.push({
+            videoId: video.videoId,
+            title: video.title,
+            text: "",
+            success: false,
+            error: "No captions available for this video. Please paste the transcript manually.",
+          });
+          await new Promise((r) => setTimeout(r, 300));
+          continue;
+        }
       }
     }
 
