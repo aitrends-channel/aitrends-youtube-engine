@@ -30,12 +30,12 @@ export async function POST(request: Request) {
   const { error: emailError } = await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
     to: email,
-    subject: "Reset your aiTrends password",
+    subject: "Reset your Heclus password",
     html: `
       <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px;color:#1a1a1a">
         <h2 style="margin:0 0 16px;font-size:20px;font-weight:700">Reset your password</h2>
         <p style="margin:0 0 24px;font-size:15px;color:#444">
-          You requested a password reset for your <strong>aiTrends</strong> account.
+          You requested a password reset for your <strong>Heclus</strong> account.
           Click the button below to choose a new password.
         </p>
         <a href="${resetLink}"

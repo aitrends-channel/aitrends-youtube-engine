@@ -195,11 +195,10 @@ export default function HomePage() {
         style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 shrink-0 rounded-full overflow-hidden flex items-center justify-center">
-            <Image src="/logo.png" alt="aiTrends" width={32} height={32} className="object-cover w-full h-full" />
+            <Image src="/logo.jpeg" alt="Heclus" width={32} height={32} className="object-cover w-full h-full" />
           </div>
           <div>
-            <span className="font-bold text-sm tracking-tight text-foreground">aiTrends</span>
-            <span className="text-sm tracking-tight ml-1" style={{ color: "var(--c-50)" }}>YT Workflow</span>
+            <span className="font-bold text-sm tracking-tight text-foreground">Heclus</span>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -248,12 +247,11 @@ export default function HomePage() {
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium"
             style={{ background: "oklch(0.72 0.25 285 / 0.1)", border: "1px solid oklch(0.72 0.25 285 / 0.25)", color: "oklch(0.72 0.25 285)" }}>
             <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-            Welcome to aiTrends
+            Welcome to Heclus
           </div>
 
           <h1 className="text-5xl font-black tracking-tight leading-[1.08]">
-            <span style={{ color: "var(--c-96)" }}>aiTrends</span>
-            <span style={{ color: "var(--c-45)" }}> YT Workflow</span>
+            <span style={{ color: "var(--c-96)" }}>Heclus</span>
             <br />
             <span style={{
               background: "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",

@@ -13,9 +13,9 @@ export async function sendTempPasswordEmail(to: string, tempPassword: string) {
   await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
     to,
-    subject: "Your aiTrends YT Workflow access",
+    subject: "Your Heclus access",
     html: `
-      <p>Your account has been created for <strong>aiTrends YT Workflow</strong>.</p>
+      <p>Your account has been created for <strong>Heclus</strong>.</p>
       <p>
         <strong>Email:</strong> ${to}<br/>
         <strong>Temporary password:</strong> <code style="font-size:1.2em;letter-spacing:0.05em">${tempPassword}</code>

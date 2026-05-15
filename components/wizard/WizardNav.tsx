@@ -83,16 +83,16 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
       <div className="px-5 py-5 border-b" style={{ borderColor: "var(--bd-7)" }}>
         <button onClick={() => router.push("/")} className="flex items-center gap-3 group w-full">
           <div className="w-10 h-10 shrink-0 rounded-full overflow-hidden flex items-center justify-center">
-            <Image src="/logo.png" alt="aiTrends" width={40} height={40} className="object-cover w-full h-full" />
+            <Image src="/logo.jpeg" alt="Heclus" width={40} height={40} className="object-cover w-full h-full" />
           </div>
           <div className="min-w-0 text-left">
             <p className="text-sm font-bold text-foreground/90 group-hover:text-foreground transition-colors leading-tight">
-              aiTrends
+              Heclus
             </p>
             <p className="text-xs leading-tight mt-0.5" style={{ color: "var(--c-45)" }}>
               {channelName ? (
                 <span className="truncate block max-w-[140px]">{channelName}</span>
-              ) : "YT Workflow"}
+              ) : "Heclus"}
             </p>
           </div>
         </button>

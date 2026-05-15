@@ -1,6 +1,6 @@
 {
-  "name": "aiTrends YT Workflow",
-  "short_name": "aiTrends",
+  "name": "Heclus",
+  "short_name": "Heclus",
   "description": "Analyze channels, generate scripts, create voiceovers, images, and video clips",
   "start_url": "/",
   "scope": "/",
@@ -10,15 +10,15 @@
   "orientation": "any",
   "icons": [
     {
-      "src": "/logo.png",
+      "src": "/logo.jpeg",
       "sizes": "any",
-      "type": "image/png",
+      "type": "image/jpeg",
       "purpose": "any"
     },
     {
-      "src": "/logo.png",
+      "src": "/logo.jpeg",
       "sizes": "any",
-      "type": "image/png",
+      "type": "image/jpeg",
       "purpose": "maskable"
     }
   ]

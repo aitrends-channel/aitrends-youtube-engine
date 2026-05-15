@@ -93,10 +93,10 @@ function SetPasswordForm() {
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8 space-y-3">
           <div className="w-14 h-14 rounded-full overflow-hidden">
-            <Image src="/logo.png" alt="aiTrends" width={56} height={56} className="object-cover w-full h-full" />
+            <Image src="/logo.jpeg" alt="Heclus" width={56} height={56} className="object-cover w-full h-full" />
           </div>
           <div className="text-center">
-            <p className="font-bold text-lg tracking-tight">aiTrends</p>
+            <p className="font-bold text-lg tracking-tight">Heclus</p>
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               {isReset ? "Reset your password" : "Create your password"}
             </p>

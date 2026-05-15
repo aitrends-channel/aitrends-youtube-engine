@@ -71,7 +71,7 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
         amount: Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT),
         currency: process.env.NEXT_PUBLIC_PAYSTACK_CURRENCY ?? "NGN",
         ref: `ait_${Date.now()}`,
-        label: "aiTrends YT Workflow",
+        label: "Heclus",
         callback: function (response: { reference: string }) {
           setVerifying(true);
           fetch("/api/paystack/verify", {
@@ -141,7 +141,7 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
         {/* Heading */}
         <div className="text-center mb-6">
           <h2 className="text-xl font-bold mb-1.5" style={{ color: "var(--c-90)" }}>
-            aiTrends One Time Subscription
+            Heclus One Time Subscription
           </h2>
           <p className="text-sm leading-relaxed" style={{ color: "var(--c-45)" }}>
             Subscribe to unlock the full YouTube automation workflow.

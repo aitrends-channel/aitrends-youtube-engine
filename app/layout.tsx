@@ -5,13 +5,13 @@ import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 import { Providers } from "@/components/Providers";
 
 export const metadata: Metadata = {
-  title: "aiTrends YT Workflow",
+  title: "Heclus",
   description: "Analyze channels, generate scripts, create voiceovers, images, and video clips",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "aiTrends",
+    title: "Heclus",
   },
 };
 
