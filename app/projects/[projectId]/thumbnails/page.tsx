@@ -416,11 +416,19 @@ export default function ThumbnailsPage({ params }: PageProps) {
 
       await mutate();
       setImageProgress({ done: data.success, total: data.total });
-      setImageStep({ status: "done", message: "" });
 
-      if (data.failures?.length) {
-        toast.error(`${data.failures.length} image(s) failed to generate`);
+      const allFailed = data.failures?.length === data.total && data.total > 0;
+      const firstError = data.failures?.[0]?.error;
+
+      if (allFailed) {
+        const msg = firstError ?? "Image generation failed";
+        setImageStep({ status: "error", message: "", error: msg });
+        toast.error(msg);
+      } else if (data.failures?.length) {
+        setImageStep({ status: "done", message: "" });
+        toast.error(`${data.failures.length} of ${data.total} image(s) failed${firstError ? `: ${firstError}` : ""}`);
       } else {
+        setImageStep({ status: "done", message: "" });
         toast.success(`${data.success} thumbnail images generated`);
       }
     } catch (err) {

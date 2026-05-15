@@ -121,26 +121,31 @@ export default function ChannelPage({ params }: PageProps) {
 
     // Step 2: Extract transcripts
     setStep("transcripts", "running");
-    try {
-      const res = await fetch("/api/youtube/transcripts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videos: fetchedInfo!.topVideos }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? `Transcript fetch failed (${res.status})`);
-      fetchedTranscripts = data.transcripts;
-      setTranscripts(data.transcripts);
-      const overrides: Record<string, string> = {};
-      for (const t of data.transcripts) {
-        if (!t.success) overrides[t.videoId] = "";
-      }
-      setManualOverrides(overrides);
-      setStep("transcripts", "done");
-    } catch (err) {
+    if (!fetchedInfo!.topVideos.length) {
       setStep("transcripts", "error");
-      const msg = err instanceof Error ? err.message : "Transcript extraction failed";
-      toast.error(`Transcripts: ${msg}`);
+      toast.error("No videos found for this channel");
+    } else {
+      try {
+        const res = await fetch("/api/youtube/transcripts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ videos: fetchedInfo!.topVideos }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error ?? `Transcript fetch failed (${res.status})`);
+        fetchedTranscripts = data.transcripts;
+        setTranscripts(data.transcripts);
+        const overrides: Record<string, string> = {};
+        for (const t of data.transcripts) {
+          if (!t.success) overrides[t.videoId] = "";
+        }
+        setManualOverrides(overrides);
+        setStep("transcripts", "done");
+      } catch (err) {
+        setStep("transcripts", "error");
+        const msg = err instanceof Error ? err.message : "Transcript extraction failed";
+        toast.error(`Transcripts: ${msg}`);
+      }
     }
 
     // Save channel to project

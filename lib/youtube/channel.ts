@@ -53,23 +53,12 @@ async function fetchChannelByUsername(username: string, apiKey: string) {
   return data.items?.[0] ?? null;
 }
 
-async function getTopVideos(uploadsPlaylistId: string, apiKey: string, limit = 50): Promise<TopVideo[]> {
-  const playlistRes = await fetch(
-    `${YT_API}/playlistItems?part=contentDetails&playlistId=${uploadsPlaylistId}&maxResults=${limit}&key=${apiKey}`
-  );
-  const playlistData = await playlistRes.json();
-  const videoIds: string[] = (playlistData.items ?? []).map(
-    (item: { contentDetails: { videoId: string } }) => item.contentDetails.videoId
-  );
-
-  if (!videoIds.length) return [];
-
+async function fetchVideoStats(videoIds: string[], apiKey: string): Promise<TopVideo[]> {
   const statsRes = await fetch(
     `${YT_API}/videos?part=snippet,statistics,contentDetails&id=${videoIds.join(",")}&key=${apiKey}`
   );
   const statsData = await statsRes.json();
-
-  const videos: TopVideo[] = (statsData.items ?? []).map(
+  return (statsData.items ?? []).map(
     (item: {
       id: string;
       snippet: { title: string };
@@ -82,8 +71,30 @@ async function getTopVideos(uploadsPlaylistId: string, apiKey: string, limit = 5
       duration: item.contentDetails.duration,
     })
   );
+}
 
-  return videos.sort((a, b) => b.viewCount - a.viewCount).slice(0, 10);
+async function getTopVideos(channelId: string, uploadsPlaylistId: string, apiKey: string, limit = 50): Promise<TopVideo[]> {
+  // Derive fallback playlist ID from channel ID (UC... → UU...)
+  const derivedPlaylistId = channelId.startsWith("UC") ? "UU" + channelId.slice(2) : "";
+  const playlistIds = [...new Set([uploadsPlaylistId, derivedPlaylistId].filter(Boolean))];
+
+  for (const playlistId of playlistIds) {
+    const playlistRes = await fetch(
+      `${YT_API}/playlistItems?part=contentDetails&playlistId=${playlistId}&maxResults=${limit}&key=${apiKey}`
+    );
+    const playlistData = await playlistRes.json();
+    if (playlistData.error) continue;
+
+    const videoIds: string[] = (playlistData.items ?? []).map(
+      (item: { contentDetails: { videoId: string } }) => item.contentDetails.videoId
+    );
+    if (!videoIds.length) continue;
+
+    const videos = await fetchVideoStats(videoIds, apiKey);
+    return videos.sort((a, b) => b.viewCount - a.viewCount).slice(0, 10);
+  }
+
+  throw new Error("Could not fetch videos for this channel.");
 }
 
 export async function resolveChannel(channelUrl: string, userId: string): Promise<ChannelInfo> {
@@ -112,8 +123,8 @@ export async function resolveChannel(channelUrl: string, userId: string): Promis
 
   if (!channel) throw new Error("Channel not found. Check the URL and try again.");
 
-  const uploadsPlaylistId = channel.contentDetails.relatedPlaylists.uploads;
-  const topVideos = await getTopVideos(uploadsPlaylistId, apiKey);
+  const uploadsPlaylistId = channel.contentDetails?.relatedPlaylists?.uploads ?? "";
+  const topVideos = await getTopVideos(channel.id, uploadsPlaylistId, apiKey);
 
   const subscriberCount = parseInt(channel.statistics.subscriberCount ?? "0", 10);
   const subscribers =

@@ -44,9 +44,11 @@ interface WizardNavProps {
   currentState: number;
   highestState?: number;
   channelName?: string;
+  activeOverridePath?: string;
+  progressComplete?: boolean;
 }
 
-export function WizardNav({ projectId, currentState, highestState, channelName }: WizardNavProps) {
+export function WizardNav({ projectId, currentState, highestState, channelName, activeOverridePath, progressComplete }: WizardNavProps) {
   const reached = highestState ?? currentState;
   const router = useRouter();
   const pathname = usePathname();
@@ -54,10 +56,11 @@ export function WizardNav({ projectId, currentState, highestState, channelName }
   const [showThemePicker, setShowThemePicker] = useState(false);
 
   const theme = ICON_THEMES[themeId];
-  const currentPathRank = Object.entries(PATH_RANK).find(([p]) => pathname.endsWith(`/${p}`))?.[1] ?? -1;
+  const effectivePath = activeOverridePath ? `/${activeOverridePath}` : pathname;
+  const currentPathRank = Object.entries(PATH_RANK).find(([p]) => effectivePath.endsWith(`/${p}`))?.[1] ?? -1;
 
   function getPhaseStatus(phase: (typeof PHASES)[0]) {
-    if (pathname.endsWith(`/${phase.path}`)) return "active";
+    if (effectivePath.endsWith(`/${phase.path}`)) return "active";
     const phaseRank = PATH_RANK[phase.id] ?? 0;
     const min = Math.min(...phase.states);
     if (phaseRank < currentPathRank && reached >= min) return "done";
@@ -70,7 +73,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName }
   }
 
   const currentPhaseIndex = PHASES.findIndex((p) => pathname.endsWith(`/${p.path}`));
-  const progressPct = Math.max(0, Math.round(((currentPhaseIndex + 1) / PHASES.length) * 100));
+  const progressPct = progressComplete ? 100 : Math.max(0, Math.round(((currentPhaseIndex + 1) / PHASES.length) * 100));
 
   return (
     <aside className="w-64 shrink-0 flex flex-col h-screen sticky top-0 overflow-hidden"
