@@ -75,11 +75,20 @@ async function fetchTranscriptFallback(videoId: string): Promise<string> {
           videoId,
         }),
       });
-      if (!res.ok) continue;
+
+      if (!res.ok) {
+        console.warn(`[transcript] ${client.clientName} player request failed: HTTP ${res.status}`);
+        continue;
+      }
 
       const data = await res.json();
+      const playability = data?.playabilityStatus?.status;
       const tracks = data?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-      if (!Array.isArray(tracks) || tracks.length === 0) continue;
+
+      if (!Array.isArray(tracks) || tracks.length === 0) {
+        console.warn(`[transcript] ${client.clientName} no caption tracks (playability=${playability}, hasCaptions=${!!data?.captions})`);
+        continue;
+      }
 
       const track = tracks.find((t: { languageCode: string }) => t.languageCode === "en") ?? tracks[0];
       if (!track?.baseUrl) continue;
@@ -90,7 +99,10 @@ async function fetchTranscriptFallback(videoId: string): Promise<string> {
           "Referer": "https://www.youtube.com/",
         },
       });
-      if (!tRes.ok) continue;
+      if (!tRes.ok) {
+        console.warn(`[transcript] ${client.clientName} caption fetch failed: HTTP ${tRes.status}`);
+        continue;
+      }
 
       const tData = await tRes.json();
       const events: Array<{ segs?: Array<{ utf8?: string }> }> = tData?.events ?? [];
@@ -102,13 +114,20 @@ async function fetchTranscriptFallback(videoId: string): Promise<string> {
         .replace(/\s+/g, " ")
         .trim();
 
-      if (text.length > 0) return text;
-    } catch {
+      if (text.length > 0) {
+        console.log(`[transcript] ${client.clientName} succeeded for ${videoId}`);
+        return text;
+      }
+      console.warn(`[transcript] ${client.clientName} returned empty text`);
+    } catch (err) {
+      console.warn(`[transcript] ${client.clientName} threw: ${err instanceof Error ? err.message : String(err)}`);
       continue;
     }
   }
   throw new Error("No captions available");
 }
+
+
 
 export async function fetchTranscripts(
   videos: { videoId: string; title: string }[]
@@ -124,7 +143,8 @@ export async function fetchTranscripts(
         .join(" ")
         .replace(/\s+/g, " ")
         .trim();
-    } catch {
+    } catch (primaryErr) {
+      console.warn(`[transcript] youtube-transcript library failed for ${video.videoId}: ${primaryErr instanceof Error ? primaryErr.message : String(primaryErr)}`);
       try {
         text = await fetchTranscriptFallback(video.videoId);
       } catch {
