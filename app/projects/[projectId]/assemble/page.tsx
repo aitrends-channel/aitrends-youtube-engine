@@ -415,7 +415,10 @@ export default function AssemblePage({ params }: PageProps) {
   useEffect(() => {
     const status = project?.assembly_status as string | undefined;
     if (!status) return;
-    if (status === "processing") {
+    if (status === "queued") {
+      setAssembling(true);
+      setAssembleStatus("Queued…");
+    } else if (status === "processing") {
       setAssembling(true);
       setAssembleStatus((project?.assembly_progress as string | undefined) ?? "Assembling…");
     } else if (status === "preview") {
@@ -506,14 +509,10 @@ export default function AssemblePage({ params }: PageProps) {
   async function handleUpload() {
     setUploadStep("uploading");
     try {
-      const tokenRes = await fetch("/api/generate/assemble", { method: "POST" });
-      if (!tokenRes.ok) throw new Error("Failed to get token");
-      const { workerUrl, token } = await tokenRes.json() as { workerUrl: string; token: string };
-
-      const res = await fetch(`${workerUrl}/api/upload/${projectId}`, {
+      const res = await fetch("/api/generate/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ projectId }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: string };
@@ -530,24 +529,16 @@ export default function AssemblePage({ params }: PageProps) {
     setAssembling(true);
     setAssembledUrl(null);
     setUploadStep("idle");
-    setAssembleStatus("Contacting worker…");
+    setAssembleStatus("Queuing…");
     try {
-      const tokenRes = await fetch("/api/generate/assemble", { method: "POST" });
-      if (!tokenRes.ok) throw new Error("Failed to get assembly token");
-      const { workerUrl, token } = await tokenRes.json() as { workerUrl: string; token: string };
-
-      setAssembleStatus("Waking up worker…");
-      try { await fetch(`${workerUrl}/health`, { signal: AbortSignal.timeout(30000) }); } catch { /* ignore */ }
-
-      setAssembleStatus("Starting…");
-      const res = await fetch(`${workerUrl}/api/assemble`, {
+      const res = await fetch("/api/generate/assemble", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, projectId, aspectRatio, voiceoverType, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition }),
+        body: JSON.stringify({ projectId, aspectRatio, voiceoverType, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(err.error ?? "Failed to start assembly");
+        throw new Error(err.error ?? "Failed to queue assembly");
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Assembly failed");
