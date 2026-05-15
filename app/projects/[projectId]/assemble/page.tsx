@@ -860,9 +860,14 @@ export default function AssemblePage({ params }: PageProps) {
                 </div>
               )}
 
-              {/* Preview ready — Download + Upload */}
+              {/* Preview ready — Reassemble + Download + Upload */}
               {!assembling && assembledUrl && uploadStep === "idle" && (
                 <div className="flex gap-2">
+                  <button onClick={assembleVideo}
+                    className="px-4 py-2.5 rounded-xl text-xs font-medium transition-all"
+                    style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
+                    Reassemble
+                  </button>
                   <a href={assembledUrl} download="assembled.mp4"
                     className="flex-1 py-2.5 rounded-xl text-xs font-medium text-center transition-all"
                     style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
