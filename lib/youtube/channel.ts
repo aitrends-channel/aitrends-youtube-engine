@@ -91,7 +91,7 @@ async function getTopVideos(channelId: string, uploadsPlaylistId: string, apiKey
     if (!videoIds.length) continue;
 
     const videos = await fetchVideoStats(videoIds, apiKey);
-    return videos.sort((a, b) => b.viewCount - a.viewCount).slice(0, 10);
+    return videos.sort((a, b) => b.viewCount - a.viewCount).slice(0, 5);
   }
 
   throw new Error("Could not fetch videos for this channel.");

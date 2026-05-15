@@ -72,7 +72,7 @@ export default function ChannelPage({ params }: PageProps) {
 
   const [steps, setSteps] = useState<AnalysisStep[]>([
     { id: "channel", label: "Fetch channel info", sublabel: "Name, subscribers, top videos", status: "idle" },
-    { id: "transcripts", label: "Extract transcripts", sublabel: "Auto-pull from top 10 videos", status: "idle" },
+    { id: "transcripts", label: "Extract transcripts", sublabel: "Auto-pull from top 5 videos", status: "idle" },
     { id: "analyze", label: "Analyze channel style", sublabel: "Niche, hook style, tone, pacing", status: "idle" },
     { id: "dna", label: "Extract Style DNA", sublabel: "Sentence rhythm, emotional triggers", status: "idle" },
   ]);
@@ -380,7 +380,7 @@ export default function ChannelPage({ params }: PageProps) {
 
               <div className="space-y-1.5">
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
-                  Top 10 Videos
+                  Top 5 Videos
                 </p>
                 {channelInfo.topVideos.map((v) => (
                   <div key={v.videoId} className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm"
