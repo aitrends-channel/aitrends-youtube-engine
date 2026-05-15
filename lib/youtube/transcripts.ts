@@ -130,6 +130,20 @@ async function fetchTranscriptFallback(videoId: string): Promise<string> {
 
 
 
+async function fetchTranscriptFromWorker(videoId: string): Promise<string> {
+  const workerUrl = process.env.WORKER_URL ?? "https://video-worker-9mob.onrender.com";
+  const res = await fetch(`${workerUrl}/api/transcript/${videoId}`, {
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({})) as { error?: string };
+    throw new Error(data.error ?? `Worker transcript failed: ${res.status}`);
+  }
+  const data = await res.json() as { text: string };
+  if (!data.text?.trim()) throw new Error("Worker returned empty transcript");
+  return data.text;
+}
+
 async function fetchTranscriptYoutubeJs(videoId: string): Promise<string> {
   const yt = await Innertube.create({ generate_session_locally: true });
   const info = await yt.getInfo(videoId);
@@ -165,19 +179,25 @@ export async function fetchTranscripts(
         text = await fetchTranscriptFallback(video.videoId);
       } catch {
         try {
-          text = await fetchTranscriptYoutubeJs(video.videoId);
-          console.log(`[transcript] youtubei.js succeeded for ${video.videoId}`);
-        } catch (ytjsErr) {
-          console.warn(`[transcript] youtubei.js failed for ${video.videoId}: ${ytjsErr instanceof Error ? ytjsErr.message : String(ytjsErr)}`);
-          results.push({
-            videoId: video.videoId,
-            title: video.title,
-            text: "",
-            success: false,
-            error: "No captions available for this video. Please paste the transcript manually.",
-          });
-          await new Promise((r) => setTimeout(r, 300));
-          continue;
+          text = await fetchTranscriptFromWorker(video.videoId);
+          console.log(`[transcript] worker yt-dlp succeeded for ${video.videoId}`);
+        } catch (workerErr) {
+          console.warn(`[transcript] worker failed for ${video.videoId}: ${workerErr instanceof Error ? workerErr.message : String(workerErr)}`);
+          try {
+            text = await fetchTranscriptYoutubeJs(video.videoId);
+            console.log(`[transcript] youtubei.js succeeded for ${video.videoId}`);
+          } catch (ytjsErr) {
+            console.warn(`[transcript] youtubei.js failed for ${video.videoId}: ${ytjsErr instanceof Error ? ytjsErr.message : String(ytjsErr)}`);
+              results.push({
+              videoId: video.videoId,
+              title: video.title,
+              text: "",
+              success: false,
+              error: "No captions available for this video. Please paste the transcript manually.",
+            });
+            await new Promise((r) => setTimeout(r, 300));
+            continue;
+          }
         }
       }
     }
