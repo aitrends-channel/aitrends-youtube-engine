@@ -5,7 +5,15 @@ const INNERTUBE_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=fa
 
 // Clients ordered by reliability from datacenter IPs.
 // Android/iOS clients bypass the poToken requirement that blocks WEB from servers.
-const INNERTUBE_CLIENTS = [
+interface InnertubeClient {
+  clientName: string;
+  clientVersion: string;
+  userAgent: string;
+  extraHeaders: Record<string, string>;
+  extraContext: Record<string, unknown>;
+}
+
+const INNERTUBE_CLIENTS: InnertubeClient[] = [
   {
     clientName: "ANDROID",
     clientVersion: "19.44.38",
