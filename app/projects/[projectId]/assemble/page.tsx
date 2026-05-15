@@ -445,6 +445,8 @@ export default function AssemblePage({ params }: PageProps) {
       setAssembling(false);
       setAssembleStatus("");
       setUploadStep("idle");
+      // Clear local preview URLs — the worker /tmp is wiped on restart so they're dead
+      setAssembledUrl((prev) => (prev?.includes("/api/preview/") ? null : prev));
     }
   }, [project?.assembly_status, project?.assembly_progress]);
 
