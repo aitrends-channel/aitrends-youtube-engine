@@ -76,16 +76,17 @@ export async function submitImageTask(
 
 export async function checkImageTask(
   taskId: string,
-  userId?: string
+  userId?: string,
+  modelId?: string
 ): Promise<{ status: "pending" | "done" | "failed"; url?: string; error?: string }> {
   const DONE = ["succeed", "success", "completed", "done", "finish", "finished", "complete"];
   const FAIL = ["failed", "error", "fail"];
 
-  const statusRes = await kieRequest<KieRecordResponse>(
-    `/api/v1/jobs/recordInfo?taskId=${taskId}`,
-    {},
-    userId
-  );
+  const pollEndpoint = modelId?.startsWith("flux-kontext")
+    ? `/api/v1/flux/kontext/record-info?taskId=${taskId}`
+    : `/api/v1/jobs/recordInfo?taskId=${taskId}`;
+
+  const statusRes = await kieRequest<KieRecordResponse>(pollEndpoint, {}, userId);
 
   if (!statusRes.data) return { status: "pending" };
   const d = statusRes.data;

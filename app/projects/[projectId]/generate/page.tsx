@@ -456,7 +456,7 @@ export default function GeneratePage({ params }: PageProps) {
             const res = await fetch("/api/generate/images/poll", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ projectId, beatNumber, taskId }),
+              body: JSON.stringify({ projectId, beatNumber, taskId, modelId: selectedImageModel }),
             });
             const data = await res.json().catch(() => ({})) as { status?: string; error?: string };
             const status = !res.ok ? "error" : (data.status ?? "pending");
@@ -518,7 +518,7 @@ export default function GeneratePage({ params }: PageProps) {
         const pollRes = await fetch("/api/generate/images/poll", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, beatNumber: beat.beatNumber, taskId }),
+          body: JSON.stringify({ projectId, beatNumber: beat.beatNumber, taskId, modelId: selectedImageModel }),
         });
         const pollData = await pollRes.json().catch(() => ({})) as { status?: string; error?: string };
         if (pollData.status === "done") { toast.success(`Beat ${beat.beatNumber} regenerated`); return; }

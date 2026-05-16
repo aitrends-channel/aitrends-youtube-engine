@@ -12,15 +12,15 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   try {
-    const { projectId, beatNumber, taskId } = await req.json() as {
-      projectId: string; beatNumber: number; taskId: string;
+    const { projectId, beatNumber, taskId, modelId } = await req.json() as {
+      projectId: string; beatNumber: number; taskId: string; modelId?: string;
     };
 
     if (!projectId || !beatNumber || !taskId) {
       return NextResponse.json({ error: "projectId, beatNumber, and taskId are required" }, { status: 400 });
     }
 
-    const result = await checkImageTask(taskId, user.id);
+    const result = await checkImageTask(taskId, user.id, modelId);
     console.log(`[images/poll] beat=${beatNumber} taskId=${taskId} status=${result.status}${result.error ? ` error=${result.error}` : ""}`);
 
     if (result.status === "done" && result.url) {
