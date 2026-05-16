@@ -268,6 +268,10 @@ export default function GeneratePage({ params }: PageProps) {
   const hasActiveVideos = beats.some((b) => b.videoStatus === "queued" || b.videoStatus === "rendering");
 
   useEffect(() => {
+    if (hasActiveVideos && !videosSubmitted) setVideosSubmitted(true);
+  }, [hasActiveVideos]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     if (!videosSubmitted) return;
     let lastError: string | null = null;
     const poll = async () => {
