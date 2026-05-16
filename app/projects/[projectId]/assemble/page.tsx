@@ -1043,7 +1043,7 @@ export default function AssemblePage({ params }: PageProps) {
           </div>{/* end left column */}
 
           {/* ── Right sticky sidebar: Next Video ──────────────────────────── */}
-          {assembledUrl && !assembling && (
+          {!assembling && (
             <div className="w-80 shrink-0 sticky top-8">
               <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                 <div>
