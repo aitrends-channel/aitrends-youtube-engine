@@ -21,6 +21,8 @@ interface KieRecordResponse {
     resultJson?: string;
     output?: string | { url?: string; image_url?: string };
     failReason?: string;
+    failMsg?: string;
+    failCode?: string;
     error?: string;
   };
 }
@@ -111,7 +113,7 @@ export async function checkImageTask(
   }
 
   if (FAIL.includes(normalized)) {
-    const detail = d.failReason ?? d.error ?? JSON.stringify(d);
+    const detail = d.failMsg ?? d.failReason ?? d.error ?? `fail code ${d.failCode ?? "unknown"}`;
     console.error(`[images] task failed: ${detail}`);
     return { status: "failed", error: detail };
   }
