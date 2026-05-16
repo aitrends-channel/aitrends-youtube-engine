@@ -836,7 +836,7 @@ export default function AssemblePage({ params }: PageProps) {
               {!assembling && assembledUrl && (
                 <div className="flex gap-2">
                   <button onClick={assembleVideo}
-                    className="px-4 py-2.5 rounded-xl text-xs font-medium transition-all"
+                    className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all"
                     style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
                     Reassemble
                   </button>
