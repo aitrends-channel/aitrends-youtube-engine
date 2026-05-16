@@ -96,7 +96,7 @@ export function buildScriptPrompt(
   analysis: ChannelAnalysisOutput,
   topic: string
 ): string {
-  const targetWordCount = Math.min(analysis.targetWordCount ?? 900, 200);
+  const targetWordCount = Math.min(analysis.targetWordCount ?? 900, parseInt(process.env.MAX_SCRIPT_WORDS ?? "1200", 10));
   return `Generate a FULL YouTube video script for the topic: "${topic}"
 
 STYLE DNA (MUST FOLLOW EXACTLY):
@@ -227,7 +227,8 @@ Composition: ${visualProfile.composition}
 Mood: ${visualProfile.mood}
 Detail: ${visualProfile.detailLevel}`;
 
-  return `Generate 2 YouTube thumbnail concepts for this video.
+  const maxThumbnails = parseInt(process.env.MAX_THUMBNAILS ?? "5", 10);
+  return `Generate ${maxThumbnails} YouTube thumbnail concepts for this video.
 
 SCRIPT SUMMARY (first 300 words):
 ${script.split(" ").slice(0, 300).join(" ")}...
@@ -242,7 +243,7 @@ ${thumbnailAnalysis ? `THUMBNAIL ANALYSIS (match this channel's thumbnail style 
 - Emotion triggers: ${thumbnailAnalysis.emotionTriggers.join(", ")}` : "Match the channel's visual style."}
 
 RULES:
-- 2 thumbnail concepts, positions 1-2
+- ${maxThumbnails} thumbnail concepts, positions 1-${maxThumbnails}
 - Each must create immediate curiosity or strong emotion
 - Vary the approaches: close-up face, dramatic scene, text-heavy, before/after, reaction shot, etc.
 

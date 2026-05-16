@@ -61,7 +61,7 @@ async function generateImages(
 ) {
   const anthropic = await getAnthropicClient(userId);
   const words = script.trim().split(/\s+/);
-  const WORDS_PER_BEAT = 100;
+  const WORDS_PER_BEAT = parseInt(process.env.WORDS_PER_BEAT ?? "25", 10);
   const targetBeats = Math.max(1, Math.round(words.length / WORDS_PER_BEAT));
 
   send({ type: "status", message: `Generating image prompts for ~${targetBeats} beats...` });
