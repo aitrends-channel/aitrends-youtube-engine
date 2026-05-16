@@ -20,7 +20,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 function assertComplete(stopReason: string | null | undefined, label: string) {
   if (stopReason === "max_tokens") {
@@ -60,71 +60,45 @@ async function generateImages(
   send: (data: object) => void
 ) {
   const anthropic = await getAnthropicClient(userId);
-  const words = script.split(/\s+/);
-  const WORDS_PER_CHUNK = 300;
+  const words = script.trim().split(/\s+/);
   const WORDS_PER_BEAT = 25;
+  const targetBeats = Math.max(1, Math.round(words.length / WORDS_PER_BEAT));
 
-  const chunks: string[] = [];
-  for (let i = 0; i < words.length; i += WORDS_PER_CHUNK) {
-    const chunk = words.slice(i, i + WORDS_PER_CHUNK).join(" ");
-    if (chunk.trim()) chunks.push(chunk);
-  }
-  if (chunks.length > 1 && chunks[chunks.length - 1].split(/\s+/).length < WORDS_PER_BEAT) {
-    chunks[chunks.length - 2] += " " + chunks.pop()!;
-  }
+  send({ type: "status", message: `Generating image prompts for ~${targetBeats} beats...` });
 
-  send({ type: "status", message: `Splitting script into ${chunks.length} sections...` });
+  const res = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 8192,
+    system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+    tools: [{ name: "save_image_prompts", description: "Save image prompts for all beats", input_schema: imagePromptsInputSchema }],
+    tool_choice: { type: "tool", name: "save_image_prompts" },
+    messages: [{ role: "user", content: buildImagePromptsPrompt(script, visualProfile, 1, targetBeats) }],
+  });
 
-  // Clear old beats once upfront, then save each chunk immediately as it completes
+  assertComplete(res.stop_reason, "image prompts");
+
+  const tool = res.content.find((b) => b.type === "tool_use");
+  if (!tool || tool.type !== "tool_use") throw new Error("No image prompts returned from Claude. Try again.");
+  const input = tool.input as Record<string, unknown>;
+  if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error("Claude returned no beats. Try again.");
+
+  const beats = ImagePromptsSchema.parse(input).beats;
+  const totalSaved = beats.length;
+
   await supabase.from("project_beats").delete().eq("project_id", projectId);
-
-  let beatCursor = 1;
-  let totalSaved = 0;
-
-  for (let i = 0; i < chunks.length; i++) {
-    send({ type: "progress", current: i + 1, total: chunks.length });
-
-    const chunkWordCount = chunks[i].split(/\s+/).length;
-    const targetBeats = Math.max(1, Math.round(chunkWordCount / WORDS_PER_BEAT));
-
-    const res = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 4096,
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-      tools: [{ name: "save_image_prompts", description: "Save image prompts for all beats", input_schema: imagePromptsInputSchema }],
-      tool_choice: { type: "tool", name: "save_image_prompts" },
-      messages: [{ role: "user", content: buildImagePromptsPrompt(chunks[i], visualProfile, beatCursor, targetBeats) }],
-    });
-
-    assertComplete(res.stop_reason, `section ${i + 1}/${chunks.length}`);
-
-    const tool = res.content.find((b) => b.type === "tool_use");
-    if (!tool || tool.type !== "tool_use") { console.warn(`No tool response for section ${i + 1} — skipping`); continue; }
-    const input = tool.input as Record<string, unknown>;
-    if (!Array.isArray(input.beats) || input.beats.length === 0) { console.warn(`Empty beats for section ${i + 1} — skipping`); continue; }
-
-    const beats = ImagePromptsSchema.parse(input).beats;
-
-    // Save this chunk's beats immediately — partial progress survives a timeout
-    const { error: insertError } = await supabase.from("project_beats").insert(
-      beats.map((b) => ({
-        project_id: projectId,
-        beat_number: b.beatNumber,
-        script_segment: b.scriptSegment,
-        image_prompt: b.imagePrompt,
-        camera: b.camera,
-        lighting: b.lighting,
-        mood: b.mood,
-        action: b.action,
-      }))
-    );
-    if (insertError) throw new Error(`Failed to save beats for section ${i + 1}: ${insertError.message}`);
-
-    totalSaved += beats.length;
-    beatCursor += beats.length;
-  }
-
-  if (totalSaved === 0) throw new Error("No beats were generated — the script may be too short or Claude returned empty responses.");
+  const { error: insertError } = await supabase.from("project_beats").insert(
+    beats.map((b) => ({
+      project_id: projectId,
+      beat_number: b.beatNumber,
+      script_segment: b.scriptSegment,
+      image_prompt: b.imagePrompt,
+      camera: b.camera,
+      lighting: b.lighting,
+      mood: b.mood,
+      action: b.action,
+    }))
+  );
+  if (insertError) throw new Error(`Failed to save beats: ${insertError.message}`);
 
   await supabase.from("projects").update({ current_state: 14 }).eq("id", projectId).eq("user_id", userId);
   send({ type: "done", beatCount: totalSaved });
