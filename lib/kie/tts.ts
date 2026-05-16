@@ -1,14 +1,10 @@
-import { kieRequest } from "./client";
+import { getSettings } from "@/lib/settings";
 import type { KieModel } from "@/lib/types";
 
-// Switch to "elevenlabs/text-to-speech-turbo-2-5" for faster generation at slightly lower quality
-const TTS_MODEL = "elevenlabs/text-to-speech-multilingual-v2";
-
-// ElevenLabs actual limit is 5000 chars; no need for the previous conservative buffer
+const EL_BASE = "https://api.elevenlabs.io";
+const TTS_MODEL = "eleven_turbo_v2_5";
 const MAX_CHARS = 5000;
 
-// ElevenLabs voice IDs confirmed to work via KIE.
-// Preview format: https://static.aiquickdraw.com/elevenlabs/voice/<id>.mp3
 function v(id: string, name: string, tags: string[]): KieModel {
   return { id, name, type: "tts", tags, previewUrl: `https://static.aiquickdraw.com/elevenlabs/voice/${id}.mp3` };
 }
@@ -43,8 +39,6 @@ const VOICES: KieModel[] = [
   v("pPdl9cQBQq4p6mRkZy2Z", "Emma",      ["Female", "Adorable, Upbeat"]),
   v("nzeAacJi50IvxcyDnMXa", "Marshal",   ["Male",   "Friendly, Warm"]),
 ];
-
-// ── Text helpers ──────────────────────────────────────────────────────────────
 
 function normalizeText(text: string): string {
   return text
@@ -84,94 +78,36 @@ function splitIntoChunks(text: string): string[] {
   return chunks;
 }
 
-// ── KIE task types ────────────────────────────────────────────────────────────
-
-interface KieTaskResponse {
-  code: number;
-  msg: string;
-  data: { taskId: string };
-}
-
-interface KieRecordResponse {
-  code: number;
-  data: {
-    state?: string;
-    resultJson?: string;
-    failMsg?: string;
-  };
-}
-
-function sleep(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-// ── KIE ElevenLabs TTS ────────────────────────────────────────────────────────
-
 async function generateChunk(
   text: string,
   voiceId: string,
-  userId?: string,
+  apiKey: string,
   onStatus?: (msg: string) => void
 ): Promise<ArrayBuffer> {
   onStatus?.("Generating audio...");
-  console.log(`[TTS] KIE request | model: ${TTS_MODEL} | voice: ${voiceId} | chars: ${text.length}`);
+  console.log(`[TTS] ElevenLabs direct | model: ${TTS_MODEL} | voice: ${voiceId} | chars: ${text.length}`);
 
-  const res = await kieRequest<KieTaskResponse>("/api/v1/jobs/createTask", {
+  const res = await fetch(`${EL_BASE}/v1/text-to-speech/${voiceId}`, {
     method: "POST",
+    headers: {
+      "xi-api-key": apiKey,
+      "Content-Type": "application/json",
+      Accept: "audio/mpeg",
+    },
     body: JSON.stringify({
-      model: TTS_MODEL,
-      input: {
-        text,
-        voice: voiceId,
-        stability: 0.5,
-        similarity_boost: 0.75,
-      },
+      text,
+      model_id: TTS_MODEL,
+      voice_settings: { stability: 0.5, similarity_boost: 0.75 },
     }),
-  }, userId);
+  });
 
-  if (res.code !== 200) throw new Error(res.msg ?? "Failed to create TTS task");
-  const { taskId } = res.data;
-
-  for (let i = 0; i < 60; i++) {
-    await sleep(3000);
-
-    const poll = await kieRequest<KieRecordResponse>(
-      `/api/v1/jobs/recordInfo?taskId=${taskId}`,
-      {},
-      userId
-    );
-    const state = (poll.data?.state ?? "").toLowerCase();
-
-    if (state === "success") {
-      let audioUrl: string | undefined;
-      const rj = poll.data?.resultJson;
-      if (typeof rj === "string") {
-        if (rj.startsWith("http")) {
-          audioUrl = rj;
-        } else {
-          try {
-            const parsed = JSON.parse(rj) as { resultUrls?: string[]; url?: string };
-            audioUrl = parsed.resultUrls?.[0] ?? parsed.url;
-          } catch { /* fall through */ }
-        }
-      }
-      if (!audioUrl) throw new Error("TTS task completed but no audio URL in response");
-
-      console.log(`[TTS] KIE success | voice: ${voiceId}`);
-      const audioRes = await fetch(audioUrl);
-      if (!audioRes.ok) throw new Error(`Failed to download audio (${audioRes.status})`);
-      return audioRes.arrayBuffer();
-    }
-
-    if (state === "fail") {
-      throw new Error(poll.data?.failMsg ?? "TTS generation failed");
-    }
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`ElevenLabs error ${res.status}: ${body}`);
   }
 
-  throw new Error("TTS generation timed out after 3 minutes");
+  return res.arrayBuffer();
 }
-
-// ── Public API ────────────────────────────────────────────────────────────────
 
 export async function listTTSVoices(): Promise<KieModel[]> {
   return VOICES;
@@ -184,12 +120,18 @@ export async function generateTTS(
   onStatus?: (msg: string) => void,
   userId?: string
 ): Promise<ArrayBuffer> {
+  const apiKey = userId
+    ? (await getSettings(userId)).elevenlabs_api_key
+    : (process.env.ELEVENLABS_API_KEY ?? "");
+
+  if (!apiKey) throw new Error("ElevenLabs API key not configured. Add it in Settings.");
+
   const chunks = splitIntoChunks(text);
-  console.log(`[TTS] ${chunks.length} chunk(s) | cleaned chars: ${normalizeText(text).length} | voice: ${voiceId}`);
+  console.log(`[TTS] ${chunks.length} chunk(s) | chars: ${normalizeText(text).length} | voice: ${voiceId}`);
 
   if (chunks.length === 1) {
     onProgress?.(0, 1);
-    const result = await generateChunk(chunks[0], voiceId, userId, onStatus);
+    const result = await generateChunk(chunks[0], voiceId, apiKey, onStatus);
     onProgress?.(1, 1);
     return result;
   }
@@ -198,7 +140,7 @@ export async function generateTTS(
   for (let i = 0; i < chunks.length; i++) {
     onProgress?.(i, chunks.length);
     onStatus?.(`Chunk ${i + 1} of ${chunks.length}...`);
-    buffers.push(await generateChunk(chunks[i], voiceId, userId, onStatus));
+    buffers.push(await generateChunk(chunks[i], voiceId, apiKey, onStatus));
   }
   onProgress?.(chunks.length, chunks.length);
 
