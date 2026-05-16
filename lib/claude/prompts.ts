@@ -96,11 +96,12 @@ export function buildScriptPrompt(
   analysis: ChannelAnalysisOutput,
   topic: string
 ): string {
+  const targetWordCount = Math.min(analysis.targetWordCount ?? 900, 1200);
   return `Generate a FULL YouTube video script for the topic: "${topic}"
 
 STYLE DNA (MUST FOLLOW EXACTLY):
 - Niche: ${analysis.niche}
-- Target Word Count: ${analysis.targetWordCount} words (stay within ±5%)
+- Target Word Count: ${targetWordCount} words (stay within ±5%)
 - Words Per Second: ${analysis.wordsPerSecond} WPS
 - Hook Style: ${analysis.hookStyle}
 - Sentence Style: ${analysis.sentenceStyle}

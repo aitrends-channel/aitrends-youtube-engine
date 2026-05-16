@@ -61,7 +61,7 @@ async function generateImages(
 ) {
   const anthropic = await getAnthropicClient(userId);
   const words = script.split(/\s+/);
-  const WORDS_PER_CHUNK = 150;
+  const WORDS_PER_CHUNK = 300;
   const WORDS_PER_BEAT = 25;
 
   const chunks: string[] = [];
@@ -75,11 +75,11 @@ async function generateImages(
 
   send({ type: "status", message: `Splitting script into ${chunks.length} sections...` });
 
+  // Clear old beats once upfront, then save each chunk immediately as it completes
+  await supabase.from("project_beats").delete().eq("project_id", projectId);
+
   let beatCursor = 1;
-  const allBeats: Array<{
-    beatNumber: number; scriptSegment: string; imagePrompt: string;
-    camera: string; lighting: string; mood: string; action: string;
-  }> = [];
+  let totalSaved = 0;
 
   for (let i = 0; i < chunks.length; i++) {
     send({ type: "progress", current: i + 1, total: chunks.length });
@@ -104,29 +104,30 @@ async function generateImages(
     if (!Array.isArray(input.beats) || input.beats.length === 0) { console.warn(`Empty beats for section ${i + 1} — skipping`); continue; }
 
     const beats = ImagePromptsSchema.parse(input).beats;
-    allBeats.push(...beats);
+
+    // Save this chunk's beats immediately — partial progress survives a timeout
+    const { error: insertError } = await supabase.from("project_beats").insert(
+      beats.map((b) => ({
+        project_id: projectId,
+        beat_number: b.beatNumber,
+        script_segment: b.scriptSegment,
+        image_prompt: b.imagePrompt,
+        camera: b.camera,
+        lighting: b.lighting,
+        mood: b.mood,
+        action: b.action,
+      }))
+    );
+    if (insertError) throw new Error(`Failed to save beats for section ${i + 1}: ${insertError.message}`);
+
+    totalSaved += beats.length;
     beatCursor += beats.length;
   }
 
-  if (allBeats.length === 0) throw new Error("No beats were generated — the script may be too short or Claude returned empty responses.");
-
-  await supabase.from("project_beats").delete().eq("project_id", projectId);
-  const { error: insertError } = await supabase.from("project_beats").insert(
-    allBeats.map((b) => ({
-      project_id: projectId,
-      beat_number: b.beatNumber,
-      script_segment: b.scriptSegment,
-      image_prompt: b.imagePrompt,
-      camera: b.camera,
-      lighting: b.lighting,
-      mood: b.mood,
-      action: b.action,
-    }))
-  );
-  if (insertError) throw new Error(`Failed to save beats: ${insertError.message}`);
+  if (totalSaved === 0) throw new Error("No beats were generated — the script may be too short or Claude returned empty responses.");
 
   await supabase.from("projects").update({ current_state: 14 }).eq("id", projectId).eq("user_id", userId);
-  send({ type: "done", beatCount: allBeats.length });
+  send({ type: "done", beatCount: totalSaved });
 }
 
 // ── Step 2: Video prompts ──────────────────────────────────────────────────

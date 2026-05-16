@@ -254,6 +254,7 @@ async function streamStep(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let doneReceived = false;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -277,13 +278,18 @@ async function streamStep(
           });
         } else if (event.type === "error") {
           throw new Error(event.message);
+        } else if (event.type === "done") {
+          doneReceived = true;
         }
-        // "done" is handled by the caller
       } catch (e) {
         if (e instanceof SyntaxError) continue;
         throw e;
       }
     }
+  }
+
+  if (!doneReceived) {
+    throw new Error("Generation timed out — the server closed the connection before finishing. Any beats saved so far are preserved. Try again to complete the rest.");
   }
 }
 
