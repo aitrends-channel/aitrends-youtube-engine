@@ -343,7 +343,6 @@ export default function AssemblePage({ params }: PageProps) {
   const [assembling, setAssembling] = useState(false);
   const [assembleStatus, setAssembleStatus] = useState("");
   const [assembledUrl, setAssembledUrl] = useState<string | null>(null);
-  const [uploadStep, setUploadStep] = useState<"idle" | "uploading" | "done">("idle");
 
   // Next video state
   const [nextTopic, setNextTopic] = useState("");
@@ -399,15 +398,12 @@ export default function AssemblePage({ params }: PageProps) {
     );
   }
 
-  // Pick up assembled_url from project on load — skip stale local preview URLs
+  // Pick up assembled_url from project on load
   useEffect(() => {
     const status = project?.assembly_status as string | undefined;
     const url = project?.assembled_url as string | undefined;
-    if (!assembling && url && !assembledUrl) {
-      const isLocalPreview = url.includes("/api/preview/");
-      if (!isLocalPreview || status === "preview") {
-        setAssembledUrl(url);
-      }
+    if (!assembling && url && !assembledUrl && (status === "done" || status === "preview")) {
+      setAssembledUrl(url);
     }
   }, [project, assembling, assembledUrl]);
 
@@ -418,34 +414,26 @@ export default function AssemblePage({ params }: PageProps) {
     if (status === "queued") {
       setAssembling(true);
       setAssembleStatus("Queued…");
-    } else if (status === "processing") {
+    } else if (status === "processing" || status === "uploading") {
       setAssembling(true);
       setAssembleStatus((project?.assembly_progress as string | undefined) ?? "Assembling…");
-    } else if (status === "preview") {
-      if (assembling) {
-        setAssembling(false);
-        setAssembleStatus("");
-        setUploadStep("idle");
-        setAssembledUrl(project?.assembled_url as string ?? null);
-        // Scroll thumbnail section into view
-        setTimeout(() => thumbnailSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 300);
-      } else {
-        setAssembledUrl(project?.assembled_url as string ?? null);
-      }
-    } else if (status === "uploading") {
-      setUploadStep("uploading");
-    } else if (status === "done") {
-      setUploadStep("done");
+    } else if (status === "preview" || status === "done") {
+      const url = project?.assembled_url as string | undefined;
+      const wasAssembling = assembling;
       setAssembling(false);
       setAssembleStatus("");
-      setAssembledUrl(project?.assembled_url as string ?? null);
-      toast.success("Uploaded!");
+      if (url) {
+        setAssembledUrl(url);
+        if (wasAssembling) {
+          toast.success("Video ready!");
+          setTimeout(() => thumbnailSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 300);
+        }
+      }
     } else if (status === "failed") {
       if (assembling) toast.error((project?.assembly_error as string | undefined) ?? "Assembly failed");
       setAssembling(false);
       setAssembleStatus("");
-      setUploadStep("idle");
-      // Clear local preview URLs — the worker /tmp is wiped on restart so they're dead
+      // Clear stale local preview URLs — the worker /tmp is wiped on restart
       setAssembledUrl((prev) => (prev?.includes("/api/preview/") ? null : prev));
     }
   }, [project?.assembly_status, project?.assembly_progress]);
@@ -508,29 +496,10 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }
 
-  async function handleUpload() {
-    setUploadStep("uploading");
-    try {
-      const res = await fetch("/api/generate/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(err.error ?? "Upload failed");
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Upload failed");
-      setUploadStep("idle");
-    }
-  }
-
   async function assembleVideo() {
     if (assembling) return;
     setAssembling(true);
     setAssembledUrl(null);
-    setUploadStep("idle");
     setAssembleStatus("Queuing…");
     try {
       const res = await fetch("/api/generate/assemble", {
@@ -863,8 +832,8 @@ export default function AssemblePage({ params }: PageProps) {
                 </div>
               )}
 
-              {/* Preview ready — Reassemble + Download + Upload */}
-              {!assembling && assembledUrl && uploadStep === "idle" && (
+              {/* Video ready — Reassemble + Download */}
+              {!assembling && assembledUrl && (
                 <div className="flex gap-2">
                   <button onClick={assembleVideo}
                     className="px-4 py-2.5 rounded-xl text-xs font-medium transition-all"
@@ -872,65 +841,10 @@ export default function AssemblePage({ params }: PageProps) {
                     Reassemble
                   </button>
                   <a href={assembledUrl} download="assembled.mp4"
-                    className="flex-1 py-2.5 rounded-xl text-xs font-medium text-center transition-all"
-                    style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
-                    ↓ Download
-                  </a>
-                  <button onClick={handleUpload}
-                    className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all"
+                    className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all"
                     style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                    ↑ Upload to Cloud
-                  </button>
-                </div>
-              )}
-
-              {/* Upload step progress */}
-              {uploadStep !== "idle" && (
-                <div className="rounded-xl p-4 space-y-3" style={{ background: "var(--bg-page-2)", border: "1px solid var(--bd-7)" }}>
-                  {([
-                    { label: "Video assembled",    done: true,                  active: false },
-                    { label: "Uploading to cloud", done: uploadStep === "done", active: uploadStep === "uploading" },
-                    { label: "Complete",           done: uploadStep === "done", active: false },
-                  ] as { label: string; done: boolean; active: boolean }[]).map((step, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <div className="relative w-5 h-5 flex-shrink-0 flex items-center justify-center">
-                        {step.done ? (
-                          <div className="w-5 h-5 rounded-full flex items-center justify-center"
-                            style={{ background: "oklch(0.65 0.15 145)" }}>
-                            <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                              <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          </div>
-                        ) : step.active ? (
-                          <div className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin"
-                            style={{ borderColor: "oklch(0.72 0.25 285 / 0.25)", borderTopColor: "oklch(0.72 0.25 285)" }} />
-                        ) : (
-                          <div className="w-5 h-5 rounded-full" style={{ border: "2px solid var(--bd-10)" }} />
-                        )}
-                      </div>
-                      <span className="text-xs" style={{
-                        color: step.done ? "oklch(0.72 0.2 145)" : step.active ? "var(--c-75)" : "var(--c-35)",
-                      }}>
-                        {step.label}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* After upload done — Download + Reassemble */}
-              {uploadStep === "done" && (
-                <div className="flex gap-2">
-                  <a href={assembledUrl ?? ""} download="assembled.mp4"
-                    className="flex-1 py-2.5 rounded-xl text-xs font-medium text-center transition-all"
-                    style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
                     ↓ Download
                   </a>
-                  <button onClick={assembleVideo}
-                    className="px-5 py-2.5 rounded-xl text-xs font-medium transition-all"
-                    style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
-                    Reassemble
-                  </button>
                 </div>
               )}
 
