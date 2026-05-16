@@ -16,10 +16,10 @@ export async function POST(req: Request) {
 
   try {
     const anthropic = await getAnthropicClient(user.id);
-    const { projectId, transcripts, topicMode, topicHint } = await req.json();
+    const { projectId, metadata, topicMode, topicHint } = await req.json();
 
-    if (!transcripts?.length) {
-      return NextResponse.json({ error: "Transcripts are required" }, { status: 400 });
+    if (!metadata?.length) {
+      return NextResponse.json({ error: "Video metadata is required" }, { status: 400 });
     }
 
     const analysisResponse = await anthropic.messages.create({
@@ -32,7 +32,7 @@ export async function POST(req: Request) {
         input_schema: channelAnalysisInputSchema,
       }],
       tool_choice: { type: "tool", name: "save_channel_analysis" },
-      messages: [{ role: "user", content: buildAnalysisPrompt(transcripts) }],
+      messages: [{ role: "user", content: buildAnalysisPrompt(metadata) }],
     });
 
     const analysisToolUse = analysisResponse.content.find((b) => b.type === "tool_use");

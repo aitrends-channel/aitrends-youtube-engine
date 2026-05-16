@@ -29,6 +29,19 @@ export interface TranscriptResult {
   error?: string;
 }
 
+export interface VideoMetadata {
+  videoId: string;
+  title: string;
+  description: string;
+  tags: string[];
+  viewCount: number;
+  likeCount: number;
+  commentCount: number;
+  publishedAt: string;
+  duration: string;
+  topComments: string[];
+}
+
 export interface StyleDNA {
   sentenceRhythm: string;
   flowPattern: string;

@@ -1,35 +1,66 @@
 import type { ChannelAnalysisOutput, VisualProfileOutput, ThumbnailAnalysisOutput } from "./schemas";
+import type { VideoMetadata } from "@/lib/types";
 
-export function buildAnalysisPrompt(transcripts: { title: string; text: string }[]): string {
-  const transcriptText = transcripts
-    .map((t, i) => `--- TRANSCRIPT ${i + 1}: "${t.title}" ---\n${t.text}`)
-    .join("\n\n");
+function parseDuration(iso: string): string {
+  const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return "unknown";
+  const h = parseInt(match[1] ?? "0", 10);
+  const m = parseInt(match[2] ?? "0", 10);
+  const s = parseInt(match[3] ?? "0", 10);
+  const parts: string[] = [];
+  if (h) parts.push(`${h}h`);
+  if (m) parts.push(`${m}m`);
+  if (s && !h) parts.push(`${s}s`);
+  return parts.join(" ") || "unknown";
+}
 
-  return `Analyze these YouTube video transcripts and extract the channel's content style.
+export function buildAnalysisPrompt(metadata: VideoMetadata[]): string {
+  const videoText = metadata.map((v, i) => {
+    const duration = parseDuration(v.duration);
+    const engagementRate = v.viewCount > 0 ? ((v.likeCount / v.viewCount) * 100).toFixed(2) : "0";
+    const published = v.publishedAt ? new Date(v.publishedAt).toLocaleDateString("en-US", { year: "numeric", month: "short" }) : "unknown";
+    const comments = v.topComments.length
+      ? v.topComments.slice(0, 15).map((c) => `  - "${c}"`).join("\n")
+      : "  (comments unavailable)";
 
-${transcriptText}
+    return `--- VIDEO ${i + 1}: "${v.title}" ---
+Duration: ${duration} | Views: ${v.viewCount.toLocaleString()} | Likes: ${v.likeCount.toLocaleString()} | Engagement: ${engagementRate}% | Published: ${published}
+${v.tags.length ? `Tags: ${v.tags.slice(0, 15).join(", ")}` : ""}
+
+DESCRIPTION:
+${v.description.trim() || "(no description)"}
+
+TOP AUDIENCE COMMENTS (what resonates with viewers):
+${comments}`.trim();
+  }).join("\n\n");
+
+  return `Analyze these YouTube videos from the same channel and extract the channel's content style DNA.
+
+You are working from video metadata — titles, descriptions, tags, engagement metrics, and top audience comments. Use these signals to infer how this creator writes, frames topics, and connects with their audience.
+
+${videoText}
 
 Perform STATE 4 (Channel Analysis) and STATE 5 (Style DNA Extraction):
 
 STATE 4 — Extract:
-- Niche and topic category
-- Target audience description
-- Hook style (how videos open to grab attention)
-- Script flow structure
-- Sentence style (length, complexity, punctuation patterns)
-- Emotional pacing curve (how energy builds/drops)
-- Retention techniques used
-- Words per second (calculate from transcript length vs estimated video duration — assume ~1.5-2.0 WPS for talking-head content)
-- Target word count for a new video of similar length
+- Niche and topic category (infer from titles, tags, descriptions)
+- Target audience description (infer from language, topics, comment tone)
+- Hook style: how videos open to grab attention — infer from title patterns (curiosity gap, numbered lists, fear/revelation, personal story, etc.)
+- Script flow structure: infer from description structure and content type
+- Sentence style: infer from description writing patterns (length, complexity, punctuation)
+- Emotional pacing curve: how energy builds — infer from engagement metrics and comment sentiment
+- Retention techniques: identify from title patterns (open loops, cliffhangers, transformation promises)
+- Words per second: assume 1.5-2.0 WPS for talking-head content based on the niche style
+- Target word count: calculate from average video duration × words per second
 
 STATE 5 — Extract deep writing behavior (HOW it works, not what it says):
-- Sentence rhythm patterns
-- Flow pattern (how paragraphs connect)
+- Sentence rhythm patterns (infer from description style)
+- Flow pattern (how ideas connect — linear, story-driven, list-based)
 - Repetition style
-- Tone
+- Tone (authoritative, conversational, urgent, inspirational, etc.)
 - Transition phrases and patterns
-- Curiosity gap techniques
-- Emotional trigger words/themes
+- Curiosity gap techniques (infer from title patterns)
+- Emotional trigger words/themes (infer from titles, tags, and what comments respond to)
 - Direct address style (how they speak to "you")
 - Detail level
 

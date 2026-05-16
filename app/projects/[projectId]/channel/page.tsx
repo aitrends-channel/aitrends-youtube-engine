@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { toast } from "sonner";
 import { useProject } from "@/hooks/useProject";
-import type { ChannelInfo, TranscriptResult } from "@/lib/types";
+import type { ChannelInfo, VideoMetadata } from "@/lib/types";
 
 interface PageProps {
   params: { projectId: string };
@@ -63,8 +63,7 @@ export default function ChannelPage({ params }: PageProps) {
 
   const [channelUrl, setChannelUrl] = useState("");
   const [channelInfo, setChannelInfo] = useState<ChannelInfo | null>(null);
-  const [transcripts, setTranscripts] = useState<TranscriptResult[]>([]);
-  const [manualOverrides, setManualOverrides] = useState<Record<string, string>>({});
+  const [videoMetadata, setVideoMetadata] = useState<VideoMetadata[]>([]);
   const [topicMode, setTopicMode] = useState<"generate" | "custom">("generate");
   const [topicHint, setTopicHint] = useState("");
   const [customTopic, setCustomTopic] = useState("");
@@ -72,7 +71,7 @@ export default function ChannelPage({ params }: PageProps) {
 
   const [steps, setSteps] = useState<AnalysisStep[]>([
     { id: "channel", label: "Fetch channel info", sublabel: "Name, subscribers, top videos", status: "idle" },
-    { id: "transcripts", label: "Extract transcripts", sublabel: "Auto-pull from top 5 videos", status: "idle" },
+    { id: "transcripts", label: "Fetch video metadata", sublabel: "Descriptions, tags & top comments", status: "idle" },
     { id: "analyze", label: "Analyze channel style", sublabel: "Niche, hook style, tone, pacing", status: "idle" },
     { id: "dna", label: "Extract Style DNA", sublabel: "Sentence rhythm, emotional triggers", status: "idle" },
   ]);
@@ -97,7 +96,7 @@ export default function ChannelPage({ params }: PageProps) {
     setSteps((prev) => prev.map((s) => ({ ...s, status: "idle" })));
 
     let fetchedInfo: ChannelInfo | null = null;
-    let fetchedTranscripts: TranscriptResult[] = [];
+    let fetchedMetadata: VideoMetadata[] = [];
 
     // Step 1: Fetch channel
     setStep("channel", "running");
@@ -119,7 +118,7 @@ export default function ChannelPage({ params }: PageProps) {
       return;
     }
 
-    // Step 2: Extract transcripts
+    // Step 2: Fetch video metadata
     setStep("transcripts", "running");
     if (!fetchedInfo!.topVideos.length) {
       setStep("transcripts", "error");
@@ -132,19 +131,14 @@ export default function ChannelPage({ params }: PageProps) {
           body: JSON.stringify({ videos: fetchedInfo!.topVideos }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data?.error ?? `Transcript fetch failed (${res.status})`);
-        fetchedTranscripts = data.transcripts;
-        setTranscripts(data.transcripts);
-        const overrides: Record<string, string> = {};
-        for (const t of data.transcripts) {
-          if (!t.success) overrides[t.videoId] = "";
-        }
-        setManualOverrides(overrides);
+        if (!res.ok) throw new Error(data?.error ?? `Metadata fetch failed (${res.status})`);
+        fetchedMetadata = data.metadata;
+        setVideoMetadata(data.metadata);
         setStep("transcripts", "done");
       } catch (err) {
         setStep("transcripts", "error");
-        const msg = err instanceof Error ? err.message : "Transcript extraction failed";
-        toast.error(`Transcripts: ${msg}`);
+        const msg = err instanceof Error ? err.message : "Metadata fetch failed";
+        toast.error(`Metadata: ${msg}`);
       }
     }
 
@@ -160,19 +154,10 @@ export default function ChannelPage({ params }: PageProps) {
     });
 
     // Steps 3-4: Claude analysis
-    const readyTranscripts = (fetchedTranscripts.length ? fetchedTranscripts : transcripts)
-      .map((t) => ({
-        title: t.title,
-        text: manualOverrides[t.videoId] !== undefined ? manualOverrides[t.videoId] : t.text,
-      }))
-      .filter((t) => t.text.trim().length > 50);
-
-    if (!readyTranscripts.length) {
+    const readyMetadata = fetchedMetadata.length ? fetchedMetadata : videoMetadata;
+    if (!readyMetadata.length) {
       setIsWorking(false);
-      const firstError = fetchedTranscripts.find((t) => !t.success)?.error;
-      toast.error(firstError
-        ? `Transcripts failed: ${firstError}`
-        : "No transcripts available. Please paste them manually.");
+      toast.error("No video metadata available. Try again.");
       return;
     }
 
@@ -193,7 +178,7 @@ export default function ChannelPage({ params }: PageProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
-          transcripts: readyTranscripts,
+          metadata: readyMetadata,
           topicMode,
           topicHint: topicHint.trim() || undefined,
         }),
@@ -395,28 +380,6 @@ export default function ChannelPage({ params }: PageProps) {
             </div>
           )}
 
-          {/* Manual transcript fallback */}
-          {transcripts.some((t) => !t.success) && (
-            <div className="rounded-2xl p-6 space-y-4"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
-                Manual Transcript Entry
-              </p>
-              {transcripts.filter((t) => !t.success).map((t) => (
-                <div key={t.videoId} className="space-y-2">
-                  <p className="text-sm" style={{ color: "var(--c-60)" }}>{t.title}</p>
-                  <textarea
-                    placeholder="Paste transcript here..."
-                    value={manualOverrides[t.videoId] ?? ""}
-                    onChange={(e) => setManualOverrides((prev) => ({ ...prev, [t.videoId]: e.target.value }))}
-                    rows={6}
-                    className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-none transition-all"
-                    style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-8)", color: "var(--c-90)" }}
-                  />
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       </main>
     </div>
