@@ -17,6 +17,32 @@ const fetcher = (url: string) =>
     return r.json().catch(() => ({}));
   });
 
+function friendlyError(raw: string | undefined | null): string {
+  const msg = (raw ?? "").toLowerCase();
+  if (msg.includes("quota_exceeded") || msg.includes("quota exceeded") || msg.includes("credits remaining") || msg.includes("credit balance"))
+    return "Your ElevenLabs credits are exhausted — top up your account at elevenlabs.io";
+  if (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit")))
+    return "Insufficient KIE credits — top up your account at kie.ai";
+  if (msg.includes("invalid_api_key") || msg.includes("invalid api key") || msg.includes("unauthorized") || (msg.includes("api key") && msg.includes("invalid")))
+    return "API key is invalid — go to Settings to update it";
+  if (msg.includes("api key") && (msg.includes("missing") || msg.includes("not set") || msg.includes("required")))
+    return "API key not set — go to Settings to add it";
+  if (msg.includes("internal error") || msg.includes("internal server error") || msg.includes("fail code 500"))
+    return "The selected model is temporarily unavailable — try a different one";
+  if (msg.includes("this field is required"))
+    return "Video model rejected the request — try a different video model";
+  if (msg.includes("timed out") || msg.includes("timeout"))
+    return "Generation timed out — try again or use a simpler prompt";
+  if (msg.includes("no task id") || msg.includes("no taskid"))
+    return "Failed to queue task — the model may be unavailable, try another";
+  if (msg.includes("no url") || msg.includes("no image url") || msg.includes("completed but no url"))
+    return "Image was generated but could not be retrieved — try again";
+  if (msg.includes("rate limit") || msg.includes("too many requests"))
+    return "Too many requests — wait a moment and try again";
+  if (raw && raw.length > 0) return raw;
+  return "Something went wrong — please try again";
+}
+
 interface PageProps {
   params: { projectId: string };
 }
@@ -279,10 +305,7 @@ export default function GeneratePage({ params }: PageProps) {
       const data = await res.json().catch(() => ({})) as { pending?: number; firstError?: string | null };
       if (data.firstError && data.firstError !== lastError) {
         lastError = data.firstError;
-        const msg = data.firstError.toLowerCase().includes("insufficient") || data.firstError.toLowerCase().includes("balance")
-          ? `Not enough KIE credits for this model. Switch to a cheaper model (e.g. Wan 2.7) or top up your balance.`
-          : `Video generation error: ${data.firstError}`;
-        toast.error(msg);
+        toast.error(friendlyError(data.firstError));
       }
       await mutate();
     };
@@ -334,7 +357,7 @@ export default function GeneratePage({ params }: PageProps) {
         }
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "TTS failed");
+      toast.error(friendlyError(err instanceof Error ? err.message : null));
     } finally {
       setGeneratingTts(false);
       setTtsProgress(null);
@@ -438,10 +461,10 @@ export default function GeneratePage({ params }: PageProps) {
       }
 
       if (pending.length === 0) {
-        throw new Error(`Failed to submit any image tasks. First error: ${firstSubmitError ?? "Unknown error"}`);
+        throw new Error(firstSubmitError ?? "unknown error");
       }
       if (firstSubmitError) {
-        toast.warning(`${pending.length}/${beats.length} tasks submitted. Some failed: ${firstSubmitError}`);
+        toast.warning(`${pending.length}/${beats.length} tasks submitted — ${friendlyError(firstSubmitError)}`);
       }
 
       // Poll all pending tasks in parallel every 3s until all complete
@@ -480,13 +503,15 @@ export default function GeneratePage({ params }: PageProps) {
 
       await mutate();
       if (successCount === 0) {
-        const reason = firstPollError ?? firstSubmitError ?? "Timed out — check Vercel logs for [images] poll lines";
-        toast.error(`0/${beats.length} images generated — ${reason}`);
+        const reason = firstPollError ?? firstSubmitError ?? "timed out";
+        toast.error(`0/${beats.length} images generated — ${friendlyError(reason)}`);
+      } else if (successCount < beats.length) {
+        toast.warning(`${successCount}/${beats.length} images generated — some failed`);
       } else {
         toast.success(`${successCount}/${beats.length} images generated`);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Image generation failed");
+      toast.error(friendlyError(err instanceof Error ? err.message : null));
     } finally {
       setGeneratingImages(false);
       setClearingImages(false);
@@ -524,9 +549,9 @@ export default function GeneratePage({ params }: PageProps) {
         if (pollData.status === "done") { toast.success(`Beat ${beat.beatNumber} regenerated`); return; }
         if (pollData.status === "failed") throw new Error(pollData.error ?? "Image generation failed");
       }
-      throw new Error("Image generation timed out");
+      throw new Error("timed out");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Regeneration failed");
+      toast.error(friendlyError(err instanceof Error ? err.message : null));
     } finally {
       await mutate();
       setRegenBeats((prev) => { const next = new Set(prev); next.delete(beat.beatNumber); return next; });
@@ -554,11 +579,10 @@ export default function GeneratePage({ params }: PageProps) {
       setVideosSubmitted(true);
       if ((data.submitted ?? 0) > 0) toast.success(`${data.submitted ?? 0} video clips submitted`);
       if (data.failures?.length) {
-        const firstErr = data.failures[0].error;
-        toast.error(`${data.failures.length} clip(s) failed: ${firstErr}`);
+        toast.error(`${data.failures.length} clip(s) failed — ${friendlyError(data.failures[0].error)}`);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to queue videos");
+      toast.error(friendlyError(err instanceof Error ? err.message : null));
     } finally {
       setQueuingVideos(false);
     }
