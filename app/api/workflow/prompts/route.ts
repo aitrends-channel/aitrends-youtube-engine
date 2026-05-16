@@ -108,8 +108,10 @@ async function generateImages(
     beatCursor += beats.length;
   }
 
+  if (allBeats.length === 0) throw new Error("No beats were generated — the script may be too short or Claude returned empty responses.");
+
   await supabase.from("project_beats").delete().eq("project_id", projectId);
-  await supabase.from("project_beats").insert(
+  const { error: insertError } = await supabase.from("project_beats").insert(
     allBeats.map((b) => ({
       project_id: projectId,
       beat_number: b.beatNumber,
@@ -121,6 +123,7 @@ async function generateImages(
       action: b.action,
     }))
   );
+  if (insertError) throw new Error(`Failed to save beats: ${insertError.message}`);
 
   await supabase.from("projects").update({ current_state: 14 }).eq("id", projectId).eq("user_id", userId);
   send({ type: "done", beatCount: allBeats.length });

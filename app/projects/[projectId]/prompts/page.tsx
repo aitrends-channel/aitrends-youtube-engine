@@ -350,7 +350,7 @@ export default function PromptsPage({ params }: PageProps) {
   }
 
   async function runVideoStep() {
-    if (!hasImageBeats && effectiveImage.status !== "done") {
+    if (!hasImageBeats) {
       toast.error("Generate image prompts first");
       return;
     }
@@ -423,7 +423,7 @@ export default function PromptsPage({ params }: PageProps) {
             description="Camera movement and motion instructions layered on top of each image beat"
             state={effectiveVideo}
             doneLabel={videoBeats.length > 0 ? `${videoBeats.length} beats ready` : undefined}
-            disabled={!hasImageBeats && effectiveImage.status !== "done"}
+            disabled={!hasImageBeats}
             optional
             onGenerate={runVideoStep}
           />
