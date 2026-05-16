@@ -480,7 +480,7 @@ export default function GeneratePage({ params }: PageProps) {
 
       await mutate();
       if (successCount === 0) {
-        const reason = firstPollError ?? firstSubmitError ?? "Check that your KIE API key is set in Settings";
+        const reason = firstPollError ?? firstSubmitError ?? "Timed out — check Vercel logs for [images] poll lines";
         toast.error(`0/${beats.length} images generated — ${reason}`);
       } else {
         toast.success(`${successCount}/${beats.length} images generated`);
