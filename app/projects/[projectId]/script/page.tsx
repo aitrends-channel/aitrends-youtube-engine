@@ -76,9 +76,17 @@ export default function ScriptPage({ params }: PageProps) {
     if (selectedTopic) await generateScript(selectedTopic);
   }
 
-  function handleContinue() {
+  async function handleContinue() {
     if (!script.trim()) { toast.error("Generate a script first"); return; }
-    saveScript().then(() => router.push(`/projects/${projectId}/visuals`));
+    await saveScript();
+    if ((project?.current_state ?? 0) < 7) {
+      await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_state: 7 }),
+      });
+    }
+    router.push(`/projects/${projectId}/visuals`);
   }
 
   return (
