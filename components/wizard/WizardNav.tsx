@@ -60,8 +60,8 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
   const currentPathRank = Object.entries(PATH_RANK).find(([p]) => effectivePath.endsWith(`/${p}`))?.[1] ?? -1;
 
   function getPhaseStatus(phase: (typeof PHASES)[0]) {
-    if (effectivePath.endsWith(`/${phase.path}`)) return "active";
     if (progressComplete && phase.id === "thumbnails") return "done";
+    if (effectivePath.endsWith(`/${phase.path}`)) return "active";
     const phaseRank = PATH_RANK[phase.id] ?? 0;
     const min = Math.min(...phase.states);
     if (phaseRank < currentPathRank && reached >= min) return "done";
