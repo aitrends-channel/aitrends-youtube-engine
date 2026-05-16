@@ -847,7 +847,8 @@ export default function AssemblePage({ params }: PageProps) {
             <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
               {assembledUrl && (
                 <video key={assembledUrl} src={assembledUrl} controls className="w-full rounded-xl"
-                  style={{ background: "var(--bg-page-2)" }} />
+                  style={{ background: "var(--bg-page-2)" }}
+                  onError={() => toast.error("Preview unavailable — the worker may have restarted. Try downloading or click Reassemble.")} />
               )}
 
               {assembling && (
