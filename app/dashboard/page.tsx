@@ -33,6 +33,7 @@ interface Project {
   current_state: number;
   created_at: string;
   selected_topic?: string;
+  assembly_status?: string | null;
 }
 
 interface ChannelGroup {
@@ -350,14 +351,20 @@ export default function HomePage() {
                   <div className="grid gap-7"
                     style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
                     {group.projects.map((p) => {
-                      const path = (p.current_state === 6 && p.selected_topic)
-                        ? "script"
-                        : (PHASE_PATHS[p.current_state] ?? "channel");
-                      const stateLabel = (p.current_state === 6 && p.selected_topic)
-                        ? "Script"
-                        : (PHASE_LABELS[p.current_state] ?? "Setup");
-                      const progress = Math.min(100, Math.round((p.current_state / 15) * 100));
-                      const isComplete = p.current_state >= 15;
+                      const assembled = p.assembly_status === "done";
+                      const effectiveState = assembled ? 15 : p.current_state;
+                      const path = assembled
+                        ? "assemble"
+                        : (p.current_state === 6 && p.selected_topic)
+                          ? "script"
+                          : (PHASE_PATHS[p.current_state] ?? "channel");
+                      const stateLabel = assembled
+                        ? "Complete"
+                        : (p.current_state === 6 && p.selected_topic)
+                          ? "Script"
+                          : (PHASE_LABELS[p.current_state] ?? "Setup");
+                      const progress = Math.min(100, Math.round((effectiveState / 15) * 100));
+                      const isComplete = effectiveState >= 15;
 
                       return (
                         <button

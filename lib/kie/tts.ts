@@ -55,7 +55,7 @@ function normalizeText(text: string): string {
 }
 
 function splitIntoChunks(text: string): string[] {
-  const cleaned = text; // already normalized by caller
+  const cleaned = text;
   if (cleaned.length <= MAX_CHARS) return [cleaned];
 
   const chunks: string[] = [];
@@ -136,7 +136,7 @@ export async function generateTTS(
   }
 
   const chunks = splitIntoChunks(normalized);
-  console.log(`[TTS] ${chunks.length} chunk(s) | chars: ${normalizeText(text).length} | voice: ${voiceId}`);
+  console.log(`[TTS] ${chunks.length} chunk(s) | chars: ${normalized.length} | voice: ${voiceId}`);
 
   if (chunks.length === 1) {
     onProgress?.(0, 1);
