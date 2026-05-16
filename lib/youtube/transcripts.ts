@@ -1,6 +1,7 @@
 import { YoutubeTranscript } from "youtube-transcript";
 import { Innertube } from "youtubei.js";
 import type { TranscriptResult } from "@/lib/types";
+import { WORKER_URL } from "@/lib/workerUrl";
 
 const INNERTUBE_URL = "https://www.youtube.com/youtubei/v1/player?prettyPrint=false";
 
@@ -131,8 +132,7 @@ async function fetchTranscriptFallback(videoId: string): Promise<string> {
 
 
 async function fetchTranscriptFromWorker(videoId: string): Promise<string> {
-  const workerUrl = process.env.WORKER_URL ?? "https://video-worker-9mob.onrender.com";
-  const res = await fetch(`${workerUrl}/api/transcript/${videoId}`, {
+  const res = await fetch(`${WORKER_URL}/api/transcript/${videoId}`, {
     signal: AbortSignal.timeout(60_000),
   });
   if (!res.ok) {

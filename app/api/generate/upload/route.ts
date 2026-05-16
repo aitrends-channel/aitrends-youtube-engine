@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { WORKER_URL } from "@/lib/workerUrl";
 import type { User } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
@@ -19,9 +20,7 @@ export async function POST(req: Request) {
   const { projectId } = await req.json().catch(() => ({})) as { projectId?: string };
   if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
 
-  const workerUrl = process.env.WORKER_URL ?? "https://video-worker-9mob.onrender.com";
-
-  const res = await fetch(`${workerUrl}/api/upload/${projectId}`, {
+  const res = await fetch(`${WORKER_URL}/api/upload/${projectId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ token: session.access_token }),
