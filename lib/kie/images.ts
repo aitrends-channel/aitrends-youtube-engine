@@ -84,12 +84,17 @@ export async function checkImageTask(
   const DONE = ["succeed", "success", "completed", "done", "finish", "finished", "complete"];
   const FAIL = ["failed", "error", "fail"];
 
-  const pollEndpoint = `/api/v1/jobs/recordInfo?taskId=${taskId}`;
+  const pollEndpoint = modelId?.startsWith("flux-kontext")
+    ? `/api/v1/flux/kontext/record-info?taskId=${taskId}`
+    : `/api/v1/jobs/recordInfo?taskId=${taskId}`;
 
   const statusRes = await kieRequest<KieRecordResponse>(pollEndpoint, {}, userId);
+  const rawLog = JSON.stringify(statusRes).slice(0, 300);
 
-  console.log(`[images] poll raw=${JSON.stringify(statusRes).slice(0, 400)}`);
-  if (!statusRes.data) return { status: "pending" };
+  if (!statusRes.data) {
+    console.log(`[images] no data from poll — raw=${rawLog}`);
+    return { status: "pending" };
+  }
   const d = statusRes.data;
   const normalized = (d.state ?? d.status ?? "").toLowerCase();
 
