@@ -45,7 +45,7 @@ export async function submitImageTask(
       method: "POST",
       body: JSON.stringify({ prompt, model: modelId, aspectRatio, outputFormat: "jpeg" }),
     }, userId);
-    if (res.code !== 200) throw new Error(res.msg ?? "Failed to create image task");
+    if (res.code !== 200) throw new Error(`KIE ${res.code}: ${res.msg ?? "Failed to create image task"}`);
     if (!res.data?.taskId) throw new Error("No task ID returned from image API");
     return res.data.taskId;
   } else if (IMAGE_SIZE_MODELS.has(modelId)) {
@@ -58,7 +58,7 @@ export async function submitImageTask(
       method: "POST",
       body: JSON.stringify({ model: modelId, input }),
     }, userId);
-    if (res.code !== 200) throw new Error(res.msg ?? "Failed to create image task");
+    if (res.code !== 200) throw new Error(`KIE ${res.code}: ${res.msg ?? "Failed to create image task"}`);
     if (!res.data?.taskId) throw new Error("No task ID returned from image API");
     return res.data.taskId;
   } else {
@@ -68,7 +68,7 @@ export async function submitImageTask(
       method: "POST",
       body: JSON.stringify({ model: modelId, input }),
     }, userId);
-    if (res.code !== 200) throw new Error(res.msg ?? "Failed to create image task");
+    if (res.code !== 200) throw new Error(`KIE ${res.code}: ${res.msg ?? "Failed to create image task"}`);
     if (!res.data?.taskId) throw new Error("No task ID returned from image API");
     return res.data.taskId;
   }
@@ -110,9 +110,12 @@ export async function checkImageTask(
   }
 
   if (FAIL.includes(normalized)) {
-    return { status: "failed", error: d.failReason ?? d.error ?? "Image generation failed" };
+    const detail = d.failReason ?? d.error ?? JSON.stringify(d);
+    console.error(`[images] task failed: ${detail}`);
+    return { status: "failed", error: detail };
   }
 
+  console.log(`[images] poll state="${normalized}" raw=${JSON.stringify(d)}`);
   return { status: "pending" };
 }
 
@@ -130,7 +133,7 @@ export async function generateImage(
       method: "POST",
       body: JSON.stringify({ prompt, model: modelId, aspectRatio, outputFormat: "jpeg" }),
     }, userId);
-    if (res.code !== 200) throw new Error(res.msg ?? "Failed to create image task");
+    if (res.code !== 200) throw new Error(`KIE ${res.code}: ${res.msg ?? "Failed to create image task"}`);
     if (!res.data?.taskId) throw new Error("No task ID returned from image API");
     taskId = res.data.taskId;
   } else if (IMAGE_SIZE_MODELS.has(modelId)) {
@@ -143,7 +146,7 @@ export async function generateImage(
       method: "POST",
       body: JSON.stringify({ model: modelId, input }),
     }, userId);
-    if (res.code !== 200) throw new Error(res.msg ?? "Failed to create image task");
+    if (res.code !== 200) throw new Error(`KIE ${res.code}: ${res.msg ?? "Failed to create image task"}`);
     if (!res.data?.taskId) throw new Error("No task ID returned from image API");
     taskId = res.data.taskId;
   } else {
@@ -153,7 +156,7 @@ export async function generateImage(
       method: "POST",
       body: JSON.stringify({ model: modelId, input }),
     }, userId);
-    if (res.code !== 200) throw new Error(res.msg ?? "Failed to create image task");
+    if (res.code !== 200) throw new Error(`KIE ${res.code}: ${res.msg ?? "Failed to create image task"}`);
     if (!res.data?.taskId) throw new Error("No task ID returned from image API");
     taskId = res.data.taskId;
   }
