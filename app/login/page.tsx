@@ -16,22 +16,25 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const supabase = createSupabaseBrowserClient();
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) { router.replace("/dashboard"); return; }
-
-      // Supabase recovery/invite links may land here if the project Site URL points to /login.
-      // Detect the tokens and forward to /set-password before showing the login form.
-      const hash = window.location.hash;
-      if (!hash) return;
+    // Check hash immediately — invite/recovery links land here when Supabase
+    // Site URL points to /login. Forward before showing the form.
+    const hash = window.location.hash;
+    if (hash) {
       const params = new URLSearchParams(hash.slice(1));
       const type = params.get("type");
       const accessToken = params.get("access_token");
       if (type === "recovery" && accessToken) {
         router.replace(`/set-password?reset=true${hash}`);
+        return;
       } else if (type === "invite" && accessToken) {
         router.replace(`/set-password${hash}`);
+        return;
       }
+    }
+
+    const supabase = createSupabaseBrowserClient();
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) router.replace("/dashboard");
     });
   }, [router]);
 
