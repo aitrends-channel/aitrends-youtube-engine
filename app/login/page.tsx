@@ -14,9 +14,10 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
+    // Check hash immediately — invite/recovery links land here when Supabase
+    // Site URL points to /login. Forward before showing the form.
     const hash = window.location.hash;
     if (hash) {
       const params = new URLSearchParams(hash.slice(1));
@@ -33,8 +34,7 @@ function LoginForm() {
 
     const supabase = createSupabaseBrowserClient();
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) { router.replace("/dashboard"); return; }
-      setChecking(false);
+      if (data.session) router.replace("/dashboard");
     });
   }, [router]);
 
@@ -78,8 +78,6 @@ function LoginForm() {
       setLoading(false);
     }
   }
-
-  if (checking) return null;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
