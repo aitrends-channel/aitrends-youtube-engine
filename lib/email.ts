@@ -16,56 +16,110 @@ export async function sendInviteEmail(to: string, inviteLink: string) {
     subject: "You're invited to Heclus",
     html: `<!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>You're invited to Heclus</title></head>
-<body style="margin:0;padding:0;background:#0a0a0a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0a;padding:40px 16px;">
-    <tr><td align="center">
-      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>You're invited to Heclus</title>
+</head>
+<body style="margin:0;padding:0;background-color:#080808;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;">
 
-        <!-- Logo -->
-        <tr><td align="center" style="padding-bottom:32px;">
-          <img src="https://www.heclus.io/logo.jpeg" alt="Heclus" width="56" height="56"
-            style="border-radius:50%;display:block;"/>
-          <p style="margin:12px 0 0;font-size:18px;font-weight:700;color:#e8e8e8;letter-spacing:-0.3px;">Heclus</p>
-        </td></tr>
+  <!-- Outer wrapper -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#080808;min-height:100vh;">
+    <tr>
+      <td align="center" valign="top" style="padding:48px 16px 64px;">
 
-        <!-- Card -->
-        <tr><td style="background:#141414;border-radius:16px;border:1px solid rgba(255,255,255,0.08);padding:36px 32px;">
+        <!-- Container -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
 
-          <h1 style="margin:0 0 8px;font-size:20px;font-weight:700;color:#e8e8e8;letter-spacing:-0.3px;">
-            Welcome to Heclus
-          </h1>
-          <p style="margin:0 0 28px;font-size:14px;color:#888;line-height:1.6;">
-            Your account is ready. Set your password to get started.
-          </p>
+          <!-- Logo block -->
+          <tr>
+            <td align="center" style="padding-bottom:36px;">
+              <img src="https://www.heclus.io/logo.jpeg" alt="Heclus" width="52" height="52"
+                style="display:block;border-radius:50%;border:2px solid rgba(255,255,255,0.1);" />
+              <p style="margin:14px 0 0;font-size:15px;font-weight:700;color:#c8c8c8;letter-spacing:0.3px;text-transform:uppercase;">
+                Heclus
+              </p>
+            </td>
+          </tr>
 
-          <!-- CTA Button -->
-          <table cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
-            <tr><td align="center" style="border-radius:10px;background:#8b6cf7;">
-              <a href="${inviteLink}"
-                style="display:inline-block;padding:13px 32px;font-size:14px;font-weight:600;color:#0a0a0a;text-decoration:none;letter-spacing:-0.1px;">
-                Set up your account
-              </a>
-            </td></tr>
-          </table>
+          <!-- Card -->
+          <tr>
+            <td style="background-color:#111111;border-radius:20px;border:1px solid rgba(255,255,255,0.07);overflow:hidden;">
 
-          <!-- Fallback link -->
-          <p style="margin:0 0 4px;font-size:12px;color:#555;">Or copy this link into your browser:</p>
-          <p style="margin:0;font-size:11px;color:#666;word-break:break-all;line-height:1.5;">${inviteLink}</p>
+              <!-- Card top accent bar -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="height:3px;background:linear-gradient(90deg,#7c5cbf,#9b7ff5,#7c5cbf);font-size:0;line-height:0;">&nbsp;</td>
+                </tr>
+              </table>
 
-        </td></tr>
+              <!-- Card body -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="padding:40px 40px 36px;">
 
-        <!-- Footer -->
-        <tr><td align="center" style="padding-top:24px;">
-          <p style="margin:0;font-size:12px;color:#444;line-height:1.6;">
-            This link expires in 24 hours. If you didn't request this, you can safely ignore this email.
-          </p>
-          <p style="margin:8px 0 0;font-size:12px;color:#333;">© 2025 Heclus</p>
-        </td></tr>
+                    <!-- Heading -->
+                    <p style="margin:0 0 6px;font-size:22px;font-weight:700;color:#ebebeb;letter-spacing:-0.4px;line-height:1.3;">
+                      Welcome to Heclus
+                    </p>
+                    <p style="margin:0 0 32px;font-size:14px;color:#777;line-height:1.7;">
+                      You've been invited to join Heclus. Click the button below to set your password and activate your account.
+                    </p>
 
-      </table>
-    </td></tr>
+                    <!-- Divider -->
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:32px;">
+                      <tr><td style="height:1px;background-color:rgba(255,255,255,0.06);font-size:0;line-height:0;">&nbsp;</td></tr>
+                    </table>
+
+                    <!-- CTA Button -->
+                    <table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:32px;">
+                      <tr>
+                        <td align="center" style="border-radius:12px;background-color:#8b6cf7;box-shadow:0 4px 24px rgba(139,108,247,0.35);">
+                          <a href="${inviteLink}"
+                            style="display:inline-block;padding:14px 36px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;letter-spacing:0.1px;border-radius:12px;">
+                            Activate my account &rarr;
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+
+                    <!-- Divider -->
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;">
+                      <tr><td style="height:1px;background-color:rgba(255,255,255,0.06);font-size:0;line-height:0;">&nbsp;</td></tr>
+                    </table>
+
+                    <!-- Fallback URL -->
+                    <p style="margin:0 0 6px;font-size:12px;font-weight:500;color:#555;text-transform:uppercase;letter-spacing:0.5px;">
+                      Or paste this link in your browser
+                    </p>
+                    <p style="margin:0;font-size:11px;color:#444;word-break:break-all;line-height:1.6;font-family:'Courier New',Courier,monospace;">
+                      ${inviteLink}
+                    </p>
+
+                  </td>
+                </tr>
+              </table>
+
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td align="center" style="padding-top:32px;">
+              <p style="margin:0 0 6px;font-size:12px;color:#3a3a3a;line-height:1.7;">
+                This link expires in <strong style="color:#444;">24 hours</strong>. If you didn&rsquo;t request this, you can safely ignore this email.
+              </p>
+              <p style="margin:0;font-size:11px;color:#2e2e2e;">
+                &copy; 2025 Heclus &nbsp;&middot;&nbsp; <a href="https://www.heclus.io" style="color:#444;text-decoration:none;">www.heclus.io</a>
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
   </table>
+
 </body>
 </html>`,
   });
