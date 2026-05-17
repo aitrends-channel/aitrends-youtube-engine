@@ -10,7 +10,7 @@ export function generateTempPassword(): string {
 
 export async function sendInviteEmail(to: string, inviteLink: string) {
   const resend = new Resend(process.env.RESEND_API_KEY);
-  await resend.emails.send({
+  const { error } = await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
     to,
     subject: "Complete your Heclus account setup",
@@ -21,11 +21,12 @@ export async function sendInviteEmail(to: string, inviteLink: string) {
       <p style="color:#888;font-size:0.9em">This link expires in 24 hours.</p>
     `,
   });
+  if (error) throw new Error(error.message);
 }
 
 export async function sendTempPasswordEmail(to: string, tempPassword: string) {
   const resend = new Resend(process.env.RESEND_API_KEY);
-  await resend.emails.send({
+  const { error } = await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
     to,
     subject: "Your Heclus access",
@@ -38,4 +39,5 @@ export async function sendTempPasswordEmail(to: string, tempPassword: string) {
       <p>Open the desktop app, log in with these credentials, and you will be prompted to set a permanent password.</p>
     `,
   });
+  if (error) throw new Error(error.message);
 }
