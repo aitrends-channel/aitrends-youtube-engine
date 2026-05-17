@@ -20,19 +20,15 @@ function SetPasswordForm() {
     const supabase = createSupabaseBrowserClient();
 
     async function setup() {
-      // 1. Already have a valid session (navigated back, or /auth/callback set one)
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) { setChecking(false); return; }
-
-      // 2. Implicit flow: admin invite/recovery links land here with
-      //    #access_token=xxx in the hash. @supabase/ssr in PKCE mode does NOT
-      //    auto-process hash tokens, so we do it manually.
+      // 1. Hash tokens take priority — always process them when present so a
+      //    stale session from a previous user never shadows a fresh invite link.
       const hash = window.location.hash;
       if (hash) {
         const p = new URLSearchParams(hash.slice(1));
         const accessToken = p.get("access_token");
         const refreshToken = p.get("refresh_token") ?? "";
         if (accessToken) {
+          await supabase.auth.signOut();
           const { error: sessionError } = await supabase.auth.setSession({
             access_token: accessToken,
             refresh_token: refreshToken,
@@ -41,12 +37,16 @@ function SetPasswordForm() {
         }
       }
 
-      // 3. PKCE flow: some paths (e.g. user-initiated reset) may land with ?code=
+      // 2. PKCE flow: some paths (e.g. user-initiated reset) may land with ?code=
       const code = new URLSearchParams(window.location.search).get("code");
       if (code) {
         const { error: codeError } = await supabase.auth.exchangeCodeForSession(code);
         if (!codeError) { setChecking(false); return; }
       }
+
+      // 3. No hash or code — check for an existing valid session (navigated back)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) { setChecking(false); return; }
 
       // 4. Nothing worked — link is expired or invalid
       setError("This link has expired or is invalid. Request a new one.");
