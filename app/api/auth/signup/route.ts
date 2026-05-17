@@ -21,6 +21,9 @@ export async function POST(request: Request) {
   const match = existing?.users.find((u) => u.email?.toLowerCase() === email);
   if (match) await supabase.auth.admin.deleteUser(match.id);
 
+  // Grant access so check-access allows login after password is set.
+  await supabase.from("allowed_emails").upsert({ email });
+
   const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
     type: "invite",
     email,
