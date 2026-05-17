@@ -35,11 +35,6 @@ export async function middleware(request: NextRequest) {
 
   const { data: { session } } = await supabase.auth.getSession();
 
-  // Logged-in user visiting /login → send to dashboard
-  if (session && pathname === "/login") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
-  }
-
   // Unauthenticated user visiting a protected page → send to login
   if (!session && !isPublicPath(pathname)) {
     const loginUrl = new URL("/login", request.url);
