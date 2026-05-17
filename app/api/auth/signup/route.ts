@@ -16,6 +16,11 @@ export async function POST(request: Request) {
 
   const appUrl = getAppUrl(request);
 
+  // Remove any existing user with this email so generateLink creates a clean record.
+  const { data: existing } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+  const match = existing?.users.find((u) => u.email?.toLowerCase() === email);
+  if (match) await supabase.auth.admin.deleteUser(match.id);
+
   const { data: linkData, error: linkError } = await supabase.auth.admin.generateLink({
     type: "invite",
     email,
