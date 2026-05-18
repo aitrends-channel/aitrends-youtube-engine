@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { deleteFolder } from "@/lib/supabase/storage";
 import type { User } from "@supabase/supabase-js";
 
 export async function GET(
@@ -81,4 +82,56 @@ export async function PATCH(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data);
+}
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: { projectId: string } }
+) {
+  let user: User;
+  try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+
+  const { projectId } = params;
+
+  // Verify project belongs to this user and fetch file URLs
+  const [projectRes, beatsRes, thumbsRes] = await Promise.all([
+    supabase.from("projects").select("id, tts_url").eq("id", projectId).eq("user_id", user.id).single(),
+    supabase.from("project_beats").select("image_url, video_url, audio_url").eq("project_id", projectId),
+    supabase.from("project_thumbnails").select("image_url").eq("project_id", projectId),
+  ]);
+
+  if (projectRes.error || !projectRes.data) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
+
+  // Collect all Supabase storage URLs and extract their paths
+  const supabaseStorageBase = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/assets/`;
+  const supabasePaths: string[] = [];
+
+  const allUrls = [
+    projectRes.data.tts_url,
+    ...(beatsRes.data ?? []).flatMap((b) => [b.image_url, b.video_url, b.audio_url]),
+    ...(thumbsRes.data ?? []).map((t) => t.image_url),
+  ].filter((url): url is string => !!url && url.startsWith(supabaseStorageBase));
+
+  for (const url of allUrls) {
+    supabasePaths.push(url.replace(supabaseStorageBase, ""));
+  }
+
+  // Delete Supabase storage files
+  if (supabasePaths.length > 0) {
+    await supabase.storage.from("assets").remove(supabasePaths);
+  }
+
+  // Delete R2 files
+  await deleteFolder(`${projectId}/`);
+
+  // Delete database records
+  await Promise.all([
+    supabase.from("project_beats").delete().eq("project_id", projectId),
+    supabase.from("project_thumbnails").delete().eq("project_id", projectId),
+  ]);
+  await supabase.from("projects").delete().eq("id", projectId).eq("user_id", user.id);
+
+  return NextResponse.json({ success: true });
 }

@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from "@aws-sdk/client-s3";
 
 const r2 = new S3Client({
   region: "auto",
@@ -35,4 +35,27 @@ export async function uploadFromUrl(path: string, url: string, contentType: stri
 
 export function getPublicUrl(path: string): string {
   return `${PUBLIC_URL}/${path}`;
+}
+
+export async function deleteFolder(prefix: string): Promise<void> {
+  let continuationToken: string | undefined;
+
+  do {
+    const list = await r2.send(new ListObjectsV2Command({
+      Bucket: BUCKET,
+      Prefix: prefix,
+      ContinuationToken: continuationToken,
+    }));
+
+    const objects = (list.Contents ?? []).map((o) => ({ Key: o.Key! }));
+
+    if (objects.length > 0) {
+      await r2.send(new DeleteObjectsCommand({
+        Bucket: BUCKET,
+        Delete: { Objects: objects, Quiet: true },
+      }));
+    }
+
+    continuationToken = list.IsTruncated ? list.NextContinuationToken : undefined;
+  } while (continuationToken);
 }
