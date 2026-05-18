@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { fetchVideoMetadata } from "@/lib/youtube/metadata";
+import { fetchTranscriptsViaSupadata } from "@/lib/youtube/supadata";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 
@@ -15,10 +15,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "videos array is required" }, { status: 400 });
     }
 
-    const metadata = await fetchVideoMetadata(videos, user.id);
-    return NextResponse.json({ metadata });
+    const transcripts = await fetchTranscriptsViaSupadata(videos);
+    return NextResponse.json({ transcripts });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to fetch video metadata";
+    const message = err instanceof Error ? err.message : "Failed to fetch transcripts";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
