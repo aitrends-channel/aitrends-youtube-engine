@@ -70,6 +70,7 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
         email,
         amount: Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT),
         currency: process.env.NEXT_PUBLIC_PAYSTACK_CURRENCY ?? "NGN",
+        channels: ["card"],
         ref: `ait_${Date.now()}`,
         label: "Heclus",
         callback: function (response: { reference: string }) {
