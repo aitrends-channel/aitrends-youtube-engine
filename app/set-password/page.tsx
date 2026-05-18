@@ -93,8 +93,8 @@ function SetPasswordForm() {
       style={{ background: "var(--bg-page)" }}>
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8 space-y-3">
-          <div className="w-14 h-14 rounded-full overflow-hidden">
-            <Image src="/logo.jpeg" alt="Heclus" width={56} height={56} className="object-cover w-full h-full" />
+          <div className="w-14 h-14 rounded-xl">
+            <Image src="/logo.png" alt="Heclus" width={56} height={56} className="object-cover w-full h-full" />
           </div>
           <div className="text-center">
             <p className="font-bold text-lg tracking-tight">Heclus</p>
