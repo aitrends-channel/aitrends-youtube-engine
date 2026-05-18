@@ -9,10 +9,7 @@ export const metadata: Metadata = {
   description: "Analyze channels, generate scripts, create voiceovers, images, and video clips",
   manifest: "/manifest.json",
   icons: {
-    icon: [
-      { url: "/heclus-icon.svg", type: "image/svg+xml" },
-      { url: "/heclus-icon.png", type: "image/png" },
-    ],
+    icon: "/heclus-icon.png",
     apple: "/heclus-icon.png",
   },
   appleWebApp: {
