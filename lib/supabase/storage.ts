@@ -1,20 +1,29 @@
-import { supabase } from "./client";
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-const BUCKET = "assets";
+const r2 = new S3Client({
+  region: "auto",
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
+  },
+});
+
+const BUCKET = process.env.R2_BUCKET_NAME!;
+const PUBLIC_URL = (process.env.R2_PUBLIC_URL ?? "").replace(/\/$/, "");
 
 export async function uploadBuffer(
   path: string,
   buffer: ArrayBuffer,
   contentType: string
 ): Promise<string> {
-  const { error } = await supabase.storage
-    .from(BUCKET)
-    .upload(path, buffer, { contentType, upsert: true });
-
-  if (error) throw new Error(`Storage upload failed: ${error.message}`);
-
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-  return data.publicUrl;
+  await r2.send(new PutObjectCommand({
+    Bucket: BUCKET,
+    Key: path,
+    Body: Buffer.from(buffer),
+    ContentType: contentType,
+  }));
+  return `${PUBLIC_URL}/${path}`;
 }
 
 export async function uploadFromUrl(path: string, url: string, contentType: string): Promise<string> {
@@ -25,6 +34,5 @@ export async function uploadFromUrl(path: string, url: string, contentType: stri
 }
 
 export function getPublicUrl(path: string): string {
-  const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-  return data.publicUrl;
+  return `${PUBLIC_URL}/${path}`;
 }
