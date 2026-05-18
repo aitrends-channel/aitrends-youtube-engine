@@ -23,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="h-full" style={{ fontFamily: "'Inter Variable', sans-serif" }}>
       <head>
+        <link rel="icon" href="/heclus.ico" />
         <meta name="theme-color" content="#0f0a0f" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
