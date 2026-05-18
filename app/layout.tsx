@@ -9,8 +9,8 @@ export const metadata: Metadata = {
   description: "Analyze channels, generate scripts, create voiceovers, images, and video clips",
   manifest: "/manifest.json",
   icons: {
-    icon: "/heclus.ico",
-    apple: "/heclus-icon.png",
+    icon: "/heclus-white.ico",
+    apple: "/heclus-icon-white.png",
   },
   appleWebApp: {
     capable: true,
@@ -23,7 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="h-full" style={{ fontFamily: "'Inter Variable', sans-serif" }}>
       <head>
-        <link rel="icon" href="/heclus.ico" />
+        <link rel="icon" href="/heclus-white.ico" />
         <meta name="theme-color" content="#0f0a0f" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
