@@ -1,13 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: "standalone",
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "**" },
     ],
   },
   experimental: {
-    serverComponentsExternalPackages: ["bullmq", "fluent-ffmpeg", "ffmpeg-static", "ffprobe-static"],
+    serverComponentsExternalPackages: ["bullmq"],
     serverActions: {
       bodySizeLimit: "10mb",
     },

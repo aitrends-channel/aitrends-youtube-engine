@@ -12,7 +12,8 @@ function SetPasswordForm() {
   const isReset = searchParams.get("reset") === "true";
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
 
@@ -49,21 +50,21 @@ function SetPasswordForm() {
       if (session) { setChecking(false); return; }
 
       // 4. Nothing worked — link is expired or invalid
-      setError("This link has expired or is invalid. Request a new one.");
+      setLinkError("This link has expired or is invalid. Request a new one.");
       setChecking(false);
     }
 
     setup().catch(() => {
-      setError("Something went wrong verifying your link. Please try again.");
+      setLinkError("Something went wrong verifying your link. Please try again.");
       setChecking(false);
     });
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (password !== confirm) { setError("Passwords do not match."); return; }
-    if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
-    setError(null);
+    if (password !== confirm) { setFormError("Passwords do not match."); return; }
+    if (password.length < 8) { setFormError("Password must be at least 8 characters."); return; }
+    setFormError(null);
     setLoading(true);
     const supabase = createSupabaseBrowserClient();
     try {
@@ -75,7 +76,7 @@ function SetPasswordForm() {
       router.push("/");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to set password");
+      setFormError(err instanceof Error ? err.message : "Failed to set password");
     } finally {
       setLoading(false);
     }
@@ -111,10 +112,10 @@ function SetPasswordForm() {
               <Spinner size={22} className="text-purple-400" />
               <span className="text-sm" style={{ color: "var(--c-45)" }}>Verifying your link…</span>
             </div>
-          ) : error ? (
+          ) : linkError ? (
             <p className="text-xs px-3 py-2 rounded-lg"
               style={{ background: "oklch(0.6 0.22 25 / 0.1)", color: "oklch(0.7 0.2 25)", border: "1px solid oklch(0.6 0.22 25 / 0.2)" }}>
-              {error}
+              {linkError}
             </p>
           ) : (
             <>
@@ -155,10 +156,10 @@ function SetPasswordForm() {
                   />
                 </div>
 
-                {error && (
+                {formError && (
                   <p className="text-xs px-3 py-2 rounded-lg"
                     style={{ background: "oklch(0.6 0.22 25 / 0.1)", color: "oklch(0.7 0.2 25)", border: "1px solid oklch(0.6 0.22 25 / 0.2)" }}>
-                    {error}
+                    {formError}
                   </p>
                 )}
 
