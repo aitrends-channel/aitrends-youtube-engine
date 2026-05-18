@@ -1,70 +1,54 @@
 import type { ChannelAnalysisOutput, VisualProfileOutput, ThumbnailAnalysisOutput } from "./schemas";
-import type { VideoMetadata } from "@/lib/types";
+import type { SupadataTranscript } from "@/lib/youtube/supadata";
 
-function parseDuration(iso: string): string {
-  const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-  if (!match) return "unknown";
-  const h = parseInt(match[1] ?? "0", 10);
-  const m = parseInt(match[2] ?? "0", 10);
-  const s = parseInt(match[3] ?? "0", 10);
-  const parts: string[] = [];
-  if (h) parts.push(`${h}h`);
-  if (m) parts.push(`${m}m`);
-  if (s && !h) parts.push(`${s}s`);
-  return parts.join(" ") || "unknown";
-}
+export function buildAnalysisPrompt(transcripts: SupadataTranscript[]): string {
+  const successful = transcripts.filter((t) => t.success && t.text.length > 0);
+  const failed = transcripts.filter((t) => !t.success || !t.text.length);
 
-export function buildAnalysisPrompt(metadata: VideoMetadata[]): string {
-  const videoText = metadata.map((v, i) => {
-    const duration = parseDuration(v.duration);
-    const engagementRate = v.viewCount > 0 ? ((v.likeCount / v.viewCount) * 100).toFixed(2) : "0";
-    const published = v.publishedAt ? new Date(v.publishedAt).toLocaleDateString("en-US", { year: "numeric", month: "short" }) : "unknown";
-    const comments = v.topComments.length
-      ? v.topComments.slice(0, 15).map((c) => `  - "${c}"`).join("\n")
-      : "  (comments unavailable)";
+  const videoText = successful.map((t, i) => {
+    const avgWordCount = successful.reduce((sum, s) => sum + s.wordCount, 0) / successful.length;
+    return `--- VIDEO ${i + 1}: "${t.title}" ---
+Word count (full transcript): ~${t.wordCount} words
 
-    return `--- VIDEO ${i + 1}: "${v.title}" ---
-Duration: ${duration} | Views: ${v.viewCount.toLocaleString()} | Likes: ${v.likeCount.toLocaleString()} | Engagement: ${engagementRate}% | Published: ${published}
-${v.tags.length ? `Tags: ${v.tags.slice(0, 15).join(", ")}` : ""}
-
-DESCRIPTION:
-${v.description.trim() || "(no description)"}
-
-TOP AUDIENCE COMMENTS (what resonates with viewers):
-${comments}`.trim();
+TRANSCRIPT (first ~1500 words):
+${t.text}`.trim();
   }).join("\n\n");
 
-  return `Analyze these YouTube videos from the same channel and extract the channel's content style DNA.
+  const failedNote = failed.length
+    ? `\nNote: ${failed.length} video(s) had no available transcript and were skipped.\n`
+    : "";
 
-You are working from video metadata — titles, descriptions, tags, engagement metrics, and top audience comments. Use these signals to infer how this creator writes, frames topics, and connects with their audience.
+  return `Analyze these real YouTube video transcripts from the same channel and extract the channel's content style DNA.
 
-${videoText}
+You are working from ACTUAL transcript text — the creator's real words, exactly as spoken. Use this to extract precise writing patterns, not inferences.
+
+${failedNote}${videoText}
 
 Perform STATE 4 (Channel Analysis) and STATE 5 (Style DNA Extraction):
 
 STATE 4 — Extract:
-- Niche and topic category (infer from titles, tags, descriptions)
-- Target audience description (infer from language, topics, comment tone)
-- Hook style: how videos open to grab attention — infer from title patterns (curiosity gap, numbered lists, fear/revelation, personal story, etc.)
-- Script flow structure: infer from description structure and content type
-- Sentence style: infer from description writing patterns (length, complexity, punctuation)
-- Emotional pacing curve: how energy builds — infer from engagement metrics and comment sentiment
-- Retention techniques: identify from title patterns (open loops, cliffhangers, transformation promises)
-- Words per second: assume 1.5-2.0 WPS for talking-head content based on the niche style
-- Target word count: calculate from average video duration × words per second
+- Niche and topic category (from transcript content and vocabulary)
+- Target audience description (from language level, topics, and how the creator addresses the viewer)
+- Hook style: analyze the ACTUAL opening lines of each transcript — identify the exact hook pattern used (curiosity gap, bold claim, personal story, question, numbered list, fear/urgency, etc.)
+- Script flow structure: map how the video is structured from the transcript (intro → conflict/problem → content → CTA, etc.)
+- Sentence style: analyze actual sentence lengths, complexity, and punctuation patterns from the text
+- Emotional pacing curve: how energy and tension build across the transcript
+- Retention techniques: identify exact patterns used (open loops, callbacks, cliffhangers, "stay to the end" moments)
+- Words per second: estimate WPS based on transcript word count and typical video length for this niche (1.5–2.5 WPS)
+- Target word count: use the actual average word count across transcripts as the baseline
 
-STATE 5 — Extract deep writing behavior (HOW it works, not what it says):
-- Sentence rhythm patterns (infer from description style)
-- Flow pattern (how ideas connect — linear, story-driven, list-based)
-- Repetition style
-- Tone (authoritative, conversational, urgent, inspirational, etc.)
-- Transition phrases and patterns
-- Curiosity gap techniques (infer from title patterns)
-- Emotional trigger words/themes (infer from titles, tags, and what comments respond to)
-- Direct address style (how they speak to "you")
-- Detail level
+STATE 5 — Extract deep writing behavior directly from the transcript text:
+- Sentence rhythm patterns (short punchy bursts? long flowing sentences? mixed?)
+- Flow pattern (how ideas connect — does it use contrast, building tension, storytelling, lists?)
+- Repetition style (does the creator repeat key phrases for emphasis? which ones?)
+- Tone (authoritative, conversational, urgent, inspirational — pull exact examples)
+- Transition phrases (the actual words/phrases used to move between ideas — quote them)
+- Curiosity gap techniques (exact phrasing patterns that create open loops)
+- Emotional trigger words/themes (the specific words that carry emotional weight in these transcripts)
+- Direct address style (how they speak to "you" — formal, intimate, commanding, friendly?)
+- Detail level (abstract concepts only? specific numbers and examples? anecdotes?)
 
-Return a single JSON object with the extracted analysis. Be specific and actionable — these values will directly govern script generation.`;
+Return a single JSON object with the extracted analysis. Be precise and pull from the actual text — these values will directly govern script generation.`;
 }
 
 export function buildVideoIdeasPrompt(

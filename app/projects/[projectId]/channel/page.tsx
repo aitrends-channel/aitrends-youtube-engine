@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { toast } from "sonner";
 import { useProject } from "@/hooks/useProject";
-import type { ChannelInfo, VideoMetadata } from "@/lib/types";
+import type { ChannelInfo } from "@/lib/types";
+import type { SupadataTranscript } from "@/lib/youtube/supadata";
 
 interface PageProps {
   params: { projectId: string };
@@ -63,7 +64,7 @@ export default function ChannelPage({ params }: PageProps) {
 
   const [channelUrl, setChannelUrl] = useState("");
   const [channelInfo, setChannelInfo] = useState<ChannelInfo | null>(null);
-  const [videoMetadata, setVideoMetadata] = useState<VideoMetadata[]>([]);
+  const [transcripts, setTranscripts] = useState<SupadataTranscript[]>([]);
   const [topicMode, setTopicMode] = useState<"generate" | "custom">("generate");
   const [topicHint, setTopicHint] = useState("");
   const [customTopic, setCustomTopic] = useState("");
@@ -71,7 +72,7 @@ export default function ChannelPage({ params }: PageProps) {
 
   const [steps, setSteps] = useState<AnalysisStep[]>([
     { id: "channel", label: "Fetch channel info", sublabel: "Name, subscribers, top videos", status: "idle" },
-    { id: "transcripts", label: "Fetch video metadata", sublabel: "Descriptions, tags & top comments", status: "idle" },
+    { id: "transcripts", label: "Fetch video transcripts", sublabel: "Real transcript text via Supadata", status: "idle" },
     { id: "analyze", label: "Analyze channel style", sublabel: "Niche, hook style, tone, pacing", status: "idle" },
     { id: "dna", label: "Extract Style DNA", sublabel: "Sentence rhythm, emotional triggers", status: "idle" },
   ]);
@@ -96,7 +97,7 @@ export default function ChannelPage({ params }: PageProps) {
     setSteps((prev) => prev.map((s) => ({ ...s, status: "idle" })));
 
     let fetchedInfo: ChannelInfo | null = null;
-    let fetchedMetadata: VideoMetadata[] = [];
+    let fetchedTranscripts: SupadataTranscript[] = [];
 
     // Step 1: Fetch channel
     setStep("channel", "running");
@@ -131,14 +132,14 @@ export default function ChannelPage({ params }: PageProps) {
           body: JSON.stringify({ videos: fetchedInfo!.topVideos }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data?.error ?? `Metadata fetch failed (${res.status})`);
-        fetchedMetadata = data.metadata;
-        setVideoMetadata(data.metadata);
+        if (!res.ok) throw new Error(data?.error ?? `Transcript fetch failed (${res.status})`);
+        fetchedTranscripts = data.transcripts;
+        setTranscripts(data.transcripts);
         setStep("transcripts", "done");
       } catch (err) {
         setStep("transcripts", "error");
-        const msg = err instanceof Error ? err.message : "Metadata fetch failed";
-        toast.error(`Metadata: ${msg}`);
+        const msg = err instanceof Error ? err.message : "Transcript fetch failed";
+        toast.error(`Transcripts: ${msg}`);
       }
     }
 
@@ -154,10 +155,10 @@ export default function ChannelPage({ params }: PageProps) {
     });
 
     // Steps 3-4: Claude analysis
-    const readyMetadata = fetchedMetadata.length ? fetchedMetadata : videoMetadata;
-    if (!readyMetadata.length) {
+    const readyTranscripts = fetchedTranscripts.length ? fetchedTranscripts : transcripts;
+    if (!readyTranscripts.length) {
       setIsWorking(false);
-      toast.error("No video metadata available. Try again.");
+      toast.error("No transcripts available. Try again.");
       return;
     }
 
@@ -178,7 +179,7 @@ export default function ChannelPage({ params }: PageProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
-          metadata: readyMetadata,
+          transcripts: readyTranscripts,
           topicMode,
           topicHint: topicHint.trim() || undefined,
         }),
