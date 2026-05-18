@@ -45,7 +45,7 @@ export async function POST(request: Request) {
         <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
           <tr>
             <td align="center" style="padding-bottom:36px;">
-              <img src="https://app.heclus.io/logo.png" alt="Heclus" width="52" height="52"
+              <img src="https://app.heclus.io/heclus-icon.png" alt="Heclus" width="52" height="52"
                 style="display:block;border-radius:12px;" />
               <p style="margin:14px 0 0;font-size:15px;font-weight:700;color:#c8c8c8;letter-spacing:0.3px;text-transform:uppercase;">
                 Heclus

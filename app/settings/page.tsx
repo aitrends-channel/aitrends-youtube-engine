@@ -199,7 +199,7 @@ export default function SettingsPage() {
         style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center">
-            <Image src="/logo.png" alt="Heclus" width={32} height={32} className="object-cover w-full h-full" />
+            <Image src="/heclus-icon.png" alt="Heclus" width={32} height={32} className="object-cover w-full h-full" />
           </div>
           <div>
             <span className="font-bold text-sm tracking-tight text-foreground">Heclus</span>
