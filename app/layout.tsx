@@ -8,6 +8,10 @@ export const metadata: Metadata = {
   title: "Heclus",
   description: "Analyze channels, generate scripts, create voiceovers, images, and video clips",
   manifest: "/manifest.json",
+  icons: {
+    icon: "/logo.svg",
+    apple: "/logo.jpeg",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
