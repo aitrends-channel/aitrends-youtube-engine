@@ -94,7 +94,7 @@ function SetPasswordForm() {
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8 space-y-3">
           <div className="w-14 h-14 rounded-xl">
-            <Image src="/heclus-icon.png" alt="Heclus" width={56} height={56} className="object-cover w-full h-full" />
+            <Image src="/heclus-icon-white.svg" alt="Heclus" width={56} height={56} className="object-cover w-full h-full" />
           </div>
           <div className="text-center">
             <p className="font-bold text-lg tracking-tight">Heclus</p>
