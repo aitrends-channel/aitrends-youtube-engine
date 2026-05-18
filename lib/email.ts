@@ -34,8 +34,8 @@ export async function sendInviteEmail(to: string, inviteLink: string) {
           <!-- Logo block -->
           <tr>
             <td align="center" style="padding-bottom:36px;">
-              <img src="https://www.heclus.io/logo.jpeg" alt="Heclus" width="52" height="52"
-                style="display:block;border-radius:50%;border:2px solid rgba(255,255,255,0.1);" />
+              <img src="https://app.heclus.io/logo.png" alt="Heclus" width="52" height="52"
+                style="display:block;border-radius:12px;" />
               <p style="margin:14px 0 0;font-size:15px;font-weight:700;color:#c8c8c8;letter-spacing:0.3px;text-transform:uppercase;">
                 Heclus
               </p>
