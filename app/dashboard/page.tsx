@@ -237,6 +237,10 @@ export default function HomePage() {
 
       <main className="flex-1 w-full px-24 py-12 space-y-12">
 
+        {channelGroups.length > 0 && (
+          <h2 className="text-xl font-bold tracking-tight" style={{ color: "var(--c-85)" }}>Your projects</h2>
+        )}
+
         {/* Channel groups */}
         {channelGroups.length > 0 && (
           <div className="space-y-12">
