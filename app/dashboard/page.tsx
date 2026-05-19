@@ -250,7 +250,7 @@ export default function HomePage() {
 
       <main className="flex-1 w-full px-24 py-12 space-y-12">
 
-        {channelGroups.length > 0 && (() => {
+        {(() => {
           const allProjects = channelGroups.flatMap(g => g.projects);
           const total = allProjects.length;
           const completed = allProjects.filter(p => p.assembly_status === "done").length;
