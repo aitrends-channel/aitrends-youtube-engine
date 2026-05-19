@@ -91,7 +91,6 @@ export default function HomePage() {
     await supabase.auth.signOut();
     router.push("/login");
   }
-  const [creatingFor, setCreatingFor] = useState<string | null>(null);
   const { data: projects } = useSWR<Project[]>("/api/projects", fetcher);
 
   const channelGroups = useMemo<ChannelGroup[]>(() => {
@@ -149,7 +148,6 @@ export default function HomePage() {
   }
 
   async function doCreateVideoForChannel(group: ChannelGroup) {
-    if (creatingFor) return;
     const source = [...group.projects].sort((a, b) => b.current_state - a.current_state)[0];
     setCreatingFor(group.channelName);
     try {
@@ -183,10 +181,6 @@ export default function HomePage() {
     } finally {
       setCreatingFor(null);
     }
-  }
-
-  function createVideoForChannel(group: ChannelGroup) {
-    requireSubscription(() => doCreateVideoForChannel(group));
   }
 
   return (
@@ -247,7 +241,6 @@ export default function HomePage() {
         {channelGroups.length > 0 && (
           <div className="space-y-12">
             {channelGroups.map((group) => {
-              const isCreatingThis = creatingFor === group.channelName;
               return (
                 <div key={group.channelName}>
                   {/* Channel header */}
@@ -347,34 +340,6 @@ export default function HomePage() {
                       );
                     })}
 
-                    {/* New video — pre-loaded with this channel's data */}
-                    <button
-                      onClick={() => createVideoForChannel(group)}
-                      disabled={!!creatingFor}
-                      className="text-left p-10 rounded-2xl transition-all hover:scale-[1.01] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                      style={{ background: "var(--bg-card-subtle)", border: "1px dashed var(--bd-9)" }}
-                      onMouseEnter={(e) => {
-                        if (!creatingFor) (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.3)";
-                      }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-9)"; }}
-                    >
-                      <div className="flex flex-col items-center justify-center min-h-[160px] gap-3">
-                        {isCreatingThis ? (
-                          <>
-                            <span className="text-xl animate-spin" style={{ color: "oklch(0.72 0.25 285)" }}>◌</span>
-                            <span className="text-sm" style={{ color: "var(--c-50)" }}>Setting up…</span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="text-3xl" style={{ color: "var(--c-28)" }}>+</span>
-                            <span className="text-sm font-medium" style={{ color: "var(--c-42)" }}>New video</span>
-                            <span className="text-xs" style={{ color: "var(--c-30)" }}>
-                              {group.channelName}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </button>
                   </div>
                 </div>
               );
@@ -420,9 +385,33 @@ export default function HomePage() {
 
         {/* Empty state */}
         {channelGroups.length === 0 && projects !== undefined && (
-          <div className="text-center py-20 space-y-3">
-            <p className="text-sm" style={{ color: "var(--c-38)" }}>No projects yet.</p>
-            <p className="text-xs" style={{ color: "var(--c-28)" }}>Click "Start New Project" to get started.</p>
+          <div className="flex flex-col items-center justify-center py-32 gap-6">
+            <button
+              onClick={createProject}
+              disabled={creating}
+              className="w-16 h-16 rounded-2xl flex items-center justify-center transition-all hover:scale-105 active:scale-95 disabled:opacity-50 cursor-pointer"
+              style={{
+                background: "oklch(0.72 0.25 285 / 0.08)",
+                border: "2px dashed oklch(0.72 0.25 285 / 0.35)",
+                color: "oklch(0.72 0.25 285)",
+              }}
+            >
+              <span className="text-3xl leading-none">+</span>
+            </button>
+            <div className="text-center space-y-2">
+              <p className="text-base font-semibold" style={{ color: "var(--c-70)" }}>Start your first video</p>
+              <p className="text-sm max-w-xs leading-relaxed" style={{ color: "var(--c-38)" }}>
+                Paste a YouTube channel URL and Heclus will generate a full script, voiceover, AI images, and video clips — automatically.
+              </p>
+            </div>
+            <button
+              onClick={createProject}
+              disabled={creating}
+              className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
+            >
+              {creating ? "Creating…" : "New Project →"}
+            </button>
           </div>
         )}
       </main>
