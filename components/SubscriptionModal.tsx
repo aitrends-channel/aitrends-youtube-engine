@@ -1,9 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, Check, Zap } from "lucide-react";
 
+const FOUNDER_LIMIT = 100;
+
 const PLANS = [
+  {
+    id: "founder",
+    name: "Founder",
+    price: "$40",
+    period: " / year",
+    limit: "1 year · all features",
+    amountEnv: "NEXT_PUBLIC_PAYSTACK_AMOUNT_FOUNDER",
+    features: ["Unlimited niches", "Full AI pipeline", "Script & voiceover", "AI images & thumbnails", "Video assembly", "Priority support", "1 year — no renewal"],
+    highlighted: false,
+    disabled: false,
+    founder: true,
+  },
   {
     id: "starter",
     name: "Starter",
@@ -38,6 +52,7 @@ const PLANS = [
 ];
 
 const PLAN_AMOUNTS: Record<string, number> = {
+  founder: Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_FOUNDER),
   starter: Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_STARTER),
   pro:     Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_PRO),
   agency:  Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_AGENCY),
@@ -69,10 +84,18 @@ function loadPaystackScript(): Promise<void> {
 }
 
 export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
-  const [selectedPlan, setSelectedPlan] = useState("pro");
+  const [selectedPlan, setSelectedPlan] = useState("founder");
+  const [spotsLeft, setSpotsLeft] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/founder-spots")
+      .then(r => r.json())
+      .then(d => setSpotsLeft(d.remaining))
+      .catch(() => {});
+  }, []);
 
   async function handleSubscribe() {
     setLoading(true);
@@ -172,7 +195,7 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
         </div>
 
         {/* Plan selector */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="grid grid-cols-2 gap-3 mb-6">
           {PLANS.map((plan) => (
             <button
               key={plan.id}
@@ -187,6 +210,14 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
                 cursor: plan.disabled ? "not-allowed" : "pointer",
               }}
             >
+              {plan.founder && (
+                <span
+                  className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                  style={{ background: "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))", color: "white" }}
+                >
+                  🔥 {spotsLeft !== null ? `${spotsLeft} spots left` : "First 100"}
+                </span>
+              )}
               {plan.highlighted && (
                 <span
                   className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
