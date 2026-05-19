@@ -59,6 +59,7 @@ interface Props {
   email: string;
   onClose: () => void;
   onSuccess: () => void;
+  defaultPlan?: string;
 }
 
 function loadPaystackScript(): Promise<void> {
@@ -72,8 +73,8 @@ function loadPaystackScript(): Promise<void> {
   });
 }
 
-export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
-  const [selectedPlan, setSelectedPlan] = useState("founder");
+export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Props) {
+  const [selectedPlan, setSelectedPlan] = useState(defaultPlan ?? "founder");
   const [spotsLeft, setSpotsLeft] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);

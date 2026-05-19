@@ -74,6 +74,7 @@ export default function HomePage() {
   const [userEmail, setUserEmail] = useState("");
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -82,7 +83,16 @@ export default function HomePage() {
       if (!user) { router.replace("/login"); return; }
       if (user.email === ADMIN_EMAIL) setIsAdmin(true);
       setUserEmail(user.email ?? "");
-      setIsPaid(user.app_metadata?.paid === true);
+      const paid = user.app_metadata?.paid === true;
+      setIsPaid(paid);
+      if (!paid) {
+        const plan = localStorage.getItem("heclus_selected_plan");
+        if (plan) {
+          setSelectedPlan(plan);
+          localStorage.removeItem("heclus_selected_plan");
+          setShowSubscriptionModal(true);
+        }
+      }
     });
   }, [router]);
 
@@ -550,6 +560,7 @@ export default function HomePage() {
       {showSubscriptionModal && (
         <SubscriptionModal
           email={userEmail}
+          defaultPlan={selectedPlan}
           onClose={() => { setShowSubscriptionModal(false); setPendingAction(null); }}
           onSuccess={handleSubscriptionSuccess}
         />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -144,9 +144,19 @@ function SignupForm({ onSuccess }: { onSuccess: (email: string) => void }) {
   );
 }
 
+const VALID_PLANS = ["founder", "starter", "pro"];
+
 export default function SignupPage() {
   const [success, setSuccess] = useState(false);
   const [invitedEmail, setInvitedEmail] = useState("");
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const plan = params.get("plan");
+    if (plan && VALID_PLANS.includes(plan)) {
+      localStorage.setItem("heclus_selected_plan", plan);
+    }
+  }, []);
 
   function handleSuccess(email: string) {
     setInvitedEmail(email);
