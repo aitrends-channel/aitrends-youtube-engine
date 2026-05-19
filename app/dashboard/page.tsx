@@ -241,78 +241,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <main className="flex-1 w-full px-24 py-20 space-y-24">
-
-        {/* Hero */}
-        <div className="text-center space-y-7 max-w-3xl mx-auto">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium"
-            style={{ background: "oklch(0.72 0.25 285 / 0.1)", border: "1px solid oklch(0.72 0.25 285 / 0.25)", color: "oklch(0.72 0.25 285)" }}>
-            <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-            Welcome to Heclus
-          </div>
-
-          <h1 className="text-5xl font-black tracking-tight leading-[1.08]">
-            <span style={{ color: "var(--c-96)" }}>Heclus</span>
-            <br />
-            <span style={{
-              background: "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-            }}>
-              Clone any YouTube Niche
-            </span>
-          </h1>
-
-          <p className="text-lg max-w-xl mx-auto leading-relaxed" style={{ color: "var(--c-55)" }}>
-            Paste a channel URL. Get a style-matched script, voiceover, AI images, and video clips — fully automated.
-          </p>
-
-          <button
-            onClick={createProject}
-            disabled={creating}
-            className="px-8 py-3.5 rounded-xl text-base font-bold transition-all hover:scale-105 active:scale-95 disabled:cursor-not-allowed cursor-pointer"
-            style={{
-              background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-              color: "var(--c-98)",
-              boxShadow: "0 0 36px oklch(0.72 0.25 285 / 0.35), 0 4px 20px oklch(0 0 0 / 0.5)",
-            }}
-          >
-            {creating ? "Creating…" : "Start New Project →"}
-          </button>
-        </div>
-
-        {/* Pipeline flow */}
-        <div className="space-y-4">
-          <p className="text-center text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--c-35)" }}>
-            Full Automation Pipeline
-          </p>
-          <div className="overflow-x-auto pb-1">
-            <div className="flex items-center gap-1 mx-auto" style={{ width: "fit-content" }}>
-              {PIPELINE_STEPS.flatMap((step, i) => {
-                const nodes = [
-                  <div key={step.label}
-                    className="flex flex-col items-center gap-2 px-4 py-3.5 rounded-xl"
-                    style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)", minWidth: 88 }}>
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center"
-                      style={{ background: "oklch(0.72 0.25 285 / 0.1)", border: "1px solid oklch(0.72 0.25 285 / 0.15)" }}>
-                      <step.Icon size={16} style={{ color: "oklch(0.72 0.25 285)" }} />
-                    </div>
-                    <span className="text-xs font-medium text-center leading-tight whitespace-nowrap"
-                      style={{ color: "var(--c-50)" }}>
-                      {step.label}
-                    </span>
-                  </div>,
-                ];
-                if (i < PIPELINE_STEPS.length - 1) {
-                  nodes.push(
-                    <ChevronRight key={`arrow-${i}`} size={14} style={{ color: "var(--c-28)", flexShrink: 0 }} />
-                  );
-                }
-                return nodes;
-              })}
-            </div>
-          </div>
-        </div>
+      <main className="flex-1 w-full px-24 py-12 space-y-12">
 
         {/* Channel groups */}
         {channelGroups.length > 0 && (
