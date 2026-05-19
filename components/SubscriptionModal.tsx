@@ -39,9 +39,9 @@ const PLANS = [
 ];
 
 const PLAN_AMOUNTS: Record<string, number> = {
-  founder: 40,
-  starter: 19,
-  pro:     49,
+  founder: 1,
+  starter: 1,
+  pro:     1,
 };
 
 declare global {
