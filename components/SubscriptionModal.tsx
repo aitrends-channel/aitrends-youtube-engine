@@ -13,7 +13,7 @@ const PLANS = [
     period: " / year",
     limit: "1 year · 20 niches",
     amountEnv: "NEXT_PUBLIC_PAYSTACK_AMOUNT_FOUNDER",
-    features: ["20 niches", "Unlimited videos per niche", "Full AI pipeline", "All features included", "1 year — no renewal"],
+    features: ["20 niches", "HD image processing", "Full AI pipeline", "All features included", "1 year — no renewal"],
     highlighted: false,
     disabled: false,
     founder: true,
@@ -23,9 +23,9 @@ const PLANS = [
     name: "Starter",
     price: "$19",
     period: "/mo",
-    limit: "5 niches · 3 videos each",
+    limit: "5 niches/month",
     amountEnv: "NEXT_PUBLIC_PAYSTACK_AMOUNT_STARTER",
-    features: ["5 niches/month", "3 videos per niche", "Full AI pipeline", "All features included", "Community support"],
+    features: ["5 niches/month", "Standard image processing", "Full AI pipeline", "All features included", "Community support"],
     disabled: false,
   },
   {
@@ -33,21 +33,11 @@ const PLANS = [
     name: "Pro",
     price: "$49",
     period: "/mo",
-    limit: "Unlimited niches & videos",
+    limit: "Unlimited niches",
     amountEnv: "NEXT_PUBLIC_PAYSTACK_AMOUNT_PRO",
-    features: ["Unlimited niches", "Unlimited videos per niche", "Full AI pipeline", "All features included", "Priority support"],
+    features: ["Unlimited niches", "HD image processing", "Full AI pipeline", "All features included", "Priority support"],
     highlighted: true,
     disabled: false,
-  },
-  {
-    id: "agency",
-    name: "Agency",
-    price: "$99",
-    period: "/mo",
-    limit: "3 seats + unlimited",
-    amountEnv: "NEXT_PUBLIC_PAYSTACK_AMOUNT_AGENCY",
-    features: ["3 team seats", "Unlimited niches", "Full AI pipeline", "All Pro features", "Priority support"],
-    disabled: true,
   },
 ];
 
@@ -55,7 +45,6 @@ const PLAN_AMOUNTS: Record<string, number> = {
   founder: Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_FOUNDER),
   starter: Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_STARTER),
   pro:     Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_PRO),
-  agency:  Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_AGENCY),
 };
 
 declare global {
@@ -195,7 +184,7 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
         </div>
 
         {/* Plan selector */}
-        <div className="grid grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-3 gap-3 mb-6">
           {PLANS.map((plan) => (
             <button
               key={plan.id}
