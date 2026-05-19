@@ -161,13 +161,13 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center px-4"
       style={{ background: "var(--bg-page)" }}>
       <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center mb-8 space-y-3">
-          <div className="w-14 h-14 rounded-xl">
+        <div className="flex flex-col items-center mb-8 gap-3">
+          <div className="w-14 h-14 rounded-xl overflow-hidden">
             <Image src="/heclus-icon-white.svg" alt="Heclus" width={56} height={56} className="object-cover w-full h-full" />
           </div>
-          <div className="text-center leading-none">
+          <div className="flex flex-col items-center gap-0.5">
             <p className="font-bold text-lg tracking-tight">Heclus</p>
-            <p className="text-xs font-medium tracking-wide mt-1" style={{ color: "#888" }}>by aiTrends</p>
+            <p className="text-xs font-medium tracking-wide" style={{ color: "#888" }}>by aiTrends</p>
           </div>
         </div>
 
