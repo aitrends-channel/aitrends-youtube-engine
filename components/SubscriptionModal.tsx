@@ -3,14 +3,42 @@
 import { useState } from "react";
 import { X, Check, Zap } from "lucide-react";
 
-const FEATURES = [
-  "Full AI automation pipeline",
-  "Script & voiceover generation",
-  "AI images & video clips",
-  "Thumbnail generation",
-  "Unlimited projects",
-  "Priority support",
+const PLANS = [
+  {
+    id: "starter",
+    name: "Starter",
+    price: "$19",
+    period: "/mo",
+    limit: "5 videos/month",
+    amountEnv: "NEXT_PUBLIC_PAYSTACK_AMOUNT_STARTER",
+    features: ["5 projects per month", "Full AI pipeline", "Script & voiceover", "AI images", "ZIP export"],
+  },
+  {
+    id: "pro",
+    name: "Pro",
+    price: "$49",
+    period: "/mo",
+    limit: "Unlimited videos",
+    amountEnv: "NEXT_PUBLIC_PAYSTACK_AMOUNT_PRO",
+    features: ["Unlimited projects", "Full AI pipeline", "Script & voiceover", "AI images & thumbnails", "Video assembly", "Priority support"],
+    highlighted: true,
+  },
+  {
+    id: "agency",
+    name: "Agency",
+    price: "$99",
+    period: "/mo",
+    limit: "3 seats + unlimited",
+    amountEnv: "NEXT_PUBLIC_PAYSTACK_AMOUNT_AGENCY",
+    features: ["3 team seats", "Unlimited projects", "Full AI pipeline", "All Pro features", "Priority support"],
+  },
 ];
+
+const PLAN_AMOUNTS: Record<string, number> = {
+  starter: Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_STARTER),
+  pro:     Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_PRO),
+  agency:  Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_AGENCY),
+};
 
 declare global {
   interface Window {
@@ -38,6 +66,7 @@ function loadPaystackScript(): Promise<void> {
 }
 
 export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
+  const [selectedPlan, setSelectedPlan] = useState("pro");
   const [loading, setLoading] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +85,6 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
     }
 
     if (!window.PaystackPop) {
-      console.error("[Paystack] PaystackPop not found on window after script load");
       setLoading(false);
       setError("Paystack failed to initialise. Please refresh the page and try again.");
       return;
@@ -64,27 +92,26 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
 
     setLoading(false);
 
+    const amount = PLAN_AMOUNTS[selectedPlan] || Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT);
+
     try {
       const handler = window.PaystackPop.setup({
         key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY,
         email,
-        amount: Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT),
+        amount,
         currency: process.env.NEXT_PUBLIC_PAYSTACK_CURRENCY ?? "NGN",
         channels: ["card"],
-        ref: `ait_${Date.now()}`,
+        ref: `ait_${selectedPlan}_${Date.now()}`,
         label: "Heclus",
         callback: function (response: { reference: string }) {
           setVerifying(true);
           fetch("/api/paystack/verify", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reference: response.reference }),
+            body: JSON.stringify({ reference: response.reference, plan: selectedPlan }),
           })
             .then(function (res) {
-              if (res.ok) {
-                onSuccess();
-                return;
-              }
+              if (res.ok) { onSuccess(); return; }
               return res.json().catch(() => ({})).then(function (data) {
                 setError(data.error ?? "Payment verification failed. Contact support.");
               });
@@ -92,16 +119,13 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
             .catch(function () {
               setError("Failed to verify payment. Contact support.");
             })
-            .finally(function () {
-              setVerifying(false);
-            });
+            .finally(function () { setVerifying(false); });
         },
         onClose: function () {},
       });
 
       handler.openIframe();
     } catch (err) {
-      console.error("[Paystack] setup/openIframe failed:", err);
       setError(`Payment setup failed: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
   }
@@ -113,7 +137,7 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="relative w-full max-w-md rounded-2xl p-8"
+        className="relative w-full max-w-lg rounded-2xl p-8"
         style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
       >
         <button
@@ -125,7 +149,7 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
         </button>
 
         {/* Badge */}
-        <div className="flex justify-center mb-6">
+        <div className="flex justify-center mb-5">
           <div
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold"
             style={{
@@ -135,34 +159,67 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
             }}
           >
             <Zap size={12} />
-            Subscription Required
+            Choose a Plan
           </div>
         </div>
 
-        {/* Heading */}
         <div className="text-center mb-6">
-          <h2 className="text-xl font-bold mb-1.5" style={{ color: "var(--c-90)" }}>
-            Heclus One Time Subscription
-          </h2>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--c-45)" }}>
-            Subscribe to unlock the full YouTube automation workflow.
-          </p>
+          <h2 className="text-xl font-bold mb-1" style={{ color: "var(--c-90)" }}>Unlock Heclus</h2>
+          <p className="text-sm" style={{ color: "var(--c-45)" }}>Pick the plan that fits your workflow.</p>
         </div>
 
-        {/* Features */}
-        <ul className="space-y-2.5 mb-8">
-          {FEATURES.map((f) => (
-            <li key={f} className="flex items-center gap-3 text-sm" style={{ color: "var(--c-70)" }}>
-              <span
-                className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
-                style={{ background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)" }}
-              >
-                <Check size={10} strokeWidth={3} />
-              </span>
-              {f}
-            </li>
+        {/* Plan selector */}
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          {PLANS.map((plan) => (
+            <button
+              key={plan.id}
+              onClick={() => setSelectedPlan(plan.id)}
+              className="relative rounded-xl p-3 text-left transition-all cursor-pointer"
+              style={{
+                background: selectedPlan === plan.id ? "oklch(0.72 0.25 285 / 0.12)" : "oklch(1 0 0 / 0.03)",
+                border: selectedPlan === plan.id
+                  ? "1px solid oklch(0.72 0.25 285 / 0.50)"
+                  : "1px solid oklch(1 0 0 / 0.08)",
+              }}
+            >
+              {plan.highlighted && (
+                <span
+                  className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+                >
+                  Popular
+                </span>
+              )}
+              <p className="text-xs font-semibold mb-1" style={{ color: selectedPlan === plan.id ? "oklch(0.82 0.18 285)" : "var(--c-60)" }}>
+                {plan.name}
+              </p>
+              <p className="text-base font-bold" style={{ color: "var(--c-90)" }}>
+                {plan.price}<span className="text-xs font-normal" style={{ color: "var(--c-40)" }}>{plan.period}</span>
+              </p>
+              <p className="text-[10px] mt-0.5" style={{ color: "var(--c-35)" }}>{plan.limit}</p>
+            </button>
           ))}
-        </ul>
+        </div>
+
+        {/* Selected plan features */}
+        {(() => {
+          const plan = PLANS.find(p => p.id === selectedPlan)!;
+          return (
+            <ul className="space-y-2 mb-6">
+              {plan.features.map((f) => (
+                <li key={f} className="flex items-center gap-2.5 text-sm" style={{ color: "var(--c-65)" }}>
+                  <span
+                    className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
+                    style={{ background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)" }}
+                  >
+                    <Check size={9} strokeWidth={3} />
+                  </span>
+                  {f}
+                </li>
+              ))}
+            </ul>
+          );
+        })()}
 
         {error && (
           <p
@@ -186,11 +243,11 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
             color: "var(--c-98)",
           }}
         >
-          {verifying ? "Verifying payment…" : loading ? "Loading…" : "Subscribe"}
+          {verifying ? "Verifying payment…" : loading ? "Loading…" : `Subscribe to ${PLANS.find(p => p.id === selectedPlan)?.name}`}
         </button>
 
         <p className="text-center text-xs mt-3" style={{ color: "var(--c-32)" }}>
-          Secured by Paystack · One-time payment · Lifetime access
+          Secured by Paystack · Cancel anytime
         </p>
       </div>
     </div>
