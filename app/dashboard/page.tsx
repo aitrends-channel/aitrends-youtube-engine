@@ -147,6 +147,45 @@ export default function HomePage() {
     requireSubscription(doCreateProject);
   }
 
+  async function doCreateVideoForChannel(group: ChannelGroup) {
+    const source = [...group.projects].sort((a, b) => b.current_state - a.current_state)[0];
+    setCreating(true);
+    try {
+      const fullRes = await fetch(`/api/projects/${source.id}`);
+      const full = await fullRes.json();
+      const forkRes = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fork: {
+            channelUrl:        full.channel_url,
+            channelName:       full.channel_name,
+            channelAnalysis:   full.channel_analysis,
+            channelInfo:       full.channel_info,
+            transcripts:       full.transcripts,
+            visualProfile:     full.visual_profile,
+            thumbnailAnalysis: full.thumbnail_analysis,
+            videoIdeas:        full.video_ideas,
+          },
+        }),
+      });
+      const project = await forkRes.json();
+      if (project.id) {
+        router.push(`/projects/${project.id}/topic`);
+      } else {
+        toast.error("Failed to create project");
+      }
+    } catch {
+      toast.error("Failed to create project");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  function createVideoForChannel(group: ChannelGroup) {
+    requireSubscription(() => doCreateVideoForChannel(group));
+  }
+
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-page)" }}>
       {/* Header */}
@@ -202,7 +241,7 @@ export default function HomePage() {
       <main className="flex-1 w-full px-24 py-12 space-y-12">
 
         {channelGroups.length > 0 && (
-          <h2 className="text-xl font-bold tracking-tight" style={{ color: "var(--c-85)" }}>Your projects</h2>
+          <h2 className="text-xl font-bold tracking-tight" style={{ color: "var(--c-85)" }}>Your Niches / Projects</h2>
         )}
 
         {/* Channel groups */}
@@ -231,10 +270,20 @@ export default function HomePage() {
                         )}
                       </div>
                     </div>
-                    <span className="text-xs px-3 py-1 rounded-full"
-                      style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}>
-                      {group.projects.length} {group.projects.length === 1 ? "video" : "videos"}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs px-3 py-1 rounded-full"
+                        style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}>
+                        {group.projects.length} {group.projects.length === 1 ? "video" : "videos"}
+                      </span>
+                      <button
+                        onClick={() => createVideoForChannel(group)}
+                        disabled={creating}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
+                        style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
+                      >
+                        + New Project
+                      </button>
+                    </div>
                   </div>
 
                   {/* Project cards — auto-fill grid */}
