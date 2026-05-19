@@ -46,7 +46,7 @@ const PLAN_AMOUNTS: Record<string, number> = {
 
 declare global {
   interface Window {
-    FlutterwaveCheckout: (config: Record<string, unknown>) => void;
+    FlutterwaveCheckout?: (config: Record<string, unknown>) => void;
   }
 }
 
