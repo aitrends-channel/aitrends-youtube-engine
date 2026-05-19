@@ -233,7 +233,7 @@ export default function HomePage() {
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
           >
-            {creating ? "Creating…" : "+ New Project"}
+            {creating ? "Creating…" : "+ New Niche"}
           </button>
         </div>
       </header>
