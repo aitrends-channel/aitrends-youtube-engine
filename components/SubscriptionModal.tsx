@@ -163,7 +163,7 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="relative w-full max-w-lg rounded-2xl p-8"
+        className="relative w-full max-w-2xl rounded-2xl p-8"
         style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
       >
         <button
@@ -195,7 +195,7 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
         </div>
 
         {/* Plan selector */}
-        <div className="grid grid-cols-2 gap-3 mb-6">
+        <div className="grid grid-cols-4 gap-3 mb-6">
           {PLANS.map((plan) => (
             <button
               key={plan.id}
