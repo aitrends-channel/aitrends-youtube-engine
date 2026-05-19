@@ -281,7 +281,7 @@ export default function HomePage() {
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
                         style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
                       >
-                        + New Project
+                        + New Video
                       </button>
                     </div>
                   </div>
