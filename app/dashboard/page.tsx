@@ -240,9 +240,71 @@ export default function HomePage() {
 
       <main className="flex-1 w-full px-24 py-12 space-y-12">
 
-        {channelGroups.length > 0 && (
-          <h2 className="text-xl font-bold tracking-tight" style={{ color: "var(--c-85)" }}>Your Niches / Projects</h2>
-        )}
+        {channelGroups.length > 0 && (() => {
+          const allProjects = channelGroups.flatMap(g => g.projects);
+          const total = allProjects.length;
+          const completed = allProjects.filter(p => p.assembly_status === "done").length;
+          const inProgress = allProjects.filter(p => p.assembly_status !== "done" && p.current_state > 0).length;
+          const niches = channelGroups.length;
+
+          // Last 7 days bar chart
+          const now = new Date();
+          const days = Array.from({ length: 7 }, (_, i) => {
+            const d = new Date(now);
+            d.setDate(d.getDate() - (6 - i));
+            return d.toISOString().slice(0, 10);
+          });
+          const dayCounts = days.map(day =>
+            allProjects.filter(p => p.created_at.slice(0, 10) === day).length
+          );
+          const maxCount = Math.max(...dayCounts, 1);
+          const dayLabels = days.map(d => {
+            const date = new Date(d);
+            return date.toLocaleDateString("en", { weekday: "short" });
+          });
+
+          return (
+            <div className="space-y-6">
+              {/* Stat cards */}
+              <div className="grid grid-cols-4 gap-4">
+                {[
+                  { label: "Total Videos", value: total },
+                  { label: "Completed", value: completed },
+                  { label: "In Progress", value: inProgress },
+                  { label: "Niches", value: niches },
+                ].map(({ label, value }) => (
+                  <div key={label} className="rounded-xl px-5 py-4"
+                    style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+                    <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{value}</p>
+                    <p className="text-xs" style={{ color: "var(--c-42)" }}>{label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Bar chart — videos created last 7 days */}
+              <div className="rounded-xl px-5 py-4" style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+                <p className="text-xs font-semibold mb-4" style={{ color: "var(--c-42)" }}>Videos created — last 7 days</p>
+                <div className="flex items-end gap-2" style={{ height: 64 }}>
+                  {dayCounts.map((count, i) => (
+                    <div key={i} className="flex flex-col items-center gap-1 flex-1">
+                      <div className="w-full rounded-t-md transition-all"
+                        style={{
+                          height: count === 0 ? 3 : Math.max(6, Math.round((count / maxCount) * 56)),
+                          background: count === 0
+                            ? "oklch(1 0 0 / 0.06)"
+                            : "linear-gradient(180deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+                        }}
+                      />
+                      <span className="text-xs" style={{ color: "var(--c-30)" }}>{dayLabels[i]}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <h2 className="text-xl font-bold tracking-tight" style={{ color: "var(--c-85)" }}>Your Niches / Projects</h2>
+            </div>
+          );
+        })()}
 
         {/* Channel groups */}
         {channelGroups.length > 0 && (
