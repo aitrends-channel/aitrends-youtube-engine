@@ -163,8 +163,9 @@ export default function SignupPage() {
           <div className="w-14 h-14 rounded-xl">
             <Image src="/heclus-icon-white.svg" alt="Heclus" width={56} height={56} className="object-cover w-full h-full" />
           </div>
-          <div className="text-center">
+          <div className="text-center leading-none">
             <p className="font-bold text-lg tracking-tight">Heclus</p>
+            <p className="text-xs font-medium tracking-wide mt-1" style={{ color: "#888" }}>by aiTrends</p>
           </div>
         </div>
 
