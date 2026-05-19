@@ -12,7 +12,6 @@ const PLANS = [
     price: "$40",
     period: " / year",
     limit: "1 year · 20 niches",
-    amountEnv: "NEXT_PUBLIC_PAYSTACK_AMOUNT_FOUNDER",
     features: ["20 niches", "HD image processing", "Full AI pipeline", "All features included", "1 year — no renewal"],
     highlighted: false,
     disabled: false,
@@ -24,7 +23,6 @@ const PLANS = [
     price: "$19",
     period: "/mo",
     limit: "5 niches/month",
-    amountEnv: "NEXT_PUBLIC_PAYSTACK_AMOUNT_STARTER",
     features: ["5 niches/month", "Standard image processing", "Full AI pipeline", "All features included", "Community support"],
     disabled: false,
   },
@@ -34,7 +32,6 @@ const PLANS = [
     price: "$49",
     period: "/mo",
     limit: "Unlimited niches",
-    amountEnv: "NEXT_PUBLIC_PAYSTACK_AMOUNT_PRO",
     features: ["Unlimited niches", "HD image processing", "Full AI pipeline", "All features included", "Priority support"],
     highlighted: true,
     disabled: false,
@@ -42,16 +39,14 @@ const PLANS = [
 ];
 
 const PLAN_AMOUNTS: Record<string, number> = {
-  founder: Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_FOUNDER),
-  starter: Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_STARTER),
-  pro:     Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT_PRO),
+  founder: 40,
+  starter: 19,
+  pro:     49,
 };
 
 declare global {
   interface Window {
-    PaystackPop: {
-      setup: (config: Record<string, unknown>) => { openIframe: () => void };
-    };
+    FlutterwaveCheckout: (config: Record<string, unknown>) => void;
   }
 }
 
@@ -62,13 +57,13 @@ interface Props {
   defaultPlan?: string;
 }
 
-function loadPaystackScript(): Promise<void> {
+function loadFlutterwaveScript(): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (window.PaystackPop) return resolve();
+    if (window.FlutterwaveCheckout) return resolve();
     const script = document.createElement("script");
-    script.src = "https://js.paystack.co/v1/inline.js";
+    script.src = "https://checkout.flutterwave.com/v3.js";
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load Paystack"));
+    script.onerror = () => reject(new Error("Failed to load Flutterwave"));
     document.head.appendChild(script);
   });
 }
@@ -92,39 +87,44 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
     setError(null);
 
     try {
-      await loadPaystackScript();
+      await loadFlutterwaveScript();
     } catch (err) {
-      console.error("[Paystack] Script load failed:", err);
+      console.error("[Flutterwave] Script load failed:", err);
       setLoading(false);
-      setError("Could not load Paystack. Check your internet connection and try again.");
+      setError("Could not load payment. Check your internet connection and try again.");
       return;
     }
 
-    if (!window.PaystackPop) {
+    if (!window.FlutterwaveCheckout) {
       setLoading(false);
-      setError("Paystack failed to initialise. Please refresh the page and try again.");
+      setError("Payment failed to initialise. Please refresh the page and try again.");
       return;
     }
 
     setLoading(false);
 
-    const amount = PLAN_AMOUNTS[selectedPlan] || Number(process.env.NEXT_PUBLIC_PAYSTACK_AMOUNT);
+    const plan = PLANS.find(p => p.id === selectedPlan);
 
     try {
-      const handler = window.PaystackPop.setup({
-        key: process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY,
-        email,
-        amount,
-        currency: process.env.NEXT_PUBLIC_PAYSTACK_CURRENCY ?? "NGN",
-        channels: ["card"],
-        ref: `ait_${selectedPlan}_${Date.now()}`,
-        label: "Heclus",
-        callback: function (response: { reference: string }) {
+      window.FlutterwaveCheckout({
+        public_key: process.env.NEXT_PUBLIC_FLW_PUBLIC_KEY,
+        tx_ref: `ait_${selectedPlan}_${Date.now()}`,
+        amount: PLAN_AMOUNTS[selectedPlan],
+        currency: "USD",
+        payment_options: "card",
+        customer: { email },
+        customizations: {
+          title: "Heclus",
+          description: `${plan?.name ?? "Pro"} Plan`,
+          logo: `${typeof window !== "undefined" ? window.location.origin : ""}/heclus-icon-white.png`,
+        },
+        callback: function (response: { transaction_id: number; status: string }) {
+          if (response.status !== "successful") return;
           setVerifying(true);
-          fetch("/api/paystack/verify", {
+          fetch("/api/flutterwave/verify", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ reference: response.reference, plan: selectedPlan }),
+            body: JSON.stringify({ transaction_id: response.transaction_id, plan: selectedPlan }),
           })
             .then(function (res) {
               if (res.ok) { onSuccess(); return; }
@@ -137,10 +137,8 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
             })
             .finally(function () { setVerifying(false); });
         },
-        onClose: function () {},
+        onclose: function () {},
       });
-
-      handler.openIframe();
     } catch (err) {
       setError(`Payment setup failed: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
@@ -281,7 +279,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
         </button>
 
         <p className="text-center text-xs mt-3" style={{ color: "var(--c-32)" }}>
-          Secured by Paystack · Cancel anytime
+          Secured by Flutterwave · Cancel anytime
         </p>
       </div>
     </div>
