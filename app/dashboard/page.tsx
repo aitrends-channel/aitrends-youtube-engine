@@ -282,22 +282,58 @@ export default function HomePage() {
               </div>
 
               {/* Bar chart — videos created last 7 days */}
-              <div className="rounded-xl px-5 py-4" style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-                <p className="text-xs font-semibold mb-4" style={{ color: "var(--c-42)" }}>Videos created — last 7 days</p>
-                <div className="flex items-end gap-2" style={{ height: 64 }}>
-                  {dayCounts.map((count, i) => (
-                    <div key={i} className="flex flex-col items-center gap-1 flex-1">
-                      <div className="w-full rounded-t-md transition-all"
-                        style={{
-                          height: count === 0 ? 3 : Math.max(6, Math.round((count / maxCount) * 56)),
-                          background: count === 0
-                            ? "oklch(1 0 0 / 0.06)"
-                            : "linear-gradient(180deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-                        }}
-                      />
-                      <span className="text-xs" style={{ color: "var(--c-30)" }}>{dayLabels[i]}</span>
-                    </div>
+              <div className="rounded-2xl px-6 py-5" style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+                <div className="flex items-center justify-between mb-5">
+                  <div>
+                    <p className="text-sm font-semibold" style={{ color: "var(--c-75)" }}>Videos created</p>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--c-35)" }}>Last 7 days</p>
+                  </div>
+                  <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>
+                    {dayCounts.reduce((a, b) => a + b, 0)}
+                  </span>
+                </div>
+                {/* Chart area */}
+                <div className="relative">
+                  {/* Horizontal grid lines */}
+                  {[1, 0.5].map((frac) => (
+                    <div key={frac} className="absolute w-full" style={{
+                      bottom: 28 + Math.round(frac * 100),
+                      height: 1,
+                      background: "oklch(1 0 0 / 0.05)",
+                    }} />
                   ))}
+                  {/* Bars + labels */}
+                  <div className="flex items-end gap-2" style={{ height: 128 + 28 }}>
+                    {dayCounts.map((count, i) => {
+                      const barH = count === 0 ? 0 : Math.max(8, Math.round((count / maxCount) * 100));
+                      const isToday = i === 6;
+                      return (
+                        <div key={i} className="flex flex-col items-center justify-end flex-1" style={{ height: "100%" }}>
+                          <div className="flex items-end justify-center w-full" style={{ flex: 1 }}>
+                            {count > 0 && (
+                              <span className="text-xs font-semibold mb-1" style={{ color: "oklch(0.82 0.18 285)" }}>{count}</span>
+                            )}
+                          </div>
+                          <div className="w-full rounded-t-lg transition-all duration-500 relative overflow-hidden"
+                            style={{
+                              height: count === 0 ? 3 : barH,
+                              background: count === 0
+                                ? "oklch(1 0 0 / 0.06)"
+                                : isToday
+                                  ? "linear-gradient(180deg, oklch(0.82 0.20 285), oklch(0.65 0.25 295))"
+                                  : "linear-gradient(180deg, oklch(0.72 0.25 285 / 0.7), oklch(0.58 0.28 300 / 0.7))",
+                              boxShadow: count > 0 && isToday ? "0 0 12px oklch(0.72 0.25 285 / 0.4)" : "none",
+                            }}
+                          />
+                          <div className="mt-2 text-center">
+                            <span className="text-xs font-medium" style={{ color: isToday ? "oklch(0.72 0.25 285)" : "var(--c-35)" }}>
+                              {dayLabels[i]}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
