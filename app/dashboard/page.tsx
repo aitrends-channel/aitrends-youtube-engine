@@ -147,42 +147,6 @@ export default function HomePage() {
     requireSubscription(doCreateProject);
   }
 
-  async function doCreateVideoForChannel(group: ChannelGroup) {
-    const source = [...group.projects].sort((a, b) => b.current_state - a.current_state)[0];
-    setCreatingFor(group.channelName);
-    try {
-      const fullRes = await fetch(`/api/projects/${source.id}`);
-      const full = await fullRes.json();
-
-      const forkRes = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fork: {
-            channelUrl:        full.channel_url,
-            channelName:       full.channel_name,
-            channelAnalysis:   full.channel_analysis,
-            channelInfo:       full.channel_info,
-            transcripts:       full.transcripts,
-            visualProfile:     full.visual_profile,
-            thumbnailAnalysis: full.thumbnail_analysis,
-            videoIdeas:        full.video_ideas,
-          },
-        }),
-      });
-      const project = await forkRes.json();
-      if (project.id) {
-        router.push(`/projects/${project.id}/topic`);
-      } else {
-        toast.error("Failed to create video");
-      }
-    } catch {
-      toast.error("Failed to create video");
-    } finally {
-      setCreatingFor(null);
-    }
-  }
-
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-page)" }}>
       {/* Header */}
