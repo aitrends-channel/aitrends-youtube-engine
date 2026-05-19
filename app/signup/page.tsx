@@ -160,7 +160,7 @@ export default function SignupPage() {
     >
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8 gap-3">
-          <div className="w-14 h-14 rounded-xl overflow-hidden">
+          <div className="w-14 h-14 rounded-xl overflow-hidden" style={{ marginLeft: "3px" }}>
             <Image src="/heclus-icon-white.svg" alt="Heclus" width={56} height={56} className="object-cover w-full h-full" />
           </div>
           <div className="flex flex-col items-center gap-0.5">
