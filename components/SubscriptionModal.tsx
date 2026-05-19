@@ -120,6 +120,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
         ref: `ait_${selectedPlan}_${Date.now()}`,
         label: "Heclus",
         callback: function (response: { reference: string }) {
+          document.querySelectorAll(".__ps_cur_overlay").forEach(el => el.remove());
           setVerifying(true);
           fetch("/api/paystack/verify", {
             method: "POST",
@@ -137,10 +138,37 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
             })
             .finally(function () { setVerifying(false); });
         },
-        onClose: function () {},
+        onClose: function () {
+          document.querySelectorAll(".__ps_cur_overlay").forEach(el => el.remove());
+        },
       });
 
       handler.openIframe();
+
+      // Overlay "GHS" with "USD" in the Paystack iframe visually
+      const observer = new MutationObserver(() => {
+        const iframe = document.querySelector("iframe[src*=\"paystack\"]");
+        if (!iframe) return;
+        observer.disconnect();
+        setTimeout(() => {
+          const rect = iframe.getBoundingClientRect();
+          const overlays: { dx: number; dy: number; w: number; h: number; bg: string; color: string }[] = [
+            // Top-right header "Pay GHS 735"
+            { dx: 310, dy: 36, w: 30, h: 18, bg: "#ffffff", color: "#1a1a1a" },
+            // Green button "Pay GHS 735"
+            { dx: 148, dy: 278, w: 30, h: 20, bg: "#48bb78", color: "#ffffff" },
+          ];
+          overlays.forEach(({ dx, dy, w, h, bg, color }) => {
+            const el = document.createElement("div");
+            el.className = "__ps_cur_overlay";
+            el.style.cssText = `position:fixed;top:${rect.top + dy}px;left:${rect.left + dx}px;width:${w}px;height:${h}px;background:${bg};z-index:2147483647;pointer-events:none;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:${color};font-family:sans-serif;`;
+            el.textContent = "USD";
+            document.body.appendChild(el);
+          });
+        }, 400);
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+
     } catch (err) {
       setError(`Payment setup failed: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
