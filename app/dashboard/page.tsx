@@ -281,61 +281,77 @@ export default function HomePage() {
                 ))}
               </div>
 
-              {/* Bar chart — videos created last 7 days */}
-              <div className="rounded-2xl px-6 py-5" style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-                <div className="flex items-center justify-between mb-5">
-                  <div>
-                    <p className="text-sm font-semibold" style={{ color: "var(--c-75)" }}>Videos created</p>
-                    <p className="text-xs mt-0.5" style={{ color: "var(--c-35)" }}>Last 7 days</p>
-                  </div>
-                  <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>
-                    {dayCounts.reduce((a, b) => a + b, 0)}
-                  </span>
-                </div>
-                {/* Chart area */}
-                <div className="relative">
-                  {/* Horizontal grid lines */}
-                  {[1, 0.5].map((frac) => (
-                    <div key={frac} className="absolute w-full" style={{
-                      bottom: 28 + Math.round(frac * 100),
-                      height: 1,
-                      background: "oklch(1 0 0 / 0.05)",
-                    }} />
-                  ))}
-                  {/* Bars + labels */}
-                  <div className="flex items-end gap-2" style={{ height: 128 + 28 }}>
-                    {dayCounts.map((count, i) => {
-                      const barH = count === 0 ? 0 : Math.max(8, Math.round((count / maxCount) * 100));
-                      const isToday = i === 6;
-                      return (
-                        <div key={i} className="flex flex-col items-center justify-end flex-1" style={{ height: "100%" }}>
-                          <div className="flex items-end justify-center w-full" style={{ flex: 1 }}>
-                            {count > 0 && (
-                              <span className="text-xs font-semibold mb-1" style={{ color: "oklch(0.82 0.18 285)" }}>{count}</span>
-                            )}
-                          </div>
-                          <div className="w-full rounded-t-lg transition-all duration-500 relative overflow-hidden"
-                            style={{
-                              height: count === 0 ? 3 : barH,
-                              background: count === 0
-                                ? "oklch(1 0 0 / 0.06)"
-                                : isToday
-                                  ? "linear-gradient(180deg, oklch(0.82 0.20 285), oklch(0.65 0.25 295))"
-                                  : "linear-gradient(180deg, oklch(0.72 0.25 285 / 0.7), oklch(0.58 0.28 300 / 0.7))",
-                              boxShadow: count > 0 && isToday ? "0 0 12px oklch(0.72 0.25 285 / 0.4)" : "none",
-                            }}
+              {/* Line graph — videos created last 7 days */}
+              {(() => {
+                const W = 600, H = 120, PAD = 12;
+                const xs = dayCounts.map((_, i) => PAD + (i / 6) * (W - PAD * 2));
+                const ys = dayCounts.map(c => H - PAD - (c / maxCount) * (H - PAD * 2));
+                const linePts = xs.map((x, i) => `${x},${ys[i]}`).join(" ");
+                const areaPts = `${xs[0]},${H} ` + linePts + ` ${xs[xs.length - 1]},${H}`;
+
+                // Smooth cubic bezier path
+                let path = `M ${xs[0]} ${ys[0]}`;
+                for (let i = 1; i < xs.length; i++) {
+                  const cpx = (xs[i - 1] + xs[i]) / 2;
+                  path += ` C ${cpx} ${ys[i - 1]}, ${cpx} ${ys[i]}, ${xs[i]} ${ys[i]}`;
+                }
+                const areaPath = path + ` L ${xs[xs.length-1]} ${H} L ${xs[0]} ${H} Z`;
+
+                return (
+                  <div className="rounded-2xl px-6 py-5" style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+                    <div className="flex items-center justify-between mb-5">
+                      <div>
+                        <p className="text-sm font-semibold" style={{ color: "var(--c-75)" }}>Videos created</p>
+                        <p className="text-xs mt-0.5" style={{ color: "var(--c-35)" }}>Last 7 days</p>
+                      </div>
+                      <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>
+                        {dayCounts.reduce((a, b) => a + b, 0)}
+                      </span>
+                    </div>
+                    <svg viewBox={`0 0 ${W} ${H + 20}`} className="w-full" style={{ overflow: "visible" }}>
+                      <defs>
+                        <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#9b7ff5" stopOpacity="0.25" />
+                          <stop offset="100%" stopColor="#9b7ff5" stopOpacity="0" />
+                        </linearGradient>
+                      </defs>
+                      {/* Grid lines */}
+                      {[0.25, 0.5, 0.75, 1].map(f => (
+                        <line key={f}
+                          x1={PAD} y1={H - PAD - f * (H - PAD * 2)}
+                          x2={W - PAD} y2={H - PAD - f * (H - PAD * 2)}
+                          stroke="white" strokeOpacity="0.05" strokeWidth="1"
+                        />
+                      ))}
+                      {/* Area fill */}
+                      <path d={areaPath} fill="url(#lineGrad)" />
+                      {/* Line */}
+                      <path d={path} fill="none" stroke="#9b7ff5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      {/* Dots */}
+                      {xs.map((x, i) => (
+                        <g key={i}>
+                          <circle cx={x} cy={ys[i]} r={i === 6 ? 5 : 3.5}
+                            fill={i === 6 ? "#9b7ff5" : "#1a1a2e"}
+                            stroke="#9b7ff5" strokeWidth={i === 6 ? 2 : 1.5}
                           />
-                          <div className="mt-2 text-center">
-                            <span className="text-xs font-medium" style={{ color: isToday ? "oklch(0.72 0.25 285)" : "var(--c-35)" }}>
-                              {dayLabels[i]}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
+                          {dayCounts[i] > 0 && (
+                            <text x={x} y={ys[i] - 9} textAnchor="middle" fontSize="9" fill="#9b7ff5" fontWeight="600">
+                              {dayCounts[i]}
+                            </text>
+                          )}
+                        </g>
+                      ))}
+                      {/* Day labels */}
+                      {xs.map((x, i) => (
+                        <text key={i} x={x} y={H + 16} textAnchor="middle" fontSize="10"
+                          fill={i === 6 ? "#9b7ff5" : "rgba(255,255,255,0.3)"} fontWeight={i === 6 ? "600" : "400"}>
+                          {dayLabels[i]}
+                        </text>
+                      ))}
+                    </svg>
                   </div>
-                </div>
-              </div>
+                );
+              })()}
 
               <h2 className="text-xl font-bold tracking-tight" style={{ color: "var(--c-85)" }}>Your Niches / Projects</h2>
             </div>
