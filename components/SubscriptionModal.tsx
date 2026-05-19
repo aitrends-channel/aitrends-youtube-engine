@@ -9,19 +9,21 @@ const PLANS = [
     name: "Starter",
     price: "$19",
     period: "/mo",
-    limit: "5 videos/month",
+    limit: "5 niches/month",
     amountEnv: "NEXT_PUBLIC_PAYSTACK_AMOUNT_STARTER",
-    features: ["5 projects per month", "Full AI pipeline", "Script & voiceover", "AI images", "ZIP export"],
+    features: ["5 niches per month", "Full AI pipeline", "Script & voiceover", "AI images", "ZIP export"],
+    disabled: false,
   },
   {
     id: "pro",
     name: "Pro",
     price: "$49",
     period: "/mo",
-    limit: "Unlimited videos",
+    limit: "Unlimited niches",
     amountEnv: "NEXT_PUBLIC_PAYSTACK_AMOUNT_PRO",
-    features: ["Unlimited projects", "Full AI pipeline", "Script & voiceover", "AI images & thumbnails", "Video assembly", "Priority support"],
+    features: ["Unlimited niches", "Full AI pipeline", "Script & voiceover", "AI images & thumbnails", "Video assembly", "Priority support"],
     highlighted: true,
+    disabled: false,
   },
   {
     id: "agency",
@@ -30,7 +32,8 @@ const PLANS = [
     period: "/mo",
     limit: "3 seats + unlimited",
     amountEnv: "NEXT_PUBLIC_PAYSTACK_AMOUNT_AGENCY",
-    features: ["3 team seats", "Unlimited projects", "Full AI pipeline", "All Pro features", "Priority support"],
+    features: ["3 team seats", "Unlimited niches", "Full AI pipeline", "All Pro features", "Priority support"],
+    disabled: true,
   },
 ];
 
@@ -173,13 +176,15 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
           {PLANS.map((plan) => (
             <button
               key={plan.id}
-              onClick={() => setSelectedPlan(plan.id)}
-              className="relative rounded-xl p-3 text-left transition-all cursor-pointer"
+              onClick={() => !plan.disabled && setSelectedPlan(plan.id)}
+              className="relative rounded-xl p-3 text-left transition-all"
               style={{
-                background: selectedPlan === plan.id ? "oklch(0.72 0.25 285 / 0.12)" : "oklch(1 0 0 / 0.03)",
-                border: selectedPlan === plan.id
+                background: plan.disabled ? "oklch(1 0 0 / 0.01)" : selectedPlan === plan.id ? "oklch(0.72 0.25 285 / 0.12)" : "oklch(1 0 0 / 0.03)",
+                border: plan.disabled ? "1px solid oklch(1 0 0 / 0.05)" : selectedPlan === plan.id
                   ? "1px solid oklch(0.72 0.25 285 / 0.50)"
                   : "1px solid oklch(1 0 0 / 0.08)",
+                opacity: plan.disabled ? 0.4 : 1,
+                cursor: plan.disabled ? "not-allowed" : "pointer",
               }}
             >
               {plan.highlighted && (
@@ -188,6 +193,14 @@ export function SubscriptionModal({ email, onClose, onSuccess }: Props) {
                   style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
                 >
                   Popular
+                </span>
+              )}
+              {plan.disabled && (
+                <span
+                  className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                  style={{ background: "oklch(0.35 0 0)", color: "oklch(0.60 0 0)" }}
+                >
+                  Soon
                 </span>
               )}
               <p className="text-xs font-semibold mb-1" style={{ color: selectedPlan === plan.id ? "oklch(0.82 0.18 285)" : "var(--c-60)" }}>
