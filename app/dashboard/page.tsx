@@ -210,7 +210,7 @@ export default function HomePage() {
           <div className="space-y-12">
             {channelGroups.map((group) => {
               return (
-                <div key={group.channelName}>
+                <div key={group.channelName} className="rounded-2xl p-6" style={{ background: "oklch(1 0 0 / 0.03)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
                   {/* Channel header */}
                   <div className="flex items-center justify-between mb-5">
                     <div className="flex items-center gap-3">
