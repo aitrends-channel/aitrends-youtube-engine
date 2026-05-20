@@ -77,6 +77,7 @@ export default function HomePage() {
   const [selectedPlan, setSelectedPlan] = useState<string | undefined>(undefined);
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
   const [userPlan, setUserPlan] = useState<string>("starter");
+  const { data: apiStatus } = useSWR("/api/api-status", fetcher, { revalidateOnFocus: false });
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -454,6 +455,107 @@ export default function HomePage() {
                         </text>
                       ))}
                     </svg>
+                  </div>
+                );
+              })()}
+
+              {/* API Status */}
+              {(() => {
+                const apis = [
+                  {
+                    key: "anthropic",
+                    label: "Anthropic",
+                    description: "Claude AI — scripts & analysis",
+                    color: "#c084fc",
+                    data: apiStatus?.anthropic as { configured: boolean; valid: boolean | null } | undefined,
+                  },
+                  {
+                    key: "youtube",
+                    label: "YouTube",
+                    description: "Channel lookup & metadata",
+                    color: "#f87171",
+                    data: apiStatus?.youtube as { configured: boolean; valid: boolean | null } | undefined,
+                  },
+                  {
+                    key: "kie",
+                    label: "KIE",
+                    description: "TTS, images & video generation",
+                    color: "#60a5fa",
+                    data: apiStatus?.kie as { configured: boolean; valid: boolean | null; credits?: number } | undefined,
+                  },
+                  {
+                    key: "elevenlabs",
+                    label: "ElevenLabs",
+                    description: "Voiceover & captions",
+                    color: "#34d399",
+                    data: apiStatus?.elevenlabs as { configured: boolean; valid: boolean | null; charUsed?: number; charLimit?: number; tier?: string } | undefined,
+                  },
+                ];
+
+                return (
+                  <div style={{ marginTop: "40px" }}>
+                    <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>API Status</h3>
+                    <div className="grid grid-cols-4 gap-4">
+                      {apis.map(({ key, label, description, color, data }) => {
+                        const loading = !apiStatus;
+                        const notConfigured = data && !data.configured;
+                        const invalid = data?.configured && data.valid === false;
+                        const valid = data?.configured && data.valid === true;
+
+                        const el = apiStatus?.elevenlabs as { configured: boolean; valid: boolean | null; charUsed?: number; charLimit?: number; tier?: string } | undefined;
+                        const kieData = apiStatus?.kie as { configured: boolean; valid: boolean | null; credits?: number } | undefined;
+
+                        const statusColor = loading ? "var(--c-35)"
+                          : notConfigured ? "#94a3b8"
+                          : invalid ? "#f87171"
+                          : "#34d399";
+                        const statusLabel = loading ? "Checking…"
+                          : notConfigured ? "Not configured"
+                          : invalid ? "Invalid key"
+                          : "Active";
+
+                        return (
+                          <div key={key} className="rounded-xl px-5 py-4"
+                            style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+                            {/* Header */}
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                                style={{ background: `${statusColor}22`, color: statusColor }}>
+                                {statusLabel}
+                              </span>
+                            </div>
+                            <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>{label}</p>
+                            <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>{description}</p>
+
+                            {/* ElevenLabs character usage */}
+                            {key === "elevenlabs" && valid && el?.charLimit !== undefined && (
+                              <div>
+                                <div className="flex justify-between text-[10px] mb-1" style={{ color: "var(--c-40)" }}>
+                                  <span>{(el.charUsed ?? 0).toLocaleString()} used</span>
+                                  <span>{(el.charLimit).toLocaleString()} limit</span>
+                                </div>
+                                <div className="w-full rounded-full h-1.5" style={{ background: "oklch(1 0 0 / 0.08)" }}>
+                                  <div className="h-1.5 rounded-full transition-all"
+                                    style={{
+                                      width: `${Math.min(((el.charUsed ?? 0) / el.charLimit) * 100, 100)}%`,
+                                      background: ((el.charUsed ?? 0) / el.charLimit) > 0.9 ? "#f87171" : color,
+                                    }} />
+                                </div>
+                                {el.tier && <p className="text-[10px] mt-1.5 capitalize" style={{ color: "var(--c-35)" }}>{el.tier} plan</p>}
+                              </div>
+                            )}
+
+                            {/* KIE credits */}
+                            {key === "kie" && valid && kieData?.credits !== undefined && (
+                              <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
+                                <span className="font-semibold" style={{ color }}>{kieData.credits.toLocaleString()}</span> credits remaining
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 );
               })()}
