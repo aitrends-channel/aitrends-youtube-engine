@@ -306,13 +306,18 @@ export default function HomePage() {
                         <circle cx={CX} cy={CY} r={R} fill="none"
                           stroke={arcColor} strokeOpacity="0.12" strokeWidth={stroke} />
                         {/* Arc */}
-                        <circle cx={CX} cy={CY} r={R} fill="none"
-                          stroke="url(#arcGrad)"
-                          strokeWidth={stroke}
-                          strokeDasharray={`${unlimited ? circ : dash} ${circ}`}
-                          strokeDashoffset={circ / 4}
-                          strokeLinecap="round"
-                        />
+                        {(unlimited || pct >= 1) ? (
+                          <circle cx={CX} cy={CY} r={R} fill="none"
+                            stroke="url(#arcGrad)" strokeWidth={stroke} />
+                        ) : (
+                          <circle cx={CX} cy={CY} r={R} fill="none"
+                            stroke="url(#arcGrad)"
+                            strokeWidth={stroke}
+                            strokeDasharray={`${dash} ${circ}`}
+                            strokeDashoffset={circ / 4}
+                            strokeLinecap="round"
+                          />
+                        )}
                         {/* Center text */}
                         <text x={CX} y={CY + 1} textAnchor="middle" dominantBaseline="middle"
                           fontSize="8.5" fontWeight="700" fill={arcColor}>
