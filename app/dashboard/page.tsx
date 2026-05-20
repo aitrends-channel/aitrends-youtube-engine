@@ -75,6 +75,8 @@ export default function HomePage() {
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string | undefined>(undefined);
+  const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
+  const [userPlan, setUserPlan] = useState<string>("starter");
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -85,6 +87,7 @@ export default function HomePage() {
       setUserEmail(user.email ?? "");
       const paid = user.app_metadata?.paid === true;
       setIsPaid(paid);
+      if (user.app_metadata?.plan) setUserPlan(user.app_metadata.plan as string);
       if (!paid) {
         const plan = localStorage.getItem("heclus_selected_plan");
         if (plan) {
@@ -264,7 +267,6 @@ export default function HomePage() {
                   { label: "Total Videos", value: total },
                   { label: "Completed", value: completed },
                   { label: "In Progress", value: inProgress },
-                  { label: "Niches", value: niches },
                 ].map(({ label, value }) => (
                   <div key={label} className="rounded-xl px-5 py-4"
                     style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
@@ -272,6 +274,42 @@ export default function HomePage() {
                     <p className="text-xs" style={{ color: "var(--c-42)" }}>{label}</p>
                   </div>
                 ))}
+                {/* Niches card with pie chart */}
+                {(() => {
+                  const PLAN_LIMITS: Record<string, number | null> = { founder: 20, starter: 5, pro: null };
+                  const limit = isAdmin ? null : (PLAN_LIMITS[userPlan] ?? 5);
+                  const unlimited = limit === null;
+                  const used = niches;
+                  const pct = unlimited ? 1 : Math.min(used / limit!, 1);
+                  const R = 16, CX = 16, CY = 16, stroke = 4;
+                  const circ = 2 * Math.PI * R;
+                  const dash = pct * circ;
+                  return (
+                    <div className="rounded-xl px-5 py-4 flex items-center justify-between"
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+                      <div>
+                        <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{used}</p>
+                        <p className="text-xs" style={{ color: "var(--c-42)" }}>Niches</p>
+                        <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>
+                          {unlimited ? "Unlimited" : `of ${limit}`}
+                        </p>
+                      </div>
+                      <svg width={36} height={36} viewBox="0 0 32 32">
+                        {/* Track */}
+                        <circle cx={CX} cy={CY} r={R} fill="none"
+                          stroke="#9b7ff5" strokeOpacity="0.15" strokeWidth={stroke} />
+                        {/* Progress */}
+                        <circle cx={CX} cy={CY} r={R} fill="none"
+                          stroke={unlimited ? "#9b7ff5" : pct >= 1 ? "oklch(0.65 0.22 25)" : "#9b7ff5"}
+                          strokeWidth={stroke}
+                          strokeDasharray={`${unlimited ? circ : dash} ${circ}`}
+                          strokeDashoffset={circ / 4}
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </div>
+                  );
+                })()}
               </div>
 
               <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "40px", marginBottom: "10px" }}>Niches/Video Chart</h3>
@@ -325,15 +363,35 @@ export default function HomePage() {
                       <path d={path} fill="none" stroke="#9b7ff5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                       {/* Dots */}
                       {xs.map((x, i) => (
-                        <g key={i}>
-                          <circle cx={x} cy={ys[i]} r={isLast(i) ? 5 : 3.5}
+                        <g key={i}
+                          onMouseEnter={() => setHoveredPoint(i)}
+                          onMouseLeave={() => setHoveredPoint(null)}
+                          style={{ cursor: "pointer" }}
+                        >
+                          {/* Larger invisible hit area */}
+                          <circle cx={x} cy={ys[i]} r={12} fill="transparent" />
+                          <circle cx={x} cy={ys[i]} r={hoveredPoint === i ? 6 : isLast(i) ? 5 : 3.5}
                             fill="#9b7ff5"
                             stroke="#9b7ff5" strokeWidth={isLast(i) ? 2 : 1.5}
                           />
-                          {points[i].count > 0 && (
+                          {points[i].count > 0 && hoveredPoint !== i && (
                             <text x={x} y={ys[i] - 9} textAnchor="middle" fontSize="9" fill="#9b7ff5" fontWeight="600">
                               {points[i].count}
                             </text>
+                          )}
+                          {/* Hover tooltip */}
+                          {hoveredPoint === i && (
+                            <g>
+                              <rect
+                                x={x - 28} y={ys[i] - 30}
+                                width={56} height={20}
+                                rx={4} ry={4}
+                                fill="#1e1533" stroke="#9b7ff5" strokeOpacity="0.5" strokeWidth="1"
+                              />
+                              <text x={x} y={ys[i] - 16} textAnchor="middle" fontSize="10" fill="#9b7ff5" fontWeight="600">
+                                {points[i].count} {points[i].count === 1 ? "Video" : "Videos"}
+                              </text>
+                            </g>
                           )}
                         </g>
                       ))}
