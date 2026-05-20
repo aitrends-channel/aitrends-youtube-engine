@@ -350,7 +350,7 @@ export default function HomePage() {
                 );
               })()}
 
-              <h2 className="text-xl font-bold tracking-tight" style={{ color: "var(--c-85)", marginTop: "30px" }}>Your Niches & Videos</h2>
+              <h2 className="text-xl font-bold tracking-tight" style={{ color: "var(--c-85)", marginTop: "60px" }}>Your Niches & Videos</h2>
             </div>
           );
         })()}
