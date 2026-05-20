@@ -84,16 +84,15 @@ export default function HomePage() {
   useEffect(() => {
     let cancelled = false;
     const supabase = createSupabaseBrowserClient();
-    supabase.auth.getUser().then(({ data }) => {
+
+    function applyUser(user: { id: string; email?: string | null; created_at?: string; app_metadata?: Record<string, unknown> }) {
       if (cancelled) return;
-      const user = data.user;
-      if (!user) { router.replace("/login"); return; }
       if (user.email === ADMIN_EMAIL) setIsAdmin(true);
       setUserEmail(user.email ?? "");
       if (user.created_at) {
         setMemberSince(new Date(user.created_at).toLocaleDateString("en", { month: "short", year: "numeric" }));
       }
-      const paid = user.app_metadata?.paid === true;
+      const paid = (user.app_metadata?.paid === true) || false;
       setIsPaid(paid);
       if (user.app_metadata?.plan) setUserPlan(user.app_metadata.plan as string);
       if (!paid) {
@@ -104,7 +103,22 @@ export default function HomePage() {
           setShowSubscriptionModal(true);
         }
       }
+    }
+
+    // Phase 1: instant local session read — populates UI immediately, no network call
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (cancelled) return;
+      if (!session?.user) return; // phase 2 will handle the redirect
+      applyUser(session.user as Parameters<typeof applyUser>[0]);
     });
+
+    // Phase 2: verified server-side check — corrects stale data & redirects if truly logged out
+    supabase.auth.getUser().then(({ data }) => {
+      if (cancelled) return;
+      if (!data.user) { router.replace("/login"); return; }
+      applyUser(data.user as Parameters<typeof applyUser>[0]);
+    });
+
     return () => { cancelled = true; };
   }, [router]);
 
@@ -205,8 +219,6 @@ export default function HomePage() {
   function createVideoForChannel(group: ChannelGroup) {
     requireSubscription(() => doCreateVideoForChannel(group));
   }
-
-  if (isPaid === null && !isAdmin) return null;
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-page)" }}>
