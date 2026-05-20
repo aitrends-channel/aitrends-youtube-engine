@@ -180,14 +180,17 @@ export default function AdminPage() {
   const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
     const supabase = createSupabaseBrowserClient();
     supabase.auth.getUser().then(({ data }) => {
+      if (cancelled) return;
       if (!data.user || data.user.email !== ADMIN_EMAIL) {
         router.push("/");
       } else {
         setAuthChecked(true);
       }
     });
+    return () => { cancelled = true; };
   }, [router]);
 
   const { data, isLoading, mutate } = useSWR<AdminStatsResponse>(

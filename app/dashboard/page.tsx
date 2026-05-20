@@ -82,8 +82,10 @@ export default function HomePage() {
   const { data: apiStatus } = useSWR("/api/api-status", fetcher, { revalidateOnFocus: false });
 
   useEffect(() => {
+    let cancelled = false;
     const supabase = createSupabaseBrowserClient();
     supabase.auth.getUser().then(({ data }) => {
+      if (cancelled) return;
       const user = data.user;
       if (!user) { router.replace("/login"); return; }
       if (user.email === ADMIN_EMAIL) setIsAdmin(true);
@@ -103,6 +105,7 @@ export default function HomePage() {
         }
       }
     });
+    return () => { cancelled = true; };
   }, [router]);
 
   async function handleSignOut() {
