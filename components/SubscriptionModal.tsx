@@ -115,7 +115,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
 
     // Open Gumroad overlay
     const a = document.createElement("a");
-    a.href = `https://app.gumroad.com/l/${permalink}?wanted=true&email=${encodeURIComponent(email)}`;
+    a.href = `https://aitrendschannel.gumroad.com/l/${permalink}?wanted=true&email=${encodeURIComponent(email)}`;
     a.style.display = "none";
     document.body.appendChild(a);
     a.click();
