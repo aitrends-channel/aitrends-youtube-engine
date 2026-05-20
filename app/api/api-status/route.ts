@@ -5,10 +5,10 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 
 export interface ApiStatusResult {
-  anthropic:   { configured: boolean; valid: boolean | null };
-  youtube:     { configured: boolean; valid: boolean | null };
-  kie:         { configured: boolean; valid: boolean | null; credits?: number };
-  elevenlabs:  { configured: boolean; valid: boolean | null; charUsed?: number; charLimit?: number; tier?: string };
+  anthropic:  { configured: boolean; valid: boolean | null; billingModel: "per-token" };
+  youtube:    { configured: boolean; valid: boolean | null; quotaPerDay: number };
+  kie:        { configured: boolean; valid: boolean | null; credits?: number };
+  elevenlabs: { configured: boolean; valid: boolean | null; charUsed?: number; charLimit?: number; tier?: string };
 }
 
 export async function GET() {
@@ -28,43 +28,55 @@ export async function GET() {
 }
 
 async function checkAnthropic(key: string) {
-  if (!key) return { configured: false, valid: null };
+  const base = { billingModel: "per-token" as const };
+  if (!key) return { configured: false, valid: null, ...base };
   try {
     const res = await fetch("https://api.anthropic.com/v1/models", {
       headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
     });
-    return { configured: true, valid: res.ok };
+    return { configured: true, valid: res.ok, ...base };
   } catch {
-    return { configured: true, valid: false };
+    return { configured: true, valid: false, ...base };
   }
 }
 
 async function checkYouTube(key: string) {
-  if (!key) return { configured: false, valid: null };
+  const base = { quotaPerDay: 10_000 };
+  if (!key) return { configured: false, valid: null, ...base };
   try {
     const url = `https://www.googleapis.com/youtube/v3/videos?part=id&chart=mostPopular&maxResults=1&key=${key}`;
     const res = await fetch(url);
-    return { configured: true, valid: res.ok };
+    return { configured: true, valid: res.ok, ...base };
   } catch {
-    return { configured: true, valid: false };
+    return { configured: true, valid: false, ...base };
   }
 }
 
 async function checkKie(key: string) {
   if (!key) return { configured: false, valid: null };
-  try {
-    const res = await fetch("https://api.kie.ai/api/v1/account", {
-      headers: { Authorization: `Bearer ${key}` },
-    });
-    if (res.ok) {
-      const data = await res.json() as { credits?: number; balance?: number };
-      const credits = data.credits ?? data.balance;
-      return { configured: true, valid: true, ...(credits !== undefined ? { credits } : {}) };
-    }
-    return { configured: true, valid: res.status !== 401 && res.status !== 403 };
-  } catch {
-    return { configured: true, valid: false };
+  // Try known balance endpoints in order
+  const endpoints = [
+    "/api/v1/account",
+    "/api/v1/user/balance",
+    "/api/v1/user/info",
+    "/api/v1/credits",
+  ];
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(`https://api.kie.ai${endpoint}`, {
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      if (res.ok) {
+        const data = await res.json() as Record<string, unknown>;
+        const credits = (data.credits ?? data.balance ?? data.remaining_credits ?? data.credit_balance) as number | undefined;
+        return { configured: true, valid: true, ...(credits !== undefined ? { credits } : {}) };
+      }
+      if (res.status === 401 || res.status === 403) {
+        return { configured: true, valid: false };
+      }
+    } catch { /* try next */ }
   }
+  return { configured: true, valid: true };
 }
 
 async function checkElevenLabs(key: string) {

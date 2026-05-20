@@ -459,102 +459,111 @@ export default function HomePage() {
                 );
               })()}
 
-              {/* API Status */}
+              {/* API Keys Status */}
               {(() => {
-                const apis = [
-                  {
-                    key: "anthropic",
-                    label: "Anthropic",
-                    description: "Claude AI — scripts & analysis",
-                    color: "#c084fc",
-                    data: apiStatus?.anthropic as { configured: boolean; valid: boolean | null } | undefined,
-                  },
-                  {
-                    key: "youtube",
-                    label: "YouTube",
-                    description: "Channel lookup & metadata",
-                    color: "#f87171",
-                    data: apiStatus?.youtube as { configured: boolean; valid: boolean | null } | undefined,
-                  },
-                  {
-                    key: "kie",
-                    label: "KIE",
-                    description: "TTS, images & video generation",
-                    color: "#60a5fa",
-                    data: apiStatus?.kie as { configured: boolean; valid: boolean | null; credits?: number } | undefined,
-                  },
-                  {
-                    key: "elevenlabs",
-                    label: "ElevenLabs",
-                    description: "Voiceover & captions",
-                    color: "#34d399",
-                    data: apiStatus?.elevenlabs as { configured: boolean; valid: boolean | null; charUsed?: number; charLimit?: number; tier?: string } | undefined,
-                  },
-                ];
+                const el    = apiStatus?.elevenlabs as { configured: boolean; valid: boolean | null; charUsed?: number; charLimit?: number; tier?: string } | undefined;
+                const kie   = apiStatus?.kie        as { configured: boolean; valid: boolean | null; credits?: number } | undefined;
+                const yt    = apiStatus?.youtube    as { configured: boolean; valid: boolean | null; quotaPerDay?: number } | undefined;
+                const anth  = apiStatus?.anthropic  as { configured: boolean; valid: boolean | null } | undefined;
+
+                function StatusBadge({ data, color }: { data: { configured: boolean; valid: boolean | null } | undefined; color: string }) {
+                  const loading = !apiStatus;
+                  const statusColor = loading ? "var(--c-35)" : !data?.configured ? "#94a3b8" : data.valid === false ? "#f87171" : "#34d399";
+                  const label      = loading ? "Checking…"   : !data?.configured ? "Not set"              : data.valid === false ? "Invalid key"          : "Active";
+                  return (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                      style={{ background: `${statusColor}22`, color: statusColor }}>
+                      {label}
+                    </span>
+                  );
+                }
+
+                function UsageBar({ used, limit, color }: { used: number; limit: number; color: string }) {
+                  const pct = Math.min(used / limit, 1);
+                  const barColor = pct > 0.9 ? "#f87171" : color;
+                  return (
+                    <div>
+                      <div className="flex justify-between text-[10px] mb-1" style={{ color: "var(--c-40)" }}>
+                        <span>{used.toLocaleString()} used</span>
+                        <span>{limit.toLocaleString()} limit</span>
+                      </div>
+                      <div className="w-full rounded-full h-1.5" style={{ background: "oklch(1 0 0 / 0.08)" }}>
+                        <div className="h-1.5 rounded-full" style={{ width: `${pct * 100}%`, background: barColor }} />
+                      </div>
+                    </div>
+                  );
+                }
+
+                function StaticInfo({ label, value, color }: { label: string; value: string; color: string }) {
+                  return (
+                    <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
+                      {label}: <span className="font-semibold" style={{ color }}>{value}</span>
+                    </p>
+                  );
+                }
+
+                const cardStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" };
 
                 return (
                   <div style={{ marginTop: "40px" }}>
-                    <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>API Status</h3>
+                    <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Keys Status</h3>
                     <div className="grid grid-cols-4 gap-4">
-                      {apis.map(({ key, label, description, color, data }) => {
-                        const loading = !apiStatus;
-                        const notConfigured = data && !data.configured;
-                        const invalid = data?.configured && data.valid === false;
-                        const valid = data?.configured && data.valid === true;
 
-                        const el = apiStatus?.elevenlabs as { configured: boolean; valid: boolean | null; charUsed?: number; charLimit?: number; tier?: string } | undefined;
-                        const kieData = apiStatus?.kie as { configured: boolean; valid: boolean | null; credits?: number } | undefined;
+                      {/* Anthropic */}
+                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="w-2 h-2 rounded-full" style={{ background: "#c084fc" }} />
+                          <StatusBadge data={anth} color="#c084fc" />
+                        </div>
+                        <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>Anthropic</p>
+                        <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>Claude AI — scripts & analysis</p>
+                        <StaticInfo label="Billing" value="Pay-per-token" color="#c084fc" />
+                        <p className="text-[10px] mt-0.5" style={{ color: "var(--c-30)" }}>No credit pool — billed by usage</p>
+                      </div>
 
-                        const statusColor = loading ? "var(--c-35)"
-                          : notConfigured ? "#94a3b8"
-                          : invalid ? "#f87171"
-                          : "#34d399";
-                        const statusLabel = loading ? "Checking…"
-                          : notConfigured ? "Not configured"
-                          : invalid ? "Invalid key"
-                          : "Active";
+                      {/* YouTube */}
+                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="w-2 h-2 rounded-full" style={{ background: "#f87171" }} />
+                          <StatusBadge data={yt} color="#f87171" />
+                        </div>
+                        <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>YouTube</p>
+                        <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>Channel lookup & metadata</p>
+                        <StaticInfo label="Quota" value={`${(yt?.quotaPerDay ?? 10000).toLocaleString()} units / day`} color="#f87171" />
+                        <p className="text-[10px] mt-0.5" style={{ color: "var(--c-30)" }}>Resets daily · View in Google Console</p>
+                      </div>
 
-                        return (
-                          <div key={key} className="rounded-xl px-5 py-4"
-                            style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-                            {/* Header */}
-                            <div className="flex items-center justify-between mb-2">
-                              <div className="w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
-                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                                style={{ background: `${statusColor}22`, color: statusColor }}>
-                                {statusLabel}
-                              </span>
-                            </div>
-                            <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>{label}</p>
-                            <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>{description}</p>
+                      {/* KIE */}
+                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="w-2 h-2 rounded-full" style={{ background: "#60a5fa" }} />
+                          <StatusBadge data={kie} color="#60a5fa" />
+                        </div>
+                        <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>KIE</p>
+                        <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>TTS, images & video generation</p>
+                        {kie?.configured && kie.valid && kie.credits !== undefined ? (
+                          <StaticInfo label="Credits remaining" value={kie.credits.toLocaleString()} color="#60a5fa" />
+                        ) : kie?.configured && kie.valid ? (
+                          <p className="text-[10px]" style={{ color: "var(--c-30)" }}>Check balance in KIE dashboard</p>
+                        ) : null}
+                      </div>
 
-                            {/* ElevenLabs character usage */}
-                            {key === "elevenlabs" && valid && el?.charLimit !== undefined && (
-                              <div>
-                                <div className="flex justify-between text-[10px] mb-1" style={{ color: "var(--c-40)" }}>
-                                  <span>{(el.charUsed ?? 0).toLocaleString()} used</span>
-                                  <span>{(el.charLimit).toLocaleString()} limit</span>
-                                </div>
-                                <div className="w-full rounded-full h-1.5" style={{ background: "oklch(1 0 0 / 0.08)" }}>
-                                  <div className="h-1.5 rounded-full transition-all"
-                                    style={{
-                                      width: `${Math.min(((el.charUsed ?? 0) / el.charLimit) * 100, 100)}%`,
-                                      background: ((el.charUsed ?? 0) / el.charLimit) > 0.9 ? "#f87171" : color,
-                                    }} />
-                                </div>
-                                {el.tier && <p className="text-[10px] mt-1.5 capitalize" style={{ color: "var(--c-35)" }}>{el.tier} plan</p>}
-                              </div>
-                            )}
-
-                            {/* KIE credits */}
-                            {key === "kie" && valid && kieData?.credits !== undefined && (
-                              <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
-                                <span className="font-semibold" style={{ color }}>{kieData.credits.toLocaleString()}</span> credits remaining
-                              </p>
-                            )}
+                      {/* ElevenLabs */}
+                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="w-2 h-2 rounded-full" style={{ background: "#34d399" }} />
+                          <StatusBadge data={el} color="#34d399" />
+                        </div>
+                        <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>ElevenLabs</p>
+                        <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>Voiceover & captions</p>
+                        {el?.configured && el.valid && el.charLimit !== undefined ? (
+                          <div>
+                            <UsageBar used={el.charUsed ?? 0} limit={el.charLimit} color="#34d399" />
+                            {el.tier && <p className="text-[10px] mt-1.5 capitalize" style={{ color: "var(--c-35)" }}>{el.tier} plan</p>}
                           </div>
-                        );
-                      })}
+                        ) : null}
+                      </div>
+
                     </div>
                   </div>
                 );
