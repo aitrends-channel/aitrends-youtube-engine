@@ -52,6 +52,16 @@ interface Props {
   defaultPlan?: string;
 }
 
+function loadGumroadScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector('script[src*="gumroad.com/js"]')) { resolve(); return; }
+    const script = document.createElement("script");
+    script.src = "https://gumroad.com/js/gumroad.js";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Failed to load Gumroad"));
+    document.head.appendChild(script);
+  });
+}
 
 export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Props) {
   const [selectedPlan, setSelectedPlan] = useState(defaultPlan ?? "founder");
@@ -67,10 +77,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
       .catch(() => {});
   }, []);
 
-  const [awaitingConfirm, setAwaitingConfirm] = useState(false);
-
   async function pollForPayment() {
-    setAwaitingConfirm(false);
     setVerifying(true);
     const supabase = createSupabaseBrowserClient();
     for (let i = 0; i < 15; i++) {
@@ -83,29 +90,46 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
       }
     }
     setVerifying(false);
-    setError("Payment not yet confirmed. Please wait a moment and try again.");
+    setError("Payment received but not yet confirmed. Please refresh the page in a moment.");
   }
 
   async function handleSubscribe() {
     setLoading(true);
     setError(null);
 
-    const permalink = PLAN_PERMALINKS[selectedPlan];
-    if (!permalink) {
+    try {
+      await loadGumroadScript();
+    } catch {
       setLoading(false);
-      setError("Payment not configured for this plan.");
+      setError("Could not load payment. Check your internet connection and try again.");
       return;
     }
 
     setLoading(false);
 
-    // Open Gumroad in a new tab with email pre-filled
-    window.open(
-      `https://aitrendschannel.gumroad.com/l/${permalink}?email=${encodeURIComponent(email)}`,
-      "_blank"
-    );
+    const permalink = PLAN_PERMALINKS[selectedPlan];
+    if (!permalink) {
+      setError("Payment not configured for this plan.");
+      return;
+    }
 
-    setAwaitingConfirm(true);
+    // Open Gumroad overlay
+    const a = document.createElement("a");
+    a.href = `https://aitrendschannel.gumroad.com/l/${permalink}?wanted=true&email=${encodeURIComponent(email)}`;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { if (a.parentNode) a.parentNode.removeChild(a); }, 100);
+
+    // Poll for payment after overlay closes (detected via MutationObserver)
+    const observer = new MutationObserver(() => {
+      const overlay = document.querySelector(".gumroad-overlay-container, #gumroad-overlay, iframe[src*='gumroad']");
+      if (!overlay) {
+        observer.disconnect();
+        pollForPayment();
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
   }
 
   return (
@@ -230,43 +254,17 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
           </p>
         )}
 
-        {awaitingConfirm ? (
-          <div className="space-y-3">
-            <p className="text-xs text-center" style={{ color: "var(--c-45)" }}>
-              Complete your payment on Gumroad, then click below to activate your account.
-            </p>
-            <button
-              onClick={pollForPayment}
-              disabled={verifying}
-              className="w-full py-3 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              style={{
-                background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-                color: "var(--c-98)",
-              }}
-            >
-              {verifying ? "Confirming payment…" : "I've completed payment →"}
-            </button>
-            <button
-              onClick={() => setAwaitingConfirm(false)}
-              className="w-full py-2 rounded-xl text-xs transition-all hover:opacity-70 cursor-pointer"
-              style={{ color: "var(--c-40)" }}
-            >
-              Go back
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={handleSubscribe}
-            disabled={loading || verifying}
-            className="w-full py-3 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-            style={{
-              background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-              color: "var(--c-98)",
-            }}
-          >
-            {loading ? "Loading…" : `Subscribe to ${PLANS.find(p => p.id === selectedPlan)?.name}`}
-          </button>
-        )}
+        <button
+          onClick={handleSubscribe}
+          disabled={loading || verifying}
+          className="w-full py-3 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          style={{
+            background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+            color: "var(--c-98)",
+          }}
+        >
+          {verifying ? "Verifying payment…" : loading ? "Loading…" : `Subscribe to ${PLANS.find(p => p.id === selectedPlan)?.name}`}
+        </button>
 
         <p className="text-center text-xs mt-3" style={{ color: "var(--c-32)" }}>
           Secured by Gumroad · Cancel anytime
