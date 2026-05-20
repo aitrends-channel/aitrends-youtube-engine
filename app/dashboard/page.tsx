@@ -10,6 +10,7 @@ import useSWR from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
+import { PageLoader } from "@/components/PageLoader";
 
 const ADMIN_EMAIL = "prioritylearn@gmail.com";
 
@@ -219,6 +220,8 @@ export default function HomePage() {
   function createVideoForChannel(group: ChannelGroup) {
     requireSubscription(() => doCreateVideoForChannel(group));
   }
+
+  if (!userEmail && isPaid === null && !isAdmin) return <PageLoader />;
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-page)" }}>

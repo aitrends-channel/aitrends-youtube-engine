@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { Spinner } from "@/components/ui/spinner";
+import { PageLoader } from "@/components/PageLoader";
 
 function LoginForm() {
   const router = useRouter();
@@ -165,7 +166,7 @@ export default function LoginPage() {
     });
   }, [router]);
 
-  if (!ready) return null;
+  if (!ready) return <PageLoader />;
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4"
