@@ -281,9 +281,10 @@ export default function HomePage() {
                   const unlimited = limit === null;
                   const used = niches;
                   const pct = unlimited ? 1 : Math.min(used / limit!, 1);
-                  const R = 16, CX = 16, CY = 16, stroke = 4;
+                  const R = 18, CX = 22, CY = 22, stroke = 5;
                   const circ = 2 * Math.PI * R;
                   const dash = pct * circ;
+                  const arcColor = pct >= 1 ? "#e8745a" : "#9b7ff5";
                   return (
                     <div className="rounded-xl px-5 py-4 flex items-center justify-between"
                       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
@@ -294,18 +295,29 @@ export default function HomePage() {
                           {unlimited ? "Unlimited" : `of ${limit}`}
                         </p>
                       </div>
-                      <svg width={36} height={36} viewBox="0 0 32 32">
+                      <svg width={44} height={44} viewBox="0 0 44 44">
+                        <defs>
+                          <linearGradient id="arcGrad" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0%" stopColor={unlimited ? "#b89dff" : arcColor} />
+                            <stop offset="100%" stopColor={arcColor} />
+                          </linearGradient>
+                        </defs>
                         {/* Track */}
                         <circle cx={CX} cy={CY} r={R} fill="none"
-                          stroke="#9b7ff5" strokeOpacity="0.15" strokeWidth={stroke} />
-                        {/* Progress */}
+                          stroke={arcColor} strokeOpacity="0.12" strokeWidth={stroke} />
+                        {/* Arc */}
                         <circle cx={CX} cy={CY} r={R} fill="none"
-                          stroke={unlimited ? "#9b7ff5" : pct >= 1 ? "oklch(0.65 0.22 25)" : "#9b7ff5"}
+                          stroke="url(#arcGrad)"
                           strokeWidth={stroke}
                           strokeDasharray={`${unlimited ? circ : dash} ${circ}`}
                           strokeDashoffset={circ / 4}
                           strokeLinecap="round"
                         />
+                        {/* Center text */}
+                        <text x={CX} y={CY + 1} textAnchor="middle" dominantBaseline="middle"
+                          fontSize="8.5" fontWeight="700" fill={arcColor}>
+                          {unlimited ? "∞" : `${used}/${limit}`}
+                        </text>
                       </svg>
                     </div>
                   );
@@ -380,19 +392,23 @@ export default function HomePage() {
                             </text>
                           )}
                           {/* Hover tooltip */}
-                          {hoveredPoint === i && (
-                            <g>
-                              <rect
-                                x={x - 28} y={ys[i] - 30}
-                                width={56} height={20}
-                                rx={4} ry={4}
-                                fill="#1e1533" stroke="#9b7ff5" strokeOpacity="0.5" strokeWidth="1"
-                              />
-                              <text x={x} y={ys[i] - 16} textAnchor="middle" fontSize="10" fill="#9b7ff5" fontWeight="600">
-                                {points[i].count} {points[i].count === 1 ? "Video" : "Videos"}
-                              </text>
-                            </g>
-                          )}
+                          {hoveredPoint === i && (() => {
+                            const TW = 90, TH = 32, TX = Math.min(Math.max(x - TW / 2, PAD), W - PAD - TW);
+                            const TY = ys[i] - TH - 10;
+                            const nicheLabel = points[i].label.length > 14 ? points[i].label.slice(0, 13) + "…" : points[i].label;
+                            return (
+                              <g>
+                                <rect x={TX} y={TY} width={TW} height={TH} rx={5} ry={5}
+                                  fill="#1e1533" stroke="#9b7ff5" strokeOpacity="0.4" strokeWidth="1" />
+                                <text x={TX + TW / 2} y={TY + 12} textAnchor="middle" fontSize="9.5" fill="rgba(255,255,255,0.7)" fontWeight="500">
+                                  {nicheLabel}
+                                </text>
+                                <text x={TX + TW / 2} y={TY + 24} textAnchor="middle" fontSize="10" fill="#9b7ff5" fontWeight="700">
+                                  {points[i].count} {points[i].count === 1 ? "Video" : "Videos"}
+                                </text>
+                              </g>
+                            );
+                          })()}
                         </g>
                       ))}
                       {/* Niche labels */}
