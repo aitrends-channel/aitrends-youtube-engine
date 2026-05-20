@@ -262,72 +262,101 @@ export default function HomePage() {
             <div className="space-y-6">
               <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>General Stats</h3>
               {/* Stat cards */}
-              <div className="grid grid-cols-4 gap-4">
-                {[
-                  { label: "Total Videos", value: total },
-                  { label: "Completed", value: completed },
-                  { label: "In Progress", value: inProgress },
-                ].map(({ label, value }) => (
-                  <div key={label} className="rounded-xl px-5 py-4"
-                    style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-                    <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{value}</p>
-                    <p className="text-xs" style={{ color: "var(--c-42)" }}>{label}</p>
-                  </div>
-                ))}
-                {/* Niches card with pie chart */}
-                {(() => {
-                  const PLAN_LIMITS: Record<string, number | null> = { founder: 20, starter: 5, pro: null };
-                  const limit = isAdmin ? null : (PLAN_LIMITS[userPlan] ?? 5);
-                  const unlimited = limit === null;
-                  const used = niches;
-                  const pct = unlimited ? 1 : Math.min(used / limit!, 1);
-                  const R = 18, CX = 22, CY = 22, stroke = 5;
-                  const circ = 2 * Math.PI * R;
+              {(() => {
+                const R = 18, CX = 22, CY = 22, stroke = 5;
+                const circ = 2 * Math.PI * R;
+
+                function PieRing({ id, pct, color, centerText, full }: { id: string; pct: number; color: string; centerText: string; full?: boolean }) {
                   const dash = pct * circ;
-                  const arcColor = pct >= 1 ? "#e8745a" : "#9b7ff5";
                   return (
+                    <svg width={44} height={44} viewBox="0 0 44 44">
+                      <defs>
+                        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+                          <stop offset="0%" stopColor={color} stopOpacity="0.7" />
+                          <stop offset="100%" stopColor={color} />
+                        </linearGradient>
+                      </defs>
+                      <circle cx={CX} cy={CY} r={R} fill="none" stroke={color} strokeOpacity="0.12" strokeWidth={stroke} />
+                      {(full || pct >= 1) ? (
+                        <circle cx={CX} cy={CY} r={R} fill="none" stroke={`url(#${id})`} strokeWidth={stroke} />
+                      ) : pct > 0 ? (
+                        <circle cx={CX} cy={CY} r={R} fill="none"
+                          stroke={`url(#${id})`} strokeWidth={stroke}
+                          strokeDasharray={`${dash} ${circ}`}
+                          strokeDashoffset={circ / 4}
+                          strokeLinecap="round"
+                        />
+                      ) : null}
+                      <text x={CX} y={CY + 1} textAnchor="middle" dominantBaseline="middle"
+                        fontSize="8.5" fontWeight="700" fill={color}>
+                        {centerText}
+                      </text>
+                    </svg>
+                  );
+                }
+
+                const PLAN_LIMITS: Record<string, number | null> = { founder: 20, starter: 5, pro: null };
+                const nicheLimit = isAdmin ? null : (PLAN_LIMITS[userPlan] ?? 5);
+                const unlimited = nicheLimit === null;
+                const nichePct = unlimited ? 1 : Math.min(niches / nicheLimit!, 1);
+                const nicheColor = nichePct >= 1 ? "#e8745a" : "#9b7ff5";
+
+                const completedPct = total > 0 ? completed / total : 0;
+                const inProgressPct = total > 0 ? inProgress / total : 0;
+
+                return (
+                  <div className="grid grid-cols-4 gap-4">
+                    {/* Total Videos — plain */}
+                    <div className="rounded-xl px-5 py-4"
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+                      <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{total}</p>
+                      <p className="text-xs" style={{ color: "var(--c-42)" }}>Total Videos</p>
+                    </div>
+
+                    {/* Completed */}
                     <div className="rounded-xl px-5 py-4 flex items-center justify-between"
                       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
                       <div>
-                        <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{used}</p>
-                        <p className="text-xs" style={{ color: "var(--c-42)" }}>Niches</p>
+                        <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{completed}</p>
+                        <p className="text-xs" style={{ color: "var(--c-42)" }}>Completed</p>
                         <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>
-                          {unlimited ? "Unlimited" : `of ${limit}`}
+                          {total > 0 ? `${Math.round(completedPct * 100)}% of total` : "0%"}
                         </p>
                       </div>
-                      <svg width={44} height={44} viewBox="0 0 44 44">
-                        <defs>
-                          <linearGradient id="arcGrad" x1="0" y1="0" x2="1" y2="1">
-                            <stop offset="0%" stopColor={unlimited ? "#b89dff" : arcColor} />
-                            <stop offset="100%" stopColor={arcColor} />
-                          </linearGradient>
-                        </defs>
-                        {/* Track */}
-                        <circle cx={CX} cy={CY} r={R} fill="none"
-                          stroke={arcColor} strokeOpacity="0.12" strokeWidth={stroke} />
-                        {/* Arc */}
-                        {(unlimited || pct >= 1) ? (
-                          <circle cx={CX} cy={CY} r={R} fill="none"
-                            stroke="url(#arcGrad)" strokeWidth={stroke} />
-                        ) : (
-                          <circle cx={CX} cy={CY} r={R} fill="none"
-                            stroke="url(#arcGrad)"
-                            strokeWidth={stroke}
-                            strokeDasharray={`${dash} ${circ}`}
-                            strokeDashoffset={circ / 4}
-                            strokeLinecap="round"
-                          />
-                        )}
-                        {/* Center text */}
-                        <text x={CX} y={CY + 1} textAnchor="middle" dominantBaseline="middle"
-                          fontSize="8.5" fontWeight="700" fill={arcColor}>
-                          {unlimited ? "∞" : `${used}/${limit}`}
-                        </text>
-                      </svg>
+                      <PieRing id="compGrad" pct={completedPct} color="#5bc48a"
+                        centerText={total > 0 ? `${Math.round(completedPct * 100)}%` : "0%"} />
                     </div>
-                  );
-                })()}
-              </div>
+
+                    {/* In Progress */}
+                    <div className="rounded-xl px-5 py-4 flex items-center justify-between"
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+                      <div>
+                        <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{inProgress}</p>
+                        <p className="text-xs" style={{ color: "var(--c-42)" }}>In Progress</p>
+                        <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>
+                          {total > 0 ? `${Math.round(inProgressPct * 100)}% of total` : "0%"}
+                        </p>
+                      </div>
+                      <PieRing id="progGrad" pct={inProgressPct} color="#f0a855"
+                        centerText={total > 0 ? `${Math.round(inProgressPct * 100)}%` : "0%"} />
+                    </div>
+
+                    {/* Niches */}
+                    <div className="rounded-xl px-5 py-4 flex items-center justify-between"
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+                      <div>
+                        <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{niches}</p>
+                        <p className="text-xs" style={{ color: "var(--c-42)" }}>Niches</p>
+                        <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>
+                          {unlimited ? "Unlimited" : `of ${nicheLimit}`}
+                        </p>
+                      </div>
+                      <PieRing id="nicheGrad" pct={nichePct} color={nicheColor}
+                        centerText={unlimited ? "∞" : `${niches}/${nicheLimit}`} full={unlimited} />
+                    </div>
+                  </div>
+                );
+              })()}
 
               <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "40px", marginBottom: "10px" }}>Niches/Video Chart</h3>
               {/* Line graph — videos per niche */}
