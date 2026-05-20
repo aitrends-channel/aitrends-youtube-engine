@@ -77,6 +77,8 @@ export default function HomePage() {
   const [selectedPlan, setSelectedPlan] = useState<string | undefined>(undefined);
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
   const [userPlan, setUserPlan] = useState<string>("starter");
+  const [memberSince, setMemberSince] = useState<string>("");
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const { data: apiStatus } = useSWR("/api/api-status", fetcher, { revalidateOnFocus: false });
 
   useEffect(() => {
@@ -86,6 +88,9 @@ export default function HomePage() {
       if (!user) { router.replace("/login"); return; }
       if (user.email === ADMIN_EMAIL) setIsAdmin(true);
       setUserEmail(user.email ?? "");
+      if (user.created_at) {
+        setMemberSince(new Date(user.created_at).toLocaleDateString("en", { month: "short", year: "numeric" }));
+      }
       const paid = user.app_metadata?.paid === true;
       setIsPaid(paid);
       if (user.app_metadata?.plan) setUserPlan(user.app_metadata.plan as string);
@@ -222,23 +227,80 @@ export default function HomePage() {
               <span>Admin</span>
             </Link>
           )}
-          <Link
-            href="/settings"
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80"
-            style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
-          >
-            <Settings size={15} />
-            <span>Settings</span>
-          </Link>
-          <button
-            onClick={handleSignOut}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80 cursor-pointer"
-            style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
-          >
-            <LogOut size={15} />
-            <span>Sign Out</span>
-          </button>
           <ThemeToggle />
+          {/* Profile avatar + dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowProfileMenu(v => !v)}
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold transition-all hover:opacity-80 cursor-pointer shrink-0"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+            >
+              {userEmail ? userEmail[0].toUpperCase() : "?"}
+            </button>
+
+            {showProfileMenu && (
+              <>
+                {/* Backdrop */}
+                <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
+                {/* Dropdown */}
+                <div className="absolute right-0 top-12 z-50 w-64 rounded-2xl py-3 shadow-2xl"
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}>
+
+                  {/* Avatar + info */}
+                  <div className="px-4 pb-3" style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
+                    <div className="flex items-center gap-3 mb-3">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-base font-bold shrink-0"
+                        style={{ background: "oklch(0.72 0.25 285)", color: "white" }}>
+                        {userEmail ? userEmail[0].toUpperCase() : "?"}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold truncate" style={{ color: "var(--c-88)" }}>{userEmail}</p>
+                        {memberSince && (
+                          <p className="text-[10px]" style={{ color: "var(--c-38)" }}>Member since {memberSince}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Plan badge */}
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize"
+                        style={{
+                          background: isAdmin ? "oklch(0.55 0.15 145 / 0.15)" : "oklch(0.72 0.25 285 / 0.15)",
+                          color: isAdmin ? "oklch(0.65 0.15 145)" : "oklch(0.72 0.25 285)",
+                          border: `1px solid ${isAdmin ? "oklch(0.55 0.15 145 / 0.25)" : "oklch(0.72 0.25 285 / 0.25)"}`,
+                        }}>
+                        {isAdmin ? "Admin" : isPaid ? userPlan : "Free"}
+                      </span>
+                      {isPaid && !isAdmin && (
+                        <span className="text-[10px]" style={{ color: "var(--c-35)" }}>plan</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Menu items */}
+                  <div className="px-2 pt-2">
+                    <Link
+                      href="/settings"
+                      onClick={() => setShowProfileMenu(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all hover:opacity-80"
+                      style={{ color: "var(--c-60)" }}
+                    >
+                      <Settings size={15} />
+                      <span>API Keys & Settings</span>
+                    </Link>
+                    <button
+                      onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all hover:opacity-80 cursor-pointer"
+                      style={{ color: "#f87171" }}
+                    >
+                      <LogOut size={15} />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
           <button
             onClick={createProject}
             disabled={creating}
