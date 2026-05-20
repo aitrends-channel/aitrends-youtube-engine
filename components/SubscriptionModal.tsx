@@ -40,9 +40,9 @@ const PLANS = [
 ];
 
 const PLAN_PERMALINKS: Record<string, string> = {
-  founder: process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_FOUNDER ?? "",
-  starter: process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_STARTER ?? "",
-  pro:     process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_PRO ?? "",
+  founder: process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_FOUNDER ?? "orrqlz",
+  starter: process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_STARTER ?? "ordcs",
+  pro:     process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_PRO     ?? "hymnls",
 };
 
 interface Props {
