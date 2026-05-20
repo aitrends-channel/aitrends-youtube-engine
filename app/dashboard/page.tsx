@@ -273,18 +273,25 @@ export default function HomePage() {
                 ))}
               </div>
 
-              {/* Bar chart — videos per niche */}
+              {/* Line graph — videos per niche */}
               {(() => {
-                const W = 600, H = 140, PAD_T = 20, PAD_B = 28, PAD_X = 16;
-                const barData = channelGroups.length > 0
+                const W = 600, H = 120, PAD = 12;
+                const points = channelGroups.length > 0
                   ? channelGroups.map(g => ({ label: g.channelName, count: g.projects.length }))
-                  : [{ label: "No niches yet", count: 0 }];
-                const maxVal = Math.max(...barData.map(d => d.count), 1);
-                const n = barData.length;
-                const plotW = W - PAD_X * 2;
-                const barW = Math.min(48, plotW / n * 0.55);
-                const gap = plotW / n;
-                const plotH = H - PAD_T - PAD_B;
+                  : Array.from({ length: 7 }, (_, i) => ({ label: `Niche ${i + 1}`, count: 0 }));
+                const maxCount = Math.max(...points.map(p => p.count), 1);
+                const n = points.length;
+                const xs = points.map((_, i) => PAD + (n === 1 ? (W - PAD * 2) / 2 : (i / (n - 1)) * (W - PAD * 2)));
+                const ys = points.map(p => H - PAD - (p.count / maxCount) * (H - PAD * 2));
+
+                // Smooth cubic bezier path
+                let path = `M ${xs[0]} ${ys[0]}`;
+                for (let i = 1; i < xs.length; i++) {
+                  const cpx = (xs[i - 1] + xs[i]) / 2;
+                  path += ` C ${cpx} ${ys[i - 1]}, ${cpx} ${ys[i]}, ${xs[i]} ${ys[i]}`;
+                }
+                const areaPath = path + ` L ${xs[xs.length - 1]} ${H} L ${xs[0]} ${H} Z`;
+                const isLast = (i: number) => i === points.length - 1;
 
                 return (
                   <div className="rounded-2xl px-6 py-5" style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
@@ -295,54 +302,47 @@ export default function HomePage() {
                       </div>
                       <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{total}</span>
                     </div>
-                    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ overflow: "visible" }}>
+                    <svg viewBox={`0 0 ${W} ${H + 20}`} className="w-full" style={{ overflow: "visible" }}>
                       <defs>
-                        <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#9b7ff5" stopOpacity="0.9" />
-                          <stop offset="100%" stopColor="#9b7ff5" stopOpacity="0.4" />
+                        <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#9b7ff5" stopOpacity="0.25" />
+                          <stop offset="100%" stopColor="#9b7ff5" stopOpacity="0" />
                         </linearGradient>
                       </defs>
-                      {/* Baseline */}
-                      <line x1={PAD_X} y1={PAD_T + plotH} x2={W - PAD_X} y2={PAD_T + plotH}
-                        stroke="white" strokeOpacity="0.08" strokeWidth="1" />
                       {/* Grid lines */}
                       {[0.25, 0.5, 0.75, 1].map(f => (
                         <line key={f}
-                          x1={PAD_X} y1={PAD_T + plotH - f * plotH}
-                          x2={W - PAD_X} y2={PAD_T + plotH - f * plotH}
+                          x1={PAD} y1={H - PAD - f * (H - PAD * 2)}
+                          x2={W - PAD} y2={H - PAD - f * (H - PAD * 2)}
                           stroke="white" strokeOpacity="0.05" strokeWidth="1"
                         />
                       ))}
-                      {/* Bars */}
-                      {barData.map((d, i) => {
-                        const cx = PAD_X + gap * i + gap / 2;
-                        const barH = Math.max((d.count / maxVal) * plotH, d.count > 0 ? 3 : 0);
-                        const x = cx - barW / 2;
-                        const y = PAD_T + plotH - barH;
-                        const r = Math.min(4, barW / 4);
-                        return (
-                          <g key={i}>
-                            {barH > 0 && (
-                              <path
-                                d={`M ${x + r} ${y} H ${x + barW - r} Q ${x + barW} ${y} ${x + barW} ${y + r} V ${y + barH} H ${x} V ${y + r} Q ${x} ${y} ${x + r} ${y}`}
-                                fill="url(#barGrad)"
-                              />
-                            )}
-                            {d.count > 0 && (
-                              <text x={cx} y={y - 5} textAnchor="middle" fontSize="10" fill="#9b7ff5" fontWeight="600">
-                                {d.count}
-                              </text>
-                            )}
-                            <text
-                              x={cx} y={PAD_T + plotH + 16}
-                              textAnchor="middle" fontSize="10"
-                              fill={channelGroups.length === 0 ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.4)"}
-                            >
-                              {d.label.length > 10 ? d.label.slice(0, 9) + "…" : d.label}
+                      {/* Area fill */}
+                      <path d={areaPath} fill="url(#lineGrad)" />
+                      {/* Line */}
+                      <path d={path} fill="none" stroke="#9b7ff5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      {/* Dots */}
+                      {xs.map((x, i) => (
+                        <g key={i}>
+                          <circle cx={x} cy={ys[i]} r={isLast(i) ? 5 : 3.5}
+                            fill={isLast(i) ? "#9b7ff5" : "#1a1a2e"}
+                            stroke="#9b7ff5" strokeWidth={isLast(i) ? 2 : 1.5}
+                          />
+                          {points[i].count > 0 && (
+                            <text x={x} y={ys[i] - 9} textAnchor="middle" fontSize="9" fill="#9b7ff5" fontWeight="600">
+                              {points[i].count}
                             </text>
-                          </g>
-                        );
-                      })}
+                          )}
+                        </g>
+                      ))}
+                      {/* Niche labels */}
+                      {xs.map((x, i) => (
+                        <text key={i} x={x} y={H + 16} textAnchor="middle" fontSize="10"
+                          fill={channelGroups.length === 0 ? "rgba(255,255,255,0.12)" : isLast(i) ? "#9b7ff5" : "rgba(255,255,255,0.3)"}
+                          fontWeight={isLast(i) ? "600" : "400"}>
+                          {points[i].label.length > 10 ? points[i].label.slice(0, 9) + "…" : points[i].label}
+                        </text>
+                      ))}
                     </svg>
                   </div>
                 );
