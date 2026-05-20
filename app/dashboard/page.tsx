@@ -130,10 +130,8 @@ export default function HomePage() {
   function handleSubscriptionSuccess() {
     setIsPaid(true);
     setShowSubscriptionModal(false);
-    if (pendingAction) {
-      pendingAction();
-      setPendingAction(null);
-    }
+    setPendingAction(null);
+    router.push("/dashboard");
   }
 
   async function doCreateProject() {
