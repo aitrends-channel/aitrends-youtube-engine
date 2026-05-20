@@ -5,9 +5,9 @@ import { sendInviteEmail } from "@/lib/email";
 const WEBHOOK_SECRET = process.env.GUMROAD_WEBHOOK_SECRET;
 
 const PERMALINK_TO_PLAN: Record<string, string> = {
-  [process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_FOUNDER ?? "jkkldu"]: "founder",
-  [process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_STARTER ?? "stbixx"]: "starter",
-  [process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_PRO     ?? "itrmoq"]: "pro",
+  [process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_FOUNDER ?? "svxbq"]:  "founder",
+  [process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_STARTER ?? "ipntsc"]: "starter",
+  [process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_PRO     ?? "htvrim"]: "pro",
 };
 
 export async function POST(request: Request) {
