@@ -327,7 +327,7 @@ export default function HomePage() {
                       {xs.map((x, i) => (
                         <g key={i}>
                           <circle cx={x} cy={ys[i]} r={isLast(i) ? 5 : 3.5}
-                            fill={isLast(i) ? "#9b7ff5" : "#1a1a2e"}
+                            fill="#9b7ff5"
                             stroke="#9b7ff5" strokeWidth={isLast(i) ? 2 : 1.5}
                           />
                           {points[i].count > 0 && (
