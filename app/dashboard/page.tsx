@@ -257,6 +257,7 @@ export default function HomePage() {
 
           return (
             <div className="space-y-6">
+              <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>General Stats</h3>
               {/* Stat cards */}
               <div className="grid grid-cols-4 gap-4">
                 {[
@@ -273,6 +274,7 @@ export default function HomePage() {
                 ))}
               </div>
 
+              <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Niches/Video Chart</h3>
               {/* Line graph — videos per niche */}
               {(() => {
                 const W = 600, H = 120, PAD = 12;
