@@ -274,7 +274,7 @@ export default function HomePage() {
                 ))}
               </div>
 
-              <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Niches/Video Chart</h3>
+              <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "40px", marginBottom: "10px" }}>Niches/Video Chart</h3>
               {/* Line graph — videos per niche */}
               {(() => {
                 const W = 600, H = 120, PAD = 12;
