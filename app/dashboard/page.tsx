@@ -267,7 +267,7 @@ export default function HomePage() {
                   { label: "Niches", value: niches },
                 ].map(({ label, value }) => (
                   <div key={label} className="rounded-xl px-5 py-4"
-                    style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+                    style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
                     <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{value}</p>
                     <p className="text-xs" style={{ color: "var(--c-42)" }}>{label}</p>
                   </div>
@@ -296,7 +296,7 @@ export default function HomePage() {
                 const isLast = (i: number) => i === points.length - 1;
 
                 return (
-                  <div className="rounded-2xl px-6 py-5" style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+                  <div className="rounded-2xl px-6 py-5" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
                     <div className="flex items-center justify-between mb-5">
                       <div>
                         <p className="text-sm font-semibold" style={{ color: "var(--c-75)" }}>Videos per niche</p>
