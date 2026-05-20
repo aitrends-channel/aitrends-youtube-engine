@@ -255,22 +255,6 @@ export default function HomePage() {
           const inProgress = allProjects.filter(p => p.assembly_status !== "done" && p.current_state > 0).length;
           const niches = channelGroups.length;
 
-          // Last 7 days bar chart
-          const now = new Date();
-          const days = Array.from({ length: 7 }, (_, i) => {
-            const d = new Date(now);
-            d.setDate(d.getDate() - (6 - i));
-            return d.toISOString().slice(0, 10);
-          });
-          const dayCounts = days.map(day =>
-            allProjects.filter(p => p.created_at.slice(0, 10) === day).length
-          );
-          const maxCount = Math.max(...dayCounts, 1);
-          const dayLabels = days.map(d => {
-            const date = new Date(d);
-            return date.toLocaleDateString("en", { weekday: "short" });
-          });
-
           return (
             <div className="space-y-6">
               {/* Stat cards */}
@@ -289,73 +273,76 @@ export default function HomePage() {
                 ))}
               </div>
 
-              {/* Line graph — videos created last 7 days */}
+              {/* Bar chart — videos per niche */}
               {(() => {
-                const W = 600, H = 120, PAD = 12;
-                const xs = dayCounts.map((_, i) => PAD + (i / 6) * (W - PAD * 2));
-                const ys = dayCounts.map(c => H - PAD - (c / maxCount) * (H - PAD * 2));
-                const linePts = xs.map((x, i) => `${x},${ys[i]}`).join(" ");
-                const areaPts = `${xs[0]},${H} ` + linePts + ` ${xs[xs.length - 1]},${H}`;
-
-                // Smooth cubic bezier path
-                let path = `M ${xs[0]} ${ys[0]}`;
-                for (let i = 1; i < xs.length; i++) {
-                  const cpx = (xs[i - 1] + xs[i]) / 2;
-                  path += ` C ${cpx} ${ys[i - 1]}, ${cpx} ${ys[i]}, ${xs[i]} ${ys[i]}`;
-                }
-                const areaPath = path + ` L ${xs[xs.length-1]} ${H} L ${xs[0]} ${H} Z`;
+                const W = 600, H = 140, PAD_T = 20, PAD_B = 28, PAD_X = 16;
+                const barData = channelGroups.length > 0
+                  ? channelGroups.map(g => ({ label: g.channelName, count: g.projects.length }))
+                  : [{ label: "No niches yet", count: 0 }];
+                const maxVal = Math.max(...barData.map(d => d.count), 1);
+                const n = barData.length;
+                const plotW = W - PAD_X * 2;
+                const barW = Math.min(48, plotW / n * 0.55);
+                const gap = plotW / n;
+                const plotH = H - PAD_T - PAD_B;
 
                 return (
                   <div className="rounded-2xl px-6 py-5" style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
                     <div className="flex items-center justify-between mb-5">
                       <div>
-                        <p className="text-sm font-semibold" style={{ color: "var(--c-75)" }}>Videos created</p>
-                        <p className="text-xs mt-0.5" style={{ color: "var(--c-35)" }}>Last 7 days</p>
+                        <p className="text-sm font-semibold" style={{ color: "var(--c-75)" }}>Videos per niche</p>
+                        <p className="text-xs mt-0.5" style={{ color: "var(--c-35)" }}>All time</p>
                       </div>
-                      <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>
-                        {dayCounts.reduce((a, b) => a + b, 0)}
-                      </span>
+                      <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{total}</span>
                     </div>
-                    <svg viewBox={`0 0 ${W} ${H + 20}`} className="w-full" style={{ overflow: "visible" }}>
+                    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ overflow: "visible" }}>
                       <defs>
-                        <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#9b7ff5" stopOpacity="0.25" />
-                          <stop offset="100%" stopColor="#9b7ff5" stopOpacity="0" />
+                        <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#9b7ff5" stopOpacity="0.9" />
+                          <stop offset="100%" stopColor="#9b7ff5" stopOpacity="0.4" />
                         </linearGradient>
                       </defs>
+                      {/* Baseline */}
+                      <line x1={PAD_X} y1={PAD_T + plotH} x2={W - PAD_X} y2={PAD_T + plotH}
+                        stroke="white" strokeOpacity="0.08" strokeWidth="1" />
                       {/* Grid lines */}
                       {[0.25, 0.5, 0.75, 1].map(f => (
                         <line key={f}
-                          x1={PAD} y1={H - PAD - f * (H - PAD * 2)}
-                          x2={W - PAD} y2={H - PAD - f * (H - PAD * 2)}
+                          x1={PAD_X} y1={PAD_T + plotH - f * plotH}
+                          x2={W - PAD_X} y2={PAD_T + plotH - f * plotH}
                           stroke="white" strokeOpacity="0.05" strokeWidth="1"
                         />
                       ))}
-                      {/* Area fill */}
-                      <path d={areaPath} fill="url(#lineGrad)" />
-                      {/* Line */}
-                      <path d={path} fill="none" stroke="#9b7ff5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      {/* Dots */}
-                      {xs.map((x, i) => (
-                        <g key={i}>
-                          <circle cx={x} cy={ys[i]} r={i === 6 ? 5 : 3.5}
-                            fill={i === 6 ? "#9b7ff5" : "#1a1a2e"}
-                            stroke="#9b7ff5" strokeWidth={i === 6 ? 2 : 1.5}
-                          />
-                          {dayCounts[i] > 0 && (
-                            <text x={x} y={ys[i] - 9} textAnchor="middle" fontSize="9" fill="#9b7ff5" fontWeight="600">
-                              {dayCounts[i]}
+                      {/* Bars */}
+                      {barData.map((d, i) => {
+                        const cx = PAD_X + gap * i + gap / 2;
+                        const barH = Math.max((d.count / maxVal) * plotH, d.count > 0 ? 3 : 0);
+                        const x = cx - barW / 2;
+                        const y = PAD_T + plotH - barH;
+                        const r = Math.min(4, barW / 4);
+                        return (
+                          <g key={i}>
+                            {barH > 0 && (
+                              <path
+                                d={`M ${x + r} ${y} H ${x + barW - r} Q ${x + barW} ${y} ${x + barW} ${y + r} V ${y + barH} H ${x} V ${y + r} Q ${x} ${y} ${x + r} ${y}`}
+                                fill="url(#barGrad)"
+                              />
+                            )}
+                            {d.count > 0 && (
+                              <text x={cx} y={y - 5} textAnchor="middle" fontSize="10" fill="#9b7ff5" fontWeight="600">
+                                {d.count}
+                              </text>
+                            )}
+                            <text
+                              x={cx} y={PAD_T + plotH + 16}
+                              textAnchor="middle" fontSize="10"
+                              fill={channelGroups.length === 0 ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.4)"}
+                            >
+                              {d.label.length > 10 ? d.label.slice(0, 9) + "…" : d.label}
                             </text>
-                          )}
-                        </g>
-                      ))}
-                      {/* Day labels */}
-                      {xs.map((x, i) => (
-                        <text key={i} x={x} y={H + 16} textAnchor="middle" fontSize="10"
-                          fill={i === 6 ? "#9b7ff5" : "rgba(255,255,255,0.3)"} fontWeight={i === 6 ? "600" : "400"}>
-                          {dayLabels[i]}
-                        </text>
-                      ))}
+                          </g>
+                        );
+                      })}
                     </svg>
                   </div>
                 );
