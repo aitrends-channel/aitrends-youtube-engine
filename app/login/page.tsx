@@ -14,11 +14,9 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
-    // Check hash immediately — invite/recovery links land here when Supabase
-    // Site URL points to /login. Forward before showing the form.
+    // Handle invite/recovery hash links that Supabase redirects to /login
     const hash = window.location.hash;
     if (hash) {
       const params = new URLSearchParams(hash.slice(1));
@@ -32,18 +30,7 @@ function LoginForm() {
         return;
       }
     }
-
-    const supabase = createSupabaseBrowserClient();
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) {
-        router.replace("/dashboard");
-      } else {
-        setChecking(false);
-      }
-    });
-  }, [router]);
-
-  if (checking) return null;
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -164,6 +151,22 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
+  const router = useRouter();
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        router.replace("/dashboard");
+      } else {
+        setReady(true);
+      }
+    });
+  }, [router]);
+
+  if (!ready) return null;
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4"
       style={{ background: "var(--bg-page)" }}>
