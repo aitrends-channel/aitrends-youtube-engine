@@ -14,6 +14,7 @@ function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
     // Check hash immediately — invite/recovery links land here when Supabase
@@ -34,9 +35,15 @@ function LoginForm() {
 
     const supabase = createSupabaseBrowserClient();
     supabase.auth.getSession().then(({ data }) => {
-      if (data.session) router.replace("/dashboard");
+      if (data.session) {
+        router.replace("/dashboard");
+      } else {
+        setChecking(false);
+      }
     });
   }, [router]);
+
+  if (checking) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

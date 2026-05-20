@@ -203,6 +203,8 @@ export default function HomePage() {
     requireSubscription(() => doCreateVideoForChannel(group));
   }
 
+  if (isPaid === null && !isAdmin) return null;
+
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-page)" }}>
       {/* Header */}
