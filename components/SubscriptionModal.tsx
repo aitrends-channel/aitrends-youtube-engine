@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { X, Check, Zap } from "lucide-react";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 const FOUNDER_LIMIT = 100;
 
@@ -38,17 +39,11 @@ const PLANS = [
   },
 ];
 
-const PLAN_AMOUNTS: Record<string, number> = {
-  founder: 1,
-  starter: 1,
-  pro:     1,
+const PLAN_PERMALINKS: Record<string, string> = {
+  founder: process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_FOUNDER ?? "",
+  starter: process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_STARTER ?? "",
+  pro:     process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_PRO ?? "",
 };
-
-declare global {
-  interface Window {
-    FlutterwaveCheckout?: (config: Record<string, unknown>) => void;
-  }
-}
 
 interface Props {
   email: string;
@@ -57,13 +52,13 @@ interface Props {
   defaultPlan?: string;
 }
 
-function loadFlutterwaveScript(): Promise<void> {
+function loadGumroadScript(): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (window.FlutterwaveCheckout) return resolve();
+    if (document.querySelector('script[src*="gumroad.com/js"]')) { resolve(); return; }
     const script = document.createElement("script");
-    script.src = "https://checkout.flutterwave.com/v3.js";
+    script.src = "https://gumroad.com/js/gumroad.js";
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load Flutterwave"));
+    script.onerror = () => reject(new Error("Failed to load Gumroad"));
     document.head.appendChild(script);
   });
 }
@@ -82,66 +77,59 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
       .catch(() => {});
   }, []);
 
+  async function pollForPayment() {
+    setVerifying(true);
+    const supabase = createSupabaseBrowserClient();
+    for (let i = 0; i < 15; i++) {
+      await new Promise(r => setTimeout(r, 2000));
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.app_metadata?.paid === true) {
+        setVerifying(false);
+        onSuccess();
+        return;
+      }
+    }
+    setVerifying(false);
+    setError("Payment received but not yet confirmed. Please refresh the page in a moment.");
+  }
+
   async function handleSubscribe() {
     setLoading(true);
     setError(null);
 
     try {
-      await loadFlutterwaveScript();
-    } catch (err) {
-      console.error("[Flutterwave] Script load failed:", err);
+      await loadGumroadScript();
+    } catch {
       setLoading(false);
       setError("Could not load payment. Check your internet connection and try again.");
       return;
     }
 
-    if (!window.FlutterwaveCheckout) {
-      setLoading(false);
-      setError("Payment failed to initialise. Please refresh the page and try again.");
+    setLoading(false);
+
+    const permalink = PLAN_PERMALINKS[selectedPlan];
+    if (!permalink) {
+      setError("Payment not configured for this plan.");
       return;
     }
 
-    setLoading(false);
+    // Open Gumroad overlay
+    const a = document.createElement("a");
+    a.href = `https://app.gumroad.com/l/${permalink}?wanted=true&email=${encodeURIComponent(email)}`;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { if (a.parentNode) a.parentNode.removeChild(a); }, 100);
 
-    const plan = PLANS.find(p => p.id === selectedPlan);
-
-    try {
-      window.FlutterwaveCheckout({
-        public_key: process.env.NEXT_PUBLIC_FLW_PUBLIC_KEY,
-        tx_ref: `ait_${selectedPlan}_${Date.now()}`,
-        amount: PLAN_AMOUNTS[selectedPlan],
-        currency: "USD",
-        payment_options: "card",
-        customer: { email },
-        customizations: {
-          title: "Heclus",
-          description: `${plan?.name ?? "Pro"} Plan`,
-          logo: `${typeof window !== "undefined" ? window.location.origin : ""}/heclus-icon-white.png`,
-        },
-        callback: function (response: { transaction_id: number; status: string }) {
-          if (response.status !== "successful") return;
-          setVerifying(true);
-          fetch("/api/flutterwave/verify", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ transaction_id: response.transaction_id, plan: selectedPlan }),
-          })
-            .then(function (res) {
-              if (res.ok) { onSuccess(); return; }
-              return res.json().catch(() => ({})).then(function (data) {
-                setError(data.error ?? "Payment verification failed. Contact support.");
-              });
-            })
-            .catch(function () {
-              setError("Failed to verify payment. Contact support.");
-            })
-            .finally(function () { setVerifying(false); });
-        },
-        onclose: function () {},
-      });
-    } catch (err) {
-      setError(`Payment setup failed: ${err instanceof Error ? err.message : "Unknown error"}`);
-    }
+    // Poll for payment after overlay closes (detected via MutationObserver)
+    const observer = new MutationObserver(() => {
+      const overlay = document.querySelector(".gumroad-overlay-container, #gumroad-overlay, iframe[src*='gumroad']");
+      if (!overlay) {
+        observer.disconnect();
+        pollForPayment();
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
   }
 
   return (
@@ -279,7 +267,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
         </button>
 
         <p className="text-center text-xs mt-3" style={{ color: "var(--c-32)" }}>
-          Secured by Flutterwave · Cancel anytime
+          Secured by Gumroad · Cancel anytime
         </p>
       </div>
     </div>

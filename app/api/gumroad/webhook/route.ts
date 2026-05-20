@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { supabase as serviceClient } from "@/lib/supabase/client";
-import { generateTempPassword, sendTempPasswordEmail } from "@/lib/email";
+import { sendInviteEmail } from "@/lib/email";
 
 const WEBHOOK_SECRET = process.env.GUMROAD_WEBHOOK_SECRET;
+
+const PERMALINK_TO_PLAN: Record<string, string> = {
+  [process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_FOUNDER ?? "orrqlz"]: "founder",
+  [process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_STARTER ?? "ordcs"]:  "starter",
+  [process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_PRO     ?? "hymnls"]: "pro",
+};
 
 export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -10,50 +16,47 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Gumroad posts application/x-www-form-urlencoded
   const formData = await request.formData();
   const email = (formData.get("email") as string | null)?.trim().toLowerCase();
+  const permalink = (formData.get("short_product_id") as string | null) ?? (formData.get("permalink") as string | null) ?? "";
 
   if (!email) {
     return NextResponse.json({ error: "No email in payload" }, { status: 400 });
   }
 
-  const tempPassword = generateTempPassword();
+  const plan = PERMALINK_TO_PLAN[permalink] ?? "starter";
+  const isFounder = plan === "founder";
+  const now = new Date().toISOString();
+  const planExpiry = isFounder ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString() : null;
 
-  // Try to create a new user
-  const { error: createError } = await serviceClient.auth.admin.createUser({
-    email,
-    password: tempPassword,
-    email_confirm: true,
-    app_metadata: { paid: true },
-    user_metadata: { must_change_password: true },
-  });
+  const metadata = {
+    paid: true,
+    paid_at: now,
+    plan,
+    ...(isFounder && { plan_expires_at: planExpiry }),
+  };
 
-  if (createError) {
-    // User already exists — find and update them with a fresh temp password
-    const { data: listData } = await serviceClient.auth.admin.listUsers({ perPage: 1000 });
-    const existing = listData?.users.find((u) => u.email?.toLowerCase() === email);
-    if (!existing) {
-      console.error("[gumroad-webhook] user lookup failed after create error:", createError.message);
-      return NextResponse.json({ error: "User lookup failed" }, { status: 500 });
-    }
-    const { error: updateError } = await serviceClient.auth.admin.updateUserById(existing.id, {
-      password: tempPassword,
-      app_metadata: { paid: true },
-      user_metadata: { must_change_password: true },
+  const { data: listData } = await serviceClient.auth.admin.listUsers({ perPage: 1000 });
+  const existing = listData?.users.find((u) => u.email?.toLowerCase() === email);
+
+  if (existing) {
+    await serviceClient.auth.admin.updateUserById(existing.id, {
+      app_metadata: { ...existing.app_metadata, ...metadata },
     });
-    if (updateError) {
-      console.error("[gumroad-webhook] update failed:", updateError.message);
-      return NextResponse.json({ error: updateError.message }, { status: 500 });
+  } else {
+    const { origin } = new URL(request.url);
+    const appUrl = process.env.APP_URL ?? origin;
+    const { data: invite, error: inviteError } = await serviceClient.auth.admin.inviteUserByEmail(email, {
+      redirectTo: `${appUrl}/auth/callback?next=/set-password`,
+    });
+    if (invite?.user) {
+      await serviceClient.auth.admin.updateUserById(invite.user.id, { app_metadata: metadata });
+      try { await sendInviteEmail(email, invite.user.id); } catch {}
+    } else if (inviteError) {
+      return NextResponse.json({ error: inviteError.message }, { status: 500 });
     }
   }
 
-  try {
-    await sendTempPasswordEmail(email, tempPassword);
-  } catch (err) {
-    console.error("[gumroad-webhook] email send failed:", (err as Error).message);
-    // Don't fail the webhook — the account was created successfully
-  }
-
-  return NextResponse.json({ success: true });
+  await serviceClient.from("allowed_emails").upsert({ email });
+  return NextResponse.json({ success: true, plan });
 }
