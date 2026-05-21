@@ -431,34 +431,32 @@ export default function DemoGeneratePage() {
               )}
 
               <div className="p-5 mt-auto space-y-3">
-                <p className="text-xs" style={{ color: "var(--c-40)" }}>
-                  Runs in background — clips appear as each job completes.
-                </p>
+                {videosPhase !== "done" && (
+                  <p className="text-xs" style={{ color: "var(--c-40)" }}>
+                    Runs in background — clips appear as each job completes.
+                  </p>
+                )}
                 {videosPhase === "done" && (
                   <ProgressBar value={totalBeats} total={totalBeats} />
                 )}
-                <button
-                  onClick={queueVideos}
-                  disabled={videosPhase === "queuing"}
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
-                  style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-                >
-                  {videosPhase === "queuing" ? "Queuing…" : `Queue ${totalBeats} Video Clips`}
-                </button>
-                <button
-                  onClick={() => router.push("/demo/finish")}
-                  disabled={videosPhase !== "done"}
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-30 transition-all"
-                  style={{
-                    background: "var(--bg-panel)",
-                    color: videosPhase === "done" ? "var(--c-75)" : "var(--c-40)",
-                    border: "1px solid var(--bd-10)",
-                  }}
-                >
-                  {videosPhase === "done"
-                    ? `Proceed to Assemble (${totalBeats}/${totalBeats} clips ready)`
-                    : `Need at least 2 clips to proceed (0/${totalBeats})`}
-                </button>
+                {videosPhase === "done" ? (
+                  <button
+                    onClick={() => router.push("/demo/finish")}
+                    className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                  >
+                    Continue →
+                  </button>
+                ) : (
+                  <button
+                    onClick={queueVideos}
+                    disabled={videosPhase === "queuing"}
+                    className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                  >
+                    {videosPhase === "queuing" ? "Queuing…" : `Queue ${totalBeats} Video Clips`}
+                  </button>
+                )}
               </div>
             </div>
           </div>
