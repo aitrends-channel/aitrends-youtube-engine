@@ -11,6 +11,7 @@ export default function DemoScriptPage() {
   const router = useRouter();
   const { state, update } = useDemoState();
   const [topic, setTopic] = useState("");
+  const [navigating, setNavigating] = useState(false);
   const [displayedScript, setDisplayedScript] = useState(
     state.scriptPhase === "done" ? DEMO_DATA.script : ""
   );
@@ -147,15 +148,21 @@ export default function DemoScriptPage() {
               {scriptDone && (
                 <div className="mt-6 flex justify-end">
                   <button
-                    onClick={() => router.push("/demo/visuals")}
-                    className="px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                    onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/visuals"), 500); }}
+                    disabled={navigating}
+                    className="px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-60"
                     style={{
                       background: "oklch(0.72 0.25 285)",
                       color: "var(--bg-page-2)",
                       boxShadow: "0 0 16px oklch(0.72 0.25 285 / 0.3)",
                     }}
                   >
-                    Continue to Visuals →
+                    {navigating ? (
+                      <span className="flex items-center gap-2">
+                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Preparing visuals…
+                      </span>
+                    ) : "Continue to Visuals →"}
                   </button>
                 </div>
               )}

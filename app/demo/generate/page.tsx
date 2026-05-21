@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
@@ -135,6 +136,8 @@ export default function DemoGeneratePage() {
   const router = useRouter();
   const { state, update } = useDemoState();
 
+  const [navigating, setNavigating] = useState(false);
+
   const {
     selectedVoice, ttsPhase,
     selectedImageModel, selectedImageRatio, imagesPhase, imagesProgress,
@@ -186,11 +189,17 @@ export default function DemoGeneratePage() {
               </div>
               {allDone && (
                 <button
-                  onClick={() => router.push("/demo/assemble")}
-                  className="px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90"
+                  onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/assemble"), 500); }}
+                  disabled={navigating}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-60"
                   style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                 >
-                  Continue →
+                  {navigating ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      Loading…
+                    </span>
+                  ) : "Continue →"}
                 </button>
               )}
             </div>
@@ -263,16 +272,18 @@ export default function DemoGeneratePage() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {ttsPhase === "generating" && (
-                      <p className="text-xs text-center" style={{ color: "var(--c-55)" }}>Generating voiceover…</p>
-                    )}
                     <button
                       onClick={generateVoiceover}
                       disabled={ttsPhase === "generating"}
-                      className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+                      className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 transition-all"
                       style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                     >
-                      {ttsPhase === "generating" ? "Generating…" : "Generate Voiceover"}
+                      {ttsPhase === "generating" ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          Generating voiceover…
+                        </span>
+                      ) : "Generate Voiceover"}
                     </button>
                   </div>
                 )}
@@ -356,9 +367,12 @@ export default function DemoGeneratePage() {
                   className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                   style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                 >
-                  {imagesPhase === "generating"
-                    ? `Generating… ${imagesProgress}/${totalBeats}`
-                    : imagesPhase === "done"
+                  {imagesPhase === "generating" ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      {`Generating… ${imagesProgress}/${totalBeats}`}
+                    </span>
+                  ) : imagesPhase === "done"
                     ? `Regenerate All (${totalBeats})`
                     : `Generate ${totalBeats} Images`}
                 </button>
@@ -483,10 +497,15 @@ export default function DemoGeneratePage() {
                   <button
                     onClick={queueVideos}
                     disabled={videosPhase === "queuing"}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+                    className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 transition-all"
                     style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                   >
-                    {videosPhase === "queuing" ? "Queuing…" : `Queue ${totalBeats} Video Clips`}
+                    {videosPhase === "queuing" ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Queuing clips…
+                      </span>
+                    ) : `Queue ${totalBeats} Video Clips`}
                   </button>
                 )}
               </div>

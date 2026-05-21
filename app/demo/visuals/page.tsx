@@ -69,6 +69,7 @@ function SelectableImage({ url, selected, onToggle, label }: { url: string; sele
 export default function DemoVisualsPage() {
   const router = useRouter();
   const { state, update } = useDemoState();
+  const [navigating, setNavigating] = useState(false);
 
   const { visualsFetchPhase, visualsAnalyzePhase } = state;
 
@@ -128,11 +129,17 @@ export default function DemoVisualsPage() {
             </div>
             {hasDone && (
               <button
-                onClick={() => router.push("/demo/prompts")}
-                className="px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90"
+                onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/prompts"), 500); }}
+                disabled={navigating}
+                className="px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-60"
                 style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
               >
-                Continue to Prompts →
+                {navigating ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    Loading…
+                  </span>
+                ) : "Continue to Prompts →"}
               </button>
             )}
           </div>
@@ -365,11 +372,17 @@ export default function DemoVisualsPage() {
                 </div>
                 <div className="px-5 pb-5">
                   <button
-                    onClick={() => router.push("/demo/prompts")}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                    onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/prompts"), 500); }}
+                    disabled={navigating}
+                    className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-60"
                     style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                   >
-                    Generate All Prompts →
+                    {navigating ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Generating prompts…
+                      </span>
+                    ) : "Generate All Prompts →"}
                   </button>
                 </div>
               </div>

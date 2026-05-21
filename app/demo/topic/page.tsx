@@ -9,11 +9,13 @@ import { DEMO_DATA } from "@/lib/demo-data";
 export default function DemoTopicPage() {
   const router = useRouter();
   const [selectedTopic, setSelectedTopic] = useState("");
+  const [navigating, setNavigating] = useState(false);
 
   function handleContinue() {
     if (!selectedTopic) return;
+    setNavigating(true);
     sessionStorage.setItem("demo_topic", selectedTopic);
-    router.push("/demo/script");
+    setTimeout(() => router.push("/demo/script"), 500);
   }
 
   return (
@@ -90,11 +92,16 @@ export default function DemoTopicPage() {
 
           <button
             onClick={handleContinue}
-            disabled={!selectedTopic}
+            disabled={!selectedTopic || navigating}
             className="w-full py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-40"
             style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
           >
-            Continue to Script →
+            {navigating ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Preparing script…
+              </span>
+            ) : "Continue to Script →"}
           </button>
         </div>
         </main>

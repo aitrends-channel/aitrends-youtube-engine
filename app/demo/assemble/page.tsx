@@ -77,6 +77,7 @@ export default function DemoAssemblePage() {
   } = state;
 
   const [assembleMsg, setAssembleMsg] = useState("");
+  const [navigating, setNavigating] = useState(false);
 
   const totalBeats = DEMO_DATA.promptBeats.length;
 
@@ -283,10 +284,16 @@ export default function DemoAssemblePage() {
                       Export
                     </a>
                     <button
-                      onClick={() => router.push("/demo/thumbnails")}
-                      className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all hover:opacity-90"
+                      onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/thumbnails"), 500); }}
+                      disabled={navigating}
+                      className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all hover:opacity-90 disabled:opacity-60"
                       style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                      Continue
+                      {navigating ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          Loading…
+                        </span>
+                      ) : "Continue"}
                     </button>
                   </div>
                 ) : (

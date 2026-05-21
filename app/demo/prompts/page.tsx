@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
@@ -11,6 +12,7 @@ type Tab = "image" | "video";
 export default function DemoPromptsPage() {
   const router = useRouter();
   const { state, update } = useDemoState();
+  const [navigating, setNavigating] = useState(false);
   const activeTab = state.promptsTab;
   const setActiveTab = (tab: Tab) => update({ promptsTab: tab });
 
@@ -105,15 +107,21 @@ export default function DemoPromptsPage() {
 
             <div className="flex justify-end pt-2 pb-4">
               <button
-                onClick={() => router.push("/demo/generate")}
-                className="px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/generate"), 500); }}
+                disabled={navigating}
+                className="px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-60"
                 style={{
                   background: "oklch(0.72 0.25 285)",
                   color: "var(--bg-page-2)",
                   boxShadow: "0 0 16px oklch(0.72 0.25 285 / 0.3)",
                 }}
               >
-                Generate →
+                {navigating ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    Preparing generator…
+                  </span>
+                ) : "Generate →"}
               </button>
             </div>
           </div>
