@@ -444,17 +444,53 @@ export default function HomePage() {
               <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "40px", marginBottom: "10px" }}>Niches/Video Chart</h3>
               {/* Bar chart — videos per niche */}
               {(() => {
-                const W = 600, H = 140, PAD_X = 16, PAD_T = 16, PAD_B = 24;
+                const W = 600, PAD_X = 16, PAD_T = 16;
                 const points = channelGroups.length > 0
                   ? channelGroups.map(g => ({ label: g.channelName, count: g.projects.length }))
                   : Array.from({ length: 7 }, (_, i) => ({ label: `Niche ${i + 1}`, count: 0 }));
                 const maxCount = Math.max(...points.map(p => p.count), 1);
                 const n = points.length;
                 const plotW = W - PAD_X * 2;
-                const plotH = H - PAD_T - PAD_B;
                 const slotW = plotW / n;
                 const barW = Math.min(52, slotW * 0.6);
                 const r = Math.min(5, barW / 3);
+
+                // Word-wrap label into lines that fit within the slot width
+                const CHAR_W = 5.8; // approx px per char at font-size 10
+                const maxCharsPerLine = Math.max(6, Math.floor(slotW / CHAR_W));
+                function wrapLabel(text: string): string[] {
+                  const words = text.split(" ");
+                  const lines: string[] = [];
+                  let current = "";
+                  for (const word of words) {
+                    const candidate = current ? `${current} ${word}` : word;
+                    if (candidate.length <= maxCharsPerLine) {
+                      current = candidate;
+                    } else {
+                      if (current) lines.push(current);
+                      // If a single word is too long, split it hard
+                      if (word.length > maxCharsPerLine) {
+                        let remaining = word;
+                        while (remaining.length > maxCharsPerLine) {
+                          lines.push(remaining.slice(0, maxCharsPerLine));
+                          remaining = remaining.slice(maxCharsPerLine);
+                        }
+                        current = remaining;
+                      } else {
+                        current = word;
+                      }
+                    }
+                  }
+                  if (current) lines.push(current);
+                  return lines;
+                }
+
+                const LINE_H = 13; // px between label lines
+                const wrappedLabels = points.map(p => wrapLabel(p.label));
+                const maxLines = Math.max(...wrappedLabels.map(l => l.length));
+                const PAD_B = 8 + maxLines * LINE_H;
+                const H = 140 + (maxLines - 1) * LINE_H;
+                const plotH = H - PAD_T - PAD_B;
 
                 return (
                   <div className="rounded-2xl px-6 py-5" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
@@ -535,11 +571,15 @@ export default function HomePage() {
                                 </g>
                               );
                             })()}
-                            {/* X-axis label */}
-                            <text x={cx} y={PAD_T + plotH + 16} textAnchor="middle" fontSize="10"
+                            {/* X-axis label — word-wrapped */}
+                            <text x={cx} textAnchor="middle" fontSize="10"
                               fill={isEmpty ? "rgba(255,255,255,0.12)" : hov ? "#9b7ff5" : "rgba(255,255,255,0.3)"}
                               fontWeight={hov ? "600" : "400"}>
-                              {pt.label.length > 10 ? pt.label.slice(0, 9) + "…" : pt.label}
+                              {wrappedLabels[i].map((line, li) => (
+                                <tspan key={li} x={cx} dy={li === 0 ? PAD_T + plotH + LINE_H : LINE_H}>
+                                  {line}
+                                </tspan>
+                              ))}
                             </text>
                           </g>
                         );
