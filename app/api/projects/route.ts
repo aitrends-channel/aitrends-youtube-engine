@@ -18,6 +18,9 @@ export async function GET() {
   return NextResponse.json(data);
 }
 
+const PLAN_LIMITS: Record<string, number | null> = { founder: 20, starter: 5, pro: null };
+const ADMIN_EMAIL = "prioritylearn@gmail.com";
+
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
@@ -53,6 +56,24 @@ export async function POST(req: Request) {
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json(data);
+  }
+
+  // Enforce niche limit for non-fork project creation
+  const isAdmin = user.email === ADMIN_EMAIL;
+  if (!isAdmin) {
+    const plan = (user.app_metadata?.plan as string) ?? "starter";
+    const limit = PLAN_LIMITS[plan] ?? 5;
+    if (limit !== null) {
+      const { data: existing } = await supabase
+        .from("projects")
+        .select("channel_name")
+        .eq("user_id", user.id)
+        .not("channel_name", "is", null);
+      const nicheCount = new Set((existing ?? []).map((p) => p.channel_name)).size;
+      if (nicheCount >= limit) {
+        return NextResponse.json({ error: "Niche limit reached", limitReached: true }, { status: 403 });
+      }
+    }
   }
 
   const { data, error } = await supabase

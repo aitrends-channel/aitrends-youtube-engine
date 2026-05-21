@@ -145,6 +145,15 @@ export default function HomePage() {
     return Array.from(map.values()).sort((a, b) => b.lastActive.localeCompare(a.lastActive));
   }, [projects]);
 
+  const { nicheLimit, atNicheLimit } = useMemo(() => {
+    const PLAN_LIMITS: Record<string, number | null> = { founder: 20, starter: 5, pro: null };
+    const limit = isAdmin ? null : (PLAN_LIMITS[userPlan] ?? 5);
+    const nicheCount = new Set(
+      (projects ?? []).filter((p) => p.channel_name).map((p) => p.channel_name)
+    ).size;
+    return { nicheLimit: limit, atNicheLimit: limit !== null && nicheCount >= limit };
+  }, [isAdmin, userPlan, projects]);
+
   function requireSubscription(action: () => void) {
     if (isPaid || isAdmin) {
       action();
@@ -166,6 +175,10 @@ export default function HomePage() {
     try {
       const res = await fetch("/api/projects", { method: "POST" });
       const project = await res.json();
+      if (res.status === 403 && project.limitReached) {
+        toast.error(`You've reached your ${nicheLimit}-niche limit. Upgrade your plan to add more.`);
+        return;
+      }
       if (project.id) {
         router.push(`/projects/${project.id}/channel`);
       } else {
@@ -324,14 +337,21 @@ export default function HomePage() {
               </>
             )}
           </div>
-          <button
-            onClick={createProject}
-            disabled={creating || !authReady}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-            style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
-          >
-            {creating ? "Creating…" : "+ New Niche"}
-          </button>
+          <div className="flex flex-col items-end gap-0.5">
+            <button
+              onClick={createProject}
+              disabled={creating || !authReady || atNicheLimit}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
+            >
+              {creating ? "Creating…" : "+ New Niche"}
+            </button>
+            {atNicheLimit && (
+              <span className="text-[10px]" style={{ color: "oklch(0.7 0.2 25)" }}>
+                {nicheLimit}-niche limit reached · <a href="/plan" className="underline hover:opacity-80">Upgrade</a>
+              </span>
+            )}
+          </div>
         </div>
       </header>
 
@@ -868,7 +888,7 @@ export default function HomePage() {
           <div className="flex flex-col items-center justify-center py-32 gap-6">
             <button
               onClick={createProject}
-              disabled={creating || !authReady}
+              disabled={creating || !authReady || atNicheLimit}
               className="w-16 h-16 rounded-2xl flex items-center justify-center transition-all hover:scale-105 active:scale-95 disabled:opacity-50 cursor-pointer"
               style={{
                 background: "oklch(0.72 0.25 285 / 0.08)",
@@ -886,7 +906,7 @@ export default function HomePage() {
             </div>
             <button
               onClick={createProject}
-              disabled={creating || !authReady}
+              disabled={creating || !authReady || atNicheLimit}
               className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
             >
