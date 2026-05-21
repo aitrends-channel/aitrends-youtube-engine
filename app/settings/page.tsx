@@ -383,7 +383,7 @@ export default function SettingsPage() {
             </div>
 
             {/* Intro */}
-            <div className="p-5 rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+            <div className="p-5 rounded-2xl space-y-3" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
               <p className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
                 Thanks for signing up. Now before you start creating, let me walk you through a quick setup process.
                 And here&apos;s the best part — instead of paying huge monthly subscriptions for multiple AI tools, this system
@@ -396,81 +396,112 @@ export default function SettingsPage() {
               </p>
             </div>
 
-            {[
-              {
-                num: 1,
-                title: "Anthropic API Key",
-                tag: "Claude AI — script generation & prompts",
-                steps: [
-                  "Head over to Anthropic's platform website and sign in.",
-                  "Select \"Get API Key\" — this takes you to the API Keys page.",
-                  "Click Create Key, choose Default, give it any name, and click Add.",
-                  "Copy the key and paste it into the Anthropic field in the Setup tab.",
-                ],
-                note: "You'll also need to top up your Anthropic balance. Go to the Billing section and add around $5 to start — you can top up later as needed. You're only charged for the requests you actually make, not a fixed monthly fee.",
-              },
-              {
-                num: 2,
-                title: "YouTube Data API Key",
-                tag: "Channel & video data lookup",
-                steps: [
-                  "Go to Google Cloud Console and create a new project (any name).",
-                  "With the project selected, go to APIs & Services → Enable APIs & Services.",
-                  "Search for \"YouTube Data API v3\" and click Enable.",
-                  "Go to Credentials, select YouTube Data API v3, choose Public Data, and continue.",
-                  "Copy the generated key and paste it into the YouTube API field.",
-                ],
-                note: null,
-              },
-              {
-                num: 3,
-                title: "Kie AI API Key",
-                tag: "Voiceovers, image generation & video clips",
-                steps: [
-                  "Head over to the Kie AI website and make sure you're logged in.",
-                  "Go to the API Keys section, create a new key, give it a name, and click Create.",
-                  "Copy the key and paste it into the Kie AI field.",
-                ],
-                note: "Kie AI is a unified platform that gives you access to ElevenLabs voice generation, image models, and popular AI video generators — all from one balance. Instead of separate subscriptions across multiple platforms, you manage everything in one place, and it's usually cheaper too.",
-              },
-              {
-                num: 4,
-                title: "ElevenLabs API Key",
-                tag: "Caption timing & final assembly",
-                steps: [
-                  "Go to ElevenLabs and head to Developers → API Keys.",
-                  "You'll usually see a default unrestricted developer key already available.",
-                  "Copy it and paste it into the ElevenLabs field.",
-                ],
-                note: "You won't be generating voiceovers directly through ElevenLabs — Kie handles that part. But the ElevenLabs key is still required for the final assembly process. Their free developer key is completely fine for this.",
-              },
-            ].map(({ num, title, tag, steps, note }) => (
-              <div key={num} className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
-                <div className="flex items-start gap-3">
-                  <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold mt-0.5"
-                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
-                    {num}
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{title}</p>
-                    <p className="text-xs mt-0.5" style={{ color: "var(--c-40)" }}>{tag}</p>
-                  </div>
+            {/* Step 1 — Anthropic */}
+            <div className="p-5 rounded-2xl space-y-4" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+              <div className="flex items-start gap-3">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold mt-0.5"
+                  style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>1</div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Anthropic API Key</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--c-40)" }}>Claude AI — script generation & prompts</p>
                 </div>
-                <ol className="space-y-2 pl-10">
-                  {steps.map((s, i) => (
-                    <li key={i} className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
-                      <span className="font-medium" style={{ color: "var(--c-50)" }}>{i + 1}.</span> {s}
-                    </li>
-                  ))}
-                </ol>
-                {note && (
-                  <div className="ml-10 px-3 py-2.5 rounded-lg text-xs leading-relaxed"
-                    style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px solid oklch(0.72 0.25 285 / 0.15)", color: "var(--c-50)" }}>
-                    {note}
-                  </div>
-                )}
               </div>
-            ))}
+              <ol className="space-y-2 pl-10">
+                {([
+                  <>Head over to <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>console.anthropic.com</a> and sign in.</>,
+                  <>Select <strong style={{ color: "var(--c-80)" }}>&quot;Get API Key&quot;</strong> — this takes you to the API Keys page.</>,
+                  <>Click <strong style={{ color: "var(--c-80)" }}>Create Key</strong>, choose Default, give it any name, and click Add.</>,
+                  <>Copy the key and paste it into the Anthropic field in the Setup tab.</>,
+                ] as React.ReactNode[]).map((s, i) => (
+                  <li key={i} className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
+                    <span className="font-medium" style={{ color: "var(--c-50)" }}>{i + 1}.</span> {s}
+                  </li>
+                ))}
+              </ol>
+              <div className="ml-10 px-3 py-2.5 rounded-lg text-xs leading-relaxed"
+                style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px solid oklch(0.72 0.25 285 / 0.15)", color: "var(--c-50)" }}>
+                You&apos;ll also need to top up your Anthropic balance. Go to the Billing section and add around $5 to start — you can top up later as needed. You&apos;re only charged for the requests you actually make, not a fixed monthly fee.
+              </div>
+            </div>
+
+            {/* Step 2 — YouTube */}
+            <div className="p-5 rounded-2xl space-y-4" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+              <div className="flex items-start gap-3">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold mt-0.5"
+                  style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>2</div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">YouTube Data API Key</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--c-40)" }}>Channel & video data lookup</p>
+                </div>
+              </div>
+              <ol className="space-y-2 pl-10">
+                {([
+                  <>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>Google Cloud Console</a> and create a new project (any name).</>,
+                  <>With the project selected, go to <strong style={{ color: "var(--c-80)" }}>APIs & Services → Enable APIs & Services</strong>.</>,
+                  <>Search for <strong style={{ color: "var(--c-80)" }}>&quot;YouTube Data API v3&quot;</strong> and click Enable.</>,
+                  <>Go to <strong style={{ color: "var(--c-80)" }}>Credentials</strong>, select YouTube Data API v3, choose Public Data, and continue.</>,
+                  <>Copy the generated key and paste it into the YouTube API field.</>,
+                ] as React.ReactNode[]).map((s, i) => (
+                  <li key={i} className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
+                    <span className="font-medium" style={{ color: "var(--c-50)" }}>{i + 1}.</span> {s}
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* Step 3 — Kie AI */}
+            <div className="p-5 rounded-2xl space-y-4" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+              <div className="flex items-start gap-3">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold mt-0.5"
+                  style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>3</div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">Kie AI API Key</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--c-40)" }}>Voiceovers, image generation & video clips</p>
+                </div>
+              </div>
+              <ol className="space-y-2 pl-10">
+                {([
+                  <>Head over to <a href="https://kie.ai" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>kie.ai</a> and make sure you&apos;re logged in.</>,
+                  <>Go to the <strong style={{ color: "var(--c-80)" }}>API Keys</strong> section, create a new key, give it a name, and click Create.</>,
+                  <>Copy the key and paste it into the Kie AI field.</>,
+                ] as React.ReactNode[]).map((s, i) => (
+                  <li key={i} className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
+                    <span className="font-medium" style={{ color: "var(--c-50)" }}>{i + 1}.</span> {s}
+                  </li>
+                ))}
+              </ol>
+              <div className="ml-10 px-3 py-2.5 rounded-lg text-xs leading-relaxed"
+                style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px solid oklch(0.72 0.25 285 / 0.15)", color: "var(--c-50)" }}>
+                Kie AI is a unified platform that gives you access to ElevenLabs voice generation, image models, and popular AI video generators — all from one balance. Instead of separate subscriptions across multiple platforms, you manage everything in one place, and it&apos;s usually cheaper too.
+              </div>
+            </div>
+
+            {/* Step 4 — ElevenLabs */}
+            <div className="p-5 rounded-2xl space-y-4" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+              <div className="flex items-start gap-3">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold mt-0.5"
+                  style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>4</div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">ElevenLabs API Key</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--c-40)" }}>Caption timing & final assembly</p>
+                </div>
+              </div>
+              <ol className="space-y-2 pl-10">
+                {([
+                  <>Go to <a href="https://elevenlabs.io" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>ElevenLabs</a> and head to <strong style={{ color: "var(--c-80)" }}>Developers → API Keys</strong>.</>,
+                  <>You&apos;ll usually see a default unrestricted developer key already available.</>,
+                  <>Copy it and paste it into the ElevenLabs field.</>,
+                ] as React.ReactNode[]).map((s, i) => (
+                  <li key={i} className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
+                    <span className="font-medium" style={{ color: "var(--c-50)" }}>{i + 1}.</span> {s}
+                  </li>
+                ))}
+              </ol>
+              <div className="ml-10 px-3 py-2.5 rounded-lg text-xs leading-relaxed"
+                style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px solid oklch(0.72 0.25 285 / 0.15)", color: "var(--c-50)" }}>
+                You won&apos;t be generating voiceovers directly through ElevenLabs — Kie handles that part. But the ElevenLabs key is still required for the final assembly process. Their free developer key is completely fine for this.
+              </div>
+            </div>
 
             {/* Final note */}
             <div className="p-5 rounded-2xl" style={{ background: "oklch(0.55 0.15 145 / 0.08)", border: "1px solid oklch(0.55 0.15 145 / 0.2)" }}>
