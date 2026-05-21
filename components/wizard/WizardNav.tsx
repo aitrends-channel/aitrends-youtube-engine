@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import {
   Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film,
-  Check, ZoomIn, ZoomOut, LayoutTemplate,
+  Check, ZoomIn, ZoomOut, LayoutTemplate, LayoutDashboard,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -96,6 +96,18 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
               ) : "Heclus"}
             </p>
           </div>
+        </button>
+      </div>
+
+      {/* Dashboard link */}
+      <div className="px-3 py-2 border-b" style={{ borderColor: "var(--bd-7)" }}>
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all hover:bg-white/5"
+          style={{ color: "var(--c-45)" }}
+        >
+          <LayoutDashboard size={14} />
+          Go to Dashboard
         </button>
       </div>
 
