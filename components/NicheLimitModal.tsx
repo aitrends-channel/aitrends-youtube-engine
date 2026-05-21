@@ -109,14 +109,17 @@ export function NicheLimitModal({ email, userPlan, nicheLimit, onClose, onSucces
           <X size={16} />
         </button>
 
+        {/* Top-left logo */}
+        <div className="flex items-center gap-2">
+          <Image src="/heclus-icon-white.svg" alt="Heclus" width={32} height={32} className="rounded-xl" />
+          <span className="text-sm font-bold text-foreground">Heclus</span>
+        </div>
+
         {/* Icon + heading */}
         <div className="flex flex-col items-center text-center gap-3">
-          <div className="flex flex-col items-center gap-2">
-            <Image src="/heclus-icon-white.svg" alt="Heclus" width={44} height={44} className="rounded-xl" />
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center"
-              style={{ background: "oklch(0.6 0.22 25 / 0.12)", border: "1px solid oklch(0.6 0.22 25 / 0.25)" }}>
-              <AlertTriangle size={16} style={{ color: "oklch(0.7 0.2 25)" }} />
-            </div>
+          <div className="w-10 h-10 rounded-2xl flex items-center justify-center"
+            style={{ background: "oklch(0.6 0.22 25 / 0.12)", border: "1px solid oklch(0.6 0.22 25 / 0.25)" }}>
+            <AlertTriangle size={18} style={{ color: "oklch(0.7 0.2 25)" }} />
           </div>
           <div>
             <h2 className="text-lg font-bold text-foreground">Niche limit reached</h2>
