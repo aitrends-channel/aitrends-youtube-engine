@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
-import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
 
@@ -59,10 +58,9 @@ export default function DemoScriptPage() {
   const scriptDone = displayedScript.length >= DEMO_DATA.script.length;
 
   return (
-    <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
+    <div className="flex flex-1 overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <DemoNav currentStep={2} />
       <div className="flex-1 flex flex-col min-h-0">
-        <DemoBanner onSubscribe={() => router.push("/dashboard")} />
         <main className="flex-1 flex flex-col overflow-hidden">
         <div
           className="flex items-center justify-between px-8 py-4 shrink-0"

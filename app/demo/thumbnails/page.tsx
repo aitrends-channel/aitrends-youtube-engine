@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { Download } from "lucide-react";
 import { DemoNav } from "@/components/demo/DemoNav";
-import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
 
@@ -60,10 +59,9 @@ export default function DemoThumbnailsPage() {
   }
 
   return (
-    <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
+    <div className="flex flex-1 overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <DemoNav currentStep={hasImages ? 8 : 7} />
       <div className="flex-1 flex flex-col min-h-0">
-        <DemoBanner onSubscribe={() => router.push("/dashboard")} />
         <main className="flex-1 overflow-y-auto">
 
           {/* Header */}

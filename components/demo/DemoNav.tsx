@@ -27,7 +27,7 @@ export function DemoNav({ currentStep }: DemoNavProps) {
   return (
     <>
       <aside
-        className="w-64 shrink-0 flex flex-col h-screen sticky top-0 overflow-hidden"
+        className="w-64 shrink-0 flex flex-col h-full overflow-hidden"
         style={{ background: "var(--bg-nav)", borderRight: "1px solid var(--bd-7)" }}
       >
         {/* Logo */}
