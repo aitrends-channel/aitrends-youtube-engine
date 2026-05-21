@@ -78,11 +78,11 @@ export default function DemoScriptPage() {
           <div className="flex items-center gap-3">
             {scriptDone && (
               <button
-                onClick={() => router.push("/demo/generate")}
+                onClick={() => router.push("/demo/visuals")}
                 className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all"
                 style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
               >
-                Continue to Generate →
+                Continue to Visuals →
               </button>
             )}
           </div>
@@ -152,7 +152,7 @@ export default function DemoScriptPage() {
               {scriptDone && (
                 <div className="mt-6 flex justify-end">
                   <button
-                    onClick={() => router.push("/demo/generate")}
+                    onClick={() => router.push("/demo/visuals")}
                     className="px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
                     style={{
                       background: "oklch(0.72 0.25 285)",
@@ -160,7 +160,7 @@ export default function DemoScriptPage() {
                       boxShadow: "0 0 16px oklch(0.72 0.25 285 / 0.3)",
                     }}
                   >
-                    Continue to Generate →
+                    Continue to Visuals →
                   </button>
                 </div>
               )}

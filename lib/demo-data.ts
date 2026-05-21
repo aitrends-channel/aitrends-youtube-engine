@@ -44,6 +44,38 @@ The gap between people who build wealth and people who don't is rarely income. I
 
 If you want to go deeper on any of these — especially habit three, because the real math on car financing is genuinely disturbing — drop a comment below and I'll make a dedicated video. And if this was useful, the subscribe button is right there. It costs you nothing, and it keeps content like this coming.`,
 
+  visualProfile: {
+    palette: ["#1a1a2e", "#7c5cbf", "#f5c842", "#e8e8e8", "#2d2d44"],
+    paletteLabels: ["Background", "Accent", "Highlight", "Text", "Panel"],
+    style: "Dark, high-contrast with bold typography and data-driven overlays. Thumbnails use split-screen layouts with strong directional lighting and a consistent purple/gold color language to signal premium finance content.",
+    thumbnailPattern: "Bold sans-serif headline on left, punchy visual on right. Always includes a number or percentage in large type.",
+    editingPace: "Fast-cut — average shot length 2.1 seconds. Hook delivered in first 8 seconds.",
+    musicMood: "Tense, motivational underscore with occasional silence for emphasis.",
+  },
+
+  promptBeats: [
+    {
+      beat: 1,
+      imagePrompt: "Split screen: pile of coins on left, empty wallet on right, dramatic cinematic lighting with purple accent glow",
+      videoPrompt: "Slow push-in on the split screen, slight rack focus from coins to empty wallet",
+    },
+    {
+      beat: 2,
+      imagePrompt: "Person staring at laptop showing bank statement, late night, dim lamp light, concerned expression, shallow depth of field",
+      videoPrompt: "Subtle handheld drift to the right, subject stays sharp while background softly blurs",
+    },
+    {
+      beat: 3,
+      imagePrompt: "Animated bar chart rising steeply, dark background, glowing purple data bars, futuristic financial dashboard aesthetic",
+      videoPrompt: "Quick zoom-out from a single bar to the full chart, then freeze on peak",
+    },
+    {
+      beat: 4,
+      imagePrompt: "Stack of credit cards melting into liquid, surreal macro photography, warm orange and red tones, studio lighting",
+      videoPrompt: "Slow downward tilt revealing the melting base, held for two seconds",
+    },
+  ],
+
   imagePrompts: [
     "Split screen: pile of coins on left, empty wallet on right, dramatic cinematic lighting with purple accent glow",
     "Person staring at laptop showing bank statement, late night, dim lamp light, concerned expression, shallow depth of field",

@@ -36,7 +36,7 @@ export default function DemoGeneratePage() {
 
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
-      <DemoNav currentStep={3} />
+      <DemoNav currentStep={5} />
       <div className="flex-1 flex flex-col min-h-0">
         <DemoBanner onSubscribe={() => router.push("/dashboard")} />
         <main className="flex-1 overflow-y-auto">

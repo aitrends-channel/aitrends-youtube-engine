@@ -2,15 +2,17 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Tv, Lightbulb, ScrollText, Clapperboard, CheckCircle2, Check, LayoutDashboard } from "lucide-react";
+import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, CheckCircle2, Check, LayoutDashboard } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 const STEPS: { label: string; sublabel: string; Icon: LucideIcon }[] = [
-  { label: "Channel", sublabel: "Analysis & Style", Icon: Tv },
-  { label: "Topic", sublabel: "Video Idea", Icon: Lightbulb },
-  { label: "Script", sublabel: "Generate & Edit", Icon: ScrollText },
-  { label: "Generate", sublabel: "Assets & Export", Icon: Clapperboard },
-  { label: "Done", sublabel: "Subscribe to Start", Icon: CheckCircle2 },
+  { label: "Channel",   sublabel: "Analysis & Style",    Icon: Tv },
+  { label: "Topic",     sublabel: "Video Idea",           Icon: Lightbulb },
+  { label: "Script",    sublabel: "Generate & Edit",      Icon: ScrollText },
+  { label: "Visuals",   sublabel: "Style Extraction",     Icon: ImageIcon },
+  { label: "Prompts",   sublabel: "Image & Video Beats",  Icon: Wand2 },
+  { label: "Generate",  sublabel: "Assets & Export",      Icon: Clapperboard },
+  { label: "Done",      sublabel: "Subscribe to Start",   Icon: CheckCircle2 },
 ];
 
 interface DemoNavProps {
@@ -19,7 +21,7 @@ interface DemoNavProps {
 
 export function DemoNav({ currentStep }: DemoNavProps) {
   const router = useRouter();
-  const progressPct = Math.round((currentStep / 4) * 100);
+  const progressPct = Math.round((currentStep / 6) * 100);
 
   return (
     <>
