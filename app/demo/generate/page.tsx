@@ -1,38 +1,142 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DEMO_DATA } from "@/lib/demo-data";
 
-type Phase = "loading" | "done";
+// ── Fake model data ──────────────────────────────────────────────────────────
 
-const WAVEFORM_HEIGHTS = [30, 55, 75, 45, 90, 60, 80, 40, 65, 50];
+const FAKE_VOICES = [
+  { id: "v1", name: "Rachel",  tags: ["american", "calm", "narration"] },
+  { id: "v2", name: "Marcus",  tags: ["american", "deep", "authoritative"] },
+  { id: "v3", name: "Sophia",  tags: ["british", "professional"] },
+  { id: "v4", name: "Daniel",  tags: ["american", "energetic", "youtube"] },
+];
+
+const FAKE_IMAGE_MODELS = [
+  { id: "i1", name: "FLUX 1.1 Pro",      description: "Best quality, slower",            tags: ["HD", "photorealistic"], cost: "2 cr/img" },
+  { id: "i2", name: "FLUX 1.1 Pro Ultra", description: "Ultra-high resolution",           tags: ["4K", "detail"],         cost: "4 cr/img" },
+  { id: "i3", name: "FLUX Schnell",       description: "Fast generation",                 tags: ["fast"],                 cost: "1 cr/img" },
+  { id: "i4", name: "Stable Diffusion 3", description: "Strong creative flexibility",     tags: ["creative"],             cost: "1 cr/img" },
+];
+
+const FAKE_IMAGE_RATIOS = ["16:9", "9:16", "1:1", "4:3"];
+
+const FAKE_VIDEO_MODELS = [
+  { id: "vd1", name: "Kling 1.6 Pro",  description: "Best motion quality",         tags: ["smooth", "HD"],     cost: "10 cr/s" },
+  { id: "vd2", name: "Kling 1.6 Std",  description: "Balanced speed & quality",    tags: ["standard"],         cost: "5 cr/s" },
+  { id: "vd3", name: "Wan 2.1",        description: "Fast turnaround",             tags: ["fast"],             cost: "3 cr/s" },
+];
+
+const FAKE_VIDEO_RATIOS = ["16:9", "9:16", "1:1"];
+const FAKE_DURATIONS = [{ label: "5s", value: 5 }, { label: "10s", value: 10 }];
+
+const WAVEFORM_HEIGHTS = [30, 55, 75, 45, 90, 60, 80, 40, 65, 50, 35, 70, 85, 50, 40, 60, 75, 55, 65, 45];
+
+// ── Sub-components ───────────────────────────────────────────────────────────
+
+function SectionHeader({ icon, title, subtitle }: { icon: string; title: string; subtitle: string }) {
+  return (
+    <div className="flex items-center gap-3 mb-4">
+      <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base"
+        style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
+        {icon}
+      </div>
+      <div>
+        <p className="font-semibold text-sm">{title}</p>
+        <p className="text-xs" style={{ color: "var(--c-45)" }}>{subtitle}</p>
+      </div>
+    </div>
+  );
+}
+
+function ProgressBar({ value, total }: { value: number; total: number }) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  return (
+    <div className="space-y-1.5">
+      <div className="flex justify-between text-xs" style={{ color: "var(--c-45)" }}>
+        <span>{value} / {total}</span><span>{pct}%</span>
+      </div>
+      <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
+        <div className="h-full rounded-full transition-all"
+          style={{ width: `${pct}%`, background: "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))" }} />
+      </div>
+    </div>
+  );
+}
+
+function RatioButtons({ ratios, selected, onSelect }: { ratios: string[]; selected: string; onSelect: (r: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {ratios.map((r) => (
+        <button key={r} onClick={() => onSelect(r)}
+          className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+          style={selected === r ? {
+            background: "oklch(0.72 0.25 285 / 0.15)",
+            border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+            color: "oklch(0.88 0.12 285)",
+          } : {
+            background: "var(--bg-input)",
+            border: "1px solid var(--bd-7)",
+            color: "var(--c-50)",
+          }}>
+          {r}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Main page ────────────────────────────────────────────────────────────────
 
 export default function DemoGeneratePage() {
   const router = useRouter();
-  const [phase, setPhase] = useState<Phase>("loading");
-  const [progress, setProgress] = useState(0);
 
-  useEffect(() => {
-    const duration = 2500;
-    const interval = 50;
-    const steps = duration / interval;
-    let current = 0;
+  // Voice Over state
+  const [selectedVoice, setSelectedVoice]     = useState("v1");
+  const [ttsPhase, setTtsPhase]               = useState<"idle" | "generating" | "done">("idle");
 
+  // Images state
+  const [selectedImageModel, setSelectedImageModel] = useState("i1");
+  const [selectedImageRatio, setSelectedImageRatio] = useState("16:9");
+  const [imagesPhase, setImagesPhase]               = useState<"idle" | "generating" | "done">("idle");
+  const [imagesProgress, setImagesProgress]         = useState(0);
+
+  // Videos state
+  const [selectedVideoModel, setSelectedVideoModel] = useState("vd1");
+  const [selectedVideoRatio, setSelectedVideoRatio] = useState("16:9");
+  const [selectedDuration, setSelectedDuration]     = useState(5);
+  const [videosPhase, setVideosPhase]               = useState<"idle" | "queuing" | "done">("idle");
+
+  const totalBeats = DEMO_DATA.promptBeats.length;
+
+  function generateVoiceover() {
+    setTtsPhase("generating");
+    setTimeout(() => setTtsPhase("done"), 2500);
+  }
+
+  function generateImages() {
+    setImagesPhase("generating");
+    setImagesProgress(0);
+    let count = 0;
     const id = setInterval(() => {
-      current += 1;
-      const pct = Math.min(Math.round((current / steps) * 100), 100);
-      setProgress(pct);
-      if (current >= steps) {
+      count++;
+      setImagesProgress(count);
+      if (count >= totalBeats) {
         clearInterval(id);
-        setTimeout(() => setPhase("done"), 200);
+        setImagesPhase("done");
       }
-    }, interval);
+    }, 700);
+  }
 
-    return () => clearInterval(id);
-  }, []);
+  function queueVideos() {
+    setVideosPhase("queuing");
+    setTimeout(() => setVideosPhase("done"), 2000);
+  }
+
+  const allDone = ttsPhase === "done" && imagesPhase === "done" && videosPhase === "done";
 
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
@@ -40,169 +144,332 @@ export default function DemoGeneratePage() {
       <div className="flex-1 flex flex-col min-h-0">
         <DemoBanner onSubscribe={() => router.push("/dashboard")} />
         <main className="flex-1 overflow-y-auto">
-        <div
-          className="px-8 py-5"
-          style={{
-            borderBottom: "1px solid var(--bd-6)",
-            background: "var(--bg-header-2)",
-            backdropFilter: "blur(12px)",
-          }}
-        >
-          <h1 className="font-bold text-lg">Generate Assets</h1>
-          <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-            AI-generated images and voiceover for your video
-          </p>
-        </div>
-
-        <div className="max-w-3xl mx-auto px-8 py-8 space-y-8">
-
-          {phase === "loading" && (
-            <div
-              className="rounded-2xl p-8 text-center space-y-6"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}
-            >
-              <div className="space-y-2">
-                <p className="text-sm font-semibold" style={{ color: "var(--c-75)" }}>
-                  Generating your assets…
-                </p>
-                <p className="text-xs" style={{ color: "var(--c-45)" }}>
-                  Creating images and synthesizing voiceover
+          {/* Header */}
+          <div className="px-8 py-5"
+            style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="font-bold text-lg">Generate Assets</h1>
+                <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                  Select a model for each service, then generate your final content
                 </p>
               </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-xs" style={{ color: "var(--c-45)" }}>
-                  <span>Progress</span>
-                  <span>{progress}%</span>
-                </div>
-                <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--bg-progress)" }}>
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{
-                      width: `${progress}%`,
-                      background: "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-                      boxShadow: "0 0 8px oklch(0.72 0.25 285 / 0.5)",
-                      transition: "width 50ms linear",
-                    }}
-                  />
-                </div>
-              </div>
+              {allDone && (
+                <button
+                  onClick={() => router.push("/demo/finish")}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                >
+                  Continue →
+                </button>
+              )}
             </div>
-          )}
+          </div>
 
-          {phase === "done" && (
-            <div className="space-y-8">
+          <div className="p-8 grid grid-cols-1 xl:grid-cols-3 gap-6">
 
-              {/* AI Images */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-9 h-9 rounded-xl flex items-center justify-center text-base"
-                    style={{
-                      background: "oklch(0.72 0.25 285 / 0.1)",
-                      color: "oklch(0.72 0.25 285)",
-                      border: "1px solid oklch(0.72 0.25 285 / 0.2)",
-                    }}
-                  >
-                    ◈
-                  </div>
-                  <div>
-                    <p className="font-semibold text-sm">AI Images</p>
-                    <p className="text-xs" style={{ color: "var(--c-45)" }}>4 scenes generated from script beats</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  {DEMO_DATA.imagePrompts.map((prompt, i) => (
+            {/* ── Voiceover column ─────────────────────────────────────────── */}
+            <div className="rounded-2xl flex flex-col overflow-hidden"
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <div className="p-5" style={{ borderBottom: "1px solid var(--bd-6)" }}>
+                <SectionHeader icon="♪" title="Voiceover" subtitle="Text-to-speech from your script" />
+                <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
+                  Select Voice
+                </p>
+                <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+                  {FAKE_VOICES.map((v) => (
                     <div
-                      key={i}
-                      className="rounded-xl aspect-square flex items-center justify-center p-4"
-                      style={{
-                        background: "oklch(0.72 0.25 285 / 0.08)",
-                        border: "1px solid oklch(0.72 0.25 285 / 0.15)",
+                      key={v.id}
+                      role="button"
+                      onClick={() => setSelectedVoice(v.id)}
+                      className="cursor-pointer p-3 rounded-xl transition-all select-none"
+                      style={selectedVoice === v.id ? {
+                        background: "oklch(0.72 0.25 285 / 0.1)",
+                        border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+                        color: "var(--c-90)",
+                      } : {
+                        background: "var(--bg-input)",
+                        border: "1px solid var(--bd-7)",
+                        color: "var(--c-60)",
                       }}
                     >
-                      <p
-                        className="text-xs italic text-center leading-relaxed"
-                        style={{ color: "var(--c-50)" }}
-                      >
-                        {prompt}
-                      </p>
+                      <p className="font-medium text-xs">{v.name}</p>
+                      <div className="flex gap-1 mt-1.5 flex-wrap">
+                        {v.tags.map((tag) => (
+                          <span key={tag} className="px-1.5 py-0.5 rounded text-xs"
+                            style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Voiceover */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-3">
-                  <div
-                    className="w-9 h-9 rounded-xl flex items-center justify-center text-base"
-                    style={{
-                      background: "oklch(0.72 0.25 285 / 0.1)",
-                      color: "oklch(0.72 0.25 285)",
-                      border: "1px solid oklch(0.72 0.25 285 / 0.2)",
-                    }}
-                  >
-                    ♪
-                  </div>
-                  <div>
-                    <p className="font-semibold text-sm">Voiceover</p>
-                    <p className="text-xs" style={{ color: "var(--c-45)" }}>Text-to-speech from your script</p>
-                  </div>
-                </div>
-
-                <div
-                  className="rounded-xl p-5"
-                  style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}
-                >
-                  <div className="flex items-center gap-4">
-                    <button
-                      className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all hover:opacity-80"
-                      style={{ background: "oklch(0.72 0.25 285)", color: "oklch(0.06 0 0)" }}
-                    >
-                      <svg width="12" height="14" viewBox="0 0 12 14" fill="currentColor">
-                        <path d="M0 1L12 7L0 13V1Z" />
-                      </svg>
-                    </button>
-
-                    <div className="flex-1 flex items-center gap-0.5 h-8">
-                      {WAVEFORM_HEIGHTS.map((h, i) => (
-                        <div
-                          key={i}
-                          className="flex-1 rounded-full"
-                          style={{
-                            height: `${h}%`,
-                            background: "oklch(0.72 0.25 285)",
-                            opacity: 0.7,
-                          }}
-                        />
-                      ))}
+              <div className="p-5 mt-auto space-y-3">
+                {ttsPhase === "done" ? (
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Original</span>
+                        <span className="text-xs" style={{ color: "var(--c-45)" }}>↓ Download</span>
+                      </div>
+                      {/* Fake waveform player */}
+                      <div className="rounded-lg px-3 py-2 flex items-center gap-3"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--bd-7)" }}>
+                        <button className="w-6 h-6 rounded flex items-center justify-center shrink-0"
+                          style={{ background: "oklch(0.72 0.25 285)", color: "oklch(0.06 0 0)" }}>
+                          <svg width="7" height="9" viewBox="0 0 7 9" fill="currentColor"><path d="M0 0.5L7 4.5L0 8.5V0.5Z" /></svg>
+                        </button>
+                        <div className="flex-1 flex items-center gap-0.5 h-6">
+                          {WAVEFORM_HEIGHTS.map((h, i) => (
+                            <div key={i} className="flex-1 rounded-full"
+                              style={{ height: `${h}%`, background: "oklch(0.72 0.25 285)", opacity: 0.65 }} />
+                          ))}
+                        </div>
+                        <span className="text-xs font-mono shrink-0" style={{ color: "var(--c-50)" }}>2:34</span>
+                      </div>
                     </div>
-
-                    <span className="text-xs font-mono shrink-0" style={{ color: "var(--c-50)" }}>
-                      2:34
-                    </span>
+                    <div className="flex gap-2">
+                      <button onClick={generateVoiceover}
+                        className="flex-1 py-2 rounded-lg text-xs font-medium transition-all"
+                        style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
+                        Trim Pauses
+                      </button>
+                      <button onClick={generateVoiceover}
+                        className="px-3 py-2 rounded-lg text-xs"
+                        style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
+                        Regen
+                      </button>
+                    </div>
                   </div>
+                ) : (
+                  <div className="space-y-2">
+                    {ttsPhase === "generating" && (
+                      <p className="text-xs text-center" style={{ color: "var(--c-55)" }}>Generating voiceover…</p>
+                    )}
+                    <button
+                      onClick={generateVoiceover}
+                      disabled={ttsPhase === "generating"}
+                      className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+                      style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                    >
+                      {ttsPhase === "generating" ? "Generating…" : "Generate Voiceover"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── AI Images column ─────────────────────────────────────────── */}
+            <div className="rounded-2xl flex flex-col overflow-hidden"
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <div className="p-5" style={{ borderBottom: "1px solid var(--bd-6)" }}>
+                <SectionHeader icon="◈" title="AI Images" subtitle={`${totalBeats} images from script beats`} />
+                <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
+                  Select Model
+                </p>
+                <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                  {FAKE_IMAGE_MODELS.map((m) => (
+                    <button key={m.id} onClick={() => setSelectedImageModel(m.id)}
+                      className="w-full text-left p-3 rounded-xl transition-all"
+                      style={selectedImageModel === m.id ? {
+                        background: "oklch(0.72 0.25 285 / 0.1)",
+                        border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+                        color: "var(--c-90)",
+                      } : {
+                        background: "var(--bg-input)",
+                        border: "1px solid var(--bd-7)",
+                        color: "var(--c-60)",
+                      }}>
+                      <p className="font-medium text-xs">{m.name}</p>
+                      {m.description && <p className="text-xs mt-0.5 opacity-60">{m.description}</p>}
+                      <div className="flex gap-1 mt-2 flex-wrap">
+                        {m.tags.map((tag) => (
+                          <span key={tag} className="px-1.5 py-0.5 rounded text-xs"
+                            style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>{tag}</span>
+                        ))}
+                        <span className="px-1.5 py-0.5 rounded text-xs"
+                          style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" }}>
+                          {m.cost}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
                 </div>
+
+                <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
+                  Aspect Ratio
+                </p>
+                <RatioButtons ratios={FAKE_IMAGE_RATIOS} selected={selectedImageRatio} onSelect={setSelectedImageRatio} />
               </div>
 
-              {/* Continue */}
-              <div className="flex justify-end pt-2">
+              {/* Image beat grid */}
+              {imagesPhase !== "idle" && (
+                <div className="px-5 pt-4">
+                  <ProgressBar value={imagesPhase === "done" ? totalBeats : imagesProgress} total={totalBeats} />
+                  <div className="grid grid-cols-4 gap-1.5 mt-3 max-h-36 overflow-y-auto">
+                    {DEMO_DATA.promptBeats.map((beat, i) => (
+                      <div key={beat.beat}
+                        className="relative aspect-video rounded-lg overflow-hidden flex items-center justify-center"
+                        style={{
+                          background: imagesPhase === "done" || i < imagesProgress
+                            ? `oklch(0.72 0.25 285 / ${0.15 + i * 0.05})`
+                            : "var(--bg-progress)",
+                          border: "1px solid oklch(0.72 0.25 285 / 0.15)",
+                        }}>
+                        {imagesPhase === "done" || i < imagesProgress ? (
+                          <span className="text-[8px] font-bold" style={{ color: "oklch(0.72 0.25 285)" }}>
+                            Beat {beat.beat}
+                          </span>
+                        ) : (
+                          <span className="text-[9px]" style={{ color: "var(--c-35)" }}>{beat.beat}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="p-5 mt-auto">
                 <button
-                  onClick={() => router.push("/demo/finish")}
-                  className="px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
-                  style={{
-                    background: "oklch(0.72 0.25 285)",
-                    color: "var(--bg-page-2)",
-                    boxShadow: "0 0 16px oklch(0.72 0.25 285 / 0.3)",
-                  }}
+                  onClick={generateImages}
+                  disabled={imagesPhase === "generating"}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                 >
-                  Continue →
+                  {imagesPhase === "generating"
+                    ? `Generating… ${imagesProgress}/${totalBeats}`
+                    : imagesPhase === "done"
+                    ? `Regenerate All (${totalBeats})`
+                    : `Generate ${totalBeats} Images`}
                 </button>
               </div>
             </div>
-          )}
-        </div>
+
+            {/* ── AI Video Clips column ────────────────────────────────────── */}
+            <div className="rounded-2xl flex flex-col overflow-hidden"
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <div className="p-5" style={{ borderBottom: "1px solid var(--bd-6)" }}>
+                <SectionHeader icon="⚡" title="AI Video Clips" subtitle={`${totalBeats} clips · 5–10s each`} />
+                <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
+                  Select Model
+                </p>
+                <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                  {FAKE_VIDEO_MODELS.map((m) => (
+                    <button key={m.id} onClick={() => setSelectedVideoModel(m.id)}
+                      className="w-full text-left p-3 rounded-xl transition-all"
+                      style={selectedVideoModel === m.id ? {
+                        background: "oklch(0.72 0.25 285 / 0.1)",
+                        border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+                        color: "var(--c-90)",
+                      } : {
+                        background: "var(--bg-input)",
+                        border: "1px solid var(--bd-7)",
+                        color: "var(--c-60)",
+                      }}>
+                      <p className="font-medium text-xs">{m.name}</p>
+                      {m.description && <p className="text-xs mt-0.5 opacity-60">{m.description}</p>}
+                      <div className="flex gap-1 mt-2 flex-wrap">
+                        {m.tags.map((tag) => (
+                          <span key={tag} className="px-1.5 py-0.5 rounded text-xs"
+                            style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>{tag}</span>
+                        ))}
+                        <span className="px-1.5 py-0.5 rounded text-xs"
+                          style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" }}>
+                          {m.cost}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+
+                <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
+                  Aspect Ratio
+                </p>
+                <RatioButtons ratios={FAKE_VIDEO_RATIOS} selected={selectedVideoRatio} onSelect={setSelectedVideoRatio} />
+
+                <p className="text-xs font-semibold uppercase tracking-wider mt-3 mb-2" style={{ color: "var(--c-40)" }}>
+                  Duration
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {FAKE_DURATIONS.map((d) => (
+                    <button key={d.value} onClick={() => setSelectedDuration(d.value)}
+                      className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                      style={selectedDuration === d.value ? {
+                        background: "oklch(0.72 0.25 285 / 0.15)",
+                        border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                        color: "oklch(0.88 0.12 285)",
+                      } : {
+                        background: "var(--bg-input)",
+                        border: "1px solid var(--bd-7)",
+                        color: "var(--c-50)",
+                      }}>
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Video clip grid */}
+              {videosPhase !== "idle" && (
+                <div className="px-5 pt-4">
+                  <ProgressBar value={videosPhase === "done" ? totalBeats : 0} total={totalBeats} />
+                  <div className="grid grid-cols-4 gap-1.5 mt-3 max-h-36 overflow-y-auto">
+                    {DEMO_DATA.promptBeats.map((beat) => (
+                      <div key={beat.beat}
+                        className="aspect-video rounded-lg overflow-hidden flex items-center justify-center"
+                        style={{ background: "var(--bg-progress)" }}>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded"
+                          style={{
+                            background: videosPhase === "done"
+                              ? "oklch(0.55 0.15 145 / 0.15)"
+                              : "oklch(0.72 0.25 285 / 0.1)",
+                            color: videosPhase === "done"
+                              ? "oklch(0.7 0.15 145)"
+                              : "oklch(0.72 0.25 285)",
+                          }}>
+                          {videosPhase === "done" ? "done" : "queued"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="p-5 mt-auto space-y-3">
+                <p className="text-xs" style={{ color: "var(--c-40)" }}>
+                  Runs in background — clips appear as each job completes.
+                </p>
+                {videosPhase === "done" && (
+                  <ProgressBar value={totalBeats} total={totalBeats} />
+                )}
+                <button
+                  onClick={queueVideos}
+                  disabled={videosPhase === "queuing"}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                >
+                  {videosPhase === "queuing" ? "Queuing…" : `Queue ${totalBeats} Video Clips`}
+                </button>
+                <button
+                  onClick={() => router.push("/demo/finish")}
+                  disabled={videosPhase !== "done"}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-30 transition-all"
+                  style={{
+                    background: "var(--bg-panel)",
+                    color: videosPhase === "done" ? "var(--c-75)" : "var(--c-40)",
+                    border: "1px solid var(--bd-10)",
+                  }}
+                >
+                  {videosPhase === "done"
+                    ? `Proceed to Assemble (${totalBeats}/${totalBeats} clips ready)`
+                    : `Need at least 2 clips to proceed (0/${totalBeats})`}
+                </button>
+              </div>
+            </div>
+          </div>
         </main>
       </div>
     </div>
