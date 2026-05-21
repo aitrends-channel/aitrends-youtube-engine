@@ -406,17 +406,24 @@ export default function DemoGeneratePage() {
                       <div key={beat.beat}
                         className="aspect-video rounded-lg overflow-hidden flex items-center justify-center"
                         style={{ background: "var(--bg-progress)" }}>
-                        <span className="text-[9px] px-1.5 py-0.5 rounded"
-                          style={{
-                            background: videosPhase === "done"
-                              ? "oklch(0.55 0.15 145 / 0.15)"
-                              : "oklch(0.72 0.25 285 / 0.1)",
-                            color: videosPhase === "done"
-                              ? "oklch(0.7 0.15 145)"
-                              : "oklch(0.72 0.25 285)",
-                          }}>
-                          {videosPhase === "done" ? "done" : "queued"}
-                        </span>
+                        {videosPhase === "done" ? (
+                          <video
+                            src={beat.videoUrl}
+                            className="w-full h-full object-cover"
+                            muted
+                            autoPlay
+                            loop
+                            playsInline
+                          />
+                        ) : (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded"
+                            style={{
+                              background: "oklch(0.72 0.25 285 / 0.1)",
+                              color: "oklch(0.72 0.25 285)",
+                            }}>
+                            queued
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>
