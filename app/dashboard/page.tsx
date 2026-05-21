@@ -10,6 +10,7 @@ import useSWR from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
+import { NicheLimitModal } from "@/components/NicheLimitModal";
 import { PageLoader } from "@/components/PageLoader";
 
 const ADMIN_EMAIL = "prioritylearn@gmail.com";
@@ -80,6 +81,7 @@ export default function HomePage() {
   const [userPlan, setUserPlan] = useState<string>("starter");
   const [memberSince, setMemberSince] = useState<string>("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showNicheLimitModal, setShowNicheLimitModal] = useState(false);
   const { data: apiStatus } = useSWR("/api/api-status", fetcher, { revalidateOnFocus: false });
 
   useEffect(() => {
@@ -189,6 +191,7 @@ export default function HomePage() {
   }
 
   function createProject() {
+    if (atNicheLimit) { setShowNicheLimitModal(true); return; }
     requireSubscription(doCreateProject);
   }
 
@@ -334,21 +337,14 @@ export default function HomePage() {
               </>
             )}
           </div>
-          <div className="flex flex-col items-end gap-0.5">
-            <button
-              onClick={createProject}
-              disabled={creating || !authReady || atNicheLimit}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
-            >
-              {creating ? "Creating…" : "+ New Niche"}
-            </button>
-            {atNicheLimit && (
-              <span className="text-[10px]" style={{ color: "oklch(0.7 0.2 25)" }}>
-                {nicheLimit}-niche limit reached · <a href="/plan" className="underline hover:opacity-80">Upgrade</a>
-              </span>
-            )}
-          </div>
+          <button
+            onClick={createProject}
+            disabled={creating || !authReady}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
+          >
+            {creating ? "Creating…" : "+ New Niche"}
+          </button>
         </div>
       </header>
 
@@ -885,7 +881,7 @@ export default function HomePage() {
           <div className="flex flex-col items-center justify-center py-32 gap-6">
             <button
               onClick={createProject}
-              disabled={creating || !authReady || atNicheLimit}
+              disabled={creating || !authReady}
               className="w-16 h-16 rounded-2xl flex items-center justify-center transition-all hover:scale-105 active:scale-95 disabled:opacity-50 cursor-pointer"
               style={{
                 background: "oklch(0.72 0.25 285 / 0.08)",
@@ -903,7 +899,7 @@ export default function HomePage() {
             </div>
             <button
               onClick={createProject}
-              disabled={creating || !authReady || atNicheLimit}
+              disabled={creating || !authReady}
               className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
             >
@@ -919,6 +915,16 @@ export default function HomePage() {
           defaultPlan={selectedPlan}
           onClose={() => { setShowSubscriptionModal(false); setPendingAction(null); }}
           onSuccess={handleSubscriptionSuccess}
+        />
+      )}
+
+      {showNicheLimitModal && (
+        <NicheLimitModal
+          email={userEmail}
+          userPlan={userPlan}
+          nicheLimit={nicheLimit ?? 5}
+          onClose={() => setShowNicheLimitModal(false)}
+          onSuccess={() => { setShowNicheLimitModal(false); window.location.reload(); }}
         />
       )}
     </div>
