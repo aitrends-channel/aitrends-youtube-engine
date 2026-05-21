@@ -7,7 +7,7 @@ interface DemoBannerProps {
 export function DemoBanner({ onSubscribe }: DemoBannerProps) {
   return (
     <div
-      className="fixed top-0 left-64 right-0 z-40 flex items-center justify-between px-6 py-2 text-xs"
+      className="flex items-center justify-between px-6 py-2.5 text-xs shrink-0"
       style={{
         background: "oklch(0.72 0.25 285 / 0.12)",
         borderBottom: "1px solid oklch(0.72 0.25 285 / 0.2)",

@@ -19,9 +19,9 @@ export default function DemoTopicPage() {
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
       <DemoNav currentStep={1} />
-      <DemoBanner onSubscribe={() => router.push("/dashboard")} />
-
-      <main className="flex-1 overflow-y-auto">
+      <div className="flex-1 flex flex-col min-h-0">
+        <DemoBanner onSubscribe={() => router.push("/dashboard")} />
+        <main className="flex-1 overflow-y-auto">
         <div
           className="px-8 py-5"
           style={{
@@ -36,7 +36,7 @@ export default function DemoTopicPage() {
           </p>
         </div>
 
-        <div className="max-w-2xl mx-auto px-8 pt-14 pb-8 space-y-5">
+        <div className="max-w-2xl mx-auto px-8 pt-6 pb-8 space-y-5">
 
           <div className="space-y-2">
             {DEMO_DATA.videoIdeas.map((idea, i) => (
@@ -96,7 +96,8 @@ export default function DemoTopicPage() {
             Continue to Script →
           </button>
         </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

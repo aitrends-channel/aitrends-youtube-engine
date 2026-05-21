@@ -60,10 +60,10 @@ export default function DemoChannelPage() {
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
       <DemoNav currentStep={0} />
-      <DemoBanner onSubscribe={() => router.push("/dashboard")} />
-
-      <main className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-8 pt-14 pb-10 space-y-8">
+      <div className="flex-1 flex flex-col min-h-0">
+        <DemoBanner onSubscribe={() => router.push("/dashboard")} />
+        <main className="flex-1 overflow-y-auto">
+        <div className="max-w-2xl mx-auto px-8 pt-8 pb-10 space-y-8">
 
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Channel Setup</h1>
@@ -209,7 +209,8 @@ export default function DemoChannelPage() {
             </div>
           )}
         </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

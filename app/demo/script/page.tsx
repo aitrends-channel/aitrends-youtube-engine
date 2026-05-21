@@ -56,16 +56,15 @@ export default function DemoScriptPage() {
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
       <DemoNav currentStep={2} />
-      <DemoBanner onSubscribe={() => router.push("/dashboard")} />
-
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col min-h-0">
+        <DemoBanner onSubscribe={() => router.push("/dashboard")} />
+        <main className="flex-1 flex flex-col overflow-hidden">
         <div
           className="flex items-center justify-between px-8 py-4 shrink-0"
           style={{
             borderBottom: "1px solid var(--bd-6)",
             background: "var(--bg-header-2)",
             backdropFilter: "blur(12px)",
-            marginTop: "36px",
           }}
         >
           <div>
@@ -168,7 +167,8 @@ export default function DemoScriptPage() {
             </div>
           )}
         </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

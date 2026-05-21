@@ -37,16 +37,15 @@ export default function DemoGeneratePage() {
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
       <DemoNav currentStep={3} />
-      <DemoBanner onSubscribe={() => router.push("/dashboard")} />
-
-      <main className="flex-1 overflow-y-auto">
+      <div className="flex-1 flex flex-col min-h-0">
+        <DemoBanner onSubscribe={() => router.push("/dashboard")} />
+        <main className="flex-1 overflow-y-auto">
         <div
           className="px-8 py-5"
           style={{
             borderBottom: "1px solid var(--bd-6)",
             background: "var(--bg-header-2)",
             backdropFilter: "blur(12px)",
-            marginTop: "36px",
           }}
         >
           <h1 className="font-bold text-lg">Generate Assets</h1>
@@ -204,7 +203,8 @@ export default function DemoGeneratePage() {
             </div>
           )}
         </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

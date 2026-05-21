@@ -23,15 +23,6 @@ export function DemoNav({ currentStep }: DemoNavProps) {
 
   return (
     <>
-      <button
-        onClick={() => router.push("/dashboard")}
-        className="fixed top-4 right-4 z-50 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all hover:opacity-80"
-        style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
-      >
-        <LayoutDashboard size={13} />
-        Back to Dashboard
-      </button>
-
       <aside
         className="w-64 shrink-0 flex flex-col h-screen sticky top-0 overflow-hidden"
         style={{ background: "var(--bg-nav)", borderRight: "1px solid var(--bd-7)" }}
@@ -159,6 +150,18 @@ export function DemoNav({ currentStep }: DemoNavProps) {
               }}
             />
           </div>
+        </div>
+
+        {/* Back to Dashboard */}
+        <div className="px-4 pb-4">
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+            style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+          >
+            <LayoutDashboard size={13} />
+            Back to Dashboard
+          </button>
         </div>
       </aside>
     </>
