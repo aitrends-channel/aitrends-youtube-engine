@@ -90,4 +90,34 @@ If you want to go deeper on any of these — especially habit three, because the
     "Animated bar chart rising steeply, dark background, glowing purple data bars, futuristic financial dashboard aesthetic",
     "Stack of credit cards melting into liquid, surreal macro photography, warm orange and red tones, studio lighting",
   ],
+
+  thumbnailConcepts: [
+    {
+      position: 1,
+      title: "The Shocking Truth",
+      visualConcept: "Split screen — person looking wealthy on left, empty wallet on right. Dark background with purple accent lighting.",
+      textOverlay: "5 HABITS MAKING YOU POOR",
+      emotionTrigger: "Shock and self-recognition — viewers see themselves in the 'broke' side",
+      stylePrompt: "Dark cinematic split-screen, bold yellow sans-serif headline, purple accent glow, shallow depth of field",
+      imageUrl: "/demo/images/Gemini_Generated_Image_6e55gj6e55gj6e55.png",
+    },
+    {
+      position: 2,
+      title: "The Hidden Drain",
+      visualConcept: "Overhead flat-lay of receipts, subscriptions, and a nearly empty bank card. Dark surface, dramatic spotlight.",
+      textOverlay: "$1,700/yr ON SUBSCRIPTIONS YOU FORGOT",
+      emotionTrigger: "Guilt and urgency — 'that could be me'",
+      stylePrompt: "Overhead flat-lay product photography, dark matte surface, warm spotlight, bold white text with red accent",
+      imageUrl: "/demo/images/Gemini_Generated_Image_b8var0b8var0b8va.png",
+    },
+    {
+      position: 3,
+      title: "The Fix",
+      visualConcept: "Graph shooting upward on a dark screen, hand pointing at the peak. Confident, aspirational.",
+      textOverlay: "FIX THE SYSTEM. KEEP THE MONEY.",
+      emotionTrigger: "Hope and empowerment — clear path forward",
+      stylePrompt: "Dark data dashboard aesthetic, glowing purple bar chart, confident hand gesture, bold clean typography",
+      imageUrl: "/demo/images/Gemini_Generated_Image_s4y61cs4y61cs4y6.png",
+    },
+  ],
 };

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, CheckCircle2, Check, LayoutDashboard } from "lucide-react";
+import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, CheckCircle2, Check, LayoutDashboard } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 const STEPS: { label: string; sublabel: string; Icon: LucideIcon }[] = [
@@ -12,6 +12,7 @@ const STEPS: { label: string; sublabel: string; Icon: LucideIcon }[] = [
   { label: "Visuals",   sublabel: "Style Extraction",     Icon: ImageIcon },
   { label: "Prompts",   sublabel: "Image & Video Beats",  Icon: Wand2 },
   { label: "Generate",  sublabel: "Assets & Export",      Icon: Clapperboard },
+  { label: "Assemble",  sublabel: "Final Video",          Icon: Film },
   { label: "Done",      sublabel: "Subscribe to Start",   Icon: CheckCircle2 },
 ];
 
@@ -21,7 +22,7 @@ interface DemoNavProps {
 
 export function DemoNav({ currentStep }: DemoNavProps) {
   const router = useRouter();
-  const progressPct = Math.round((currentStep / 6) * 100);
+  const progressPct = Math.round((currentStep / 7) * 100);
 
   return (
     <>

@@ -154,7 +154,7 @@ export default function DemoGeneratePage() {
               </div>
               {allDone && (
                 <button
-                  onClick={() => router.push("/demo/finish")}
+                  onClick={() => router.push("/demo/assemble")}
                   className="px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90"
                   style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                 >
@@ -441,7 +441,7 @@ export default function DemoGeneratePage() {
                 )}
                 {videosPhase === "done" ? (
                   <button
-                    onClick={() => router.push("/demo/finish")}
+                    onClick={() => router.push("/demo/assemble")}
                     className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
                     style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                   >
