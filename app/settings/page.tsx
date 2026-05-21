@@ -141,6 +141,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [tab, setTab] = useState<"setup" | "instructions">("setup");
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -226,116 +227,148 @@ export default function SettingsPage() {
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-2xl mx-auto px-8 py-14 space-y-8">
-        {/* Page heading */}
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-              style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-              <Settings size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
-            </div>
-            <h1 className="text-2xl font-bold text-foreground">API Keys</h1>
-          </div>
-          <p className="text-sm leading-relaxed" style={{ color: "var(--c-50)" }}>
-            Configure your API keys here. They are stored in your Supabase database and override any values in{" "}
-            <code className="text-xs px-1.5 py-0.5 rounded font-mono"
-              style={{ background: "var(--bg-control)", color: "oklch(0.7 0.15 285)" }}>
-              .env.local
-            </code>.
-            Leave a field blank to keep the existing value.
-          </p>
+      <main className="flex-1 w-full max-w-2xl mx-auto px-8 py-14">
+
+        {/* Tabs */}
+        <div className="flex gap-1 mb-10 p-1 rounded-xl w-fit"
+          style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+          {(["setup", "instructions"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className="px-5 py-2 rounded-lg text-xs font-bold tracking-widest uppercase transition-all cursor-pointer"
+              style={{
+                background: tab === t ? "oklch(0.72 0.25 285)" : "transparent",
+                color: tab === t ? "white" : "var(--c-45)",
+              }}
+            >
+              {t}
+            </button>
+          ))}
         </div>
 
-        {/* Form */}
-        {loading ? (
-          <div className="flex items-center gap-2 py-6" style={{ color: "var(--c-40)" }}>
-            <Spinner size={16} />
-            <span className="text-sm">Loading settings…</span>
-          </div>
-        ) : (
-          <form onSubmit={handleSave} className="space-y-4">
-            {KEY_FIELDS.map((field) => {
-              const currentMasked = masked[field.key] ?? "";
-              const isSet = !!currentMasked;
-              const isShowing = visible[field.key];
-
-              return (
-                <div key={field.key} className="p-5 rounded-2xl space-y-3"
-                  style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <label className="text-sm font-semibold text-foreground">{field.label}</label>
-                      {isSet && (
-                        <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium"
-                          style={{
-                            background: "oklch(0.55 0.15 145 / 0.15)",
-                            color: "oklch(0.65 0.15 145)",
-                            border: "1px solid oklch(0.55 0.15 145 / 0.3)",
-                          }}>
-                          <CheckCircle2 size={10} />
-                          Configured
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs" style={{ color: "var(--c-45)" }}>{field.description}</p>
-                  </div>
-
-                  {isSet && (
-                    <div className="text-xs font-mono px-3 py-2 rounded-lg"
-                      style={{ background: "var(--bg-code)", color: "var(--c-40)", border: "1px solid var(--bd-5)" }}>
-                      Current: {currentMasked}
-                    </div>
-                  )}
-
-                  <div className="relative">
-                    <input
-                      type={isShowing ? "text" : "password"}
-                      name={field.key}
-                      autoComplete="new-password"
-                      spellCheck={false}
-                      value={form[field.key]}
-                      onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
-                      placeholder={isSet ? "Enter new value to replace…" : field.placeholder}
-                      className="w-full pr-10 px-3 py-2.5 rounded-xl text-sm font-mono outline-none transition-all"
-                      style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-88)" }}
-                      onFocus={(e) => { (e.target as HTMLInputElement).style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
-                      onBlur={(e) => { (e.target as HTMLInputElement).style.borderColor = "var(--bd-10)"; }}
-                    />
-                    <button type="button" tabIndex={-1} onClick={() => toggle(field.key)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 transition-opacity hover:opacity-70"
-                      style={{ color: "var(--c-40)" }}>
-                      {isShowing ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
-                  </div>
+        {/* SETUP tab */}
+        {tab === "setup" && (
+          <div className="space-y-8">
+            {/* Page heading */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+                  <Settings size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
                 </div>
-              );
-            })}
+                <h1 className="text-2xl font-bold text-foreground">API Keys</h1>
+              </div>
+              <p className="text-sm leading-relaxed" style={{ color: "var(--c-50)" }}>
+                Configure your API keys here. They are stored in your Supabase database and override any values in{" "}
+                <code className="text-xs px-1.5 py-0.5 rounded font-mono"
+                  style={{ background: "var(--bg-control)", color: "oklch(0.7 0.15 285)" }}>
+                  .env.local
+                </code>.
+                Leave a field blank to keep the existing value.
+              </p>
+            </div>
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
-              style={{
-                background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-                color: "var(--c-98)",
-                boxShadow: "0 0 24px oklch(0.72 0.25 285 / 0.25)",
-              }}>
-              {saving ? <Spinner size={15} /> : <Save size={15} />}
-              {saving ? "Saving…" : "Save API Keys"}
-            </button>
-          </form>
+            {/* Form */}
+            {loading ? (
+              <div className="flex items-center gap-2 py-6" style={{ color: "var(--c-40)" }}>
+                <Spinner size={16} />
+                <span className="text-sm">Loading settings…</span>
+              </div>
+            ) : (
+              <form onSubmit={handleSave} className="space-y-4">
+                {KEY_FIELDS.map((field) => {
+                  const currentMasked = masked[field.key] ?? "";
+                  const isSet = !!currentMasked;
+                  const isShowing = visible[field.key];
+
+                  return (
+                    <div key={field.key} className="p-5 rounded-2xl space-y-3"
+                      style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <label className="text-sm font-semibold text-foreground">{field.label}</label>
+                          {isSet && (
+                            <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium"
+                              style={{
+                                background: "oklch(0.55 0.15 145 / 0.15)",
+                                color: "oklch(0.65 0.15 145)",
+                                border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                              }}>
+                              <CheckCircle2 size={10} />
+                              Configured
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs" style={{ color: "var(--c-45)" }}>{field.description}</p>
+                      </div>
+
+                      {isSet && (
+                        <div className="text-xs font-mono px-3 py-2 rounded-lg"
+                          style={{ background: "var(--bg-code)", color: "var(--c-40)", border: "1px solid var(--bd-5)" }}>
+                          Current: {currentMasked}
+                        </div>
+                      )}
+
+                      <div className="relative">
+                        <input
+                          type={isShowing ? "text" : "password"}
+                          name={field.key}
+                          autoComplete="new-password"
+                          spellCheck={false}
+                          value={form[field.key]}
+                          onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
+                          placeholder={isSet ? "Enter new value to replace…" : field.placeholder}
+                          className="w-full pr-10 px-3 py-2.5 rounded-xl text-sm font-mono outline-none transition-all"
+                          style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-88)" }}
+                          onFocus={(e) => { (e.target as HTMLInputElement).style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
+                          onBlur={(e) => { (e.target as HTMLInputElement).style.borderColor = "var(--bd-10)"; }}
+                        />
+                        <button type="button" tabIndex={-1} onClick={() => toggle(field.key)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 transition-opacity hover:opacity-70"
+                          style={{ color: "var(--c-40)" }}>
+                          {isShowing ? <EyeOff size={14} /> : <Eye size={14} />}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+                  style={{
+                    background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+                    color: "var(--c-98)",
+                    boxShadow: "0 0 24px oklch(0.72 0.25 285 / 0.25)",
+                  }}>
+                  {saving ? <Spinner size={15} /> : <Save size={15} />}
+                  {saving ? "Saving…" : "Save API Keys"}
+                </button>
+              </form>
+            )}
+
+            {/* Info note */}
+            <div className="px-4 py-3 rounded-xl text-xs leading-relaxed"
+              style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px solid oklch(0.72 0.25 285 / 0.15)", color: "var(--c-50)" }}>
+              Keys saved here take effect immediately. If a key is blank in the database, the app falls back to{" "}
+              <code style={{ color: "var(--c-60)" }}>.env.local</code>.
+              Your Supabase URL and Redis credentials must remain in <code style={{ color: "var(--c-60)" }}>.env.local</code> to bootstrap the app.
+            </div>
+
+            {/* Add User — admin only */}
+            {isAdmin && <AddUserSection />}
+          </div>
         )}
 
-        {/* Info note */}
-        <div className="px-4 py-3 rounded-xl text-xs leading-relaxed"
-          style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px solid oklch(0.72 0.25 285 / 0.15)", color: "var(--c-50)" }}>
-          Keys saved here take effect immediately. If a key is blank in the database, the app falls back to{" "}
-          <code style={{ color: "var(--c-60)" }}>.env.local</code>.
-          Your Supabase URL and Redis credentials must remain in <code style={{ color: "var(--c-60)" }}>.env.local</code> to bootstrap the app.
-        </div>
+        {/* INSTRUCTIONS tab */}
+        {tab === "instructions" && (
+          <div className="flex items-center justify-center py-24">
+            <p className="text-sm" style={{ color: "var(--c-35)" }}>Instructions coming soon…</p>
+          </div>
+        )}
 
-        {/* Add User — admin only */}
-        {isAdmin && <AddUserSection />}
       </main>
     </div>
   );
