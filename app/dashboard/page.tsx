@@ -442,25 +442,19 @@ export default function HomePage() {
               })()}
 
               <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "40px", marginBottom: "10px" }}>Niches/Video Chart</h3>
-              {/* Line graph — videos per niche */}
+              {/* Bar chart — videos per niche */}
               {(() => {
-                const W = 600, H = 120, PAD = 12;
+                const W = 600, H = 140, PAD_X = 16, PAD_T = 16, PAD_B = 24;
                 const points = channelGroups.length > 0
                   ? channelGroups.map(g => ({ label: g.channelName, count: g.projects.length }))
                   : Array.from({ length: 7 }, (_, i) => ({ label: `Niche ${i + 1}`, count: 0 }));
                 const maxCount = Math.max(...points.map(p => p.count), 1);
                 const n = points.length;
-                const xs = points.map((_, i) => PAD + (n === 1 ? (W - PAD * 2) / 2 : (i / (n - 1)) * (W - PAD * 2)));
-                const ys = points.map(p => H - PAD - (p.count / maxCount) * (H - PAD * 2));
-
-                // Smooth cubic bezier path
-                let path = `M ${xs[0]} ${ys[0]}`;
-                for (let i = 1; i < xs.length; i++) {
-                  const cpx = (xs[i - 1] + xs[i]) / 2;
-                  path += ` C ${cpx} ${ys[i - 1]}, ${cpx} ${ys[i]}, ${xs[i]} ${ys[i]}`;
-                }
-                const areaPath = path + ` L ${xs[xs.length - 1]} ${H} L ${xs[0]} ${H} Z`;
-                const isLast = (i: number) => i === points.length - 1;
+                const plotW = W - PAD_X * 2;
+                const plotH = H - PAD_T - PAD_B;
+                const slotW = plotW / n;
+                const barW = Math.min(52, slotW * 0.6);
+                const r = Math.min(5, barW / 3);
 
                 return (
                   <div className="rounded-2xl px-6 py-5" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
@@ -471,71 +465,85 @@ export default function HomePage() {
                       </div>
                       <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{total}</span>
                     </div>
-                    <svg viewBox={`0 0 ${W} ${H + 20}`} className="w-full" style={{ overflow: "visible" }}>
+                    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ overflow: "visible" }}>
                       <defs>
-                        <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#9b7ff5" stopOpacity="0.25" />
-                          <stop offset="100%" stopColor="#9b7ff5" stopOpacity="0" />
+                        <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#9b7ff5" stopOpacity="0.95" />
+                          <stop offset="100%" stopColor="#9b7ff5" stopOpacity="0.45" />
+                        </linearGradient>
+                        <linearGradient id="barHov" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#b89dff" stopOpacity="1" />
+                          <stop offset="100%" stopColor="#9b7ff5" stopOpacity="0.7" />
                         </linearGradient>
                       </defs>
+                      {/* Baseline */}
+                      <line x1={PAD_X} y1={PAD_T + plotH} x2={W - PAD_X} y2={PAD_T + plotH}
+                        stroke="white" strokeOpacity="0.08" strokeWidth="1" />
                       {/* Grid lines */}
                       {[0.25, 0.5, 0.75, 1].map(f => (
                         <line key={f}
-                          x1={PAD} y1={H - PAD - f * (H - PAD * 2)}
-                          x2={W - PAD} y2={H - PAD - f * (H - PAD * 2)}
+                          x1={PAD_X} y1={PAD_T + plotH - f * plotH}
+                          x2={W - PAD_X} y2={PAD_T + plotH - f * plotH}
                           stroke="white" strokeOpacity="0.05" strokeWidth="1"
                         />
                       ))}
-                      {/* Area fill */}
-                      <path d={areaPath} fill="url(#lineGrad)" />
-                      {/* Line */}
-                      <path d={path} fill="none" stroke="#9b7ff5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      {/* Dots */}
-                      {xs.map((x, i) => (
-                        <g key={i}
-                          onMouseEnter={() => setHoveredPoint(i)}
-                          onMouseLeave={() => setHoveredPoint(null)}
-                          style={{ cursor: "pointer" }}
-                        >
-                          {/* Larger invisible hit area */}
-                          <circle cx={x} cy={ys[i]} r={12} fill="transparent" />
-                          <circle cx={x} cy={ys[i]} r={hoveredPoint === i ? 6 : isLast(i) ? 5 : 3.5}
-                            fill="#9b7ff5"
-                            stroke="#9b7ff5" strokeWidth={isLast(i) ? 2 : 1.5}
-                          />
-                          {points[i].count > 0 && hoveredPoint !== i && (
-                            <text x={x} y={ys[i] - 9} textAnchor="middle" fontSize="9" fill="#9b7ff5" fontWeight="600">
-                              {points[i].count}
+                      {/* Bars */}
+                      {points.map((pt, i) => {
+                        const cx = PAD_X + slotW * i + slotW / 2;
+                        const barH = Math.max((pt.count / maxCount) * plotH, pt.count > 0 ? 4 : 0);
+                        const x = cx - barW / 2;
+                        const y = PAD_T + plotH - barH;
+                        const hov = hoveredPoint === i;
+                        const isEmpty = channelGroups.length === 0;
+                        return (
+                          <g key={i}
+                            onMouseEnter={() => setHoveredPoint(i)}
+                            onMouseLeave={() => setHoveredPoint(null)}
+                            style={{ cursor: pt.count > 0 ? "pointer" : "default" }}
+                          >
+                            {/* Hit area */}
+                            <rect x={x} y={PAD_T} width={barW} height={plotH} fill="transparent" />
+                            {/* Bar */}
+                            {barH > 0 && (
+                              <path
+                                d={`M ${x + r} ${y} H ${x + barW - r} Q ${x + barW} ${y} ${x + barW} ${y + r} V ${y + barH} H ${x} V ${y + r} Q ${x} ${y} ${x + r} ${y}`}
+                                fill={hov ? "url(#barHov)" : "url(#barGrad)"}
+                              />
+                            )}
+                            {/* Count label above bar */}
+                            {pt.count > 0 && !hov && (
+                              <text x={cx} y={y - 5} textAnchor="middle" fontSize="10" fill="#9b7ff5" fontWeight="600">
+                                {pt.count}
+                              </text>
+                            )}
+                            {/* Tooltip */}
+                            {hov && (() => {
+                              const TW = 90, TH = 32;
+                              const TX = Math.min(Math.max(cx - TW / 2, PAD_X), W - PAD_X - TW);
+                              const TY = Math.max(y - TH - 8, 2);
+                              const nicheLabel = pt.label.length > 14 ? pt.label.slice(0, 13) + "…" : pt.label;
+                              return (
+                                <g>
+                                  <rect x={TX} y={TY} width={TW} height={TH} rx={5} ry={5}
+                                    fill="#1e1533" stroke="#9b7ff5" strokeOpacity="0.4" strokeWidth="1" />
+                                  <text x={TX + TW / 2} y={TY + 12} textAnchor="middle" fontSize="9.5" fill="rgba(255,255,255,0.7)" fontWeight="500">
+                                    {nicheLabel}
+                                  </text>
+                                  <text x={TX + TW / 2} y={TY + 24} textAnchor="middle" fontSize="10" fill="#9b7ff5" fontWeight="700">
+                                    {pt.count} {pt.count === 1 ? "Video" : "Videos"}
+                                  </text>
+                                </g>
+                              );
+                            })()}
+                            {/* X-axis label */}
+                            <text x={cx} y={PAD_T + plotH + 16} textAnchor="middle" fontSize="10"
+                              fill={isEmpty ? "rgba(255,255,255,0.12)" : hov ? "#9b7ff5" : "rgba(255,255,255,0.3)"}
+                              fontWeight={hov ? "600" : "400"}>
+                              {pt.label.length > 10 ? pt.label.slice(0, 9) + "…" : pt.label}
                             </text>
-                          )}
-                          {/* Hover tooltip */}
-                          {hoveredPoint === i && (() => {
-                            const TW = 90, TH = 32, TX = Math.min(Math.max(x - TW / 2, PAD), W - PAD - TW);
-                            const TY = ys[i] - TH - 10;
-                            const nicheLabel = points[i].label.length > 14 ? points[i].label.slice(0, 13) + "…" : points[i].label;
-                            return (
-                              <g>
-                                <rect x={TX} y={TY} width={TW} height={TH} rx={5} ry={5}
-                                  fill="#1e1533" stroke="#9b7ff5" strokeOpacity="0.4" strokeWidth="1" />
-                                <text x={TX + TW / 2} y={TY + 12} textAnchor="middle" fontSize="9.5" fill="rgba(255,255,255,0.7)" fontWeight="500">
-                                  {nicheLabel}
-                                </text>
-                                <text x={TX + TW / 2} y={TY + 24} textAnchor="middle" fontSize="10" fill="#9b7ff5" fontWeight="700">
-                                  {points[i].count} {points[i].count === 1 ? "Video" : "Videos"}
-                                </text>
-                              </g>
-                            );
-                          })()}
-                        </g>
-                      ))}
-                      {/* Niche labels */}
-                      {xs.map((x, i) => (
-                        <text key={i} x={x} y={H + 16} textAnchor="middle" fontSize="10"
-                          fill={channelGroups.length === 0 ? "rgba(255,255,255,0.12)" : isLast(i) ? "#9b7ff5" : "rgba(255,255,255,0.3)"}
-                          fontWeight={isLast(i) ? "600" : "400"}>
-                          {points[i].label.length > 10 ? points[i].label.slice(0, 9) + "…" : points[i].label}
-                        </text>
-                      ))}
+                          </g>
+                        );
+                      })}
                     </svg>
                   </div>
                 );
