@@ -75,17 +75,7 @@ export default function DemoScriptPage() {
               </p>
             )}
           </div>
-          <div className="flex items-center gap-3">
-            {scriptDone && (
-              <button
-                onClick={() => router.push("/demo/visuals")}
-                className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-              >
-                Continue to Visuals →
-              </button>
-            )}
-          </div>
+          <div />
         </div>
 
         <div className="flex-1 overflow-y-auto p-8">
