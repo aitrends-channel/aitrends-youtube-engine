@@ -302,7 +302,7 @@ export default function DemoAssemblePage() {
               <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                 {assemblePhase === "done" && (
                   <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
-                    <video src={DEMO_DATA.promptBeats[0].videoUrl} controls muted loop
+                    <video src="/demo/assemble/Heclus demo video.mp4" controls
                       className="w-full rounded-xl" style={{ aspectRatio: "16/9", display: "block" }} />
                   </div>
                 )}
