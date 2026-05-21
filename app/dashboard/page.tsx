@@ -306,7 +306,7 @@ export default function HomePage() {
                       style={{ color: "var(--c-60)" }}
                     >
                       <Settings size={15} />
-                      <span>API Keys & Settings</span>
+                      <span>Setup</span>
                     </Link>
                     <button
                       onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
