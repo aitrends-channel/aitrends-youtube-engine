@@ -264,12 +264,7 @@ export default function SettingsPage() {
                 <h1 className="text-2xl font-bold text-foreground">API Keys</h1>
               </div>
               <p className="text-sm leading-relaxed" style={{ color: "var(--c-50)" }}>
-                Configure your API keys here. They are stored in your Supabase database and override any values in{" "}
-                <code className="text-xs px-1.5 py-0.5 rounded font-mono"
-                  style={{ background: "var(--bg-control)", color: "oklch(0.7 0.15 285)" }}>
-                  .env.local
-                </code>.
-                Leave a field blank to keep the existing value.
+                Enter your API keys below. They are saved securely and take effect immediately. Leave a field blank to keep the existing value.
               </p>
             </div>
 
@@ -356,9 +351,7 @@ export default function SettingsPage() {
             {/* Info note */}
             <div className="px-4 py-3 rounded-xl text-xs leading-relaxed"
               style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px solid oklch(0.72 0.25 285 / 0.15)", color: "var(--c-50)" }}>
-              Keys saved here take effect immediately. If a key is blank in the database, the app falls back to{" "}
-              <code style={{ color: "var(--c-60)" }}>.env.local</code>.
-              Your Supabase URL and Redis credentials must remain in <code style={{ color: "var(--c-60)" }}>.env.local</code> to bootstrap the app.
+              Keys are saved securely and applied immediately. If a key hasn&apos;t been set yet, the system will use any default value already configured on the server.
             </div>
 
             {/* Add User — admin only */}
