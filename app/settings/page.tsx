@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus } from "lucide-react";
+import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import Image from "next/image";
@@ -141,7 +141,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [tab, setTab] = useState<"setup" | "instructions">("setup");
+  const [tab, setTab] = useState<"setup" | "instructions">("instructions");
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -153,7 +153,11 @@ export default function SettingsPage() {
   useEffect(() => {
     fetch("/api/settings")
       .then((r) => r.json())
-      .then((data) => setMasked(data as FormState))
+      .then((data) => {
+        setMasked(data as FormState);
+        const anyConfigured = Object.values(data as FormState).some(Boolean);
+        setTab(anyConfigured ? "setup" : "instructions");
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -230,13 +234,13 @@ export default function SettingsPage() {
       <main className="flex-1 w-full max-w-2xl mx-auto px-8 py-14">
 
         {/* Tabs */}
-        <div className="flex gap-1 mb-10 p-1 rounded-xl w-fit"
+        <div className="flex gap-1 mb-10 p-1 rounded-xl"
           style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-          {(["setup", "instructions"] as const).map((t) => (
+          {(["instructions", "setup"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className="px-5 py-2 rounded-lg text-xs font-bold tracking-widest uppercase transition-all cursor-pointer"
+              className="flex-1 py-2 rounded-lg text-xs font-bold tracking-widest uppercase transition-all cursor-pointer"
               style={{
                 background: tab === t ? "oklch(0.72 0.25 285)" : "transparent",
                 color: tab === t ? "white" : "var(--c-45)",
@@ -364,8 +368,129 @@ export default function SettingsPage() {
 
         {/* INSTRUCTIONS tab */}
         {tab === "instructions" && (
-          <div className="flex items-center justify-center py-24">
-            <p className="text-sm" style={{ color: "var(--c-35)" }}>Instructions coming soon…</p>
+          <div className="space-y-8">
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+                  <BookOpen size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+                </div>
+                <h1 className="text-2xl font-bold text-foreground">Setup Guide</h1>
+              </div>
+              <p className="text-sm leading-relaxed" style={{ color: "var(--c-50)" }}>
+                Get your API keys configured in about 5–10 minutes. You only need to do this once.
+              </p>
+            </div>
+
+            {/* Intro */}
+            <div className="p-5 rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+              <p className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
+                Thanks for signing up. Now before you start creating, let me walk you through a quick setup process.
+                And here&apos;s the best part — instead of paying huge monthly subscriptions for multiple AI tools, this system
+                gives you full control over your costs. You only pay for what you actually use — scripting, voiceovers,
+                images, video generation — all of it.
+              </p>
+              <p className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
+                To get everything working, you just need to add four API keys. The whole setup takes about five to ten minutes,
+                and you only have to do it once. So let&apos;s get into it.
+              </p>
+            </div>
+
+            {[
+              {
+                num: 1,
+                title: "Anthropic API Key",
+                tag: "Claude AI — script generation & prompts",
+                steps: [
+                  "Head over to Anthropic's platform website and sign in.",
+                  "Select \"Get API Key\" — this takes you to the API Keys page.",
+                  "Click Create Key, choose Default, give it any name, and click Add.",
+                  "Copy the key and paste it into the Anthropic field in the Setup tab.",
+                ],
+                note: "You'll also need to top up your Anthropic balance. Go to the Billing section and add around $5 to start — you can top up later as needed. You're only charged for the requests you actually make, not a fixed monthly fee.",
+              },
+              {
+                num: 2,
+                title: "YouTube Data API Key",
+                tag: "Channel & video data lookup",
+                steps: [
+                  "Go to Google Cloud Console and create a new project (any name).",
+                  "With the project selected, go to APIs & Services → Enable APIs & Services.",
+                  "Search for \"YouTube Data API v3\" and click Enable.",
+                  "Go to Credentials, select YouTube Data API v3, choose Public Data, and continue.",
+                  "Copy the generated key and paste it into the YouTube API field.",
+                ],
+                note: null,
+              },
+              {
+                num: 3,
+                title: "Kie AI API Key",
+                tag: "Voiceovers, image generation & video clips",
+                steps: [
+                  "Head over to the Kie AI website and make sure you're logged in.",
+                  "Go to the API Keys section, create a new key, give it a name, and click Create.",
+                  "Copy the key and paste it into the Kie AI field.",
+                ],
+                note: "Kie AI is a unified platform that gives you access to ElevenLabs voice generation, image models, and popular AI video generators — all from one balance. Instead of separate subscriptions across multiple platforms, you manage everything in one place, and it's usually cheaper too.",
+              },
+              {
+                num: 4,
+                title: "ElevenLabs API Key",
+                tag: "Caption timing & final assembly",
+                steps: [
+                  "Go to ElevenLabs and head to Developers → API Keys.",
+                  "You'll usually see a default unrestricted developer key already available.",
+                  "Copy it and paste it into the ElevenLabs field.",
+                ],
+                note: "You won't be generating voiceovers directly through ElevenLabs — Kie handles that part. But the ElevenLabs key is still required for the final assembly process. Their free developer key is completely fine for this.",
+              },
+            ].map(({ num, title, tag, steps, note }) => (
+              <div key={num} className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+                <div className="flex items-start gap-3">
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold mt-0.5"
+                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
+                    {num}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{title}</p>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--c-40)" }}>{tag}</p>
+                  </div>
+                </div>
+                <ol className="space-y-2 pl-10">
+                  {steps.map((s, i) => (
+                    <li key={i} className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
+                      <span className="font-medium" style={{ color: "var(--c-50)" }}>{i + 1}.</span> {s}
+                    </li>
+                  ))}
+                </ol>
+                {note && (
+                  <div className="ml-10 px-3 py-2.5 rounded-lg text-xs leading-relaxed"
+                    style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px solid oklch(0.72 0.25 285 / 0.15)", color: "var(--c-50)" }}>
+                    {note}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {/* Final note */}
+            <div className="p-5 rounded-2xl" style={{ background: "oklch(0.55 0.15 145 / 0.08)", border: "1px solid oklch(0.55 0.15 145 / 0.2)" }}>
+              <p className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
+                Once all four keys are added, click <strong style={{ color: "var(--c-80)" }}>Save</strong> in the Setup tab and your system is fully set up.
+                Going forward, the main things to keep an eye on are your <strong style={{ color: "var(--c-80)" }}>Anthropic balance</strong> and
+                your <strong style={{ color: "var(--c-80)" }}>Kie AI credits</strong>. As long as those are topped up, you&apos;re ready to create.
+              </p>
+              <p className="text-sm mt-2 font-medium" style={{ color: "oklch(0.65 0.15 145)" }}>Happy creating!</p>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={() => setTab("setup")}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                style={{ background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))", color: "var(--c-98)" }}>
+                <ArrowLeft size={14} style={{ transform: "rotate(180deg)" }} />
+                Go to Setup
+              </button>
+            </div>
           </div>
         )}
 
