@@ -56,21 +56,25 @@ If you want to go deeper on any of these — especially habit three, because the
   promptBeats: [
     {
       beat: 1,
+      imageUrl: "/demo/images/Gemini_Generated_Image_6e55gj6e55gj6e55.png",
       imagePrompt: "Split screen: pile of coins on left, empty wallet on right, dramatic cinematic lighting with purple accent glow",
       videoPrompt: "Slow push-in on the split screen, slight rack focus from coins to empty wallet",
     },
     {
       beat: 2,
+      imageUrl: "/demo/images/Gemini_Generated_Image_b8var0b8var0b8va.png",
       imagePrompt: "Person staring at laptop showing bank statement, late night, dim lamp light, concerned expression, shallow depth of field",
       videoPrompt: "Subtle handheld drift to the right, subject stays sharp while background softly blurs",
     },
     {
       beat: 3,
+      imageUrl: "/demo/images/Gemini_Generated_Image_s4y61cs4y61cs4y6.png",
       imagePrompt: "Animated bar chart rising steeply, dark background, glowing purple data bars, futuristic financial dashboard aesthetic",
       videoPrompt: "Quick zoom-out from a single bar to the full chart, then freeze on peak",
     },
     {
       beat: 4,
+      imageUrl: "/demo/images/Gemini_Generated_Image_urxej0urxej0urxe.png",
       imagePrompt: "Stack of credit cards melting into liquid, surreal macro photography, warm orange and red tones, studio lighting",
       videoPrompt: "Slow downward tilt revealing the melting base, held for two seconds",
     },

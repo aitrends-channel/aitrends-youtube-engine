@@ -295,24 +295,24 @@ export default function DemoGeneratePage() {
                 <div className="px-5 pt-4">
                   <ProgressBar value={imagesPhase === "done" ? totalBeats : imagesProgress} total={totalBeats} />
                   <div className="grid grid-cols-4 gap-1.5 mt-3 max-h-36 overflow-y-auto">
-                    {DEMO_DATA.promptBeats.map((beat, i) => (
+                    {DEMO_DATA.promptBeats.map((beat, i) => {
+                    const revealed = imagesPhase === "done" || i < imagesProgress;
+                    return (
                       <div key={beat.beat}
                         className="relative aspect-video rounded-lg overflow-hidden flex items-center justify-center"
-                        style={{
-                          background: imagesPhase === "done" || i < imagesProgress
-                            ? `oklch(0.72 0.25 285 / ${0.15 + i * 0.05})`
-                            : "var(--bg-progress)",
-                          border: "1px solid oklch(0.72 0.25 285 / 0.15)",
-                        }}>
-                        {imagesPhase === "done" || i < imagesProgress ? (
-                          <span className="text-[8px] font-bold" style={{ color: "oklch(0.72 0.25 285)" }}>
-                            Beat {beat.beat}
-                          </span>
+                        style={{ background: "var(--bg-progress)" }}>
+                        {revealed ? (
+                          <img
+                            src={beat.imageUrl}
+                            alt={`Beat ${beat.beat}`}
+                            className="w-full h-full object-cover"
+                          />
                         ) : (
                           <span className="text-[9px]" style={{ color: "var(--c-35)" }}>{beat.beat}</span>
                         )}
                       </div>
-                    ))}
+                    );
+                  })}
                   </div>
                 </div>
               )}
