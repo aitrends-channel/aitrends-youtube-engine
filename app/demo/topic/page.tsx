@@ -39,52 +39,53 @@ export default function DemoTopicPage() {
         <div className="max-w-2xl mx-auto px-8 pt-6 pb-8 space-y-5">
 
           <div className="space-y-2">
-            {DEMO_DATA.videoIdeas.map((idea, i) => (
-              <button
-                key={i}
-                onClick={() => setSelectedTopic(idea)}
-                className="w-full text-left p-4 rounded-xl transition-all"
-                style={
-                  selectedTopic === idea
-                    ? {
-                        background: "oklch(0.72 0.25 285 / 0.12)",
-                        border: "1px solid oklch(0.72 0.25 285 / 0.35)",
-                      }
-                    : {
-                        background: "var(--bg-panel)",
-                        border: "1px solid var(--bd-7)",
-                      }
-                }
-                onMouseEnter={(e) => {
-                  if (selectedTopic !== idea)
-                    (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.2)";
-                }}
-                onMouseLeave={(e) => {
-                  if (selectedTopic !== idea)
-                    (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)";
-                }}
-              >
-                <div className="flex items-start gap-3">
-                  <span
-                    className="text-xs font-mono mt-0.5 shrink-0"
-                    style={{
-                      color: "oklch(0.72 0.25 285)",
-                      background: "oklch(0.72 0.25 285 / 0.1)",
-                      padding: "2px 6px",
-                      borderRadius: "4px",
-                    }}
-                  >
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <span
-                    className="text-sm leading-relaxed"
-                    style={{ color: selectedTopic === idea ? "var(--c-90)" : "var(--c-65)" }}
-                  >
-                    {idea}
-                  </span>
-                </div>
-              </button>
-            ))}
+            {DEMO_DATA.videoIdeas.map((idea, i) => {
+              const locked = i > 0;
+              const selected = selectedTopic === idea;
+              return (
+                <button
+                  key={i}
+                  onClick={() => !locked && setSelectedTopic(idea)}
+                  disabled={locked}
+                  className="w-full text-left p-4 rounded-xl transition-all"
+                  style={
+                    selected
+                      ? { background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.35)" }
+                      : locked
+                      ? { background: "var(--bg-panel)", border: "1px solid var(--bd-7)", opacity: 0.35, cursor: "not-allowed" }
+                      : { background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }
+                  }
+                  onMouseEnter={(e) => {
+                    if (!locked && !selected)
+                      (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.2)";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!locked && !selected)
+                      (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)";
+                  }}
+                >
+                  <div className="flex items-start gap-3">
+                    <span
+                      className="text-xs font-mono mt-0.5 shrink-0"
+                      style={{
+                        color: locked ? "var(--c-35)" : "oklch(0.72 0.25 285)",
+                        background: locked ? "var(--bg-track)" : "oklch(0.72 0.25 285 / 0.1)",
+                        padding: "2px 6px",
+                        borderRadius: "4px",
+                      }}
+                    >
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <span
+                      className="text-sm leading-relaxed"
+                      style={{ color: selected ? "var(--c-90)" : locked ? "var(--c-35)" : "var(--c-65)" }}
+                    >
+                      {idea}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
 
           <button
