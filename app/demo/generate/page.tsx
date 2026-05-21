@@ -16,18 +16,36 @@ const FAKE_VOICES = [
 ];
 
 const FAKE_IMAGE_MODELS = [
-  { id: "i1", name: "FLUX 1.1 Pro",      description: "Best quality, slower",            tags: ["HD", "photorealistic"], cost: "2 cr/img" },
-  { id: "i2", name: "FLUX 1.1 Pro Ultra", description: "Ultra-high resolution",           tags: ["4K", "detail"],         cost: "4 cr/img" },
-  { id: "i3", name: "FLUX Schnell",       description: "Fast generation",                 tags: ["fast"],                 cost: "1 cr/img" },
-  { id: "i4", name: "Stable Diffusion 3", description: "Strong creative flexibility",     tags: ["creative"],             cost: "1 cr/img" },
+  { id: "flux-kontext-pro",                    name: "Flux Kontext Pro",   description: "High quality context-aware generation", tags: ["High Quality"],          cost: "2 cr/img" },
+  { id: "flux-kontext-max",                    name: "Flux Kontext Max",   description: "Maximum quality context generation",    tags: ["Max Quality"],           cost: "4 cr/img" },
+  { id: "flux-2/pro-text-to-image",            name: "Flux 2 Pro",         description: "Fast, professional-grade output",        tags: ["Fast"],                  cost: "2 cr/img" },
+  { id: "flux-2/flex-text-to-image",           name: "Flux 2 Flex",        description: "Flexible styles and compositions",       tags: ["Flexible"],              cost: "2 cr/img" },
+  { id: "google/imagen4",                      name: "Imagen 4",           description: "Google's photorealistic model",          tags: ["Google"],                cost: "3 cr/img" },
+  { id: "google/imagen4-ultra",                name: "Imagen 4 Ultra",     description: "Google ultra-high fidelity",             tags: ["Google", "Ultra"],       cost: "5 cr/img" },
+  { id: "nano-banana-2",                       name: "Nano Banana 2",      description: "Up to 4K, wide ratio support",           tags: ["Google"],                cost: "2 cr/img" },
+  { id: "nano-banana-pro",                     name: "Nano Banana Pro",    description: "Pro-grade 4K image output",              tags: ["Google", "Pro"],         cost: "3 cr/img" },
+  { id: "bytedance/seedream-v4-text-to-image", name: "Seedream 4.0",       description: "ByteDance's latest image model",         tags: ["ByteDance", "Latest"],   cost: "3 cr/img" },
+  { id: "grok-imagine/text-to-image",          name: "Grok Imagine",       description: "xAI's creative image generator",         tags: ["xAI"],                   cost: "3 cr/img" },
+  { id: "qwen2/text-to-image",                 name: "Qwen 2",             description: "Alibaba's image generation model",       tags: ["Alibaba"],               cost: "2 cr/img" },
+  { id: "z-image",                             name: "Z-Image",            description: "Stylized artistic output",               tags: ["Stylized"],              cost: "2 cr/img" },
+  { id: "ideogram/v3-remix",                   name: "Ideogram V3",        description: "Strong text rendering, creative",        tags: ["Creative"],              cost: "2 cr/img" },
 ];
 
-const FAKE_IMAGE_RATIOS = ["16:9", "9:16", "1:1", "4:3"];
+const FAKE_IMAGE_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:2", "3:4", "2:3", "21:9"];
 
 const FAKE_VIDEO_MODELS = [
-  { id: "vd1", name: "Kling 1.6 Pro",  description: "Best motion quality",         tags: ["smooth", "HD"],     cost: "10 cr/s" },
-  { id: "vd2", name: "Kling 1.6 Std",  description: "Balanced speed & quality",    tags: ["standard"],         cost: "5 cr/s" },
-  { id: "vd3", name: "Wan 2.1",        description: "Fast turnaround",             tags: ["fast"],             cost: "3 cr/s" },
+  { id: "kling-3.0/video",             name: "Kling 3.0",       description: "Latest Kling, I2V + T2V",          tags: ["Latest", "I2V + T2V"],      cost: "12 cr/s" },
+  { id: "kling-2.6/text-to-video",     name: "Kling 2.6 T2V",   description: "Text-to-video generation",          tags: ["Text-to-Video"],            cost: "8 cr/s"  },
+  { id: "kling-2.6/image-to-video",    name: "Kling 2.6 I2V",   description: "Image-to-video animation",          tags: ["Image-to-Video"],           cost: "8 cr/s"  },
+  { id: "wan/2-7-text-to-video",       name: "Wan 2.7 T2V",     description: "Fast text-to-video output",         tags: ["Text-to-Video"],            cost: "4 cr/s"  },
+  { id: "wan/2-7-image-to-video",      name: "Wan 2.7 I2V",     description: "Fast image-to-video animation",     tags: ["Image-to-Video"],           cost: "4 cr/s"  },
+  { id: "hailuo/02-text-to-video-pro", name: "Hailuo Pro",      description: "Pro text-to-video quality",         tags: ["Text-to-Video"],            cost: "10 cr/s" },
+  { id: "grok-imagine/image-to-video", name: "Grok Imagine",    description: "xAI image-to-video model",          tags: ["Image-to-Video"],           cost: "8 cr/s"  },
+  { id: "sora-2-image-to-video",       name: "Sora 2",          description: "OpenAI's image-to-video model",     tags: ["Image-to-Video"],           cost: "15 cr/s" },
+  { id: "veo3",                        name: "Veo 3",           description: "Google's T2V + I2V flagship",        tags: ["T2V + I2V", "Google"],      cost: "18 cr/s" },
+  { id: "veo3_fast",                   name: "Veo 3 Fast",      description: "Google Veo 3 at faster speed",      tags: ["T2V + I2V", "Google", "Fast"], cost: "10 cr/s" },
+  { id: "runway",                      name: "Runway",          description: "Industry-standard video gen",        tags: ["T2V + I2V"],                cost: "8 cr/s"  },
+  { id: "bytedance/seedance-2",        name: "Seedance 2",      description: "ByteDance I2V + T2V model",         tags: ["ByteDance", "I2V + T2V"],   cost: "6 cr/s"  },
 ];
 
 const FAKE_VIDEO_RATIOS = ["16:9", "9:16", "1:1"];
