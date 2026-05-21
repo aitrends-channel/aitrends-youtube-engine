@@ -175,8 +175,8 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
         {/* Try Demo */}
         <button
           onClick={() => { onClose(); router.push("/demo/channel"); }}
-          className="w-full flex items-center justify-between px-4 py-3 rounded-xl mb-3 transition-all hover:opacity-90"
-          style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.08)" }}
+          className="w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all hover:opacity-90"
+          style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.08)", marginBottom: "30px" }}
         >
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
