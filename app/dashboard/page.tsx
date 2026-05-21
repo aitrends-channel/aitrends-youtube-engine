@@ -457,9 +457,14 @@ export default function HomePage() {
                 );
               })()}
 
-              {channelGroups.length > 0 && <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "40px", marginBottom: "10px" }}>Niches/Video Chart</h3>}
+              <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "40px", marginBottom: "10px" }}>Niches/Video Chart</h3>
               {/* Bar chart — videos per niche */}
-              {channelGroups.length > 0 && (() => {
+              {channelGroups.length === 0 ? (
+                <div className="rounded-2xl px-6 py-10 flex flex-col items-center justify-center text-center" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+                  <p className="text-sm font-medium" style={{ color: "var(--c-40)" }}>No niches yet</p>
+                  <p className="text-xs mt-1" style={{ color: "var(--c-30)" }}>Create your first niche to see video counts here</p>
+                </div>
+              ) : (() => {
                 const W = 600, PAD_X = 16, PAD_T = 16;
                 const points = channelGroups.map(g => ({ label: g.channelName, count: g.projects.length }));
                 const maxCount = Math.max(...points.map(p => p.count), 1);
