@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, LayoutTemplate, Check, LayoutDashboard } from "lucide-react";
+import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, LayoutTemplate, Check } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 const STEPS: { label: string; sublabel: string; Icon: LucideIcon; href: string }[] = [
@@ -32,35 +32,25 @@ export function DemoNav({ currentStep }: DemoNavProps) {
       >
         {/* Logo */}
         <div className="px-5 py-5 border-b" style={{ borderColor: "var(--bd-7)" }}>
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center">
-                <Image src="/heclus-icon-white.svg" alt="Heclus" width={40} height={40} className="object-cover w-full h-full" />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-foreground/90 leading-tight">Heclus</p>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span
-                    className="text-xs font-semibold px-1.5 py-0.5 rounded"
-                    style={{
-                      background: "oklch(0.72 0.25 285 / 0.15)",
-                      border: "1px solid oklch(0.72 0.25 285 / 0.3)",
-                      color: "oklch(0.72 0.25 285)",
-                    }}
-                  >
-                    Demo
-                  </span>
-                </div>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center">
+              <Image src="/heclus-icon-white.svg" alt="Heclus" width={40} height={40} className="object-cover w-full h-full" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-foreground/90 leading-tight">Heclus</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span
+                  className="text-xs font-semibold px-1.5 py-0.5 rounded"
+                  style={{
+                    background: "oklch(0.72 0.25 285 / 0.15)",
+                    border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+                    color: "oklch(0.72 0.25 285)",
+                  }}
+                >
+                  Demo
+                </span>
               </div>
             </div>
-            <button
-              onClick={() => router.push("/dashboard")}
-              className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
-              style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
-            >
-              <LayoutDashboard size={12} />
-              Dashboard
-            </button>
           </div>
         </div>
 

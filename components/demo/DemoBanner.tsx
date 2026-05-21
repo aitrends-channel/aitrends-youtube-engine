@@ -44,6 +44,14 @@ export function DemoBanner() {
           Subscribe Now →
         </button>
 
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="px-3 py-1 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+          style={{ background: "var(--bg-control)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+        >
+          Dashboard
+        </button>
+
         <ThemeToggle />
 
         {/* Profile avatar + dropdown */}
