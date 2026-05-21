@@ -22,6 +22,18 @@ const PLAN_LIMITS: Record<string, number | null> = {
   pro:     null,
 };
 
+const PLAN_PRICES: Record<string, string> = {
+  founder: "$40/yr",
+  starter: "$19/mo",
+  pro:     "$49/mo",
+};
+
+// Next tier to suggest when at limit
+const UPGRADE_PATH: Record<string, string> = {
+  founder: "pro",
+  starter: "pro",
+};
+
 function loadGumroadScript(): Promise<void> {
   return new Promise((resolve, reject) => {
     if (document.querySelector('script[src*="gumroad.com/js"]')) { resolve(); return; }
@@ -47,6 +59,9 @@ export function NicheLimitModal({ email, userPlan, nicheLimit, onClose, onSucces
 
   const planLabel = PLAN_LABELS[userPlan] ?? userPlan;
   const isAlreadyPro = userPlan === "pro";
+  const upgradePlan = UPGRADE_PATH[userPlan] ?? null;
+  const upgradePlanLabel = upgradePlan ? (PLAN_LABELS[upgradePlan] ?? upgradePlan) : null;
+  const upgradePlanPrice = upgradePlan ? (PLAN_PRICES[upgradePlan] ?? "") : "";
 
   function pollForPayment() {
     const interval = setInterval(async () => {
@@ -166,39 +181,41 @@ export function NicheLimitModal({ email, userPlan, nicheLimit, onClose, onSucces
             </button>
           )}
 
-          {/* Upgrade to Pro */}
-          <button
-            onClick={() => handleGumroad("pro", "upgrade")}
-            disabled={loading !== null}
-            className="w-full rounded-xl p-4 text-left transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
-            style={{
-              background: "linear-gradient(135deg, oklch(0.72 0.25 285 / 0.12), oklch(0.58 0.28 300 / 0.12))",
-              border: "1px solid oklch(0.72 0.25 285 / 0.35)",
-            }}
-          >
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
-                style={{ background: "oklch(0.72 0.25 285)", boxShadow: "0 0 12px oklch(0.72 0.25 285 / 0.4)" }}>
-                {loading === "upgrade" ? (
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <Zap size={14} style={{ color: "white" }} />
-                )}
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <p className="text-sm font-semibold text-foreground">Upgrade to Pro</p>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                    style={{ background: "oklch(0.72 0.25 285)", color: "white" }}>
-                    $49/mo
-                  </span>
+          {/* Upgrade to next tier */}
+          {upgradePlan && (
+            <button
+              onClick={() => handleGumroad(upgradePlan, "upgrade")}
+              disabled={loading !== null}
+              className="w-full rounded-xl p-4 text-left transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
+              style={{
+                background: "linear-gradient(135deg, oklch(0.72 0.25 285 / 0.12), oklch(0.58 0.28 300 / 0.12))",
+                border: "1px solid oklch(0.72 0.25 285 / 0.35)",
+              }}
+            >
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+                  style={{ background: "oklch(0.72 0.25 285)", boxShadow: "0 0 12px oklch(0.72 0.25 285 / 0.4)" }}>
+                  {loading === "upgrade" ? (
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Zap size={14} style={{ color: "white" }} />
+                  )}
                 </div>
-                <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                  Unlimited niches — never worry about limits again
-                </p>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold text-foreground">Upgrade to {upgradePlanLabel}</p>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                      style={{ background: "oklch(0.72 0.25 285)", color: "white" }}>
+                      {upgradePlanPrice}
+                    </span>
+                  </div>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                    Unlimited niches — never worry about limits again
+                  </p>
+                </div>
               </div>
-            </div>
-          </button>
+            </button>
+          )}
         </div>
 
         {error && (
