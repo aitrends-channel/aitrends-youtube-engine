@@ -34,7 +34,7 @@ const PLANS = [
     price: "$49",
     period: "/mo",
     limit: "Unlimited niches",
-    features: ["Unlimited niches", "HD image processing", "Full AI pipeline", "All features included", "Priority support"],
+    features: ["Everything in Starter", "Clone unlimited YouTube niches", "Unlimited video creation", "Bulk video generation", "Priority rendering queue", "Priority support"],
     highlighted: true,
     disabled: false,
   },
