@@ -822,7 +822,11 @@ export default function AssemblePage({ params }: PageProps) {
 
               {assembling && (
                 <div className="space-y-3">
-                  <p className="text-xs text-center" style={{ color: "var(--c-55)" }}>{assembleStatus}</p>
+                  <div className="flex items-center justify-center gap-2">
+                    <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0"
+                      style={{ color: "oklch(0.72 0.25 285)" }} />
+                    <p className="text-xs text-center" style={{ color: "var(--c-55)" }}>{assembleStatus}</p>
+                  </div>
                   <button onClick={() => { setAssembling(false); setAssembleStatus(""); }}
                     className="w-full py-2 rounded-xl text-xs font-medium transition-all"
                     style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-45)" }}>
@@ -1090,12 +1094,22 @@ export default function AssemblePage({ params }: PageProps) {
                   <button onClick={startNextVideo} disabled={!nextTopic.trim() || creatingNext}
                     className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40"
                     style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                    {creatingNext ? "Creating…" : "Start Next Video →"}
+                    {creatingNext ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Creating…
+                      </span>
+                    ) : "Start Next Video →"}
                   </button>
                   <button onClick={generateMoreIdeas} disabled={generatingIdeas || !project?.channel_analysis}
                     className="w-full py-2 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
                     style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}>
-                    {generatingIdeas ? "Generating…" : "Generate More Ideas"}
+                    {generatingIdeas ? (
+                      <span className="flex items-center justify-center gap-1.5">
+                        <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Generating…
+                      </span>
+                    ) : "Generate More Ideas"}
                   </button>
                 </div>
               </div>

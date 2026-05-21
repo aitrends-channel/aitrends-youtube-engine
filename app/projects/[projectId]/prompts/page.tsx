@@ -311,6 +311,7 @@ export default function PromptsPage({ params }: PageProps) {
   const [imageStep, setImageStep] = useState<StepState>(IDLE);
   const [videoStep, setVideoStep] = useState<StepState>(IDLE);
   const [activeTab, setActiveTab] = useState<Tab>("beats");
+  const [navigating, setNavigating] = useState(false);
 
   const beats: Beat[] = project?.beats ?? [];
   const videoBeats = beats.filter((b) => b.videoPrompt);
@@ -402,12 +403,17 @@ export default function PromptsPage({ params }: PageProps) {
           </div>
           {hasImageBeats && (
             <button
-              onClick={() => router.push(`/projects/${projectId}/generate`)}
-              disabled={anyRunning}
-              className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40"
+              onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/generate`); }}
+              disabled={anyRunning || navigating}
+              className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 transition-all"
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
             >
-              Generate →
+              {navigating ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Loading…
+                </span>
+              ) : "Generate →"}
             </button>
           )}
         </div>

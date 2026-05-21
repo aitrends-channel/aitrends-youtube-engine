@@ -82,6 +82,7 @@ export default function VisualsPage({ params }: PageProps) {
   const { project } = useProject(projectId);
 
   const [mode, setMode] = useState<Mode>("auto");
+  const [navigating, setNavigating] = useState(false);
 
   // Auto screenshot state
   const [fetching, setFetching] = useState(false);
@@ -236,11 +237,17 @@ export default function VisualsPage({ params }: PageProps) {
             </div>
             {visualProfile && (
               <button
-                onClick={() => router.push(`/projects/${projectId}/prompts`)}
-                className="px-4 py-2 rounded-lg text-sm font-semibold"
+                onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/prompts`); }}
+                disabled={navigating}
+                className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-60 transition-all"
                 style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
               >
-                Continue to Prompts →
+                {navigating ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    Loading…
+                  </span>
+                ) : "Continue to Prompts →"}
               </button>
             )}
           </div>
@@ -540,8 +547,12 @@ export default function VisualsPage({ params }: PageProps) {
               className="w-full py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-40"
               style={{ background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))", color: "var(--bg-page-2)" }}
             >
-              {analyzing ? "Analyzing..." :
-               mode === "auto" && !autoShots.length ? "Fetch screenshots first" :
+              {analyzing ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Analyzing…
+                </span>
+              ) : mode === "auto" && !autoShots.length ? "Fetch screenshots first" :
                `Analyze ${mode === "auto" ? `${totalSelected} selected images` : "Visual Style"}`}
             </button>
           )}
@@ -585,11 +596,17 @@ export default function VisualsPage({ params }: PageProps) {
               </div>
               <div className="px-5 pb-5">
                 <button
-                  onClick={() => router.push(`/projects/${projectId}/prompts`)}
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold"
+                  onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/prompts`); }}
+                  disabled={navigating}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 transition-all"
                   style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                 >
-                  Generate All Prompts →
+                  {navigating ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      Loading…
+                    </span>
+                  ) : "Generate All Prompts →"}
                 </button>
               </div>
             </div>

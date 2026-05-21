@@ -131,7 +131,12 @@ export default function TopicPage({ params }: PageProps) {
               className="w-full py-2.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
               style={{ background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}
             >
-              {generatingIdeas ? "Generating ideas…" : allIdeas.length > 0 ? "Generate More Ideas" : "Generate Ideas"}
+              {generatingIdeas ? (
+            <span className="flex items-center justify-center gap-2">
+              <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              Generating ideas…
+            </span>
+          ) : allIdeas.length > 0 ? "Generate More Ideas" : "Generate Ideas"}
             </button>
           )}
 
@@ -164,7 +169,12 @@ export default function TopicPage({ params }: PageProps) {
             className="w-full py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-40"
             style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
           >
-            {saving ? "Saving…" : "Continue to Script →"}
+            {saving ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Saving…
+              </span>
+            ) : "Continue to Script →"}
           </button>
         </div>
       </main>

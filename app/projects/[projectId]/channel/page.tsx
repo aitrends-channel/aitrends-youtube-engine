@@ -261,7 +261,12 @@ export default function ChannelPage({ params }: PageProps) {
                     boxShadow: isWorking ? "none" : "0 0 16px oklch(0.72 0.25 285 / 0.3)"
                   }}
                 >
-                  {isWorking ? "Running..." : "Analyze"}
+                  {isWorking ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      Running…
+                    </span>
+                  ) : "Analyze"}
                 </button>
               </div>
             </div>

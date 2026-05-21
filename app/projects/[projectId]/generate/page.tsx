@@ -222,6 +222,7 @@ export default function GeneratePage({ params }: PageProps) {
 
   const initialTtsSelected = useRef(false);
 
+  const [navigating, setNavigating] = useState(false);
   const [generatingTts, setGeneratingTts] = useState(false);
   const [ttsProgress, setTtsProgress] = useState<{ current: number; total: number } | null>(null);
   const [ttsStatusMsg, setTtsStatusMsg] = useState<string>("");
@@ -689,24 +690,23 @@ export default function GeneratePage({ params }: PageProps) {
                   )}
 
                   {/* Actions */}
-                  {removingPauses ? (
-                    <p className="text-xs text-center py-1" style={{ color: "var(--c-55)" }}>
-                      {removePausesStatus}
-                    </p>
-                  ) : (
-                    <div className="flex gap-2">
-                      <button onClick={removePauses} disabled={removingPauses || generatingTts}
-                        className="flex-1 py-2 rounded-lg text-xs font-medium disabled:opacity-40 transition-all"
-                        style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
-                        {ttsCleanedUrl ? "Re-trim" : "Trim Pauses"}
-                      </button>
-                      <button onClick={() => generateVoiceover(selectedTtsModel)} disabled={generatingTts}
-                        className="px-3 py-2 rounded-lg text-xs disabled:opacity-40"
-                        style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
-                        Regen
-                      </button>
-                    </div>
-                  )}
+                  <div className="flex gap-2">
+                    <button onClick={removePauses} disabled={removingPauses || generatingTts}
+                      className="flex-1 py-2 rounded-lg text-xs font-medium disabled:opacity-40 transition-all"
+                      style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
+                      {removingPauses ? (
+                        <span className="flex items-center justify-center gap-1.5">
+                          <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          {removePausesStatus || "Trimming…"}
+                        </span>
+                      ) : ttsCleanedUrl ? "Re-trim" : "Trim Pauses"}
+                    </button>
+                    <button onClick={() => generateVoiceover(selectedTtsModel)} disabled={generatingTts}
+                      className="px-3 py-2 rounded-lg text-xs disabled:opacity-40"
+                      style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
+                      Regen
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -724,7 +724,12 @@ export default function GeneratePage({ params }: PageProps) {
                     className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                     style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                   >
-                    {generatingTts ? "Generating..." : "Generate Voiceover"}
+                    {generatingTts ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Generating…
+                      </span>
+                    ) : "Generate Voiceover"}
                   </button>
                 </div>
               )}
@@ -861,9 +866,12 @@ export default function GeneratePage({ params }: PageProps) {
                 className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                 style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
               >
-                {generatingImages
-                  ? `Generating... ${clearingImages ? 0 : generatedImages}/${totalBeats}`
-                  : generatedImages > 0
+                {generatingImages ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    {`Generating… ${clearingImages ? 0 : generatedImages}/${totalBeats}`}
+                  </span>
+                ) : generatedImages > 0
                   ? `Regenerate All (${totalBeats})`
                   : `Generate ${totalBeats} Images`}
               </button>
@@ -999,15 +1007,25 @@ export default function GeneratePage({ params }: PageProps) {
                 className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                 style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
               >
-                {queuingVideos ? "Queuing..." : `Queue ${videoBeats} Video Clips`}
+                {queuingVideos ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    Queuing clips…
+                  </span>
+                ) : `Queue ${videoBeats} Video Clips`}
               </button>
               <button
-                onClick={() => router.push(`/projects/${projectId}/assemble`)}
-                disabled={generatedVideos < 2}
+                onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/assemble`); }}
+                disabled={generatedVideos < 2 || navigating}
                 className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-30 transition-all"
                 style={{ background: "var(--bg-panel)", color: generatedVideos >= 2 ? "var(--c-75)" : "var(--c-40)", border: "1px solid var(--bd-10)" }}
               >
-                {generatedVideos >= 2
+                {navigating ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    Loading…
+                  </span>
+                ) : generatedVideos >= 2
                   ? `Proceed to Assemble (${generatedVideos}/${videoBeats} clips ready)`
                   : `Need at least 2 clips to proceed (${generatedVideos}/${videoBeats})`}
               </button>
