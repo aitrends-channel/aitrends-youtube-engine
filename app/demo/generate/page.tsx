@@ -33,8 +33,6 @@ const FAKE_VIDEO_MODELS = [
 const FAKE_VIDEO_RATIOS = ["16:9", "9:16", "1:1"];
 const FAKE_DURATIONS = [{ label: "5s", value: 5 }, { label: "10s", value: 10 }];
 
-const WAVEFORM_HEIGHTS = [30, 55, 75, 45, 90, 60, 80, 40, 65, 50, 35, 70, 85, 50, 40, 60, 75, 55, 65, 45];
-
 // ── Sub-components ───────────────────────────────────────────────────────────
 
 function SectionHeader({ icon, title, subtitle }: { icon: string; title: string; subtitle: string }) {
@@ -213,27 +211,14 @@ export default function DemoGeneratePage() {
                     <div className="space-y-1">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Original</span>
-                        <span className="text-xs" style={{ color: "var(--c-45)" }}>↓ Download</span>
+                        <a href="/demo_voiceover.mp3" download="voiceover.mp3"
+                          className="text-xs" style={{ color: "var(--c-45)" }}>↓ Download</a>
                       </div>
-                      {/* Fake waveform player */}
-                      <div className="rounded-lg px-3 py-2 flex items-center gap-3"
-                        style={{ background: "var(--bg-input)", border: "1px solid var(--bd-7)" }}>
-                        <button className="w-6 h-6 rounded flex items-center justify-center shrink-0"
-                          style={{ background: "oklch(0.72 0.25 285)", color: "oklch(0.06 0 0)" }}>
-                          <svg width="7" height="9" viewBox="0 0 7 9" fill="currentColor"><path d="M0 0.5L7 4.5L0 8.5V0.5Z" /></svg>
-                        </button>
-                        <div className="flex-1 flex items-center gap-0.5 h-6">
-                          {WAVEFORM_HEIGHTS.map((h, i) => (
-                            <div key={i} className="flex-1 rounded-full"
-                              style={{ height: `${h}%`, background: "oklch(0.72 0.25 285)", opacity: 0.65 }} />
-                          ))}
-                        </div>
-                        <span className="text-xs font-mono shrink-0" style={{ color: "var(--c-50)" }}>2:34</span>
-                      </div>
+                      <audio controls src="/demo_voiceover.mp3" className="w-full h-8" />
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={generateVoiceover}
-                        className="flex-1 py-2 rounded-lg text-xs font-medium transition-all"
+                      <button disabled
+                        className="flex-1 py-2 rounded-lg text-xs font-medium opacity-40"
                         style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
                         Trim Pauses
                       </button>
