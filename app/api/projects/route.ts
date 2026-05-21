@@ -67,9 +67,11 @@ export async function POST(req: Request) {
       const { data: existing } = await supabase
         .from("projects")
         .select("channel_name")
-        .eq("user_id", user.id)
-        .not("channel_name", "is", null);
-      const nicheCount = new Set((existing ?? []).map((p) => p.channel_name)).size;
+        .eq("user_id", user.id);
+      const rows = existing ?? [];
+      const namedNiches = new Set(rows.filter((p) => p.channel_name).map((p) => p.channel_name)).size;
+      const hasUnnamed = rows.some((p) => !p.channel_name);
+      const nicheCount = namedNiches + (hasUnnamed ? 1 : 0);
       if (nicheCount >= limit) {
         return NextResponse.json({ error: "Niche limit reached", limitReached: true }, { status: 403 });
       }

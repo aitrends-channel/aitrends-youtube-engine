@@ -148,11 +148,8 @@ export default function HomePage() {
   const { nicheLimit, atNicheLimit } = useMemo(() => {
     const PLAN_LIMITS: Record<string, number | null> = { founder: 20, starter: 5, pro: null };
     const limit = isAdmin ? null : (PLAN_LIMITS[userPlan] ?? 5);
-    const nicheCount = new Set(
-      (projects ?? []).filter((p) => p.channel_name).map((p) => p.channel_name)
-    ).size;
-    return { nicheLimit: limit, atNicheLimit: limit !== null && nicheCount >= limit };
-  }, [isAdmin, userPlan, projects]);
+    return { nicheLimit: limit, atNicheLimit: limit !== null && channelGroups.length >= limit };
+  }, [isAdmin, userPlan, channelGroups]);
 
   function requireSubscription(action: () => void) {
     if (isPaid || isAdmin) {
