@@ -185,7 +185,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
               <PlayCircle size={16} />
             </div>
             <div className="text-left">
-              <p className="text-sm font-semibold" style={{ color: "var(--c-80)" }}>Try Demo</p>
+              <p className="text-sm font-semibold" style={{ color: "var(--c-80)" }}>Try complete workflow demo</p>
               <p className="text-xs" style={{ color: "var(--c-40)" }}>Explore Heclus with a guided walkthrough — free</p>
             </div>
           </div>
