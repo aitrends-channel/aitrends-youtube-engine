@@ -221,7 +221,7 @@ export default function HomePage() {
     requireSubscription(() => doCreateVideoForChannel(group));
   }
 
-  if (!userEmail && isPaid === null && !isAdmin) return <PageLoader />;
+  const authReady = !!userEmail || isAdmin;
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-page)" }}>
@@ -323,7 +323,7 @@ export default function HomePage() {
           </div>
           <button
             onClick={createProject}
-            disabled={creating}
+            disabled={creating || !authReady}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
           >
@@ -737,7 +737,7 @@ export default function HomePage() {
                       </span>
                       <button
                         onClick={() => createVideoForChannel(group)}
-                        disabled={creating}
+                        disabled={creating || !authReady}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
                         style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
                       >
@@ -865,7 +865,7 @@ export default function HomePage() {
           <div className="flex flex-col items-center justify-center py-32 gap-6">
             <button
               onClick={createProject}
-              disabled={creating}
+              disabled={creating || !authReady}
               className="w-16 h-16 rounded-2xl flex items-center justify-center transition-all hover:scale-105 active:scale-95 disabled:opacity-50 cursor-pointer"
               style={{
                 background: "oklch(0.72 0.25 285 / 0.08)",
@@ -883,7 +883,7 @@ export default function HomePage() {
             </div>
             <button
               onClick={createProject}
-              disabled={creating}
+              disabled={creating || !authReady}
               className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
             >
