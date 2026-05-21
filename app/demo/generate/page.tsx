@@ -9,10 +9,34 @@ import { useDemoState } from "@/lib/demo-context";
 // ── Fake model data ──────────────────────────────────────────────────────────
 
 const FAKE_VOICES = [
-  { id: "v1", name: "Rachel",  tags: ["american", "calm", "narration"] },
-  { id: "v2", name: "Marcus",  tags: ["american", "deep", "authoritative"] },
-  { id: "v3", name: "Sophia",  tags: ["british", "professional"] },
-  { id: "v4", name: "Daniel",  tags: ["american", "energetic", "youtube"] },
+  { id: "nPczCjzI2devNBz1zQrb", name: "Brian",     tags: ["Male",   "Deep, Resonant"] },
+  { id: "FGY2WhTYpPnrIDTdsKH5", name: "Laura",     tags: ["Female", "Enthusiastic"] },
+  { id: "TX3LPaxmHKxFdv7VOQHJ", name: "Liam",      tags: ["Male",   "Energetic"] },
+  { id: "N2lVS1w4EtoT3dr4eOWO", name: "Callum",    tags: ["Male",   "Husky"] },
+  { id: "EkK5I93UQWFDigLMpZcX", name: "James",     tags: ["Male",   "Bold, Engaging"] },
+  { id: "Z3R5wn05IrDiVCyEkUrK", name: "Arabella",  tags: ["Female", "Mysterious"] },
+  { id: "hpp4J3VqNfWAUOO0d1Us", name: "Bella",     tags: ["Female", "Warm, Professional"] },
+  { id: "uYXf8XasLslADfZ2MB4u", name: "Hope",      tags: ["Female", "Bubbly, Energetic"] },
+  { id: "gs0tAILXbY5DNrJrsM6F", name: "Jeff",      tags: ["Male",   "Classy, Strong"] },
+  { id: "DTKMou8ccj1ZaWGBiotd", name: "Jamahal",   tags: ["Male",   "Vibrant, Natural"] },
+  { id: "vBKc2FfBKJfcZNyEt1n6", name: "Finn",      tags: ["Male",   "Youthful, Eager"] },
+  { id: "DYkrAHD8iwork3YSUBbs", name: "Tom",       tags: ["Male",   "Conversational"] },
+  { id: "56AoDkrOh6qfVPDXZ7Pt", name: "Cassidy",   tags: ["Female", "Crisp, Direct"] },
+  { id: "lcMyyd2HUfFzxdCaC4Ta", name: "Lucy",      tags: ["Female", "Fresh, Casual"] },
+  { id: "6aDn1KB0hjpdcocrUkmq", name: "Tiffany",   tags: ["Female", "Natural, Welcoming"] },
+  { id: "Sq93GQT4X1lKDXsQcixO", name: "Felix",     tags: ["Male",   "Warm, Positive"] },
+  { id: "LruHrtVF6PSyGItzMNHS", name: "Benjamin",  tags: ["Male",   "Deep, Calming"] },
+  { id: "1wGbFxmAM3Fgw63G1zZJ", name: "Allison",   tags: ["Female", "Calm, Soothing"] },
+  { id: "MJ0RnG71ty4LH3dvNfSd", name: "Leon",      tags: ["Male",   "Soothing, Grounded"] },
+  { id: "NNl6r8mD7vthiJatiJt1", name: "Bradford",  tags: ["Male",   "Expressive"] },
+  { id: "Sm1seazb4gs7RSlUVw7c", name: "Anika",     tags: ["Female", "Animated, Friendly"] },
+  { id: "5l5f8iK3YPeGga21rQIX", name: "Adeline",   tags: ["Female", "Conversational"] },
+  { id: "aD6riP1btT197c6dACmy", name: "Rachel M",  tags: ["Female", "British, Radio"] },
+  { id: "AeRdCCKzvd23BpJoofzx", name: "Nathaniel", tags: ["Male",   "British, Calm"] },
+  { id: "BZgkqPqms7Kj9ulSkVzn", name: "Eve",       tags: ["Female", "Authentic, Happy"] },
+  { id: "6F5Zhi321D3Oq7v1oNT4", name: "Hank",      tags: ["Male",   "Deep, Narrator"] },
+  { id: "pPdl9cQBQq4p6mRkZy2Z", name: "Emma",      tags: ["Female", "Adorable, Upbeat"] },
+  { id: "nzeAacJi50IvxcyDnMXa", name: "Marshal",   tags: ["Male",   "Friendly, Warm"] },
 ];
 
 const FAKE_IMAGE_MODELS = [
