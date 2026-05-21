@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Check, Zap } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { X, Check, Zap, PlayCircle } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 const FOUNDER_LIMIT = 100;
@@ -64,6 +65,7 @@ function loadGumroadScript(): Promise<void> {
 }
 
 export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Props) {
+  const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState(defaultPlan ?? "founder");
   const [spotsLeft, setSpotsLeft] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
@@ -169,6 +171,27 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
           <h2 className="text-xl font-bold mb-1" style={{ color: "var(--c-90)" }}>Unlock Heclus</h2>
           <p className="text-sm" style={{ color: "var(--c-45)" }}>Pick the plan that fits your workflow.</p>
         </div>
+
+        {/* Try Demo */}
+        <button
+          onClick={() => { onClose(); router.push("/demo/channel"); }}
+          className="w-full flex items-center justify-between px-4 py-3 rounded-xl mb-3 transition-all hover:opacity-90"
+          style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.08)" }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" }}>
+              <PlayCircle size={16} />
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-semibold" style={{ color: "var(--c-80)" }}>Try Demo</p>
+              <p className="text-xs" style={{ color: "var(--c-40)" }}>Explore Heclus with a guided walkthrough — free</p>
+            </div>
+          </div>
+          <span className="text-xs font-medium shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>
+            Free →
+          </span>
+        </button>
 
         {/* Plan selector */}
         <div className="grid grid-cols-3 gap-3 mb-6">
