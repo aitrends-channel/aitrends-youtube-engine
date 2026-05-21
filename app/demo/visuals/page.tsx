@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
+import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
 
@@ -108,9 +109,10 @@ export default function DemoVisualsPage() {
   const { visualProfile } = DEMO_DATA;
 
   return (
-    <div className="flex flex-1 overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
+    <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
       <DemoNav currentStep={3} />
       <div className="flex-1 flex flex-col min-h-0">
+        <DemoBanner />
         <main className="flex-1 overflow-y-auto">
 
           {/* Header */}

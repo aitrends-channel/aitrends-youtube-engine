@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
+import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DEMO_DATA } from "@/lib/demo-data";
 
 export default function DemoTopicPage() {
@@ -16,9 +17,10 @@ export default function DemoTopicPage() {
   }
 
   return (
-    <div className="flex flex-1 overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
+    <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
       <DemoNav currentStep={1} />
       <div className="flex-1 flex flex-col min-h-0">
+        <DemoBanner />
         <main className="flex-1 overflow-y-auto">
         <div
           className="px-8 py-5"
