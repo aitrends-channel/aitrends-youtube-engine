@@ -457,13 +457,11 @@ export default function HomePage() {
                 );
               })()}
 
-              <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "40px", marginBottom: "10px" }}>Niches/Video Chart</h3>
+              {channelGroups.length > 0 && <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "40px", marginBottom: "10px" }}>Niches/Video Chart</h3>}
               {/* Bar chart — videos per niche */}
-              {(() => {
+              {channelGroups.length > 0 && (() => {
                 const W = 600, PAD_X = 16, PAD_T = 16;
-                const points = channelGroups.length > 0
-                  ? channelGroups.map(g => ({ label: g.channelName, count: g.projects.length }))
-                  : Array.from({ length: 7 }, (_, i) => ({ label: `Niche ${i + 1}`, count: 0 }));
+                const points = channelGroups.map(g => ({ label: g.channelName, count: g.projects.length }));
                 const maxCount = Math.max(...points.map(p => p.count), 1);
                 const n = points.length;
                 const plotW = W - PAD_X * 2;
