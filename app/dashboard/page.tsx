@@ -283,16 +283,19 @@ export default function HomePage() {
 
                     {/* Plan badge */}
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize"
-                        style={{
-                          background: isAdmin ? "oklch(0.55 0.15 145 / 0.15)" : "oklch(0.72 0.25 285 / 0.15)",
-                          color: isAdmin ? "oklch(0.65 0.15 145)" : "oklch(0.72 0.25 285)",
-                          border: `1px solid ${isAdmin ? "oklch(0.55 0.15 145 / 0.25)" : "oklch(0.72 0.25 285 / 0.25)"}`,
-                        }}>
-                        {isAdmin ? "Admin" : isPaid ? userPlan : "Free"}
-                      </span>
-                      {isPaid && !isAdmin && (
-                        <span className="text-[10px]" style={{ color: "var(--c-35)" }}>plan</span>
+                      {isAdmin ? (
+                        <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize"
+                          style={{ background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "1px solid oklch(0.55 0.15 145 / 0.25)" }}>
+                          Admin
+                        </span>
+                      ) : (
+                        <Link
+                          href="/plan"
+                          onClick={() => setShowProfileMenu(false)}
+                          className="text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize transition-opacity hover:opacity-75"
+                          style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+                          {isPaid ? userPlan : "Free"} plan →
+                        </Link>
                       )}
                     </div>
                   </div>
