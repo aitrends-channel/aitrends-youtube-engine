@@ -897,14 +897,25 @@ export default function HomePage() {
                 Paste a YouTube channel URL and Heclus will generate a full script, voiceover, AI images, and video clips — automatically.
               </p>
             </div>
-            <button
-              onClick={createProject}
-              disabled={creating || !authReady}
-              className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
-              style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
-            >
-              {creating ? "Creating…" : "New Project →"}
-            </button>
+            <div className="flex flex-col items-center gap-3">
+              {(!isPaid && !isAdmin) && (
+                <button
+                  onClick={() => router.push("/demo/channel")}
+                  className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 cursor-pointer"
+                  style={{ background: "oklch(1 0 0 / 0.08)", color: "var(--c-70)", border: "1px solid oklch(1 0 0 / 0.12)" }}
+                >
+                  Try Demo →
+                </button>
+              )}
+              <button
+                onClick={createProject}
+                disabled={creating || !authReady}
+                className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
+                style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
+              >
+                {creating ? "Creating…" : isPaid || isAdmin ? "New Project →" : "Subscribe & Start →"}
+              </button>
+            </div>
           </div>
         )}
       </main>
