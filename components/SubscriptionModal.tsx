@@ -141,16 +141,17 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="relative w-full max-w-2xl rounded-2xl p-8"
-        style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
+        className="relative w-full max-w-2xl rounded-2xl overflow-hidden"
+        style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)", maxHeight: "90vh" }}
       >
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 p-1.5 rounded-lg transition-opacity hover:opacity-60 cursor-pointer"
+          className="absolute top-4 right-4 z-10 p-1.5 rounded-lg transition-opacity hover:opacity-60 cursor-pointer"
           style={{ color: "var(--c-40)" }}
         >
           <X size={16} />
         </button>
+        <div className="overflow-y-auto p-8" style={{ maxHeight: "90vh" }}>
 
         {/* Badge */}
         <div className="flex justify-center mb-5">
@@ -292,6 +293,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
         <p className="text-center text-xs mt-3" style={{ color: "var(--c-32)" }}>
           Secured by Gumroad · Cancel anytime
         </p>
+        </div>
       </div>
     </div>
   );
