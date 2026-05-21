@@ -1,16 +1,18 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DEMO_DATA } from "@/lib/demo-data";
+import { useDemoState } from "@/lib/demo-context";
 
 type Tab = "image" | "video";
 
 export default function DemoPromptsPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<Tab>("image");
+  const { state, update } = useDemoState();
+  const activeTab = state.promptsTab;
+  const setActiveTab = (tab: Tab) => update({ promptsTab: tab });
 
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
@@ -29,13 +31,6 @@ export default function DemoPromptsPage() {
                 {DEMO_DATA.promptBeats.length} beats · image & video prompts
               </p>
             </div>
-            <button
-              onClick={() => router.push("/demo/generate")}
-              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90"
-              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-            >
-              Generate →
-            </button>
           </div>
 
           {/* Step cards */}

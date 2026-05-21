@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DEMO_DATA } from "@/lib/demo-data";
+import { useDemoState } from "@/lib/demo-context";
 
 const ASPECT_RATIOS = ["16:9", "9:16", "1:1"] as const;
 type AspectRatio = typeof ASPECT_RATIOS[number];
@@ -47,12 +48,6 @@ const ASSEMBLE_STEPS = [
   "Uploading…",
 ];
 
-const FAKE_IMAGE_MODELS = [
-  { id: "i1", name: "FLUX 1.1 Pro",       tags: ["HD", "photorealistic"] },
-  { id: "i2", name: "FLUX 1.1 Pro Ultra", tags: ["4K", "detail"] },
-  { id: "i3", name: "FLUX Schnell",        tags: ["fast"] },
-];
-
 function SelectButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button onClick={onClick}
@@ -71,52 +66,22 @@ function SelectButton({ active, onClick, children }: { active: boolean; onClick:
   );
 }
 
-function StepBadge({ status, num }: { status: "idle" | "running" | "done" | "error"; num: number }) {
-  return (
-    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm font-bold mt-0.5"
-      style={
-        status === "done"    ? { background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.7 0.15 145)" } :
-        status === "running" ? { background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" } :
-        { background: "var(--bg-progress)", color: "var(--c-30)" }
-      }>
-      {status === "done" ? "✓" : status === "running"
-        ? <span className="block w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
-        : num}
-    </div>
-  );
-}
-
 export default function DemoAssemblePage() {
   const router = useRouter();
+  const { state, update } = useDemoState();
 
-  // Assembly settings
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
-  const [voiceoverType, setVoiceoverType] = useState<"original" | "trimmed">("original");
-  const [captionsEnabled, setCaptionsEnabled] = useState(false);
-  const [captionsStyle, setCaptionsStyle]     = useState("classic");
-  const [captionsSize, setCaptionsSize]       = useState("medium");
-  const [captionsPosition, setCaptionsPosition] = useState("bottom");
-  const [captionsLanguage, setCaptionsLanguage] = useState("source");
+  const {
+    aspectRatio, voiceoverType,
+    captionsEnabled, captionsStyle, captionsSize, captionsPosition, captionsLanguage,
+    assemblePhase,
+  } = state;
 
-  // Assembly state
-  const [assemblePhase, setAssemblePhase] = useState<"idle" | "assembling" | "done">("idle");
-  const [assembleMsg, setAssembleMsg]     = useState("");
-
-  // Thumbnail state
-  const [conceptPhase, setConceptPhase]   = useState<"idle" | "running" | "done">("idle");
-  const [imagePhase, setImagePhase]       = useState<"idle" | "running" | "done">("idle");
-  const [imageProgress, setImageProgress] = useState(0);
-  const [selectedModel, setSelectedModel] = useState("i1");
-  const [selectedRatio, setSelectedRatio] = useState("16:9");
-
-  // Next video
-  const [nextTopic, setNextTopic] = useState("");
+  const [assembleMsg, setAssembleMsg] = useState("");
 
   const totalBeats = DEMO_DATA.promptBeats.length;
-  const thumbs     = DEMO_DATA.thumbnailConcepts;
 
   function assemble() {
-    setAssemblePhase("assembling");
+    update({ assemblePhase: "assembling" });
     let i = 0;
     setAssembleMsg(ASSEMBLE_STEPS[0]);
     const id = setInterval(() => {
@@ -125,30 +90,11 @@ export default function DemoAssemblePage() {
         setAssembleMsg(ASSEMBLE_STEPS[i]);
       } else {
         clearInterval(id);
-        setAssemblePhase("done");
+        update({ assemblePhase: "done" });
         setAssembleMsg("");
       }
     }, 1000);
   }
-
-  function generateConcepts() {
-    setConceptPhase("running");
-    setTimeout(() => setConceptPhase("done"), 2000);
-  }
-
-  function generateImages() {
-    setImagePhase("running");
-    setImageProgress(0);
-    let count = 0;
-    const id = setInterval(() => {
-      count++;
-      setImageProgress(count);
-      if (count >= thumbs.length) { clearInterval(id); setImagePhase("done"); }
-    }, 700);
-  }
-
-  const hasConcepts = conceptPhase === "done";
-  const hasImages   = imagePhase === "done";
 
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
@@ -188,7 +134,7 @@ export default function DemoAssemblePage() {
                 <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--c-40)" }}>Output Aspect Ratio</p>
                 <div className="flex gap-2">
                   {ASPECT_RATIOS.map((r) => (
-                    <SelectButton key={r} active={aspectRatio === r} onClick={() => setAspectRatio(r)}>{r}</SelectButton>
+                    <SelectButton key={r} active={aspectRatio === r} onClick={() => update({ aspectRatio: r })}>{r}</SelectButton>
                   ))}
                 </div>
               </div>
@@ -197,7 +143,7 @@ export default function DemoAssemblePage() {
               <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                 <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--c-40)" }}>Voiceover Source</p>
                 <div className="flex gap-2">
-                  <button onClick={() => setVoiceoverType("original")}
+                  <button onClick={() => update({ voiceoverType: "original" })}
                     className="flex-1 py-2 rounded-xl text-xs font-medium transition-all"
                     style={voiceoverType === "original" ? {
                       background: "oklch(0.72 0.25 285 / 0.15)",
@@ -208,7 +154,7 @@ export default function DemoAssemblePage() {
                     }}>
                     Original
                   </button>
-                  <button onClick={() => setVoiceoverType("trimmed")} disabled
+                  <button onClick={() => update({ voiceoverType: "trimmed" })} disabled
                     className="flex-1 py-2 rounded-xl text-xs font-medium opacity-35"
                     style={{ background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-30)" }}>
                     Trimmed — unavailable
@@ -223,7 +169,7 @@ export default function DemoAssemblePage() {
                     <p className="text-sm font-semibold">Captions</p>
                     <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>Burned into the video — always visible</p>
                   </div>
-                  <button onClick={() => setCaptionsEnabled((v) => !v)}
+                  <button onClick={() => update({ captionsEnabled: !captionsEnabled })}
                     className="relative w-11 h-6 rounded-full transition-all shrink-0"
                     style={{ background: captionsEnabled ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}>
                     <span className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
@@ -237,7 +183,7 @@ export default function DemoAssemblePage() {
                       <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Style</p>
                       <div className="grid grid-cols-2 gap-1.5">
                         {CAPTION_STYLES.map((s) => (
-                          <button key={s.id} onClick={() => setCaptionsStyle(s.id)}
+                          <button key={s.id} onClick={() => update({ captionsStyle: s.id })}
                             className="py-2 px-3 rounded-xl text-left transition-all"
                             style={captionsStyle === s.id ? {
                               background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)",
@@ -254,7 +200,7 @@ export default function DemoAssemblePage() {
                         <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Size</p>
                         <div className="flex gap-1.5">
                           {CAPTION_SIZES.map((s) => (
-                            <button key={s.id} onClick={() => setCaptionsSize(s.id)}
+                            <button key={s.id} onClick={() => update({ captionsSize: s.id })}
                               className="flex-1 py-1.5 rounded-xl text-xs font-semibold transition-all"
                               style={captionsSize === s.id ? {
                                 background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "oklch(0.88 0.12 285)",
@@ -268,7 +214,7 @@ export default function DemoAssemblePage() {
                         <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Position</p>
                         <div className="flex gap-1.5">
                           {CAPTION_POSITIONS.map((p) => (
-                            <button key={p.id} onClick={() => setCaptionsPosition(p.id)}
+                            <button key={p.id} onClick={() => update({ captionsPosition: p.id })}
                               className="flex-1 py-1.5 rounded-xl text-xs font-medium transition-all"
                               style={captionsPosition === p.id ? {
                                 background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "oklch(0.88 0.12 285)",
@@ -284,7 +230,7 @@ export default function DemoAssemblePage() {
                       <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Language</p>
                       <div className="flex flex-wrap gap-1.5">
                         {CAPTION_LANGUAGES.map((lang) => (
-                          <button key={lang.code} onClick={() => setCaptionsLanguage(lang.code)}
+                          <button key={lang.code} onClick={() => update({ captionsLanguage: lang.code })}
                             className="px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
                             style={captionsLanguage === lang.code ? {
                               background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "oklch(0.88 0.12 285)",
@@ -302,8 +248,12 @@ export default function DemoAssemblePage() {
               <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                 {assemblePhase === "done" && (
                   <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
-                    <video src="/demo/assemble/Heclus demo video.mp4" controls
-                      className="w-full rounded-xl" style={{ aspectRatio: "16/9", display: "block" }} />
+                    <video
+                      src="/demo/assemble/Heclus demo video.mp4"
+                      controls
+                      className="w-full rounded-xl"
+                      style={{ aspectRatio: "16/9", display: "block" }}
+                    />
                   </div>
                 )}
 
@@ -321,15 +271,22 @@ export default function DemoAssemblePage() {
                 {assemblePhase === "done" ? (
                   <div className="flex gap-2">
                     <button onClick={assemble}
-                      className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all"
+                      className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all hover:opacity-80"
                       style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
                       Reassemble
                     </button>
+                    <a
+                      href="/demo/assemble/Heclus demo video.mp4"
+                      download="heclus-demo-video.mp4"
+                      className="flex-1 py-2.5 rounded-xl text-xs font-medium text-center transition-all hover:opacity-80"
+                      style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
+                      Export
+                    </a>
                     <button
-                      onClick={() => router.push("/demo/finish")}
+                      onClick={() => router.push("/demo/thumbnails")}
                       className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all hover:opacity-90"
                       style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                      Continue →
+                      Continue
                     </button>
                   </div>
                 ) : (
@@ -341,204 +298,8 @@ export default function DemoAssemblePage() {
                 )}
               </div>
 
-              {/* ── Thumbnails ── */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-3 pt-2">
-                  <div className="flex-1 h-px" style={{ background: "var(--bd-7)" }} />
-                  <p className="text-xs font-semibold uppercase tracking-wider px-2" style={{ color: "var(--c-40)" }}>Thumbnails</p>
-                  <div className="flex-1 h-px" style={{ background: "var(--bd-7)" }} />
-                </div>
-
-                {/* Thumbnail cards */}
-                {hasConcepts && (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    {thumbs.map((t) => (
-                      <div key={t.position} className="rounded-xl overflow-hidden"
-                        style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-                        <div className="aspect-video w-full relative" style={{ background: "var(--bg-card-subtle)" }}>
-                          {hasImages || (imagePhase === "running" && imageProgress > t.position - 1) ? (
-                            <img src={t.imageUrl} alt={t.title} className="w-full h-full object-cover" />
-                          ) : imagePhase === "running" && imageProgress === t.position - 1 ? (
-                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                              <span className="w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin"
-                                style={{ color: "oklch(0.72 0.25 285)" }} />
-                              <p className="text-xs" style={{ color: "var(--c-45)" }}>Generating…</p>
-                            </div>
-                          ) : (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <p className="text-xs" style={{ color: "var(--c-30)" }}>No image yet</p>
-                            </div>
-                          )}
-                          <div className="absolute top-2 left-2 w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold"
-                            style={{ background: "var(--bg-overlay)", color: "oklch(0.58 0.28 300)" }}>
-                            {t.position}
-                          </div>
-                        </div>
-                        <div className="p-4 space-y-3">
-                          <p className="font-semibold text-sm">{t.title}</p>
-                          <div className="space-y-2.5">
-                            {[
-                              { label: "Visual Concept", value: t.visualConcept },
-                              { label: "Text Overlay",   value: t.textOverlay, highlight: true },
-                              { label: "Emotion Trigger", value: t.emotionTrigger },
-                              { label: "Style Prompt",    value: t.stylePrompt },
-                            ].map(({ label, value, highlight }) => (
-                              <div key={label}>
-                                <p className="text-xs font-semibold uppercase tracking-wider mb-0.5" style={{ color: "var(--c-40)" }}>{label}</p>
-                                <p className="text-xs leading-relaxed" style={{ color: highlight ? "var(--c-82)" : "var(--c-50)" }}>{value}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Step 1 — Concepts */}
-                <div className="rounded-xl p-4 flex gap-4"
-                  style={{
-                    background: "var(--bg-panel)",
-                    border: `1px solid ${hasConcepts ? "oklch(0.55 0.15 145 / 0.25)" : conceptPhase === "running" ? "oklch(0.72 0.25 285 / 0.25)" : "var(--bd-7)"}`,
-                  }}>
-                  <StepBadge status={hasConcepts ? "done" : conceptPhase === "running" ? "running" : "idle"} num={1} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold mb-0.5" style={{ color: "var(--c-85)" }}>Generate Concepts</p>
-                    <p className="text-xs mb-2" style={{ color: "var(--c-40)" }}>
-                      3 thumbnail concepts with text overlays, visual style, and image generation prompts
-                    </p>
-                    {hasConcepts && <p className="text-xs" style={{ color: "oklch(0.6 0.15 145)" }}>{thumbs.length} concepts ready</p>}
-                  </div>
-                  <div className="shrink-0 flex items-start">
-                    <button onClick={generateConcepts} disabled={conceptPhase === "running"}
-                      className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-30 transition-opacity"
-                      style={hasConcepts
-                        ? { background: "var(--bg-progress)", color: "var(--c-50)", border: "1px solid var(--bd-8)" }
-                        : { background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                      {conceptPhase === "running" ? "Running…" : hasConcepts ? "Regenerate" : "Generate"}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Step 2 — Images */}
-                <div className="rounded-xl overflow-hidden"
-                  style={{
-                    background: "var(--bg-panel)",
-                    border: `1px solid ${hasImages ? "oklch(0.55 0.15 145 / 0.25)" : imagePhase === "running" ? "oklch(0.72 0.25 285 / 0.25)" : "var(--bd-7)"}`,
-                    opacity: hasConcepts ? 1 : 0.4,
-                  }}>
-                  <div className="p-4 flex gap-4">
-                    <StepBadge status={hasImages ? "done" : imagePhase === "running" ? "running" : "idle"} num={2} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold mb-0.5" style={{ color: "var(--c-85)" }}>Generate Images</p>
-                      <p className="text-xs mb-2" style={{ color: "var(--c-40)" }}>
-                        Generate an AI image for each concept using the style prompt
-                      </p>
-                      {imagePhase === "running" && (
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-progress)" }}>
-                            <div className="h-full rounded-full transition-all"
-                              style={{ width: `${Math.round((imageProgress / thumbs.length) * 100)}%`, background: "oklch(0.72 0.25 285)" }} />
-                          </div>
-                          <span className="text-xs shrink-0" style={{ color: "var(--c-40)" }}>{imageProgress}/{thumbs.length}</span>
-                        </div>
-                      )}
-                      {hasImages && <p className="text-xs" style={{ color: "oklch(0.6 0.15 145)" }}>{thumbs.length} images generated</p>}
-                    </div>
-                    <div className="shrink-0 flex items-start">
-                      <button onClick={generateImages} disabled={!hasConcepts || imagePhase === "running"}
-                        className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-30 transition-opacity"
-                        style={hasImages
-                          ? { background: "var(--bg-progress)", color: "var(--c-50)", border: "1px solid var(--bd-8)" }
-                          : { background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                        {imagePhase === "running" ? "Running…" : hasImages ? "Regenerate" : "Generate"}
-                      </button>
-                    </div>
-                  </div>
-
-                  {hasConcepts && imagePhase !== "running" && (
-                    <div className="px-4 pb-4 space-y-3" style={{ borderTop: "1px solid var(--bd-6)" }}>
-                      <p className="text-xs font-semibold uppercase tracking-wider pt-3" style={{ color: "var(--c-40)" }}>Image Model</p>
-                      <div className="grid grid-cols-2 gap-2">
-                        {FAKE_IMAGE_MODELS.map((m) => (
-                          <button key={m.id} onClick={() => setSelectedModel(m.id)}
-                            className="text-left px-3 py-2 rounded-lg text-xs transition-all"
-                            style={selectedModel === m.id ? {
-                              background: "oklch(0.72 0.25 285 / 0.1)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "var(--c-88)",
-                            } : { background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}>
-                            <p className="font-medium">{m.name}</p>
-                            {m.tags.map((t) => (
-                              <span key={t} className="inline-block mt-1 px-1.5 py-0.5 rounded text-xs mr-1"
-                                style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>{t}</span>
-                            ))}
-                          </button>
-                        ))}
-                      </div>
-                      <div>
-                        <p className="text-xs mb-1.5" style={{ color: "var(--c-40)" }}>Aspect Ratio</p>
-                        <div className="flex gap-1.5">
-                          {["16:9", "9:16", "1:1"].map((r) => (
-                            <button key={r} onClick={() => setSelectedRatio(r)}
-                              className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                              style={selectedRatio === r ? {
-                                background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)",
-                              } : { background: "var(--bg-control)", color: "var(--c-50)", border: "1px solid var(--bd-8)" }}>
-                              {r}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
 
             </div>{/* end left column */}
-
-            {/* ── Right sidebar: Next Video ── */}
-            <div className="w-80 shrink-0 sticky top-8">
-              <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-                <div>
-                  <p className="text-sm font-semibold">Start Your Next Video</p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                    Same channel — pick a topic and jump straight to the script
-                  </p>
-                </div>
-
-                <div className="space-y-1 max-h-52 overflow-y-auto pr-0.5">
-                  {DEMO_DATA.videoIdeas.slice(1).map((idea, i) => (
-                    <button key={i} onClick={() => setNextTopic(idea)}
-                      className="w-full text-left px-3 py-2.5 rounded-xl text-xs transition-all"
-                      style={nextTopic === idea ? {
-                        background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.35)", color: "var(--c-90)",
-                      } : { background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}>
-                      <span className="font-mono text-[9px] mr-2" style={{ color: "oklch(0.72 0.25 285 / 0.5)" }}>
-                        {String(i + 2).padStart(2, "0")}
-                      </span>
-                      {idea}
-                    </button>
-                  ))}
-                </div>
-
-                <input
-                  type="text"
-                  value={nextTopic}
-                  onChange={(e) => setNextTopic(e.target.value)}
-                  placeholder="Or type a custom topic…"
-                  className="w-full px-3 py-2.5 rounded-xl text-sm outline-none transition-all"
-                  style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
-                />
-
-                <div className="flex flex-col gap-2">
-                  <button onClick={() => router.push("/dashboard")}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
-                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                    Subscribe to Start Next Video →
-                  </button>
-                </div>
-              </div>
-            </div>
-
           </div>
         </main>
       </div>

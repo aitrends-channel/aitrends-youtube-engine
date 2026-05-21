@@ -5,14 +5,15 @@ import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DEMO_DATA } from "@/lib/demo-data";
-
-type Phase = "loading" | "done";
+import { useDemoState } from "@/lib/demo-context";
 
 export default function DemoScriptPage() {
   const router = useRouter();
+  const { state, update } = useDemoState();
   const [topic, setTopic] = useState("");
-  const [phase, setPhase] = useState<Phase>("loading");
-  const [displayedScript, setDisplayedScript] = useState("");
+  const [displayedScript, setDisplayedScript] = useState(
+    state.scriptPhase === "done" ? DEMO_DATA.script : ""
+  );
   const scriptContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -21,11 +22,13 @@ export default function DemoScriptPage() {
   }, []);
 
   useEffect(() => {
+    if (state.scriptPhase === "done") return;
+
     let loadingTimer: ReturnType<typeof setTimeout>;
     let typeInterval: ReturnType<typeof setInterval>;
 
     loadingTimer = setTimeout(() => {
-      setPhase("done");
+      update({ scriptPhase: "done" });
       let charIndex = 0;
       const fullScript = DEMO_DATA.script;
 
@@ -43,6 +46,7 @@ export default function DemoScriptPage() {
       clearTimeout(loadingTimer);
       clearInterval(typeInterval);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -51,6 +55,7 @@ export default function DemoScriptPage() {
     }
   }, [displayedScript]);
 
+  const phase = state.scriptPhase;
   const scriptDone = displayedScript.length >= DEMO_DATA.script.length;
 
   return (

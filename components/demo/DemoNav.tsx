@@ -2,18 +2,18 @@
 
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, CheckCircle2, Check, LayoutDashboard } from "lucide-react";
+import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, LayoutTemplate, Check, LayoutDashboard } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-const STEPS: { label: string; sublabel: string; Icon: LucideIcon }[] = [
-  { label: "Channel",   sublabel: "Analysis & Style",    Icon: Tv },
-  { label: "Topic",     sublabel: "Video Idea",           Icon: Lightbulb },
-  { label: "Script",    sublabel: "Generate & Edit",      Icon: ScrollText },
-  { label: "Visuals",   sublabel: "Style Extraction",     Icon: ImageIcon },
-  { label: "Prompts",   sublabel: "Image & Video Beats",  Icon: Wand2 },
-  { label: "Generate",  sublabel: "Assets & Export",      Icon: Clapperboard },
-  { label: "Assemble",  sublabel: "Final Video",          Icon: Film },
-  { label: "Done",      sublabel: "Subscribe to Start",   Icon: CheckCircle2 },
+const STEPS: { label: string; sublabel: string; Icon: LucideIcon; href: string }[] = [
+  { label: "Channel",    sublabel: "Analysis & Style",    Icon: Tv,             href: "/demo/channel" },
+  { label: "Topic",      sublabel: "Video Idea",           Icon: Lightbulb,      href: "/demo/topic" },
+  { label: "Script",     sublabel: "Generate & Edit",      Icon: ScrollText,     href: "/demo/script" },
+  { label: "Visuals",    sublabel: "Style Extraction",     Icon: ImageIcon,      href: "/demo/visuals" },
+  { label: "Prompts",    sublabel: "Image & Video Beats",  Icon: Wand2,          href: "/demo/prompts" },
+  { label: "Generate",   sublabel: "Assets & Export",      Icon: Clapperboard,   href: "/demo/generate" },
+  { label: "Assemble",   sublabel: "Final Video",          Icon: Film,           href: "/demo/assemble" },
+  { label: "Thumbnails", sublabel: "Concepts & Images",    Icon: LayoutTemplate, href: "/demo/thumbnails" },
 ];
 
 interface DemoNavProps {
@@ -22,7 +22,7 @@ interface DemoNavProps {
 
 export function DemoNav({ currentStep }: DemoNavProps) {
   const router = useRouter();
-  const progressPct = Math.round((currentStep / 7) * 100);
+  const progressPct = Math.min(Math.round((currentStep / 8) * 100), 100);
 
   return (
     <>
@@ -59,19 +59,25 @@ export function DemoNav({ currentStep }: DemoNavProps) {
           {STEPS.map((step, i) => {
             const isActive = i === currentStep;
             const isDone = i < currentStep;
+            const isClickable = isDone || isActive;
 
             return (
               <div key={step.label}>
                 <div
-                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left"
-                  style={
-                    isActive
+                  role={isClickable ? "button" : undefined}
+                  onClick={isClickable ? () => router.push(step.href) : undefined}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-opacity"
+                  style={{
+                    cursor: isClickable ? "pointer" : "default",
+                    ...(isActive
                       ? {
                           background: "oklch(0.72 0.25 285 / 0.12)",
                           boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.25)",
                         }
-                      : {}
-                  }
+                      : isDone
+                      ? { opacity: 0.75 }
+                      : {}),
+                  }}
                 >
                   <div
                     className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-all"
@@ -148,8 +154,12 @@ export function DemoNav({ currentStep }: DemoNavProps) {
               className="h-full rounded-full transition-all duration-500"
               style={{
                 width: `${progressPct}%`,
-                background: "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-                boxShadow: "0 0 8px oklch(0.72 0.25 285 / 0.5)",
+                background: progressPct === 100
+                  ? "linear-gradient(90deg, oklch(0.6 0.18 145), oklch(0.5 0.2 145))"
+                  : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+                boxShadow: progressPct === 100
+                  ? "0 0 8px oklch(0.6 0.18 145 / 0.5)"
+                  : "0 0 8px oklch(0.72 0.25 285 / 0.5)",
               }}
             />
           </div>

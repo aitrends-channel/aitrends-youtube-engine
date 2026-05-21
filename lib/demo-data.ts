@@ -6,11 +6,19 @@ export const DEMO_DATA = {
     avgViews: "18K",
   },
 
+  channelTopVideos: [
+    { videoId: "t1", title: "How I Saved $50,000 in 2 Years on a $60K Salary",               viewCount: 1840000 },
+    { videoId: "t2", title: "Stop Paying These 7 Fees — You Don't Have To",                   viewCount: 1120000 },
+    { videoId: "t3", title: "The Exact Budget That Got Me Out of $40K Debt",                   viewCount:  980000 },
+    { videoId: "t4", title: "Index Funds vs ETFs — The Answer Nobody Gives You",               viewCount:  760000 },
+    { videoId: "t5", title: "Why 90% of Americans Will Never Build Real Wealth",               viewCount:  640000 },
+  ],
+
   analysisSteps: [
-    "Fetching channel data…",
-    "Analyzing video transcripts…",
-    "Extracting style DNA…",
-    "Generating video ideas…",
+    { label: "Fetch channel info",       sublabel: "Name, subscribers, top videos" },
+    { label: "Fetch video transcripts",  sublabel: "Real transcript text via Supadata" },
+    { label: "Analyze channel style",    sublabel: "Niche, hook style, tone, pacing" },
+    { label: "Extract Style DNA",        sublabel: "Sentence rhythm, emotional triggers" },
   ],
 
   styleProfile:
@@ -51,7 +59,17 @@ If you want to go deeper on any of these — especially habit three, because the
     thumbnailPattern: "Bold sans-serif headline on left, punchy visual on right. Always includes a number or percentage in large type.",
     editingPace: "Fast-cut — average shot length 2.1 seconds. Hook delivered in first 8 seconds.",
     musicMood: "Tense, motivational underscore with occasional silence for emphasis.",
+    artStyle: "Dark cinematic with high-contrast split-screen compositions and bold sans-serif typography",
+    lightingStyle: "Dramatic directional lighting with deep shadows and purple accent glow",
+    cameraStyle: "Close-up punchy shots mixed with data overlays; minimal camera movement",
+    mood: "Urgent and aspirational — creates tension then resolution within each video",
   },
+
+  fakeScreenshots: [
+    { videoId: "v1", title: "5 Money Habits That Are Making You Poorer",           thumbnailUrl: "/demo/images/Gemini_Generated_Image_6e55gj6e55gj6e55.png", frameUrls: ["/demo/images/Gemini_Generated_Image_b8var0b8var0b8va.png", "/demo/images/Gemini_Generated_Image_s4y61cs4y61cs4y6.png"] },
+    { videoId: "v2", title: "Why Your Emergency Fund Is the Wrong Size",            thumbnailUrl: "/demo/images/Gemini_Generated_Image_urxej0urxej0urxe.png", frameUrls: ["/demo/images/Gemini_Generated_Image_6e55gj6e55gj6e55.png", "/demo/images/Gemini_Generated_Image_b8var0b8var0b8va.png"] },
+    { videoId: "v3", title: "The Silent 401(k) Fee That's Stealing Your Retirement", thumbnailUrl: "/demo/images/Gemini_Generated_Image_s4y61cs4y61cs4y6.png", frameUrls: ["/demo/images/Gemini_Generated_Image_urxej0urxej0urxe.png", "/demo/images/Gemini_Generated_Image_6e55gj6e55gj6e55.png"] },
+  ],
 
   promptBeats: [
     {

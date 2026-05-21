@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DEMO_DATA } from "@/lib/demo-data";
+import { useDemoState } from "@/lib/demo-context";
 
 // ── Fake model data ──────────────────────────────────────────────────────────
 
@@ -91,47 +91,37 @@ function RatioButtons({ ratios, selected, onSelect }: { ratios: string[]; select
 
 export default function DemoGeneratePage() {
   const router = useRouter();
+  const { state, update } = useDemoState();
 
-  // Voice Over state
-  const [selectedVoice, setSelectedVoice]     = useState("v1");
-  const [ttsPhase, setTtsPhase]               = useState<"idle" | "generating" | "done">("idle");
-
-  // Images state
-  const [selectedImageModel, setSelectedImageModel] = useState("i1");
-  const [selectedImageRatio, setSelectedImageRatio] = useState("16:9");
-  const [imagesPhase, setImagesPhase]               = useState<"idle" | "generating" | "done">("idle");
-  const [imagesProgress, setImagesProgress]         = useState(0);
-
-  // Videos state
-  const [selectedVideoModel, setSelectedVideoModel] = useState("vd1");
-  const [selectedVideoRatio, setSelectedVideoRatio] = useState("16:9");
-  const [selectedDuration, setSelectedDuration]     = useState(5);
-  const [videosPhase, setVideosPhase]               = useState<"idle" | "queuing" | "done">("idle");
+  const {
+    selectedVoice, ttsPhase,
+    selectedImageModel, selectedImageRatio, imagesPhase, imagesProgress,
+    selectedVideoModel, selectedVideoRatio, selectedDuration, videosPhase,
+  } = state;
 
   const totalBeats = DEMO_DATA.promptBeats.length;
 
   function generateVoiceover() {
-    setTtsPhase("generating");
-    setTimeout(() => setTtsPhase("done"), 2500);
+    update({ ttsPhase: "generating" });
+    setTimeout(() => update({ ttsPhase: "done" }), 2500);
   }
 
   function generateImages() {
-    setImagesPhase("generating");
-    setImagesProgress(0);
+    update({ imagesPhase: "generating", imagesProgress: 0 });
     let count = 0;
     const id = setInterval(() => {
       count++;
-      setImagesProgress(count);
+      update({ imagesProgress: count });
       if (count >= totalBeats) {
         clearInterval(id);
-        setImagesPhase("done");
+        update({ imagesPhase: "done" });
       }
     }, 700);
   }
 
   function queueVideos() {
-    setVideosPhase("queuing");
-    setTimeout(() => setVideosPhase("done"), 2000);
+    update({ videosPhase: "queuing" });
+    setTimeout(() => update({ videosPhase: "done" }), 2000);
   }
 
   const allDone = ttsPhase === "done" && imagesPhase === "done" && videosPhase === "done";
@@ -179,7 +169,7 @@ export default function DemoGeneratePage() {
                     <div
                       key={v.id}
                       role="button"
-                      onClick={() => setSelectedVoice(v.id)}
+                      onClick={() => update({ selectedVoice: v.id })}
                       className="cursor-pointer p-3 rounded-xl transition-all select-none"
                       style={selectedVoice === v.id ? {
                         background: "oklch(0.72 0.25 285 / 0.1)",
@@ -257,7 +247,7 @@ export default function DemoGeneratePage() {
                 </p>
                 <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
                   {FAKE_IMAGE_MODELS.map((m) => (
-                    <button key={m.id} onClick={() => setSelectedImageModel(m.id)}
+                    <button key={m.id} onClick={() => update({ selectedImageModel: m.id })}
                       className="w-full text-left p-3 rounded-xl transition-all"
                       style={selectedImageModel === m.id ? {
                         background: "oklch(0.72 0.25 285 / 0.1)",
@@ -287,7 +277,7 @@ export default function DemoGeneratePage() {
                 <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
                   Aspect Ratio
                 </p>
-                <RatioButtons ratios={FAKE_IMAGE_RATIOS} selected={selectedImageRatio} onSelect={setSelectedImageRatio} />
+                <RatioButtons ratios={FAKE_IMAGE_RATIOS} selected={selectedImageRatio} onSelect={(r) => update({ selectedImageRatio: r })} />
               </div>
 
               {/* Image beat grid */}
@@ -343,7 +333,7 @@ export default function DemoGeneratePage() {
                 </p>
                 <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
                   {FAKE_VIDEO_MODELS.map((m) => (
-                    <button key={m.id} onClick={() => setSelectedVideoModel(m.id)}
+                    <button key={m.id} onClick={() => update({ selectedVideoModel: m.id })}
                       className="w-full text-left p-3 rounded-xl transition-all"
                       style={selectedVideoModel === m.id ? {
                         background: "oklch(0.72 0.25 285 / 0.1)",
@@ -373,14 +363,14 @@ export default function DemoGeneratePage() {
                 <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
                   Aspect Ratio
                 </p>
-                <RatioButtons ratios={FAKE_VIDEO_RATIOS} selected={selectedVideoRatio} onSelect={setSelectedVideoRatio} />
+                <RatioButtons ratios={FAKE_VIDEO_RATIOS} selected={selectedVideoRatio} onSelect={(r) => update({ selectedVideoRatio: r })} />
 
                 <p className="text-xs font-semibold uppercase tracking-wider mt-3 mb-2" style={{ color: "var(--c-40)" }}>
                   Duration
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {FAKE_DURATIONS.map((d) => (
-                    <button key={d.value} onClick={() => setSelectedDuration(d.value)}
+                    <button key={d.value} onClick={() => update({ selectedDuration: d.value })}
                       className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
                       style={selectedDuration === d.value ? {
                         background: "oklch(0.72 0.25 285 / 0.15)",
