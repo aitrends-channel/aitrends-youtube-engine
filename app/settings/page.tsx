@@ -98,7 +98,7 @@ function AddUserSection() {
       </div>
 
       <form onSubmit={handleAddUser} className="p-5 rounded-2xl space-y-3"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+        style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
         <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Email address</label>
         <div className="flex gap-2">
           <input
@@ -288,7 +288,7 @@ export default function SettingsPage() {
 
                   return (
                     <div key={field.key} className="p-5 rounded-2xl space-y-3"
-                      style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <label className="text-sm font-semibold text-foreground">{field.label}</label>
