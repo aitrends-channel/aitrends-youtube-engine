@@ -335,7 +335,7 @@ export default function SettingsPage() {
 
                 <button
                   type="submit"
-                  disabled={saving}
+                  disabled={saving || Object.values(form).every((v) => !v.trim())}
                   className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
                   style={{
                     background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
