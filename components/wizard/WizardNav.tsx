@@ -77,6 +77,15 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
   const progressPct = progressComplete ? 100 : Math.max(0, Math.round(((currentPhaseIndex + 1) / PHASES.length) * 100));
 
   return (
+    <>
+    <button
+      onClick={() => router.push("/dashboard")}
+      className="fixed top-4 right-4 z-50 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+      style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+    >
+      <LayoutDashboard size={13} />
+      Back to Dashboard
+    </button>
     <aside className="w-64 shrink-0 flex flex-col h-screen sticky top-0 overflow-hidden"
       style={{ background: "var(--bg-nav)", borderRight: "1px solid var(--bd-7)" }}>
 
@@ -96,18 +105,6 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
               ) : "Heclus"}
             </p>
           </div>
-        </button>
-      </div>
-
-      {/* Dashboard link */}
-      <div className="px-3 py-2 border-b" style={{ borderColor: "var(--bd-7)" }}>
-        <button
-          onClick={() => router.push("/dashboard")}
-          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all hover:bg-white/5"
-          style={{ color: "var(--c-45)" }}
-        >
-          <LayoutDashboard size={14} />
-          Go to Dashboard
         </button>
       </div>
 
@@ -300,5 +297,6 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
         )}
       </div>
     </aside>
+    </>
   );
 }
