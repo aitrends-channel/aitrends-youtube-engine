@@ -138,6 +138,14 @@
   --bd-8: oklch(1 0 0 / 0.08);
   --bd-9: oklch(1 0 0 / 0.09);
   --bd-10: oklch(1 0 0 / 0.10);
+
+  /* Chart / SVG colors — dark */
+  --chart-grid: oklch(1 0 0 / 0.08);
+  --chart-grid-faint: oklch(1 0 0 / 0.05);
+  --chart-axis-label: oklch(1 0 0 / 0.30);
+  --chart-axis-empty: oklch(1 0 0 / 0.12);
+  --chart-tooltip-bg: oklch(0.12 0.02 285);
+  --chart-tooltip-text: oklch(1 0 0 / 0.70);
 }
 
 /* Light theme overrides */
@@ -179,27 +187,27 @@
   --c-98: oklch(0.05 0 0);
   --c-96: oklch(0.06 0 0);
   --c-95: oklch(0.08 0 0);
-  --c-85: oklch(0.18 0 0);
-  --c-75: oklch(0.28 0 0);
-  --c-65: oklch(0.38 0 0);
   --c-90: oklch(0.12 0 0);
   --c-88: oklch(0.15 0 0);
-  --c-82: oklch(0.22 0 0);
-  --c-78: oklch(0.28 0 0);
-  --c-72: oklch(0.32 0 0);
-  --c-70: oklch(0.35 0 0);
-  --c-60: oklch(0.42 0 0);
-  --c-55: oklch(0.47 0 0);
-  --c-50: oklch(0.52 0 0);
-  --c-45: oklch(0.57 0 0);
-  --c-42: oklch(0.60 0 0);
-  --c-40: oklch(0.62 0 0);
-  --c-38: oklch(0.64 0 0);
-  --c-35: oklch(0.67 0 0);
-  --c-30: oklch(0.72 0 0);
-  --c-28: oklch(0.74 0 0);
-  --c-25: oklch(0.77 0 0);
-  --c-22: oklch(0.80 0 0);
+  --c-85: oklch(0.18 0 0);
+  --c-82: oklch(0.21 0 0);
+  --c-78: oklch(0.25 0 0);
+  --c-75: oklch(0.28 0 0);
+  --c-72: oklch(0.30 0 0);
+  --c-70: oklch(0.32 0 0);
+  --c-65: oklch(0.36 0 0);
+  --c-60: oklch(0.38 0 0);
+  --c-55: oklch(0.42 0 0);
+  --c-50: oklch(0.46 0 0);
+  --c-45: oklch(0.50 0 0);
+  --c-42: oklch(0.52 0 0);
+  --c-40: oklch(0.54 0 0);
+  --c-38: oklch(0.56 0 0);
+  --c-35: oklch(0.59 0 0);
+  --c-30: oklch(0.63 0 0);
+  --c-28: oklch(0.65 0 0);
+  --c-25: oklch(0.68 0 0);
+  --c-22: oklch(0.71 0 0);
 
   --bd-2: oklch(0 0 0 / 0.03);
   --bd-4: oklch(0 0 0 / 0.06);
@@ -209,6 +217,14 @@
   --bd-8: oklch(0 0 0 / 0.11);
   --bd-9: oklch(0 0 0 / 0.12);
   --bd-10: oklch(0 0 0 / 0.14);
+
+  /* Chart / SVG colors — light */
+  --chart-grid: oklch(0 0 0 / 0.12);
+  --chart-grid-faint: oklch(0 0 0 / 0.07);
+  --chart-axis-label: oklch(0 0 0 / 0.50);
+  --chart-axis-empty: oklch(0 0 0 / 0.28);
+  --chart-tooltip-bg: oklch(0.90 0 0);
+  --chart-tooltip-text: oklch(0 0 0 / 0.80);
 }
 
 @layer base {

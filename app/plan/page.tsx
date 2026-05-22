@@ -142,7 +142,7 @@ export default function PlanPage() {
         {!planData?.paid ? (
           /* No active plan */
           <div className="p-6 rounded-2xl text-center space-y-4"
-            style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+            style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
             <p className="text-sm font-medium" style={{ color: "var(--c-60)" }}>You don&apos;t have an active plan.</p>
             <button
               onClick={() => setShowModal(true)}
@@ -155,7 +155,7 @@ export default function PlanPage() {
           <>
             {/* Current plan card */}
             <div className="p-5 rounded-2xl space-y-5"
-              style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+              style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
               <div className="flex items-start justify-between">
                 <div>
                   <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full capitalize mb-2"
@@ -204,7 +204,7 @@ export default function PlanPage() {
 
             {/* Billing details */}
             <div className="p-5 rounded-2xl space-y-3"
-              style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+              style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
               <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--c-40)" }}>Billing Details</p>
 
               {paidAt && (
@@ -268,9 +268,9 @@ export default function PlanPage() {
                 onClick={() => setShowModal(true)}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
                 style={{
-                  background: "oklch(1 0 0 / 0.06)",
+                  background: "var(--bg-card-subtle)",
                   color: "var(--c-60)",
-                  border: "1px solid oklch(1 0 0 / 0.08)",
+                  border: "1px solid var(--bd-8)",
                 }}>
                 Change Plan
               </button>

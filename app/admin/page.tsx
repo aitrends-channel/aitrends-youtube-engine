@@ -298,7 +298,7 @@ export default function AdminPage() {
             </div>
             <h2 className="text-lg font-bold text-foreground">Users</h2>
             <span className="text-xs px-2.5 py-0.5 rounded-full"
-              style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
+              style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}>
               {users.length}
             </span>
           </div>
@@ -393,7 +393,7 @@ export default function AdminPage() {
             </div>
             <h2 className="text-lg font-bold text-foreground">All Projects</h2>
             <span className="text-xs px-2.5 py-0.5 rounded-full"
-              style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
+              style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}>
               {projects.length}
             </span>
           </div>

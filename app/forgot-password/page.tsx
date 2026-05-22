@@ -67,7 +67,7 @@ export default function ForgotPasswordPage() {
 
         <div
           className="rounded-2xl p-6"
-          style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.08)" }}
+          style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}
         >
           <h1 className="text-sm font-semibold mb-1" style={{ color: "var(--c-75)" }}>
             Reset your password
