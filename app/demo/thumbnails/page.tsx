@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Download } from "lucide-react";
 import { DemoNav } from "@/components/demo/DemoNav";
@@ -37,7 +37,7 @@ export default function DemoThumbnailsPage() {
 
   const {
     conceptPhase, thumbImagePhase: imagePhase,
-    thumbImageProgress: imageProgress,
+    thumbImageProgress: imageProgress, thumbOffset,
     selectedThumbModel: selectedModel, selectedThumbRatio: selectedRatio,
   } = state;
 
@@ -45,20 +45,23 @@ export default function DemoThumbnailsPage() {
   const hasConcepts = conceptPhase === "done";
   const hasImages   = imagePhase === "done";
 
-  const [thumbOffset, setThumbOffset] = useState(() =>
-    Math.floor(Math.random() * allThumbs.length)
-  );
+  // Set a random initial offset once (only on first concept generation)
+  const didInitOffset = useRef(false);
 
   const thumbs = [0, 1, 2].map((i) => allThumbs[(thumbOffset + i) % allThumbs.length]);
 
   function generateConcepts() {
-    update({ conceptPhase: "running" });
+    if (!didInitOffset.current) {
+      didInitOffset.current = true;
+      update({ conceptPhase: "running", thumbOffset: Math.floor(Math.random() * allThumbs.length) });
+    } else {
+      update({ conceptPhase: "running" });
+    }
     setTimeout(() => update({ conceptPhase: "done" }), 2000);
   }
 
   function generateImages() {
-    setThumbOffset((prev) => (prev + 1) % allThumbs.length);
-    update({ thumbImagePhase: "running", thumbImageProgress: 0 });
+    update({ thumbImagePhase: "running", thumbImageProgress: 0, thumbOffset: (thumbOffset + 1) % allThumbs.length });
     let count = 0;
     const id = setInterval(() => {
       count++;
