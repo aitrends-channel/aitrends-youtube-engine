@@ -134,6 +134,7 @@ function loadFromSession(): DemoState {
 interface DemoContextValue {
   state: DemoState;
   update: (patch: Partial<DemoState>) => void;
+  resetDemo: () => void;
 }
 
 const DemoContext = createContext<DemoContextValue | null>(null);
@@ -158,8 +159,13 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
   const update = (patch: Partial<DemoState>) =>
     setState((prev) => ({ ...prev, ...patch }));
 
+  const resetDemo = () => {
+    try { sessionStorage.removeItem(SESSION_KEY); } catch {}
+    setState(DEFAULTS);
+  };
+
   return (
-    <DemoContext.Provider value={{ state, update }}>
+    <DemoContext.Provider value={{ state, update, resetDemo }}>
       {children}
     </DemoContext.Provider>
   );

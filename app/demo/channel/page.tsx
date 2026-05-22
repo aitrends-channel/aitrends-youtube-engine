@@ -51,7 +51,7 @@ function StepIndicator({ step }: { step: AnalysisStep }) {
 
 export default function DemoChannelPage() {
   const router = useRouter();
-  const { state, update } = useDemoState();
+  const { state, update, resetDemo } = useDemoState();
 
   const { channelPhase, channelTopicMode, channelTopicHint } = state;
 
@@ -101,7 +101,13 @@ export default function DemoChannelPage() {
   }, [channelPhase]);
 
   function handleAnalyze() {
-    update({ channelPhase: "loading" });
+    if (isDone) {
+      // Wipe all state and start fresh — resetDemo sets DEFAULTS (channelPhase:"idle"),
+      // then we immediately kick off loading so the effect fires.
+      resetDemo();
+    }
+    // Use a short delay when re-analyzing so the reset setState flush finishes first
+    setTimeout(() => update({ channelPhase: "loading" }), 0);
   }
 
   const isLoading = channelPhase === "loading";
@@ -147,15 +153,16 @@ export default function DemoChannelPage() {
                   />
                   <button
                     onClick={handleAnalyze}
-                    disabled={isLoading || isDone}
+                    disabled={isLoading}
                     className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40"
                     style={{
-                      background: "oklch(0.72 0.25 285)",
-                      color: "var(--bg-page-2)",
+                      background: isDone ? "var(--bg-progress)" : "oklch(0.72 0.25 285)",
+                      color: isDone ? "var(--c-60)" : "var(--bg-page-2)",
+                      border: isDone ? "1px solid var(--bd-8)" : "none",
                       boxShadow: isLoading || isDone ? "none" : "0 0 16px oklch(0.72 0.25 285 / 0.3)",
                     }}
                   >
-                    {isLoading ? "Running…" : isDone ? "Done" : "Analyze"}
+                    {isLoading ? "Running…" : isDone ? "Re-analyze" : "Analyze"}
                   </button>
                 </div>
               </div>
