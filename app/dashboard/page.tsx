@@ -118,7 +118,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress }: { onSubscribe: () =
   const niches    = 1;
   const nicheLimit = 5;
 
-  const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--bd-7)" };
+  const cardStyle = { background: "var(--bg-glass)", border: "1px solid var(--bd-7)" };
 
   const W = 600, PAD_X = 16, PAD_T = 16, PAD_B = 32, H = 160;
   const plotH = H - PAD_T - PAD_B;
@@ -230,7 +230,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress }: { onSubscribe: () =
                     <div className="flex justify-between text-[10px] mb-1" style={{ color: "var(--c-40)" }}>
                       <span>45,230 used</span><span>100,000 limit</span>
                     </div>
-                    <div className="w-full rounded-full h-1.5" style={{ background: "var(--bg-card)" }}>
+                    <div className="w-full rounded-full h-1.5" style={{ background: "var(--bg-glass)" }}>
                       <div className="h-1.5 rounded-full" style={{ width: "45.2%", background: color }} />
                     </div>
                     <p className="text-[10px] mt-1.5" style={{ color: "var(--c-35)" }}>{sub}</p>
@@ -281,7 +281,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress }: { onSubscribe: () =
             <button
               onClick={() => router.push(href)}
               className="text-left p-4 sm:p-6 rounded-2xl transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}
+              style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)"; }}
             >
@@ -542,7 +542,7 @@ export default function HomePage() {
                 <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
                 {/* Dropdown */}
                 <div className="absolute right-0 top-12 z-50 w-64 rounded-2xl py-3 shadow-2xl"
-                  style={{ background: "var(--bg-card)", border: "1px solid var(--bd-10)" }}>
+                  style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-10)" }}>
 
                   {/* Avatar + info */}
                   <div className="px-4 pb-3" style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -698,14 +698,14 @@ export default function HomePage() {
                   <div className="grid grid-cols-4 gap-4">
                     {/* Total Videos — plain */}
                     <div className="rounded-xl px-5 py-4"
-                      style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+                      style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
                       <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{total}</p>
                       <p className="text-xs" style={{ color: "var(--c-42)" }}>Total Videos</p>
                     </div>
 
                     {/* Completed */}
                     <div className="rounded-xl px-5 py-4 flex items-center justify-between"
-                      style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+                      style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
                       <div>
                         <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{completed}</p>
                         <p className="text-xs" style={{ color: "var(--c-42)" }}>Completed</p>
@@ -719,7 +719,7 @@ export default function HomePage() {
 
                     {/* In Progress */}
                     <div className="rounded-xl px-5 py-4 flex items-center justify-between"
-                      style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+                      style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
                       <div>
                         <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{inProgress}</p>
                         <p className="text-xs" style={{ color: "var(--c-42)" }}>In Progress</p>
@@ -733,7 +733,7 @@ export default function HomePage() {
 
                     {/* Niches */}
                     <div className="rounded-xl px-5 py-4 flex items-center justify-between"
-                      style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+                      style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
                       <div>
                         <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{niches}</p>
                         <p className="text-xs" style={{ color: "var(--c-42)" }}>Niches</p>
@@ -751,7 +751,7 @@ export default function HomePage() {
               <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "40px", marginBottom: "10px" }}>Niches/Video Chart</h3>
               {/* Bar chart — videos per niche */}
               {channelGroups.length === 0 ? (
-                <div className="rounded-2xl px-6 py-10 flex flex-col items-center justify-center text-center" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+                <div className="rounded-2xl px-6 py-10 flex flex-col items-center justify-center text-center" style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
                   <p className="text-sm font-medium" style={{ color: "var(--c-40)" }}>No niches yet</p>
                   <p className="text-xs mt-1" style={{ color: "var(--c-30)" }}>Create your first niche to see video counts here</p>
                 </div>
@@ -803,7 +803,7 @@ export default function HomePage() {
                 const plotH = H - PAD_T - PAD_B;
 
                 return (
-                  <div className="rounded-2xl px-6 py-5" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+                  <div className="rounded-2xl px-6 py-5" style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
                     <div className="flex items-center justify-between mb-5">
                       <div>
                         <p className="text-sm font-semibold" style={{ color: "var(--c-75)" }}>Videos per niche</p>
@@ -927,7 +927,7 @@ export default function HomePage() {
                         <span>{used.toLocaleString()} used</span>
                         <span>{limit.toLocaleString()} limit</span>
                       </div>
-                      <div className="w-full rounded-full h-1.5" style={{ background: "var(--bg-card)" }}>
+                      <div className="w-full rounded-full h-1.5" style={{ background: "var(--bg-glass)" }}>
                         <div className="h-1.5 rounded-full" style={{ width: `${pct * 100}%`, background: barColor }} />
                       </div>
                     </div>
@@ -942,7 +942,7 @@ export default function HomePage() {
                   );
                 }
 
-                const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--bd-7)" };
+                const cardStyle = { background: "var(--bg-glass)", border: "1px solid var(--bd-7)" };
 
                 return (
                   <div style={{ marginTop: "40px" }}>
@@ -1019,7 +1019,7 @@ export default function HomePage() {
           <div className="space-y-12">
             {channelGroups.map((group) => {
               return (
-                <div key={group.channelName} className="rounded-2xl px-6" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)", paddingTop: "34px", paddingBottom: "34px" }}>
+                <div key={group.channelName} className="rounded-2xl px-6" style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)", paddingTop: "34px", paddingBottom: "34px" }}>
                   {/* Channel header */}
                   <div className="flex items-center justify-between mb-5">
                     <div className="flex items-center gap-3">
@@ -1080,7 +1080,7 @@ export default function HomePage() {
                           key={p.id}
                           onClick={() => router.push(`/projects/${p.id}/${path}`)}
                           className="text-left p-6 rounded-2xl transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
-                          style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}
+                          style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}
                           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
                           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)"; }}
                         >
@@ -1140,16 +1140,16 @@ export default function HomePage() {
             {[0, 1].map((g) => (
               <div key={g}>
                 <div className="flex items-center gap-3 mb-5">
-                  <div className="w-11 h-11 rounded-xl animate-pulse" style={{ background: "var(--bg-card)" }} />
+                  <div className="w-11 h-11 rounded-xl animate-pulse" style={{ background: "var(--bg-glass)" }} />
                   <div className="space-y-2">
-                    <div className="h-4 w-36 rounded animate-pulse" style={{ background: "var(--bg-card)" }} />
-                    <div className="h-3 w-52 rounded animate-pulse" style={{ background: "var(--bg-card)" }} />
+                    <div className="h-4 w-36 rounded animate-pulse" style={{ background: "var(--bg-glass)" }} />
+                    <div className="h-3 w-52 rounded animate-pulse" style={{ background: "var(--bg-glass)" }} />
                   </div>
                 </div>
                 <div className="grid gap-7" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
                   {[0, 1, 2].map((i) => (
                     <div key={i} className="p-6 rounded-2xl space-y-4"
-                      style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+                      style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
                       <div className="flex items-start justify-between">
                         <div className="h-5 w-20 rounded-full animate-pulse" style={{ background: "var(--bg-elevated)" }} />
                         <div className="h-4 w-14 rounded animate-pulse" style={{ background: "var(--bg-elevated)" }} />
@@ -1196,7 +1196,7 @@ export default function HomePage() {
                 <button
                   onClick={() => router.push("/demo/channel")}
                   className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 cursor-pointer"
-                  style={{ background: "var(--bg-card)", color: "var(--c-70)", border: "1px solid var(--bd-10)" }}
+                  style={{ background: "var(--bg-glass)", color: "var(--c-70)", border: "1px solid var(--bd-10)" }}
                 >
                   Try Demo →
                 </button>

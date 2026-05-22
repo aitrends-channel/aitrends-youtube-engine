@@ -212,7 +212,7 @@ export default function ScriptPage({ params }: PageProps) {
                 style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                 {/* Script header bar */}
                 <div className="flex items-center justify-between px-5 py-3"
-                  style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-card-subtle)" }}>
+                  style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-glass-subtle)" }}>
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 rounded-full"
                       style={{ background: isStreaming ? "oklch(0.72 0.25 285)" : "oklch(0.55 0.15 145)", boxShadow: isStreaming ? "0 0 6px oklch(0.72 0.25 285)" : "none" }}

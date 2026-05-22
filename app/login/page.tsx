@@ -183,7 +183,7 @@ export default function LoginPage() {
         </div>
 
         <div className="rounded-2xl p-6"
-          style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}>
+          style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-8)" }}>
           <Suspense>
             <LoginForm />
           </Suspense>

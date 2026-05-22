@@ -125,7 +125,7 @@ export default function DemoDashboardPage() {
   const x = cx - barW / 2;
   const y = PAD_T;
 
-  const cardStyle = { background: "var(--bg-card)", border: "1px solid var(--bd-7)" };
+  const cardStyle = { background: "var(--bg-glass)", border: "1px solid var(--bd-7)" };
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-page)" }}>
@@ -180,7 +180,7 @@ export default function DemoDashboardPage() {
                 <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
                 <div
                   className="absolute right-0 top-12 z-50 w-64 rounded-2xl py-3 shadow-2xl"
-                  style={{ background: "var(--bg-card)", border: "1px solid var(--bd-10)" }}
+                  style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-10)" }}
                 >
                   <div className="px-4 pb-3" style={{ borderBottom: "1px solid var(--bd-7)" }}>
                     <div className="flex items-center gap-3 mb-3">
@@ -404,7 +404,7 @@ export default function DemoDashboardPage() {
                     <span>45,230 used</span>
                     <span>100,000 limit</span>
                   </div>
-                  <div className="w-full rounded-full h-1.5" style={{ background: "var(--bg-card)" }}>
+                  <div className="w-full rounded-full h-1.5" style={{ background: "var(--bg-glass)" }}>
                     <div className="h-1.5 rounded-full" style={{ width: "45.2%", background: "#34d399" }} />
                   </div>
                   <p className="text-[10px] mt-1.5 capitalize" style={{ color: "var(--c-35)" }}>Creator plan</p>
@@ -421,7 +421,7 @@ export default function DemoDashboardPage() {
         <div>
           <div
             className="rounded-2xl px-6"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)", paddingTop: "34px", paddingBottom: "34px" }}
+            style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)", paddingTop: "34px", paddingBottom: "34px" }}
           >
             {/* Channel header */}
             <div className="flex items-center justify-between mb-5">
@@ -461,7 +461,7 @@ export default function DemoDashboardPage() {
                   key={v.id}
                   onClick={() => router.push(v.href)}
                   className="text-left p-6 rounded-2xl transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
-                  style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}
+                  style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}
                   onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)"; }}
                 >

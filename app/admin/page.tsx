@@ -103,7 +103,7 @@ function StatCard({
 
   return (
     <div className="p-6 rounded-2xl space-y-4"
-      style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+      style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
           {label}
@@ -147,7 +147,7 @@ function AddUserForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <form onSubmit={handleSubmit} className="p-5 rounded-2xl space-y-3"
-      style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+      style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
       <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Email address</label>
       <div className="flex gap-2">
         <input
@@ -314,7 +314,7 @@ export default function AdminPage() {
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No users yet.</div>
           ) : (
             <div className="rounded-2xl overflow-hidden"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+              style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
               <table className="w-full border-collapse">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -407,7 +407,7 @@ export default function AdminPage() {
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No projects yet.</div>
           ) : (
             <div className="rounded-2xl overflow-hidden"
-              style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+              style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
               <table className="w-full border-collapse">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
