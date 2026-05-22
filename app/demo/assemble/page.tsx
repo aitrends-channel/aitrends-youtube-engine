@@ -179,13 +179,13 @@ export default function DemoAssemblePage() {
                 </div>
 
                 {captionsEnabled && (
-                  <div className="space-y-4">
+                  <div className="space-y-4 pointer-events-none opacity-40">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Style</p>
                       <div className="grid grid-cols-2 gap-1.5">
                         {CAPTION_STYLES.map((s) => (
-                          <button key={s.id} onClick={() => update({ captionsStyle: s.id })}
-                            className="py-2 px-3 rounded-xl text-left transition-all"
+                          <button key={s.id} tabIndex={-1}
+                            className="py-2 px-3 rounded-xl text-left"
                             style={captionsStyle === s.id ? {
                               background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)",
                             } : { background: "var(--bg-input)", border: "1px solid var(--bd-7)" }}>
@@ -201,8 +201,8 @@ export default function DemoAssemblePage() {
                         <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Size</p>
                         <div className="flex gap-1.5">
                           {CAPTION_SIZES.map((s) => (
-                            <button key={s.id} onClick={() => update({ captionsSize: s.id })}
-                              className="flex-1 py-1.5 rounded-xl text-xs font-semibold transition-all"
+                            <button key={s.id} tabIndex={-1}
+                              className="flex-1 py-1.5 rounded-xl text-xs font-semibold"
                               style={captionsSize === s.id ? {
                                 background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "oklch(0.88 0.12 285)",
                               } : { background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-50)" }}>
@@ -215,8 +215,8 @@ export default function DemoAssemblePage() {
                         <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Position</p>
                         <div className="flex gap-1.5">
                           {CAPTION_POSITIONS.map((p) => (
-                            <button key={p.id} onClick={() => update({ captionsPosition: p.id })}
-                              className="flex-1 py-1.5 rounded-xl text-xs font-medium transition-all"
+                            <button key={p.id} tabIndex={-1}
+                              className="flex-1 py-1.5 rounded-xl text-xs font-medium"
                               style={captionsPosition === p.id ? {
                                 background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "oklch(0.88 0.12 285)",
                               } : { background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-50)" }}>
@@ -231,8 +231,8 @@ export default function DemoAssemblePage() {
                       <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Language</p>
                       <div className="flex flex-wrap gap-1.5">
                         {CAPTION_LANGUAGES.map((lang) => (
-                          <button key={lang.code} onClick={() => update({ captionsLanguage: lang.code })}
-                            className="px-3 py-1.5 rounded-xl text-xs font-medium transition-all"
+                          <button key={lang.code} tabIndex={-1}
+                            className="px-3 py-1.5 rounded-xl text-xs font-medium"
                             style={captionsLanguage === lang.code ? {
                               background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "oklch(0.88 0.12 285)",
                             } : { background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-50)" }}>
@@ -250,7 +250,8 @@ export default function DemoAssemblePage() {
                 {assemblePhase === "done" && (
                   <div className="rounded-xl overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
                     <video
-                      src="/demo/assemble/Heclus demo video.mp4"
+                      key={captionsEnabled ? "with" : "without"}
+                      src={captionsEnabled ? "/demo/videos/with_captions.mp4" : "/demo/videos/without_captions.mp4"}
                       controls
                       className="w-full rounded-xl"
                       style={{ aspectRatio: "16/9", display: "block" }}
@@ -277,8 +278,8 @@ export default function DemoAssemblePage() {
                       Reassemble
                     </button>
                     <a
-                      href="/demo/assemble/Heclus demo video.mp4"
-                      download="heclus-demo-video.mp4"
+                      href={captionsEnabled ? "/demo/videos/with_captions.mp4" : "/demo/videos/without_captions.mp4"}
+                      download={captionsEnabled ? "heclus-demo-with-captions.mp4" : "heclus-demo-no-captions.mp4"}
                       className="flex-1 py-2.5 rounded-xl text-xs font-medium text-center transition-all hover:opacity-80"
                       style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
                       Export

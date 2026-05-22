@@ -1,9 +1,11 @@
 "use client";
 
+import { useEffect } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, LayoutTemplate, Check } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { useDemoState } from "@/lib/demo-context";
 
 const STEPS: { label: string; sublabel: string; Icon: LucideIcon; href: string }[] = [
   { label: "Channel",    sublabel: "Analysis & Style",    Icon: Tv,             href: "/demo/channel" },
@@ -22,7 +24,17 @@ interface DemoNavProps {
 
 export function DemoNav({ currentStep }: DemoNavProps) {
   const router = useRouter();
-  const progressPct = Math.min(Math.round((currentStep / 8) * 100), 100);
+  const { state, update } = useDemoState();
+  const highestStep = state.highestStep;
+
+  useEffect(() => {
+    if (currentStep > highestStep) {
+      update({ highestStep: currentStep });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentStep]);
+
+  const progressPct = Math.min(Math.round(((highestStep + 1) / 8) * 100), 100);
 
   return (
     <>
@@ -58,8 +70,8 @@ export function DemoNav({ currentStep }: DemoNavProps) {
         <nav className="flex-1 px-3 py-5 space-y-1 overflow-y-auto">
           {STEPS.map((step, i) => {
             const isActive = i === currentStep;
-            const isDone = i < currentStep;
-            const isClickable = isDone || isActive;
+            const isDone = !isActive && i <= highestStep;
+            const isClickable = i <= highestStep;
 
             return (
               <div key={step.label}>

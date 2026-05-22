@@ -5,16 +5,17 @@ import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DEMO_DATA } from "@/lib/demo-data";
+import { useDemoState } from "@/lib/demo-context";
 
 export default function DemoTopicPage() {
   const router = useRouter();
-  const [selectedTopic, setSelectedTopic] = useState("");
+  const { state, update } = useDemoState();
+  const selectedTopic = state.selectedTopic;
   const [navigating, setNavigating] = useState(false);
 
   function handleContinue() {
     if (!selectedTopic) return;
     setNavigating(true);
-    sessionStorage.setItem("demo_topic", selectedTopic);
     setTimeout(() => router.push("/demo/script"), 500);
   }
 
@@ -47,7 +48,7 @@ export default function DemoTopicPage() {
               return (
                 <button
                   key={i}
-                  onClick={() => !locked && setSelectedTopic(idea)}
+                  onClick={() => !locked && update({ selectedTopic: idea })}
                   disabled={locked}
                   className="w-full text-left p-4 rounded-xl transition-all"
                   style={

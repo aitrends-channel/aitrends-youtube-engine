@@ -216,33 +216,41 @@ export default function DemoGeneratePage() {
                   Select Voice
                 </p>
                 <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                  {FAKE_VOICES.map((v) => (
-                    <div
-                      key={v.id}
-                      role="button"
-                      onClick={() => update({ selectedVoice: v.id })}
-                      className="cursor-pointer p-3 rounded-xl transition-all select-none"
-                      style={selectedVoice === v.id ? {
-                        background: "oklch(0.72 0.25 285 / 0.1)",
-                        border: "1px solid oklch(0.72 0.25 285 / 0.3)",
-                        color: "var(--c-90)",
-                      } : {
-                        background: "var(--bg-input)",
-                        border: "1px solid var(--bd-7)",
-                        color: "var(--c-60)",
-                      }}
-                    >
-                      <p className="font-medium text-xs">{v.name}</p>
-                      <div className="flex gap-1 mt-1.5 flex-wrap">
-                        {v.tags.map((tag) => (
-                          <span key={tag} className="px-1.5 py-0.5 rounded text-xs"
-                            style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>
-                            {tag}
-                          </span>
-                        ))}
+                  {FAKE_VOICES.map((v) => {
+                    const isSelectable = v.name === "Liam";
+                    const isSelected = selectedVoice === v.id;
+                    return (
+                      <div
+                        key={v.id}
+                        role={isSelectable ? "button" : undefined}
+                        onClick={isSelectable ? () => update({ selectedVoice: v.id }) : undefined}
+                        className="p-3 rounded-xl transition-all select-none"
+                        style={{
+                          cursor: isSelectable ? "pointer" : "default",
+                          opacity: isSelectable ? 1 : 0.35,
+                          ...(isSelected ? {
+                            background: "oklch(0.72 0.25 285 / 0.1)",
+                            border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+                            color: "var(--c-90)",
+                          } : {
+                            background: "var(--bg-input)",
+                            border: "1px solid var(--bd-7)",
+                            color: "var(--c-60)",
+                          }),
+                        }}
+                      >
+                        <p className="font-medium text-xs">{v.name}</p>
+                        <div className="flex gap-1 mt-1.5 flex-wrap">
+                          {v.tags.map((tag) => (
+                            <span key={tag} className="px-1.5 py-0.5 rounded text-xs"
+                              style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -252,10 +260,10 @@ export default function DemoGeneratePage() {
                     <div className="space-y-1">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Original</span>
-                        <a href="/demo_voiceover.mp3" download="voiceover.mp3"
+                        <a href="/demo/voiceover/demo-voiceover_short.mp3" download="voiceover.mp3"
                           className="text-xs" style={{ color: "var(--c-45)" }}>↓ Download</a>
                       </div>
-                      <audio controls src="/demo_voiceover.mp3" className="w-full h-8" />
+                      <audio controls src="/demo/voiceover/demo-voiceover_short.mp3" className="w-full h-8" />
                     </div>
                     <div className="flex gap-2">
                       <button disabled

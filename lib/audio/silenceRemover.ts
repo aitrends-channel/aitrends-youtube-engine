@@ -97,6 +97,26 @@ function toInt16(data: Float32Array): Int16Array {
   return out;
 }
 
+export function trimToLength(
+  buffer: AudioBuffer,
+  maxSeconds: number
+): PauseRemovalResult {
+  const { sampleRate, numberOfChannels, length: totalSamples } = buffer;
+  const outLength = Math.min(Math.round(maxSeconds * sampleRate), totalSamples);
+  const channels: Float32Array[] = Array.from({ length: numberOfChannels }, (_, c) => {
+    const out = new Float32Array(outLength);
+    out.set(buffer.getChannelData(c).subarray(0, outLength));
+    return out;
+  });
+  return {
+    channels,
+    sampleRate,
+    length: outLength,
+    originalDuration: totalSamples / sampleRate,
+    newDuration: outLength / sampleRate,
+  };
+}
+
 export function encodeMp3(channels: Float32Array[], sampleRate: number): ArrayBuffer {
   const numChannels = channels.length;
   const encoder = new Mp3Encoder(numChannels, sampleRate, 128);

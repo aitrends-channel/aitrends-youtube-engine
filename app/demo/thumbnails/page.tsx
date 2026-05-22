@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download } from "lucide-react";
 import { DemoNav } from "@/components/demo/DemoNav";
@@ -40,9 +41,15 @@ export default function DemoThumbnailsPage() {
     selectedThumbModel: selectedModel, selectedThumbRatio: selectedRatio,
   } = state;
 
-  const thumbs      = DEMO_DATA.thumbnailConcepts;
+  const allThumbs   = DEMO_DATA.thumbnailConcepts;
   const hasConcepts = conceptPhase === "done";
   const hasImages   = imagePhase === "done";
+
+  const [thumbOffset, setThumbOffset] = useState(() =>
+    Math.floor(Math.random() * allThumbs.length)
+  );
+
+  const thumbs = [0, 1, 2].map((i) => allThumbs[(thumbOffset + i) % allThumbs.length]);
 
   function generateConcepts() {
     update({ conceptPhase: "running" });
@@ -50,6 +57,7 @@ export default function DemoThumbnailsPage() {
   }
 
   function generateImages() {
+    setThumbOffset((prev) => (prev + 1) % allThumbs.length);
     update({ thumbImagePhase: "running", thumbImageProgress: 0 });
     let count = 0;
     const id = setInterval(() => {

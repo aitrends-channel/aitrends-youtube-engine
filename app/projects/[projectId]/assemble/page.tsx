@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import type { Beat, ThumbnailConcept, KieModel } from "@/lib/types";
 import { getModelConfig } from "@/lib/kie/imageModels";
+import { trimToLength, encodeMp3 } from "@/lib/audio/silenceRemover";
 
 interface PageProps {
   params: { projectId: string };
@@ -344,6 +345,12 @@ export default function AssemblePage({ params }: PageProps) {
   const [assembleStatus, setAssembleStatus] = useState("");
   const [assembledUrl, setAssembledUrl] = useState<string | null>(null);
 
+  // Trim voiceover to video length
+  const assembledVideoRef = useRef<HTMLVideoElement>(null);
+  const [videoDuration, setVideoDuration] = useState<number | null>(null);
+  const [trimmingAudio, setTrimmingAudio] = useState(false);
+  const [trimAudioStatus, setTrimAudioStatus] = useState("");
+
   // Next video state
   const [nextTopic, setNextTopic] = useState("");
   const [extraIdeas, setExtraIdeas] = useState<string[]>([]);
@@ -493,6 +500,54 @@ export default function AssemblePage({ params }: PageProps) {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create project");
       setCreatingNext(false);
+    }
+  }
+
+  async function trimVoiceoverToVideo() {
+    const videoEl = assembledVideoRef.current;
+    const duration = videoDuration ?? (videoEl?.duration && isFinite(videoEl.duration) ? videoEl.duration : null);
+    if (!duration || !ttsUrl) return;
+    setTrimmingAudio(true);
+    setTrimAudioStatus("Fetching voiceover…");
+    try {
+      const res = await fetch(ttsUrl);
+      if (!res.ok) throw new Error("Failed to fetch voiceover audio");
+      const audioBytes = await res.arrayBuffer();
+
+      setTrimAudioStatus("Decoding audio…");
+      const ctx = new AudioContext();
+      const audioBuffer = await ctx.decodeAudioData(audioBytes);
+      ctx.close();
+
+      if (audioBuffer.duration <= duration) {
+        toast.success("Voiceover is already shorter than the video — no trim needed");
+        return;
+      }
+
+      setTrimAudioStatus("Trimming…");
+      const { channels, sampleRate, newDuration } = trimToLength(audioBuffer, duration);
+
+      setTrimAudioStatus("Encoding MP3…");
+      const mp3Bytes = encodeMp3(channels, sampleRate);
+
+      setTrimAudioStatus("Uploading…");
+      const uploadRes = await fetch(`/api/generate/tts/clean?projectId=${projectId}`, {
+        method: "POST",
+        body: mp3Bytes,
+        headers: { "Content-Type": "audio/mpeg" },
+      });
+      if (!uploadRes.ok) {
+        const err = await uploadRes.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Upload failed");
+      }
+      await mutate();
+      setVoiceoverType("cleaned");
+      toast.success(`Voiceover trimmed to ${Math.round(newDuration)}s`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Trim failed");
+    } finally {
+      setTrimmingAudio(false);
+      setTrimAudioStatus("");
     }
   }
 
@@ -675,36 +730,70 @@ export default function AssemblePage({ params }: PageProps) {
             </div>
 
             {/* Voiceover selector */}
-            <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--c-40)" }}>Voiceover Source</p>
-              <div className="flex gap-2">
-                <button onClick={() => setVoiceoverType("cleaned")} disabled={assembling || !ttsCleanedUrl}
-                  className="flex-1 py-2 rounded-xl text-xs font-medium transition-all disabled:opacity-35"
-                  style={voiceoverType === "cleaned" && ttsCleanedUrl ? {
-                    background: "oklch(0.72 0.25 285 / 0.15)",
-                    border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                    color: "oklch(0.88 0.12 285)",
-                  } : {
-                    background: "var(--bg-input)",
-                    border: "1px solid var(--bd-7)",
-                    color: ttsCleanedUrl ? "var(--c-50)" : "var(--c-30)",
-                  }}>
-                  Trimmed{ttsCleanedUrl ? " ✓" : " — unavailable"}
-                </button>
-                <button onClick={() => setVoiceoverType("original")} disabled={assembling || !ttsUrl}
-                  className="flex-1 py-2 rounded-xl text-xs font-medium transition-all disabled:opacity-35"
-                  style={voiceoverType === "original" ? {
-                    background: "oklch(0.72 0.25 285 / 0.15)",
-                    border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                    color: "oklch(0.88 0.12 285)",
-                  } : {
-                    background: "var(--bg-input)",
-                    border: "1px solid var(--bd-7)",
-                    color: ttsUrl ? "var(--c-50)" : "var(--c-30)",
-                  }}>
-                  Original{ttsUrl ? "" : " — unavailable"}
-                </button>
+            <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--c-40)" }}>Voiceover Source</p>
+                <div className="flex gap-2">
+                  <button onClick={() => setVoiceoverType("cleaned")} disabled={assembling || !ttsCleanedUrl}
+                    className="flex-1 py-2 rounded-xl text-xs font-medium transition-all disabled:opacity-35"
+                    style={voiceoverType === "cleaned" && ttsCleanedUrl ? {
+                      background: "oklch(0.72 0.25 285 / 0.15)",
+                      border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                      color: "oklch(0.88 0.12 285)",
+                    } : {
+                      background: "var(--bg-input)",
+                      border: "1px solid var(--bd-7)",
+                      color: ttsCleanedUrl ? "var(--c-50)" : "var(--c-30)",
+                    }}>
+                    Trimmed{ttsCleanedUrl ? " ✓" : " — unavailable"}
+                  </button>
+                  <button onClick={() => setVoiceoverType("original")} disabled={assembling || !ttsUrl}
+                    className="flex-1 py-2 rounded-xl text-xs font-medium transition-all disabled:opacity-35"
+                    style={voiceoverType === "original" ? {
+                      background: "oklch(0.72 0.25 285 / 0.15)",
+                      border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                      color: "oklch(0.88 0.12 285)",
+                    } : {
+                      background: "var(--bg-input)",
+                      border: "1px solid var(--bd-7)",
+                      color: ttsUrl ? "var(--c-50)" : "var(--c-30)",
+                    }}>
+                    Original{ttsUrl ? "" : " — unavailable"}
+                  </button>
+                </div>
               </div>
+
+              {/* Trim to video length — only shown once video is assembled */}
+              {assembledUrl && ttsUrl && (
+                <div className="pt-1 border-t" style={{ borderColor: "var(--bd-6)" }}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium" style={{ color: "var(--c-65)" }}>Trim to video length</p>
+                      <p className="text-xs mt-0.5" style={{ color: "var(--c-40)" }}>
+                        {videoDuration
+                          ? `Hard-cut voiceover at ${Math.round(videoDuration)}s to match the assembled video`
+                          : "Load the video above to detect its duration"}
+                      </p>
+                      {trimmingAudio && trimAudioStatus && (
+                        <p className="text-xs mt-1" style={{ color: "oklch(0.72 0.25 285)" }}>{trimAudioStatus}</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={trimVoiceoverToVideo}
+                      disabled={trimmingAudio || assembling || !videoDuration}
+                      className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-all"
+                      style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                    >
+                      {trimmingAudio ? (
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          Trimming…
+                        </span>
+                      ) : "Trim"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Captions */}
@@ -815,9 +904,19 @@ export default function AssemblePage({ params }: PageProps) {
             {/* Assembly controls */}
             <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
               {assembledUrl && (
-                <video key={assembledUrl} src={assembledUrl} controls className="w-full rounded-xl"
+                <video
+                  key={assembledUrl}
+                  ref={assembledVideoRef}
+                  src={assembledUrl}
+                  controls
+                  className="w-full rounded-xl"
                   style={{ background: "var(--bg-page-2)" }}
-                  onError={() => toast.error("Preview unavailable — the worker may have restarted. Try downloading or click Reassemble.")} />
+                  onLoadedMetadata={() => {
+                    const d = assembledVideoRef.current?.duration;
+                    if (d && isFinite(d)) setVideoDuration(d);
+                  }}
+                  onError={() => toast.error("Preview unavailable — the worker may have restarted. Try downloading or click Reassemble.")}
+                />
               )}
 
               {assembling && (

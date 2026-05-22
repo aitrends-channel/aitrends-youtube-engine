@@ -3,10 +3,16 @@
 import { createContext, useContext, useState } from "react";
 
 export interface DemoState {
+  // Navigation
+  highestStep: number;
+
   // Channel
   channelPhase: "idle" | "loading" | "done";
   channelTopicMode: "generate" | "custom";
   channelTopicHint: string;
+
+  // Topic
+  selectedTopic: string;
 
   // Script
   scriptPhase: "loading" | "done";
@@ -53,14 +59,16 @@ export interface DemoState {
 }
 
 const DEFAULTS: DemoState = {
+  highestStep: 0,
   channelPhase: "idle",
   channelTopicMode: "generate",
   channelTopicHint: "",
+  selectedTopic: "",
   scriptPhase: "loading",
   visualsFetchPhase: "idle",
   visualsAnalyzePhase: "idle",
   promptsTab: "image",
-  selectedVoice: "v1",
+  selectedVoice: "TX3LPaxmHKxFdv7VOQHJ",
   ttsPhase: "idle",
   selectedImageModel: "i1",
   selectedImageRatio: "16:9",

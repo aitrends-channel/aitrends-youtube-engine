@@ -10,17 +10,12 @@ import { useDemoState } from "@/lib/demo-context";
 export default function DemoScriptPage() {
   const router = useRouter();
   const { state, update } = useDemoState();
-  const [topic, setTopic] = useState("");
+  const topic = state.selectedTopic || DEMO_DATA.videoIdeas[0];
   const [navigating, setNavigating] = useState(false);
   const [displayedScript, setDisplayedScript] = useState(
     state.scriptPhase === "done" ? DEMO_DATA.script : ""
   );
   const scriptContainerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const saved = sessionStorage.getItem("demo_topic");
-    setTopic(saved ?? DEMO_DATA.videoIdeas[0]);
-  }, []);
 
   useEffect(() => {
     if (state.scriptPhase === "done") return;
