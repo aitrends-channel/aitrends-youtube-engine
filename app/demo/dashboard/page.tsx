@@ -1,70 +1,45 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Settings, LogOut, BarChart3, Film, ArrowLeft } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { DemoBanner } from "@/components/demo/DemoBanner";
+import { SubscriptionModal } from "@/components/SubscriptionModal";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { DEMO_DATA } from "@/lib/demo-data";
 
 // ── Mock project data ─────────────────────────────────────────────────────────
 
 const CHANNEL = DEMO_DATA.channel;
 
-const MOCK_VIDEOS = [
-  {
-    id: "d1",
-    title: "5 Money Habits That Are Making You Poorer",
-    stateLabel: "Complete",
-    progress: 100,
-    timeAgo: "2d ago",
-    isComplete: true,
-    href: "/demo/assemble",
-  },
-  {
-    id: "d2",
-    title: "Why Your Emergency Fund Is the Wrong Size (And the Exact Number You Need)",
-    stateLabel: "Complete",
-    progress: 100,
-    timeAgo: "3d ago",
-    isComplete: true,
-    href: "/demo/assemble",
-  },
-  {
-    id: "d3",
-    title: "The Silent 401(k) Fee That's Stealing Years From Your Retirement",
-    stateLabel: "Generate",
-    progress: 87,
-    timeAgo: "1d ago",
-    isComplete: false,
-    href: "/demo/generate",
-  },
-  {
-    id: "d4",
-    title: "I Tracked Every Dollar for 90 Days — Here's What Actually Changed",
-    stateLabel: "Prompts",
-    progress: 60,
-    timeAgo: "5h ago",
-    isComplete: false,
-    href: "/demo/prompts",
-  },
-  {
-    id: "d5",
-    title: "Stop Budgeting. Do This Instead to Build Wealth Faster",
-    stateLabel: "Script",
-    progress: 40,
-    timeAgo: "2h ago",
-    isComplete: false,
-    href: "/demo/script",
-  },
+const DEMO_STEP_LABELS = ["Channel", "Topic", "Script", "Visuals", "Prompts", "Generate", "Assemble", "Complete"];
+const DEMO_STEP_HREFS  = [
+  "/demo/channel", "/demo/topic", "/demo/script", "/demo/visuals",
+  "/demo/prompts", "/demo/generate", "/demo/assemble", "/demo/thumbnails",
 ];
 
-const TOTAL      = MOCK_VIDEOS.length;
-const COMPLETED  = MOCK_VIDEOS.filter(v => v.isComplete).length;
-const IN_PROG    = MOCK_VIDEOS.filter(v => !v.isComplete).length;
-const NICHES     = 1;
+const MOCK_VIDEO_BASE = {
+  id: "d1",
+  title: "5 Money Habits That Are Making You Poorer",
+  timeAgo: "2d ago",
+};
+
+const TOTAL       = 1;
+const NICHES      = 1;
 const NICHE_LIMIT = 5;
+
+// Display-only — not counted in any stats
+const STATIC_NICHE = {
+  name: "MoneyMindset",
+  url: "youtube.com/@moneymindset",
+  videos: [
+    { title: "5 Passive Income Streams That Actually Work in 2025", progress: 100 },
+    { title: "How I Built a $10K/Month Portfolio with ETFs", progress: 100 },
+    { title: "The Truth About Index Funds Nobody Tells You", progress: 100 },
+  ],
+};
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -108,10 +83,45 @@ export default function DemoDashboardPage() {
   const router = useRouter();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [hoveredBar, setHoveredBar] = useState(false);
+  const [showSubModal, setShowSubModal] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
+  const [hasNiche, setHasNiche] = useState<boolean | null>(null);
+  const [highestStep, setHighestStep] = useState(0);
+  const [signingOut, setSigningOut] = useState(false);
 
-  const completedPct  = COMPLETED / TOTAL;
-  const inProgPct     = IN_PROG / TOTAL;
-  const nichePct      = NICHES / NICHE_LIMIT;
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user?.email) setUserEmail(data.user.email);
+    });
+
+    fetch("/api/demo-niche")
+      .then(r => r.json())
+      .then(d => setHasNiche(d.demo_niche_created === true))
+      .catch(() => setHasNiche(false));
+
+    try {
+      const raw = sessionStorage.getItem("demo_state_v1");
+      if (raw) {
+        const s = JSON.parse(raw);
+        if (typeof s.highestStep === "number") setHighestStep(s.highestStep);
+      }
+    } catch {}
+  }, []);
+
+  const videoIsComplete = highestStep >= 7;
+  const videoProgress   = Math.round(((highestStep + 1) / 8) * 100);
+  const videoStateLabel = DEMO_STEP_LABELS[Math.min(highestStep, 7)];
+  const videoHref       = DEMO_STEP_HREFS[Math.min(highestStep, 7)];
+
+  const nicheReady   = hasNiche === true;
+  const completed    = nicheReady ? (videoIsComplete ? 1 : 0) : 0;
+  const inProg       = nicheReady ? (videoIsComplete ? 0 : 1) : 0;
+  const totalVideos  = nicheReady ? TOTAL : 0;
+  const nicheCount   = nicheReady ? NICHES : 0;
+  const completedPct = nicheReady ? completed / TOTAL : 0;
+  const inProgPct    = nicheReady ? inProg / TOTAL : 0;
+  const nichePct     = nicheReady ? NICHES / NICHE_LIMIT : 0;
   const nicheColor    = "#9b7ff5";
 
   // Bar chart (single bar — FinanceFuel)
@@ -121,7 +131,7 @@ export default function DemoDashboardPage() {
   const barW = 52;
   const rx = 5;
   const cx = PAD_X + plotW / 2;
-  const barH = plotH; // single bar at 100% height (5 videos = max for this demo)
+  const barH = plotH; // single bar at 100% height (1 video = max for this demo)
   const x = cx - barW / 2;
   const y = PAD_T;
 
@@ -212,12 +222,20 @@ export default function DemoDashboardPage() {
                       <span>Setup</span>
                     </button>
                     <button
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all hover:opacity-80"
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ color: "#f87171" }}
-                      onClick={() => setShowProfileMenu(false)}
+                      disabled={signingOut}
+                      onClick={async () => {
+                        setShowProfileMenu(false);
+                        setSigningOut(true);
+                        try { sessionStorage.removeItem("demo_state_v1"); } catch {}
+                        const supabase = createSupabaseBrowserClient();
+                        await supabase.auth.signOut();
+                        router.push("/login");
+                      }}
                     >
                       <LogOut size={15} />
-                      <span>Sign Out</span>
+                      <span>{signingOut ? "Signing out…" : "Sign Out"}</span>
                     </button>
                   </div>
                 </div>
@@ -226,7 +244,7 @@ export default function DemoDashboardPage() {
           </div>
 
           <button
-            onClick={() => router.push("/demo/channel")}
+            onClick={() => setShowSubModal(true)}
             className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 cursor-pointer"
             style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
           >
@@ -244,14 +262,14 @@ export default function DemoDashboardPage() {
           <div className="grid grid-cols-4 gap-4">
             {/* Total Videos */}
             <div className="rounded-xl px-5 py-4" style={cardStyle}>
-              <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{TOTAL}</p>
+              <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{totalVideos}</p>
               <p className="text-xs" style={{ color: "var(--c-42)" }}>Total Videos</p>
             </div>
 
             {/* Completed */}
             <div className="rounded-xl px-5 py-4 flex items-center justify-between" style={cardStyle}>
               <div>
-                <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{COMPLETED}</p>
+                <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{completed}</p>
                 <p className="text-xs" style={{ color: "var(--c-42)" }}>Completed</p>
                 <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>{Math.round(completedPct * 100)}% of total</p>
               </div>
@@ -261,7 +279,7 @@ export default function DemoDashboardPage() {
             {/* In Progress */}
             <div className="rounded-xl px-5 py-4 flex items-center justify-between" style={cardStyle}>
               <div>
-                <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{IN_PROG}</p>
+                <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{inProg}</p>
                 <p className="text-xs" style={{ color: "var(--c-42)" }}>In Progress</p>
                 <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>{Math.round(inProgPct * 100)}% of total</p>
               </div>
@@ -271,11 +289,11 @@ export default function DemoDashboardPage() {
             {/* Niches */}
             <div className="rounded-xl px-5 py-4 flex items-center justify-between" style={cardStyle}>
               <div>
-                <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{NICHES}</p>
+                <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{nicheCount}</p>
                 <p className="text-xs" style={{ color: "var(--c-42)" }}>Niches</p>
                 <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>of {NICHE_LIMIT}</p>
               </div>
-              <PieRing id="dNicheGrad" pct={nichePct} color={nicheColor} centerText={`${NICHES}/${NICHE_LIMIT}`} />
+              <PieRing id="dNicheGrad" pct={nichePct} color={nicheColor} centerText={`${nicheCount}/${NICHE_LIMIT}`} />
             </div>
           </div>
 
@@ -287,7 +305,7 @@ export default function DemoDashboardPage() {
                 <p className="text-sm font-semibold" style={{ color: "var(--c-75)" }}>Videos per niche</p>
                 <p className="text-xs mt-0.5" style={{ color: "var(--c-35)" }}>All time</p>
               </div>
-              <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{TOTAL}</span>
+              <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{totalVideos}</span>
             </div>
             <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ overflow: "visible" }}>
               <defs>
@@ -320,7 +338,7 @@ export default function DemoDashboardPage() {
                 />
                 {!hoveredBar && (
                   <text x={cx} y={y - 5} textAnchor="middle" fontSize="10" fill="#9b7ff5" fontWeight="600">
-                    {TOTAL}
+                    {totalVideos}
                   </text>
                 )}
                 {hoveredBar && (() => {
@@ -332,7 +350,7 @@ export default function DemoDashboardPage() {
                         FinanceFuel
                       </text>
                       <text x={TX + TW / 2} y={TY + 24} textAnchor="middle" fontSize="10" fill="#9b7ff5" fontWeight="700">
-                        {TOTAL} Videos
+                        {totalVideos} Videos
                       </text>
                     </g>
                   );
@@ -401,6 +419,22 @@ export default function DemoDashboardPage() {
         </div>
 
         {/* ── Channel group ─────────────────────────────────────────────────── */}
+        {hasNiche === null ? null : hasNiche === false ? (
+          <div
+            className="flex flex-col items-center justify-center py-20 rounded-2xl"
+            style={{ background: "oklch(1 0 0 / 0.03)", border: "1px dashed oklch(1 0 0 / 0.1)" }}
+          >
+            <p className="text-sm font-semibold mb-1" style={{ color: "var(--c-55)" }}>No niches yet</p>
+            <p className="text-xs mb-5" style={{ color: "var(--c-35)" }}>Try the end-to-end workflow to create your first niche.</p>
+            <button
+              onClick={() => router.push("/demo/channel")}
+              className="px-4 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 cursor-pointer"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
+            >
+              Start demo →
+            </button>
+          </div>
+        ) : (
         <div>
           <div
             className="rounded-2xl px-6"
@@ -425,10 +459,10 @@ export default function DemoDashboardPage() {
                   className="text-xs px-3 py-1 rounded-full"
                   style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}
                 >
-                  {TOTAL} videos
+                  {totalVideos} videos
                 </span>
                 <button
-                  onClick={() => router.push("/demo/channel")}
+                  onClick={() => setShowSubModal(true)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 cursor-pointer"
                   style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
                 >
@@ -439,37 +473,108 @@ export default function DemoDashboardPage() {
 
             {/* Video cards */}
             <div className="grid gap-7" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
-              {MOCK_VIDEOS.map((v) => (
-                <button
-                  key={v.id}
-                  onClick={() => router.push(v.href)}
-                  className="text-left p-6 rounded-2xl transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+              <button
+                onClick={() => router.push(videoHref)}
+                className="text-left p-6 rounded-2xl transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)"; }}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <span
+                    className="text-xs px-2.5 py-0.5 rounded-full font-medium"
+                    style={videoIsComplete ? {
+                      background: "oklch(0.55 0.15 145 / 0.15)",
+                      color: "oklch(0.65 0.15 145)",
+                      border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                    } : {
+                      background: "oklch(0.72 0.25 285 / 0.1)",
+                      color: "oklch(0.72 0.25 285)",
+                      border: "1px solid oklch(0.72 0.25 285 / 0.2)",
+                    }}
+                  >
+                    {videoStateLabel}
+                  </span>
+                  <span className="text-xs" style={{ color: "var(--c-38)" }}>{MOCK_VIDEO_BASE.timeAgo}</span>
+                </div>
+
+                <p className="text-lg font-semibold leading-snug mb-5" style={{ color: "var(--c-88)" }}>
+                  {MOCK_VIDEO_BASE.title}
+                </p>
+
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs" style={{ color: "var(--c-38)" }}>
+                    <span>Progress</span>
+                    <span>{videoProgress}%</span>
+                  </div>
+                  <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${videoProgress}%`,
+                        background: videoIsComplete
+                          ? "oklch(0.55 0.15 145)"
+                          : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+                      }}
+                    />
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+        )}
+
+        {/* Static display-only niche — not counted in any stats */}
+        {hasNiche === true && <div style={{ opacity: 0.18, pointerEvents: "none", userSelect: "none" }}>
+          <div className="px-8 py-6 rounded-2xl" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+            {/* Channel header */}
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold shrink-0"
+                  style={{ background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "1px solid oklch(0.55 0.15 145 / 0.25)" }}
+                >
+                  M
+                </div>
+                <div>
+                  <h2 className="text-base font-bold">{STATIC_NICHE.name}</h2>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>{STATIC_NICHE.url}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span
+                  className="text-xs px-3 py-1 rounded-full"
+                  style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}
+                >
+                  {STATIC_NICHE.videos.length} videos
+                </span>
+              </div>
+            </div>
+
+            {/* Video cards */}
+            <div className="grid gap-7" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
+              {STATIC_NICHE.videos.map((v, i) => (
+                <div
+                  key={i}
+                  className="text-left p-6 rounded-2xl"
                   style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)"; }}
                 >
                   <div className="flex items-start justify-between mb-3">
                     <span
                       className="text-xs px-2.5 py-0.5 rounded-full font-medium"
-                      style={v.isComplete ? {
+                      style={{
                         background: "oklch(0.55 0.15 145 / 0.15)",
                         color: "oklch(0.65 0.15 145)",
                         border: "1px solid oklch(0.55 0.15 145 / 0.3)",
-                      } : {
-                        background: "oklch(0.72 0.25 285 / 0.1)",
-                        color: "oklch(0.72 0.25 285)",
-                        border: "1px solid oklch(0.72 0.25 285 / 0.2)",
                       }}
                     >
-                      {v.stateLabel}
+                      Complete
                     </span>
-                    <span className="text-xs" style={{ color: "var(--c-38)" }}>{v.timeAgo}</span>
                   </div>
-
                   <p className="text-lg font-semibold leading-snug mb-5" style={{ color: "var(--c-88)" }}>
                     {v.title}
                   </p>
-
                   <div className="space-y-1.5">
                     <div className="flex justify-between text-xs" style={{ color: "var(--c-38)" }}>
                       <span>Progress</span>
@@ -477,23 +582,27 @@ export default function DemoDashboardPage() {
                     </div>
                     <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
                       <div
-                        className="h-full rounded-full transition-all"
-                        style={{
-                          width: `${v.progress}%`,
-                          background: v.isComplete
-                            ? "oklch(0.55 0.15 145)"
-                            : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-                        }}
+                        className="h-full rounded-full"
+                        style={{ width: `${v.progress}%`, background: "oklch(0.55 0.15 145)" }}
                       />
                     </div>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           </div>
-        </div>
+        </div>}
 
       </main>
+
+      {showSubModal && (
+        <SubscriptionModal
+          email={userEmail}
+          hideTryDemo={hasNiche === true}
+          onClose={() => setShowSubModal(false)}
+          onSuccess={() => { setShowSubModal(false); router.push("/dashboard"); }}
+        />
+      )}
     </div>
   );
 }

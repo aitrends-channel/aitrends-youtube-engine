@@ -27,6 +27,7 @@ const DEMO_DEFAULT_TOPIC = "5 Money Habits That Are Making You Poorer";
 interface DemoProgress {
   topic: string;
   highestStep: number;
+  channelDone: boolean;
 }
 
 const R_PIE = 18, CX_PIE = 22, CY_PIE = 22, STROKE_PIE = 5;
@@ -43,14 +44,17 @@ function DemoPieRing({ id, pct, color, centerText }: { id: string; pct: number; 
         </linearGradient>
       </defs>
       <circle cx={CX_PIE} cy={CY_PIE} r={R_PIE} fill="none" stroke={color} strokeOpacity="0.12" strokeWidth={STROKE_PIE} />
-      {pct > 0 && (
+      {pct >= 1 ? (
+        <circle cx={CX_PIE} cy={CY_PIE} r={R_PIE} fill="none"
+          stroke={`url(#${id})`} strokeWidth={STROKE_PIE} />
+      ) : pct > 0 ? (
         <circle cx={CX_PIE} cy={CY_PIE} r={R_PIE} fill="none"
           stroke={`url(#${id})`} strokeWidth={STROKE_PIE}
           strokeDasharray={`${dash} ${CIRC_PIE}`}
           strokeDashoffset={CIRC_PIE / 4}
           strokeLinecap="round"
         />
-      )}
+      ) : null}
       <text x={CX_PIE} y={CY_PIE + 1} textAnchor="middle" dominantBaseline="middle"
         fontSize="8.5" fontWeight="700" fill={color}>{centerText}</text>
     </svg>
@@ -101,9 +105,11 @@ function timeAgo(date: string) {
 
 // ── Demo dashboard content component ─────────────────────────────────────────
 
-function DemoDashboardContent({ onSubscribe, demoProgress }: { onSubscribe: () => void; demoProgress: DemoProgress }) {
+function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: { onSubscribe: () => void; demoProgress: DemoProgress; demoNicheCreated: boolean }) {
   const router = useRouter();
   const [hoveredBar, setHoveredBar] = useState(false);
+
+  const hasStartedDemo = demoNicheCreated || demoProgress.topic !== "" || demoProgress.highestStep > 0;
 
   const step       = Math.min(demoProgress.highestStep, 7);
   const isComplete = step === 7;
@@ -112,10 +118,10 @@ function DemoDashboardContent({ onSubscribe, demoProgress }: { onSubscribe: () =
   const href       = DEMO_STEP_HREFS[step];
   const title      = demoProgress.topic || DEMO_DEFAULT_TOPIC;
 
-  const total     = 4;
-  const completed = 3 + (isComplete ? 1 : 0);
-  const inProg    = isComplete ? 0 : 1;
-  const niches    = 2;
+  const total     = hasStartedDemo ? 1 : 0;
+  const completed = hasStartedDemo ? (isComplete ? 1 : 0) : 0;
+  const inProg    = hasStartedDemo ? (isComplete ? 0 : 1) : 0;
+  const niches    = hasStartedDemo ? 1 : 0;
 
   const STATIC_NICHE = {
     name: "MoneyMindset",
@@ -126,7 +132,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress }: { onSubscribe: () =
       { title: "The Truth About Index Funds Nobody Tells You", state: "Complete" },
     ],
   };
-  const nicheLimit = 5;
+  const nicheLimit = 1;
 
   const cardStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" };
 
@@ -135,9 +141,8 @@ function DemoDashboardContent({ onSubscribe, demoProgress }: { onSubscribe: () =
   const barW = 52, rx = 5;
   const bars = [
     { label: "FinanceFuel", count: 1 },
-    { label: "MoneyMindset", count: 3 },
   ];
-  const maxCount = 3;
+  const maxCount = 1;
   const plotW = W - PAD_X * 2;
   const slotW = plotW / bars.length;
 
@@ -173,11 +178,17 @@ function DemoDashboardContent({ onSubscribe, demoProgress }: { onSubscribe: () =
               <p className="text-xs" style={{ color: "var(--c-42)" }}>Niches</p>
               <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>of {nicheLimit}</p>
             </div>
-            <DemoPieRing id="dcNiche" pct={niches / nicheLimit} color="#9b7ff5" centerText={`${niches}/${nicheLimit}`} />
+            <DemoPieRing id="dcNiche" pct={niches / nicheLimit} color="#5bc48a" centerText={`${niches}/${nicheLimit}`} />
           </div>
         </div>
 
         <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "40px", marginBottom: "10px" }}>Niches/Video Chart</h3>
+        {!hasStartedDemo ? (
+          <div className="rounded-2xl px-6 py-10 flex flex-col items-center justify-center text-center" style={cardStyle}>
+            <p className="text-sm font-medium" style={{ color: "var(--c-40)" }}>No data yet</p>
+            <p className="text-xs mt-1" style={{ color: "var(--c-30)" }}>Chart will populate once you start your first niche</p>
+          </div>
+        ) : (
         <div className="rounded-2xl px-4 py-4 sm:px-6 sm:py-5" style={cardStyle}>
           <div className="flex items-center justify-between mb-5">
             <div>
@@ -218,6 +229,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress }: { onSubscribe: () =
             })}
           </svg>
         </div>
+        )}
 
         <div style={{ marginTop: "40px" }}>
           <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Keys Status</h3>
@@ -244,6 +256,29 @@ function DemoDashboardContent({ onSubscribe, demoProgress }: { onSubscribe: () =
         <h2 className="text-xl font-bold tracking-tight" style={{ color: "var(--c-85)", marginTop: "60px" }}>Your Niches & Videos</h2>
       </div>
 
+      {!hasStartedDemo ? (
+        <div className="rounded-2xl px-6 py-16 flex flex-col items-center justify-center text-center" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+          <p className="text-sm font-medium mb-1" style={{ color: "var(--c-45)" }}>No niches yet</p>
+          <p className="text-xs mb-6" style={{ color: "var(--c-30)" }}>Try the demo to see how a niche looks, or subscribe to create your first one.</p>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => router.push("/demo/channel")}
+              className="px-4 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 cursor-pointer"
+              style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
+            >
+              Try demo →
+            </button>
+            <button
+              onClick={onSubscribe}
+              className="px-4 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 cursor-pointer"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
+            >
+              Subscribe & Start →
+            </button>
+          </div>
+        </div>
+      ) : (
+      <>
       {/* FinanceFuel channel group */}
       <div>
         <div className="rounded-2xl px-4 sm:px-6 py-6 sm:py-8" style={cardStyle}>
@@ -308,7 +343,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress }: { onSubscribe: () =
       </div>
 
       {/* Static niche group — locked/grayed */}
-      <div style={{ opacity: 0.18, pointerEvents: "none", userSelect: "none" }}>
+      <div style={{ opacity: 0.18, pointerEvents: "none", userSelect: "none" }} >
         <div className="rounded-2xl px-4 sm:px-6 py-6 sm:py-8" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
             <div className="flex items-center gap-3">
@@ -359,6 +394,8 @@ function DemoDashboardContent({ onSubscribe, demoProgress }: { onSubscribe: () =
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }
@@ -370,7 +407,8 @@ export default function HomePage() {
   const [creating, setCreating] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isPaid, setIsPaid] = useState<boolean | null>(null);
-  const [demoProgress, setDemoProgress] = useState<DemoProgress>({ topic: "", highestStep: 0 });
+  const [demoProgress, setDemoProgress] = useState<DemoProgress>({ topic: "", highestStep: 0, channelDone: false });
+  const [demoNicheCreated, setDemoNicheCreated] = useState(false);
   const [userEmail, setUserEmail] = useState("");
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
@@ -424,6 +462,7 @@ export default function HomePage() {
   }, [router]);
 
   useEffect(() => {
+    // Read sessionStorage for in-session step tracking
     try {
       const raw = sessionStorage.getItem("demo_state_v1");
       if (raw) {
@@ -431,12 +470,20 @@ export default function HomePage() {
         setDemoProgress({
           topic: typeof s.selectedTopic === "string" ? s.selectedTopic : "",
           highestStep: typeof s.highestStep === "number" ? s.highestStep : 0,
+          channelDone: s.channelPhase === "done",
         });
       }
     } catch {}
+
+    // Read persistent DB flag
+    fetch("/api/demo-niche")
+      .then(r => r.json())
+      .then(d => { if (d.demo_niche_created) setDemoNicheCreated(true); })
+      .catch(() => {});
   }, []);
 
   async function handleSignOut() {
+    try { sessionStorage.removeItem("demo_state_v1"); } catch {}
     const supabase = createSupabaseBrowserClient();
     await supabase.auth.signOut();
     router.push("/login");
@@ -447,7 +494,8 @@ export default function HomePage() {
     if (!Array.isArray(projects)) return [];
     const map = new Map<string, ChannelGroup>();
     for (const p of projects) {
-      const key = p.channel_name ?? "Untitled Channel";
+      if (!p.channel_name) continue; // hide until channel step is completed
+      const key = p.channel_name;
       if (!map.has(key)) {
         map.set(key, { channelName: key, channelUrl: p.channel_url, projects: [], lastActive: p.created_at });
       }
@@ -685,7 +733,7 @@ export default function HomePage() {
         )}
 
         {showDemo ? (
-          <DemoDashboardContent onSubscribe={() => setShowSubscriptionModal(true)} demoProgress={demoProgress} />
+          <DemoDashboardContent onSubscribe={() => setShowSubscriptionModal(true)} demoProgress={demoProgress} demoNicheCreated={demoNicheCreated} />
         ) : (
 
         /* ── Real dashboard content ─────────────────────────────────── */
@@ -1273,7 +1321,7 @@ export default function HomePage() {
         <SubscriptionModal
           email={userEmail}
           defaultPlan={selectedPlan}
-          hideTryDemo
+          hideTryDemo={demoNicheCreated || demoProgress.channelDone || demoProgress.topic !== "" || demoProgress.highestStep > 0}
           onClose={() => { setShowSubscriptionModal(false); setPendingAction(null); }}
           onSuccess={handleSubscriptionSuccess}
         />

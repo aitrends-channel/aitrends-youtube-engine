@@ -77,6 +77,7 @@ export default function DemoChannelPage() {
         setTimeout(() => {
           if (!cancelled) {
             update({ channelPhase: "done" });
+            fetch("/api/demo-niche", { method: "POST" }).catch(() => {});
             router.push("/demo/topic");
           }
         }, 400);

@@ -1,0 +1,1 @@
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS demo_niche_created BOOLEAN DEFAULT FALSE;
