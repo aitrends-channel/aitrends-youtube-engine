@@ -103,7 +103,7 @@ function StatCard({
 
   return (
     <div className="p-6 rounded-2xl space-y-4"
-      style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
           {label}
@@ -147,7 +147,7 @@ function AddUserForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <form onSubmit={handleSubmit} className="p-5 rounded-2xl space-y-3"
-      style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
       <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Email address</label>
       <div className="flex gap-2">
         <input
@@ -298,7 +298,7 @@ export default function AdminPage() {
             </div>
             <h2 className="text-lg font-bold text-foreground">Users</h2>
             <span className="text-xs px-2.5 py-0.5 rounded-full"
-              style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}>
+              style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
               {users.length}
             </span>
           </div>
@@ -314,7 +314,7 @@ export default function AdminPage() {
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No users yet.</div>
           ) : (
             <div className="rounded-2xl overflow-hidden"
-              style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
+              style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
               <table className="w-full border-collapse">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -393,7 +393,7 @@ export default function AdminPage() {
             </div>
             <h2 className="text-lg font-bold text-foreground">All Projects</h2>
             <span className="text-xs px-2.5 py-0.5 rounded-full"
-              style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}>
+              style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
               {projects.length}
             </span>
           </div>
@@ -407,7 +407,7 @@ export default function AdminPage() {
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No projects yet.</div>
           ) : (
             <div className="rounded-2xl overflow-hidden"
-              style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
+              style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
               <table className="w-full border-collapse">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>

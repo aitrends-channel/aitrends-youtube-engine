@@ -116,7 +116,7 @@ export function NicheLimitModal({ email, userPlan, nicheLimit, onClose, onSucces
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="relative w-full max-w-md rounded-2xl p-8 space-y-6"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--bd-10)" }}>
+        style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}>
 
         <button onClick={onClose}
           className="absolute top-4 right-4 p-1.5 rounded-lg transition-opacity hover:opacity-60 cursor-pointer"
@@ -157,7 +157,7 @@ export function NicheLimitModal({ email, userPlan, nicheLimit, onClose, onSucces
               onClick={() => handleGumroad(userPlan, "renew")}
               disabled={loading !== null}
               className="w-full rounded-xl p-4 text-left transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
-              style={{ background: "var(--bg-card-subtle)", border: "1px solid var(--bd-10)" }}
+              style={{ background: "oklch(1 0 0 / 0.06)", border: "1px solid oklch(1 0 0 / 0.1)" }}
             >
               <div className="flex items-start gap-3">
                 <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"

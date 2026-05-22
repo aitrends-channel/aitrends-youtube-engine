@@ -211,7 +211,7 @@ export default function DemoThumbnailsPage() {
                 {thumbs.map((t) => (
                   <div key={t.position} className="rounded-xl overflow-hidden"
                     style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-                    <div className="aspect-video w-full relative" style={{ background: "var(--bg-glass-subtle)" }}>
+                    <div className="aspect-video w-full relative" style={{ background: "var(--bg-card-subtle)" }}>
                       {hasImages || (imagePhase === "running" && imageProgress > t.position - 1) ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={t.imageUrl} alt={t.title} className="w-full h-full object-cover" />

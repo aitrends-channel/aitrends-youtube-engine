@@ -149,7 +149,7 @@ function PreviewModal({
         </div>
 
         {/* Image */}
-        <div className="relative rounded-xl overflow-hidden" style={{ background: "var(--bg-glass-subtle)" }}>
+        <div className="relative rounded-xl overflow-hidden" style={{ background: "var(--bg-card-subtle)" }}>
           <div className="aspect-video w-full">
             {thumb.imageUrl ? (
               <img src={thumb.imageUrl} alt={thumb.title} className="w-full h-full object-contain" />
@@ -217,7 +217,7 @@ function ThumbnailCard({ thumb, onPreview }: { thumb: ThumbnailConcept; onPrevie
       {/* Image area */}
       <div
         className="aspect-video w-full relative group"
-        style={{ background: "var(--bg-glass-subtle)", cursor: thumb.imageUrl && !imgError ? "zoom-in" : "default" }}
+        style={{ background: "var(--bg-card-subtle)", cursor: thumb.imageUrl && !imgError ? "zoom-in" : "default" }}
         onClick={() => thumb.imageUrl && !imgError && onPreview?.()}
       >
         {thumb.imageUrl && !imgError ? (

@@ -69,9 +69,9 @@ export function DemoBanner() {
               <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
               <div
                 className="absolute right-0 top-9 z-50 w-56 rounded-2xl py-3 shadow-2xl"
-                style={{ background: "var(--bg-card)", border: "1px solid var(--bd-10)" }}
+                style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
               >
-                <div className="px-4 pb-3" style={{ borderBottom: "1px solid var(--bd-7)" }}>
+                <div className="px-4 pb-3" style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
                   <p className="text-xs font-semibold truncate" style={{ color: "var(--c-88)" }}>
                     {userEmail || "Loading…"}
                   </p>

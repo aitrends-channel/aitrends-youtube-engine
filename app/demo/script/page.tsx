@@ -102,7 +102,7 @@ export default function DemoScriptPage() {
                 style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                 <div
                   className="flex items-center justify-between px-5 py-3"
-                  style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-glass-subtle)" }}
+                  style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-card-subtle)" }}
                 >
                   <div className="flex items-center gap-2">
                     <div

@@ -98,7 +98,7 @@ function AddUserSection() {
       </div>
 
       <form onSubmit={handleAddUser} className="p-5 rounded-2xl space-y-3"
-        style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
+        style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
         <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Email address</label>
         <div className="flex gap-2">
           <input
@@ -235,7 +235,7 @@ export default function SettingsPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 mb-10 p-1 rounded-xl"
-          style={{ background: "var(--bg-glass-subtle)", border: "1px solid var(--bd-7)" }}>
+          style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
           {(["instructions", "setup"] as const).map((t) => (
             <button
               key={t}
@@ -283,7 +283,7 @@ export default function SettingsPage() {
 
                   return (
                     <div key={field.key} className="p-5 rounded-2xl space-y-3"
-                      style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
                       <div>
                         <div className="flex items-center gap-2 mb-1">
                           <label className="text-sm font-semibold text-foreground">{field.label}</label>
@@ -371,7 +371,7 @@ export default function SettingsPage() {
             </div>
 
             {/* Intro */}
-            <div className="p-5 rounded-2xl space-y-3" style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
+            <div className="p-5 rounded-2xl space-y-3" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
               <p className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
                 Thanks for signing up. Now before you start creating, let me walk you through a quick setup process.
                 And here&apos;s the best part — instead of paying huge monthly subscriptions for multiple AI tools, this system
@@ -385,7 +385,7 @@ export default function SettingsPage() {
             </div>
 
             {/* Step 1 — Anthropic */}
-            <div className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
+            <div className="p-5 rounded-2xl space-y-4" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
               <div className="flex items-start gap-3">
                 <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold mt-0.5"
                   style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>1</div>
@@ -413,7 +413,7 @@ export default function SettingsPage() {
             </div>
 
             {/* Step 2 — YouTube */}
-            <div className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
+            <div className="p-5 rounded-2xl space-y-4" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
               <div className="flex items-start gap-3">
                 <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold mt-0.5"
                   style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>2</div>
@@ -438,7 +438,7 @@ export default function SettingsPage() {
             </div>
 
             {/* Step 3 — Kie AI */}
-            <div className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
+            <div className="p-5 rounded-2xl space-y-4" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
               <div className="flex items-start gap-3">
                 <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold mt-0.5"
                   style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>3</div>
@@ -465,7 +465,7 @@ export default function SettingsPage() {
             </div>
 
             {/* Step 4 — ElevenLabs */}
-            <div className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-7)" }}>
+            <div className="p-5 rounded-2xl space-y-4" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
               <div className="flex items-start gap-3">
                 <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold mt-0.5"
                   style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>4</div>

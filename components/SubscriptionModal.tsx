@@ -142,7 +142,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
     >
       <div
         className="relative w-full max-w-2xl rounded-2xl overflow-hidden"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--bd-10)", maxHeight: "90vh" }}
+        style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)", maxHeight: "90vh" }}
       >
         <button
           onClick={onClose}
@@ -177,7 +177,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
         <button
           onClick={() => { onClose(); router.push("/demo/channel"); }}
           className="w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all hover:opacity-90 cursor-pointer"
-          style={{ background: "var(--bg-card-subtle)", border: "1px solid var(--bd-8)", marginBottom: "30px" }}
+          style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.08)", marginBottom: "30px" }}
         >
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
@@ -202,10 +202,10 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
               onClick={() => !plan.disabled && setSelectedPlan(plan.id)}
               className="relative rounded-xl p-3 text-left transition-all"
               style={{
-                background: plan.disabled ? "transparent" : selectedPlan === plan.id ? "oklch(0.72 0.25 285 / 0.12)" : "var(--bg-card-subtle)",
-                border: plan.disabled ? "1px solid var(--bd-5)" : selectedPlan === plan.id
+                background: plan.disabled ? "oklch(1 0 0 / 0.01)" : selectedPlan === plan.id ? "oklch(0.72 0.25 285 / 0.12)" : "oklch(1 0 0 / 0.03)",
+                border: plan.disabled ? "1px solid oklch(1 0 0 / 0.05)" : selectedPlan === plan.id
                   ? "1px solid oklch(0.72 0.25 285 / 0.50)"
-                  : "1px solid var(--bd-8)",
+                  : "1px solid oklch(1 0 0 / 0.08)",
                 opacity: plan.disabled ? 0.4 : 1,
                 cursor: plan.disabled ? "not-allowed" : "pointer",
               }}

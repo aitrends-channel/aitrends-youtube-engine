@@ -105,7 +105,7 @@ function SetPasswordForm() {
         </div>
 
         <div className="rounded-2xl p-6"
-          style={{ background: "var(--bg-glass)", border: "1px solid var(--bd-8)" }}>
+          style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}>
 
           {checking ? (
             <div className="flex flex-col items-center justify-center py-8 gap-3">
