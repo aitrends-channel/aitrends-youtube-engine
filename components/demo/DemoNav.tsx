@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, LayoutTemplate, Check } from "lucide-react";
+import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, LayoutTemplate, Check, RotateCcw } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useDemoState } from "@/lib/demo-context";
 
@@ -24,8 +24,9 @@ interface DemoNavProps {
 
 export function DemoNav({ currentStep }: DemoNavProps) {
   const router = useRouter();
-  const { state, update } = useDemoState();
+  const { state, update, resetDemo } = useDemoState();
   const highestStep = state.highestStep;
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     if (currentStep > highestStep) {
@@ -155,26 +156,56 @@ export function DemoNav({ currentStep }: DemoNavProps) {
           })}
         </nav>
 
-        {/* Progress bar */}
-        <div className="px-5 py-4 border-t" style={{ borderColor: "var(--bd-7)" }}>
-          <div className="flex justify-between text-xs mb-2" style={{ color: "var(--c-45)" }}>
-            <span>Progress</span>
-            <span>{progressPct}%</span>
+        {/* Progress bar + Reset */}
+        <div className="px-5 py-4 border-t space-y-3" style={{ borderColor: "var(--bd-7)" }}>
+          <div>
+            <div className="flex justify-between text-xs mb-2" style={{ color: "var(--c-45)" }}>
+              <span>Progress</span>
+              <span>{progressPct}%</span>
+            </div>
+            <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-progress)" }}>
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${progressPct}%`,
+                  background: progressPct === 100
+                    ? "linear-gradient(90deg, oklch(0.6 0.18 145), oklch(0.5 0.2 145))"
+                    : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+                  boxShadow: progressPct === 100
+                    ? "0 0 8px oklch(0.6 0.18 145 / 0.5)"
+                    : "0 0 8px oklch(0.72 0.25 285 / 0.5)",
+                }}
+              />
+            </div>
           </div>
-          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-progress)" }}>
-            <div
-              className="h-full rounded-full transition-all duration-500"
-              style={{
-                width: `${progressPct}%`,
-                background: progressPct === 100
-                  ? "linear-gradient(90deg, oklch(0.6 0.18 145), oklch(0.5 0.2 145))"
-                  : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-                boxShadow: progressPct === 100
-                  ? "0 0 8px oklch(0.6 0.18 145 / 0.5)"
-                  : "0 0 8px oklch(0.72 0.25 285 / 0.5)",
-              }}
-            />
-          </div>
+
+          {confirming ? (
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => setConfirming(false)}
+                className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+                style={{ background: "var(--bg-progress)", color: "var(--c-50)", border: "1px solid var(--bd-8)" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { resetDemo(); router.push("/demo/channel"); }}
+                className="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+                style={{ background: "oklch(0.55 0.22 25)", color: "white" }}
+              >
+                Confirm
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirming(true)}
+              className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+              style={{ background: "var(--bg-progress)", color: "var(--c-45)", border: "1px solid var(--bd-8)" }}
+            >
+              <RotateCcw size={11} />
+              Reset process
+            </button>
+          )}
         </div>
 
       </aside>
