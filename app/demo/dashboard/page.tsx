@@ -354,61 +354,44 @@ export default function DemoDashboardPage() {
               <div className="rounded-xl px-5 py-4" style={cardStyle}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="w-2 h-2 rounded-full" style={{ background: "#c084fc" }} />
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#34d39922", color: "#34d399" }}>Active</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#94a3b822", color: "#94a3b8" }}>Not set</span>
                 </div>
                 <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>Anthropic</p>
-                <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>Claude AI — scripts & analysis</p>
-                <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
-                  Billing: <span className="font-semibold" style={{ color: "#c084fc" }}>Pay-per-token</span>
-                </p>
-                <p className="text-[10px] mt-0.5" style={{ color: "var(--c-30)" }}>No credit pool — billed by usage</p>
+                <p className="text-[10px] font-medium mb-2" style={{ color: "#f0a855" }}>Pending setup</p>
+                <p className="text-[10px]" style={{ color: "var(--c-38)" }}>Claude AI — scripts & analysis</p>
               </div>
 
               {/* YouTube */}
               <div className="rounded-xl px-5 py-4" style={cardStyle}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="w-2 h-2 rounded-full" style={{ background: "#f87171" }} />
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#34d39922", color: "#34d399" }}>Active</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#94a3b822", color: "#94a3b8" }}>Not set</span>
                 </div>
                 <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>YouTube</p>
-                <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>Channel lookup & metadata</p>
-                <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
-                  Quota: <span className="font-semibold" style={{ color: "#f87171" }}>10,000 units / day</span>
-                </p>
-                <p className="text-[10px] mt-0.5" style={{ color: "var(--c-30)" }}>Resets daily · View in Google Console</p>
+                <p className="text-[10px] font-medium mb-2" style={{ color: "#f0a855" }}>Pending setup</p>
+                <p className="text-[10px]" style={{ color: "var(--c-38)" }}>Channel lookup & metadata</p>
               </div>
 
               {/* KIE */}
               <div className="rounded-xl px-5 py-4" style={cardStyle}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="w-2 h-2 rounded-full" style={{ background: "#60a5fa" }} />
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#34d39922", color: "#34d399" }}>Active</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#94a3b822", color: "#94a3b8" }}>Not set</span>
                 </div>
                 <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>KIE</p>
-                <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>TTS, images & video generation</p>
-                <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
-                  Credits remaining: <span className="font-semibold" style={{ color: "#60a5fa" }}>847</span>
-                </p>
+                <p className="text-[10px] font-medium mb-2" style={{ color: "#f0a855" }}>Pending setup</p>
+                <p className="text-[10px]" style={{ color: "var(--c-38)" }}>TTS, images & video generation</p>
               </div>
 
               {/* ElevenLabs */}
               <div className="rounded-xl px-5 py-4" style={cardStyle}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="w-2 h-2 rounded-full" style={{ background: "#34d399" }} />
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#34d39922", color: "#34d399" }}>Active</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#94a3b822", color: "#94a3b8" }}>Not set</span>
                 </div>
                 <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>ElevenLabs</p>
-                <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>Voiceover & captions</p>
-                <div>
-                  <div className="flex justify-between text-[10px] mb-1" style={{ color: "var(--c-40)" }}>
-                    <span>45,230 used</span>
-                    <span>100,000 limit</span>
-                  </div>
-                  <div className="w-full rounded-full h-1.5" style={{ background: "oklch(1 0 0 / 0.08)" }}>
-                    <div className="h-1.5 rounded-full" style={{ width: "45.2%", background: "#34d399" }} />
-                  </div>
-                  <p className="text-[10px] mt-1.5 capitalize" style={{ color: "var(--c-35)" }}>Creator plan</p>
-                </div>
+                <p className="text-[10px] font-medium mb-2" style={{ color: "#f0a855" }}>Pending setup</p>
+                <p className="text-[10px]" style={{ color: "var(--c-38)" }}>Voiceover & captions</p>
               </div>
 
             </div>
