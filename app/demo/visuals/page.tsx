@@ -118,7 +118,7 @@ export default function DemoVisualsPage() {
 
           {/* Header */}
           <div
-            className="flex items-center justify-between px-8 py-5"
+            className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-8 py-4 sm:py-5"
             style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}
           >
             <div>
@@ -144,7 +144,7 @@ export default function DemoVisualsPage() {
             )}
           </div>
 
-          <div className="p-8 max-w-4xl mx-auto space-y-6">
+          <div className="p-4 sm:p-8 max-w-4xl mx-auto space-y-6">
 
             {/* Mode toggle (Manual locked) */}
             <div className="flex gap-2 p-1 rounded-xl w-fit"
@@ -172,7 +172,7 @@ export default function DemoVisualsPage() {
             {/* Fetch panel */}
             <div className="rounded-2xl p-5"
               style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                   <p className="font-semibold text-sm">Auto-capture from Channel Videos</p>
                   <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
@@ -195,7 +195,7 @@ export default function DemoVisualsPage() {
               </div>
 
               {!hasFetched && visualsFetchPhase === "idle" && (
-                <div className="mt-4 grid grid-cols-3 gap-3">
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {[
                     { icon: "◎", label: "Thumbnail images",   desc: "Official YouTube thumbnail per video" },
                     { icon: "◈", label: "Video frame stills", desc: "2 auto-frames per video" },
@@ -255,7 +255,7 @@ export default function DemoVisualsPage() {
                     {screenshots.map((shot) => (
                       <div key={shot.videoId}>
                         <p className="text-xs mb-2 truncate" style={{ color: "var(--c-45)" }}>{shot.title}</p>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                           {shot.frameUrls.map((url, i) => (
                             <SelectableImage
                               key={url}
@@ -283,7 +283,7 @@ export default function DemoVisualsPage() {
                     </span>
                   </div>
                   <div className="p-5">
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {screenshots.map((shot) => (
                         <SelectableImage
                           key={shot.thumbnailUrl}

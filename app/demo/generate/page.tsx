@@ -178,9 +178,9 @@ export default function DemoGeneratePage() {
         <DemoBanner />
         <main className="flex-1 overflow-y-auto">
           {/* Header */}
-          <div className="px-8 py-5"
+          <div className="px-4 sm:px-8 py-4 sm:py-5"
             style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <h1 className="font-bold text-lg">Generate Assets</h1>
                 <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
@@ -205,7 +205,7 @@ export default function DemoGeneratePage() {
             </div>
           </div>
 
-          <div className="p-8 grid grid-cols-1 xl:grid-cols-3 gap-6">
+          <div className="p-4 sm:p-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
 
             {/* ── Voiceover column ─────────────────────────────────────────── */}
             <div className="rounded-2xl flex flex-col overflow-hidden"

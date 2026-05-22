@@ -105,7 +105,7 @@ export default function DemoAssemblePage() {
         <main className="flex-1 overflow-y-auto">
 
           {/* Header */}
-          <div className="px-8 py-5"
+          <div className="px-4 sm:px-8 py-4 sm:py-5"
             style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
             <h1 className="font-bold text-lg">Assemble Final Video</h1>
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
@@ -113,11 +113,11 @@ export default function DemoAssemblePage() {
             </p>
           </div>
 
-          <div className="p-8 flex gap-6 items-start">
+          <div className="p-4 sm:p-8">
             <div className="flex-1 min-w-0 max-w-2xl space-y-6">
 
               {/* Status cards */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {[
                   { label: "Voiceover", value: "Original", color: "oklch(0.72 0.25 285)" },
                   { label: "Video Clips", value: `${totalBeats} / ${totalBeats}`, color: "oklch(0.72 0.25 285)" },

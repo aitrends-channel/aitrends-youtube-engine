@@ -61,7 +61,7 @@ export default function DemoScriptPage() {
         <DemoBanner />
         <main className="flex-1 flex flex-col overflow-hidden">
         <div
-          className="flex items-center justify-between px-8 py-4 shrink-0"
+          className="flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 shrink-0"
           style={{
             borderBottom: "1px solid var(--bd-6)",
             background: "var(--bg-header-2)",
@@ -79,7 +79,7 @@ export default function DemoScriptPage() {
           <div />
         </div>
 
-        <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-8">
           {phase === "loading" && (
             <div className="max-w-xl mx-auto text-center space-y-5 p-10 rounded-2xl"
               style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
@@ -126,7 +126,7 @@ export default function DemoScriptPage() {
                 <div className="relative p-6">
                   <div
                     ref={scriptContainerRef}
-                    className="w-full min-h-[560px] max-h-[560px] overflow-y-auto text-sm leading-8 font-sans whitespace-pre-wrap"
+                    className="w-full min-h-[200px] max-h-[50vh] sm:min-h-[560px] sm:max-h-[560px] overflow-y-auto text-sm leading-8 font-sans whitespace-pre-wrap"
                     style={{ color: "var(--c-90)" }}
                   >
                     {displayedScript}

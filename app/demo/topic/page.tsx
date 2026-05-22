@@ -26,7 +26,7 @@ export default function DemoTopicPage() {
         <DemoBanner />
         <main className="flex-1 overflow-y-auto">
         <div
-          className="px-8 py-5"
+          className="px-4 sm:px-8 py-4 sm:py-5"
           style={{
             borderBottom: "1px solid var(--bd-6)",
             background: "var(--bg-header-2)",
@@ -39,7 +39,7 @@ export default function DemoTopicPage() {
           </p>
         </div>
 
-        <div className="max-w-2xl mx-auto px-8 pt-6 pb-8 space-y-5">
+        <div className="max-w-2xl mx-auto px-4 sm:px-8 pt-6 pb-8 space-y-5">
 
           <div className="space-y-2">
             {DEMO_DATA.videoIdeas.map((idea, i) => {

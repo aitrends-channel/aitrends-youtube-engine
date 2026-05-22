@@ -24,7 +24,7 @@ export default function DemoPromptsPage() {
         <main className="flex-1 flex flex-col overflow-hidden">
           {/* Header */}
           <div
-            className="flex items-center justify-between px-8 py-4 shrink-0"
+            className="flex items-center justify-between px-4 sm:px-8 py-4 shrink-0"
             style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}
           >
             <div>
@@ -36,7 +36,7 @@ export default function DemoPromptsPage() {
           </div>
 
           {/* Step cards */}
-          <div className="px-8 py-4 space-y-2 shrink-0" style={{ borderBottom: "1px solid var(--bd-6)" }}>
+          <div className="px-4 sm:px-8 py-4 space-y-2 shrink-0" style={{ borderBottom: "1px solid var(--bd-6)" }}>
             {[
               { num: 1, title: "Image Prompts", desc: "One AI image prompt per script beat, matched to your channel's visual style", beats: DEMO_DATA.promptBeats.length },
               { num: 2, title: "Video Prompts", desc: "Camera movement and motion instructions layered on top of each image beat", beats: DEMO_DATA.promptBeats.length },
@@ -64,7 +64,7 @@ export default function DemoPromptsPage() {
           </div>
 
           {/* Tabs */}
-          <div className="px-8 pt-4 shrink-0 flex gap-1" style={{ borderBottom: "1px solid var(--bd-6)" }}>
+          <div className="px-4 sm:px-8 pt-4 shrink-0 flex gap-1" style={{ borderBottom: "1px solid var(--bd-6)" }}>
             {(["image", "video"] as Tab[]).map((tab) => (
               <button
                 key={tab}
@@ -84,7 +84,7 @@ export default function DemoPromptsPage() {
           </div>
 
           {/* Beat list */}
-          <div className="flex-1 overflow-y-auto px-8 py-5 space-y-3">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-5 space-y-3">
             {DEMO_DATA.promptBeats.map((beat) => (
               <div
                 key={beat.beat}

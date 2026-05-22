@@ -79,7 +79,7 @@ export default function DemoThumbnailsPage() {
 
           {/* Header */}
           <div
-            className="px-8 py-5"
+            className="px-4 sm:px-8 py-4 sm:py-5"
             style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}
           >
             <h1 className="font-bold text-lg">Thumbnail Generator</h1>
@@ -88,7 +88,7 @@ export default function DemoThumbnailsPage() {
             </p>
           </div>
 
-          <div className="p-8 max-w-3xl space-y-6">
+          <div className="p-4 sm:p-8 max-w-3xl space-y-6">
 
             {/* Step 1 — Concepts */}
             <div

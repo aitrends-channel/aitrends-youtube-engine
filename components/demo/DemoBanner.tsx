@@ -25,15 +25,19 @@ export function DemoBanner() {
   }
 
   return (
+    <>
+      {/* Spacer so content clears the fixed mobile nav */}
+      <div className="h-14 md:hidden shrink-0" />
     <div
-      className="flex items-center justify-between px-6 py-2.5 text-xs shrink-0"
+      className="flex items-center justify-between px-4 sm:px-6 py-2.5 text-xs shrink-0"
       style={{
         background: "oklch(0.72 0.25 285 / 0.12)",
         borderBottom: "1px solid oklch(0.72 0.25 285 / 0.2)",
         color: "var(--c-65)",
       }}
     >
-      <span>✨ You&apos;re viewing a demo — subscribe to run this on your own channel.</span>
+      <span className="hidden sm:inline">✨ You&apos;re viewing a demo — subscribe to run this on your own channel.</span>
+      <span className="sm:hidden">✨ Demo mode</span>
 
       <div className="flex items-center gap-3 shrink-0 ml-4">
         <button
@@ -110,5 +114,6 @@ export function DemoBanner() {
         </div>
       </div>
     </div>
+    </>
   );
 }
