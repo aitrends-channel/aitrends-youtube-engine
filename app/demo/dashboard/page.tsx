@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { Settings, LogOut, BarChart3, Film, ArrowLeft } from "lucide-react";
@@ -88,6 +88,18 @@ export default function DemoDashboardPage() {
   const [hasNiche, setHasNiche] = useState<boolean | null>(null);
   const [highestStep, setHighestStep] = useState(0);
   const [signingOut, setSigningOut] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showProfileMenu) return;
+    function handleClick(e: MouseEvent) {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setShowProfileMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showProfileMenu]);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -176,7 +188,7 @@ export default function DemoDashboardPage() {
           <ThemeToggle />
 
           {/* Profile avatar */}
-          <div className="relative">
+          <div className="relative" ref={profileMenuRef}>
             <button
               onClick={() => setShowProfileMenu(v => !v)}
               className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold transition-all hover:opacity-80 cursor-pointer"
@@ -187,9 +199,8 @@ export default function DemoDashboardPage() {
 
             {showProfileMenu && (
               <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
                 <div
-                  className="absolute right-0 top-12 z-50 w-64 rounded-2xl py-3 shadow-2xl"
+                  className="absolute right-0 top-12 z-[200] w-64 rounded-2xl py-3 shadow-2xl"
                   style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
                 >
                   <div className="px-4 pb-3" style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>

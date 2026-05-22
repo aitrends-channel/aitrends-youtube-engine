@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -418,6 +418,18 @@ export default function HomePage() {
   const [memberSince, setMemberSince] = useState<string>("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showNicheLimitModal, setShowNicheLimitModal] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showProfileMenu) return;
+    function handleClick(e: MouseEvent) {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setShowProfileMenu(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showProfileMenu]);
   const { data: apiStatus } = useSWR("/api/api-status", fetcher, { revalidateOnFocus: false });
 
   useEffect(() => {
@@ -623,7 +635,7 @@ export default function HomePage() {
           )}
           <ThemeToggle />
           {/* Profile avatar + dropdown */}
-          <div className="relative">
+          <div className="relative" ref={profileMenuRef}>
             <button
               onClick={() => setShowProfileMenu(v => !v)}
               className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold transition-all hover:opacity-80 cursor-pointer shrink-0"
@@ -634,11 +646,9 @@ export default function HomePage() {
 
             {showProfileMenu && (
               <>
-                {/* Backdrop */}
-                <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
                 {/* Dropdown */}
-                <div className="absolute right-0 top-12 z-50 w-64 rounded-2xl py-3 shadow-2xl"
-                  style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-10)" }}>
+                <div className="absolute right-0 top-12 z-[200] w-64 rounded-2xl py-3 shadow-2xl"
+                  style={{ background: "var(--bg-card)", border: "1px solid var(--bd-10)" }}>
 
                   {/* Avatar + info */}
                   <div className="px-4 pb-3" style={{ borderBottom: "1px solid var(--bd-7)" }}>
