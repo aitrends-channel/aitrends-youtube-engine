@@ -112,19 +112,34 @@ function DemoDashboardContent({ onSubscribe, demoProgress }: { onSubscribe: () =
   const href       = DEMO_STEP_HREFS[step];
   const title      = demoProgress.topic || DEMO_DEFAULT_TOPIC;
 
-  const total     = 1;
-  const completed = isComplete ? 1 : 0;
+  const total     = 4;
+  const completed = 3 + (isComplete ? 1 : 0);
   const inProg    = isComplete ? 0 : 1;
-  const niches    = 1;
+  const niches    = 2;
+
+  const STATIC_NICHE = {
+    name: "MoneyMindset",
+    url: "youtube.com/@moneymindset",
+    videos: [
+      { title: "5 Passive Income Streams That Actually Work in 2025", state: "Complete" },
+      { title: "How I Built a $10K/Month Portfolio with ETFs", state: "Complete" },
+      { title: "The Truth About Index Funds Nobody Tells You", state: "Complete" },
+    ],
+  };
   const nicheLimit = 5;
 
   const cardStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" };
 
   const W = 600, PAD_X = 16, PAD_T = 16, PAD_B = 32, H = 160;
   const plotH = H - PAD_T - PAD_B;
-  const cx = PAD_X + (W - PAD_X * 2) / 2;
   const barW = 52, rx = 5;
-  const bx = cx - barW / 2;
+  const bars = [
+    { label: "FinanceFuel", count: 1 },
+    { label: "MoneyMindset", count: 3 },
+  ];
+  const maxCount = 3;
+  const plotW = W - PAD_X * 2;
+  const slotW = plotW / bars.length;
 
   return (
     <div className="space-y-12">
@@ -183,29 +198,24 @@ function DemoDashboardContent({ onSubscribe, demoProgress }: { onSubscribe: () =
               </linearGradient>
             </defs>
             <line x1={PAD_X} y1={PAD_T + plotH} x2={W - PAD_X} y2={PAD_T + plotH} style={{ stroke: "oklch(1 0 0 / 0.08)" }} strokeWidth="1" />
-            {[0.25, 0.5, 0.75, 1].map(f => (
+            {[0.33, 0.67, 1].map(f => (
               <line key={f} x1={PAD_X} y1={PAD_T + plotH - f * plotH} x2={W - PAD_X} y2={PAD_T + plotH - f * plotH} style={{ stroke: "oklch(1 0 0 / 0.05)" }} strokeWidth="1" />
             ))}
-            <g onMouseEnter={() => setHoveredBar(true)} onMouseLeave={() => setHoveredBar(false)} style={{ cursor: "pointer" }}>
-              <rect x={bx} y={PAD_T} width={barW} height={plotH} fill="transparent" />
-              <path d={`M ${bx+rx} ${PAD_T} H ${bx+barW-rx} Q ${bx+barW} ${PAD_T} ${bx+barW} ${PAD_T+rx} V ${PAD_T+plotH} H ${bx} V ${PAD_T+rx} Q ${bx} ${PAD_T} ${bx+rx} ${PAD_T}`}
-                fill={hoveredBar ? "url(#dcBarH)" : "url(#dcBarG)"} />
-              {!hoveredBar && <text x={cx} y={PAD_T - 5} textAnchor="middle" fontSize="10" fill="#9b7ff5" fontWeight="600">{total}</text>}
-              {hoveredBar && (() => {
-                const TW = 100, TH = 32, TX = cx - TW / 2, TY = PAD_T - TH - 8;
-                return (
-                  <g>
-                    <rect x={TX} y={TY} width={TW} height={TH} rx={5} style={{ fill: "oklch(0.12 0.02 285)" }} stroke="#9b7ff5" strokeOpacity="0.4" strokeWidth="1" />
-                    <text x={TX + TW/2} y={TY + 12} textAnchor="middle" fontSize="9.5" style={{ fill: "oklch(1 0 0 / 0.70)" }} fontWeight="500">FinanceFuel</text>
-                    <text x={TX + TW/2} y={TY + 24} textAnchor="middle" fontSize="10" fill="#9b7ff5" fontWeight="700">{total} Videos</text>
-                  </g>
-                );
-              })()}
-              <text x={cx} y={PAD_T + plotH + 18} textAnchor="middle" fontSize="10"
-                style={{ fill: hoveredBar ? "#9b7ff5" : "oklch(1 0 0 / 0.30)" }} fontWeight={hoveredBar ? "600" : "400"}>
-                FinanceFuel
-              </text>
-            </g>
+            {bars.map((bar, i) => {
+              const cx = PAD_X + slotW * i + slotW / 2;
+              const bx = cx - barW / 2;
+              const barH = (bar.count / maxCount) * plotH;
+              const by = PAD_T + plotH - barH;
+              return (
+                <g key={bar.label}>
+                  <path d={`M ${bx+rx} ${by} H ${bx+barW-rx} Q ${bx+barW} ${by} ${bx+barW} ${by+rx} V ${PAD_T+plotH} H ${bx} V ${by+rx} Q ${bx} ${by} ${bx+rx} ${by}`}
+                    fill="url(#dcBarG)" opacity={0.85 + i * 0.15} />
+                  <text x={cx} y={by - 5} textAnchor="middle" fontSize="10" fill="#9b7ff5" fontWeight="600">{bar.count}</text>
+                  <text x={cx} y={PAD_T + plotH + 18} textAnchor="middle" fontSize="10"
+                    style={{ fill: "oklch(1 0 0 / 0.30)" }}>{bar.label}</text>
+                </g>
+              );
+            })}
           </svg>
         </div>
 
@@ -213,34 +223,19 @@ function DemoDashboardContent({ onSubscribe, demoProgress }: { onSubscribe: () =
           <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Keys Status</h3>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {[
-              { name: "Anthropic",   color: "#c084fc", desc: "Claude AI — scripts & analysis",    detail: "Billing: Pay-per-token",           sub: "No credit pool — billed by usage" },
-              { name: "YouTube",     color: "#f87171", desc: "Channel lookup & metadata",          detail: "Quota: 10,000 units / day",        sub: "Resets daily · View in Google Console" },
-              { name: "KIE",         color: "#60a5fa", desc: "TTS, images & video generation",     detail: "Credits remaining: 847",           sub: "" },
-              { name: "ElevenLabs",  color: "#34d399", desc: "Voiceover & captions",               detail: null,                               sub: "Creator plan" },
-            ].map(({ name, color, desc, detail, sub }) => (
+              { name: "Anthropic",   color: "#c084fc", desc: "Claude AI — scripts & analysis" },
+              { name: "YouTube",     color: "#f87171", desc: "Channel lookup & metadata" },
+              { name: "KIE",         color: "#60a5fa", desc: "TTS, images & video generation" },
+              { name: "ElevenLabs",  color: "#34d399", desc: "Voiceover & captions" },
+            ].map(({ name, color, desc }) => (
               <div key={name} className="rounded-xl px-5 py-4" style={cardStyle}>
                 <div className="flex items-center justify-between mb-2">
                   <div className="w-2 h-2 rounded-full" style={{ background: color }} />
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#34d39922", color: "#34d399" }}>Active</span>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#94a3b822", color: "#94a3b8" }}>Not set</span>
                 </div>
                 <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>{name}</p>
-                <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>{desc}</p>
-                {name === "ElevenLabs" ? (
-                  <div>
-                    <div className="flex justify-between text-[10px] mb-1" style={{ color: "var(--c-40)" }}>
-                      <span>45,230 used</span><span>100,000 limit</span>
-                    </div>
-                    <div className="w-full rounded-full h-1.5" style={{ background: "oklch(1 0 0 / 0.08)" }}>
-                      <div className="h-1.5 rounded-full" style={{ width: "45.2%", background: color }} />
-                    </div>
-                    <p className="text-[10px] mt-1.5" style={{ color: "var(--c-35)" }}>{sub}</p>
-                  </div>
-                ) : (
-                  <>
-                    <p className="text-[10px]" style={{ color: "var(--c-40)" }}>{detail}</p>
-                    {sub && <p className="text-[10px] mt-0.5" style={{ color: "var(--c-30)" }}>{sub}</p>}
-                  </>
-                )}
+                <p className="text-[10px] font-medium mb-2" style={{ color: "#f0a855" }}>Pending setup</p>
+                <p className="text-[10px]" style={{ color: "var(--c-38)" }}>{desc}</p>
               </div>
             ))}
           </div>
@@ -308,6 +303,59 @@ function DemoDashboardContent({ onSubscribe, demoProgress }: { onSubscribe: () =
                 </div>
               </div>
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Static niche group — locked/grayed */}
+      <div style={{ opacity: 0.18, pointerEvents: "none", userSelect: "none" }}>
+        <div className="rounded-2xl px-4 sm:px-6 py-6 sm:py-8" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-bold shrink-0"
+                style={{ background: "oklch(0.5 0 0 / 0.15)", color: "oklch(0.5 0 0)", border: "1px solid oklch(0.5 0 0 / 0.25)" }}>
+                M
+              </div>
+              <div>
+                <h2 className="text-base font-bold">{STATIC_NICHE.name}</h2>
+                <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>{STATIC_NICHE.url}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-xs px-3 py-1 rounded-full" style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}>
+                {STATIC_NICHE.videos.length} videos
+              </span>
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                style={{ background: "oklch(0.3 0 0)", color: "oklch(0.5 0 0)" }}>
+                + New Video
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            {STATIC_NICHE.videos.map((v) => (
+              <div
+                key={v.title}
+                className="text-left p-4 sm:p-6 rounded-2xl"
+                style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
+                    style={{ background: "oklch(0.3 0 0 / 0.3)", color: "oklch(0.45 0 0)", border: "1px solid oklch(0.3 0 0 / 0.2)" }}>
+                    {v.state}
+                  </span>
+                </div>
+                <p className="text-lg font-semibold leading-snug mb-5" style={{ color: "var(--c-88)" }}>{v.title}</p>
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs" style={{ color: "var(--c-38)" }}>
+                    <span>Progress</span><span>100%</span>
+                  </div>
+                  <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
+                    <div className="h-full rounded-full" style={{ width: "100%", background: "oklch(0.4 0 0)" }} />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -956,6 +1004,7 @@ export default function HomePage() {
                           <StatusBadge data={anth} color="#c084fc" />
                         </div>
                         <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>Anthropic</p>
+                        {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mb-1" style={{ color: "#f0a855" }}>Pending setup</p>}
                         <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>Claude AI — scripts & analysis</p>
                         <StaticInfo label="Billing" value="Pay-per-token" color="#c084fc" />
                         <p className="text-[10px] mt-0.5" style={{ color: "var(--c-30)" }}>No credit pool — billed by usage</p>
@@ -968,6 +1017,7 @@ export default function HomePage() {
                           <StatusBadge data={yt} color="#f87171" />
                         </div>
                         <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>YouTube</p>
+                        {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mb-1" style={{ color: "#f0a855" }}>Pending setup</p>}
                         <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>Channel lookup & metadata</p>
                         <StaticInfo label="Quota" value={`${(yt?.quotaPerDay ?? 10000).toLocaleString()} units / day`} color="#f87171" />
                         <p className="text-[10px] mt-0.5" style={{ color: "var(--c-30)" }}>Resets daily · View in Google Console</p>
@@ -980,6 +1030,7 @@ export default function HomePage() {
                           <StatusBadge data={kie} color="#60a5fa" />
                         </div>
                         <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>KIE</p>
+                        {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mb-1" style={{ color: "#f0a855" }}>Pending setup</p>}
                         <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>TTS, images & video generation</p>
                         {kie?.configured && kie.valid && kie.credits !== undefined ? (
                           <StaticInfo label="Credits remaining" value={kie.credits.toLocaleString()} color="#60a5fa" />
@@ -995,6 +1046,7 @@ export default function HomePage() {
                           <StatusBadge data={el} color="#34d399" />
                         </div>
                         <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>ElevenLabs</p>
+                        {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mb-1" style={{ color: "#f0a855" }}>Pending setup</p>}
                         <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>Voiceover & captions</p>
                         {el?.configured && el.valid && el.charLimit !== undefined ? (
                           <div>
@@ -1221,6 +1273,7 @@ export default function HomePage() {
         <SubscriptionModal
           email={userEmail}
           defaultPlan={selectedPlan}
+          hideTryDemo
           onClose={() => { setShowSubscriptionModal(false); setPendingAction(null); }}
           onSuccess={handleSubscriptionSuccess}
         />

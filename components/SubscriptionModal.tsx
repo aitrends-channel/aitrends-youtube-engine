@@ -51,6 +51,7 @@ interface Props {
   onClose: () => void;
   onSuccess: () => void;
   defaultPlan?: string;
+  hideTryDemo?: boolean;
 }
 
 function loadGumroadScript(): Promise<void> {
@@ -64,7 +65,7 @@ function loadGumroadScript(): Promise<void> {
   });
 }
 
-export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Props) {
+export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hideTryDemo }: Props) {
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState(defaultPlan ?? "founder");
   const [spotsLeft, setSpotsLeft] = useState<number | null>(null);
@@ -174,7 +175,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
         </div>
 
         {/* Try Demo */}
-        <button
+        {!hideTryDemo && <button
           onClick={() => { onClose(); router.push("/demo/channel"); }}
           className="w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all hover:opacity-90 cursor-pointer"
           style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.08)", marginBottom: "30px" }}
@@ -192,7 +193,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan }: Pr
           <span className="text-xs font-medium shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>
             Free →
           </span>
-        </button>
+        </button>}
 
         {/* Plan selector */}
         <div className="grid grid-cols-3 gap-3 mb-6">
