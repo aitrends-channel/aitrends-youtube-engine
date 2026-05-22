@@ -701,10 +701,11 @@ export default function HomePage() {
           <button
             onClick={createProject}
             disabled={creating || !authReady}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
           >
-            {creating ? "Creating…" : "+ New Niche"}
+            <span>{creating ? "Creating…" : "+"}</span>
+            <span className="hidden sm:inline">{creating ? "" : "New Niche"}</span>
           </button>
         </div>
       </header>
@@ -748,7 +749,17 @@ export default function HomePage() {
             <div className="space-y-6">
               <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>General Stats</h3>
               {/* Stat cards */}
-              {(() => {
+              {projects === undefined ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  {[0, 1, 2, 3].map((i) => (
+                    <div key={i} className="rounded-xl px-5 py-4 space-y-2" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                      <div className="h-8 w-10 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.08)" }} />
+                      <div className="h-3 w-20 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.06)" }} />
+                      <div className="h-2.5 w-14 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.05)" }} />
+                    </div>
+                  ))}
+                </div>
+              ) : (() => {
                 const R = 18, CX = 22, CY = 22, stroke = 5;
                 const circ = 2 * Math.PI * R;
 
@@ -791,7 +802,7 @@ export default function HomePage() {
                 const inProgressPct = total > 0 ? inProgress / total : 0;
 
                 return (
-                  <div className="grid grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                     {/* Total Videos — plain */}
                     <div className="rounded-xl px-5 py-4"
                       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
@@ -846,7 +857,22 @@ export default function HomePage() {
 
               <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "40px", marginBottom: "10px" }}>Niches/Video Chart</h3>
               {/* Bar chart — videos per niche */}
-              {channelGroups.length === 0 ? (
+              {projects === undefined ? (
+                <div className="rounded-2xl px-6 py-5" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                  <div className="flex items-center justify-between mb-5">
+                    <div className="space-y-2">
+                      <div className="h-4 w-32 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.08)" }} />
+                      <div className="h-3 w-16 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.06)" }} />
+                    </div>
+                    <div className="h-8 w-10 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.08)" }} />
+                  </div>
+                  <div className="flex items-end gap-4 h-24 px-4">
+                    {[60, 40, 80, 30].map((h, i) => (
+                      <div key={i} className="flex-1 rounded-t animate-pulse" style={{ height: `${h}%`, background: "oklch(1 0 0 / 0.08)" }} />
+                    ))}
+                  </div>
+                </div>
+              ) : channelGroups.length === 0 ? (
                 <div className="rounded-2xl px-6 py-10 flex flex-col items-center justify-center text-center" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
                   <p className="text-sm font-medium" style={{ color: "var(--c-40)" }}>No niches yet</p>
                   <p className="text-xs mt-1" style={{ color: "var(--c-30)" }}>Create your first niche to see video counts here</p>
@@ -1043,7 +1069,7 @@ export default function HomePage() {
                 return (
                   <div style={{ marginTop: "40px" }}>
                     <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Keys Status</h3>
-                    <div className="grid grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
 
                       {/* Anthropic */}
                       <div className="rounded-xl px-5 py-4" style={cardStyle}>
@@ -1121,7 +1147,7 @@ export default function HomePage() {
               return (
                 <div key={group.channelName} className="rounded-2xl px-6" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)", paddingTop: "34px", paddingBottom: "34px" }}>
                   {/* Channel header */}
-                  <div className="flex items-center justify-between mb-5">
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
                     <div className="flex items-center gap-3">
                       <div className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-bold shrink-0"
                         style={{
@@ -1158,7 +1184,7 @@ export default function HomePage() {
 
                   {/* Project cards — auto-fill grid */}
                   <div className="grid gap-7"
-                    style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
+                    style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))" }}>
                     {group.projects.map((p) => {
                       const assembled = p.assembly_status === "done";
                       const effectiveState = assembled ? 15 : p.current_state;
@@ -1246,7 +1272,7 @@ export default function HomePage() {
                     <div className="h-3 w-52 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.08)" }} />
                   </div>
                 </div>
-                <div className="grid gap-7" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
+                <div className="grid gap-7" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))" }}>
                   {[0, 1, 2].map((i) => (
                     <div key={i} className="p-6 rounded-2xl space-y-4"
                       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
