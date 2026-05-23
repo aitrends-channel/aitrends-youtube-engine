@@ -2,14 +2,17 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Settings, LogOut } from "lucide-react";
+import { Settings, LogOut, Check } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { useDemoState } from "@/lib/demo-context";
+import { DEMO_STEPS } from "@/components/demo/DemoNav";
 
 export function DemoBanner() {
   const router = useRouter();
   const [showMenu, setShowMenu] = useState(false);
   const [userEmail, setUserEmail] = useState("");
+  const { currentStep, setDrawerOpen } = useDemoState();
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -26,8 +29,8 @@ export function DemoBanner() {
 
   return (
     <>
-      {/* Spacer so content clears the fixed mobile nav (h-14 top bar + h-8 dots strip + 1px border) */}
-      <div className="h-[89px] md:hidden shrink-0" />
+      {/* Spacer so content clears the fixed mobile nav */}
+      <div className="h-14 md:hidden shrink-0" />
     <div
       className="flex items-center justify-between px-4 sm:px-6 py-2.5 text-xs shrink-0"
       style={{
@@ -114,6 +117,46 @@ export function DemoBanner() {
         </div>
       </div>
     </div>
+
+      {/* Step dots — mobile only, shown only on workflow pages */}
+      {currentStep >= 0 && (
+        <div
+          className="md:hidden flex items-center px-4 h-9 shrink-0"
+          style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-nav)" }}
+        >
+          {DEMO_STEPS.map((step, i) => {
+            const isDone = i < currentStep;
+            const isActive = i === currentStep;
+            return (
+              <div
+                key={step.label}
+                className="flex items-center"
+                style={{ flex: i < DEMO_STEPS.length - 1 ? "1 1 0%" : "0 0 auto" }}
+              >
+                <button
+                  onClick={() => setDrawerOpen(true)}
+                  className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center transition-all focus:outline-none"
+                  style={
+                    isDone
+                      ? { background: "oklch(0.55 0.15 145)", border: "none" }
+                      : isActive
+                      ? { background: "oklch(0.72 0.25 285)", border: "none", boxShadow: "0 0 6px oklch(0.72 0.25 285 / 0.6)" }
+                      : { background: "transparent", border: "1.5px solid var(--bd-8)" }
+                  }
+                >
+                  {isDone && <Check size={9} strokeWidth={3} color="white" />}
+                </button>
+                {i < DEMO_STEPS.length - 1 && (
+                  <div
+                    className="flex-1 h-px mx-1 transition-all"
+                    style={{ background: isDone ? "oklch(0.55 0.15 145 / 0.4)" : "var(--bd-6)" }}
+                  />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </>
   );
 }

@@ -135,6 +135,11 @@ interface DemoContextValue {
   state: DemoState;
   update: (patch: Partial<DemoState>) => void;
   resetDemo: () => void;
+  // Transient UI state (not persisted to sessionStorage)
+  currentStep: number;       // -1 when not on a workflow page (e.g. dashboard)
+  setCurrentStep: (step: number) => void;
+  drawerOpen: boolean;
+  setDrawerOpen: (open: boolean) => void;
 }
 
 const DemoContext = createContext<DemoContextValue | null>(null);
@@ -146,6 +151,9 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
     if (typeof window === "undefined") return DEFAULTS;
     return loadFromSession();
   });
+
+  const [currentStep, setCurrentStep] = useState(-1);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Persist to sessionStorage on every state change
   useEffect(() => {
@@ -165,7 +173,7 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <DemoContext.Provider value={{ state, update, resetDemo }}>
+    <DemoContext.Provider value={{ state, update, resetDemo, currentStep, setCurrentStep, drawerOpen, setDrawerOpen }}>
       {children}
     </DemoContext.Provider>
   );
