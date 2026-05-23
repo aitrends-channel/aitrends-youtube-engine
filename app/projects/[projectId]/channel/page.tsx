@@ -213,10 +213,10 @@ export default function ChannelPage({ params }: PageProps) {
   const isRunning = steps.some((s) => s.status === "running");
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen overflow-x-hidden">
       <WizardNav projectId={projectId} currentState={1} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
+      <main className="flex-1 min-w-0 overflow-y-auto pt-[105px] md:pt-0">
         <div className="max-w-2xl mx-auto px-4 sm:px-8 py-6 sm:py-10 space-y-8">
 
           {/* Header */}
@@ -242,7 +242,7 @@ export default function ChannelPage({ params }: PageProps) {
                   value={channelUrl}
                   onChange={(e) => setChannelUrl(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && !isWorking && runFullAnalysis()}
-                  className="flex-1 px-4 py-2.5 rounded-xl text-sm outline-none transition-all"
+                  className="flex-1 min-w-0 px-4 py-2.5 rounded-xl text-sm outline-none transition-all"
                   style={{
                     background: "var(--bg-progress)",
                     border: "1px solid var(--bd-8)",
@@ -254,7 +254,7 @@ export default function ChannelPage({ params }: PageProps) {
                 <button
                   onClick={runFullAnalysis}
                   disabled={isWorking || !channelUrl.trim()}
-                  className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+                  className="shrink-0 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40"
                   style={{
                     background: "oklch(0.72 0.25 285)",
                     color: "var(--bg-page-2)",
@@ -358,10 +358,10 @@ export default function ChannelPage({ params }: PageProps) {
           {channelInfo && (
             <div className="rounded-2xl p-6 space-y-4"
               style={{ background: "var(--bg-panel)", border: "1px solid oklch(0.72 0.25 285 / 0.15)" }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="font-semibold">{channelInfo.channelName}</h2>
-                  <p className="text-sm" style={{ color: "var(--c-50)" }}>{channelInfo.subscribers} subscribers</p>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="font-semibold truncate">{channelInfo.channelName}</h2>
+                  <p className="text-sm truncate" style={{ color: "var(--c-50)" }}>{channelInfo.subscribers} subscribers</p>
                 </div>
                 <div className="px-2 py-1 rounded-full text-xs font-medium"
                   style={{ background: "oklch(0.55 0.15 145 / 0.15)", border: "1px solid oklch(0.55 0.15 145 / 0.3)", color: "oklch(0.7 0.15 145)" }}>
