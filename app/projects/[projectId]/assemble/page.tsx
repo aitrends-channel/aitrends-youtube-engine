@@ -664,7 +664,7 @@ export default function AssemblePage({ params }: PageProps) {
 
       <WizardNav projectId={projectId} currentState={15} highestState={Math.max(project?.current_state ?? 0, 15)} channelName={project?.channel_name} activeOverridePath={assembledUrl || hasConcepts ? "thumbnails" : undefined} progressComplete={thumbnails.length > 0 && thumbnails.every((t) => t.imageUrl)} />
 
-      <main className="flex-1 overflow-y-auto pt-14 md:pt-0">
+      <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
         {/* Header */}
         <div className="px-4 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>

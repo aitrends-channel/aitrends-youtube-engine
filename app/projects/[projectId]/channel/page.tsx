@@ -216,7 +216,7 @@ export default function ChannelPage({ params }: PageProps) {
     <div className="flex h-screen">
       <WizardNav projectId={projectId} currentState={1} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 overflow-y-auto pt-14 md:pt-0">
+      <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
         <div className="max-w-2xl mx-auto px-4 sm:px-8 py-6 sm:py-10 space-y-8">
 
           {/* Header */}

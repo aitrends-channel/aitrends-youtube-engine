@@ -470,7 +470,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
       )}
       <WizardNav projectId={projectId} currentState={13} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 flex flex-col overflow-hidden pt-14 md:pt-0">
+      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
         {/* Header */}
         <div className="flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
