@@ -610,7 +610,7 @@ export default function HomePage() {
   const showDemo = isPaid === false && !isAdmin;
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-page)" }}>
+    <div className="min-h-screen flex flex-col overflow-x-hidden" style={{ background: "var(--bg-page)" }}>
       {/* Header */}
       <header className="flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 sticky top-0 z-10"
         style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>

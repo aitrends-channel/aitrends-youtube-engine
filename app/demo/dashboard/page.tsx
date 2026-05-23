@@ -150,7 +150,7 @@ export default function DemoDashboardPage() {
   const cardStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" };
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-page)" }}>
+    <div className="min-h-screen flex flex-col overflow-x-hidden" style={{ background: "var(--bg-page)" }}>
       <DemoBanner />
 
       {/* Header */}
@@ -178,7 +178,7 @@ export default function DemoDashboardPage() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.push("/demo/channel")}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all hover:opacity-80"
             style={{ background: "var(--bg-control)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
           >
             <ArrowLeft size={13} />
@@ -256,10 +256,11 @@ export default function DemoDashboardPage() {
 
           <button
             onClick={() => setShowSubModal(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 cursor-pointer"
+            className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 cursor-pointer"
             style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
           >
-            + New Video
+            <span>+</span>
+            <span className="hidden sm:inline">New Video</span>
           </button>
         </div>
       </header>
