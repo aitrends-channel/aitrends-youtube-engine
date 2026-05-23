@@ -68,8 +68,8 @@ export default function TopicPage({ params }: PageProps) {
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={6} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 overflow-y-auto">
-        <div className="px-8 py-5"
+      <main className="flex-1 overflow-y-auto pt-14 md:pt-0">
+        <div className="px-4 sm:px-8 py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <h1 className="font-bold text-lg">Choose Your Topic</h1>
           <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
@@ -77,7 +77,7 @@ export default function TopicPage({ params }: PageProps) {
           </p>
         </div>
 
-        <div className="max-w-2xl mx-auto px-8 py-8 space-y-5">
+        <div className="max-w-2xl mx-auto px-4 sm:px-8 py-6 sm:py-8 space-y-5">
 
           {/* Ideas list */}
           {allIdeas.length > 0 && (

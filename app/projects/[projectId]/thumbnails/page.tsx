@@ -470,9 +470,9 @@ export default function ThumbnailsPage({ params }: PageProps) {
       )}
       <WizardNav projectId={projectId} currentState={13} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden pt-14 md:pt-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-8 py-4 shrink-0"
+        <div className="flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div>
             <h1 className="font-bold text-lg">Thumbnails</h1>
@@ -485,7 +485,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="px-8 py-6 space-y-4 max-w-5xl mx-auto">
+          <div className="px-4 sm:px-8 py-4 sm:py-6 space-y-4 max-w-5xl mx-auto">
 
             {/* Step 1 — Concepts */}
             <div className="rounded-xl p-4 flex gap-4"
@@ -567,7 +567,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
               {hasConcepts && !isImageRunning && (
                 <div className="px-4 pb-4 space-y-3" style={{ borderTop: "1px solid var(--bd-6)" }}>
                   <p className="text-xs font-semibold uppercase tracking-wider pt-3" style={{ color: "var(--c-40)" }}>Image Model</p>
-                  <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
                     {(imageModels ?? []).map((m) => (
                       <button key={m.id} onClick={() => { setSelectedModel(m.id); setSelectedResolution(null); }}
                         className="text-left px-3 py-2 rounded-lg text-xs transition-all"

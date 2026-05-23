@@ -224,13 +224,13 @@ export default function VisualsPage({ params }: PageProps) {
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={7} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto pt-14 md:pt-0">
         {/* Header */}
-        <div className="px-8 py-5"
+        <div className="px-4 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <div className="flex items-center justify-between">
+          <div className="flex items-start sm:items-center justify-between gap-3">
             <div>
-              <h1 className="font-bold text-lg">Visual Style Extraction</h1>
+              <h1 className="font-bold text-base sm:text-lg">Visual Style Extraction</h1>
               <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
                 Upload or auto-capture screenshots so Claude can extract the channel&apos;s visual signature
               </p>
@@ -239,7 +239,7 @@ export default function VisualsPage({ params }: PageProps) {
               <button
                 onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/prompts`); }}
                 disabled={navigating}
-                className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-60 transition-all"
+                className="shrink-0 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold disabled:opacity-60 transition-all"
                 style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
               >
                 {navigating ? (
@@ -247,13 +247,13 @@ export default function VisualsPage({ params }: PageProps) {
                     <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                     Loading…
                   </span>
-                ) : "Continue to Prompts →"}
+                ) : "Continue →"}
               </button>
             )}
           </div>
         </div>
 
-        <div className="p-8 max-w-4xl mx-auto space-y-6">
+        <div className="p-4 sm:p-8 max-w-4xl mx-auto space-y-6">
           {/* Mode toggle */}
           <div className="flex gap-2 p-1 rounded-xl w-fit"
             style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-7)" }}>
@@ -306,7 +306,7 @@ export default function VisualsPage({ params }: PageProps) {
 
                 {/* Info about what it does */}
                 {!autoShots.length && !fetching && (
-                  <div className="mt-4 grid grid-cols-3 gap-3">
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {[
                       { icon: "◎", label: "Thumbnail images", desc: "Official YouTube thumbnail per video" },
                       { icon: "◈", label: "Video frame stills", desc: "3 auto-frames from ~25%, 50%, 75% of each video" },
@@ -377,7 +377,7 @@ export default function VisualsPage({ params }: PageProps) {
                           <p className="text-xs mb-2 truncate" style={{ color: "var(--c-45)" }}>
                             {shot.title}
                           </p>
-                          <div className="grid grid-cols-3 gap-2">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                             {shot.frameUrls.map((url, i) => (
                               <SelectableImage
                                 key={url}
@@ -405,7 +405,7 @@ export default function VisualsPage({ params }: PageProps) {
                       </span>
                     </div>
                     <div className="p-5">
-                      <div className="grid grid-cols-4 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {autoShots.filter((s) => s.thumbnailUrl).map((shot) => (
                           <SelectableImage
                             key={shot.thumbnailUrl}
@@ -460,7 +460,7 @@ export default function VisualsPage({ params }: PageProps) {
                   <input ref={videoInputRef} type="file" accept="image/*" multiple className="hidden"
                     onChange={(e) => setVideoImages(Array.from(e.target.files ?? []).slice(0, 5))} />
                   {videoImages.length > 0 && (
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {videoImages.map((f, i) => (
                         <div key={i} className="relative aspect-video rounded-lg overflow-hidden"
                           style={{ border: "1px solid var(--bd-10)" }}>
@@ -505,7 +505,7 @@ export default function VisualsPage({ params }: PageProps) {
                   <input ref={thumbInputRef} type="file" accept="image/*" multiple className="hidden"
                     onChange={(e) => setThumbnailImages(Array.from(e.target.files ?? []).slice(0, 3))} />
                   {thumbnailImages.length > 0 && (
-                    <div className="grid grid-cols-4 gap-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {thumbnailImages.map((f, i) => (
                         <div key={i} className="relative aspect-video rounded-lg overflow-hidden"
                           style={{ border: "1px solid var(--bd-10)" }}>

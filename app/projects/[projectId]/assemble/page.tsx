@@ -664,21 +664,21 @@ export default function AssemblePage({ params }: PageProps) {
 
       <WizardNav projectId={projectId} currentState={15} highestState={Math.max(project?.current_state ?? 0, 15)} channelName={project?.channel_name} activeOverridePath={assembledUrl || hasConcepts ? "thumbnails" : undefined} progressComplete={thumbnails.length > 0 && thumbnails.every((t) => t.imageUrl)} />
 
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto pt-14 md:pt-0">
         {/* Header */}
-        <div className="px-8 py-5"
+        <div className="px-4 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <h1 className="font-bold text-lg">Assemble Final Video</h1>
+          <h1 className="font-bold text-base sm:text-lg">Assemble Final Video</h1>
           <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
             Transcribes your voiceover to align each clip to the exact narration timing
           </p>
         </div>
 
-        <div className="p-8 flex gap-6 items-start">
-          <div className="flex-1 min-w-0 max-w-2xl space-y-6">
+        <div className="p-4 sm:p-8 flex flex-col lg:flex-row gap-6 items-start">
+          <div className="flex-1 min-w-0 w-full max-w-2xl space-y-6">
 
             {/* Status cards */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
               <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover</p>
                 <p className="mt-2 text-sm font-medium"
@@ -1070,7 +1070,7 @@ export default function AssemblePage({ params }: PageProps) {
                 {hasConcepts && !isImageRunning && (
                   <div className="px-4 pb-4 space-y-3" style={{ borderTop: "1px solid var(--bd-6)" }}>
                     <p className="text-xs font-semibold uppercase tracking-wider pt-3" style={{ color: "var(--c-40)" }}>Image Model</p>
-                    <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
                       {(imageModels ?? []).map((m) => (
                         <button key={m.id} onClick={() => { setSelectedModel(m.id); setSelectedResolution(null); }}
                           className="text-left px-3 py-2 rounded-lg text-xs transition-all"
@@ -1147,7 +1147,7 @@ export default function AssemblePage({ params }: PageProps) {
 
           {/* ── Right sticky sidebar: Next Video ──────────────────────────── */}
           {!assembling && (
-            <div className="w-80 shrink-0 sticky top-8">
+            <div className="w-full lg:w-80 shrink-0 lg:sticky lg:top-8">
               <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                 <div>
                   <p className="text-sm font-semibold">Start Your Next Video</p>

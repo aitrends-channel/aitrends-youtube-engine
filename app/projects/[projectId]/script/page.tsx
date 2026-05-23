@@ -95,21 +95,21 @@ export default function ScriptPage({ params }: PageProps) {
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={6} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden pt-14 md:pt-0">
         {/* Toolbar */}
-        <div className="flex items-center justify-between px-8 py-4 shrink-0"
+        <div className="flex flex-wrap items-center gap-2 px-4 sm:px-8 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <div>
-            <h1 className="font-bold text-lg text-foreground">Script Editor</h1>
+          <div className="flex-1 min-w-0 mr-2">
+            <h1 className="font-bold text-base sm:text-lg text-foreground">Script Editor</h1>
             {selectedTopic && (
-              <p className="text-xs truncate max-w-sm mt-0.5" style={{ color: "var(--c-50)" }}>
+              <p className="text-xs truncate max-w-xs sm:max-w-sm mt-0.5" style={{ color: "var(--c-50)" }}>
                 {selectedTopic}
               </p>
             )}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
             {script && (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono"
+              <div className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-mono"
                 style={{
                   background: wordCountOk ? "oklch(0.55 0.15 145 / 0.1)" : "oklch(0.72 0.25 285 / 0.1)",
                   border: `1px solid ${wordCountOk ? "oklch(0.55 0.15 145 / 0.3)" : "oklch(0.72 0.25 285 / 0.3)"}`,
@@ -118,13 +118,13 @@ export default function ScriptPage({ params }: PageProps) {
                 <span>{wordCount}</span>
                 <span style={{ opacity: 0.5 }}>/</span>
                 <span>{targetWordCount}</span>
-                <span style={{ opacity: 0.5 }}>words</span>
+                <span className="hidden sm:inline" style={{ opacity: 0.5 }}>words</span>
               </div>
             )}
             {script && (
               <button
                 onClick={() => navigator.clipboard.writeText(script).then(() => toast.success("Copied"))}
-                className="px-3 py-1.5 rounded-lg text-xs transition-all"
+                className="px-2.5 py-1.5 rounded-lg text-xs transition-all"
                 style={{ background: "var(--bg-control)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
               >
                 Copy
@@ -133,17 +133,17 @@ export default function ScriptPage({ params }: PageProps) {
             {script && !isStreaming && (
               <button
                 onClick={() => setConfirmRegen(true)}
-                className="px-3 py-1.5 rounded-lg text-xs transition-all"
+                className="hidden sm:block px-2.5 py-1.5 rounded-lg text-xs transition-all"
                 style={{ background: "var(--bg-control)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
               >
-                Regenerate
+                Regen
               </button>
             )}
             {script && !isStreaming && (
               <button
                 onClick={saveScript}
                 disabled={saving}
-                className="px-3 py-1.5 rounded-lg text-xs transition-all"
+                className="px-2.5 py-1.5 rounded-lg text-xs transition-all"
                 style={{ background: "var(--bg-control)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
               >
                 {saving ? (
@@ -157,12 +157,12 @@ export default function ScriptPage({ params }: PageProps) {
             <button
               onClick={handleContinue}
               disabled={!script || isStreaming || navigating}
-              className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40"
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40"
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
             >
               {navigating ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
                   Saving…
                 </span>
               ) : "Continue →"}
@@ -171,7 +171,7 @@ export default function ScriptPage({ params }: PageProps) {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-8">
           {/* No-script state */}
           {!script && !isStreaming && (
             <div className="max-w-xl mx-auto">
