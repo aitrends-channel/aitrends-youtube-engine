@@ -192,12 +192,12 @@ export function DemoNav({ currentStep }: DemoNavProps) {
         style={{ background: "var(--bg-nav)", borderBottom: "1px solid var(--bd-7)" }}
       >
         {/* Brand */}
-        <div className="flex items-center gap-2">
+        <button onClick={() => router.push("/dashboard")} className="flex items-center gap-2">
           <div className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center">
             <Image src="/heclus-icon-white.svg" alt="Heclus" width={28} height={28} className="object-cover w-full h-full" />
           </div>
           <span className="text-sm font-bold" style={{ color: "var(--c-90)" }}>Heclus</span>
-        </div>
+        </button>
 
         {/* Right controls */}
         <div className="flex items-center gap-2">
@@ -297,12 +297,12 @@ export function DemoNav({ currentStep }: DemoNavProps) {
         style={{ background: "var(--bg-nav)", borderRight: "1px solid var(--bd-7)" }}
       >
         <div className="px-5 py-5 border-b" style={{ borderColor: "var(--bd-7)" }}>
-          <div className="flex items-center gap-3">
+          <button onClick={() => router.push("/dashboard")} className="flex items-center gap-3 group w-full">
             <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center">
               <Image src="/heclus-icon-white.svg" alt="Heclus" width={40} height={40} className="object-cover w-full h-full" />
             </div>
-            <div className="min-w-0">
-              <p className="text-sm font-bold text-foreground/90 leading-tight">Heclus</p>
+            <div className="min-w-0 text-left">
+              <p className="text-sm font-bold text-foreground/90 leading-tight group-hover:text-foreground transition-colors">Heclus</p>
               <div className="flex items-center gap-1.5 mt-0.5">
                 <span
                   className="text-xs font-semibold px-1.5 py-0.5 rounded"
@@ -312,7 +312,7 @@ export function DemoNav({ currentStep }: DemoNavProps) {
                 </span>
               </div>
             </div>
-          </div>
+          </button>
         </div>
         {stepList}
         {progressFooter}

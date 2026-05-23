@@ -100,7 +100,7 @@ function AddUserSection() {
       <form onSubmit={handleAddUser} className="p-5 rounded-2xl space-y-3"
         style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
         <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Email address</label>
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="email"
             value={email}
@@ -200,38 +200,38 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-page)" }}>
       {/* Header */}
-      <header className="flex items-center justify-between px-8 py-4 sticky top-0 z-10"
+      <header className="flex items-center justify-between px-4 sm:px-8 py-4 sticky top-0 z-10"
         style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <div className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center">
             <Image src="/heclus-icon-white.svg" alt="Heclus" width={32} height={32} className="object-cover w-full h-full" />
           </div>
-          <div>
+          <div className="min-w-0">
             <span className="font-bold text-sm tracking-tight text-foreground">Heclus</span>
-            <span className="text-sm tracking-tight ml-1" style={{ color: "var(--c-50)" }}>Settings</span>
+            <span className="text-sm tracking-tight ml-1 hidden sm:inline" style={{ color: "var(--c-50)" }}>Settings</span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={handleSignOut}
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80"
             style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
           >
             <LogOut size={15} />
-            <span>Sign Out</span>
+            <span className="hidden sm:inline">Sign Out</span>
           </button>
           <ThemeToggle />
           <button
-            onClick={() => router.push("/")}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80"
+            onClick={() => router.push("/dashboard")}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80"
             style={{ background: "var(--bg-control)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}>
             <ArrowLeft size={14} />
-            Back to Home
+            <span className="hidden sm:inline">Back to Dashboard</span>
           </button>
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-2xl mx-auto px-8 py-14">
+      <main className="flex-1 w-full max-w-2xl mx-auto px-4 sm:px-8 py-8 sm:py-14">
 
         {/* Tabs */}
         <div className="flex gap-1 mb-10 p-1 rounded-xl"
@@ -394,7 +394,7 @@ export default function SettingsPage() {
                   <p className="text-xs mt-0.5" style={{ color: "var(--c-40)" }}>Claude AI — script generation & prompts</p>
                 </div>
               </div>
-              <ol className="space-y-2 pl-10">
+              <ol className="space-y-2 pl-5 sm:pl-10">
                 {([
                   <>Head over to <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>console.anthropic.com</a> and sign in.</>,
                   <>Select <strong style={{ color: "var(--c-80)" }}>&quot;Get API Key&quot;</strong> — this takes you to the API Keys page.</>,
@@ -406,7 +406,7 @@ export default function SettingsPage() {
                   </li>
                 ))}
               </ol>
-              <div className="ml-10 px-3 py-2.5 rounded-lg text-xs leading-relaxed"
+              <div className="ml-5 sm:ml-10 px-3 py-2.5 rounded-lg text-xs leading-relaxed"
                 style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px solid oklch(0.72 0.25 285 / 0.15)", color: "var(--c-50)" }}>
                 You&apos;ll also need to top up your Anthropic balance. Go to the Billing section and add around $5 to start — you can top up later as needed. You&apos;re only charged for the requests you actually make, not a fixed monthly fee.
               </div>
@@ -422,7 +422,7 @@ export default function SettingsPage() {
                   <p className="text-xs mt-0.5" style={{ color: "var(--c-40)" }}>Channel & video data lookup</p>
                 </div>
               </div>
-              <ol className="space-y-2 pl-10">
+              <ol className="space-y-2 pl-5 sm:pl-10">
                 {([
                   <>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>Google Cloud Console</a> and create a new project (any name).</>,
                   <>With the project selected, go to <strong style={{ color: "var(--c-80)" }}>APIs & Services → Enable APIs & Services</strong>.</>,
@@ -447,7 +447,7 @@ export default function SettingsPage() {
                   <p className="text-xs mt-0.5" style={{ color: "var(--c-40)" }}>Voiceovers, image generation & video clips</p>
                 </div>
               </div>
-              <ol className="space-y-2 pl-10">
+              <ol className="space-y-2 pl-5 sm:pl-10">
                 {([
                   <>Head over to <a href="https://kie.ai" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>kie.ai</a> and make sure you&apos;re logged in.</>,
                   <>Go to the <strong style={{ color: "var(--c-80)" }}>API Keys</strong> section, create a new key, give it a name, and click Create.</>,
@@ -458,7 +458,7 @@ export default function SettingsPage() {
                   </li>
                 ))}
               </ol>
-              <div className="ml-10 px-3 py-2.5 rounded-lg text-xs leading-relaxed"
+              <div className="ml-5 sm:ml-10 px-3 py-2.5 rounded-lg text-xs leading-relaxed"
                 style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px solid oklch(0.72 0.25 285 / 0.15)", color: "var(--c-50)" }}>
                 Kie AI is a unified platform that gives you access to ElevenLabs voice generation, image models, and popular AI video generators — all from one balance. Instead of separate subscriptions across multiple platforms, you manage everything in one place, and it&apos;s usually cheaper too.
               </div>
@@ -474,7 +474,7 @@ export default function SettingsPage() {
                   <p className="text-xs mt-0.5" style={{ color: "var(--c-40)" }}>Caption timing & final assembly</p>
                 </div>
               </div>
-              <ol className="space-y-2 pl-10">
+              <ol className="space-y-2 pl-5 sm:pl-10">
                 {([
                   <>Go to <a href="https://elevenlabs.io" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>ElevenLabs</a> and head to <strong style={{ color: "var(--c-80)" }}>Developers → API Keys</strong>.</>,
                   <>You&apos;ll usually see a default unrestricted developer key already available.</>,
@@ -485,7 +485,7 @@ export default function SettingsPage() {
                   </li>
                 ))}
               </ol>
-              <div className="ml-10 px-3 py-2.5 rounded-lg text-xs leading-relaxed"
+              <div className="ml-5 sm:ml-10 px-3 py-2.5 rounded-lg text-xs leading-relaxed"
                 style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px solid oklch(0.72 0.25 285 / 0.15)", color: "var(--c-50)" }}>
                 You won&apos;t be generating voiceovers directly through ElevenLabs — Kie handles that part. But the ElevenLabs key is still required for the final assembly process. Their free developer key is completely fine for this.
               </div>

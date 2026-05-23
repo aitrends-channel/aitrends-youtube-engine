@@ -325,12 +325,12 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
       >
         {/* Logo row */}
         <div className="h-14 flex items-center justify-between px-4">
-          <div className="flex items-center gap-2">
+          <button onClick={() => router.push("/dashboard")} className="flex items-center gap-2">
             <div className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center">
               <Image src="/heclus-icon-white.svg" alt="Heclus" width={28} height={28} className="object-cover w-full h-full" />
             </div>
             <span className="text-sm font-bold" style={{ color: "var(--c-90)" }}>Heclus</span>
-          </div>
+          </button>
 
           <div className="flex items-center gap-2">
             <ThemeToggle />
@@ -492,7 +492,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
         style={{ background: "var(--bg-nav)", borderRight: "1px solid var(--bd-7)" }}>
 
         <div className="px-5 py-5 border-b" style={{ borderColor: "var(--bd-7)" }}>
-          <button onClick={() => router.push("/")} className="flex items-center gap-3 group w-full">
+          <button onClick={() => router.push("/dashboard")} className="flex items-center gap-3 group w-full">
             <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center">
               <Image src="/heclus-icon-white.svg" alt="Heclus" width={40} height={40} className="object-cover w-full h-full" />
             </div>

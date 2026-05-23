@@ -282,19 +282,19 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
       {/* FinanceFuel channel group */}
       <div>
         <div className="rounded-2xl px-4 sm:px-6 py-6 sm:py-8" style={cardStyle}>
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between gap-3 mb-5">
+            <div className="flex items-center gap-3 min-w-0">
               <div className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-bold shrink-0"
                 style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
                 F
               </div>
-              <div>
-                <h2 className="text-base font-bold">{DEMO_DATA.channel.name}</h2>
-                <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>{DEMO_DATA.channel.url}</p>
+              <div className="min-w-0">
+                <h2 className="text-base font-bold truncate">{DEMO_DATA.channel.name}</h2>
+                <p className="text-xs mt-0.5 truncate" style={{ color: "var(--c-38)" }}>{DEMO_DATA.channel.url}</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs px-3 py-1 rounded-full" style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="hidden sm:inline text-xs px-3 py-1 rounded-full" style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}>
                 {total} videos
               </span>
               <button
@@ -345,19 +345,19 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
       {/* Static niche group — locked/grayed */}
       <div style={{ opacity: 0.18, pointerEvents: "none", userSelect: "none" }} >
         <div className="rounded-2xl px-4 sm:px-6 py-6 sm:py-8" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between gap-3 mb-5">
+            <div className="flex items-center gap-3 min-w-0">
               <div className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-bold shrink-0"
                 style={{ background: "oklch(0.5 0 0 / 0.15)", color: "oklch(0.5 0 0)", border: "1px solid oklch(0.5 0 0 / 0.25)" }}>
                 M
               </div>
-              <div>
-                <h2 className="text-base font-bold">{STATIC_NICHE.name}</h2>
-                <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>{STATIC_NICHE.url}</p>
+              <div className="min-w-0">
+                <h2 className="text-base font-bold truncate">{STATIC_NICHE.name}</h2>
+                <p className="text-xs mt-0.5 truncate" style={{ color: "var(--c-38)" }}>{STATIC_NICHE.url}</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <span className="text-xs px-3 py-1 rounded-full" style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="hidden sm:inline text-xs px-3 py-1 rounded-full" style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}>
                 {STATIC_NICHE.videos.length} videos
               </span>
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
@@ -1166,10 +1166,10 @@ export default function HomePage() {
           <div className="space-y-12">
             {channelGroups.map((group) => {
               return (
-                <div key={group.channelName} className="rounded-2xl px-6" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)", paddingTop: "34px", paddingBottom: "34px" }}>
+                <div key={group.channelName} className="rounded-2xl px-4 sm:px-6" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)", paddingTop: "34px", paddingBottom: "34px" }}>
                   {/* Channel header */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-                    <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-between gap-3 mb-5">
+                    <div className="flex items-center gap-3 min-w-0">
                       <div className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-bold shrink-0"
                         style={{
                           background: "oklch(0.72 0.25 285 / 0.15)",
@@ -1178,17 +1178,17 @@ export default function HomePage() {
                         }}>
                         {group.channelName.charAt(0).toUpperCase()}
                       </div>
-                      <div>
-                        <h2 className="text-base font-bold text-foreground">{group.channelName}</h2>
+                      <div className="min-w-0">
+                        <h2 className="text-base font-bold text-foreground truncate">{group.channelName}</h2>
                         {group.channelUrl && (
-                          <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>
+                          <p className="text-xs mt-0.5 truncate" style={{ color: "var(--c-38)" }}>
                             {group.channelUrl}
                           </p>
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs px-3 py-1 rounded-full"
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="hidden sm:inline text-xs px-3 py-1 rounded-full"
                         style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}>
                         {group.projects.length} {group.projects.length === 1 ? "video" : "videos"}
                       </span>
