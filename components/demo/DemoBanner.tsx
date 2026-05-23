@@ -7,12 +7,14 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { useDemoState } from "@/lib/demo-context";
 import { DEMO_STEPS } from "@/components/demo/DemoNav";
+import { SubscriptionModal } from "@/components/SubscriptionModal";
 
 export function DemoBanner() {
   const router = useRouter();
   const [showMenu, setShowMenu] = useState(false);
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [userEmail, setUserEmail] = useState("");
-  const { currentStep, setDrawerOpen } = useDemoState();
+  const { currentStep, setDrawerOpen, setDrawerHighlightStep } = useDemoState();
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -53,9 +55,9 @@ export function DemoBanner() {
         <div
           className="flex items-center justify-between px-4 sm:px-6 py-2.5 text-xs"
           style={{
-            background: "oklch(0.72 0.25 285 / 0.12)",
-            borderBottom: "1px solid oklch(0.72 0.25 285 / 0.2)",
-            color: "var(--c-65)",
+            background: "oklch(0.22 0.08 285)",
+            borderBottom: "1px solid oklch(0.72 0.25 285 / 0.35)",
+            color: "oklch(0.82 0.04 285)",
           }}
         >
           <span className="hidden sm:inline">✨ You&apos;re viewing a demo — subscribe to run this on your own channel.</span>
@@ -63,7 +65,7 @@ export function DemoBanner() {
 
           <div className="flex items-center gap-3 shrink-0 ml-4">
             <button
-              onClick={() => router.push("/dashboard")}
+              onClick={() => setShowSubscriptionModal(true)}
               className="px-3 py-1 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
               style={{ background: "oklch(0.72 0.25 285)", color: "oklch(0.06 0 0)" }}
             >
@@ -151,7 +153,7 @@ export function DemoBanner() {
                 return (
                   <Fragment key={step.label}>
                     <button
-                      onClick={() => setDrawerOpen(true)}
+                      onClick={() => { setDrawerHighlightStep(i); setDrawerOpen(true); }}
                       className="w-4 h-4 rounded-full shrink-0 flex items-center justify-center transition-all focus:outline-none"
                       style={
                         isDone
@@ -205,6 +207,14 @@ export function DemoBanner() {
           </div>
         )}
       </div>
+      {showSubscriptionModal && (
+        <SubscriptionModal
+          email={userEmail}
+          onClose={() => setShowSubscriptionModal(false)}
+          onSuccess={() => { setShowSubscriptionModal(false); router.push("/dashboard"); }}
+          hideTryDemo
+        />
+      )}
     </>
   );
 }

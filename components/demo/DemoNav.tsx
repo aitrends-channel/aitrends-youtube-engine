@@ -26,7 +26,7 @@ interface DemoNavProps {
 
 export function DemoNav({ currentStep }: DemoNavProps) {
   const router = useRouter();
-  const { state, update, resetDemo, drawerOpen, setDrawerOpen, setCurrentStep } = useDemoState();
+  const { state, update, resetDemo, drawerOpen, setDrawerOpen, setCurrentStep, drawerHighlightStep, setDrawerHighlightStep } = useDemoState();
   const highestStep = state.highestStep;
   const [confirming, setConfirming] = useState(false);
   const [userEmail, setUserEmail] = useState("");
@@ -67,6 +67,7 @@ export function DemoNav({ currentStep }: DemoNavProps) {
         const isActive = i === currentStep;
         const isDone = !isActive && i <= highestStep;
         const isClickable = i <= highestStep;
+        const isHighlighted = i === drawerHighlightStep && drawerHighlightStep >= 0;
 
         return (
           <div key={step.label}>
@@ -80,6 +81,9 @@ export function DemoNav({ currentStep }: DemoNavProps) {
                   ? { background: "oklch(0.72 0.25 285 / 0.12)", boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.25)" }
                   : isDone
                   ? { opacity: 0.75 }
+                  : {}),
+                ...(isHighlighted && !isActive
+                  ? { boxShadow: "inset 0 0 0 1.5px oklch(0.72 0.25 285 / 0.55)" }
                   : {}),
               }}
             >
@@ -259,7 +263,7 @@ export function DemoNav({ currentStep }: DemoNavProps) {
       {/* ── Mobile drawer ───────────────────────────────────────────── */}
       {drawerOpen && (
         <div className="md:hidden fixed inset-0 z-[300]">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setDrawerOpen(false)} />
+          <div className="absolute inset-0 bg-black/60" onClick={() => { setDrawerOpen(false); setDrawerHighlightStep(-1); }} />
           <div
             className="absolute top-0 left-0 bottom-0 w-72 flex flex-col"
             style={{ background: "var(--bg-nav)", borderRight: "1px solid var(--bd-7)" }}
@@ -274,7 +278,7 @@ export function DemoNav({ currentStep }: DemoNavProps) {
                 </div>
               </div>
               <button
-                onClick={() => setDrawerOpen(false)}
+                onClick={() => { setDrawerOpen(false); setDrawerHighlightStep(-1); }}
                 className="p-1.5 rounded-lg transition-all hover:opacity-80"
                 style={{ color: "var(--c-50)", background: "var(--bg-progress)", border: "1px solid var(--bd-8)" }}
               >

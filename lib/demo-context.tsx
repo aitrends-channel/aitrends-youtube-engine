@@ -136,10 +136,12 @@ interface DemoContextValue {
   update: (patch: Partial<DemoState>) => void;
   resetDemo: () => void;
   // Transient UI state (not persisted to sessionStorage)
-  currentStep: number;       // -1 when not on a workflow page (e.g. dashboard)
+  currentStep: number;          // -1 when not on a workflow page (e.g. dashboard)
   setCurrentStep: (step: number) => void;
   drawerOpen: boolean;
   setDrawerOpen: (open: boolean) => void;
+  drawerHighlightStep: number;  // which circle was tapped to open the drawer (-1 = none)
+  setDrawerHighlightStep: (step: number) => void;
 }
 
 const DemoContext = createContext<DemoContextValue | null>(null);
@@ -154,6 +156,7 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
 
   const [currentStep, setCurrentStep] = useState(-1);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerHighlightStep, setDrawerHighlightStep] = useState(-1);
 
   // Persist to sessionStorage on every state change
   useEffect(() => {
@@ -173,7 +176,7 @@ export function DemoProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <DemoContext.Provider value={{ state, update, resetDemo, currentStep, setCurrentStep, drawerOpen, setDrawerOpen }}>
+    <DemoContext.Provider value={{ state, update, resetDemo, currentStep, setCurrentStep, drawerOpen, setDrawerOpen, drawerHighlightStep, setDrawerHighlightStep }}>
       {children}
     </DemoContext.Provider>
   );
