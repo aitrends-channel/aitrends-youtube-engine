@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import {
   Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film,
-  Check, ZoomIn, ZoomOut, LayoutTemplate, LayoutDashboard,
+  Check, ZoomIn, ZoomOut, LayoutTemplate, LayoutDashboard, Menu, X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -54,6 +54,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
   const pathname = usePathname();
   const { themeId, setTheme, zoom, zoomIn, zoomOut } = useIconThemeStore();
   const [showThemePicker, setShowThemePicker] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const theme = ICON_THEMES[themeId];
   const effectivePath = activeOverridePath ? `/${activeOverridePath}` : pathname;
@@ -75,116 +76,92 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
 
   const currentPhaseIndex = PHASES.findIndex((p) => pathname.endsWith(`/${p.path}`));
   const progressPct = progressComplete ? 100 : Math.max(0, Math.round(((currentPhaseIndex + 1) / PHASES.length) * 100));
+  const currentPhaseLabel = PHASES[currentPhaseIndex]?.label ?? "Setup";
 
-  return (
-    <>
-    <button
-      onClick={() => router.push("/dashboard")}
-      className="fixed top-4 right-4 z-50 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all hover:opacity-80"
-      style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
-    >
-      <LayoutDashboard size={13} />
-      Back to Dashboard
-    </button>
-    <aside className="w-64 shrink-0 flex flex-col h-screen sticky top-0 overflow-hidden"
-      style={{ background: "var(--bg-nav)", borderRight: "1px solid var(--bd-7)" }}>
+  function navigate(href: string) {
+    setDrawerOpen(false);
+    router.push(href);
+  }
 
-      {/* Logo */}
-      <div className="px-5 py-5 border-b" style={{ borderColor: "var(--bd-7)" }}>
-        <button onClick={() => router.push("/")} className="flex items-center gap-3 group w-full">
-          <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center">
-            <Image src="/heclus-icon-white.svg" alt="Heclus" width={40} height={40} className="object-cover w-full h-full" />
-          </div>
-          <div className="min-w-0 text-left">
-            <p className="text-sm font-bold text-foreground/90 group-hover:text-foreground transition-colors leading-tight">
-              Heclus
-            </p>
-            <p className="text-xs leading-tight mt-0.5" style={{ color: "var(--c-45)" }}>
-              {channelName ? (
-                <span className="truncate block max-w-[140px]">{channelName}</span>
-              ) : "Heclus"}
-            </p>
-          </div>
-        </button>
-      </div>
+  const stepList = (
+    <nav className="flex-1 px-3 py-5 space-y-1 overflow-y-auto">
+      {PHASES.map((phase, i) => {
+        const status = getPhaseStatus(phase);
+        const navigable = isNavigable(phase);
+        const isActive = status === "active";
+        const isDone = status === "done";
+        const Icon = PHASE_ICONS[phase.id];
 
-      {/* Steps */}
-      <nav className="flex-1 px-3 py-5 space-y-1 overflow-y-auto">
-        {PHASES.map((phase, i) => {
-          const status = getPhaseStatus(phase);
-          const navigable = isNavigable(phase);
-          const isActive = status === "active";
-          const isDone = status === "done";
-          const Icon = PHASE_ICONS[phase.id];
-
-          return (
-            <div key={phase.id}>
-              <button
-                onClick={() => navigable && router.push(`/projects/${projectId}/${phase.path}`)}
-                disabled={!navigable}
-                className={cn(
-                  "w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all duration-200",
-                  isDone && "cursor-pointer hover:bg-white/5",
-                  !isActive && !isDone && navigable && "cursor-pointer hover:bg-white/5",
-                  !navigable && "cursor-not-allowed",
-                )}
-                style={isActive ? {
-                  background: "oklch(0.72 0.25 285 / 0.12)",
-                  boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.25)",
-                } : {}}
-              >
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-all"
-                  style={
-                    isActive ? {
-                      background: "oklch(0.72 0.25 285)",
-                      color: "oklch(0.06 0 0)",
-                      boxShadow: "0 0 14px oklch(0.72 0.25 285 / 0.5)",
-                    } : isDone ? {
-                      background: "oklch(0.55 0.15 145)",
-                      color: "white",
-                    } : {
-                      background: "var(--bg-step-idle)",
-                      color: "var(--c-38)",
-                    }
-                  }
-                >
-                  {isDone ? <Check size={16} strokeWidth={2.5} /> : <Icon size={16} strokeWidth={1.75} />}
-                </div>
-
-                <div className="min-w-0">
-                  <p className={cn("text-sm font-semibold leading-tight",
-                    isActive && "text-foreground",
-                    isDone && "text-foreground/65",
-                    status === "locked" && "text-foreground/25",
-                  )}>
-                    {phase.label}
-                  </p>
-                  <p className={cn("text-xs leading-tight mt-0.5",
-                    isActive ? "text-foreground/50" : "text-foreground/25",
-                  )}>
-                    {phase.sublabel}
-                  </p>
-                </div>
-              </button>
-
-              {i < PHASES.length - 1 && (
-                <div className="flex justify-center my-0.5">
-                  <div className="w-px h-4 rounded-full transition-all"
-                    style={{
-                      background: isDone
-                        ? "oklch(0.55 0.15 145 / 0.5)"
-                        : isActive
-                        ? "oklch(0.72 0.25 285 / 0.35)"
-                        : "var(--c-22)"
-                    }} />
-                </div>
+        return (
+          <div key={phase.id}>
+            <button
+              onClick={() => navigable && navigate(`/projects/${projectId}/${phase.path}`)}
+              disabled={!navigable}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all duration-200",
+                isDone && "cursor-pointer hover:bg-white/5",
+                !isActive && !isDone && navigable && "cursor-pointer hover:bg-white/5",
+                !navigable && "cursor-not-allowed",
               )}
-            </div>
-          );
-        })}
-      </nav>
+              style={isActive ? {
+                background: "oklch(0.72 0.25 285 / 0.12)",
+                boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.25)",
+              } : {}}
+            >
+              <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-all"
+                style={
+                  isActive ? {
+                    background: "oklch(0.72 0.25 285)",
+                    color: "oklch(0.06 0 0)",
+                    boxShadow: "0 0 14px oklch(0.72 0.25 285 / 0.5)",
+                  } : isDone ? {
+                    background: "oklch(0.55 0.15 145)",
+                    color: "white",
+                  } : {
+                    background: "var(--bg-step-idle)",
+                    color: "var(--c-38)",
+                  }
+                }
+              >
+                {isDone ? <Check size={16} strokeWidth={2.5} /> : <Icon size={16} strokeWidth={1.75} />}
+              </div>
 
-      {/* Progress bar */}
+              <div className="min-w-0">
+                <p className={cn("text-sm font-semibold leading-tight",
+                  isActive && "text-foreground",
+                  isDone && "text-foreground/65",
+                  status === "locked" && "text-foreground/25",
+                )}>
+                  {phase.label}
+                </p>
+                <p className={cn("text-xs leading-tight mt-0.5",
+                  isActive ? "text-foreground/50" : "text-foreground/25",
+                )}>
+                  {phase.sublabel}
+                </p>
+              </div>
+            </button>
+
+            {i < PHASES.length - 1 && (
+              <div className="flex justify-center my-0.5">
+                <div className="w-px h-4 rounded-full transition-all"
+                  style={{
+                    background: isDone
+                      ? "oklch(0.55 0.15 145 / 0.5)"
+                      : isActive
+                      ? "oklch(0.72 0.25 285 / 0.35)"
+                      : "var(--c-22)"
+                  }} />
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </nav>
+  );
+
+  const progressFooter = (
+    <>
       <div className="px-5 py-4 border-t" style={{ borderColor: "var(--bd-7)" }}>
         <div className="flex justify-between text-xs mb-2" style={{ color: "var(--c-45)" }}>
           <span>Progress</span>
@@ -202,7 +179,6 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
         </div>
       </div>
 
-      {/* Zoom + Theme controls */}
       <div className="px-4 pb-3" style={{ borderTop: "1px solid var(--bd-7)" }}>
         <div className="flex items-center gap-2 mt-3">
           <div className="flex-1 flex items-center justify-between px-3 py-2.5 rounded-xl"
@@ -237,7 +213,6 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
         </div>
       </div>
 
-      {/* Icon theme picker */}
       <div className="px-4 pb-4 pt-2">
         <button
           onClick={() => setShowThemePicker(!showThemePicker)}
@@ -248,16 +223,10 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
           }}
         >
           <div className="flex items-center gap-2">
-            <span className="text-base" style={{ color: "oklch(0.72 0.25 285)" }}>
-              {theme.doneIcon}
-            </span>
-            <span className="text-xs font-medium" style={{ color: "var(--c-50)" }}>
-              {theme.name} Style
-            </span>
+            <span className="text-base" style={{ color: "oklch(0.72 0.25 285)" }}>{theme.doneIcon}</span>
+            <span className="text-xs font-medium" style={{ color: "var(--c-50)" }}>{theme.name} Style</span>
           </div>
-          <span className="text-xs" style={{ color: "var(--c-35)" }}>
-            {showThemePicker ? "▲" : "▼"}
-          </span>
+          <span className="text-xs" style={{ color: "var(--c-35)" }}>{showThemePicker ? "▲" : "▼"}</span>
         </button>
 
         {showThemePicker && (
@@ -296,7 +265,122 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
           </div>
         )}
       </div>
-    </aside>
+
+      <div className="px-4 pb-4">
+        <button
+          onClick={() => navigate("/dashboard")}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+          style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+        >
+          <LayoutDashboard size={13} />
+          Back to Dashboard
+        </button>
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      {/* ── Back to Dashboard (desktop floating button) ──────────────── */}
+      <button
+        onClick={() => router.push("/dashboard")}
+        className="hidden md:flex fixed top-4 right-4 z-50 items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+        style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+      >
+        <LayoutDashboard size={13} />
+        Back to Dashboard
+      </button>
+
+      {/* ── Mobile top bar (fixed) ──────────────────────────────────── */}
+      <div
+        className="md:hidden fixed top-0 inset-x-0 z-[200] h-14 flex items-center justify-between px-4 shrink-0"
+        style={{ background: "var(--bg-nav)", borderBottom: "1px solid var(--bd-7)" }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center">
+            <Image src="/heclus-icon-white.svg" alt="Heclus" width={28} height={28} className="object-cover w-full h-full" />
+          </div>
+          {channelName && (
+            <span className="text-xs font-medium truncate max-w-[120px]" style={{ color: "var(--c-55)" }}>
+              {channelName}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <span className="text-xs font-medium" style={{ color: "var(--c-55)" }}>
+            {currentPhaseLabel} · {Math.max(currentPhaseIndex + 1, 1)}/8
+          </span>
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className="p-2 rounded-lg transition-all hover:opacity-80"
+            style={{ color: "var(--c-60)", background: "var(--bg-progress)", border: "1px solid var(--bd-8)" }}
+          >
+            <Menu size={16} />
+          </button>
+        </div>
+      </div>
+
+      {/* ── Mobile drawer ───────────────────────────────────────────── */}
+      {drawerOpen && (
+        <div className="md:hidden fixed inset-0 z-[300]">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setDrawerOpen(false)} />
+          <div
+            className="absolute top-0 left-0 bottom-0 w-72 flex flex-col"
+            style={{ background: "var(--bg-nav)", borderRight: "1px solid var(--bd-7)" }}
+          >
+            <div className="px-5 py-5 flex items-center justify-between border-b" style={{ borderColor: "var(--bd-7)" }}>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 shrink-0 rounded-xl flex items-center justify-center">
+                  <Image src="/heclus-icon-white.svg" alt="Heclus" width={36} height={36} className="object-cover w-full h-full" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-90)" }}>Heclus</p>
+                  {channelName && (
+                    <p className="text-xs leading-tight mt-0.5 truncate max-w-[140px]" style={{ color: "var(--c-45)" }}>
+                      {channelName}
+                    </p>
+                  )}
+                </div>
+              </div>
+              <button
+                onClick={() => setDrawerOpen(false)}
+                className="p-1.5 rounded-lg transition-all hover:opacity-80 shrink-0"
+                style={{ color: "var(--c-50)", background: "var(--bg-progress)", border: "1px solid var(--bd-8)" }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            {stepList}
+            {progressFooter}
+          </div>
+        </div>
+      )}
+
+      {/* ── Desktop sidebar ──────────────────────────────────────────── */}
+      <aside className="hidden md:flex w-64 shrink-0 flex-col h-screen sticky top-0 overflow-hidden"
+        style={{ background: "var(--bg-nav)", borderRight: "1px solid var(--bd-7)" }}>
+
+        <div className="px-5 py-5 border-b" style={{ borderColor: "var(--bd-7)" }}>
+          <button onClick={() => router.push("/")} className="flex items-center gap-3 group w-full">
+            <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center">
+              <Image src="/heclus-icon-white.svg" alt="Heclus" width={40} height={40} className="object-cover w-full h-full" />
+            </div>
+            <div className="min-w-0 text-left">
+              <p className="text-sm font-bold text-foreground/90 group-hover:text-foreground transition-colors leading-tight">
+                Heclus
+              </p>
+              <p className="text-xs leading-tight mt-0.5" style={{ color: "var(--c-45)" }}>
+                {channelName ? (
+                  <span className="truncate block max-w-[140px]">{channelName}</span>
+                ) : "Heclus"}
+              </p>
+            </div>
+          </button>
+        </div>
+
+        {stepList}
+        {progressFooter}
+      </aside>
     </>
   );
 }

@@ -686,15 +686,26 @@ export default function HomePage() {
 
                   {/* Menu items */}
                   <div className="px-2 pt-2">
-                    <Link
-                      href="/setup"
-                      onClick={() => setShowProfileMenu(false)}
-                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all hover:opacity-80"
-                      style={{ color: "var(--c-60)" }}
-                    >
-                      <Settings size={15} />
-                      <span>Setup</span>
-                    </Link>
+                    {isPaid || isAdmin ? (
+                      <Link
+                        href="/setup"
+                        onClick={() => setShowProfileMenu(false)}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all hover:opacity-80"
+                        style={{ color: "var(--c-60)" }}
+                      >
+                        <Settings size={15} />
+                        <span>Setup</span>
+                      </Link>
+                    ) : (
+                      <button
+                        onClick={() => { setShowProfileMenu(false); setShowSubscriptionModal(true); }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all hover:opacity-80 cursor-pointer"
+                        style={{ color: "var(--c-60)" }}
+                      >
+                        <Settings size={15} />
+                        <span>Setup</span>
+                      </button>
+                    )}
                     <button
                       onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all hover:opacity-80 cursor-pointer"
