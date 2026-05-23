@@ -115,9 +115,9 @@ export default function DemoChannelPage() {
   const isDone    = channelPhase === "done";
 
   return (
-    <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
+    <div className="flex h-screen overflow-x-hidden" style={{ background: "var(--bg-page-2)" }}>
       <DemoNav currentStep={0} />
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 min-w-0 flex flex-col min-h-0">
         <DemoBanner />
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-2xl mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-10 space-y-8">
@@ -144,7 +144,7 @@ export default function DemoChannelPage() {
                     value={DEMO_DATA.channel.url}
                     readOnly
                     disabled={isLoading}
-                    className="flex-1 px-4 py-2.5 rounded-xl text-sm outline-none"
+                    className="flex-1 min-w-0 px-4 py-2.5 rounded-xl text-sm outline-none"
                     style={{
                       background: "var(--bg-progress)",
                       border: "1px solid var(--bd-8)",
@@ -155,7 +155,7 @@ export default function DemoChannelPage() {
                   <button
                     onClick={handleAnalyze}
                     disabled={isLoading}
-                    className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+                    className="shrink-0 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40"
                     style={{
                       background: isDone ? "var(--bg-progress)" : "oklch(0.72 0.25 285)",
                       color: isDone ? "var(--c-60)" : "var(--bg-page-2)",
@@ -250,10 +250,10 @@ export default function DemoChannelPage() {
             {isDone && (
               <div className="rounded-2xl p-6 space-y-4"
                 style={{ background: "var(--bg-panel)", border: "1px solid oklch(0.72 0.25 285 / 0.15)" }}>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="font-semibold">{DEMO_DATA.channel.name}</h2>
-                    <p className="text-sm" style={{ color: "var(--c-50)" }}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="font-semibold truncate">{DEMO_DATA.channel.name}</h2>
+                    <p className="text-sm truncate" style={{ color: "var(--c-50)" }}>
                       {DEMO_DATA.channel.subscribers} subscribers · {DEMO_DATA.channel.avgViews} avg views
                     </p>
                   </div>
