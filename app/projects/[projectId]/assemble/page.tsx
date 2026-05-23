@@ -678,7 +678,7 @@ export default function AssemblePage({ params }: PageProps) {
           <div className="flex-1 min-w-0 w-full max-w-2xl space-y-6">
 
             {/* Status cards */}
-            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
               <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover</p>
                 <p className="mt-2 text-sm font-medium"

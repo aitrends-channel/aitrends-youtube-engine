@@ -270,7 +270,7 @@ export default function DemoDashboardPage() {
         <div className="space-y-6">
           <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginBottom: "10px" }}>General Stats</h3>
 
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {/* Total Videos */}
             <div className="rounded-xl px-5 py-4" style={cardStyle}>
               <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{totalVideos}</p>
@@ -377,7 +377,7 @@ export default function DemoDashboardPage() {
           {/* ── API Keys Status ────────────────────────────────────────────── */}
           <div style={{ marginTop: "40px" }}>
             <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Keys Status</h3>
-            <div className="grid grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
 
               {/* Anthropic */}
               <div className="rounded-xl px-5 py-4" style={cardStyle}>
