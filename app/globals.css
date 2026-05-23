@@ -225,6 +225,12 @@
   html {
     @apply font-sans;
   }
+  /* Zoom control is desktop-only — never let JS-applied zoom shrink mobile views */
+  @media (max-width: 767px) {
+    html {
+      zoom: 1 !important;
+    }
+  }
 }
 
 /* Glass card utility */
