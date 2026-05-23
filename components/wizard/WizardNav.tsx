@@ -67,6 +67,15 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
     });
   }, []);
 
+  // Apply zoom only on desktop — never touch document.documentElement.style.zoom on touch
+  // devices as it disrupts iOS Safari's viewport scale calculation.
+  useEffect(() => {
+    const isTouch = navigator.maxTouchPoints > 0 || "ontouchstart" in window;
+    if (isTouch) return;
+    document.documentElement.style.zoom = `${zoom / 100}`;
+    return () => { document.documentElement.style.zoom = ""; };
+  }, [zoom]);
+
   async function handleSignOut() {
     const supabase = createSupabaseBrowserClient();
     await supabase.auth.signOut();

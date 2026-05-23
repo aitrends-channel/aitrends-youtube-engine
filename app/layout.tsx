@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { ZoomProvider } from "@/components/ZoomProvider";
 import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 import { Providers } from "@/components/Providers";
 
@@ -28,14 +27,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="h-full" style={{ fontFamily: "'Inter Variable', sans-serif" }}>
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <link rel="icon" href="/heclus-white.ico" />
         <meta name="theme-color" content="#0f0a0f" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
       <body className="min-h-full bg-background text-foreground antialiased" suppressHydrationWarning>
         <ServiceWorkerRegistrar />
-        <ZoomProvider />
         <Providers>{children}</Providers>
       </body>
     </html>

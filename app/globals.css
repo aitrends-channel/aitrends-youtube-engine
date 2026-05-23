@@ -233,8 +233,8 @@ body {
   overflow-x: hidden;
 }
 
-/* Zoom control is desktop-only — hard-lock to 1 on mobile regardless of JS */
-@media (max-width: 767px) {
+/* Zoom control is desktop-only — hard-lock to 1 on all touch devices regardless of orientation or JS */
+@media (pointer: coarse) {
   html {
     zoom: 1 !important;
   }
