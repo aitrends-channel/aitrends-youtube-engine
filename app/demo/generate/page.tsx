@@ -345,7 +345,7 @@ export default function DemoGeneratePage() {
               {imagesPhase !== "idle" && (
                 <div className="px-5 pt-4">
                   <ProgressBar value={imagesPhase === "done" ? totalBeats : imagesProgress} total={totalBeats} />
-                  <div className="grid grid-cols-4 gap-1.5 mt-3 max-h-36 overflow-y-auto">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-36 overflow-y-auto">
                     {DEMO_DATA.promptBeats.map((beat, i) => {
                     const revealed = imagesPhase === "done" || i < imagesProgress;
                     return (
@@ -455,7 +455,7 @@ export default function DemoGeneratePage() {
               {videosPhase !== "idle" && (
                 <div className="px-5 pt-4">
                   <ProgressBar value={videosPhase === "done" ? totalBeats : 0} total={totalBeats} />
-                  <div className="grid grid-cols-4 gap-1.5 mt-3 max-h-36 overflow-y-auto">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-36 overflow-y-auto">
                     {DEMO_DATA.promptBeats.map((beat) => (
                       <div key={beat.beat}
                         className="aspect-video rounded-lg overflow-hidden flex items-center justify-center"

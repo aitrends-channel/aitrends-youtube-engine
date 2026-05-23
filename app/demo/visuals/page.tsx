@@ -147,7 +147,7 @@ export default function DemoVisualsPage() {
           <div className="p-4 sm:p-8 max-w-4xl mx-auto space-y-6">
 
             {/* Mode toggle (Manual locked) */}
-            <div className="flex gap-2 p-1 rounded-xl w-fit"
+            <div className="flex gap-2 p-1 rounded-xl"
               style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-7)" }}>
               {[
                 { id: "auto",   label: "⚡ Auto Screenshot", disabled: false },
@@ -156,7 +156,7 @@ export default function DemoVisualsPage() {
                 <button
                   key={m.id}
                   disabled={m.disabled}
-                  className="px-5 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-35"
+                  className="flex-1 px-3 sm:px-5 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-35"
                   style={!m.disabled ? {
                     background: "oklch(0.72 0.25 285)",
                     color: "var(--bg-page-2)",

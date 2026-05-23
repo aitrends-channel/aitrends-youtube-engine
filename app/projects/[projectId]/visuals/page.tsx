@@ -255,13 +255,13 @@ export default function VisualsPage({ params }: PageProps) {
 
         <div className="p-4 sm:p-8 max-w-4xl mx-auto space-y-6">
           {/* Mode toggle */}
-          <div className="flex gap-2 p-1 rounded-xl w-fit"
+          <div className="flex gap-2 p-1 rounded-xl"
             style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-7)" }}>
             {(["auto", "manual"] as Mode[]).map((m) => (
               <button
                 key={m}
                 onClick={() => setMode(m)}
-                className="px-5 py-2 rounded-lg text-sm font-medium transition-all"
+                className="flex-1 px-3 sm:px-5 py-2 rounded-lg text-sm font-medium transition-all"
                 style={mode === m ? {
                   background: "oklch(0.72 0.25 285)",
                   color: "var(--bg-page-2)",
@@ -280,7 +280,7 @@ export default function VisualsPage({ params }: PageProps) {
               {/* Fetch button */}
               <div className="rounded-2xl p-5"
                 style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div>
                     <p className="font-semibold text-sm">Auto-capture from Channel Videos</p>
                     <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
