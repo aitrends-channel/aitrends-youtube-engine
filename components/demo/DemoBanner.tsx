@@ -142,7 +142,7 @@ export function DemoBanner() {
         {/* ── Step dots with labels — mobile only, workflow pages only ── */}
         {onWorkflowPage && (
           <div
-            className="md:hidden pb-[10px]"
+            className="md:hidden py-[5px]"
             style={{ background: "var(--bg-nav)", borderBottom: "1px solid var(--bd-6)" }}
           >
             {/* Circles + connecting lines */}
