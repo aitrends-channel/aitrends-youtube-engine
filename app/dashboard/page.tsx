@@ -197,7 +197,8 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
             </div>
             <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{total}</span>
           </div>
-          <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ overflow: "visible" }}>
+          <div style={{ overflowX: "clip" }}>
+          <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
             <defs>
               <linearGradient id="dcBarG" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#9b7ff5" stopOpacity="0.95" />
@@ -228,6 +229,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
               );
             })}
           </svg>
+          </div>
         </div>
         )}
 
@@ -946,7 +948,7 @@ export default function HomePage() {
                 const plotH = H - PAD_T - PAD_B;
 
                 return (
-                  <div className="rounded-2xl px-6 py-5" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                  <div className="rounded-2xl px-4 sm:px-6 py-5" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
                     <div className="flex items-center justify-between mb-5">
                       <div>
                         <p className="text-sm font-semibold" style={{ color: "var(--c-75)" }}>Videos per niche</p>
@@ -954,7 +956,8 @@ export default function HomePage() {
                       </div>
                       <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{total}</span>
                     </div>
-                    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ overflow: "visible" }}>
+                    <div style={{ overflowX: "clip" }}>
+                    <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
                       <defs>
                         <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor="#9b7ff5" stopOpacity="0.95" />
@@ -1038,6 +1041,7 @@ export default function HomePage() {
                         );
                       })}
                     </svg>
+                    </div>
                   </div>
                 );
               })()}

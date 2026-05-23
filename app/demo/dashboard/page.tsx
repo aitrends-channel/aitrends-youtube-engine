@@ -311,7 +311,7 @@ export default function DemoDashboardPage() {
 
           {/* ── Bar Chart ─────────────────────────────────────────────────── */}
           <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "40px", marginBottom: "10px" }}>Niches/Video Chart</h3>
-          <div className="rounded-2xl px-6 py-5" style={cardStyle}>
+          <div className="rounded-2xl px-4 sm:px-6 py-5" style={cardStyle}>
             <div className="flex items-center justify-between mb-5">
               <div>
                 <p className="text-sm font-semibold" style={{ color: "var(--c-75)" }}>Videos per niche</p>
@@ -319,7 +319,8 @@ export default function DemoDashboardPage() {
               </div>
               <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{totalVideos}</span>
             </div>
-            <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ overflow: "visible" }}>
+            <div style={{ overflowX: "clip" }}>
+            <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
               <defs>
                 <linearGradient id="dBarGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#9b7ff5" stopOpacity="0.95" />
@@ -373,6 +374,7 @@ export default function DemoDashboardPage() {
                 </text>
               </g>
             </svg>
+            </div>
           </div>
 
           {/* ── API Keys Status ────────────────────────────────────────────── */}
