@@ -155,7 +155,7 @@ export default function DemoDashboardPage() {
 
       {/* Header */}
       <header
-        className="flex items-center justify-between px-8 py-4 sticky top-0 z-10"
+        className="flex items-center justify-between px-4 sm:px-8 py-4 sticky top-0 z-10"
         style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}
       >
         <div className="flex items-center gap-3">
@@ -264,7 +264,7 @@ export default function DemoDashboardPage() {
         </div>
       </header>
 
-      <main className="flex-1 w-full px-24 py-12 space-y-12">
+      <main className="flex-1 w-full px-4 sm:px-8 lg:px-24 py-6 sm:py-12 space-y-8 sm:space-y-12">
 
         {/* ── General Stats ─────────────────────────────────────────────── */}
         <div className="space-y-6">
@@ -452,7 +452,7 @@ export default function DemoDashboardPage() {
             style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)", paddingTop: "34px", paddingBottom: "34px" }}
           >
             {/* Channel header */}
-            <div className="flex items-center justify-between mb-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
               <div className="flex items-center gap-3">
                 <div
                   className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-bold shrink-0"
@@ -483,7 +483,7 @@ export default function DemoDashboardPage() {
             </div>
 
             {/* Video cards */}
-            <div className="grid gap-7" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
+            <div className="grid gap-7" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))" }}>
               <button
                 onClick={() => router.push(videoHref)}
                 className="text-left p-6 rounded-2xl transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
@@ -564,7 +564,7 @@ export default function DemoDashboardPage() {
             </div>
 
             {/* Video cards */}
-            <div className="grid gap-7" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
+            <div className="grid gap-7" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))" }}>
               {STATIC_NICHE.videos.map((v, i) => (
                 <div
                   key={i}
