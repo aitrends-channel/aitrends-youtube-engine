@@ -271,12 +271,6 @@ export function DemoNav({ currentStep }: DemoNavProps) {
                 </div>
                 <div>
                   <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-90)" }}>Heclus</p>
-                  <span
-                    className="text-xs font-semibold px-1.5 py-0.5 rounded mt-0.5 inline-block"
-                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "oklch(0.72 0.25 285)" }}
-                  >
-                    Demo
-                  </span>
                 </div>
               </div>
               <button
