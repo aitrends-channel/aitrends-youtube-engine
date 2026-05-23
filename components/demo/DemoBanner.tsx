@@ -38,7 +38,7 @@ export function DemoBanner() {
         Workflow pages: nav (56) + banner (37) + stepper (57) = 150px.
         Other pages (dashboard): just nav (56px).
       */}
-      <div className={`md:hidden shrink-0 ${onWorkflowPage ? "h-[132px]" : "h-14"}`} />
+      <div className={`md:hidden shrink-0 ${onWorkflowPage ? "h-[142px]" : "h-14"}`} />
 
       {/*
         On mobile workflow pages this entire block is fixed below the nav.
@@ -142,7 +142,7 @@ export function DemoBanner() {
         {/* ── Step dots with labels — mobile only, workflow pages only ── */}
         {onWorkflowPage && (
           <div
-            className="md:hidden py-[5px]"
+            className="md:hidden py-[10px]"
             style={{ background: "var(--bg-nav)", borderBottom: "1px solid var(--bd-6)" }}
           >
             {/* Circles + connecting lines */}
