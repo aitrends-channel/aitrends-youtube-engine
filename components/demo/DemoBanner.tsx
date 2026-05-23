@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { Settings, LogOut, Check } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -59,10 +59,10 @@ export function DemoBanner() {
           Dashboard
         </button>
 
-        <ThemeToggle />
+        {/* Theme + profile only on desktop — mobile top bar owns these */}
+        <span className="hidden sm:inline-flex"><ThemeToggle /></span>
 
-        {/* Profile avatar + dropdown */}
-        <div className="relative">
+        <div className="relative hidden sm:block">
           <button
             onClick={() => setShowMenu((v) => !v)}
             className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold transition-all hover:opacity-80 cursor-pointer shrink-0"
@@ -118,43 +118,71 @@ export function DemoBanner() {
       </div>
     </div>
 
-      {/* Step dots — mobile only, shown only on workflow pages */}
+      {/* Step dots with labels — mobile only, shown only on workflow pages */}
       {currentStep >= 0 && (
         <div
-          className="md:hidden flex items-center px-4 h-9 shrink-0"
-          style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-nav)" }}
+          className="md:hidden shrink-0 mt-2"
+          style={{ background: "var(--bg-nav)" }}
         >
-          {DEMO_STEPS.map((step, i) => {
-            const isDone = i < currentStep;
-            const isActive = i === currentStep;
-            return (
-              <div
-                key={step.label}
-                className="flex items-center"
-                style={{ flex: i < DEMO_STEPS.length - 1 ? "1 1 0%" : "0 0 auto" }}
-              >
-                <button
-                  onClick={() => setDrawerOpen(true)}
-                  className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center transition-all focus:outline-none"
-                  style={
-                    isDone
-                      ? { background: "oklch(0.55 0.15 145)", border: "none" }
-                      : isActive
-                      ? { background: "oklch(0.72 0.25 285)", border: "none", boxShadow: "0 0 6px oklch(0.72 0.25 285 / 0.6)" }
-                      : { background: "transparent", border: "1.5px solid var(--bd-8)" }
-                  }
-                >
-                  {isDone && <Check size={9} strokeWidth={3} color="white" />}
-                </button>
-                {i < DEMO_STEPS.length - 1 && (
-                  <div
-                    className="flex-1 h-px mx-1 transition-all"
-                    style={{ background: isDone ? "oklch(0.55 0.15 145 / 0.4)" : "var(--bd-6)" }}
-                  />
-                )}
-              </div>
-            );
-          })}
+          {/* Circles + connecting lines */}
+          <div className="flex items-center px-4 pt-2">
+            {DEMO_STEPS.map((step, i) => {
+              const isDone = i < currentStep;
+              const isActive = i === currentStep;
+              return (
+                <Fragment key={step.label}>
+                  <button
+                    onClick={() => setDrawerOpen(true)}
+                    className="w-4 h-4 rounded-full shrink-0 flex items-center justify-center transition-all focus:outline-none"
+                    style={
+                      isDone
+                        ? { background: "oklch(0.55 0.15 145)" }
+                        : isActive
+                        ? { background: "oklch(0.72 0.25 285)", boxShadow: "0 0 6px oklch(0.72 0.25 285 / 0.6)" }
+                        : { background: "transparent", border: "1.5px solid var(--bd-8)" }
+                    }
+                  >
+                    {isDone && <Check size={8} strokeWidth={3} color="white" />}
+                  </button>
+                  {i < DEMO_STEPS.length - 1 && (
+                    <div
+                      className="flex-1 h-px mx-0.5 transition-all"
+                      style={{ background: isDone ? "oklch(0.55 0.15 145 / 0.4)" : "var(--bd-6)" }}
+                    />
+                  )}
+                </Fragment>
+              );
+            })}
+          </div>
+
+          {/* Labels row — mirrors the circles row exactly */}
+          <div className="flex items-start px-4 pt-1 pb-2">
+            {DEMO_STEPS.map((step, i) => {
+              const isDone = i < currentStep;
+              const isActive = i === currentStep;
+              return (
+                <Fragment key={step.label}>
+                  <div className="w-4 shrink-0 relative flex justify-center">
+                    <span
+                      className="absolute text-[7px] leading-none whitespace-nowrap"
+                      style={{
+                        color: isActive
+                          ? "oklch(0.72 0.25 285)"
+                          : isDone
+                          ? "oklch(0.55 0.15 145)"
+                          : "var(--c-35)",
+                        transform: "translateX(-50%)",
+                        left: "50%",
+                      }}
+                    >
+                      {step.label}
+                    </span>
+                  </div>
+                  {i < DEMO_STEPS.length - 1 && <div className="flex-1" />}
+                </Fragment>
+              );
+            })}
+          </div>
         </div>
       )}
     </>

@@ -43,7 +43,7 @@ export default function DemoPromptsPage() {
             ].map(({ num, title, desc, beats }) => (
               <div
                 key={num}
-                className="flex items-center gap-4 px-4 py-3 rounded-xl"
+                className="flex items-center gap-2 sm:gap-4 px-3 sm:px-4 py-3 rounded-xl min-w-0"
                 style={{ background: "var(--bg-panel)", border: "1px solid oklch(0.55 0.15 145 / 0.25)" }}
               >
                 <div
@@ -57,7 +57,7 @@ export default function DemoPromptsPage() {
                   <p className="text-xs mt-0.5 truncate" style={{ color: "var(--c-45)" }}>{desc}</p>
                 </div>
                 <span className="text-xs font-medium shrink-0" style={{ color: "oklch(0.65 0.15 145)" }}>
-                  {beats} beats ready
+                  {beats} beats
                 </span>
               </div>
             ))}
@@ -84,11 +84,11 @@ export default function DemoPromptsPage() {
           </div>
 
           {/* Beat list */}
-          <div className="flex-1 overflow-y-auto px-4 sm:px-8 py-5 space-y-3">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-8 py-5 space-y-3">
             {DEMO_DATA.promptBeats.map((beat) => (
               <div
                 key={beat.beat}
-                className="rounded-xl p-4 space-y-2"
+                className="rounded-xl p-4 space-y-2 min-w-0"
                 style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}
               >
                 <div className="flex items-center gap-2">
@@ -99,7 +99,7 @@ export default function DemoPromptsPage() {
                     Beat {beat.beat}
                   </span>
                 </div>
-                <p className="text-sm leading-relaxed" style={{ color: "var(--c-75)" }}>
+                <p className="text-sm leading-relaxed break-words" style={{ color: "var(--c-75)" }}>
                   {activeTab === "image" ? beat.imagePrompt : beat.videoPrompt}
                 </p>
               </div>

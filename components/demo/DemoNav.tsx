@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, LayoutTemplate, Check, RotateCcw, X } from "lucide-react";
+import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, LayoutTemplate, Check, RotateCcw, X, Settings, LogOut } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useDemoState } from "@/lib/demo-context";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 export const DEMO_STEPS: { label: string; sublabel: string; Icon: LucideIcon; href: string }[] = [
   { label: "Channel",    sublabel: "Analysis & Style",    Icon: Tv,             href: "/demo/channel" },
@@ -27,6 +29,15 @@ export function DemoNav({ currentStep }: DemoNavProps) {
   const { state, update, resetDemo, drawerOpen, setDrawerOpen, setCurrentStep } = useDemoState();
   const highestStep = state.highestStep;
   const [confirming, setConfirming] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user?.email) setUserEmail(data.user.email);
+    });
+  }, []);
 
   useEffect(() => {
     setCurrentStep(currentStep);
@@ -36,6 +47,12 @@ export function DemoNav({ currentStep }: DemoNavProps) {
     return () => setCurrentStep(-1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentStep]);
+
+  async function handleSignOut() {
+    const supabase = createSupabaseBrowserClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
 
   const progressPct = Math.min(Math.round(((highestStep + 1) / 8) * 100), 100);
 
@@ -167,19 +184,75 @@ export function DemoNav({ currentStep }: DemoNavProps) {
     <>
       {/* ── Mobile top bar (fixed) ──────────────────────────────────── */}
       <div
-        className="md:hidden fixed top-0 inset-x-0 z-[200] h-14 flex items-center px-4 shrink-0"
+        className="md:hidden fixed top-0 inset-x-0 z-[200] h-14 flex items-center justify-between px-4 shrink-0"
         style={{ background: "var(--bg-nav)", borderBottom: "1px solid var(--bd-7)" }}
       >
+        {/* Brand */}
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center">
             <Image src="/heclus-icon-white.svg" alt="Heclus" width={28} height={28} className="object-cover w-full h-full" />
           </div>
-          <span
-            className="text-xs font-semibold px-1.5 py-0.5 rounded"
-            style={{ background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "oklch(0.72 0.25 285)" }}
-          >
-            Demo
-          </span>
+          <span className="text-sm font-bold" style={{ color: "var(--c-90)" }}>Heclus</span>
+        </div>
+
+        {/* Right controls */}
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+
+          {/* Profile avatar + dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setShowProfileMenu((v) => !v)}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-all hover:opacity-80 cursor-pointer shrink-0"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+            >
+              {userEmail ? userEmail[0].toUpperCase() : "?"}
+            </button>
+
+            {showProfileMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
+                <div
+                  className="absolute right-0 top-10 z-50 w-52 rounded-2xl py-3 shadow-2xl"
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
+                >
+                  <div className="px-4 pb-3" style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
+                    <p className="text-xs font-semibold truncate" style={{ color: "var(--c-88)" }}>
+                      {userEmail || "Loading…"}
+                    </p>
+                    <span
+                      className="mt-1.5 inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                      style={{
+                        background: "oklch(0.72 0.25 285 / 0.15)",
+                        color: "oklch(0.72 0.25 285)",
+                        border: "1px solid oklch(0.72 0.25 285 / 0.25)",
+                      }}
+                    >
+                      Free plan
+                    </span>
+                  </div>
+                  <div className="px-2 pt-2">
+                    <button
+                      onClick={() => { setShowProfileMenu(false); router.push("/setup"); }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
+                      style={{ color: "var(--c-60)" }}
+                    >
+                      <Settings size={13} />
+                      <span>Setup</span>
+                    </button>
+                    <button
+                      onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
+                      style={{ color: "#f87171" }}
+                    >
+                      <LogOut size={13} />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
