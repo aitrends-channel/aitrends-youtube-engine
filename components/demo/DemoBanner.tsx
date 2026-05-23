@@ -26,8 +26,8 @@ export function DemoBanner() {
 
   return (
     <>
-      {/* Spacer so content clears the fixed mobile nav */}
-      <div className="h-14 md:hidden shrink-0" />
+      {/* Spacer so content clears the fixed mobile nav (h-14 top bar + h-8 dots strip + 1px border) */}
+      <div className="h-[89px] md:hidden shrink-0" />
     <div
       className="flex items-center justify-between px-4 sm:px-6 py-2.5 text-xs shrink-0"
       style={{

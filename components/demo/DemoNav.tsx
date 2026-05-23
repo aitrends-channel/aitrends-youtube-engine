@@ -166,31 +166,67 @@ export function DemoNav({ currentStep }: DemoNavProps) {
     <>
       {/* ── Mobile top bar (fixed) ──────────────────────────────────── */}
       <div
-        className="md:hidden fixed top-0 inset-x-0 z-[200] h-14 flex items-center justify-between px-4 shrink-0"
+        className="md:hidden fixed top-0 inset-x-0 z-[200] flex flex-col shrink-0"
         style={{ background: "var(--bg-nav)", borderBottom: "1px solid var(--bd-7)" }}
       >
-        <div className="flex items-center gap-2">
-          <div className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center">
-            <Image src="/heclus-icon-white.svg" alt="Heclus" width={28} height={28} className="object-cover w-full h-full" />
+        {/* Logo row */}
+        <div className="h-14 flex items-center justify-between px-4">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center">
+              <Image src="/heclus-icon-white.svg" alt="Heclus" width={28} height={28} className="object-cover w-full h-full" />
+            </div>
+            <span
+              className="text-xs font-semibold px-1.5 py-0.5 rounded"
+              style={{ background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "oklch(0.72 0.25 285)" }}
+            >
+              Demo
+            </span>
           </div>
-          <span
-            className="text-xs font-semibold px-1.5 py-0.5 rounded"
-            style={{ background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "oklch(0.72 0.25 285)" }}
-          >
-            Demo
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-medium" style={{ color: "var(--c-55)" }}>
+              {STEPS[Math.min(currentStep, STEPS.length - 1)].label} · {Math.min(currentStep + 1, 8)}/8
+            </span>
+            <button
+              onClick={() => setDrawerOpen(true)}
+              className="p-2 rounded-lg transition-all hover:opacity-80"
+              style={{ color: "var(--c-60)", background: "var(--bg-progress)", border: "1px solid var(--bd-8)" }}
+            >
+              <Menu size={16} />
+            </button>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <span className="text-xs font-medium" style={{ color: "var(--c-55)" }}>
-            {STEPS[Math.min(currentStep, STEPS.length - 1)].label} · {Math.min(currentStep + 1, 8)}/8
-          </span>
-          <button
-            onClick={() => setDrawerOpen(true)}
-            className="p-2 rounded-lg transition-all hover:opacity-80"
-            style={{ color: "var(--c-60)", background: "var(--bg-progress)", border: "1px solid var(--bd-8)" }}
-          >
-            <Menu size={16} />
-          </button>
+
+        {/* Step dots row */}
+        <div
+          className="flex items-center px-4 h-8 gap-0"
+          style={{ borderTop: "1px solid var(--bd-6)" }}
+        >
+          {STEPS.map((step, i) => {
+            const isDone = i < currentStep;
+            const isActive = i === currentStep;
+            return (
+              <div key={step.label} className="flex items-center" style={{ flex: i < STEPS.length - 1 ? "1 1 0%" : "0 0 auto" }}>
+                <div
+                  className="w-4 h-4 rounded-full shrink-0 flex items-center justify-center transition-all"
+                  style={
+                    isDone
+                      ? { background: "oklch(0.55 0.15 145)", border: "none" }
+                      : isActive
+                      ? { background: "oklch(0.72 0.25 285)", border: "none", boxShadow: "0 0 6px oklch(0.72 0.25 285 / 0.6)" }
+                      : { background: "transparent", border: "1.5px solid var(--bd-8)" }
+                  }
+                >
+                  {isDone && <Check size={8} strokeWidth={3} color="white" />}
+                </div>
+                {i < STEPS.length - 1 && (
+                  <div
+                    className="flex-1 h-px mx-0.5 transition-all"
+                    style={{ background: isDone ? "oklch(0.55 0.15 145 / 0.4)" : "var(--bd-6)" }}
+                  />
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
