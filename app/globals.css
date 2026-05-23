@@ -225,11 +225,19 @@
   html {
     @apply font-sans;
   }
-  /* Zoom control is desktop-only — never let JS-applied zoom shrink mobile views */
-  @media (max-width: 767px) {
-    html {
-      zoom: 1 !important;
-    }
+}
+
+/* Prevent ANY horizontal overflow from expanding the viewport on mobile */
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+/* Zoom control is desktop-only — hard-lock to 1 on mobile regardless of JS */
+@media (max-width: 767px) {
+  html {
+    zoom: 1 !important;
   }
 }
 
