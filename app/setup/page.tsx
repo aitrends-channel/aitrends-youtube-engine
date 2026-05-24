@@ -146,9 +146,13 @@ export default function SettingsPage() {
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user?.email === "prioritylearn@gmail.com") setIsAdmin(true);
+      if (data.user?.email === "prioritylearn@gmail.com") {
+        setIsAdmin(true);
+      } else {
+        router.replace("/dashboard");
+      }
     });
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     fetch("/api/settings")

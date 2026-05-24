@@ -237,7 +237,7 @@ export function DemoNav({ currentStep }: DemoNavProps) {
                   </div>
                   <div className="px-2 pt-2">
                     <button
-                      onClick={() => { setShowProfileMenu(false); router.push("/setup"); }}
+                      onClick={() => { setShowProfileMenu(false); router.push("/demo/dashboard"); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
                       style={{ color: "var(--c-60)" }}
                     >

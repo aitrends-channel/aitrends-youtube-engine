@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { X, Check, Zap, PlayCircle } from "lucide-react";
+import { X, Check, Zap, PlayCircle, Loader2 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 const FOUNDER_LIMIT = 100;
@@ -40,10 +40,10 @@ const PLANS = [
   },
 ];
 
-const PLAN_PERMALINKS: Record<string, string> = {
-  founder: process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_FOUNDER ?? "svxbq",
-  starter: process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_STARTER ?? "ipntsc",
-  pro:     process.env.NEXT_PUBLIC_GUMROAD_PRODUCT_PRO     ?? "htvrim",
+const FLW_PAYMENT_LINKS: Record<string, string> = {
+  founder: process.env.NEXT_PUBLIC_FLW_LINK_FOUNDER ?? "",
+  starter: process.env.NEXT_PUBLIC_FLW_LINK_STARTER ?? "",
+  pro:     process.env.NEXT_PUBLIC_FLW_LINK_PRO     ?? "",
 };
 
 interface Props {
@@ -54,85 +54,61 @@ interface Props {
   hideTryDemo?: boolean;
 }
 
-function loadGumroadScript(): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector('script[src*="gumroad.com/js"]')) { resolve(); return; }
-    const script = document.createElement("script");
-    script.src = "https://gumroad.com/js/gumroad.js";
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load Gumroad"));
-    document.head.appendChild(script);
-  });
-}
 
 export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hideTryDemo }: Props) {
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState(defaultPlan ?? "founder");
   const [spotsLeft, setSpotsLeft] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [verifying, setVerifying] = useState(false);
+  const [polling, setPolling] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     fetch("/api/founder-spots")
       .then(r => r.json())
       .then(d => setSpotsLeft(d.remaining))
       .catch(() => {});
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
-  async function pollForPayment() {
-    setVerifying(true);
+  function startPolling() {
+    setPolling(true);
+    setError(null);
     const supabase = createSupabaseBrowserClient();
-    for (let i = 0; i < 15; i++) {
-      await new Promise(r => setTimeout(r, 2000));
+    let attempts = 0;
+    pollRef.current = setInterval(async () => {
+      attempts++;
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.app_metadata?.paid === true) {
-        setVerifying(false);
+        clearInterval(pollRef.current!);
+        setPolling(false);
         onSuccess();
         return;
       }
-    }
-    setVerifying(false);
-    setError("Payment received but not yet confirmed. Please refresh the page in a moment.");
+      if (attempts >= 30) { // 2 min timeout
+        clearInterval(pollRef.current!);
+        setPolling(false);
+        setError("Payment not yet confirmed. If you completed payment, wait a moment and click 'I've paid'.");
+      }
+    }, 4000);
   }
 
-  async function handleSubscribe() {
+  function handleSubscribe() {
+    const link = FLW_PAYMENT_LINKS[selectedPlan];
+    if (!link) {
+      setError("Payment not configured for this plan. Contact support.");
+      return;
+    }
     setLoading(true);
-    setError(null);
-
-    try {
-      await loadGumroadScript();
-    } catch {
-      setLoading(false);
-      setError("Could not load payment. Check your internet connection and try again.");
+    const w = window.open(link, "_blank");
+    if (!w) {
+      // Popup blocked — fall back to same-tab redirect
+      window.location.href = link;
       return;
     }
-
     setLoading(false);
-
-    const permalink = PLAN_PERMALINKS[selectedPlan];
-    if (!permalink) {
-      setError("Payment not configured for this plan.");
-      return;
-    }
-
-    // Open Gumroad overlay
-    const a = document.createElement("a");
-    a.href = `https://aitrendschannel.gumroad.com/l/${permalink}?wanted=true&email=${encodeURIComponent(email)}`;
-    a.style.display = "none";
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { if (a.parentNode) a.parentNode.removeChild(a); }, 100);
-
-    // Poll for payment after overlay closes (detected via MutationObserver)
-    const observer = new MutationObserver(() => {
-      const overlay = document.querySelector(".gumroad-overlay-container, #gumroad-overlay, iframe[src*='gumroad']");
-      if (!overlay) {
-        observer.disconnect();
-        pollForPayment();
-      }
-    });
-    observer.observe(document.body, { childList: true, subtree: true });
+    startPolling();
   }
 
   return (
@@ -279,20 +255,50 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
           </p>
         )}
 
-        <button
-          onClick={handleSubscribe}
-          disabled={loading || verifying}
-          className="w-full py-3 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-          style={{
-            background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-            color: "var(--c-98)",
-          }}
-        >
-          {verifying ? "Verifying payment…" : loading ? "Loading…" : `Subscribe to ${PLANS.find(p => p.id === selectedPlan)?.name}`}
-        </button>
+        {polling ? (
+          <div className="space-y-3">
+            <div
+              className="flex items-center gap-3 px-4 py-3 rounded-xl"
+              style={{ background: "oklch(0.72 0.25 285 / 0.08)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}
+            >
+              <Loader2 size={16} className="animate-spin shrink-0" style={{ color: "oklch(0.72 0.25 285)" }} />
+              <p className="text-sm" style={{ color: "oklch(0.82 0.15 285)" }}>
+                Payment window opened — complete your payment and we&apos;ll confirm it automatically.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { if (pollRef.current) clearInterval(pollRef.current); setPolling(false); }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all hover:opacity-80 cursor-pointer"
+                style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { if (pollRef.current) clearInterval(pollRef.current); startPolling(); }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all hover:opacity-90 cursor-pointer"
+                style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
+              >
+                I&apos;ve paid →
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={handleSubscribe}
+            disabled={loading}
+            className="w-full py-3 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            style={{
+              background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+              color: "var(--c-98)",
+            }}
+          >
+            {loading ? "Opening payment…" : `Subscribe to ${PLANS.find(p => p.id === selectedPlan)?.name}`}
+          </button>
+        )}
 
         <p className="text-center text-xs mt-3" style={{ color: "var(--c-32)" }}>
-          Secured by Gumroad · Cancel anytime
+          Secured by Flutterwave · Cancel anytime
         </p>
         </div>
       </div>
