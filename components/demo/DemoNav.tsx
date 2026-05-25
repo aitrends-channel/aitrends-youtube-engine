@@ -305,14 +305,6 @@ export function DemoNav({ currentStep }: DemoNavProps) {
             </div>
             <div className="min-w-0 text-left">
               <p className="text-sm font-bold text-foreground/90 leading-tight group-hover:text-foreground transition-colors">Heclus</p>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <span
-                  className="text-xs font-semibold px-1.5 py-0.5 rounded"
-                  style={{ background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "oklch(0.72 0.25 285)" }}
-                >
-                  Demo
-                </span>
-              </div>
             </div>
           </button>
         </div>

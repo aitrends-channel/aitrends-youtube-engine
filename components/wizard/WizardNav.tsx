@@ -5,12 +5,12 @@ import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import {
   Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film,
-  Check, ZoomIn, ZoomOut, LayoutTemplate, ArrowLeft, X, Settings, LogOut,
+  Check, CheckCircle2, LayoutTemplate, ArrowLeft, X, Settings, LogOut,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIconThemeStore } from "@/store/iconThemeStore";
-import { ICON_THEMES, THEME_ORDER, type ThemeId, type PhaseKey } from "@/lib/iconThemes";
+import { type PhaseKey } from "@/lib/iconThemes";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
@@ -53,8 +53,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
   const reached = highestState ?? currentState;
   const router = useRouter();
   const pathname = usePathname();
-  const { themeId, setTheme, zoom, zoomIn, zoomOut } = useIconThemeStore();
-  const [showThemePicker, setShowThemePicker] = useState(false);
+  const { zoom } = useIconThemeStore();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerHighlightPhase, setDrawerHighlightPhase] = useState(-1);
   const [userEmail, setUserEmail] = useState("");
@@ -82,7 +81,6 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
     router.push("/login");
   }
 
-  const theme = ICON_THEMES[themeId];
   const effectivePath = activeOverridePath ? `/${activeOverridePath}` : pathname;
   const currentPathRank = Object.entries(PATH_RANK).find(([p]) => effectivePath.endsWith(`/${p}`))?.[1] ?? -1;
 
@@ -151,15 +149,15 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                     color: "oklch(0.06 0 0)",
                     boxShadow: "0 0 14px oklch(0.72 0.25 285 / 0.5)",
                   } : isDone ? {
-                    background: "oklch(0.55 0.15 145)",
-                    color: "white",
+                    background: "transparent",
+                    color: "oklch(0.55 0.15 145)",
                   } : {
                     background: "var(--bg-step-idle)",
                     color: "var(--c-38)",
                   }
                 }
               >
-                {isDone ? <Check size={16} strokeWidth={2.5} /> : <Icon size={16} strokeWidth={1.75} />}
+                {isDone ? <CheckCircle2 size={18} strokeWidth={2} /> : <Icon size={16} strokeWidth={1.75} />}
               </div>
 
               <div className="min-w-0">
@@ -215,92 +213,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
         </div>
       </div>
 
-      <div className="px-4 pb-3" style={{ borderTop: "1px solid var(--bd-7)" }}>
-        <div className="flex items-center gap-2 mt-3">
-          <div className="flex-1 flex items-center justify-between px-3 py-2.5 rounded-xl"
-            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-            <div className="flex items-center gap-2">
-              <ZoomIn size={13} style={{ color: "var(--c-45)" }} />
-              <span className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Zoom</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={zoomOut}
-                disabled={zoom <= 80}
-                className="w-6 h-6 flex items-center justify-center rounded-md text-sm font-bold transition-all disabled:opacity-30 hover:bg-white/10"
-                style={{ color: "var(--c-60)" }}
-              >
-                <ZoomOut size={13} />
-              </button>
-              <span className="text-xs font-mono w-9 text-center" style={{ color: "oklch(0.72 0.25 285)" }}>
-                {zoom}%
-              </span>
-              <button
-                onClick={zoomIn}
-                disabled={zoom >= 125}
-                className="w-6 h-6 flex items-center justify-center rounded-md text-sm font-bold transition-all disabled:opacity-30 hover:bg-white/10"
-                style={{ color: "var(--c-60)" }}
-              >
-                <ZoomIn size={13} />
-              </button>
-            </div>
-          </div>
-          <ThemeToggle />
-        </div>
-      </div>
 
-      <div className="px-4 pb-4 pt-2">
-        <button
-          onClick={() => setShowThemePicker(!showThemePicker)}
-          className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all"
-          style={{
-            background: showThemePicker ? "oklch(0.72 0.25 285 / 0.08)" : "var(--bg-panel)",
-            border: `1px solid ${showThemePicker ? "oklch(0.72 0.25 285 / 0.2)" : "var(--bd-7)"}`,
-          }}
-        >
-          <div className="flex items-center gap-2">
-            <span className="text-base" style={{ color: "oklch(0.72 0.25 285)" }}>{theme.doneIcon}</span>
-            <span className="text-xs font-medium" style={{ color: "var(--c-50)" }}>{theme.name} Style</span>
-          </div>
-          <span className="text-xs" style={{ color: "var(--c-35)" }}>{showThemePicker ? "▲" : "▼"}</span>
-        </button>
-
-        {showThemePicker && (
-          <div className="mt-2 space-y-1">
-            {THEME_ORDER.map((id) => {
-              const t = ICON_THEMES[id];
-              const isSelected = themeId === id;
-              return (
-                <button
-                  key={id}
-                  onClick={() => { setTheme(id as ThemeId); setShowThemePicker(false); }}
-                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl transition-all"
-                  style={isSelected ? {
-                    background: "oklch(0.72 0.25 285 / 0.1)",
-                    border: "1px solid oklch(0.72 0.25 285 / 0.25)",
-                  } : {
-                    background: "var(--bg-panel)",
-                    border: "1px solid var(--bd-6)",
-                  }}
-                >
-                  <span className="text-xs font-medium"
-                    style={{ color: isSelected ? "oklch(0.72 0.25 285)" : "var(--c-50)" }}>
-                    {t.name}
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm" style={{ color: isSelected ? "oklch(0.72 0.25 285)" : "var(--c-40)" }}>
-                      {t.doneIcon}
-                    </span>
-                    <span className="text-xs font-mono" style={{ color: isSelected ? "oklch(0.5 0.1 285)" : "var(--c-30)" }}>
-                      done
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
 
     </>
   );

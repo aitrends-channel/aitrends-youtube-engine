@@ -724,8 +724,11 @@ export default function HomePage() {
             className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
           >
-            <span>{creating ? "Creating…" : "+"}</span>
-            <span className="hidden sm:inline">{creating ? "" : "New Niche"}</span>
+            <span className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+              style={{ background: "white", color: "oklch(0.55 0.15 145)" }}>
+              {creating ? "…" : "+"}
+            </span>
+            <span className="hidden sm:inline">{creating ? "Creating…" : "Niche"}</span>
           </button>
         </div>
       </header>
