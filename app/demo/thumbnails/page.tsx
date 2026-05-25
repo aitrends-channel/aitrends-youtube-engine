@@ -273,7 +273,8 @@ export default function DemoThumbnailsPage() {
         <div className="px-4 sm:px-8 max-w-3xl mx-auto">
           <button
             onClick={() => router.push("/projects")}
-            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all"
+            disabled={!hasImages}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40"
             style={{ background: "oklch(0.55 0.15 145)", color: "var(--bg-page-2)" }}
           >
             Done
