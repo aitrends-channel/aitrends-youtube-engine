@@ -43,7 +43,7 @@ function StepIndicator({ step }: { step: AnalysisStep }) {
           style={{ color: step.status === "idle" ? "var(--c-45)" : "var(--c-90)" }}>
           {step.label}
         </p>
-        <p className="text-xs" style={{ color: "var(--c-45)" }}>{step.sublabel}</p>
+        {step.sublabel && <p className="text-xs" style={{ color: "var(--c-45)" }}>{step.sublabel}</p>}
       </div>
     </div>
   );

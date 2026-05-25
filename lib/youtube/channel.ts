@@ -12,7 +12,11 @@ async function supadataGet<T>(path: string): Promise<T> {
   const res = await fetch(`${SUPADATA_BASE}${path}`, {
     headers: { "x-api-key": getApiKey() },
   });
-  if (!res.ok) throw new Error(`Supadata request failed: HTTP ${res.status}`);
+  if (!res.ok) {
+    let body = "";
+    try { body = await res.text(); } catch { /* ignore */ }
+    throw new Error(`Supadata ${path} → HTTP ${res.status}: ${body}`);
+  }
   return res.json() as Promise<T>;
 }
 
@@ -36,14 +40,14 @@ export async function resolveChannel(channelUrl: string): Promise<ChannelInfo> {
     subscriberCount: number;
   }>(`/youtube/channel?id=${encodeURIComponent(channelUrl)}`);
 
-  const { video_ids } = await supadataGet<{
-    video_ids: string[];
-    short_ids: string[];
-    live_ids: string[];
+  const { videoIds = [] } = await supadataGet<{
+    videoIds: string[];
+    shortIds: string[];
+    liveIds: string[];
   }>(`/youtube/channel/videos?id=${encodeURIComponent(channel.id)}&type=video&limit=10`);
 
   const videoDetails = await Promise.all(
-    video_ids.slice(0, 10).map(async (id): Promise<TopVideo | null> => {
+    videoIds.slice(0, 10).map(async (id): Promise<TopVideo | null> => {
       try {
         const v = await supadataGet<{ id: string; title: string; viewCount: number; duration: number }>(
           `/youtube/video?id=${encodeURIComponent(id)}`

@@ -15,10 +15,10 @@ export const DEMO_DATA = {
   ],
 
   analysisSteps: [
-    { label: "Fetch channel info",       sublabel: "Name, subscribers, top videos" },
-    { label: "Fetch video transcripts",  sublabel: "Real transcript text via Supadata" },
-    { label: "Analyze channel style",    sublabel: "Niche, hook style, tone, pacing" },
-    { label: "Extract Style DNA",        sublabel: "Sentence rhythm, emotional triggers" },
+    { label: "Scanning",   sublabel: "" },
+    { label: "Processing", sublabel: "" },
+    { label: "Refining",   sublabel: "" },
+    { label: "Finalising", sublabel: "" },
   ],
 
   styleProfile:

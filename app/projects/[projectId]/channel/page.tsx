@@ -51,7 +51,7 @@ function StepIndicator({ step }: { step: AnalysisStep }) {
         }}>
           {step.label}
         </p>
-        <p className="text-xs" style={{ color: "var(--c-45)" }}>{step.sublabel}</p>
+        {step.sublabel && <p className="text-xs" style={{ color: "var(--c-45)" }}>{step.sublabel}</p>}
       </div>
     </div>
   );
@@ -71,10 +71,10 @@ export default function ChannelPage({ params }: PageProps) {
   const [isWorking, setIsWorking] = useState(false);
 
   const [steps, setSteps] = useState<AnalysisStep[]>([
-    { id: "channel", label: "Fetch channel info", sublabel: "Name, subscribers, top videos", status: "idle" },
-    { id: "transcripts", label: "Fetch video transcripts", sublabel: "Real transcript text via Supadata", status: "idle" },
-    { id: "analyze", label: "Analyze channel style", sublabel: "Niche, hook style, tone, pacing", status: "idle" },
-    { id: "dna", label: "Extract Style DNA", sublabel: "Sentence rhythm, emotional triggers", status: "idle" },
+    { id: "channel", label: "Scanning", sublabel: "", status: "idle" },
+    { id: "transcripts", label: "Processing", sublabel: "", status: "idle" },
+    { id: "analyze", label: "Refining", sublabel: "", status: "idle" },
+    { id: "dna", label: "Finalising", sublabel: "", status: "idle" },
   ]);
 
   function setStep(id: string, status: StepStatus) {
@@ -124,6 +124,8 @@ export default function ChannelPage({ params }: PageProps) {
     if (!fetchedInfo!.topVideos.length) {
       setStep("transcripts", "error");
       toast.error("No videos found for this channel");
+      setIsWorking(false);
+      return;
     } else {
       try {
         const res = await fetch("/api/youtube/transcripts", {
@@ -140,6 +142,8 @@ export default function ChannelPage({ params }: PageProps) {
         setStep("transcripts", "error");
         const msg = err instanceof Error ? err.message : "Transcript fetch failed";
         toast.error(`Transcripts: ${msg}`);
+        setIsWorking(false);
+        return;
       }
     }
 
