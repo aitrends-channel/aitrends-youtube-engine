@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, LayoutTemplate, CheckCircle2, RotateCcw, X, Settings, LogOut } from "lucide-react";
+import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, LayoutTemplate, CheckCircle2, RotateCcw, X, Settings, LogOut, ArrowLeft } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useDemoState } from "@/lib/demo-context";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -193,12 +193,14 @@ export function DemoNav({ currentStep }: DemoNavProps) {
         className="md:hidden fixed top-0 inset-x-0 z-[200] h-14 flex items-center justify-between px-4 shrink-0"
         style={{ background: "var(--bg-nav)", borderBottom: "1px solid var(--bd-7)" }}
       >
-        {/* Brand */}
-        <button onClick={() => router.push("/dashboard")} className="flex items-center gap-2">
-          <div className="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center">
-            <Image src="/heclus-icon-white.svg" alt="Heclus" width={28} height={28} className="object-cover w-full h-full" />
-          </div>
-          <span className="text-sm font-bold" style={{ color: "var(--c-90)" }}>Heclus</span>
+        {/* Back */}
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+          style={{ color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+        >
+          <ArrowLeft size={13} />
+          Back
         </button>
 
         {/* Right controls */}
