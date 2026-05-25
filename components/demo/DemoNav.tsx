@@ -8,6 +8,7 @@ import type { LucideIcon } from "lucide-react";
 import { useDemoState } from "@/lib/demo-context";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { SubscriptionModal } from "@/components/SubscriptionModal";
 
 export const DEMO_STEPS: { label: string; sublabel: string; Icon: LucideIcon; href: string }[] = [
   { label: "Channel",    sublabel: "Analysis & Style",    Icon: Tv,             href: "/demo/channel" },
@@ -31,6 +32,7 @@ export function DemoNav({ currentStep }: DemoNavProps) {
   const [confirming, setConfirming] = useState(false);
   const [userEmail, setUserEmail] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showSubModal, setShowSubModal] = useState(false);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -237,7 +239,7 @@ export function DemoNav({ currentStep }: DemoNavProps) {
                   </div>
                   <div className="px-2 pt-2">
                     <button
-                      onClick={() => { setShowProfileMenu(false); router.push("/demo/dashboard"); }}
+                      onClick={() => { setShowProfileMenu(false); setShowSubModal(true); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
                       style={{ color: "var(--c-60)" }}
                     >
@@ -317,6 +319,15 @@ export function DemoNav({ currentStep }: DemoNavProps) {
         {stepList}
         {progressFooter}
       </aside>
+
+      {showSubModal && (
+        <SubscriptionModal
+          email={userEmail}
+          hideTryDemo
+          onClose={() => setShowSubModal(false)}
+          onSuccess={() => { setShowSubModal(false); router.push("/dashboard"); }}
+        />
+      )}
     </>
   );
 }
