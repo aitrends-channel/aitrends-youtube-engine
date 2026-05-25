@@ -113,7 +113,7 @@ export default function DemoAssemblePage() {
             </p>
           </div>
 
-          <div className="p-4 sm:p-8">
+          <div className="p-4 sm:p-8 pb-24 sm:pb-24">
             <div className="flex-1 min-w-0 max-w-2xl space-y-6">
 
               {/* Status cards */}

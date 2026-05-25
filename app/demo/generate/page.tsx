@@ -205,7 +205,7 @@ export default function DemoGeneratePage() {
             </div>
           </div>
 
-          <div className="p-4 sm:p-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="p-4 sm:p-8 pb-24 sm:pb-24 grid grid-cols-1 lg:grid-cols-3 gap-6">
 
             {/* ── Voiceover column ─────────────────────────────────────────── */}
             <div className="rounded-2xl flex flex-col overflow-hidden"

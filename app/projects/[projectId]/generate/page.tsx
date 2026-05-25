@@ -634,7 +634,7 @@ export default function GeneratePage({ params }: PageProps) {
           </div>
         </div>
 
-        <div className="p-4 sm:p-8 grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="p-4 sm:p-8 pb-24 sm:pb-24 grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* TTS Panel */}
           <div className="rounded-2xl flex flex-col overflow-hidden"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>

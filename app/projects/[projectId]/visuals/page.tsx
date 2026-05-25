@@ -242,7 +242,7 @@ export default function VisualsPage({ params }: PageProps) {
           </div>
         </div>
 
-        <div className="p-4 sm:p-8 max-w-4xl mx-auto space-y-6">
+        <div className="p-4 sm:p-8 pb-24 sm:pb-24 max-w-4xl mx-auto space-y-6">
           {/* Mode toggle */}
           <div className="flex gap-2 p-1 rounded-xl"
             style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-7)" }}>

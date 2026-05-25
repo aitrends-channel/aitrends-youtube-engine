@@ -144,7 +144,7 @@ export default function DemoVisualsPage() {
             )}
           </div>
 
-          <div className="p-4 sm:p-8 max-w-4xl mx-auto space-y-6">
+          <div className="p-4 sm:p-8 pb-24 sm:pb-24 max-w-4xl mx-auto space-y-6">
 
             {/* Mode toggle (Manual locked) */}
             <div className="flex gap-2 p-1 rounded-xl"

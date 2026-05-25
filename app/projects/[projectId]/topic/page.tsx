@@ -77,7 +77,7 @@ export default function TopicPage({ params }: PageProps) {
           </p>
         </div>
 
-        <div className="max-w-2xl mx-auto px-4 sm:px-8 py-6 sm:py-8 space-y-5">
+        <div className="max-w-2xl mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-24 space-y-5">
 
           {/* Ideas list */}
           {allIdeas.length > 0 && (

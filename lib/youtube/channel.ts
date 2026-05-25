@@ -1,23 +1,22 @@
+import { Supadata, SupadataError } from "@supadata/js";
+import type { YoutubeBatchResults } from "@supadata/js";
 import type { ChannelInfo, TopVideo } from "@/lib/types";
 
-const SUPADATA_BASE = "https://api.supadata.ai/v1";
-
-function getApiKey(): string {
+function getClient(): Supadata {
   const key = process.env.SUPADATA_API_KEY;
   if (!key) throw new Error("SUPADATA_API_KEY is not configured");
-  return key;
+  return new Supadata({ apiKey: key });
 }
 
-async function supadataGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${SUPADATA_BASE}${path}`, {
-    headers: { "x-api-key": getApiKey() },
-  });
-  if (!res.ok) {
-    let body = "";
-    try { body = await res.text(); } catch { /* ignore */ }
-    throw new Error(`Supadata ${path} → HTTP ${res.status}: ${body}`);
+async function pollBatch(client: Supadata, jobId: string): Promise<YoutubeBatchResults> {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    const res = await client.youtube.batch.getBatchResults(jobId);
+    if (res.status === "completed") return res;
+    if (res.status === "failed") throw new Error("Batch job failed");
+    await new Promise(r => setTimeout(r, 2000));
   }
-  return res.json() as Promise<T>;
+  throw new Error("Batch job timed out");
 }
 
 function secondsToISO(seconds: number): string {
@@ -33,42 +32,53 @@ function formatSubscribers(count: number): string {
 }
 
 export async function resolveChannel(channelUrl: string): Promise<ChannelInfo> {
-  const channel = await supadataGet<{
-    id: string;
-    name: string;
-    description: string;
-    subscriberCount: number;
-  }>(`/youtube/channel?id=${encodeURIComponent(channelUrl)}`);
+  const client = getClient();
 
-  const { videoIds = [] } = await supadataGet<{
-    videoIds: string[];
-    shortIds: string[];
-    liveIds: string[];
-  }>(`/youtube/channel/videos?id=${encodeURIComponent(channel.id)}&type=video&limit=10`);
+  try {
+    // 1 call: channel info
+    const channel = await client.youtube.channel({ id: channelUrl });
 
-  const videoDetails = await Promise.all(
-    videoIds.slice(0, 10).map(async (id): Promise<TopVideo | null> => {
-      try {
-        const v = await supadataGet<{ id: string; title: string; viewCount: number; duration: number }>(
-          `/youtube/video?id=${encodeURIComponent(id)}`
-        );
-        return { videoId: v.id, title: v.title, viewCount: v.viewCount, duration: secondsToISO(v.duration) };
-      } catch {
-        return null;
-      }
-    })
-  );
+    // 1 call: 5 most recent video IDs
+    const { videoIds = [] } = await client.youtube.channel.videos({
+      id: channel.id,
+      type: "video",
+      limit: 5,
+    });
 
-  const topVideos = videoDetails
-    .filter((v): v is TopVideo => v !== null)
-    .sort((a, b) => b.viewCount - a.viewCount)
-    .slice(0, 5);
+    if (!videoIds.length) {
+      return {
+        channelId: channel.id,
+        channelName: channel.name,
+        subscribers: formatSubscribers(channel.subscriberCount),
+        description: channel.description,
+        topVideos: [],
+      };
+    }
 
-  return {
-    channelId: channel.id,
-    channelName: channel.name,
-    subscribers: formatSubscribers(channel.subscriberCount),
-    description: channel.description,
-    topVideos,
-  };
+    // 1 batch job: all 5 video details
+    const batchJob = await client.youtube.video.batch({ videoIds });
+    const batchResults = await pollBatch(client, batchJob.jobId);
+
+    const topVideos: TopVideo[] = (batchResults.results ?? [])
+      .filter(r => r.video != null)
+      .map(r => ({
+        videoId: r.videoId,
+        title: r.video!.title,
+        viewCount: r.video!.viewCount,
+        duration: secondsToISO(r.video!.duration),
+      }));
+
+    return {
+      channelId: channel.id,
+      channelName: channel.name,
+      subscribers: formatSubscribers(channel.subscriberCount),
+      description: channel.description,
+      topVideos,
+    };
+  } catch (err) {
+    if (err instanceof SupadataError && err.error === "limit-exceeded") {
+      throw new Error("API quota exceeded. Please try again later or upgrade your Supadata plan.");
+    }
+    throw err;
+  }
 }

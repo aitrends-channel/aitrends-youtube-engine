@@ -674,7 +674,7 @@ export default function AssemblePage({ params }: PageProps) {
           </p>
         </div>
 
-        <div className="p-4 sm:p-8 flex flex-col lg:flex-row gap-6 items-start">
+        <div className="p-4 sm:p-8 pb-24 sm:pb-24 flex flex-col lg:flex-row gap-6 items-start">
           <div className="flex-1 min-w-0 w-full max-w-2xl space-y-6">
 
             {/* Status cards */}

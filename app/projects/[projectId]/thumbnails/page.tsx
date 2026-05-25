@@ -485,7 +485,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="px-4 sm:px-8 py-4 sm:py-6 space-y-4 max-w-5xl mx-auto">
+          <div className="px-4 sm:px-8 pt-4 sm:pt-6 pb-24 space-y-4 max-w-5xl mx-auto">
 
             {/* Step 1 — Concepts */}
             <div className="rounded-xl p-4 flex gap-4"

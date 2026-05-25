@@ -120,7 +120,7 @@ export default function DemoChannelPage() {
       <div className="flex-1 min-w-0 flex flex-col min-h-0">
         <DemoBanner />
         <main className="flex-1 overflow-y-auto">
-          <div className="max-w-2xl mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-10 space-y-8">
+          <div className="max-w-2xl mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-24 space-y-8">
 
             <div>
               <h1 className="text-2xl font-bold tracking-tight">Channel Setup</h1>
