@@ -114,11 +114,11 @@ export default function DemoVisualsPage() {
       <DemoNav currentStep={3} />
       <div className="flex-1 flex flex-col min-h-0">
         <DemoBanner />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 flex flex-col overflow-hidden">
 
           {/* Header */}
           <div
-            className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-8 py-4 sm:py-5"
+            className="shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 sm:px-8 py-4 sm:py-5"
             style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}
           >
             <div>
@@ -144,7 +144,8 @@ export default function DemoVisualsPage() {
             )}
           </div>
 
-          <div className="p-4 sm:p-8 pb-24 sm:pb-24 max-w-4xl mx-auto space-y-6">
+          <div className="flex-1 overflow-y-auto">
+          <div className="p-4 sm:p-8 pb-24 max-w-4xl mx-auto space-y-6">
 
             {/* Mode toggle (Manual locked) */}
             <div className="flex gap-2 p-1 rounded-xl"
@@ -354,6 +355,7 @@ export default function DemoVisualsPage() {
               </div>
             )}
 
+          </div>
           </div>
         </main>
       </div>

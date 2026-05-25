@@ -213,9 +213,9 @@ export default function VisualsPage({ params }: PageProps) {
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={7} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
+      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
         {/* Header */}
-        <div className="px-4 sm:px-8 py-4 sm:py-5"
+        <div className="shrink-0 px-4 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div className="flex items-start sm:items-center justify-between gap-3">
             <div>
@@ -242,7 +242,8 @@ export default function VisualsPage({ params }: PageProps) {
           </div>
         </div>
 
-        <div className="p-4 sm:p-8 pb-24 sm:pb-24 max-w-4xl mx-auto space-y-6">
+        <div className="flex-1 overflow-y-auto">
+        <div className="p-4 sm:p-8 pb-24 max-w-4xl mx-auto space-y-6">
           {/* Mode toggle */}
           <div className="flex gap-2 p-1 rounded-xl"
             style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-7)" }}>
@@ -560,6 +561,7 @@ export default function VisualsPage({ params }: PageProps) {
               </div>
             </div>
           )}
+        </div>
         </div>
       </main>
     </div>
