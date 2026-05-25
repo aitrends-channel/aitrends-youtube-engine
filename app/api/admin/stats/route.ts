@@ -51,7 +51,6 @@ export async function GET() {
   }
 
   const userList = [
-    // All registered auth users (paid Gumroad customers or manually granted)
     ...authUsers.map((authUser) => {
       const email = authUser.email ?? "Unknown";
       const isPaid = authUser.app_metadata?.paid === true;

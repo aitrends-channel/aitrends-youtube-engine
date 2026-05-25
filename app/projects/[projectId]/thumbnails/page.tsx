@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, use, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
@@ -329,6 +330,7 @@ async function streamStep(url: string, body: object, onUpdate: (s: StepState) =>
 export default function ThumbnailsPage({ params }: PageProps) {
   const { projectId } = params;
   const { project, mutate } = useProject(projectId);
+  const router = useRouter();
 
   const { data: imageModels } = useSWR<KieModel[]>("/api/kie/models?type=image", fetcher);
 
@@ -673,6 +675,20 @@ export default function ThumbnailsPage({ params }: PageProps) {
           </div>
         </div>
       </main>
+
+      {/* Fixed Done bar */}
+      <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
+        style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
+        <div className="px-4 sm:px-8 max-w-5xl mx-auto">
+          <button
+            onClick={() => router.push("/projects")}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all"
+            style={{ background: "oklch(0.55 0.15 145)", color: "var(--bg-page-2)" }}
+          >
+            Done
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

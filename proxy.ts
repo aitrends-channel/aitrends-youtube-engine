@@ -10,7 +10,6 @@ const PUBLIC_PREFIXES = [
   "/auth/",
   "/api/auth/",
   "/api/webhooks/",
-  "/api/gumroad/",
 ];
 
 export async function proxy(request: NextRequest) {

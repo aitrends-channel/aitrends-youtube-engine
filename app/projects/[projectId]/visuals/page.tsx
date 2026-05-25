@@ -210,39 +210,22 @@ export default function VisualsPage({ params }: PageProps) {
   const totalSelected = selectedImages.size;
 
   return (
-    <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
+    <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={7} highestState={project?.current_state} channelName={project?.channel_name} />
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
         {/* Header */}
         <div className="shrink-0 px-4 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <div className="flex items-start sm:items-center justify-between gap-3">
-            <div>
-              <h1 className="font-bold text-base sm:text-lg">Visual Style Extraction</h1>
-              <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                Upload or auto-capture screenshots so Claude can extract the channel&apos;s visual signature
-              </p>
-            </div>
-            {visualProfile && (
-              <button
-                onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/prompts`); }}
-                disabled={navigating}
-                className="shrink-0 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold disabled:opacity-60 transition-all"
-                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-              >
-                {navigating ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    Loading…
-                  </span>
-                ) : "Continue →"}
-              </button>
-            )}
+          <div>
+            <h1 className="font-bold text-base sm:text-lg">Visual Style Extraction</h1>
+            <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+              Upload or auto-capture screenshots so Claude can extract the channel&apos;s visual signature
+            </p>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto pb-[70px]">
         <div className="p-4 sm:p-8 pb-24 max-w-4xl mx-auto space-y-6">
           {/* Mode toggle */}
           <div className="flex gap-2 p-1 rounded-xl"
@@ -510,7 +493,7 @@ export default function VisualsPage({ params }: PageProps) {
           {/* Visual profile result */}
           {visualProfile && (
             <div className="rounded-2xl overflow-hidden"
-              style={{ background: "var(--bg-panel)", border: "1px solid oklch(0.55 0.15 145 / 0.25)" }}>
+              style={{ background: "var(--bg-panel)", border: "1px solid oklch(0.55 0.15 145 / 0.25)", marginBottom: "60px" }}>
               <div className="px-5 py-4 flex items-center gap-2"
                 style={{ borderBottom: "1px solid var(--bd-6)", background: "oklch(0.55 0.15 145 / 0.06)" }}>
                 <span style={{ color: "oklch(0.7 0.15 145)" }}>✓</span>
@@ -544,26 +527,33 @@ export default function VisualsPage({ params }: PageProps) {
                   </div>
                 )}
               </div>
-              <div className="px-5 pb-5">
-                <button
-                  onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/prompts`); }}
-                  disabled={navigating}
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 transition-all"
-                  style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-                >
-                  {navigating ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      Loading…
-                    </span>
-                  ) : "Generate All Prompts →"}
-                </button>
-              </div>
             </div>
           )}
         </div>
         </div>
       </main>
+
+      {/* Fixed Continue bar */}
+      {visualProfile && (
+        <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
+          style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
+          <div className="max-w-4xl mx-auto px-4 sm:px-8">
+          <button
+            onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/prompts`); }}
+            disabled={navigating}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 transition-all"
+            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+          >
+            {navigating ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Loading…
+              </span>
+            ) : "Generate All Prompts →"}
+          </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

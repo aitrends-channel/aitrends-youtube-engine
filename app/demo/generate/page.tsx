@@ -180,29 +180,10 @@ export default function DemoGeneratePage() {
           {/* Header */}
           <div className="px-4 sm:px-8 py-4 sm:py-5"
             style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div>
-                <h1 className="font-bold text-lg">Generate Assets</h1>
-                <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                  Select a model for each service, then generate your final content
-                </p>
-              </div>
-              {allDone && (
-                <button
-                  onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/assemble"), 500); }}
-                  disabled={navigating}
-                  className="px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-60"
-                  style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-                >
-                  {navigating ? (
-                    <span className="flex items-center gap-2">
-                      <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      Loading…
-                    </span>
-                  ) : "Continue →"}
-                </button>
-              )}
-            </div>
+            <h1 className="font-bold text-lg">Generate Assets</h1>
+            <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+              Select a model for each service, then generate your final content
+            </p>
           </div>
 
           <div className="p-4 sm:p-8 pb-24 sm:pb-24 grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -345,7 +326,7 @@ export default function DemoGeneratePage() {
               {imagesPhase !== "idle" && (
                 <div className="px-5 pt-4">
                   <ProgressBar value={imagesPhase === "done" ? totalBeats : imagesProgress} total={totalBeats} />
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-36 overflow-y-auto">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-72 overflow-y-auto">
                     {DEMO_DATA.promptBeats.map((beat, i) => {
                     const revealed = imagesPhase === "done" || i < imagesProgress;
                     return (
@@ -455,7 +436,7 @@ export default function DemoGeneratePage() {
               {videosPhase !== "idle" && (
                 <div className="px-5 pt-4">
                   <ProgressBar value={videosPhase === "done" ? totalBeats : 0} total={totalBeats} />
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-36 overflow-y-auto">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-72 overflow-y-auto">
                     {DEMO_DATA.promptBeats.map((beat) => (
                       <div key={beat.beat}
                         className="aspect-video rounded-lg overflow-hidden flex items-center justify-center"
@@ -493,33 +474,42 @@ export default function DemoGeneratePage() {
                 {videosPhase === "done" && (
                   <ProgressBar value={totalBeats} total={totalBeats} />
                 )}
-                {videosPhase === "done" ? (
-                  <button
-                    onClick={() => router.push("/demo/assemble")}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
-                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-                  >
-                    Continue →
-                  </button>
-                ) : (
-                  <button
-                    onClick={queueVideos}
-                    disabled={videosPhase === "queuing"}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 transition-all"
-                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-                  >
-                    {videosPhase === "queuing" ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        Queuing clips…
-                      </span>
-                    ) : `Queue ${totalBeats} Video Clips`}
-                  </button>
-                )}
+                <button
+                  onClick={queueVideos}
+                  disabled={videosPhase === "queuing" || videosPhase === "done"}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                >
+                  {videosPhase === "queuing" ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      Queuing clips…
+                    </span>
+                  ) : videosPhase === "done" ? `${totalBeats} Clips Queued` : `Queue ${totalBeats} Video Clips`}
+                </button>
               </div>
             </div>
           </div>
         </main>
+      </div>
+
+      <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
+        style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
+        <div className="px-4 sm:px-8">
+          <button
+            onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/assemble"), 500); }}
+            disabled={!allDone || navigating}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+          >
+            {navigating ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Loading…
+              </span>
+            ) : "Continue →"}
+          </button>
+        </div>
       </div>
     </div>
   );

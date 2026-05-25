@@ -13,7 +13,6 @@ export async function POST() {
     return NextResponse.json({ allowed: true });
   }
 
-  // Paid users (created via Gumroad webhook) carry paid=true in app_metadata
   if (user.app_metadata?.paid === true) {
     return NextResponse.json({ allowed: true });
   }

@@ -79,7 +79,7 @@ export default function DemoScriptPage() {
           <div />
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 sm:p-8">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-8 pb-[160px]">
           {phase === "loading" && (
             <div className="max-w-xl mx-auto text-center space-y-5 p-10 rounded-2xl"
               style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
@@ -140,32 +140,31 @@ export default function DemoScriptPage() {
                 </div>
               </div>
 
-              {scriptDone && (
-                <div className="mt-6 flex justify-end">
-                  <button
-                    onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/visuals"), 500); }}
-                    disabled={navigating}
-                    className="px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-60"
-                    style={{
-                      background: "oklch(0.72 0.25 285)",
-                      color: "var(--bg-page-2)",
-                      boxShadow: "0 0 16px oklch(0.72 0.25 285 / 0.3)",
-                    }}
-                  >
-                    {navigating ? (
-                      <span className="flex items-center gap-2">
-                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        Preparing visuals…
-                      </span>
-                    ) : "Continue to Visuals →"}
-                  </button>
-                </div>
-              )}
             </div>
           )}
         </div>
         </main>
       </div>
+      {scriptDone && (
+        <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3 px-4 sm:px-8"
+          style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
+          <div className="max-w-3xl mx-auto">
+            <button
+              onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/visuals"), 500); }}
+              disabled={navigating}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 transition-all"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              {navigating ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Preparing visuals…
+                </span>
+              ) : "Continue →"}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -610,12 +610,12 @@ export default function GeneratePage({ params }: PageProps) {
   }
 
   return (
-    <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
+    <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={14} highestState={project?.current_state} channelName={project?.channel_name} />
 
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
         {/* Header */}
-        <div className="px-4 sm:px-8 py-4 sm:py-5"
+        <div className="px-4 sm:px-8 md:pr-44 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -634,7 +634,7 @@ export default function GeneratePage({ params }: PageProps) {
           </div>
         </div>
 
-        <div className="p-4 sm:p-8 pb-24 sm:pb-24 grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="p-4 sm:p-8 pb-[70px] grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* TTS Panel */}
           <div className="rounded-2xl flex flex-col overflow-hidden"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
@@ -813,7 +813,7 @@ export default function GeneratePage({ params }: PageProps) {
             {(beats.some((b) => b.imageUrl || b.imageStatus) || regenBeats.size > 0) && (
               <div className="px-5 pt-4">
                 <ProgressBar value={clearingImages ? 0 : generatedImages} total={totalBeats} />
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-36 overflow-y-auto">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-72 overflow-y-auto">
                   {beats.map((b) => {
                     const isRegening = regenBeats.has(b.beatNumber);
                     return (
@@ -957,54 +957,55 @@ export default function GeneratePage({ params }: PageProps) {
             </div>
 
             {/* Video clip grid */}
-            {beats.some((b) => b.videoUrl || b.videoStatus) && (
-              <div className="px-5 pt-4">
-                <ProgressBar value={generatedVideos} total={videoBeats} />
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-36 overflow-y-auto">
-                  {beats.filter((b) => b.videoPrompt).map((b) => (
-                    <div
-                      key={b.beatNumber}
-                      className="aspect-video rounded-lg overflow-hidden flex items-center justify-center"
-                      style={{ background: "var(--bg-progress)" }}
-                      onMouseEnter={() => {
-                        if (!b.videoUrl) return;
-                        if (videoHideTimer.current) clearTimeout(videoHideTimer.current);
-                        setHoveredVideoBeat(b);
-                      }}
-                      onMouseLeave={() => {
-                        videoHideTimer.current = setTimeout(() => setHoveredVideoBeat(null), 200);
-                      }}
-                    >
-                      {b.videoUrl ? (
-                        <video src={b.videoUrl} title={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
-                      ) : (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded"
-                          title={b.videoStatus === "failed" && b.videoError ? b.videoError : undefined}
-                          style={{
-                            background: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285 / 0.1)" : b.videoStatus === "done" ? "oklch(0.55 0.15 145 / 0.1)" : b.videoStatus === "failed" ? "oklch(0.6 0.22 25 / 0.1)" : "var(--bg-track)",
-                            color: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285)" : b.videoStatus === "done" ? "oklch(0.7 0.15 145)" : b.videoStatus === "failed" ? "oklch(0.7 0.2 25)" : "var(--c-35)",
-                            cursor: b.videoStatus === "failed" && b.videoError ? "help" : undefined,
-                          }}>
-                          {b.videoStatus ?? "—"}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div className="p-5 mt-auto space-y-3">
-              <p className="text-xs" style={{ color: "var(--c-40)" }}>
+            <div className="px-5 pt-4 pb-[50px]">
+              {beats.some((b) => b.videoUrl || b.videoStatus) && (
+                <>
+                  <ProgressBar value={generatedVideos} total={videoBeats} />
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-72 overflow-y-auto">
+                    {beats.filter((b) => b.videoPrompt).map((b) => (
+                      <div
+                        key={b.beatNumber}
+                        className="aspect-video rounded-lg overflow-hidden flex items-center justify-center"
+                        style={{ background: "var(--bg-progress)" }}
+                        onMouseEnter={() => {
+                          if (!b.videoUrl) return;
+                          if (videoHideTimer.current) clearTimeout(videoHideTimer.current);
+                          setHoveredVideoBeat(b);
+                        }}
+                        onMouseLeave={() => {
+                          videoHideTimer.current = setTimeout(() => setHoveredVideoBeat(null), 200);
+                        }}
+                      >
+                        {b.videoUrl ? (
+                          <video src={b.videoUrl} title={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
+                        ) : (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded"
+                            title={b.videoStatus === "failed" && b.videoError ? b.videoError : undefined}
+                            style={{
+                              background: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285 / 0.1)" : b.videoStatus === "done" ? "oklch(0.55 0.15 145 / 0.1)" : b.videoStatus === "failed" ? "oklch(0.6 0.22 25 / 0.1)" : "var(--bg-track)",
+                              color: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285)" : b.videoStatus === "done" ? "oklch(0.7 0.15 145)" : b.videoStatus === "failed" ? "oklch(0.7 0.2 25)" : "var(--c-35)",
+                              cursor: b.videoStatus === "failed" && b.videoError ? "help" : undefined,
+                            }}>
+                            {b.videoStatus ?? "—"}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              <p className="text-xs mt-3" style={{ color: "var(--c-40)" }}>
                 Runs in background — clips appear as each job completes.
               </p>
               {videosSubmitted && (
-                <ProgressBar value={generatedVideos} total={videoBeats} />
+                <div className="mt-2">
+                  <ProgressBar value={generatedVideos} total={videoBeats} />
+                </div>
               )}
               <button
                 onClick={queueVideos}
                 disabled={queuingVideos || !selectedVideoModel || !videoBeats}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+                className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-3"
                 style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
               >
                 {queuingVideos ? (
@@ -1014,25 +1015,30 @@ export default function GeneratePage({ params }: PageProps) {
                   </span>
                 ) : `Queue ${videoBeats} Video Clips`}
               </button>
-              <button
-                onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/assemble`); }}
-                disabled={generatedVideos < 2 || navigating}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-30 transition-all"
-                style={{ background: "var(--bg-panel)", color: generatedVideos >= 2 ? "var(--c-75)" : "var(--c-40)", border: "1px solid var(--bd-10)" }}
-              >
-                {navigating ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    Loading…
-                  </span>
-                ) : generatedVideos >= 2
-                  ? `Proceed to Assemble (${generatedVideos}/${videoBeats} clips ready)`
-                  : `Need at least 2 clips to proceed (${generatedVideos}/${videoBeats})`}
-              </button>
             </div>
           </div>
         </div>
       </main>
+
+      {/* Fixed bottom bar */}
+      <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
+        style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
+        <div className="px-4 sm:px-8">
+          <button
+            onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/assemble`); }}
+            disabled={navigating}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+          >
+            {navigating ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Loading…
+              </span>
+            ) : "Continue →"}
+          </button>
+        </div>
+      </div>
 
       {/* Video hover preview */}
       {hoveredVideoBeat?.videoUrl && (

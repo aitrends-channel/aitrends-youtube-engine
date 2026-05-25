@@ -10,7 +10,6 @@ import useSWR from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
-import { NicheLimitModal } from "@/components/NicheLimitModal";
 import { DEMO_DATA } from "@/lib/demo-data";
 
 const ADMIN_EMAIL = "prioritylearn@gmail.com";
@@ -418,7 +417,6 @@ export default function HomePage() {
   const [userPlan, setUserPlan] = useState<string>("starter");
   const [memberSince, setMemberSince] = useState<string>("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [showNicheLimitModal, setShowNicheLimitModal] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -563,7 +561,7 @@ export default function HomePage() {
   }
 
   function createProject() {
-    if (atNicheLimit) { setShowNicheLimitModal(true); return; }
+    if (atNicheLimit) { setShowSubscriptionModal(true); return; }
     requireSubscription(doCreateProject);
   }
 
@@ -1363,15 +1361,6 @@ export default function HomePage() {
         />
       )}
 
-      {showNicheLimitModal && (
-        <NicheLimitModal
-          email={userEmail}
-          userPlan={userPlan}
-          nicheLimit={nicheLimit ?? 5}
-          onClose={() => setShowNicheLimitModal(false)}
-          onSuccess={() => { setShowNicheLimitModal(false); window.location.reload(); }}
-        />
-      )}
     </div>
   );
 }

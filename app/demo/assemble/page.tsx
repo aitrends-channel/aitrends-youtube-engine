@@ -271,30 +271,32 @@ export default function DemoAssemblePage() {
                 )}
 
                 {assemblePhase === "done" ? (
-                  <div className="flex gap-2">
-                    <button onClick={assemble}
-                      className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all hover:opacity-80"
-                      style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
-                      Reassemble
-                    </button>
-                    <a
-                      href={captionsEnabled ? "/demo/videos/with_captions.mp4" : "/demo/videos/without_captions.mp4"}
-                      download={captionsEnabled ? "heclus-demo-with-captions.mp4" : "heclus-demo-no-captions.mp4"}
-                      className="flex-1 py-2.5 rounded-xl text-xs font-medium text-center transition-all hover:opacity-80"
-                      style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
-                      Export
-                    </a>
+                  <div>
+                    <div className="flex gap-2">
+                      <button onClick={assemble}
+                        className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all hover:opacity-80"
+                        style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
+                        Reassemble
+                      </button>
+                      <a
+                        href={captionsEnabled ? "/demo/videos/with_captions.mp4" : "/demo/videos/without_captions.mp4"}
+                        download={captionsEnabled ? "heclus-demo-with-captions.mp4" : "heclus-demo-no-captions.mp4"}
+                        className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all"
+                        style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                        ↓ Export
+                      </a>
+                    </div>
                     <button
                       onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/thumbnails"), 500); }}
                       disabled={navigating}
-                      className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all hover:opacity-90 disabled:opacity-60"
-                      style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                      className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-60"
+                      style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)", marginTop: "50px", marginBottom: "20px" }}>
                       {navigating ? (
                         <span className="flex items-center justify-center gap-2">
-                          <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                           Loading…
                         </span>
-                      ) : "Continue"}
+                      ) : "Continue →"}
                     </button>
                   </div>
                 ) : (

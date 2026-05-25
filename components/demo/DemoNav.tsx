@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, LayoutTemplate, Check, RotateCcw, X, Settings, LogOut } from "lucide-react";
+import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, LayoutTemplate, CheckCircle2, RotateCcw, X, Settings, LogOut } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useDemoState } from "@/lib/demo-context";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -95,11 +95,11 @@ export function DemoNav({ currentStep }: DemoNavProps) {
                   isActive
                     ? { background: "oklch(0.72 0.25 285)", color: "oklch(0.06 0 0)", boxShadow: "0 0 14px oklch(0.72 0.25 285 / 0.5)" }
                     : isDone
-                    ? { background: "oklch(0.55 0.15 145)", color: "white" }
+                    ? { background: "transparent", color: "oklch(0.55 0.15 145)" }
                     : { background: "var(--bg-step-idle)", color: "var(--c-38)" }
                 }
               >
-                {isDone ? <Check size={16} strokeWidth={2.5} /> : <step.Icon size={16} strokeWidth={1.75} />}
+                {isDone ? <CheckCircle2 size={18} strokeWidth={2} /> : <step.Icon size={16} strokeWidth={1.75} />}
               </div>
 
               <div className="min-w-0">

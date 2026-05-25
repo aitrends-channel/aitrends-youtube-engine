@@ -50,6 +50,7 @@ export default function ScriptPage({ params }: PageProps) {
     if (error) toast.error(error);
   }, [error]);
 
+
   async function generateScript(topic: string) {
     setSelectedTopic(topic);
     await startStreaming(projectId, project?.channel_analysis, topic);
@@ -92,12 +93,12 @@ export default function ScriptPage({ params }: PageProps) {
   }
 
   return (
-    <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
+    <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={6} highestState={project?.current_state} channelName={project?.channel_name} />
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-2 px-4 sm:px-8 py-3 sm:py-4 shrink-0"
+        <div className="flex flex-wrap items-center gap-2 px-4 sm:px-8 md:pr-44 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div className="flex-1 min-w-0 mr-2">
             <h1 className="font-bold text-base sm:text-lg text-foreground">Script Editor</h1>
@@ -107,71 +108,10 @@ export default function ScriptPage({ params }: PageProps) {
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {script && (
-              <div className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-mono"
-                style={{
-                  background: wordCountOk ? "oklch(0.55 0.15 145 / 0.1)" : "oklch(0.72 0.25 285 / 0.1)",
-                  border: `1px solid ${wordCountOk ? "oklch(0.55 0.15 145 / 0.3)" : "oklch(0.72 0.25 285 / 0.3)"}`,
-                  color: wordCountOk ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)",
-                }}>
-                <span>{wordCount}</span>
-                <span style={{ opacity: 0.5 }}>/</span>
-                <span>{targetWordCount}</span>
-                <span className="hidden sm:inline" style={{ opacity: 0.5 }}>words</span>
-              </div>
-            )}
-            {script && (
-              <button
-                onClick={() => navigator.clipboard.writeText(script).then(() => toast.success("Copied"))}
-                className="px-2.5 py-1.5 rounded-lg text-xs transition-all"
-                style={{ background: "var(--bg-control)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
-              >
-                Copy
-              </button>
-            )}
-            {script && !isStreaming && (
-              <button
-                onClick={() => setConfirmRegen(true)}
-                className="hidden sm:block px-2.5 py-1.5 rounded-lg text-xs transition-all"
-                style={{ background: "var(--bg-control)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
-              >
-                Regen
-              </button>
-            )}
-            {script && !isStreaming && (
-              <button
-                onClick={saveScript}
-                disabled={saving}
-                className="px-2.5 py-1.5 rounded-lg text-xs transition-all"
-                style={{ background: "var(--bg-control)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
-              >
-                {saving ? (
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    Saving…
-                  </span>
-                ) : "Save"}
-              </button>
-            )}
-            <button
-              onClick={handleContinue}
-              disabled={!script || isStreaming || navigating}
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40"
-              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-            >
-              {navigating ? (
-                <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  Saving…
-                </span>
-              ) : "Continue →"}
-            </button>
-          </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-8">
+        <div className="flex-1 overflow-y-auto pb-[70px] p-4 sm:p-8">
           {/* No-script state */}
           {!script && !isStreaming && (
             <div className="max-w-xl mx-auto">
@@ -221,11 +161,39 @@ export default function ScriptPage({ params }: PageProps) {
                       {isStreaming ? "Generating..." : "Script"}
                     </span>
                   </div>
-                  {isStreaming && (
-                    <span className="text-xs font-mono" style={{ color: "oklch(0.72 0.25 285)" }}>
-                      {wordCount} words
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {script && (
+                      <div className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-mono"
+                        style={{
+                          background: wordCountOk ? "oklch(0.55 0.15 145 / 0.1)" : "oklch(0.72 0.25 285 / 0.1)",
+                          border: `1px solid ${wordCountOk ? "oklch(0.55 0.15 145 / 0.3)" : "oklch(0.72 0.25 285 / 0.3)"}`,
+                          color: wordCountOk ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)",
+                        }}>
+                        <span>{wordCount}</span>
+                        <span style={{ opacity: 0.5 }}>/</span>
+                        <span>{targetWordCount}</span>
+                        <span className="hidden sm:inline ml-1" style={{ opacity: 0.5 }}>words</span>
+                      </div>
+                    )}
+                    {script && (
+                      <button
+                        onClick={() => navigator.clipboard.writeText(script).then(() => toast.success("Copied"))}
+                        className="px-2.5 py-1 rounded-lg text-xs transition-all"
+                        style={{ background: "var(--bg-control)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
+                      >
+                        Copy
+                      </button>
+                    )}
+                    {script && !isStreaming && (
+                      <button
+                        onClick={() => setConfirmRegen(true)}
+                        className="hidden sm:block px-2.5 py-1 rounded-lg text-xs transition-all"
+                        style={{ background: "var(--bg-control)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
+                      >
+                        Regen
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="relative p-6">
@@ -256,6 +224,28 @@ export default function ScriptPage({ params }: PageProps) {
           )}
         </div>
       </main>
+
+      {/* Fixed Continue bar */}
+      {!isStreaming && script && (
+        <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
+          style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
+          <div className="max-w-3xl mx-auto px-4 sm:px-8">
+          <button
+            onClick={handleContinue}
+            disabled={navigating}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40"
+            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+          >
+            {navigating ? (
+              <span className="flex items-center justify-center gap-2">
+                <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Saving…
+              </span>
+            ) : "Continue →"}
+          </button>
+          </div>
+        </div>
+      )}
 
       {/* Regenerate confirm dialog */}
       <Dialog open={confirmRegen} onOpenChange={setConfirmRegen}>

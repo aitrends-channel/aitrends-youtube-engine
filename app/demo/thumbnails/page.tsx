@@ -266,6 +266,20 @@ export default function DemoThumbnailsPage() {
           </div>
         </main>
       </div>
+
+      {/* Fixed Done bar */}
+      <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
+        style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
+        <div className="px-4 sm:px-8 max-w-3xl mx-auto">
+          <button
+            onClick={() => router.push("/projects")}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all"
+            style={{ background: "oklch(0.55 0.15 145)", color: "var(--bg-page-2)" }}
+          >
+            Done
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
