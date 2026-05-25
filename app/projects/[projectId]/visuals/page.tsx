@@ -87,8 +87,7 @@ export default function VisualsPage({ params }: PageProps) {
   // Auto screenshot state
   const [fetching, setFetching] = useState(false);
   const [autoShots, setAutoShots] = useState<AutoShot[]>([]);
-  const [selectedFrames, setSelectedFrames] = useState<Set<string>>(new Set());
-  const [selectedThumbs, setSelectedThumbs] = useState<Set<string>>(new Set());
+  const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
 
   // Manual upload state
   const [videoImages, setVideoImages] = useState<File[]>([]);
@@ -112,8 +111,7 @@ export default function VisualsPage({ params }: PageProps) {
     if (!topVideos.length) { toast.error("No videos found — complete Channel Setup first"); return; }
     setFetching(true);
     setAutoShots([]);
-    setSelectedFrames(new Set());
-    setSelectedThumbs(new Set());
+    setSelectedImages(new Set());
     try {
       const res = await fetch("/api/youtube/screenshots", {
         method: "POST",
@@ -124,15 +122,13 @@ export default function VisualsPage({ params }: PageProps) {
       if (!res.ok) throw new Error(data.error);
       setAutoShots(data.screenshots);
 
-      // Auto-select all by default
-      const frames = new Set<string>();
-      const thumbs = new Set<string>();
+      // Auto-select all unique images by default
+      const all = new Set<string>();
       for (const shot of data.screenshots as AutoShot[]) {
-        if (shot.thumbnailUrl) thumbs.add(shot.thumbnailUrl);
-        for (const f of shot.frameUrls) frames.add(f);
+        if (shot.thumbnailUrl) all.add(shot.thumbnailUrl);
+        for (const f of shot.frameUrls) all.add(f);
       }
-      setSelectedFrames(frames);
-      setSelectedThumbs(thumbs);
+      setSelectedImages(all);
       toast.success(`Fetched screenshots from ${data.screenshots.length} videos`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to fetch screenshots");
@@ -141,16 +137,8 @@ export default function VisualsPage({ params }: PageProps) {
     }
   }
 
-  function toggleFrame(url: string) {
-    setSelectedFrames((prev) => {
-      const next = new Set(prev);
-      if (next.has(url)) next.delete(url); else next.add(url);
-      return next;
-    });
-  }
-
-  function toggleThumb(url: string) {
-    setSelectedThumbs((prev) => {
+  function toggleImage(url: string) {
+    setSelectedImages((prev) => {
       const next = new Set(prev);
       if (next.has(url)) next.delete(url); else next.add(url);
       return next;
@@ -177,9 +165,10 @@ export default function VisualsPage({ params }: PageProps) {
     let thumbnailImageUrls: string[];
 
     if (mode === "auto") {
-      if (selectedFrames.size < 3) { toast.error("Select at least 3 video frames"); return; }
-      videoImageUrls = [...selectedFrames];
-      thumbnailImageUrls = [...selectedThumbs];
+      if (selectedImages.size < 3) { toast.error("Select at least 3 images"); return; }
+      const thumbUrlSet = new Set(autoShots.map((s) => s.thumbnailUrl).filter(Boolean));
+      videoImageUrls = [...selectedImages].filter((u) => !thumbUrlSet.has(u));
+      thumbnailImageUrls = [...selectedImages].filter((u) => thumbUrlSet.has(u));
       setStep("upload", "done"); // already uploaded during fetch
     } else {
       if (videoImages.length < 3) { toast.error("Upload at least 3 video screenshots"); return; }
@@ -215,10 +204,10 @@ export default function VisualsPage({ params }: PageProps) {
 
   const analyzing = steps.upload === "running" || steps.analyze === "running";
   const canAnalyze = !analyzing && (
-    mode === "auto" ? selectedFrames.size >= 3 : videoImages.length >= 3
+    mode === "auto" ? selectedImages.size >= 3 : videoImages.length >= 3
   );
 
-  const totalSelected = selectedFrames.size + selectedThumbs.size;
+  const totalSelected = selectedImages.size;
 
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
@@ -324,102 +313,62 @@ export default function VisualsPage({ params }: PageProps) {
               </div>
 
               {/* Fetched screenshots grid */}
-              {autoShots.length > 0 && (
-                <div className="space-y-5">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-semibold">
-                      Select images for analysis
-                      <span className="ml-2 text-xs font-normal" style={{ color: "var(--c-45)" }}>
-                        {totalSelected} selected
-                      </span>
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => {
-                          const all = new Set<string>();
-                          const thumbs = new Set<string>();
-                          for (const s of autoShots) {
-                            if (s.thumbnailUrl) thumbs.add(s.thumbnailUrl);
-                            for (const f of s.frameUrls) all.add(f);
-                          }
-                          setSelectedFrames(all);
-                          setSelectedThumbs(thumbs);
-                        }}
-                        className="text-xs px-3 py-1 rounded-lg"
-                        style={{ background: "var(--bg-progress)", color: "var(--c-55)", border: "1px solid var(--bd-7)" }}
-                      >
-                        Select all
-                      </button>
-                      <button
-                        onClick={() => { setSelectedFrames(new Set()); setSelectedThumbs(new Set()); }}
-                        className="text-xs px-3 py-1 rounded-lg"
-                        style={{ background: "var(--bg-progress)", color: "var(--c-55)", border: "1px solid var(--bd-7)" }}
-                      >
-                        Clear all
-                      </button>
+              {autoShots.length > 0 && (() => {
+                const allImages = [...new Set(autoShots.flatMap((s) => [
+                  ...(s.thumbnailUrl ? [s.thumbnailUrl] : []),
+                  ...s.frameUrls,
+                ]))];
+                return (
+                  <div className="space-y-5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold">
+                        Select images for analysis
+                        <span className="ml-2 text-xs font-normal" style={{ color: "var(--c-45)" }}>
+                          {totalSelected} selected
+                        </span>
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setSelectedImages(new Set(allImages))}
+                          className="text-xs px-3 py-1 rounded-lg"
+                          style={{ background: "var(--bg-progress)", color: "var(--c-55)", border: "1px solid var(--bd-7)" }}
+                        >
+                          Select all
+                        </button>
+                        <button
+                          onClick={() => setSelectedImages(new Set())}
+                          className="text-xs px-3 py-1 rounded-lg"
+                          style={{ background: "var(--bg-progress)", color: "var(--c-55)", border: "1px solid var(--bd-7)" }}
+                        >
+                          Clear all
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Video frames section */}
-                  <div className="rounded-2xl overflow-hidden"
-                    style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-                    <div className="px-5 py-3 flex items-center gap-2"
-                      style={{ borderBottom: "1px solid var(--bd-6)" }}>
-                      <span style={{ color: "oklch(0.72 0.25 285)" }}>◈</span>
-                      <p className="text-xs font-semibold">Video Frame Stills</p>
-                      <span className="text-xs" style={{ color: "var(--c-40)" }}>
-                        ({selectedFrames.size} selected)
-                      </span>
-                    </div>
-                    <div className="p-5 space-y-4">
-                      {autoShots.map((shot) => (
-                        <div key={shot.videoId}>
-                          <p className="text-xs mb-2 truncate" style={{ color: "var(--c-45)" }}>
-                            {shot.title}
-                          </p>
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                            {shot.frameUrls.map((url, i) => (
-                              <SelectableImage
-                                key={url}
-                                url={url}
-                                selected={selectedFrames.has(url)}
-                                onToggle={() => toggleFrame(url)}
-                                label={`Frame ${i + 1}`}
-                              />
-                            ))}
-                          </div>
+                    <div className="rounded-2xl overflow-hidden"
+                      style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                      <div className="px-5 py-3 flex items-center gap-2"
+                        style={{ borderBottom: "1px solid var(--bd-6)" }}>
+                        <span style={{ color: "oklch(0.72 0.25 285)" }}>◈</span>
+                        <p className="text-xs font-semibold">Captured Images</p>
+                      </div>
+                      <div className="p-5">
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          {allImages.map((url, i) => (
+                            <SelectableImage
+                              key={url}
+                              url={url}
+                              selected={selectedImages.has(url)}
+                              onToggle={() => toggleImage(url)}
+                              label={`Image ${i + 1}`}
+                            />
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Thumbnails section */}
-                  <div className="rounded-2xl overflow-hidden"
-                    style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-                    <div className="px-5 py-3 flex items-center gap-2"
-                      style={{ borderBottom: "1px solid var(--bd-6)" }}>
-                      <span style={{ color: "oklch(0.58 0.28 300)" }}>◎</span>
-                      <p className="text-xs font-semibold">Thumbnails</p>
-                      <span className="text-xs" style={{ color: "var(--c-40)" }}>
-                        ({selectedThumbs.size} selected)
-                      </span>
-                    </div>
-                    <div className="p-5">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {autoShots.filter((s) => s.thumbnailUrl).map((shot) => (
-                          <SelectableImage
-                            key={shot.thumbnailUrl}
-                            url={shot.thumbnailUrl}
-                            selected={selectedThumbs.has(shot.thumbnailUrl)}
-                            onToggle={() => toggleThumb(shot.thumbnailUrl)}
-                            label={shot.title}
-                          />
-                        ))}
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
           )}
 

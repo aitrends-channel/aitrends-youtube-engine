@@ -640,7 +640,7 @@ export default function HomePage() {
           <div className="relative" ref={profileMenuRef}>
             <button
               onClick={() => setShowProfileMenu(v => !v)}
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold transition-all hover:opacity-80 cursor-pointer shrink-0"
+              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all hover:opacity-80 cursor-pointer shrink-0"
               style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
             >
               {userEmail ? userEmail[0].toUpperCase() : "?"}

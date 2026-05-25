@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import {
   Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film,
-  Check, ZoomIn, ZoomOut, LayoutTemplate, LayoutDashboard, X, Settings, LogOut,
+  Check, ZoomIn, ZoomOut, LayoutTemplate, ArrowLeft, X, Settings, LogOut,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -302,30 +302,69 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
         )}
       </div>
 
-      <div className="px-4 pb-4">
-        <button
-          onClick={() => navigate("/dashboard")}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all hover:opacity-80"
-          style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
-        >
-          <LayoutDashboard size={13} />
-          Back to Dashboard
-        </button>
-      </div>
     </>
   );
 
   return (
     <>
-      {/* ── Back to Dashboard (desktop floating button) ──────────────── */}
-      <button
-        onClick={() => router.push("/dashboard")}
-        className="hidden md:flex fixed top-4 right-4 z-50 items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all hover:opacity-80"
-        style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
-      >
-        <LayoutDashboard size={13} />
-        Back to Dashboard
-      </button>
+      {/* ── Desktop top-right: Back to Dashboard + Profile ──────────── */}
+      <div className="hidden md:flex fixed top-4 right-4 z-50 items-center gap-2">
+        <button
+          onClick={() => router.push("/dashboard")}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+          style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+        >
+          <ArrowLeft size={13} />
+          Back
+        </button>
+
+        <ThemeToggle />
+
+        {/* Profile avatar + dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => setShowProfileMenu((v) => !v)}
+            className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all hover:opacity-80 cursor-pointer shrink-0"
+            style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+          >
+            {userEmail ? userEmail[0].toUpperCase() : "?"}
+          </button>
+
+          {showProfileMenu && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
+              <div
+                className="absolute right-0 top-10 z-50 w-52 rounded-2xl py-3 shadow-2xl"
+                style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
+              >
+                <div className="px-4 pb-3" style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
+                  <p className="text-xs font-semibold truncate" style={{ color: "var(--c-88)" }}>
+                    {userEmail || "Loading…"}
+                  </p>
+                </div>
+                <div className="px-2 pt-2">
+                  <button
+                    onClick={() => { setShowProfileMenu(false); navigate("/setup"); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
+                    style={{ color: "var(--c-60)" }}
+                  >
+                    <Settings size={13} />
+                    <span>Setup</span>
+                  </button>
+                  <button
+                    onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
+                    style={{ color: "#f87171" }}
+                  >
+                    <LogOut size={13} />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* ── Mobile top bar + step dots (fixed) ──────────────────────── */}
       <div
@@ -348,7 +387,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
             <div className="relative">
               <button
                 onClick={() => setShowProfileMenu((v) => !v)}
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-all hover:opacity-80 cursor-pointer shrink-0"
+                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all hover:opacity-80 cursor-pointer shrink-0"
                 style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
               >
                 {userEmail ? userEmail[0].toUpperCase() : "?"}

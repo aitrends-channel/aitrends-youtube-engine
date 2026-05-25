@@ -21,10 +21,10 @@ export default function DemoPromptsPage() {
       <DemoNav currentStep={4} />
       <div className="flex-1 min-w-0 flex flex-col min-h-0">
         <DemoBanner />
-        <main className="flex-1 flex flex-col overflow-hidden">
+        <main className="flex-1 overflow-y-auto">
           {/* Header */}
           <div
-            className="flex items-center justify-between px-4 sm:px-8 py-4 shrink-0"
+            className="flex items-center justify-between px-4 sm:px-8 py-4 sticky top-0 z-10"
             style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}
           >
             <div>
@@ -33,10 +33,23 @@ export default function DemoPromptsPage() {
                 {DEMO_DATA.promptBeats.length} beats · image & video prompts
               </p>
             </div>
+            <button
+              onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/generate"), 500); }}
+              disabled={navigating}
+              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-60"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              {navigating ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Loading…
+                </span>
+              ) : "Generate →"}
+            </button>
           </div>
 
           {/* Step cards */}
-          <div className="px-4 sm:px-8 py-4 space-y-2 shrink-0" style={{ borderBottom: "1px solid var(--bd-6)" }}>
+          <div className="px-4 sm:px-8 py-4 space-y-2" style={{ borderBottom: "1px solid var(--bd-6)" }}>
             {[
               { num: 1, title: "Image Prompts", desc: "One AI image prompt per script beat, matched to your channel's visual style", beats: DEMO_DATA.promptBeats.length },
               { num: 2, title: "Video Prompts", desc: "Camera movement and motion instructions layered on top of each image beat", beats: DEMO_DATA.promptBeats.length },
@@ -64,7 +77,7 @@ export default function DemoPromptsPage() {
           </div>
 
           {/* Tabs */}
-          <div className="px-4 sm:px-8 pt-4 shrink-0 flex gap-1" style={{ borderBottom: "1px solid var(--bd-6)" }}>
+          <div className="px-4 sm:px-8 pt-4 flex gap-1" style={{ borderBottom: "1px solid var(--bd-6)" }}>
             {(["image", "video"] as Tab[]).map((tab) => (
               <button
                 key={tab}
@@ -84,7 +97,7 @@ export default function DemoPromptsPage() {
           </div>
 
           {/* Beat list */}
-          <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 sm:px-8 py-5 space-y-3">
+          <div className="px-4 sm:px-8 pt-5 pb-24 space-y-3">
             {DEMO_DATA.promptBeats.map((beat) => (
               <div
                 key={beat.beat}
@@ -105,25 +118,6 @@ export default function DemoPromptsPage() {
               </div>
             ))}
 
-            <div className="flex justify-end pt-2 pb-4">
-              <button
-                onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/generate"), 500); }}
-                disabled={navigating}
-                className="px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-60"
-                style={{
-                  background: "oklch(0.72 0.25 285)",
-                  color: "var(--bg-page-2)",
-                  boxShadow: "0 0 16px oklch(0.72 0.25 285 / 0.3)",
-                }}
-              >
-                {navigating ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    Preparing generator…
-                  </span>
-                ) : "Generate →"}
-              </button>
-            </div>
           </div>
         </main>
       </div>

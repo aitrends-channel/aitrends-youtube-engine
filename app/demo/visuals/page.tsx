@@ -74,7 +74,7 @@ export default function DemoVisualsPage() {
   const { visualsFetchPhase, visualsAnalyzePhase } = state;
 
   const screenshots = DEMO_DATA.fakeScreenshots;
-  const allUrls = screenshots.flatMap((s) => [s.thumbnailUrl, ...s.frameUrls]);
+  const allUrls = [...new Set(screenshots.flatMap((s) => [s.thumbnailUrl, ...s.frameUrls]))];
 
   const [selectedUrls, setSelectedUrls] = useState<Set<string>>(() =>
     visualsFetchPhase === "done" ? new Set(allUrls) : new Set()
@@ -240,57 +240,23 @@ export default function DemoVisualsPage() {
                   </div>
                 </div>
 
-                {/* Frame stills */}
+                {/* Images grid */}
                 <div className="rounded-2xl overflow-hidden"
                   style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                   <div className="px-5 py-3 flex items-center gap-2"
                     style={{ borderBottom: "1px solid var(--bd-6)" }}>
                     <span style={{ color: "oklch(0.72 0.25 285)" }}>◈</span>
-                    <p className="text-xs font-semibold">Video Frame Stills</p>
-                    <span className="text-xs" style={{ color: "var(--c-40)" }}>
-                      ({screenshots.reduce((n, s) => n + s.frameUrls.filter((u) => selectedUrls.has(u)).length, 0)} selected)
-                    </span>
-                  </div>
-                  <div className="p-5 space-y-4">
-                    {screenshots.map((shot) => (
-                      <div key={shot.videoId}>
-                        <p className="text-xs mb-2 truncate" style={{ color: "var(--c-45)" }}>{shot.title}</p>
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                          {shot.frameUrls.map((url, i) => (
-                            <SelectableImage
-                              key={url}
-                              url={url}
-                              selected={selectedUrls.has(url)}
-                              onToggle={() => toggleUrl(url)}
-                              label={`Frame ${i + 1}`}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Thumbnails */}
-                <div className="rounded-2xl overflow-hidden"
-                  style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-                  <div className="px-5 py-3 flex items-center gap-2"
-                    style={{ borderBottom: "1px solid var(--bd-6)" }}>
-                    <span style={{ color: "oklch(0.58 0.28 300)" }}>◎</span>
-                    <p className="text-xs font-semibold">Thumbnails</p>
-                    <span className="text-xs" style={{ color: "var(--c-40)" }}>
-                      ({screenshots.filter((s) => selectedUrls.has(s.thumbnailUrl)).length} selected)
-                    </span>
+                    <p className="text-xs font-semibold">Captured Images</p>
                   </div>
                   <div className="p-5">
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {screenshots.map((shot) => (
+                      {allUrls.map((url, i) => (
                         <SelectableImage
-                          key={shot.thumbnailUrl}
-                          url={shot.thumbnailUrl}
-                          selected={selectedUrls.has(shot.thumbnailUrl)}
-                          onToggle={() => toggleUrl(shot.thumbnailUrl)}
-                          label={shot.title}
+                          key={url}
+                          url={url}
+                          selected={selectedUrls.has(url)}
+                          onToggle={() => toggleUrl(url)}
+                          label={`Image ${i + 1}`}
                         />
                       ))}
                     </div>

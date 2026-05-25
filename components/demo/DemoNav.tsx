@@ -209,7 +209,7 @@ export function DemoNav({ currentStep }: DemoNavProps) {
           <div className="relative">
             <button
               onClick={() => setShowProfileMenu((v) => !v)}
-              className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-all hover:opacity-80 cursor-pointer shrink-0"
+              className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all hover:opacity-80 cursor-pointer shrink-0"
               style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
             >
               {userEmail ? userEmail[0].toUpperCase() : "?"}

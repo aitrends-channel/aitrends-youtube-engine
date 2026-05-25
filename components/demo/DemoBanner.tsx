@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Fragment } from "react";
 import { useRouter } from "next/navigation";
-import { Settings, LogOut, Check } from "lucide-react";
+import { Settings, LogOut, Check, ArrowLeft } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { useDemoState } from "@/lib/demo-context";
@@ -74,10 +74,11 @@ export function DemoBanner() {
 
             <button
               onClick={() => router.push("/dashboard")}
-              className="hidden sm:block px-3 py-1 rounded-lg text-xs font-medium transition-all hover:opacity-80"
-              style={{ background: "var(--bg-control)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+              style={{ background: "transparent", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
             >
-              Dashboard
+              <ArrowLeft size={12} />
+              Back
             </button>
 
             {/* Theme + profile: desktop only — mobile top bar owns these */}
@@ -86,7 +87,7 @@ export function DemoBanner() {
             <div className="relative hidden sm:block">
               <button
                 onClick={() => setShowMenu((v) => !v)}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold transition-all hover:opacity-80 cursor-pointer shrink-0"
+                className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all hover:opacity-80 cursor-pointer shrink-0"
                 style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
               >
                 {userEmail ? userEmail[0].toUpperCase() : "?"}
