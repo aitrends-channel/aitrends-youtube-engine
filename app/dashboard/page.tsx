@@ -235,10 +235,9 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
 
         <div style={{ marginTop: "40px" }}>
           <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Keys Status</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             {[
               { name: "Anthropic",   color: "#c084fc", desc: "Claude AI — scripts & analysis" },
-              { name: "YouTube",     color: "#f87171", desc: "Channel lookup & metadata" },
               { name: "KIE",         color: "#60a5fa", desc: "TTS, images & video generation" },
               { name: "ElevenLabs",  color: "#34d399", desc: "Voiceover & captions" },
             ].map(({ name, color, desc }) => (
@@ -1050,7 +1049,6 @@ export default function HomePage() {
               {(() => {
                 const el    = apiStatus?.elevenlabs as { configured: boolean; valid: boolean | null; charUsed?: number; charLimit?: number; tier?: string } | undefined;
                 const kie   = apiStatus?.kie        as { configured: boolean; valid: boolean | null; credits?: number } | undefined;
-                const yt    = apiStatus?.youtube    as { configured: boolean; valid: boolean | null; quotaPerDay?: number } | undefined;
                 const anth  = apiStatus?.anthropic  as { configured: boolean; valid: boolean | null } | undefined;
 
                 function StatusBadge({ data, color }: { data: { configured: boolean; valid: boolean | null } | undefined; color: string }) {
@@ -1094,7 +1092,7 @@ export default function HomePage() {
                 return (
                   <div style={{ marginTop: "40px" }}>
                     <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Keys Status</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
 
                       {/* Anthropic */}
                       <div className="rounded-xl px-5 py-4" style={cardStyle}>
@@ -1107,19 +1105,6 @@ export default function HomePage() {
                         <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>Claude AI — scripts & analysis</p>
                         <StaticInfo label="Billing" value="Pay-per-token" color="#c084fc" />
                         <p className="text-[10px] mt-0.5" style={{ color: "var(--c-30)" }}>No credit pool — billed by usage</p>
-                      </div>
-
-                      {/* YouTube */}
-                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="w-2 h-2 rounded-full" style={{ background: "#f87171" }} />
-                          <StatusBadge data={yt} color="#f87171" />
-                        </div>
-                        <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>YouTube</p>
-                        {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mb-1" style={{ color: "#f0a855" }}>Pending setup</p>}
-                        <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>Channel lookup & metadata</p>
-                        <StaticInfo label="Quota" value={`${(yt?.quotaPerDay ?? 10000).toLocaleString()} units / day`} color="#f87171" />
-                        <p className="text-[10px] mt-0.5" style={{ color: "var(--c-30)" }}>Resets daily · View in Google Console</p>
                       </div>
 
                       {/* KIE */}

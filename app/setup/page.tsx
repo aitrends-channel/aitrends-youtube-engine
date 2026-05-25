@@ -24,12 +24,6 @@ const KEY_FIELDS: KeyField[] = [
     placeholder: "sk-ant-api03-…",
   },
   {
-    key: "youtube_api_key",
-    label: "YouTube API Key",
-    description: "Used for channel lookup and video metadata via the YouTube Data API v3",
-    placeholder: "AIzaSy…",
-  },
-  {
     key: "kie_api_key",
     label: "KIE API Key",
     description: "Used for TTS voiceover, AI image generation, and video clip generation",
@@ -45,14 +39,12 @@ const KEY_FIELDS: KeyField[] = [
 
 interface FormState {
   anthropic_api_key: string;
-  youtube_api_key: string;
   kie_api_key: string;
   elevenlabs_api_key: string;
 }
 
 const EMPTY_FORM: FormState = {
   anthropic_api_key: "",
-  youtube_api_key: "",
   kie_api_key: "",
   elevenlabs_api_key: "",
 };
@@ -142,14 +134,19 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState<"setup" | "instructions">("instructions");
+  const [userEmail, setUserEmail] = useState("");
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
     supabase.auth.getUser().then(({ data }) => {
-      if (data.user?.email === "prioritylearn@gmail.com") {
+      if (!data.user) {
+        router.replace("/login");
+        return;
+      }
+      if (data.user.email) setUserEmail(data.user.email);
+      if (data.user.email === "prioritylearn@gmail.com") {
         setIsAdmin(true);
-      } else {
-        router.replace("/dashboard");
       }
     });
   }, [router]);
@@ -217,21 +214,56 @@ export default function SettingsPage() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <button
-            onClick={handleSignOut}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80"
-            style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+            onClick={() => router.push("/dashboard")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+            style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
           >
-            <LogOut size={15} />
-            <span className="hidden sm:inline">Sign Out</span>
+            <ArrowLeft size={13} />
+            Back
           </button>
           <ThemeToggle />
-          <button
-            onClick={() => router.push("/dashboard")}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80"
-            style={{ background: "var(--bg-control)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}>
-            <ArrowLeft size={14} />
-            <span className="hidden sm:inline">Back to Dashboard</span>
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setShowProfileMenu((v) => !v)}
+              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all hover:opacity-80 cursor-pointer shrink-0"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+            >
+              {userEmail ? userEmail[0].toUpperCase() : "?"}
+            </button>
+            {showProfileMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
+                <div
+                  className="absolute right-0 top-11 z-50 w-56 rounded-2xl py-3 shadow-2xl"
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
+                >
+                  <div className="px-4 pb-3" style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
+                    <p className="text-xs font-semibold truncate" style={{ color: "var(--c-88)" }}>
+                      {userEmail || "Loading…"}
+                    </p>
+                  </div>
+                  <div className="px-2 pt-2">
+                    <button
+                      onClick={() => { setShowProfileMenu(false); router.push("/dashboard"); }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
+                      style={{ color: "var(--c-60)" }}
+                    >
+                      <Settings size={13} />
+                      <span>Dashboard</span>
+                    </button>
+                    <button
+                      onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
+                      style={{ color: "#f87171" }}
+                    >
+                      <LogOut size={13} />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
@@ -360,152 +392,74 @@ export default function SettingsPage() {
 
         {/* INSTRUCTIONS tab */}
         {tab === "instructions" && (
-          <div className="space-y-8">
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                  style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-                  <BookOpen size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+          <div className="space-y-5">
+            <div>
+              <h1 className="text-xl font-bold text-foreground">Setup Guide</h1>
+              <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>Add your API keys once — takes ~5 minutes.</p>
+            </div>
+
+            {[
+              {
+                num: 1,
+                title: "Anthropic API Key",
+                sub: "Claude AI · scripts & analysis",
+                href: "https://console.anthropic.com",
+                linkLabel: "console.anthropic.com",
+                steps: [
+                  "Sign in and go to API Keys.",
+                  "Click Create Key, name it anything, copy it.",
+                  <>Top up billing with ~$5 — you&apos;re only charged per request.</>,
+                ],
+              },
+              {
+                num: 2,
+                title: "Kie AI API Key",
+                sub: "Voiceovers, images & video clips",
+                href: "https://kie.ai",
+                linkLabel: "kie.ai",
+                steps: [
+                  "Sign in and go to API Keys.",
+                  "Create a key, name it, copy it.",
+                  "Top up credits as needed.",
+                ],
+              },
+              {
+                num: 3,
+                title: "ElevenLabs API Key",
+                sub: "Caption timing & assembly",
+                href: "https://elevenlabs.io",
+                linkLabel: "elevenlabs.io",
+                steps: [
+                  "Go to Developers → API Keys.",
+                  "Copy the default developer key (free tier is fine).",
+                ],
+              },
+            ].map(({ num, title, sub, href, linkLabel, steps }) => (
+              <div key={num} className="p-4 rounded-2xl space-y-3" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 text-xs font-bold"
+                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>{num}</div>
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{title}</p>
+                    <p className="text-xs" style={{ color: "var(--c-40)" }}>{sub}</p>
+                  </div>
+                  <a href={href} target="_blank" rel="noopener noreferrer"
+                    className="ml-auto text-xs shrink-0 hover:opacity-80"
+                    style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>
+                    {linkLabel} ↗
+                  </a>
                 </div>
-                <h1 className="text-2xl font-bold text-foreground">Setup Guide</h1>
+                <ol className="space-y-1 pl-9">
+                  {steps.map((s, i) => (
+                    <li key={i} className="text-xs leading-relaxed" style={{ color: "var(--c-55)" }}>
+                      <span className="font-medium" style={{ color: "var(--c-40)" }}>{i + 1}.</span> {s}
+                    </li>
+                  ))}
+                </ol>
               </div>
-              <p className="text-sm leading-relaxed" style={{ color: "var(--c-50)" }}>
-                Get your API keys configured in about 5–10 minutes. You only need to do this once.
-              </p>
-            </div>
+            ))}
 
-            {/* Intro */}
-            <div className="p-5 rounded-2xl space-y-3" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-              <p className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
-                Thanks for signing up. Now before you start creating, let me walk you through a quick setup process.
-                And here&apos;s the best part — instead of paying huge monthly subscriptions for multiple AI tools, this system
-                gives you full control over your costs. You only pay for what you actually use — scripting, voiceovers,
-                images, video generation — all of it.
-              </p>
-              <p className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
-                To get everything working, you just need to add four API keys. The whole setup takes about five to ten minutes,
-                and you only have to do it once. So let&apos;s get into it.
-              </p>
-            </div>
-
-            {/* Step 1 — Anthropic */}
-            <div className="p-5 rounded-2xl space-y-4" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-              <div className="flex items-start gap-3">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold mt-0.5"
-                  style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>1</div>
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Anthropic API Key</p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--c-40)" }}>Claude AI — script generation & prompts</p>
-                </div>
-              </div>
-              <ol className="space-y-2 pl-5 sm:pl-10">
-                {([
-                  <>Head over to <a href="https://console.anthropic.com" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>console.anthropic.com</a> and sign in.</>,
-                  <>Select <strong style={{ color: "var(--c-80)" }}>&quot;Get API Key&quot;</strong> — this takes you to the API Keys page.</>,
-                  <>Click <strong style={{ color: "var(--c-80)" }}>Create Key</strong>, choose Default, give it any name, and click Add.</>,
-                  <>Copy the key and paste it into the Anthropic field in the Setup tab.</>,
-                ] as React.ReactNode[]).map((s, i) => (
-                  <li key={i} className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
-                    <span className="font-medium" style={{ color: "var(--c-50)" }}>{i + 1}.</span> {s}
-                  </li>
-                ))}
-              </ol>
-              <div className="ml-5 sm:ml-10 px-3 py-2.5 rounded-lg text-xs leading-relaxed"
-                style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px solid oklch(0.72 0.25 285 / 0.15)", color: "var(--c-50)" }}>
-                You&apos;ll also need to top up your Anthropic balance. Go to the Billing section and add around $5 to start — you can top up later as needed. You&apos;re only charged for the requests you actually make, not a fixed monthly fee.
-              </div>
-            </div>
-
-            {/* Step 2 — YouTube */}
-            <div className="p-5 rounded-2xl space-y-4" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-              <div className="flex items-start gap-3">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold mt-0.5"
-                  style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>2</div>
-                <div>
-                  <p className="text-sm font-semibold text-foreground">YouTube Data API Key</p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--c-40)" }}>Channel & video data lookup</p>
-                </div>
-              </div>
-              <ol className="space-y-2 pl-5 sm:pl-10">
-                {([
-                  <>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>Google Cloud Console</a> and create a new project (any name).</>,
-                  <>With the project selected, go to <strong style={{ color: "var(--c-80)" }}>APIs & Services → Enable APIs & Services</strong>.</>,
-                  <>Search for <strong style={{ color: "var(--c-80)" }}>&quot;YouTube Data API v3&quot;</strong> and click Enable.</>,
-                  <>Go to <strong style={{ color: "var(--c-80)" }}>Credentials</strong>, select YouTube Data API v3, choose Public Data, and continue.</>,
-                  <>Copy the generated key and paste it into the YouTube API field.</>,
-                ] as React.ReactNode[]).map((s, i) => (
-                  <li key={i} className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
-                    <span className="font-medium" style={{ color: "var(--c-50)" }}>{i + 1}.</span> {s}
-                  </li>
-                ))}
-              </ol>
-            </div>
-
-            {/* Step 3 — Kie AI */}
-            <div className="p-5 rounded-2xl space-y-4" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-              <div className="flex items-start gap-3">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold mt-0.5"
-                  style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>3</div>
-                <div>
-                  <p className="text-sm font-semibold text-foreground">Kie AI API Key</p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--c-40)" }}>Voiceovers, image generation & video clips</p>
-                </div>
-              </div>
-              <ol className="space-y-2 pl-5 sm:pl-10">
-                {([
-                  <>Head over to <a href="https://kie.ai" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>kie.ai</a> and make sure you&apos;re logged in.</>,
-                  <>Go to the <strong style={{ color: "var(--c-80)" }}>API Keys</strong> section, create a new key, give it a name, and click Create.</>,
-                  <>Copy the key and paste it into the Kie AI field.</>,
-                ] as React.ReactNode[]).map((s, i) => (
-                  <li key={i} className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
-                    <span className="font-medium" style={{ color: "var(--c-50)" }}>{i + 1}.</span> {s}
-                  </li>
-                ))}
-              </ol>
-              <div className="ml-5 sm:ml-10 px-3 py-2.5 rounded-lg text-xs leading-relaxed"
-                style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px solid oklch(0.72 0.25 285 / 0.15)", color: "var(--c-50)" }}>
-                Kie AI is a unified platform that gives you access to ElevenLabs voice generation, image models, and popular AI video generators — all from one balance. Instead of separate subscriptions across multiple platforms, you manage everything in one place, and it&apos;s usually cheaper too.
-              </div>
-            </div>
-
-            {/* Step 4 — ElevenLabs */}
-            <div className="p-5 rounded-2xl space-y-4" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-              <div className="flex items-start gap-3">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold mt-0.5"
-                  style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>4</div>
-                <div>
-                  <p className="text-sm font-semibold text-foreground">ElevenLabs API Key</p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--c-40)" }}>Caption timing & final assembly</p>
-                </div>
-              </div>
-              <ol className="space-y-2 pl-5 sm:pl-10">
-                {([
-                  <>Go to <a href="https://elevenlabs.io" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>ElevenLabs</a> and head to <strong style={{ color: "var(--c-80)" }}>Developers → API Keys</strong>.</>,
-                  <>You&apos;ll usually see a default unrestricted developer key already available.</>,
-                  <>Copy it and paste it into the ElevenLabs field.</>,
-                ] as React.ReactNode[]).map((s, i) => (
-                  <li key={i} className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
-                    <span className="font-medium" style={{ color: "var(--c-50)" }}>{i + 1}.</span> {s}
-                  </li>
-                ))}
-              </ol>
-              <div className="ml-5 sm:ml-10 px-3 py-2.5 rounded-lg text-xs leading-relaxed"
-                style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px solid oklch(0.72 0.25 285 / 0.15)", color: "var(--c-50)" }}>
-                You won&apos;t be generating voiceovers directly through ElevenLabs — Kie handles that part. But the ElevenLabs key is still required for the final assembly process. Their free developer key is completely fine for this.
-              </div>
-            </div>
-
-            {/* Final note */}
-            <div className="p-5 rounded-2xl" style={{ background: "oklch(0.55 0.15 145 / 0.08)", border: "1px solid oklch(0.55 0.15 145 / 0.2)" }}>
-              <p className="text-sm leading-relaxed" style={{ color: "var(--c-65)" }}>
-                Once all four keys are added, click <strong style={{ color: "var(--c-80)" }}>Save</strong> in the Setup tab and your system is fully set up.
-                Going forward, the main things to keep an eye on are your <strong style={{ color: "var(--c-80)" }}>Anthropic balance</strong> and
-                your <strong style={{ color: "var(--c-80)" }}>Kie AI credits</strong>. As long as those are topped up, you&apos;re ready to create.
-              </p>
-              <p className="text-sm mt-2 font-medium" style={{ color: "oklch(0.65 0.15 145)" }}>Happy creating!</p>
-            </div>
-
-            <div className="flex justify-end">
+            <div className="flex justify-end pt-1">
               <button
                 onClick={() => setTab("setup")}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"

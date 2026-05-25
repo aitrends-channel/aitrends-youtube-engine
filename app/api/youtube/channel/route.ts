@@ -15,7 +15,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Channel URL is required" }, { status: 400 });
     }
 
-    const channelInfo = await resolveChannel(channelUrl.trim(), user.id);
+    const channelInfo = await resolveChannel(channelUrl.trim());
     return NextResponse.json(channelInfo);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch channel";

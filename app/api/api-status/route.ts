@@ -6,7 +6,6 @@ import type { User } from "@supabase/supabase-js";
 
 export interface ApiStatusResult {
   anthropic:  { configured: boolean; valid: boolean | null; billingModel: "per-token" };
-  youtube:    { configured: boolean; valid: boolean | null; quotaPerDay: number };
   kie:        { configured: boolean; valid: boolean | null; credits?: number };
   elevenlabs: { configured: boolean; valid: boolean | null; charUsed?: number; charLimit?: number; tier?: string };
 }
@@ -17,14 +16,13 @@ export async function GET() {
 
   const s = await getSettings(user.id);
 
-  const [anthropic, youtube, kie, elevenlabs] = await Promise.all([
+  const [anthropic, kie, elevenlabs] = await Promise.all([
     checkAnthropic(s.anthropic_api_key),
-    checkYouTube(s.youtube_api_key),
     checkKie(s.kie_api_key),
     checkElevenLabs(s.elevenlabs_api_key),
   ]);
 
-  return NextResponse.json({ anthropic, youtube, kie, elevenlabs } satisfies ApiStatusResult);
+  return NextResponse.json({ anthropic, kie, elevenlabs } satisfies ApiStatusResult);
 }
 
 async function checkAnthropic(key: string) {
@@ -40,17 +38,6 @@ async function checkAnthropic(key: string) {
   }
 }
 
-async function checkYouTube(key: string) {
-  const base = { quotaPerDay: 10_000 };
-  if (!key) return { configured: false, valid: null, ...base };
-  try {
-    const url = `https://www.googleapis.com/youtube/v3/videos?part=id&chart=mostPopular&maxResults=1&key=${key}`;
-    const res = await fetch(url);
-    return { configured: true, valid: res.ok, ...base };
-  } catch {
-    return { configured: true, valid: false, ...base };
-  }
-}
 
 async function checkKie(key: string) {
   if (!key) return { configured: false, valid: null };

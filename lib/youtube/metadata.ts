@@ -1,70 +1,52 @@
-import { getSettings } from "@/lib/settings";
 import type { TopVideo, VideoMetadata } from "@/lib/types";
 
-const YT_API = "https://www.googleapis.com/youtube/v3";
+const SUPADATA_BASE = "https://api.supadata.ai/v1";
 
-async function fetchCommentsForVideo(videoId: string, apiKey: string): Promise<string[]> {
-  try {
-    const res = await fetch(
-      `${YT_API}/commentThreads?part=snippet&videoId=${encodeURIComponent(videoId)}&order=relevance&maxResults=20&key=${apiKey}`
-    );
-    const data = await res.json();
-    if (data.error) return [];
-    return (data.items ?? [])
-      .map((item: { snippet: { topLevelComment: { snippet: { textOriginal: string } } } }) =>
-        (item.snippet.topLevelComment.snippet.textOriginal ?? "")
-          .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-          .replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim()
-      )
-      .filter((t: string) => t.length > 10 && t.length < 500);
-  } catch {
-    return [];
-  }
+function secondsToISO(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `PT${m}M${s}S`;
 }
 
-export async function fetchVideoMetadata(videos: TopVideo[], userId: string): Promise<VideoMetadata[]> {
-  const { youtube_api_key: apiKey } = await getSettings(userId);
-  if (!apiKey) throw new Error("YouTube API key not configured. Add it in Settings.");
+export async function fetchVideoMetadata(videos: TopVideo[]): Promise<VideoMetadata[]> {
+  const apiKey = process.env.SUPADATA_API_KEY;
+  if (!apiKey) throw new Error("SUPADATA_API_KEY is not configured");
   if (!videos.length) return [];
 
-  const ids = videos.map((v) => v.videoId).join(",");
-  const res = await fetch(
-    `${YT_API}/videos?part=snippet,statistics,contentDetails&id=${encodeURIComponent(ids)}&key=${apiKey}`
-  );
-  const data = await res.json();
-
-  const itemsMap: Record<string, {
-    snippet: { title: string; description: string; tags?: string[]; publishedAt: string };
-    statistics: { viewCount?: string; likeCount?: string; commentCount?: string };
-    contentDetails: { duration: string };
-  }> = {};
-  for (const item of data.items ?? []) {
-    itemsMap[item.id] = item;
-  }
-
-  // Fetch comments for all videos in parallel
-  const commentsMap: Record<string, string[]> = {};
-  await Promise.all(
-    videos.map(async (v) => {
-      commentsMap[v.videoId] = await fetchCommentsForVideo(v.videoId, apiKey);
+  const results = await Promise.all(
+    videos.map(async (v): Promise<VideoMetadata | null> => {
+      try {
+        const res = await fetch(
+          `${SUPADATA_BASE}/youtube/video?id=${encodeURIComponent(v.videoId)}`,
+          { headers: { "x-api-key": apiKey } }
+        );
+        if (!res.ok) return null;
+        const data = await res.json() as {
+          title?: string;
+          description?: string;
+          tags?: string[];
+          viewCount?: number;
+          likeCount?: number;
+          uploadDate?: string;
+          duration?: number;
+        };
+        return {
+          videoId: v.videoId,
+          title: data.title ?? v.title,
+          description: data.description ?? "",
+          tags: data.tags ?? [],
+          viewCount: data.viewCount ?? 0,
+          likeCount: data.likeCount ?? 0,
+          commentCount: 0,
+          publishedAt: data.uploadDate ?? "",
+          duration: typeof data.duration === "number" ? secondsToISO(data.duration) : "",
+          topComments: [],
+        };
+      } catch {
+        return null;
+      }
     })
   );
 
-  return videos
-    .filter((v) => itemsMap[v.videoId])
-    .map((v) => {
-      const item = itemsMap[v.videoId];
-      return {
-        videoId: v.videoId,
-        title: item.snippet.title,
-        description: item.snippet.description ?? "",
-        tags: item.snippet.tags ?? [],
-        viewCount: parseInt(item.statistics.viewCount ?? "0", 10),
-        likeCount: parseInt(item.statistics.likeCount ?? "0", 10),
-        commentCount: parseInt(item.statistics.commentCount ?? "0", 10),
-        publishedAt: item.snippet.publishedAt,
-        duration: item.contentDetails.duration,
-        topComments: commentsMap[v.videoId] ?? [],
-      };
-    });
+  return results.filter((r): r is VideoMetadata => r !== null);
 }

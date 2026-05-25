@@ -380,7 +380,7 @@ export default function DemoDashboardPage() {
           {/* ── API Keys Status ────────────────────────────────────────────── */}
           <div style={{ marginTop: "40px" }}>
             <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Keys Status</h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
 
               {/* Anthropic */}
               <div className="rounded-xl px-5 py-4" style={cardStyle}>
@@ -391,17 +391,6 @@ export default function DemoDashboardPage() {
                 <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>Anthropic</p>
                 <p className="text-[10px] font-medium mb-2" style={{ color: "#f0a855" }}>Pending setup</p>
                 <p className="text-[10px]" style={{ color: "var(--c-38)" }}>Claude AI — scripts & analysis</p>
-              </div>
-
-              {/* YouTube */}
-              <div className="rounded-xl px-5 py-4" style={cardStyle}>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="w-2 h-2 rounded-full" style={{ background: "#f87171" }} />
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#94a3b822", color: "#94a3b8" }}>Not set</span>
-                </div>
-                <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>YouTube</p>
-                <p className="text-[10px] font-medium mb-2" style={{ color: "#f0a855" }}>Pending setup</p>
-                <p className="text-[10px]" style={{ color: "var(--c-38)" }}>Channel lookup & metadata</p>
               </div>
 
               {/* KIE */}
