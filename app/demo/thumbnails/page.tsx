@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Download } from "lucide-react";
 import { DemoNav } from "@/components/demo/DemoNav";
@@ -34,6 +34,7 @@ function StepBadge({ status, num }: { status: "idle" | "running" | "done"; num: 
 export default function DemoThumbnailsPage() {
   const router = useRouter();
   const { state, update } = useDemoState();
+  const [navigating, setNavigating] = useState(false);
 
   const {
     conceptPhase, thumbImagePhase: imagePhase,
@@ -72,7 +73,7 @@ export default function DemoThumbnailsPage() {
 
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
-      <DemoNav currentStep={hasImages ? 8 : 7} />
+      <DemoNav currentStep={7} />
       <div className="flex-1 flex flex-col min-h-0">
         <DemoBanner />
         <main className="flex-1 overflow-y-auto">
@@ -268,19 +269,22 @@ export default function DemoThumbnailsPage() {
       </div>
 
       {/* Fixed Done bar */}
-      <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
-        style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
-        <div className="px-4 sm:px-8 max-w-3xl mx-auto">
-          <button
-            onClick={() => router.push("/dashboard")}
-            disabled={!hasImages}
-            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40"
-            style={{ background: "oklch(0.55 0.15 145)", color: "var(--bg-page-2)" }}
-          >
-            Done
-          </button>
+      {hasImages && (
+        <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
+          style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
+          <div className="px-4 sm:px-8 max-w-3xl mx-auto">
+            <button
+              onClick={() => { setNavigating(true); router.push("/dashboard"); }}
+              disabled={navigating}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-80"
+              style={{ background: "oklch(0.55 0.15 145)", color: "var(--bg-page-2)" }}
+            >
+              {navigating && <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />}
+              {navigating ? "Redirecting…" : "Done"}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

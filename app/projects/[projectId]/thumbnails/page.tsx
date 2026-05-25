@@ -343,6 +343,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
   const [imageProgress, setImageProgress] = useState<{ done: number; total: number } | null>(null);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const closePreview = useCallback(() => setPreviewIndex(null), []);
+  const [navigating, setNavigating] = useState(false);
 
   const thumbnails: ThumbnailConcept[] = project?.thumbnails ?? [];
   const hasConcepts = thumbnails.length > 0;
@@ -677,18 +678,22 @@ export default function ThumbnailsPage({ params }: PageProps) {
       </main>
 
       {/* Fixed Done bar */}
-      <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
-        style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
-        <div className="px-4 sm:px-8 max-w-5xl mx-auto">
-          <button
-            onClick={() => router.push("/projects")}
-            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all"
-            style={{ background: "oklch(0.55 0.15 145)", color: "var(--bg-page-2)" }}
-          >
-            Done
-          </button>
+      {hasImages && (
+        <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
+          style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
+          <div className="px-4 sm:px-8 max-w-5xl mx-auto">
+            <button
+              onClick={() => { setNavigating(true); router.push("/projects"); }}
+              disabled={navigating}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-80"
+              style={{ background: "oklch(0.55 0.15 145)", color: "var(--bg-page-2)" }}
+            >
+              {navigating && <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />}
+              {navigating ? "Redirecting…" : "Done"}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

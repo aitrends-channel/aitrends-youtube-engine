@@ -166,7 +166,7 @@ export function DemoNav({ currentStep }: DemoNavProps) {
             Cancel
           </button>
           <button
-            onClick={() => { resetDemo(); navigateTo("/demo/channel"); }}
+            onClick={() => { resetDemo(); setConfirming(false); navigateTo("/demo/channel"); }}
             className="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
             style={{ background: "oklch(0.55 0.22 25)", color: "white" }}
           >
