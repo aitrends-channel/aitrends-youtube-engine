@@ -1,22 +1,40 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
+import { createHmac } from "crypto";
+
+function verifySignature(payload: string, header: string | null, secret: string): boolean {
+  if (!header) return false;
+  const parts = Object.fromEntries(header.split(",").map((p) => p.split("=")));
+  const timestamp = parts["t"];
+  const signature = parts["v1"];
+  if (!timestamp || !signature) return false;
+  const expected = createHmac("sha256", secret)
+    .update(`${timestamp}.${payload}`)
+    .digest("hex");
+  return expected === signature;
+}
 
 export async function POST(request: Request) {
-  const secret = process.env.FLW_WEBHOOK_SECRET;
-  const hash = request.headers.get("verif-hash");
+  const secret = process.env.DODO_WEBHOOK_SECRET;
+  if (!secret) {
+    return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
+  }
 
-  if (!secret || hash !== secret) {
+  const rawBody = await request.text();
+  const sig = request.headers.get("webhook-signature");
+
+  if (!verifySignature(rawBody, sig, secret)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let payload: { event?: string; data?: Record<string, unknown> };
+  let payload: { type?: string; data?: Record<string, unknown> };
   try {
-    payload = await request.json();
+    payload = JSON.parse(rawBody);
   } catch {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
-  const event = payload.event ?? "";
+  const event = payload.type ?? "";
   const data = (payload.data ?? {}) as Record<string, unknown>;
   const customer = data.customer as Record<string, string> | undefined;
   const email = (customer?.email ?? "").trim().toLowerCase();
@@ -25,9 +43,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "No email in payload" }, { status: 400 });
   }
 
-  const status = data.status as string;
   const updatedAt = new Date().toISOString();
-  const flwMeta = { event, status, updated_at: updatedAt };
+  const dodoMeta = { event, status: data.status, updated_at: updatedAt };
 
   const { data: { users }, error: listError } = await supabase.auth.admin.listUsers();
   if (listError) {
@@ -37,8 +54,8 @@ export async function POST(request: Request) {
   const existing = users.find((u) => u.email?.toLowerCase() === email);
   const baseMetadata = existing?.app_metadata ?? {};
 
-  if (event === "charge.completed" && status === "successful") {
-    const metadata = { ...baseMetadata, paid: true, paid_at: updatedAt, flutterwave: flwMeta };
+  if (event === "payment.succeeded") {
+    const metadata = { ...baseMetadata, paid: true, paid_at: updatedAt, dodo: dodoMeta };
     if (existing) {
       await supabase.auth.admin.updateUserById(existing.id, { app_metadata: metadata });
     } else {
@@ -57,10 +74,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, event });
   }
 
-  if (event === "charge.failed" || status === "failed") {
+  if (event === "payment.failed") {
     if (existing) {
       await supabase.auth.admin.updateUserById(existing.id, {
-        app_metadata: { ...baseMetadata, paid: false, flutterwave: flwMeta },
+        app_metadata: { ...baseMetadata, paid: false, dodo: dodoMeta },
       });
     }
     return NextResponse.json({ success: true, event });

@@ -7,18 +7,18 @@ export async function POST(request: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   const body = await request.json().catch(() => ({}));
-  const { transaction_id, plan } = body as { transaction_id?: number; plan?: string };
+  const { payment_id, plan } = body as { payment_id?: string; plan?: string };
 
-  if (!transaction_id) {
-    return NextResponse.json({ error: "Missing transaction_id" }, { status: 400 });
+  if (!payment_id) {
+    return NextResponse.json({ error: "Missing payment_id" }, { status: 400 });
   }
 
-  const secretKey = process.env.FLW_SECRET_KEY;
+  const secretKey = process.env.DODO_SECRET_KEY;
   if (!secretKey) {
     return NextResponse.json({ error: "Payment not configured" }, { status: 500 });
   }
 
-  const res = await fetch(`https://api.flutterwave.com/v3/transactions/${transaction_id}/verify`, {
+  const res = await fetch(`https://api.dodopayments.com/payments/${payment_id}`, {
     headers: { Authorization: `Bearer ${secretKey}` },
   });
 
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
 
   const result = await res.json();
 
-  if (result.data?.status !== "successful") {
+  if (result.status !== "succeeded") {
     return NextResponse.json({ error: "Payment not successful" }, { status: 400 });
   }
 

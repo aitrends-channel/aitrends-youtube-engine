@@ -40,10 +40,10 @@ const PLANS = [
   },
 ];
 
-const FLW_PAYMENT_LINKS: Record<string, string> = {
-  founder: process.env.NEXT_PUBLIC_FLW_LINK_FOUNDER ?? "",
-  starter: process.env.NEXT_PUBLIC_FLW_LINK_STARTER ?? "",
-  pro:     process.env.NEXT_PUBLIC_FLW_LINK_PRO     ?? "",
+const DODO_PAYMENT_LINKS: Record<string, string> = {
+  founder: process.env.NEXT_PUBLIC_DODO_LINK_FOUNDER ?? "",
+  starter: process.env.NEXT_PUBLIC_DODO_LINK_STARTER ?? "",
+  pro:     process.env.NEXT_PUBLIC_DODO_LINK_PRO     ?? "",
 };
 
 interface Props {
@@ -95,15 +95,15 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
   }
 
   function handleSubscribe() {
-    const link = FLW_PAYMENT_LINKS[selectedPlan];
+    const link = DODO_PAYMENT_LINKS[selectedPlan];
     if (!link) {
       setError("Payment not configured for this plan. Contact support.");
       return;
     }
+    try { sessionStorage.setItem("dodo_pending_plan", selectedPlan); } catch {}
     setLoading(true);
     const w = window.open(link, "_blank");
     if (!w) {
-      // Popup blocked — fall back to same-tab redirect
       window.location.href = link;
       return;
     }
@@ -298,7 +298,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
         )}
 
         <p className="text-center text-xs mt-3" style={{ color: "var(--c-32)" }}>
-          Secured by Flutterwave · Cancel anytime
+          Secured by DodoPayments · Cancel anytime
         </p>
         </div>
       </div>

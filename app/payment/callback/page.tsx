@@ -16,34 +16,34 @@ function CallbackContent() {
 
   useEffect(() => {
     const status = searchParams.get("status");
-    const transactionId = searchParams.get("transaction_id");
+    const paymentId = searchParams.get("payment_id");
 
-    if (status === "cancelled") {
+    if (status === "cancelled" || (!paymentId && status !== null)) {
       setStage("cancelled");
       return;
     }
 
-    if (status !== "successful" || !transactionId) {
+    if (!paymentId) {
       setStage("failed");
       setErrorMsg("Payment was not completed.");
       return;
     }
 
     const plan = (() => {
-      try { return sessionStorage.getItem("flw_pending_plan") ?? "pro"; } catch { return "pro"; }
+      try { return sessionStorage.getItem("dodo_pending_plan") ?? "pro"; } catch { return "pro"; }
     })();
 
-    fetch("/api/flutterwave/verify", {
+    fetch("/api/dodo/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ transaction_id: Number(transactionId), plan }),
+      body: JSON.stringify({ payment_id: paymentId, plan }),
     })
       .then(async (res) => {
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           throw new Error(data.error ?? "Verification failed");
         }
-        try { sessionStorage.removeItem("flw_pending_plan"); } catch {}
+        try { sessionStorage.removeItem("dodo_pending_plan"); } catch {}
         setStage("success");
         setTimeout(() => router.replace("/dashboard"), 2500);
       })
