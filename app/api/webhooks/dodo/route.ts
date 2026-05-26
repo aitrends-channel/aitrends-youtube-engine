@@ -23,7 +23,11 @@ export async function POST(request: Request) {
   const rawBody = await request.text();
   const sig = request.headers.get("webhook-signature");
 
+  console.log("[dodo-webhook] headers:", JSON.stringify(Object.fromEntries(request.headers)));
+  console.log("[dodo-webhook] body:", rawBody);
+
   if (!verifySignature(rawBody, sig, secret)) {
+    console.log("[dodo-webhook] signature verification failed, sig:", sig);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
