@@ -19,12 +19,12 @@ function CallbackContent() {
     const status = searchParams.get("status");
     const paymentId = searchParams.get("payment_id");
 
-    if (status === "cancelled" || (!paymentId && status !== null)) {
+    if (status === "cancelled") {
       setStage("cancelled");
       return;
     }
 
-    if (!paymentId) {
+    if (!paymentId || (status && status !== "succeeded")) {
       setStage("failed");
       setErrorMsg("Payment was not completed.");
       return;
