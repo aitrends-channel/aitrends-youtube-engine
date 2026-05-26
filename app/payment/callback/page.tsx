@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 type Stage = "verifying" | "success" | "failed" | "cancelled";
 
@@ -44,6 +45,8 @@ function CallbackContent() {
           throw new Error(data.error ?? "Verification failed");
         }
         try { sessionStorage.removeItem("dodo_pending_plan"); } catch {}
+        const supabase = createSupabaseBrowserClient();
+        await supabase.auth.refreshSession();
         setStage("success");
         setTimeout(() => router.replace("/dashboard"), 2500);
       })
