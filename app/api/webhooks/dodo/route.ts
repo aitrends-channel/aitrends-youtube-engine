@@ -29,6 +29,10 @@ export async function POST(request: Request) {
   const msgTimestamp = request.headers.get("webhook-timestamp");
   const sigHeader = request.headers.get("webhook-signature");
 
+  console.log("[dodo-webhook] msgId:", msgId, "timestamp:", msgTimestamp, "sig:", sigHeader);
+  console.log("[dodo-webhook] secret prefix:", secret.slice(0, 10));
+  console.log("[dodo-webhook] body:", rawBody.slice(0, 200));
+
   if (!verifySignature(rawBody, msgId, msgTimestamp, sigHeader, secret)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
