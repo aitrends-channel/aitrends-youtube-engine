@@ -13,7 +13,7 @@ function verifySignature(
 ): boolean {
   if (!msgId || !msgTimestamp || !sigHeader) return false;
   const secretBytes = Buffer.from(secret.replace(/^whsec_/, ""), "base64");
-  const signedPayload = `${msgId}\n${msgTimestamp}\n${payload}`;
+  const signedPayload = `${msgId}.${msgTimestamp}.${payload}`;
   const expected = createHmac("sha256", secretBytes).update(signedPayload).digest("base64");
   return sigHeader.split(" ").some((part) => part.split(",")[1] === expected);
 }
