@@ -18,18 +18,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Payment not configured" }, { status: 500 });
   }
 
-  const res = await fetch(`https://api.dodopayments.com/payments/${payment_id}`, {
-    headers: { Authorization: `Bearer ${secretKey}` },
-  });
-
-  if (!res.ok) {
-    return NextResponse.json({ error: "Verification request failed" }, { status: 502 });
+  let dodoRes: Response;
+  try {
+    dodoRes = await fetch(`https://api.dodopayments.com/payments/${payment_id}`, {
+      headers: { Authorization: `Bearer ${secretKey}` },
+    });
+  } catch (e) {
+    return NextResponse.json({ error: `Dodo fetch failed: ${(e as Error).message}` }, { status: 502 });
   }
 
-  const result = await res.json();
+  if (!dodoRes.ok) {
+    const body = await dodoRes.text().catch(() => "");
+    return NextResponse.json({ error: `Dodo API error ${dodoRes.status}: ${body}` }, { status: 502 });
+  }
+
+  const result = await dodoRes.json();
 
   if (result.status !== "succeeded") {
-    return NextResponse.json({ error: "Payment not successful" }, { status: 400 });
+    return NextResponse.json({ error: `Payment not successful (status: ${result.status})` }, { status: 400 });
   }
 
   const isFounder = plan === "founder";
@@ -37,15 +43,19 @@ export async function POST(request: Request) {
     ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
     : null;
 
-  await supabase.auth.admin.updateUserById(user.id, {
-    app_metadata: {
-      ...user.app_metadata,
-      paid: true,
-      paid_at: new Date().toISOString(),
-      plan: plan ?? "pro",
-      ...(isFounder && { plan_expires_at: planExpiry }),
-    },
-  });
+  try {
+    await supabase.auth.admin.updateUserById(user.id, {
+      app_metadata: {
+        ...user.app_metadata,
+        paid: true,
+        paid_at: new Date().toISOString(),
+        plan: plan ?? "pro",
+        ...(isFounder && { plan_expires_at: planExpiry }),
+      },
+    });
+  } catch (e) {
+    return NextResponse.json({ error: `Failed to update user: ${(e as Error).message}` }, { status: 500 });
+  }
 
   return NextResponse.json({ success: true });
 }
