@@ -2,16 +2,20 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { createHmac } from "crypto";
 
-function verifySignature(payload: string, header: string | null, secret: string): boolean {
-  if (!header) return false;
-  const parts = Object.fromEntries(header.split(",").map((p) => p.split("=")));
-  const timestamp = parts["t"];
-  const signature = parts["v1"];
-  if (!timestamp || !signature) return false;
-  const expected = createHmac("sha256", secret)
-    .update(`${timestamp}.${payload}`)
-    .digest("hex");
-  return expected === signature;
+// Standard Webhooks spec: webhook-id + webhook-timestamp + webhook-signature headers
+// signed payload: "{msgId}\n{timestamp}\n{body}", secret is base64-encoded (whsec_ prefix)
+function verifySignature(
+  payload: string,
+  msgId: string | null,
+  msgTimestamp: string | null,
+  sigHeader: string | null,
+  secret: string,
+): boolean {
+  if (!msgId || !msgTimestamp || !sigHeader) return false;
+  const secretBytes = Buffer.from(secret.replace(/^whsec_/, ""), "base64");
+  const signedPayload = `${msgId}\n${msgTimestamp}\n${payload}`;
+  const expected = createHmac("sha256", secretBytes).update(signedPayload).digest("base64");
+  return sigHeader.split(" ").some((part) => part.split(",")[1] === expected);
 }
 
 export async function POST(request: Request) {
@@ -21,13 +25,11 @@ export async function POST(request: Request) {
   }
 
   const rawBody = await request.text();
-  const sig = request.headers.get("webhook-signature");
+  const msgId = request.headers.get("webhook-id");
+  const msgTimestamp = request.headers.get("webhook-timestamp");
+  const sigHeader = request.headers.get("webhook-signature");
 
-  console.log("[dodo-webhook] headers:", JSON.stringify(Object.fromEntries(request.headers)));
-  console.log("[dodo-webhook] body:", rawBody);
-
-  if (!verifySignature(rawBody, sig, secret)) {
-    console.log("[dodo-webhook] signature verification failed, sig:", sig);
+  if (!verifySignature(rawBody, msgId, msgTimestamp, sigHeader, secret)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
