@@ -1,9 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { X, Check, Zap, PlayCircle, Loader2 } from "lucide-react";
-import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { X, Check, Zap, PlayCircle } from "lucide-react";
 
 const FOUNDER_LIMIT = 100;
 
@@ -59,40 +58,14 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState(defaultPlan ?? "founder");
   const [spotsLeft, setSpotsLeft] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [polling, setPolling] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     fetch("/api/founder-spots")
       .then(r => r.json())
       .then(d => setSpotsLeft(d.remaining))
       .catch(() => {});
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
-
-  function startPolling() {
-    setPolling(true);
-    setError(null);
-    const supabase = createSupabaseBrowserClient();
-    let attempts = 0;
-    pollRef.current = setInterval(async () => {
-      attempts++;
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user?.app_metadata?.paid === true) {
-        clearInterval(pollRef.current!);
-        setPolling(false);
-        onSuccess();
-        return;
-      }
-      if (attempts >= 30) { // 2 min timeout
-        clearInterval(pollRef.current!);
-        setPolling(false);
-        setError("Payment not yet confirmed. If you completed payment, wait a moment and click 'I've paid'.");
-      }
-    }, 4000);
-  }
 
   function handleSubscribe() {
     const link = DODO_PAYMENT_LINKS[selectedPlan];
@@ -101,14 +74,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
       return;
     }
     try { sessionStorage.setItem("dodo_pending_plan", selectedPlan); } catch {}
-    setLoading(true);
-    const w = window.open(link, "_blank");
-    if (!w) {
-      window.location.href = link;
-      return;
-    }
-    setLoading(false);
-    startPolling();
+    window.location.href = link;
   }
 
   return (
@@ -255,47 +221,16 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
           </p>
         )}
 
-        {polling ? (
-          <div className="space-y-3">
-            <div
-              className="flex items-center gap-3 px-4 py-3 rounded-xl"
-              style={{ background: "oklch(0.72 0.25 285 / 0.08)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}
-            >
-              <Loader2 size={16} className="animate-spin shrink-0" style={{ color: "oklch(0.72 0.25 285)" }} />
-              <p className="text-sm" style={{ color: "oklch(0.82 0.15 285)" }}>
-                Payment window opened — complete your payment and we&apos;ll confirm it automatically.
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => { if (pollRef.current) clearInterval(pollRef.current); setPolling(false); }}
-                className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all hover:opacity-80 cursor-pointer"
-                style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => { if (pollRef.current) clearInterval(pollRef.current); startPolling(); }}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all hover:opacity-90 cursor-pointer"
-                style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
-              >
-                I&apos;ve paid →
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            onClick={handleSubscribe}
-            disabled={loading}
-            className="w-full py-3 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-            style={{
-              background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-              color: "var(--c-98)",
-            }}
-          >
-            {loading ? "Opening payment…" : `Subscribe to ${PLANS.find(p => p.id === selectedPlan)?.name}`}
-          </button>
-        )}
+        <button
+          onClick={handleSubscribe}
+          className="w-full py-3 rounded-xl text-sm font-bold transition-all hover:opacity-90 cursor-pointer"
+          style={{
+            background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+            color: "var(--c-98)",
+          }}
+        >
+          {`Subscribe to ${PLANS.find(p => p.id === selectedPlan)?.name}`}
+        </button>
 
         <p className="text-center text-xs mt-3" style={{ color: "var(--c-32)" }}>
           Secured by DodoPayments · Cancel anytime
