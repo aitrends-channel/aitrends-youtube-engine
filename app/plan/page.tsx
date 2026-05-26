@@ -19,7 +19,7 @@ const PLANS: Record<string, {
 }> = {
   founder: {
     name: "Founder",
-    price: "$40",
+    price: "$0",
     period: "/ year",
     color: "oklch(0.72 0.25 285)",
     features: ["20 niches", "HD image processing", "Full AI pipeline", "All features included", "1 year — no renewal"],
