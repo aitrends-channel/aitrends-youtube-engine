@@ -30,30 +30,11 @@ function CallbackContent() {
       return;
     }
 
-    const plan = (() => {
-      try { return sessionStorage.getItem("dodo_pending_plan") ?? "pro"; } catch { return "pro"; }
-    })();
-
-    fetch("/api/dodo/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payment_id: paymentId, plan }),
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error ?? "Verification failed");
-        }
-        try { sessionStorage.removeItem("dodo_pending_plan"); } catch {}
-        const supabase = createSupabaseBrowserClient();
-        await supabase.auth.refreshSession();
-        setStage("success");
-        setTimeout(() => router.replace("/dashboard"), 2500);
-      })
-      .catch((err) => {
-        setErrorMsg(err.message ?? "Something went wrong. Contact support if your payment was deducted.");
-        setStage("failed");
-      });
+    try { sessionStorage.removeItem("dodo_pending_plan"); } catch {}
+    const supabase = createSupabaseBrowserClient();
+    await supabase.auth.refreshSession();
+    setStage("success");
+    setTimeout(() => router.replace("/dashboard"), 2500);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
