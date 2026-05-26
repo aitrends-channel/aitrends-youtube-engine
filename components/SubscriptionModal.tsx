@@ -10,7 +10,7 @@ const PLANS = [
   {
     id: "founder",
     name: "Founder",
-    price: "$0.1",
+    price: "$0.50",
     period: " / year",
     limit: "1 year · 20 niches",
     features: ["20 niches", "HD image processing", "Full AI pipeline", "All features included", "1 year — no renewal"],
