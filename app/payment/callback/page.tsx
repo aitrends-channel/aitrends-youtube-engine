@@ -30,11 +30,13 @@ function CallbackContent() {
       return;
     }
 
-    try { sessionStorage.removeItem("dodo_pending_plan"); } catch {}
-    const supabase = createSupabaseBrowserClient();
-    await supabase.auth.refreshSession();
-    setStage("success");
-    setTimeout(() => router.replace("/dashboard"), 2500);
+    (async () => {
+      try { sessionStorage.removeItem("dodo_pending_plan"); } catch {}
+      const supabase = createSupabaseBrowserClient();
+      await supabase.auth.refreshSession();
+      setStage("success");
+      setTimeout(() => router.replace("/dashboard"), 2500);
+    })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
