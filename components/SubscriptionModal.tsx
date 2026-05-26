@@ -68,13 +68,16 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
   }, []);
 
   function handleSubscribe() {
-    const link = DODO_PAYMENT_LINKS[selectedPlan];
-    if (!link) {
+    const base = DODO_PAYMENT_LINKS[selectedPlan];
+    if (!base) {
       setError("Payment not configured for this plan. Contact support.");
       return;
     }
     try { sessionStorage.setItem("dodo_pending_plan", selectedPlan); } catch {}
-    window.location.href = link;
+    const callbackUrl = `${window.location.origin}/payment/callback`;
+    const url = new URL(base);
+    url.searchParams.set("redirect_url", callbackUrl);
+    window.location.href = url.toString();
   }
 
   return (
