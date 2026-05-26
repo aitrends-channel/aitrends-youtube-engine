@@ -20,7 +20,7 @@ export async function POST(request: Request) {
 
   let dodoRes: Response;
   try {
-    const dodoBase = process.env.DODO_SECRET_KEY?.startsWith("sk_test_") ? "https://test.dodopayments.com" : "https://live.dodopayments.com";
+    const dodoBase = process.env.DODO_BASE_URL ?? "https://live.dodopayments.com";
     dodoRes = await fetch(`${dodoBase}/payments/${payment_id}`, {
       headers: { Authorization: `Bearer ${secretKey}` },
     });
