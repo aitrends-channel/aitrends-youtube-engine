@@ -72,13 +72,17 @@ interface AdminProject {
   createdAt: string;
 }
 
-interface YouTubeKey {
+interface ProductApiKey {
   id: string;
+  service: string;
   label: string | null;
   key: string;
   active: boolean;
   created_at: string;
 }
+
+const SERVICES = ["youtube", "kie"] as const;
+type Service = typeof SERVICES[number];
 
 interface ActivityPoint {
   date: string;
@@ -210,14 +214,15 @@ function AddUserForm({ onSuccess }: { onSuccess: () => void }) {
 }
 
 function SetupSection({
-  ytKeys,
+  productKeys,
   keysLoading,
   mutateKeys,
 }: {
-  ytKeys: YouTubeKey[];
+  productKeys: ProductApiKey[];
   keysLoading: boolean;
   mutateKeys: () => void;
 }) {
+  const [serviceInput, setServiceInput] = useState<Service>("youtube");
   const [keyInput, setKeyInput] = useState("");
   const [labelInput, setLabelInput] = useState("");
   const [adding, setAdding] = useState(false);
@@ -228,10 +233,10 @@ function SetupSection({
     e.preventDefault();
     setAdding(true);
     try {
-      const res = await fetch("/api/admin/youtube-keys", {
+      const res = await fetch("/api/admin/product-keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: keyInput, label: labelInput }),
+        body: JSON.stringify({ service: serviceInput, key: keyInput, label: labelInput }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "Failed to add key");
@@ -246,10 +251,10 @@ function SetupSection({
     }
   }
 
-  async function handleToggle(k: YouTubeKey) {
+  async function handleToggle(k: ProductApiKey) {
     setTogglingId(k.id);
     try {
-      const res = await fetch(`/api/admin/youtube-keys/${k.id}`, {
+      const res = await fetch(`/api/admin/product-keys/${k.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ active: !k.active }),
@@ -266,7 +271,7 @@ function SetupSection({
   async function handleRemove(id: string) {
     setRemovingId(id);
     try {
-      const res = await fetch(`/api/admin/youtube-keys/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/admin/product-keys/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to remove");
       toast.success("API key removed");
       mutateKeys();
@@ -277,6 +282,13 @@ function SetupSection({
     }
   }
 
+  const inputFocus = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) => {
+    e.currentTarget.style.borderColor = "oklch(0.62 0.15 220 / 0.5)";
+  };
+  const inputBlur = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) => {
+    e.currentTarget.style.borderColor = "var(--bd-10)";
+  };
+
   return (
     <section id="setup" className="rounded-2xl space-y-5" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
       <div className="flex items-center gap-3">
@@ -286,11 +298,11 @@ function SetupSection({
         </div>
         <div>
           <h2 className="text-lg font-bold text-foreground">Setup</h2>
-          <p className="text-xs" style={{ color: "var(--c-42)" }}>YouTube Data API keys used to serve all customers</p>
+          <p className="text-xs" style={{ color: "var(--c-42)" }}>Product-wide API keys used to serve all customers</p>
         </div>
         <span className="ml-auto text-xs px-2.5 py-0.5 rounded-full"
           style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
-          {ytKeys.length} key{ytKeys.length !== 1 ? "s" : ""}
+          {productKeys.length} key{productKeys.length !== 1 ? "s" : ""}
         </span>
       </div>
 
@@ -299,6 +311,16 @@ function SetupSection({
         style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.07)" }}>
         <p className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Add API Key</p>
         <div className="flex flex-col sm:flex-row gap-2">
+          <select
+            value={serviceInput}
+            onChange={(e) => setServiceInput(e.target.value as Service)}
+            className="sm:w-32 px-3 py-2.5 rounded-lg text-sm outline-none transition-all capitalize"
+            style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
+            onFocus={inputFocus}
+            onBlur={inputBlur}
+          >
+            {SERVICES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
           <input
             type="text"
             value={labelInput}
@@ -306,19 +328,19 @@ function SetupSection({
             placeholder="Label (optional)"
             className="sm:w-36 px-3 py-2.5 rounded-lg text-sm outline-none transition-all"
             style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
-            onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.62 0.15 220 / 0.5)"; }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
+            onFocus={inputFocus}
+            onBlur={inputBlur}
           />
           <input
             type="text"
             value={keyInput}
             onChange={(e) => setKeyInput(e.target.value)}
             required
-            placeholder="AIzaSy…"
+            placeholder="API key…"
             className="flex-1 px-3 py-2.5 rounded-lg text-sm outline-none transition-all font-mono"
             style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
-            onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.62 0.15 220 / 0.5)"; }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
+            onFocus={inputFocus}
+            onBlur={inputBlur}
           />
           <button
             type="submit"
@@ -334,28 +356,31 @@ function SetupSection({
 
       {/* Keys list */}
       {keysLoading ? (
-        <div className="flex items-center gap-2 py-4" style={{ color: "var(--c-40)" }}>
-          <Spinner size={14} />
-          <span className="text-sm">Loading keys…</span>
-        </div>
-      ) : ytKeys.length === 0 ? (
+        <SkeletonRows cols={6} />
+      ) : productKeys.length === 0 ? (
         <p className="text-sm italic py-2" style={{ color: "var(--c-35)" }}>No API keys configured yet.</p>
       ) : (
         <div className="rounded-2xl overflow-x-auto"
           style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
-          <table className="w-full border-collapse min-w-[480px]">
+          <table className="w-full border-collapse min-w-[560px]">
             <thead>
               <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
-                {["Label", "Key", "Status", "Added", ""].map((h) => (
+                {["Service", "Label", "Key", "Status", "Added", ""].map((h) => (
                   <th key={h} className="text-left py-3 px-4 text-xs font-medium uppercase tracking-wider" style={{ color: "var(--c-40)" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {ytKeys.map((k) => (
+              {productKeys.map((k) => (
                 <tr key={k.id} style={{ borderBottom: "1px solid var(--bd-4)" }}
                   onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bd-2)"; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
+                  <td className="py-3 px-4">
+                    <span className="text-xs px-2 py-0.5 rounded-md font-medium capitalize"
+                      style={{ background: "oklch(0.62 0.15 220 / 0.1)", color: "oklch(0.62 0.15 220)", border: "1px solid oklch(0.62 0.15 220 / 0.2)" }}>
+                      {k.service}
+                    </span>
+                  </td>
                   <td className="py-3 px-4 text-sm" style={{ color: "var(--c-65)" }}>
                     {k.label ?? <span style={{ color: "var(--c-35)" }}>—</span>}
                   </td>
@@ -403,6 +428,119 @@ function SetupSection({
   );
 }
 
+const SK = { background: "oklch(0 0 0 / 0.07)" };
+const PER_PAGE = 10;
+
+function Pagination({ page, total, onChange }: { page: number; total: number; onChange: (p: number) => void }) {
+  const totalPages = Math.ceil(total / PER_PAGE);
+  if (totalPages <= 1) return null;
+  const from = (page - 1) * PER_PAGE + 1;
+  const to = Math.min(page * PER_PAGE, total);
+  return (
+    <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }}>
+      <p className="text-xs" style={{ color: "oklch(0.50 0 0)" }}>{from}–{to} of {total}</p>
+      <div className="flex items-center gap-1">
+        <button onClick={() => onChange(page - 1)} disabled={page === 1}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+          style={{ background: "oklch(0 0 0 / 0.05)", color: "oklch(0.45 0 0)" }}>
+          Prev
+        </button>
+        <span className="px-2 text-xs font-medium" style={{ color: "oklch(0.45 0 0)" }}>{page} / {totalPages}</span>
+        <button onClick={() => onChange(page + 1)} disabled={page === totalPages}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+          style={{ background: "oklch(0 0 0 / 0.05)", color: "oklch(0.45 0 0)" }}>
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AdminSkeleton() {
+  return (
+    <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-8 py-8 sm:py-12 space-y-6 sm:space-y-10">
+        {/* Page heading */}
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl animate-pulse" style={SK} />
+          <div className="space-y-2">
+            <div className="h-6 w-44 rounded animate-pulse" style={SK} />
+            <div className="h-3 w-56 rounded animate-pulse" style={SK} />
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex items-center gap-1 p-1 rounded-xl"
+          style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="flex-1 h-8 rounded-lg animate-pulse" style={SK} />
+          ))}
+        </div>
+
+        {/* Stats cards */}
+        <div className="rounded-2xl space-y-3" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
+          <div className="h-3 w-10 rounded animate-pulse" style={SK} />
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-[10px]">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="p-6 rounded-2xl space-y-4"
+                style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06)" }}>
+                <div className="flex items-center justify-between">
+                  <div className="h-3 w-16 rounded animate-pulse" style={SK} />
+                  <div className="w-8 h-8 rounded-lg animate-pulse" style={SK} />
+                </div>
+                <div className="h-8 w-12 rounded animate-pulse" style={SK} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Activity chart */}
+        <div className="p-5 rounded-2xl space-y-4" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="space-y-2">
+              <div className="h-3 w-40 rounded animate-pulse" style={SK} />
+              <div className="flex gap-4">
+                {[...Array(3)].map((_, i) => <div key={i} className="h-3 w-16 rounded animate-pulse" style={SK} />)}
+              </div>
+            </div>
+            <div className="h-7 w-36 rounded-lg animate-pulse" style={SK} />
+          </div>
+          <div className="h-[150px] rounded-xl animate-pulse" style={SK} />
+        </div>
+
+        {/* Users section */}
+        <div className="rounded-2xl space-y-4" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl animate-pulse" style={SK} />
+            <div className="h-5 w-16 rounded animate-pulse" style={SK} />
+          </div>
+          <div className="h-[72px] rounded-2xl animate-pulse" style={SK} />
+          <SkeletonRows cols={5} />
+        </div>
+      </main>
+  );
+}
+
+function SkeletonRows({ cols, rows = 3 }: { cols: number; rows?: number }) {
+  const widths = ["w-36", "w-20", "w-16", "w-24", "w-12", "w-16", "w-10"];
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid oklch(0 0 0 / 0.07)" }}>
+      <table className="w-full border-collapse">
+        <tbody>
+          {[...Array(rows)].map((_, r) => (
+            <tr key={r} style={{ borderBottom: "1px solid oklch(0 0 0 / 0.05)" }}>
+              {[...Array(cols)].map((_, c) => (
+                <td key={c} className="py-3 px-4">
+                  <div className={`h-4 ${widths[c % widths.length]} rounded animate-pulse`} style={SK} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const [authChecked, setAuthChecked] = useState(false);
@@ -430,13 +568,15 @@ export default function AdminPage() {
     fetcher
   );
 
-  const { data: ytKeysRaw, isLoading: keysLoading, mutate: mutateKeys } = useSWR<YouTubeKey[]>(
-    authChecked ? "/api/admin/youtube-keys" : null,
+  const { data: productKeysRaw, isLoading: keysLoading, mutate: mutateKeys } = useSWR<ProductApiKey[]>(
+    authChecked ? "/api/admin/product-keys" : null,
     fetcher
   );
-  const ytKeys: YouTubeKey[] = Array.isArray(ytKeysRaw) ? ytKeysRaw : [];
+  const productKeys: ProductApiKey[] = Array.isArray(productKeysRaw) ? productKeysRaw : [];
 
   const [removing, setRemoving] = useState<string | null>(null);
+  const [usersPage, setUsersPage] = useState(1);
+  const [projectsPage, setProjectsPage] = useState(1);
   const [activityView, setActivityView] = useState<"daily" | "weekly" | "monthly">("daily");
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [hoveredRevIdx, setHoveredRevIdx] = useState<number | null>(null);
@@ -474,6 +614,7 @@ export default function AdminPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed to remove");
       toast.success(`Removed ${email}`);
+      setUsersPage(1);
       mutate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to remove user");
@@ -483,14 +624,28 @@ export default function AdminPage() {
   }
 
   if (!authChecked) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--bg-page)" }}>
-      <Spinner size={28} className="text-purple-400" />
+    <div className="min-h-screen flex flex-col" data-theme="light" style={{ background: "var(--bg-page)" }}>
+      <header className="flex items-center justify-between px-4 sm:px-8 py-4 sticky top-0 z-10"
+        style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center">
+            <Image src="/heclus-icon-white.svg" alt="Heclus" width={32} height={32} className="object-cover w-full h-full" />
+          </div>
+          <div>
+            <span className="font-bold text-sm tracking-tight text-foreground">Heclus</span>
+            <span className="text-sm tracking-tight ml-1" style={{ color: "var(--c-50)" }}>Admin</span>
+          </div>
+        </div>
+      </header>
+      <AdminSkeleton />
     </div>
   );
 
   const stats = data?.stats;
   const users = data?.users ?? [];
   const projects = data?.projects ?? [];
+  const pagedUsers = users.slice((usersPage - 1) * PER_PAGE, usersPage * PER_PAGE);
+  const pagedProjects = projects.slice((projectsPage - 1) * PER_PAGE, projectsPage * PER_PAGE);
 
   return (
     <div className="min-h-screen flex flex-col" data-theme="light" style={{ background: "var(--bg-page)" }}>
@@ -862,10 +1017,7 @@ export default function AdminPage() {
           <AddUserForm onSuccess={mutate} />
 
           {isLoading ? (
-            <div className="flex items-center gap-2 py-4" style={{ color: "var(--c-40)" }}>
-              <Spinner size={14} />
-              <span className="text-sm">Loading users…</span>
-            </div>
+            <SkeletonRows cols={5} />
           ) : users.length === 0 ? (
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No users yet.</div>
           ) : (
@@ -883,7 +1035,7 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((u) => (
+                  {pagedUsers.map((u) => (
                     <tr key={u.email}
                       style={{ borderBottom: "1px solid var(--bd-4)" }}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bd-2)"; }}
@@ -936,6 +1088,7 @@ export default function AdminPage() {
                   ))}
                 </tbody>
               </table>
+              <Pagination page={usersPage} total={users.length} onChange={setUsersPage} />
             </div>
           )}
         </section>
@@ -955,10 +1108,7 @@ export default function AdminPage() {
           </div>
 
           {isLoading ? (
-            <div className="flex items-center gap-2 py-4" style={{ color: "var(--c-40)" }}>
-              <Spinner size={14} />
-              <span className="text-sm">Loading projects…</span>
-            </div>
+            <SkeletonRows cols={7} />
           ) : projects.length === 0 ? (
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No projects yet.</div>
           ) : (
@@ -976,7 +1126,7 @@ export default function AdminPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {projects.map((p) => {
+                  {pagedProjects.map((p) => {
                     const isComplete = p.currentState >= 15;
                     return (
                       <tr key={p.id}
@@ -1047,6 +1197,7 @@ export default function AdminPage() {
                   })}
                 </tbody>
               </table>
+              <Pagination page={projectsPage} total={projects.length} onChange={setProjectsPage} />
             </div>
           )}
         </section>
@@ -1254,8 +1405,8 @@ export default function AdminPage() {
           );
         })()}
 
-        {/* Setup section — YouTube Data API key management */}
-        <SetupSection ytKeys={ytKeys} keysLoading={keysLoading} mutateKeys={mutateKeys} />
+        {/* Setup section — product-wide API key management */}
+        <SetupSection productKeys={productKeys} keysLoading={keysLoading} mutateKeys={mutateKeys} />
       </main>
     </div>
   );

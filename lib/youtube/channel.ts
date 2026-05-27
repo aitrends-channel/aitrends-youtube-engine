@@ -1,9 +1,21 @@
 import type { ChannelInfo, TopVideo } from "@/lib/types";
 import { supabase } from "@/lib/supabase/client";
 
-function getYouTubeApiKey(): string {
+async function getYouTubeApiKey(): Promise<string> {
+  const { data } = await supabase
+    .from("product_api_keys")
+    .select("key")
+    .eq("service", "youtube")
+    .eq("active", true);
+
+  if (data && data.length > 0) {
+    // Distribute quota across all active keys
+    return data[Math.floor(Math.random() * data.length)].key;
+  }
+
+  // Fall back to env var if no DB keys are configured
   const key = process.env.YOUTUBE_API_KEY;
-  if (!key) throw new Error("YOUTUBE_API_KEY is not configured");
+  if (!key) throw new Error("No active YouTube API key configured");
   return key;
 }
 
@@ -40,7 +52,7 @@ function parseChannelUrl(channelUrl: string): { type: "id" | "handle" | "usernam
 }
 
 async function fetchChannelInfo(channelUrl: string): Promise<{ id: string; name: string; subscribers: string; description: string }> {
-  const apiKey = getYouTubeApiKey();
+  const apiKey = await getYouTubeApiKey();
   const { type, value } = parseChannelUrl(channelUrl);
 
   const url = new URL("https://www.googleapis.com/youtube/v3/channels");
@@ -73,7 +85,7 @@ async function fetchChannelInfo(channelUrl: string): Promise<{ id: string; name:
 }
 
 async function fetchTopVideos(channelId: string): Promise<TopVideo[]> {
-  const apiKey = getYouTubeApiKey();
+  const apiKey = await getYouTubeApiKey();
 
   // Top 10 videos by view count
   const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
