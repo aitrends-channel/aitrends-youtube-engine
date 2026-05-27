@@ -31,7 +31,28 @@ function CallbackContent() {
     }
 
     (async () => {
+      let plan = "pro";
+      try { plan = sessionStorage.getItem("dodo_pending_plan") ?? "pro"; } catch {}
       try { sessionStorage.removeItem("dodo_pending_plan"); } catch {}
+
+      try {
+        const res = await fetch("/api/dodo/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ payment_id: paymentId, plan }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({})) as { error?: string };
+          setStage("failed");
+          setErrorMsg(data.error ?? "Payment verification failed. Contact support.");
+          return;
+        }
+      } catch {
+        setStage("failed");
+        setErrorMsg("Could not reach verification service. Contact support.");
+        return;
+      }
+
       const supabase = createSupabaseBrowserClient();
       await supabase.auth.refreshSession();
       setStage("success");
