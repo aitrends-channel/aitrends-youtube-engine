@@ -156,7 +156,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
                   className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
                 >
-                  Popular
+                  💪 Popular
                 </span>
               )}
               {plan.disabled && (
