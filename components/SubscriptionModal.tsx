@@ -236,9 +236,6 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
           {`Subscribe to ${PLANS.find(p => p.id === selectedPlan)?.name}`}
         </button>
 
-        <p className="text-center text-xs mt-3" style={{ color: "var(--c-32)" }}>
-          Secured by DodoPayments · Cancel anytime
-        </p>
         </div>
       </div>
     </div>
