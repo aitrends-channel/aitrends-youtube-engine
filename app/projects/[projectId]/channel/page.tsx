@@ -375,7 +375,7 @@ export default function ChannelPage({ params }: PageProps) {
 
               <div className="space-y-1.5">
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
-                  Top 5 Videos
+                  Top 10 Videos
                 </p>
                 {channelInfo.topVideos.map((v) => (
                   <div key={v.videoId} className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm"
