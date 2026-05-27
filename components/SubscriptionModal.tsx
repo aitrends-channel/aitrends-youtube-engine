@@ -77,6 +77,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
     const callbackUrl = `${window.location.origin}/payment/callback`;
     const url = new URL(base);
     url.searchParams.set("redirect_url", callbackUrl);
+    if (email) url.searchParams.set("customer[email]", email);
     window.location.href = url.toString();
   }
 

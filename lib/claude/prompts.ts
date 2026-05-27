@@ -10,7 +10,7 @@ export function buildAnalysisPrompt(transcripts: SupadataTranscript[]): string {
     return `--- VIDEO ${i + 1}: "${t.title}" ---
 Word count (full transcript): ~${t.wordCount} words
 
-TRANSCRIPT (first ~1500 words):
+TRANSCRIPT:
 ${t.text}`.trim();
   }).join("\n\n");
 
