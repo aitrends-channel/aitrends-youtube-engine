@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
 import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
-  CheckCircle2, UserCog, UserPlus,
+  CheckCircle2, UserCog, UserPlus, Settings,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import useSWR from "swr";
@@ -178,6 +178,9 @@ function AddUserForm({ onSuccess }: { onSuccess: () => void }) {
 export default function AdminPage() {
   const router = useRouter();
   const [authChecked, setAuthChecked] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -187,6 +190,7 @@ export default function AdminPage() {
       if (!data.user || data.user.email !== ADMIN_EMAIL) {
         router.push("/");
       } else {
+        setUserEmail(data.user.email ?? "");
         setAuthChecked(true);
       }
     });
@@ -245,24 +249,58 @@ export default function AdminPage() {
             <span className="text-sm tracking-tight ml-1" style={{ color: "var(--c-50)" }}>Admin</span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 shrink-0">
           <button
-            onClick={handleSignOut}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80 cursor-pointer"
-            style={{ background: "var(--bg-control)", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+            onClick={() => router.push("/dashboard")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+            style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
           >
-            <LogOut size={15} />
-            <span>Sign Out</span>
+            <ArrowLeft size={13} />
+            Back
           </button>
           <ThemeToggle />
-          <Link
-            href="/"
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80"
-            style={{ background: "var(--bg-control)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
-          >
-            <ArrowLeft size={14} />
-            Back to Home
-          </Link>
+          <div className="relative" ref={profileMenuRef}>
+            <button
+              onClick={() => setShowProfileMenu(v => !v)}
+              className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-all hover:opacity-80 cursor-pointer shrink-0"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+            >
+              {userEmail ? userEmail[0].toUpperCase() : "?"}
+            </button>
+            {showProfileMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
+                <div
+                  className="absolute right-0 top-11 z-50 w-56 rounded-2xl py-3 shadow-2xl"
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
+                >
+                  <div className="px-4 pb-3" style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
+                    <p className="text-xs font-semibold truncate" style={{ color: "var(--c-88)" }}>
+                      {userEmail || "Loading…"}
+                    </p>
+                  </div>
+                  <div className="px-2 pt-2">
+                    <button
+                      onClick={() => { setShowProfileMenu(false); router.push("/dashboard"); }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
+                      style={{ color: "var(--c-60)" }}
+                    >
+                      <Settings size={13} />
+                      <span>Dashboard</span>
+                    </button>
+                    <button
+                      onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
+                      style={{ color: "#f87171" }}
+                    >
+                      <LogOut size={13} />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 
