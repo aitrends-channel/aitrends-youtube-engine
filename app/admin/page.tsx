@@ -72,16 +72,20 @@ interface AdminProject {
   createdAt: string;
 }
 
+interface QuotaEntry { units_used: number; date: string; }
+
 interface ProductApiKey {
   id: string;
   service: string;
   label: string | null;
-  key: string;
+  keys: string[];
+  current_index: number;
+  quota_tracking: QuotaEntry[];
   active: boolean;
   created_at: string;
 }
 
-const SERVICES = ["youtube", "kie"] as const;
+const SERVICES = ["youtube_data_api_key", "kie"] as const;
 type Service = typeof SERVICES[number];
 
 interface ActivityPoint {
@@ -222,12 +226,15 @@ function SetupSection({
   keysLoading: boolean;
   mutateKeys: () => void;
 }) {
-  const [serviceInput, setServiceInput] = useState<Service>("youtube");
+  const [serviceInput, setServiceInput] = useState<Service>("youtube_data_api_key");
   const [keyInput, setKeyInput] = useState("");
-  const [labelInput, setLabelInput] = useState("");
   const [adding, setAdding] = useState(false);
+  const [removingKey, setRemovingKey] = useState<string | null>(null); // "rowId:index"
   const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [resettingId, setResettingId] = useState<string | null>(null);
+
+  const serviceMap = new Map(productKeys.map(k => [k.service, k]));
+  const totalKeys = productKeys.reduce((s, k) => s + k.keys.length, 0);
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -236,18 +243,36 @@ function SetupSection({
       const res = await fetch("/api/admin/product-keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ service: serviceInput, key: keyInput, label: labelInput }),
+        body: JSON.stringify({ service: serviceInput, key: keyInput }),
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error ?? "Failed to add key");
       toast.success("API key added");
       setKeyInput("");
-      setLabelInput("");
       mutateKeys();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to add key");
     } finally {
       setAdding(false);
+    }
+  }
+
+  async function handleRemoveKey(rowId: string, keyIndex: number) {
+    const tag = `${rowId}:${keyIndex}`;
+    setRemovingKey(tag);
+    try {
+      const res = await fetch(`/api/admin/product-keys/${rowId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ removeKeyIndex: keyIndex }),
+      });
+      if (!res.ok) throw new Error("Failed to remove key");
+      toast.success("Key removed");
+      mutateKeys();
+    } catch {
+      toast.error("Failed to remove key");
+    } finally {
+      setRemovingKey(null);
     }
   }
 
@@ -262,26 +287,31 @@ function SetupSection({
       if (!res.ok) throw new Error("Failed to update");
       mutateKeys();
     } catch {
-      toast.error("Failed to update key");
+      toast.error("Failed to update");
     } finally {
       setTogglingId(null);
     }
   }
 
-  async function handleRemove(id: string) {
-    setRemovingId(id);
+  async function handleResetIndex(k: ProductApiKey) {
+    setResettingId(k.id);
     try {
-      const res = await fetch(`/api/admin/product-keys/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to remove");
-      toast.success("API key removed");
+      const res = await fetch(`/api/admin/product-keys/${k.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resetIndex: true }),
+      });
+      if (!res.ok) throw new Error("Failed to reset");
+      toast.success("Reset to first key");
       mutateKeys();
     } catch {
-      toast.error("Failed to remove key");
+      toast.error("Failed to reset");
     } finally {
-      setRemovingId(null);
+      setResettingId(null);
     }
   }
 
+  const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" };
   const inputFocus = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) => {
     e.currentTarget.style.borderColor = "oklch(0.62 0.15 220 / 0.5)";
   };
@@ -298,11 +328,11 @@ function SetupSection({
         </div>
         <div>
           <h2 className="text-lg font-bold text-foreground">Setup</h2>
-          <p className="text-xs" style={{ color: "var(--c-42)" }}>Product-wide API keys used to serve all customers</p>
+          <p className="text-xs" style={{ color: "var(--c-42)" }}>Product-wide API keys — first key is default, auto-rotates on quota exceeded</p>
         </div>
         <span className="ml-auto text-xs px-2.5 py-0.5 rounded-full"
           style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
-          {productKeys.length} key{productKeys.length !== 1 ? "s" : ""}
+          {totalKeys} key{totalKeys !== 1 ? "s" : ""}
         </span>
       </div>
 
@@ -314,8 +344,8 @@ function SetupSection({
           <select
             value={serviceInput}
             onChange={(e) => setServiceInput(e.target.value as Service)}
-            className="sm:w-32 px-3 py-2.5 rounded-lg text-sm outline-none transition-all capitalize"
-            style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
+            className="sm:w-48 px-3 py-2.5 rounded-lg text-sm outline-none transition-all"
+            style={inputStyle}
             onFocus={inputFocus}
             onBlur={inputBlur}
           >
@@ -323,29 +353,19 @@ function SetupSection({
           </select>
           <input
             type="text"
-            value={labelInput}
-            onChange={(e) => setLabelInput(e.target.value)}
-            placeholder="Label (optional)"
-            className="sm:w-36 px-3 py-2.5 rounded-lg text-sm outline-none transition-all"
-            style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
-            onFocus={inputFocus}
-            onBlur={inputBlur}
-          />
-          <input
-            type="text"
             value={keyInput}
             onChange={(e) => setKeyInput(e.target.value)}
             required
-            placeholder="API key…"
+            placeholder="Paste API key…"
             className="flex-1 px-3 py-2.5 rounded-lg text-sm outline-none transition-all font-mono"
-            style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
+            style={inputStyle}
             onFocus={inputFocus}
             onBlur={inputBlur}
           />
           <button
             type="submit"
             disabled={adding}
-            className="px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+            className="px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2 shrink-0"
             style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
           >
             <UserPlus size={14} />
@@ -354,74 +374,142 @@ function SetupSection({
         </div>
       </form>
 
-      {/* Keys list */}
+      {/* Per-service key cards */}
       {keysLoading ? (
-        <SkeletonRows cols={6} />
-      ) : productKeys.length === 0 ? (
-        <p className="text-sm italic py-2" style={{ color: "var(--c-35)" }}>No API keys configured yet.</p>
+        <SkeletonRows cols={4} rows={2} />
       ) : (
-        <div className="rounded-2xl overflow-x-auto"
-          style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
-          <table className="w-full border-collapse min-w-[560px]">
-            <thead>
-              <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
-                {["Service", "Label", "Key", "Status", "Added", ""].map((h) => (
-                  <th key={h} className="text-left py-3 px-4 text-xs font-medium uppercase tracking-wider" style={{ color: "var(--c-40)" }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {productKeys.map((k) => (
-                <tr key={k.id} style={{ borderBottom: "1px solid var(--bd-4)" }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bd-2)"; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
-                  <td className="py-3 px-4">
-                    <span className="text-xs px-2 py-0.5 rounded-md font-medium capitalize"
-                      style={{ background: "oklch(0.62 0.15 220 / 0.1)", color: "oklch(0.62 0.15 220)", border: "1px solid oklch(0.62 0.15 220 / 0.2)" }}>
-                      {k.service}
+        <div className="space-y-4">
+          {SERVICES.map(service => {
+            const row = serviceMap.get(service);
+            return (
+              <div key={service} className="rounded-2xl overflow-hidden"
+                style={{ border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 8px oklch(0 0 0 / 0.04)" }}>
+                {/* Service header */}
+                <div className="flex items-center gap-3 px-4 py-3"
+                  style={{ background: "oklch(0 0 0 / 0.025)", borderBottom: row && row.keys.length > 0 ? "1px solid oklch(0 0 0 / 0.06)" : "none" }}>
+                  <span className="text-xs font-semibold font-mono tracking-wide" style={{ color: "oklch(0.62 0.15 220)" }}>
+                    {service}
+                  </span>
+                  {row && (
+                    <span className="text-xs px-2 py-0.5 rounded-full ml-1"
+                      style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-42)" }}>
+                      {row.keys.length} key{row.keys.length !== 1 ? "s" : ""}
                     </span>
-                  </td>
-                  <td className="py-3 px-4 text-sm" style={{ color: "var(--c-65)" }}>
-                    {k.label ?? <span style={{ color: "var(--c-35)" }}>—</span>}
-                  </td>
-                  <td className="py-3 px-4 text-sm font-mono" style={{ color: "var(--c-55)", letterSpacing: "0.02em" }}>
-                    {maskKey(k.key)}
-                  </td>
-                  <td className="py-3 px-4">
-                    <button
-                      onClick={() => handleToggle(k)}
-                      disabled={togglingId === k.id}
-                      className="text-xs px-2.5 py-0.5 rounded-full font-medium transition-all hover:opacity-80 cursor-pointer disabled:opacity-50"
-                      style={k.active ? {
-                        background: "oklch(0.55 0.15 145 / 0.15)",
-                        color: "oklch(0.65 0.15 145)",
-                        border: "1px solid oklch(0.55 0.15 145 / 0.3)",
-                      } : {
-                        background: "oklch(0.6 0.22 25 / 0.1)",
-                        color: "oklch(0.65 0.22 25)",
-                        border: "1px solid oklch(0.6 0.22 25 / 0.2)",
-                      }}
-                    >
-                      {togglingId === k.id ? "…" : k.active ? "Active" : "Disabled"}
-                    </button>
-                  </td>
-                  <td className="py-3 px-4 text-sm" style={{ color: "var(--c-42)" }}>
-                    {new Date(k.created_at).toLocaleDateString("en", { day: "numeric", month: "short", year: "numeric" })}
-                  </td>
-                  <td className="py-3 px-4">
-                    <button
-                      onClick={() => handleRemove(k.id)}
-                      disabled={removingId === k.id}
-                      className="text-xs px-2.5 py-1 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 cursor-pointer flex items-center gap-1"
-                      style={{ background: "oklch(0.6 0.22 25 / 0.1)", color: "oklch(0.7 0.22 25)", border: "1px solid oklch(0.6 0.22 25 / 0.2)" }}
-                    >
-                      {removingId === k.id ? <><Spinner size={11} />Removing…</> : "Remove"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  )}
+                  <div className="ml-auto flex items-center gap-2">
+                    {row && row.current_index > 0 && (
+                      <button
+                        onClick={() => handleResetIndex(row)}
+                        disabled={resettingId === row.id}
+                        className="text-xs px-2.5 py-1 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 cursor-pointer"
+                        style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
+                        {resettingId === row.id ? "…" : "↺ Reset to #1"}
+                      </button>
+                    )}
+                    {row && (
+                      <button
+                        onClick={() => handleToggle(row)}
+                        disabled={togglingId === row.id}
+                        className="text-xs px-2.5 py-1 rounded-full font-medium transition-all hover:opacity-80 cursor-pointer disabled:opacity-50"
+                        style={row.active ? {
+                          background: "oklch(0.55 0.15 145 / 0.15)",
+                          color: "oklch(0.65 0.15 145)",
+                          border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                        } : {
+                          background: "oklch(0.6 0.22 25 / 0.1)",
+                          color: "oklch(0.65 0.22 25)",
+                          border: "1px solid oklch(0.6 0.22 25 / 0.2)",
+                        }}>
+                        {togglingId === row.id ? "…" : row.active ? "Active" : "Disabled"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Keys list */}
+                {!row || row.keys.length === 0 ? (
+                  <p className="text-xs italic px-4 py-3" style={{ color: "var(--c-35)" }}>No keys yet — add one above.</p>
+                ) : (
+                  <div>
+                    {row.keys.map((k, i) => {
+                      const isCurrent = i === (row.current_index ?? 0);
+                      const isExhausted = i < (row.current_index ?? 0);
+                      const tag = `${row.id}:${i}`;
+
+                      // Quota for this key (reset if date isn't today)
+                      const today = new Date().toISOString().slice(0, 10);
+                      const tracking = (row.quota_tracking ?? [])[i];
+                      const unitsUsed = (tracking?.date === today ? tracking.units_used : 0);
+                      const pct = Math.min(100, (unitsUsed / 10_000) * 100);
+                      const barColor = pct >= 90
+                        ? "oklch(0.65 0.22 25)"
+                        : pct >= 70
+                        ? "oklch(0.72 0.18 65)"
+                        : "oklch(0.55 0.15 145)";
+                      const remaining = Math.max(0, 10_000 - unitsUsed);
+
+                      return (
+                        <div key={i}
+                          className="px-4 py-3 space-y-2"
+                          style={{
+                            borderBottom: i < row.keys.length - 1 ? "1px solid oklch(0 0 0 / 0.05)" : "none",
+                            background: isCurrent ? "oklch(0.55 0.15 145 / 0.03)" : "transparent",
+                          }}>
+                          {/* Key row */}
+                          <div className="flex items-center gap-3">
+                            <span className="text-xs font-mono w-5 text-right shrink-0" style={{ color: "var(--c-35)" }}>
+                              #{i + 1}
+                            </span>
+                            {isCurrent && (
+                              <span className="text-xs px-1.5 py-0.5 rounded font-medium shrink-0"
+                                style={{ background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "1px solid oklch(0.55 0.15 145 / 0.3)" }}>
+                                Current
+                              </span>
+                            )}
+                            {isExhausted && (
+                              <span className="text-xs px-1.5 py-0.5 rounded font-medium shrink-0"
+                                style={{ background: "oklch(0.6 0.22 25 / 0.08)", color: "oklch(0.65 0.22 25)", border: "1px solid oklch(0.6 0.22 25 / 0.15)" }}>
+                                Exhausted
+                              </span>
+                            )}
+                            {!isCurrent && !isExhausted && (
+                              <span className="text-xs px-1.5 py-0.5 rounded font-medium shrink-0"
+                                style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-40)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+                                Standby
+                              </span>
+                            )}
+                            <span className="flex-1 text-sm font-mono truncate" style={{ color: "var(--c-55)", letterSpacing: "0.02em" }}>
+                              {maskKey(k)}
+                            </span>
+                            <button
+                              onClick={() => handleRemoveKey(row.id, i)}
+                              disabled={removingKey === tag}
+                              className="text-xs px-2 py-1 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 cursor-pointer shrink-0 flex items-center gap-1"
+                              style={{ background: "oklch(0.6 0.22 25 / 0.08)", color: "oklch(0.7 0.22 25)", border: "1px solid oklch(0.6 0.22 25 / 0.15)" }}>
+                              {removingKey === tag ? <Spinner size={11} /> : "✕"}
+                            </button>
+                          </div>
+
+                          {/* Quota bar */}
+                          <div className="flex items-center gap-2 pl-8">
+                            <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "oklch(0 0 0 / 0.08)" }}>
+                              <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: barColor }} />
+                            </div>
+                            <span className="text-xs shrink-0 tabular-nums" style={{ color: "var(--c-42)", minWidth: 120, textAlign: "right" }}>
+                              {unitsUsed.toLocaleString()} / 10,000 units
+                            </span>
+                            <span className="text-xs shrink-0 font-medium" style={{ color: barColor, minWidth: 80, textAlign: "right" }}>
+                              ~{remaining.toLocaleString()} left
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </section>
@@ -432,8 +520,8 @@ const SK = { background: "oklch(0 0 0 / 0.07)" };
 const PER_PAGE = 10;
 
 function Pagination({ page, total, onChange }: { page: number; total: number; onChange: (p: number) => void }) {
-  const totalPages = Math.ceil(total / PER_PAGE);
-  if (totalPages <= 1) return null;
+  if (total === 0) return null;
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
   const from = (page - 1) * PER_PAGE + 1;
   const to = Math.min(page * PER_PAGE, total);
   return (
@@ -1034,7 +1122,7 @@ export default function AdminPage() {
                     ))}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody key={`users-p${usersPage}`}>
                   {pagedUsers.map((u) => (
                     <tr key={u.email}
                       style={{ borderBottom: "1px solid var(--bd-4)" }}
@@ -1125,7 +1213,7 @@ export default function AdminPage() {
                     ))}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody key={`projects-p${projectsPage}`}>
                   {pagedProjects.map((p) => {
                     const isComplete = p.currentState >= 15;
                     return (

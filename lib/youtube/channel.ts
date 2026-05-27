@@ -1,22 +1,70 @@
 import type { ChannelInfo, TopVideo } from "@/lib/types";
 import { supabase } from "@/lib/supabase/client";
 
-async function getYouTubeApiKey(): Promise<string> {
+const YOUTUBE_DAILY_QUOTA = 10_000;
+// Quota units per call type (YouTube Data API v3)
+const QUOTA = { channels_list: 1, search_list: 100, videos_list: 1 } as const;
+const QUOTA_FULL_RESOLVE = QUOTA.channels_list + QUOTA.search_list + QUOTA.videos_list; // 102
+const QUOTA_CACHED_RESOLVE = QUOTA.channels_list; // 1 (only channels.list runs before cache hit)
+
+export { YOUTUBE_DAILY_QUOTA };
+
+class YouTubeQuotaError extends Error {
+  constructor() { super("YouTube API quota exceeded"); }
+}
+
+async function youtubeGet<T>(url: URL): Promise<T> {
+  const res = await fetch(url.toString());
+  const data = await res.json() as { error?: { message?: string; errors?: { reason?: string }[] } };
+  const reason = data?.error?.errors?.[0]?.reason;
+  if (reason === "quotaExceeded" || reason === "rateLimitExceeded") throw new YouTubeQuotaError();
+  if (data?.error) throw new Error(`YouTube API: ${data.error.message ?? "unknown error"}`);
+  return data as T;
+}
+
+async function getYouTubeKeyRow(): Promise<{ id: string; keys: string[]; current_index: number } | null> {
   const { data } = await supabase
     .from("product_api_keys")
-    .select("key")
-    .eq("service", "youtube")
-    .eq("active", true);
+    .select("id, keys, current_index")
+    .eq("service", "youtube_data_api_key")
+    .eq("active", true)
+    .single();
+  if (!data) return null;
+  return { id: data.id, keys: data.keys as string[], current_index: data.current_index ?? 0 };
+}
 
-  if (data && data.length > 0) {
-    // Distribute quota across all active keys
-    return data[Math.floor(Math.random() * data.length)].key;
-  }
+async function advanceKey(rowId: string, failedIndex: number, total: number): Promise<void> {
+  const next = (failedIndex + 1) % total;
+  await supabase
+    .from("product_api_keys")
+    .update({ current_index: next })
+    .eq("id", rowId);
+}
 
-  // Fall back to env var if no DB keys are configured
-  const key = process.env.YOUTUBE_API_KEY;
-  if (!key) throw new Error("No active YouTube API key configured");
-  return key;
+async function recordQuotaUsage(rowId: string, keyIndex: number, units: number): Promise<void> {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const { data: row } = await supabase
+    .from("product_api_keys")
+    .select("keys, quota_tracking")
+    .eq("id", rowId)
+    .single();
+  if (!row) return;
+
+  const keysCount = (row.keys as string[]).length;
+  const tracking: Array<{ units_used: number; date: string }> = Array.isArray(row.quota_tracking)
+    ? [...(row.quota_tracking as Array<{ units_used: number; date: string }>)]
+    : [];
+
+  while (tracking.length < keysCount) tracking.push({ units_used: 0, date: today });
+
+  const entry = tracking[keyIndex] ?? { units_used: 0, date: today };
+  tracking[keyIndex] = {
+    units_used: entry.date === today ? entry.units_used + units : units,
+    date: today,
+  };
+
+  await supabase.from("product_api_keys").update({ quota_tracking: tracking }).eq("id", rowId);
 }
 
 function formatSubscribers(count: number): string {
@@ -44,15 +92,16 @@ function parseChannelUrl(channelUrl: string): { type: "id" | "handle" | "usernam
   const userMatch = p.match(/^\/user\/([\w.-]+)/);
   if (userMatch) return { type: "username", value: userMatch[1] };
 
-  // /c/customname — treat as handle
   const customMatch = p.match(/^\/c\/([\w.-]+)/);
   if (customMatch) return { type: "handle", value: customMatch[1] };
 
   return { type: "handle", value: p.replace(/^\//, "").replace(/^@/, "") };
 }
 
-async function fetchChannelInfo(channelUrl: string): Promise<{ id: string; name: string; subscribers: string; description: string }> {
-  const apiKey = await getYouTubeApiKey();
+async function fetchChannelInfo(
+  channelUrl: string,
+  apiKey: string
+): Promise<{ id: string; name: string; subscribers: string; description: string }> {
   const { type, value } = parseChannelUrl(channelUrl);
 
   const url = new URL("https://www.googleapis.com/youtube/v3/channels");
@@ -62,17 +111,13 @@ async function fetchChannelInfo(channelUrl: string): Promise<{ id: string; name:
   else if (type === "handle") url.searchParams.set("forHandle", value);
   else url.searchParams.set("forUsername", value);
 
-  const res = await fetch(url.toString());
-  if (!res.ok) throw new Error(`YouTube channel fetch failed (${res.status})`);
-  const data = await res.json() as {
+  const data = await youtubeGet<{
     items?: {
       id: string;
       snippet: { title: string; description: string };
       statistics: { subscriberCount?: string; hiddenSubscriberCount?: boolean };
     }[];
-    error?: { message: string };
-  };
-  if (data.error) throw new Error(`YouTube API: ${data.error.message}`);
+  }>(url);
 
   const channel = data.items?.[0];
   if (!channel) throw new Error("Channel not found. Check the URL and try again.");
@@ -84,10 +129,7 @@ async function fetchChannelInfo(channelUrl: string): Promise<{ id: string; name:
   return { id: channel.id, name: channel.snippet.title, subscribers, description: channel.snippet.description };
 }
 
-async function fetchTopVideos(channelId: string): Promise<TopVideo[]> {
-  const apiKey = await getYouTubeApiKey();
-
-  // Top 10 videos by view count
+async function fetchTopVideos(channelId: string, apiKey: string): Promise<TopVideo[]> {
   const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
   searchUrl.searchParams.set("part", "snippet");
   searchUrl.searchParams.set("channelId", channelId);
@@ -96,35 +138,23 @@ async function fetchTopVideos(channelId: string): Promise<TopVideo[]> {
   searchUrl.searchParams.set("maxResults", "10");
   searchUrl.searchParams.set("key", apiKey);
 
-  const searchRes = await fetch(searchUrl.toString());
-  if (!searchRes.ok) throw new Error(`YouTube search failed (${searchRes.status})`);
-  const searchData = await searchRes.json() as {
-    items?: { id: { videoId: string } }[];
-    error?: { message: string };
-  };
-  if (searchData.error) throw new Error(`YouTube API: ${searchData.error.message}`);
-
+  const searchData = await youtubeGet<{ items?: { id: { videoId: string } }[] }>(searchUrl);
   const videoIds = (searchData.items ?? []).map(i => i.id.videoId);
   if (!videoIds.length) return [];
 
-  // Exact stats and duration
   const videosUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
   videosUrl.searchParams.set("part", "snippet,statistics,contentDetails");
   videosUrl.searchParams.set("id", videoIds.join(","));
   videosUrl.searchParams.set("key", apiKey);
 
-  const videosRes = await fetch(videosUrl.toString());
-  if (!videosRes.ok) throw new Error(`YouTube videos fetch failed (${videosRes.status})`);
-  const videosData = await videosRes.json() as {
+  const videosData = await youtubeGet<{
     items?: {
       id: string;
       snippet: { title: string };
       statistics: { viewCount?: string };
       contentDetails: { duration: string };
     }[];
-    error?: { message: string };
-  };
-  if (videosData.error) throw new Error(`YouTube API: ${videosData.error.message}`);
+  }>(videosUrl);
 
   return (videosData.items ?? []).map(v => ({
     videoId: v.id,
@@ -149,18 +179,56 @@ async function getCachedChannel(channelId: string): Promise<ChannelInfo | null> 
 }
 
 export async function resolveChannel(channelUrl: string): Promise<ChannelInfo> {
-  const channel = await fetchChannelInfo(channelUrl);
+  const row = await getYouTubeKeyRow();
 
-  const cached = await getCachedChannel(channel.id);
-  if (cached) return cached;
+  let keys: string[] = [];
+  if (row && row.keys.length > 0) {
+    const start = row.current_index ?? 0;
+    keys = [...row.keys.slice(start), ...row.keys.slice(0, start)];
+  } else {
+    const envKey = process.env.YOUTUBE_API_KEY;
+    if (!envKey) throw new Error("No YouTube API keys configured");
+    keys = [envKey];
+  }
 
-  const topVideos = await fetchTopVideos(channel.id);
-  return {
-    channelId: channel.id,
-    channelName: channel.name,
-    subscribers: channel.subscribers,
-    description: channel.description,
-    topVideos,
-    lastCachedAt: new Date().toISOString(),
-  };
+  let lastError: Error = new Error("No keys available");
+
+  for (let i = 0; i < keys.length; i++) {
+    const apiKey = keys[i];
+    const absoluteIndex = row ? ((row.current_index ?? 0) + i) % row.keys.length : 0;
+
+    try {
+      const channel = await fetchChannelInfo(channelUrl, apiKey);
+      const cached = await getCachedChannel(channel.id);
+
+      if (cached) {
+        // Fire-and-forget quota tracking (channels.list only)
+        if (row) recordQuotaUsage(row.id, absoluteIndex, QUOTA_CACHED_RESOLVE).catch(() => {});
+        return cached;
+      }
+
+      const topVideos = await fetchTopVideos(channel.id, apiKey);
+
+      // Fire-and-forget quota tracking (full resolve)
+      if (row) recordQuotaUsage(row.id, absoluteIndex, QUOTA_FULL_RESOLVE).catch(() => {});
+
+      return {
+        channelId: channel.id,
+        channelName: channel.name,
+        subscribers: channel.subscribers,
+        description: channel.description,
+        topVideos,
+        lastCachedAt: new Date().toISOString(),
+      };
+    } catch (err) {
+      lastError = err as Error;
+      if (err instanceof YouTubeQuotaError && row && i < keys.length - 1) {
+        await advanceKey(row.id, absoluteIndex, row.keys.length);
+        continue;
+      }
+      throw err;
+    }
+  }
+
+  throw lastError;
 }

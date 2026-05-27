@@ -14,7 +14,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("product_api_keys")
-    .select("id, service, label, key, active, created_at")
+    .select("id, service, label, keys, current_index, quota_tracking, active, created_at")
     .order("service", { ascending: true })
     .order("created_at", { ascending: true });
 
@@ -31,9 +31,39 @@ export async function POST(req: NextRequest) {
   if (!service?.trim()) return NextResponse.json({ error: "Service is required" }, { status: 400 });
   if (!key?.trim()) return NextResponse.json({ error: "API key is required" }, { status: 400 });
 
+  const trimmedKey = key.trim();
+
+  // Check if a row already exists for this service
+  const { data: existing } = await supabase
+    .from("product_api_keys")
+    .select("id, keys")
+    .eq("service", service.trim())
+    .single();
+
+  if (existing) {
+    // Append the new key to the existing array
+    const updatedKeys = [...((existing.keys as string[]) ?? []), trimmedKey];
+    const { data, error } = await supabase
+      .from("product_api_keys")
+      .update({ keys: updatedKeys })
+      .eq("id", existing.id)
+      .select()
+      .single();
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(data);
+  }
+
+  // Create a new row for this service
   const { data, error } = await supabase
     .from("product_api_keys")
-    .insert({ service: service.trim(), key: key.trim(), label: label?.trim() || null, active: true })
+    .insert({
+      service: service.trim(),
+      label: label?.trim() || null,
+      keys: [trimmedKey],
+      current_index: 0,
+      active: true,
+    })
     .select()
     .single();
 
