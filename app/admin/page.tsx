@@ -85,8 +85,14 @@ interface ProductApiKey {
   created_at: string;
 }
 
-const SERVICES = ["youtube_data_api_key", "kie"] as const;
+const SERVICES = ["youtube_data_api_key", "supadata_api_key", "kie"] as const;
 type Service = typeof SERVICES[number];
+
+const SERVICE_LABELS: Record<Service, string> = {
+  youtube_data_api_key: "YouTube Data API Key",
+  supadata_api_key: "Supadata API Key",
+  kie: "KIE",
+};
 
 interface ActivityPoint {
   date: string;
@@ -349,7 +355,7 @@ function SetupSection({
             onFocus={inputFocus}
             onBlur={inputBlur}
           >
-            {SERVICES.map(s => <option key={s} value={s}>{s}</option>)}
+            {SERVICES.map(s => <option key={s} value={s}>{SERVICE_LABELS[s]}</option>)}
           </select>
           <input
             type="text"
@@ -387,8 +393,8 @@ function SetupSection({
                 {/* Service header */}
                 <div className="flex items-center gap-3 px-4 py-3"
                   style={{ background: "oklch(0 0 0 / 0.025)", borderBottom: row && row.keys.length > 0 ? "1px solid oklch(0 0 0 / 0.06)" : "none" }}>
-                  <span className="text-xs font-semibold font-mono tracking-wide" style={{ color: "oklch(0.62 0.15 220)" }}>
-                    {service}
+                  <span className="text-xs font-semibold tracking-wide" style={{ color: "oklch(0.62 0.15 220)" }}>
+                    {SERVICE_LABELS[service]}
                   </span>
                   {row && (
                     <span className="text-xs px-2 py-0.5 rounded-full ml-1"
