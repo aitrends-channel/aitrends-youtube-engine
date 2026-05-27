@@ -298,13 +298,13 @@ function SetupSection({
       <form onSubmit={handleAdd} className="p-4 rounded-2xl space-y-3"
         style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.07)" }}>
         <p className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Add API Key</p>
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <input
             type="text"
             value={labelInput}
             onChange={(e) => setLabelInput(e.target.value)}
             placeholder="Label (optional)"
-            className="w-36 px-3 py-2.5 rounded-lg text-sm outline-none transition-all shrink-0"
+            className="sm:w-36 px-3 py-2.5 rounded-lg text-sm outline-none transition-all"
             style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
             onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.62 0.15 220 / 0.5)"; }}
             onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
@@ -323,7 +323,7 @@ function SetupSection({
           <button
             type="submit"
             disabled={adding}
-            className="px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer flex items-center gap-2 shrink-0"
+            className="px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
             style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
           >
             <UserPlus size={14} />
@@ -341,9 +341,9 @@ function SetupSection({
       ) : ytKeys.length === 0 ? (
         <p className="text-sm italic py-2" style={{ color: "var(--c-35)" }}>No API keys configured yet.</p>
       ) : (
-        <div className="rounded-2xl overflow-hidden"
+        <div className="rounded-2xl overflow-x-auto"
           style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
-          <table className="w-full border-collapse">
+          <table className="w-full border-collapse min-w-[480px]">
             <thead>
               <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
                 {["Label", "Key", "Status", "Added", ""].map((h) => (
@@ -443,12 +443,9 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState("stats");
   const [tabsFixed, setTabsFixed] = useState(false);
   const tabsRef = useRef<HTMLDivElement>(null);
-  const headerRef = useRef<HTMLElement>(null);
-  const [headerHeight, setHeaderHeight] = useState(64);
 
   useEffect(() => {
     if (!authChecked) return;
-    if (headerRef.current) setHeaderHeight(headerRef.current.offsetHeight);
     const tabs = tabsRef.current;
     if (!tabs) return;
     const observer = new IntersectionObserver(
@@ -498,7 +495,7 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen flex flex-col" data-theme="light" style={{ background: "var(--bg-page)" }}>
       {/* Header */}
-      <header ref={headerRef} className="flex items-center justify-between px-8 py-4 sticky top-0 z-10"
+      <header className="flex items-center justify-between px-4 sm:px-8 py-4 sticky top-0 z-10"
         style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center">
@@ -555,7 +552,7 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-6xl mx-auto px-8 py-12 space-y-10">
+      <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-8 py-8 sm:py-12 space-y-6 sm:space-y-10">
         {/* Page heading */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
@@ -585,13 +582,13 @@ export default function AdminPage() {
             <button
               key={id}
               onClick={() => scrollTo(id)}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer"
+              className="flex-1 flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all cursor-pointer"
               style={activeTab === id
                 ? { background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.35)" }
                 : { color: "oklch(0.50 0 0)" }}
             >
               <Icon size={14} />
-              {label}
+              <span className="hidden sm:inline">{label}</span>
             </button>
           ));
 
@@ -607,21 +604,19 @@ export default function AdminPage() {
 
               {/* Fixed clone — only shown when original is scrolled out of view */}
               {tabsFixed && (
-                <div
-                  className="flex items-center gap-1 p-1 rounded-xl"
-                  style={{
-                    position: "fixed",
-                    top: headerHeight + 8,
-                    left: 32,
-                    right: 32,
-                    zIndex: 9999,
-                    background: "white",
-                    border: "1px solid oklch(0 0 0 / 0.07)",
-                    boxShadow: "0 8px 32px oklch(0 0 0 / 0.18), 0 2px 8px oklch(0 0 0 / 0.10)",
-                    borderRadius: "12px",
-                  }}
-                >
-                  {tabButtons}
+                <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999 }}>
+                  <div className="w-full max-w-6xl mx-auto px-4 sm:px-8 pt-2">
+                    <div
+                      className="flex items-center gap-1 p-1 rounded-xl"
+                      style={{
+                        background: "white",
+                        border: "1px solid oklch(0 0 0 / 0.07)",
+                        boxShadow: "0 8px 32px oklch(0 0 0 / 0.18), 0 2px 8px oklch(0 0 0 / 0.10)",
+                      }}
+                    >
+                      {tabButtons}
+                    </div>
+                  </div>
                 </div>
               )}
             </>
@@ -874,9 +869,9 @@ export default function AdminPage() {
           ) : users.length === 0 ? (
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No users yet.</div>
           ) : (
-            <div className="rounded-2xl overflow-hidden"
+            <div className="rounded-2xl overflow-x-auto"
               style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
-              <table className="w-full border-collapse">
+              <table className="w-full border-collapse min-w-[520px]">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
                     {["Email", "Status", "Niches", "Last Sign-in", ""].map((h) => (
@@ -967,9 +962,9 @@ export default function AdminPage() {
           ) : projects.length === 0 ? (
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No projects yet.</div>
           ) : (
-            <div className="rounded-2xl overflow-hidden"
+            <div className="rounded-2xl overflow-x-auto"
               style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
-              <table className="w-full border-collapse">
+              <table className="w-full border-collapse min-w-[640px]">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
                     {["User", "Channel", "Topic", "Phase", "Progress", "Created", ""].map((h) => (
@@ -1112,7 +1107,7 @@ export default function AdminPage() {
               </div>
 
               {/* Summary cards */}
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
                   { label: "Paid Users",     value: paidUsers.length.toString() },
                   { label: "Total Revenue",  value: `$${totalRevenue.toFixed(2)}` },
@@ -1216,9 +1211,9 @@ export default function AdminPage() {
               {paidUsers.length === 0 ? (
                 <p className="text-sm italic py-2" style={{ color: "var(--c-35)" }}>No paid users yet.</p>
               ) : (
-                <div className="rounded-2xl overflow-hidden"
+                <div className="rounded-2xl overflow-x-auto"
                   style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
-                  <table className="w-full border-collapse">
+                  <table className="w-full border-collapse min-w-[560px]">
                     <thead>
                       <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
                         {["Email", "Plan", "Paid At", "Expires", "MRR equiv"].map((h) => (
