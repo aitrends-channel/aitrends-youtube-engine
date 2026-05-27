@@ -244,14 +244,6 @@ export default function SettingsPage() {
                   </div>
                   <div className="px-2 pt-2">
                     <button
-                      onClick={() => { setShowProfileMenu(false); router.push("/dashboard"); }}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
-                      style={{ color: "var(--c-60)" }}
-                    >
-                      <Settings size={13} />
-                      <span>Dashboard</span>
-                    </button>
-                    <button
                       onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
                       style={{ color: "#f87171" }}

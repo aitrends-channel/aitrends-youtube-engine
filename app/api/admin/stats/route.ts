@@ -30,7 +30,7 @@ export async function GET() {
   const [emailsRes, authUsersRes, projectsRes] = await Promise.all([
     supabase.from("allowed_emails").select("email"),
     supabase.auth.admin.listUsers({ perPage: 1000 }),
-    supabase.from("projects").select("id, user_id, channel_name, current_state, selected_topic, created_at"),
+    supabase.from("projects").select("id, user_id, channel_name, current_state, selected_topic, created_at, assembled_url").order("created_at", { ascending: true }),
   ]);
 
   const allowedEmails: string[] = (emailsRes.data ?? []).map((r) => r.email as string);
@@ -59,6 +59,9 @@ export async function GET() {
         status: isPaid ? "Paid" : "Registered",
         projectCount: projectCountByUserId.get(authUser.id) ?? 0,
         lastSignIn: authUser.last_sign_in_at ?? null,
+        plan: (authUser.app_metadata?.plan as string | undefined) ?? null,
+        paidAt: (authUser.app_metadata?.paid_at as string | undefined) ?? null,
+        planExpiresAt: (authUser.app_metadata?.plan_expires_at as string | undefined) ?? null,
       };
     }),
     // Emails in allowed_emails that haven't signed up yet
@@ -69,6 +72,9 @@ export async function GET() {
         status: "Pending" as const,
         projectCount: 0,
         lastSignIn: null,
+        plan: null,
+        paidAt: null,
+        planExpiresAt: null,
       })),
   ];
 
@@ -88,7 +94,63 @@ export async function GET() {
     };
   });
 
-  const completed = projects.filter((p) => (p.current_state ?? 0) >= 15).length;
+  const completed = projects.filter((p) => p.assembled_url || (p.current_state ?? 0) >= 15).length;
+  const videosInProgress = projects.filter((p) => (p.current_state ?? 1) > 1 && !p.assembled_url && (p.current_state ?? 0) < 15).length;
+
+  // Last 30 days activity
+  const activityDates = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - (29 - i));
+    return d.toISOString().slice(0, 10);
+  });
+  const projectsByDay = new Map<string, number>();
+  const videosByDay = new Map<string, number>();
+  for (const p of projects) {
+    if (!p.created_at) continue;
+    const day = new Date(p.created_at).toISOString().slice(0, 10);
+    projectsByDay.set(day, (projectsByDay.get(day) ?? 0) + 1);
+    if (p.assembled_url || (p.current_state ?? 0) >= 15) videosByDay.set(day, (videosByDay.get(day) ?? 0) + 1);
+  }
+  const usersByDay = new Map<string, number>();
+  for (const u of authUsers) {
+    if (!u.created_at) continue;
+    const day = new Date(u.created_at).toISOString().slice(0, 10);
+    usersByDay.set(day, (usersByDay.get(day) ?? 0) + 1);
+  }
+  const activity = activityDates.map(date => ({
+    date,
+    projects: projectsByDay.get(date) ?? 0,
+    videos: videosByDay.get(date) ?? 0,
+    users: usersByDay.get(date) ?? 0,
+  }));
+
+  // Monthly activity — last 12 months
+  const monthlyDates = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date();
+    d.setUTCDate(1);
+    d.setUTCMonth(d.getUTCMonth() - (11 - i));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  });
+  const projectsByMonth = new Map<string, number>();
+  const videosByMonth = new Map<string, number>();
+  for (const p of projects) {
+    if (!p.created_at) continue;
+    const month = new Date(p.created_at).toISOString().slice(0, 7);
+    projectsByMonth.set(month, (projectsByMonth.get(month) ?? 0) + 1);
+    if (p.assembled_url || (p.current_state ?? 0) >= 15) videosByMonth.set(month, (videosByMonth.get(month) ?? 0) + 1);
+  }
+  const usersByMonth = new Map<string, number>();
+  for (const u of authUsers) {
+    if (!u.created_at) continue;
+    const month = new Date(u.created_at).toISOString().slice(0, 7);
+    usersByMonth.set(month, (usersByMonth.get(month) ?? 0) + 1);
+  }
+  const activityMonthly = monthlyDates.map(date => ({
+    date,
+    projects: projectsByMonth.get(date) ?? 0,
+    videos: videosByMonth.get(date) ?? 0,
+    users: usersByMonth.get(date) ?? 0,
+  }));
 
   const paidEmails = new Set(
     authUsers.filter((u) => u.app_metadata?.paid).map((u) => u.email?.toLowerCase() ?? "")
@@ -101,7 +163,10 @@ export async function GET() {
       activeAccounts: authUsers.length,
       totalProjects: projects.length,
       completed,
+      videosInProgress,
     },
+    activity,
+    activityMonthly,
     users: userList,
     projects: projectList,
   });
