@@ -21,7 +21,7 @@ const PLANS = [
   {
     id: "starter",
     name: "Starter",
-    price: "$24",
+    price: "$19",
     period: "/mo",
     limit: "5 niches/month",
     features: ["5 niches/month", "Standard image processing", "Full AI pipeline", "All features included", "Community support"],
