@@ -10,7 +10,7 @@ const PLANS = [
   {
     id: "founder",
     name: "Founder",
-    price: "$0.50",
+    price: "$40",
     period: " / year",
     limit: "1 year · 20 niches",
     features: ["20 niches", "HD image processing", "Full AI pipeline", "All features included", "1 year — no renewal"],
@@ -21,7 +21,7 @@ const PLANS = [
   {
     id: "starter",
     name: "Starter",
-    price: "$19",
+    price: "$24",
     period: "/mo",
     limit: "5 niches/month",
     features: ["5 niches/month", "Standard image processing", "Full AI pipeline", "All features included", "Community support"],
