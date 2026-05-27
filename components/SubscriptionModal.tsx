@@ -100,20 +100,6 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
         </button>
         <div className="overflow-y-auto p-8" style={{ maxHeight: "90vh" }}>
 
-        {/* Badge */}
-        <div className="flex justify-center mb-5">
-          <div
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold"
-            style={{
-              background: "oklch(0.72 0.25 285 / 0.15)",
-              color: "oklch(0.72 0.25 285)",
-              border: "1px solid oklch(0.72 0.25 285 / 0.25)",
-            }}
-          >
-            <Zap size={12} />
-            Choose a Plan
-          </div>
-        </div>
 
         <div className="text-center mb-6">
           <h2 className="text-xl font-bold mb-1" style={{ color: "var(--c-90)" }}>Unlock Heclus</h2>
