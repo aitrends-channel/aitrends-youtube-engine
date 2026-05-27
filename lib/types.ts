@@ -19,6 +19,7 @@ export interface ChannelInfo {
   subscribers: string;
   description?: string;
   topVideos: TopVideo[];
+  lastCachedAt?: string;
 }
 
 export interface TranscriptResult {

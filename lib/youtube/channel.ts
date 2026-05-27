@@ -1,4 +1,5 @@
 import type { ChannelInfo, TopVideo } from "@/lib/types";
+import { supabase } from "@/lib/supabase/client";
 
 function getYouTubeApiKey(): string {
   const key = process.env.YOUTUBE_API_KEY;
@@ -121,15 +122,33 @@ async function fetchTopVideos(channelId: string): Promise<TopVideo[]> {
   }));
 }
 
+async function getCachedChannel(channelId: string): Promise<ChannelInfo | null> {
+  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { data } = await supabase
+    .from("projects")
+    .select("channel_info")
+    .eq("channel_info->>channelId", channelId)
+    .gte("channel_info->>lastCachedAt", cutoff)
+    .limit(1)
+    .single();
+
+  if (!data?.channel_info) return null;
+  return data.channel_info as ChannelInfo;
+}
+
 export async function resolveChannel(channelUrl: string): Promise<ChannelInfo> {
   const channel = await fetchChannelInfo(channelUrl);
-  const topVideos = await fetchTopVideos(channel.id);
 
+  const cached = await getCachedChannel(channel.id);
+  if (cached) return cached;
+
+  const topVideos = await fetchTopVideos(channel.id);
   return {
     channelId: channel.id,
     channelName: channel.name,
     subscribers: channel.subscribers,
     description: channel.description,
     topVideos,
+    lastCachedAt: new Date().toISOString(),
   };
 }
