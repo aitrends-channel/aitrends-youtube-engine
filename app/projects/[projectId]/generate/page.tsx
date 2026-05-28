@@ -623,7 +623,7 @@ export default function GeneratePage({ params }: PageProps) {
         {/* Header */}
         <div className="shrink-0 px-4 sm:px-8 md:pr-44 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-start justify-between gap-3">
             <div>
               <h1 className="font-bold text-base sm:text-lg">Generate Assets</h1>
               <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
@@ -632,7 +632,7 @@ export default function GeneratePage({ params }: PageProps) {
             </div>
             <button
               onClick={exportDocx}
-              className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all"
+              className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all mt-0.5"
               style={{ background: "var(--bg-control)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
             >
               Export Doc
