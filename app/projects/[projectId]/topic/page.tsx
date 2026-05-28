@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useState, use, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
@@ -13,7 +13,12 @@ interface PageProps {
 export default function TopicPage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
-  const { project } = useProject(projectId);
+  const searchParams = useSearchParams();
+
+  const isFork = projectId === "new-fork";
+  const sourceId = isFork ? (searchParams.get("from") ?? null) : null;
+
+  const { project } = useProject(isFork ? sourceId : projectId);
 
   const [selectedTopic, setSelectedTopic] = useState("");
   const [saving, setSaving] = useState(false);
@@ -24,18 +29,20 @@ export default function TopicPage({ params }: PageProps) {
   const allIdeas = [...baseIdeas, ...extraIdeas];
 
   useEffect(() => {
-    if (project?.selected_topic && !selectedTopic) {
+    if (project?.selected_topic && !selectedTopic && !isFork) {
       setSelectedTopic(project.selected_topic);
     }
   }, [project]);
 
   async function generateMoreIdeas() {
+    const ideasProjectId = isFork ? sourceId : projectId;
+    if (!ideasProjectId) return;
     setGeneratingIdeas(true);
     try {
       const res = await fetch("/api/workflow/ideas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId }),
+        body: JSON.stringify({ projectId: ideasProjectId }),
       });
       const data = await res.json() as { ideas?: string[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Failed to generate ideas");
@@ -52,12 +59,46 @@ export default function TopicPage({ params }: PageProps) {
     if (!topic) { toast.error("Select or enter a topic first"); return; }
     setSaving(true);
     try {
-      await fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ selected_topic: topic }),
-      });
-      router.push(`/projects/${projectId}/script`);
+      if (isFork && sourceId) {
+        const fullRes = await fetch(`/api/projects/${sourceId}`);
+        const full = await fullRes.json();
+        const forkRes = await fetch("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fork: {
+              channelUrl:        full.channel_url,
+              channelName:       full.channel_name,
+              channelAnalysis:   full.channel_analysis,
+              channelInfo:       full.channel_info,
+              transcripts:       full.transcripts,
+              visualProfile:     full.visual_profile,
+              thumbnailAnalysis: full.thumbnail_analysis,
+              videoIdeas:        full.video_ideas,
+              selectedTopic:     topic,
+            },
+          }),
+        });
+        const newProject = await forkRes.json();
+        if (forkRes.status === 403 && newProject.limitReached) {
+          toast.error("You've reached your niche limit. Upgrade your plan to add more.");
+          setSaving(false);
+          return;
+        }
+        if (!newProject.id) {
+          toast.error("Failed to create video");
+          setSaving(false);
+          return;
+        }
+        router.push(`/projects/${newProject.id}/script`);
+      } else {
+        await fetch(`/api/projects/${projectId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ selected_topic: topic }),
+        });
+        router.push(`/projects/${projectId}/script`);
+      }
     } catch {
       toast.error("Failed to save topic");
       setSaving(false);
@@ -66,7 +107,7 @@ export default function TopicPage({ params }: PageProps) {
 
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
-      <WizardNav projectId={projectId} currentState={6} highestState={project?.current_state} channelName={project?.channel_name} />
+      <WizardNav projectId={isFork ? "new-fork" : projectId} currentState={6} highestState={isFork ? 6 : project?.current_state} channelName={project?.channel_name} />
 
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
         <div className="px-4 sm:px-8 py-5"
