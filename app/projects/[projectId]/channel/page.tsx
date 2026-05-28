@@ -22,36 +22,52 @@ interface AnalysisStep {
 }
 
 function StepIndicator({ step }: { step: AnalysisStep }) {
+  const isDone = step.status === "done";
+  const isRunning = step.status === "running";
+  const isError = step.status === "error";
+  const isIdle = step.status === "idle";
+
   return (
-    <div className="flex items-center gap-3">
-      <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm"
-        style={{
-          background: step.status === "done" ? "oklch(0.55 0.15 145 / 0.2)"
-            : step.status === "running" ? "oklch(0.72 0.25 285 / 0.15)"
-            : step.status === "error" ? "oklch(0.6 0.22 25 / 0.2)"
-            : "var(--bg-track)",
-          border: `1px solid ${step.status === "done" ? "oklch(0.55 0.15 145 / 0.4)"
-            : step.status === "running" ? "oklch(0.72 0.25 285 / 0.4)"
-            : step.status === "error" ? "oklch(0.6 0.22 25 / 0.4)"
-            : "var(--c-25)"}`,
-          color: step.status === "done" ? "oklch(0.7 0.15 145)"
-            : step.status === "running" ? "oklch(0.72 0.25 285)"
-            : step.status === "error" ? "oklch(0.7 0.22 25)"
-            : "var(--c-40)",
-        }}
-      >
-        {step.status === "done" ? "✓"
-          : step.status === "running" ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
-          : step.status === "error" ? "✕"
-          : "○"}
+    <div className="space-y-2">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm"
+          style={{
+            background: isDone ? "oklch(0.55 0.15 145 / 0.2)"
+              : isRunning ? "oklch(0.72 0.25 285 / 0.15)"
+              : isError ? "oklch(0.6 0.22 25 / 0.2)"
+              : "var(--bg-track)",
+            border: `1px solid ${isDone ? "oklch(0.55 0.15 145 / 0.4)"
+              : isRunning ? "oklch(0.72 0.25 285 / 0.4)"
+              : isError ? "oklch(0.6 0.22 25 / 0.4)"
+              : "var(--c-25)"}`,
+            color: isDone ? "oklch(0.7 0.15 145)"
+              : isRunning ? "oklch(0.72 0.25 285)"
+              : isError ? "oklch(0.7 0.22 25)"
+              : "var(--c-40)",
+          }}
+        >
+          {isDone ? "✓"
+            : isRunning ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+            : isError ? "✕"
+            : "○"}
+        </div>
+        <div>
+          <p className="text-sm font-medium" style={{ color: isIdle ? "var(--c-45)" : "var(--c-90)" }}>
+            {step.label}
+          </p>
+          {step.sublabel && <p className="text-xs" style={{ color: "var(--c-45)" }}>{step.sublabel}</p>}
+        </div>
       </div>
-      <div>
-        <p className="text-sm font-medium" style={{
-          color: step.status === "idle" ? "var(--c-45)" : "var(--c-90)"
-        }}>
-          {step.label}
-        </p>
-        {step.sublabel && <p className="text-xs" style={{ color: "var(--c-45)" }}>{step.sublabel}</p>}
+
+      {/* Progress bar */}
+      <div className="ml-11 h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-progress)" }}>
+        {isRunning ? (
+          <div className="wizard-progress-bar" />
+        ) : isDone ? (
+          <div className="h-full w-full rounded-full transition-all duration-500" style={{ background: "oklch(0.55 0.15 145)" }} />
+        ) : isError ? (
+          <div className="h-full w-full rounded-full" style={{ background: "oklch(0.6 0.22 25)" }} />
+        ) : null}
       </div>
     </div>
   );
@@ -192,10 +208,10 @@ export default function ChannelPage({ params }: PageProps) {
     });
 
     setStep("analyze", "running");
-    await new Promise((r) => setTimeout(r, 300));
-    setStep("dna", "running");
 
-    try {
+    // Kick off the single Claude analysis call; visually split into two
+    // sequential phases so users see one step complete before the next starts.
+    const apiPromise = (async () => {
       const res = await fetch("/api/workflow/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -208,6 +224,26 @@ export default function ChannelPage({ params }: PageProps) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      return data;
+    })();
+
+    try {
+      // Phase 1 (Refining): show running until the API returns OR 4s elapses,
+      // whichever is longer. Then mark done and start phase 2.
+      await Promise.race([
+        apiPromise.then(() => {}).catch(() => {}),
+        new Promise((r) => setTimeout(r, 4000)),
+      ]);
+      setStep("analyze", "done");
+      await new Promise((r) => setTimeout(r, 350));
+
+      // Phase 2 (Finalising): show running until the API actually finishes
+      // AND a minimum 1.5s has passed.
+      setStep("dna", "running");
+      await Promise.all([
+        apiPromise,
+        new Promise((r) => setTimeout(r, 1500)),
+      ]);
 
       if (topicMode === "custom" && topic) {
         await fetch(`/api/projects/${effectiveProjectId}`, {
@@ -217,7 +253,6 @@ export default function ChannelPage({ params }: PageProps) {
         });
       }
 
-      setStep("analyze", "done");
       setStep("dna", "done");
       await new Promise((r) => setTimeout(r, 400));
       router.push(`/projects/${effectiveProjectId}/topic`);
