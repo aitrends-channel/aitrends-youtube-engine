@@ -25,7 +25,7 @@ export async function POST(req: Request) {
 
     const stream = anthropic.messages.stream({
       model: MODEL,
-      max_tokens: 8000,
+      max_tokens: 16000,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: buildScriptPrompt(analysis, topic) }],
     });
