@@ -18,7 +18,7 @@ const PHASES: { id: PhaseKey; label: string; sublabel: string; path: string; sta
   { id: "channel",    label: "Channel",    sublabel: "Analysis & Style",    path: "channel",    states: [1, 2, 3, 4, 5] },
   { id: "topic",      label: "Topic",      sublabel: "Video Idea",           path: "topic",      states: [6] },
   { id: "script",     label: "Script",     sublabel: "Generate & Edit",     path: "script",     states: [6], navigableFrom: 6 },
-  { id: "visuals",    label: "Visuals",    sublabel: "Style Extraction",    path: "visuals",    states: [7, 8, 11, 12], navigableFrom: 6 },
+  { id: "visuals",    label: "Visuals",    sublabel: "Style Extraction",    path: "visuals",    states: [7, 8, 11, 12], navigableFrom: 7 },
   { id: "prompts",    label: "Prompts",    sublabel: "Image & Video Beats", path: "prompts",    states: [9, 10] },
   { id: "generate",   label: "Generate",   sublabel: "Assets & Export",     path: "generate",   states: [14] },
   { id: "assemble",   label: "Assemble",   sublabel: "Final Video",         path: "assemble",   states: [15], navigableFrom: 14 },
@@ -87,15 +87,14 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
   function getPhaseStatus(phase: (typeof PHASES)[0]) {
     if (progressComplete && phase.id === "thumbnails") return "done";
     if (effectivePath.endsWith(`/${phase.path}`)) return "active";
-    const phaseRank = PATH_RANK[phase.id] ?? 0;
-    const min = Math.min(...phase.states);
-    if (phaseRank < currentPathRank && reached >= min) return "done";
+    const effectiveMin = phase.navigableFrom !== undefined ? phase.navigableFrom : Math.min(...phase.states);
+    if (reached >= effectiveMin) return "done";
     return "locked";
   }
 
   function isNavigable(phase: (typeof PHASES)[0]) {
-    if (phase.navigableFrom !== undefined) return reached >= phase.navigableFrom;
-    return reached >= Math.min(...phase.states);
+    const status = getPhaseStatus(phase);
+    return status === "done" || status === "active";
   }
 
   const currentPhaseIndex = PHASES.findIndex((p) => pathname.endsWith(`/${p.path}`));
