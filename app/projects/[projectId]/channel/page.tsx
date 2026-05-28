@@ -3,6 +3,8 @@
 import { useState, use, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
+import { SubscriptionModal } from "@/components/SubscriptionModal";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { toast } from "sonner";
 import { useProject } from "@/hooks/useProject";
 import type { ChannelInfo } from "@/lib/types";
@@ -90,6 +92,16 @@ export default function ChannelPage({ params }: PageProps) {
   const [topicHint, setTopicHint] = useState("");
   const [customTopic, setCustomTopic] = useState("");
   const [isWorking, setIsWorking] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
+  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [limitInfo, setLimitInfo] = useState<{ nichesUsed: number; nicheLimit: number; currentPlan: string } | null>(null);
+
+  useEffect(() => {
+    const supabase = createSupabaseBrowserClient();
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user?.email) setUserEmail(data.user.email);
+    });
+  }, []);
 
   const [steps, setSteps] = useState<AnalysisStep[]>([
     { id: "channel", label: "Scanning", sublabel: "", status: "idle" },
@@ -189,8 +201,13 @@ export default function ChannelPage({ params }: PageProps) {
       const createRes = await fetch("/api/projects", { method: "POST" });
       const created = await createRes.json();
       if (createRes.status === 403 && created.limitReached) {
-        toast.error(created.error ?? "You've reached your niche limit. Upgrade your plan to add more.");
         setIsWorking(false);
+        setLimitInfo({
+          nichesUsed: created.nichesUsed ?? 0,
+          nicheLimit: created.limit ?? 0,
+          currentPlan: created.plan ?? "starter",
+        });
+        setShowSubscriptionModal(true);
         return;
       }
       if (!created.id) {
@@ -454,6 +471,24 @@ export default function ChannelPage({ params }: PageProps) {
 
         </div>
       </main>
+
+      {showSubscriptionModal && (
+        <SubscriptionModal
+          email={userEmail}
+          onClose={() => setShowSubscriptionModal(false)}
+          onSuccess={() => {
+            setShowSubscriptionModal(false);
+            // Plan changed — return to dashboard so the new limit refreshes.
+            router.push("/dashboard");
+          }}
+          context={limitInfo ? {
+            type: "niche-limit",
+            currentPlan: limitInfo.currentPlan,
+            nichesUsed: limitInfo.nichesUsed,
+            nicheLimit: limitInfo.nicheLimit,
+          } : undefined}
+        />
+      )}
     </div>
   );
 }

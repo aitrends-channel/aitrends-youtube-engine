@@ -80,6 +80,7 @@ export async function POST(req: Request) {
       limitReached: true,
       nichesUsed: result?.niches_used ?? 0,
       limit,
+      plan,
     }, { status: 403 });
   }
 

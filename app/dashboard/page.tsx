@@ -417,6 +417,7 @@ export default function HomePage() {
   const [demoNicheCreated, setDemoNicheCreated] = useState(false);
   const [userEmail, setUserEmail] = useState("");
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [modalContext, setModalContext] = useState<{ type: "niche-limit"; currentPlan: string; nichesUsed: number; nicheLimit: number } | undefined>(undefined);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string | undefined>(undefined);
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
@@ -551,11 +552,19 @@ export default function HomePage() {
     return Array.from(map.values()).sort((a, b) => b.lastActive.localeCompare(a.lastActive));
   }, [projects]);
 
-  const { nicheLimit, atNicheLimit } = useMemo(() => {
-    const PLAN_LIMITS: Record<string, number | null> = { founder: 20, starter: 5, pro: null };
-    const limit = isAdmin ? null : (PLAN_LIMITS[userPlan] ?? 5);
-    return { nicheLimit: limit, atNicheLimit: limit !== null && channelGroups.length >= limit };
-  }, [isAdmin, userPlan, channelGroups]);
+  // Lifetime usage from the server — deletions don't decrement, so this
+  // is the source of truth for whether the user can add another niche.
+  const { data: usage, mutate: mutateUsage } = useSWR<{
+    niches_used: number;
+    niche_limit: number | null;
+    at_limit: boolean;
+    plan: string;
+    is_admin: boolean;
+  }>("/api/usage", fetcher);
+
+  const nicheLimit = usage?.niche_limit ?? null;
+  const nichesUsed = usage?.niches_used ?? 0;
+  const atNicheLimit = !!usage?.at_limit;
 
   function requireSubscription(action: () => void) {
     if (isPaid || isAdmin) {
@@ -570,6 +579,7 @@ export default function HomePage() {
     setIsPaid(true);
     setShowSubscriptionModal(false);
     setPendingAction(null);
+    mutateUsage();
     router.push("/dashboard");
   }
 
@@ -578,7 +588,16 @@ export default function HomePage() {
   }
 
   function createProject() {
-    if (atNicheLimit) { setShowSubscriptionModal(true); return; }
+    if (atNicheLimit && nicheLimit !== null) {
+      setModalContext({
+        type: "niche-limit",
+        currentPlan: usage?.plan ?? "starter",
+        nichesUsed,
+        nicheLimit,
+      });
+      setShowSubscriptionModal(true);
+      return;
+    }
     requireSubscription(doCreateProject);
   }
 
@@ -861,10 +880,10 @@ export default function HomePage() {
                   );
                 }
 
-                const PLAN_LIMITS: Record<string, number | null> = { founder: 20, starter: 5, pro: null };
-                const nicheLimit = isAdmin ? null : (PLAN_LIMITS[userPlan] ?? 5);
+                // Use the outer nicheLimit/nichesUsed from /api/usage so the
+                // displayed stats reflect the lifetime counter, not active count.
                 const unlimited = nicheLimit === null;
-                const nichePct = unlimited ? 1 : Math.min(niches / nicheLimit!, 1);
+                const nichePct = unlimited ? 1 : Math.min(nichesUsed / nicheLimit!, 1);
                 const nicheColor = nichePct >= 1 ? "#e8745a" : "#9b7ff5";
 
                 const completedPct = total > 0 ? completed / total : 0;
@@ -907,18 +926,18 @@ export default function HomePage() {
                         centerText={total > 0 ? `${Math.round(inProgressPct * 100)}%` : "0%"} />
                     </div>
 
-                    {/* Niches */}
+                    {/* Niches Used (lifetime — deletions don't decrement) */}
                     <div className="rounded-xl px-5 py-4 flex items-center justify-between"
                       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
                       <div>
-                        <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{niches}</p>
-                        <p className="text-xs" style={{ color: "var(--c-42)" }}>Niches</p>
+                        <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{nichesUsed}</p>
+                        <p className="text-xs" style={{ color: "var(--c-42)" }}>Niches Used</p>
                         <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>
-                          {unlimited ? "Unlimited" : `of ${nicheLimit}`}
+                          {unlimited ? "Unlimited" : `of ${nicheLimit} (lifetime)`}
                         </p>
                       </div>
                       <PieRing id="nicheGrad" pct={nichePct} color={nicheColor}
-                        centerText={unlimited ? "∞" : `${niches}/${nicheLimit}`} full={unlimited} />
+                        centerText={unlimited ? "∞" : `${nichesUsed}/${nicheLimit}`} full={unlimited} />
                     </div>
                   </div>
                 );
@@ -1472,7 +1491,8 @@ export default function HomePage() {
           email={userEmail}
           defaultPlan={selectedPlan}
           hideTryDemo={demoNicheCreated || demoProgress.channelDone || demoProgress.topic !== "" || demoProgress.highestStep > 0}
-          onClose={() => { setShowSubscriptionModal(false); setPendingAction(null); }}
+          context={modalContext}
+          onClose={() => { setShowSubscriptionModal(false); setPendingAction(null); setModalContext(undefined); }}
           onSuccess={handleSubscriptionSuccess}
         />
       )}
