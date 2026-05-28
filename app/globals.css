@@ -305,8 +305,8 @@ body {
 }
 
 /* Incremental fill progress for wizard analysis steps.
-   Uses an aggressive ease-out curve so the bar feels responsive early
-   but never reaches 100% until the actual operation completes. */
+   Visibly grows over ~12s with a gentle ease-out so the user clearly
+   sees progress accumulate, then snaps to 100% when the step completes. */
 @keyframes wizard-progress-fill {
   0%   { width: 0%; }
   100% { width: 92%; }
@@ -314,6 +314,6 @@ body {
 
 .wizard-progress-fill {
   width: 0%;
-  animation: wizard-progress-fill 20s cubic-bezier(0.05, 0.7, 0.1, 0.95) forwards;
+  animation: wizard-progress-fill 12s ease-out forwards;
   border-radius: 9999px;
 }
