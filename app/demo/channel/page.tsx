@@ -16,34 +16,50 @@ interface AnalysisStep {
 }
 
 function StepIndicator({ step }: { step: AnalysisStep }) {
+  const isDone = step.status === "done";
+  const isRunning = step.status === "running";
+  const isIdle = step.status === "idle";
+
   return (
-    <div className="flex items-center gap-3">
-      <div
-        className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm"
-        style={{
-          background: step.status === "done"    ? "oklch(0.55 0.15 145 / 0.2)"
-                    : step.status === "running" ? "oklch(0.72 0.25 285 / 0.15)"
-                    : "var(--bg-track)",
-          border: `1px solid ${
-            step.status === "done"    ? "oklch(0.55 0.15 145 / 0.4)"
-          : step.status === "running" ? "oklch(0.72 0.25 285 / 0.4)"
-          : "var(--c-25)"}`,
-          color: step.status === "done"    ? "oklch(0.7 0.15 145)"
-               : step.status === "running" ? "oklch(0.72 0.25 285)"
-               : "var(--c-40)",
-        }}
-      >
-        {step.status === "done" ? "✓"
-          : step.status === "running"
-            ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+    <div className="flex items-center gap-4">
+      {/* Item: icon + label */}
+      <div className="flex items-center gap-3 shrink-0">
+        <div
+          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-sm"
+          style={{
+            background: isDone ? "oklch(0.55 0.15 145 / 0.2)"
+              : isRunning ? "oklch(0.55 0.15 145 / 0.15)"
+              : "var(--bg-track)",
+            border: `1px solid ${isDone ? "oklch(0.55 0.15 145 / 0.4)"
+              : isRunning ? "oklch(0.55 0.15 145 / 0.35)"
+              : "var(--c-25)"}`,
+            color: isDone ? "oklch(0.7 0.15 145)"
+              : isRunning ? "oklch(0.65 0.15 145)"
+              : "var(--c-40)",
+          }}
+        >
+          {isDone ? "✓"
+            : isRunning ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
             : "○"}
+        </div>
+        <div className="w-28 sm:w-32">
+          <p className="text-sm font-medium truncate" style={{ color: isIdle ? "var(--c-45)" : "var(--c-90)" }}>
+            {step.label}
+          </p>
+          {step.sublabel && <p className="text-xs truncate" style={{ color: "var(--c-45)" }}>{step.sublabel}</p>}
+        </div>
       </div>
-      <div>
-        <p className="text-sm font-medium"
-          style={{ color: step.status === "idle" ? "var(--c-45)" : "var(--c-90)" }}>
-          {step.label}
-        </p>
-        {step.sublabel && <p className="text-xs" style={{ color: "var(--c-45)" }}>{step.sublabel}</p>}
+
+      {/* Progress bar — fills green incrementally while running, snaps full on done */}
+      <div className="flex-1 ml-2 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-progress)" }}>
+        {isDone ? (
+          <div className="h-full w-full rounded-full" style={{ background: "oklch(0.55 0.15 145)" }} />
+        ) : isRunning ? (
+          <div
+            className="h-full wizard-progress-fill"
+            style={{ background: "oklch(0.6 0.16 145)", ["--wizard-fill-duration" as string]: "1.2s" } as React.CSSProperties}
+          />
+        ) : null}
       </div>
     </div>
   );

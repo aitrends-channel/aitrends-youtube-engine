@@ -1,5 +1,24 @@
 import { z } from "zod";
 
+// Claude occasionally returns array fields as a comma/newline-separated string
+// or an object with numeric keys. Normalise to string[] before validation.
+function coerceStringArray(val: unknown): unknown {
+  if (Array.isArray(val)) return val;
+  if (typeof val === "string") {
+    try {
+      const parsed = JSON.parse(val);
+      if (Array.isArray(parsed)) return parsed;
+    } catch { /* not JSON */ }
+    return val.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean);
+  }
+  if (val && typeof val === "object") {
+    return Object.values(val);
+  }
+  return val;
+}
+
+const stringArray = z.preprocess(coerceStringArray, z.array(z.string()));
+
 export const StyleDNASchema = z.object({
   sentenceRhythm: z.string(),
   flowPattern: z.string(),
@@ -7,7 +26,7 @@ export const StyleDNASchema = z.object({
   tone: z.string(),
   transitions: z.string(),
   curiosityGaps: z.string(),
-  emotionalTriggers: z.array(z.string()),
+  emotionalTriggers: stringArray,
   directAddress: z.string(),
   detailLevel: z.string(),
 });
@@ -19,7 +38,7 @@ export const ChannelAnalysisSchema = z.object({
   scriptFlow: z.string(),
   sentenceStyle: z.string(),
   emotionalPacingCurve: z.string(),
-  retentionTechniques: z.array(z.string()),
+  retentionTechniques: stringArray,
   wordsPerSecond: z.number(),
   targetWordCount: z.number(),
   styleDNA: z.preprocess(
@@ -39,7 +58,7 @@ export const VideoIdeasSchema = z.object({
 
 export const VisualProfileSchema = z.object({
   artStyle: z.string(),
-  colorPalette: z.array(z.string()),
+  colorPalette: stringArray,
   lightingStyle: z.string(),
   cameraStyle: z.string(),
   composition: z.string(),
@@ -51,7 +70,7 @@ export const ThumbnailAnalysisSchema = z.object({
   textStyle: z.string(),
   composition: z.string(),
   colorContrast: z.string(),
-  emotionTriggers: z.array(z.string()),
+  emotionTriggers: stringArray,
 });
 
 export const BeatSchema = z.object({

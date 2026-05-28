@@ -305,8 +305,9 @@ body {
 }
 
 /* Incremental fill progress for wizard analysis steps.
-   Visibly grows over ~12s with a gentle ease-out so the user clearly
-   sees progress accumulate, then snaps to 100% when the step completes. */
+   Visibly grows with a gentle ease-out so the user sees progress
+   accumulate, then snaps to 100% when the step completes.
+   Override --wizard-fill-duration inline for faster/slower fills. */
 @keyframes wizard-progress-fill {
   0%   { width: 0%; }
   100% { width: 92%; }
@@ -314,6 +315,6 @@ body {
 
 .wizard-progress-fill {
   width: 0%;
-  animation: wizard-progress-fill 12s ease-out forwards;
+  animation: wizard-progress-fill var(--wizard-fill-duration, 12s) ease-out forwards;
   border-radius: 9999px;
 }
