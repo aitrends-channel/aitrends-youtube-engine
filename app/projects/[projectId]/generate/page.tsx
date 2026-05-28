@@ -615,9 +615,9 @@ export default function GeneratePage({ params }: PageProps) {
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={14} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
+      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
         {/* Header */}
-        <div className="px-4 sm:px-8 md:pr-44 py-4 sm:py-5"
+        <div className="shrink-0 px-4 sm:px-8 md:pr-44 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -636,7 +636,8 @@ export default function GeneratePage({ params }: PageProps) {
           </div>
         </div>
 
-        <div className="p-4 sm:p-8 pb-[70px] grid grid-cols-1 xl:grid-cols-3 gap-6">
+        <div className="flex-1 overflow-y-auto pb-[70px]">
+        <div className="p-4 sm:p-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* TTS Panel */}
           <div className="rounded-2xl flex flex-col overflow-hidden"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
@@ -1019,6 +1020,7 @@ export default function GeneratePage({ params }: PageProps) {
               </button>
             </div>
           </div>
+        </div>
         </div>
       </main>
 
