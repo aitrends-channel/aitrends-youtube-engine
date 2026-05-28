@@ -17,6 +17,8 @@ export async function uploadBuffer(
   buffer: ArrayBuffer,
   contentType: string
 ): Promise<string> {
+  if (!BUCKET) throw new Error("R2 storage is not configured — R2_BUCKET_NAME environment variable is missing");
+  if (!PUBLIC_URL) throw new Error("R2 storage is not configured — R2_PUBLIC_URL environment variable is missing");
   await r2.send(new PutObjectCommand({
     Bucket: BUCKET,
     Key: path,

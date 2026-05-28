@@ -19,7 +19,13 @@ async function tryUpload(path: string, url: string): Promise<string | null> {
   try {
     return await uploadFromUrl(path, url, "image/jpeg");
   } catch {
-    return null;
+    // R2 upload failed — verify the source URL is accessible and return it directly as fallback
+    try {
+      const check = await fetch(url, { method: "HEAD" });
+      return check.ok ? url : null;
+    } catch {
+      return null;
+    }
   }
 }
 

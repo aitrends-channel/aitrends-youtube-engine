@@ -87,14 +87,20 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
   function getPhaseStatus(phase: (typeof PHASES)[0]) {
     if (progressComplete && phase.id === "thumbnails") return "done";
     if (effectivePath.endsWith(`/${phase.path}`)) return "active";
-    const effectiveMin = phase.navigableFrom !== undefined ? phase.navigableFrom : Math.min(...phase.states);
-    if (reached >= effectiveMin) return "done";
+    // Thumbnails is a side-branch — only mark done via progressComplete above
+    if (phase.id === "thumbnails") return "locked";
+    // A phase is visually "done" only when project state has moved past it
+    if (reached > Math.max(...phase.states)) return "done";
     return "locked";
   }
 
   function isNavigable(phase: (typeof PHASES)[0]) {
-    const status = getPhaseStatus(phase);
-    return status === "done" || status === "active";
+    const phaseRank = PATH_RANK[phase.id] ?? 0;
+    const effectiveMin = phase.navigableFrom !== undefined ? phase.navigableFrom : Math.min(...phase.states);
+    // Going backward or staying: navigable if you've reached the phase's start state
+    if (phaseRank <= currentPathRank) return reached >= Math.min(...phase.states);
+    // Going forward: only if the project has reached the navigableFrom threshold
+    return reached >= effectiveMin;
   }
 
   const currentPhaseIndex = PHASES.findIndex((p) => pathname.endsWith(`/${p.path}`));

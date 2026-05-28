@@ -104,7 +104,13 @@ async function generateChunk(
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`ElevenLabs error ${res.status}: ${body}`);
+    let message = `ElevenLabs error ${res.status}`;
+    try {
+      const parsed = JSON.parse(body);
+      const inner = parsed?.detail?.message ?? parsed?.message ?? parsed?.detail;
+      if (typeof inner === "string") message = inner;
+    } catch { /* keep default */ }
+    throw new Error(message);
   }
 
   return res.arrayBuffer();

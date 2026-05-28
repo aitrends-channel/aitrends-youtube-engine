@@ -19,6 +19,8 @@ const fetcher = (url: string) =>
 
 function friendlyError(raw: string | undefined | null): string {
   const msg = (raw ?? "").toLowerCase();
+if (msg.includes("paid_plan_required") || msg.includes("free users cannot use library voices") || (msg.includes("payment_required") && msg.includes("elevenlabs")))
+    return "ElevenLabs paid plan required — a paid subscription is needed to use voices via the API. Upgrade at elevenlabs.io";
   if (msg.includes("quota_exceeded") || msg.includes("quota exceeded") || msg.includes("credits remaining") || msg.includes("credit balance"))
     return "Your ElevenLabs credits are exhausted — top up your account at elevenlabs.io";
   if (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit")))
@@ -1021,24 +1023,43 @@ export default function GeneratePage({ params }: PageProps) {
       </main>
 
       {/* Fixed bottom bar */}
-      <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
-        style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
-        <div className="px-4 sm:px-8">
-          <button
-            onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/assemble`); }}
-            disabled={navigating}
-            className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
-            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-          >
-            {navigating ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                Loading…
-              </span>
-            ) : "Continue →"}
-          </button>
-        </div>
-      </div>
+      {(() => {
+        const voiceoverReady = !!ttsUrl;
+        const imagesReady = totalBeats > 0 && generatedImages === totalBeats;
+        const videosReady = videoBeats === 0 || generatedVideos === videoBeats;
+        const canContinue = voiceoverReady && imagesReady && videosReady;
+        const missing = [
+          !voiceoverReady && "voiceover",
+          !imagesReady && "images",
+          !videosReady && "video clips",
+        ].filter(Boolean).join(", ");
+
+        return (
+          <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
+            style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
+            <div className="px-4 sm:px-8 space-y-2">
+              {!canContinue && !navigating && (
+                <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
+                  Still needed: {missing}
+                </p>
+              )}
+              <button
+                onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/assemble`); }}
+                disabled={navigating || !canContinue}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+              >
+                {navigating ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    Loading…
+                  </span>
+                ) : "Continue →"}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Video hover preview */}
       {hoveredVideoBeat?.videoUrl && (

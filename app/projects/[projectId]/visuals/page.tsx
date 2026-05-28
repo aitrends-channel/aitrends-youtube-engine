@@ -129,7 +129,11 @@ export default function VisualsPage({ params }: PageProps) {
         for (const f of shot.frameUrls) all.add(f);
       }
       setSelectedImages(all);
-      toast.success(`Fetched screenshots from ${data.screenshots.length} videos`);
+      if (all.size === 0) {
+        toast.error("No images could be fetched — video frames may be unavailable for this channel");
+      } else {
+        toast.success(`Fetched ${all.size} images from ${data.screenshots.length} videos`);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to fetch screenshots");
     } finally {
@@ -337,17 +341,26 @@ export default function VisualsPage({ params }: PageProps) {
                         <p className="text-xs font-semibold">Captured Images</p>
                       </div>
                       <div className="p-5">
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                          {allImages.map((url, i) => (
-                            <SelectableImage
-                              key={url}
-                              url={url}
-                              selected={selectedImages.has(url)}
-                              onToggle={() => toggleImage(url)}
-                              label={`Image ${i + 1}`}
-                            />
-                          ))}
-                        </div>
+                        {allImages.length === 0 ? (
+                          <div className="py-8 text-center space-y-2">
+                            <p className="text-sm font-medium" style={{ color: "var(--c-45)" }}>No images available</p>
+                            <p className="text-xs" style={{ color: "var(--c-35)" }}>
+                              Could not retrieve frames for this channel. Try manual upload instead.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                            {allImages.map((url, i) => (
+                              <SelectableImage
+                                key={url}
+                                url={url}
+                                selected={selectedImages.has(url)}
+                                onToggle={() => toggleImage(url)}
+                                label={`Image ${i + 1}`}
+                              />
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
