@@ -91,6 +91,10 @@ const PHASE_PATHS: Record<number, string> = {
   11: "visuals", 12: "visuals", 13: "prompts", 14: "generate", 15: "assemble",
 };
 
+const PHASE_RANK: Record<string, number> = {
+  channel: 0, topic: 1, script: 2, visuals: 3, prompts: 4, generate: 5, assemble: 6, thumbnails: 7,
+};
+
 function timeAgo(date: string) {
   const diff = Date.now() - new Date(date).getTime();
   const m = Math.floor(diff / 60000);
@@ -539,25 +543,8 @@ export default function HomePage() {
     router.push("/dashboard");
   }
 
-  async function doCreateProject() {
-    setCreating(true);
-    try {
-      const res = await fetch("/api/projects", { method: "POST" });
-      const project = await res.json();
-      if (res.status === 403 && project.limitReached) {
-        toast.error(`You've reached your ${nicheLimit}-niche limit. Upgrade your plan to add more.`);
-        return;
-      }
-      if (project.id) {
-        router.push(`/projects/${project.id}/channel`);
-      } else {
-        toast.error("Failed to create project");
-      }
-    } catch {
-      toast.error("Failed to create project");
-    } finally {
-      setCreating(false);
-    }
+  function doCreateProject() {
+    router.push("/projects/new/channel");
   }
 
   function createProject() {
@@ -1198,7 +1185,6 @@ export default function HomePage() {
                     style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))" }}>
                     {group.projects.map((p) => {
                       const assembled = p.assembly_status === "done";
-                      const effectiveState = assembled ? 15 : p.current_state;
                       const path = assembled
                         ? "assemble"
                         : (p.current_state === 6 && p.selected_topic)
@@ -1209,8 +1195,8 @@ export default function HomePage() {
                         : (p.current_state === 6 && p.selected_topic)
                           ? "Script"
                           : (PHASE_LABELS[p.current_state] ?? "Setup");
-                      const progress = Math.min(100, Math.round((effectiveState / 15) * 100));
-                      const isComplete = effectiveState >= 15;
+                      const progress = assembled ? 100 : Math.round(((PHASE_RANK[path] ?? 0) + 1) / 8 * 100);
+                      const isComplete = assembled;
 
                       return (
                         <button

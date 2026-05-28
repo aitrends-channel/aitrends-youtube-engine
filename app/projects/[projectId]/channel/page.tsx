@@ -60,7 +60,7 @@ function StepIndicator({ step }: { step: AnalysisStep }) {
 export default function ChannelPage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
-  const { project } = useProject(projectId);
+  const { project } = useProject(projectId === "new" ? null : projectId);
 
   const [channelUrl, setChannelUrl] = useState("");
   const [channelInfo, setChannelInfo] = useState<ChannelInfo | null>(null);
@@ -147,17 +147,6 @@ export default function ChannelPage({ params }: PageProps) {
       }
     }
 
-    // Save channel to project
-    await fetch(`/api/projects/${projectId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        channel_url: channelUrl,
-        channel_name: fetchedInfo!.channelName,
-        channel_info: fetchedInfo,
-      }),
-    });
-
     // Steps 3-4: Claude analysis
     const readyTranscripts = fetchedTranscripts.length ? fetchedTranscripts : transcripts;
     if (!readyTranscripts.length) {
@@ -173,6 +162,35 @@ export default function ChannelPage({ params }: PageProps) {
       return;
     }
 
+    // Create the project record now that the first step succeeded
+    let effectiveProjectId = projectId;
+    if (projectId === "new") {
+      const createRes = await fetch("/api/projects", { method: "POST" });
+      const created = await createRes.json();
+      if (createRes.status === 403 && created.limitReached) {
+        toast.error("You've reached your niche limit. Upgrade your plan to add more.");
+        setIsWorking(false);
+        return;
+      }
+      if (!created.id) {
+        toast.error("Failed to create project");
+        setIsWorking(false);
+        return;
+      }
+      effectiveProjectId = created.id;
+    }
+
+    // Save channel to project
+    await fetch(`/api/projects/${effectiveProjectId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        channel_url: channelUrl,
+        channel_name: fetchedInfo!.channelName,
+        channel_info: fetchedInfo,
+      }),
+    });
+
     setStep("analyze", "running");
     await new Promise((r) => setTimeout(r, 300));
     setStep("dna", "running");
@@ -182,7 +200,7 @@ export default function ChannelPage({ params }: PageProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          projectId,
+          projectId: effectiveProjectId,
           transcripts: readyTranscripts,
           topicMode,
           topicHint: topicHint.trim() || undefined,
@@ -192,7 +210,7 @@ export default function ChannelPage({ params }: PageProps) {
       if (!res.ok) throw new Error(data.error);
 
       if (topicMode === "custom" && topic) {
-        await fetch(`/api/projects/${projectId}`, {
+        await fetch(`/api/projects/${effectiveProjectId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ selected_topic: topic }),
@@ -202,7 +220,7 @@ export default function ChannelPage({ params }: PageProps) {
       setStep("analyze", "done");
       setStep("dna", "done");
       await new Promise((r) => setTimeout(r, 400));
-      router.push(`/projects/${projectId}/topic`);
+      router.push(`/projects/${effectiveProjectId}/topic`);
     } catch (err) {
       setStep("analyze", "error");
       setStep("dna", "error");
