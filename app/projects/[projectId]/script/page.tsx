@@ -6,6 +6,7 @@ import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { useStreamingScript } from "@/hooks/useStreamingScript";
 import { toast } from "sonner";
+import { RefreshCw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -184,15 +185,6 @@ export default function ScriptPage({ params }: PageProps) {
                         Copy
                       </button>
                     )}
-                    {script && !isStreaming && (
-                      <button
-                        onClick={() => setConfirmRegen(true)}
-                        className="hidden sm:block px-2.5 py-1 rounded-lg text-xs transition-all"
-                        style={{ background: "var(--bg-control)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
-                      >
-                        Regen
-                      </button>
-                    )}
                   </div>
                 </div>
 
@@ -229,20 +221,29 @@ export default function ScriptPage({ params }: PageProps) {
       {!isStreaming && script && (
         <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
-          <div className="max-w-3xl mx-auto px-4 sm:px-8">
-          <button
-            onClick={handleContinue}
-            disabled={navigating}
-            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40"
-            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-          >
-            {navigating ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                Saving…
-              </span>
-            ) : "Continue →"}
-          </button>
+          <div className="max-w-3xl mx-auto px-4 sm:px-8 flex gap-3">
+            <button
+              onClick={() => setConfirmRegen(true)}
+              disabled={navigating}
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 hover:opacity-90 flex items-center justify-center gap-2"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              <RefreshCw size={14} strokeWidth={2.5} />
+              Regenerate
+            </button>
+            <button
+              onClick={handleContinue}
+              disabled={navigating}
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              {navigating ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Saving…
+                </span>
+              ) : "Continue →"}
+            </button>
           </div>
         </div>
       )}

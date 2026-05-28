@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
-import { Settings, LogOut, BarChart3 } from "lucide-react";
+import { Settings, LogOut, BarChart3, Trash2, Download } from "lucide-react";
 import useSWR from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { DEMO_DATA } from "@/lib/demo-data";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 const ADMIN_EMAIL = "prioritylearn@gmail.com";
 
@@ -70,6 +71,7 @@ interface Project {
   created_at: string;
   selected_topic?: string;
   assembly_status?: string | null;
+  assembled_url?: string | null;
 }
 
 interface ChannelGroup {
@@ -503,7 +505,35 @@ export default function HomePage() {
     await supabase.auth.signOut();
     router.push("/login");
   }
-  const { data: projects } = useSWR<Project[]>("/api/projects", fetcher);
+  const { data: projects, mutate: mutateProjects } = useSWR<Project[]>("/api/projects", fetcher);
+
+  type DeleteTarget =
+    | { type: "video"; id: string; label: string }
+    | { type: "niche"; channelName: string; projectIds: string[]; count: number };
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+  async function downloadVideo(id: string, url: string, topic: string) {
+    setDownloadingId(id);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch video");
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `${topic.replace(/[^a-z0-9]+/gi, "_").replace(/^_|_$/g, "")}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      toast.error("Failed to download video");
+    } finally {
+      setDownloadingId(null);
+    }
+  }
 
   const channelGroups = useMemo<ChannelGroup[]>(() => {
     if (!Array.isArray(projects)) return [];
@@ -559,6 +589,25 @@ export default function HomePage() {
 
   function createVideoForChannel(group: ChannelGroup) {
     requireSubscription(() => doCreateVideoForChannel(group));
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      if (deleteTarget.type === "video") {
+        await fetch(`/api/projects/${deleteTarget.id}`, { method: "DELETE" });
+        mutateProjects((prev) => prev?.filter((p) => p.id !== deleteTarget.id), false);
+      } else {
+        await Promise.all(deleteTarget.projectIds.map((id) => fetch(`/api/projects/${id}`, { method: "DELETE" })));
+        mutateProjects((prev) => prev?.filter((p) => p.channel_name !== deleteTarget.channelName), false);
+      }
+      setDeleteTarget(null);
+    } catch {
+      toast.error("Failed to delete");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   const authReady = !!userEmail || isAdmin;
@@ -1140,6 +1189,14 @@ export default function HomePage() {
                         {group.projects.length} {group.projects.length === 1 ? "video" : "videos"}
                       </span>
                       <button
+                        onClick={() => setDeleteTarget({ type: "niche", channelName: group.channelName, projectIds: group.projects.map(p => p.id), count: group.projects.length })}
+                        className="p-1.5 rounded-lg transition-all hover:opacity-90"
+                        style={{ color: "var(--c-55)", border: "1px solid var(--bd-7)" }}
+                        title="Delete niche"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                      <button
                         onClick={() => createVideoForChannel(group)}
                         disabled={creating || !authReady}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
@@ -1169,11 +1226,11 @@ export default function HomePage() {
                       const isComplete = assembled;
 
                       return (
-                        <button
+                        <div
                           key={p.id}
-                          onClick={() => router.push(`/projects/${p.id}/${path}`)}
                           className="text-left p-6 rounded-2xl transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
                           style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}
+                          onClick={() => router.push(`/projects/${p.id}/${path}`)}
                           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
                           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)"; }}
                         >
@@ -1190,9 +1247,31 @@ export default function HomePage() {
                               }}>
                               {stateLabel}
                             </span>
-                            <span className="text-xs" style={{ color: "var(--c-38)" }}>
-                              {timeAgo(p.created_at)}
-                            </span>
+
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs" style={{ color: "var(--c-38)" }}>{timeAgo(p.created_at)}</span>
+                              {isComplete && p.assembled_url && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); downloadVideo(p.id, p.assembled_url!, p.selected_topic ?? "video"); }}
+                                  disabled={downloadingId === p.id}
+                                  className="p-1 rounded-lg transition-all hover:opacity-90 disabled:opacity-50"
+                                  style={{ color: "oklch(0.65 0.15 145)" }}
+                                  title="Download video"
+                                >
+                                  {downloadingId === p.id
+                                    ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+                                    : <Download size={13} />}
+                                </button>
+                              )}
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: "video", id: p.id, label: p.selected_topic ?? "this video" }); }}
+                                className="p-1 rounded-lg transition-all hover:opacity-90"
+                                style={{ color: "var(--c-55)" }}
+                                title="Delete video"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
                           </div>
 
                           <p className="text-lg font-semibold leading-snug mb-5"
@@ -1216,7 +1295,7 @@ export default function HomePage() {
                               />
                             </div>
                           </div>
-                        </button>
+                        </div>
                       );
                     })}
 
@@ -1309,6 +1388,44 @@ export default function HomePage() {
         )}
 
       </main>
+
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>
+              {deleteTarget?.type === "niche" ? "Delete Niche" : "Delete Video"}
+            </DialogTitle>
+            <DialogDescription>
+              {deleteTarget?.type === "niche"
+                ? `This will permanently delete the "${deleteTarget.channelName}" niche and all ${deleteTarget.count} video${deleteTarget.count === 1 ? "" : "s"} inside it, including all generated assets. This action cannot be undone.`
+                : `This will permanently delete "${deleteTarget?.label}" and all its generated assets. This action cannot be undone.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleting}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmDelete}
+              disabled={deleting}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.5 0.22 25)", color: "white" }}
+            >
+              {deleting ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  Deleting…
+                </span>
+              ) : "Delete"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {showSubscriptionModal && (
         <SubscriptionModal
