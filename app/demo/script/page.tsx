@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
@@ -15,26 +16,25 @@ export default function DemoScriptPage() {
   const [displayedScript, setDisplayedScript] = useState(
     state.scriptPhase === "done" ? DEMO_DATA.script : ""
   );
+  const [regenCount, setRegenCount] = useState(0);
   const scriptContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (state.scriptPhase === "done") return;
+    if (regenCount === 0 && state.scriptPhase === "done") return;
 
-    let loadingTimer: ReturnType<typeof setTimeout>;
+    update({ scriptPhase: "loading" });
+    setDisplayedScript("");
+
+    let charIndex = 0;
+    const fullScript = DEMO_DATA.script;
     let typeInterval: ReturnType<typeof setInterval>;
 
-    loadingTimer = setTimeout(() => {
+    const loadingTimer = setTimeout(() => {
       update({ scriptPhase: "done" });
-      let charIndex = 0;
-      const fullScript = DEMO_DATA.script;
-
       typeInterval = setInterval(() => {
         charIndex = Math.min(charIndex + 8, fullScript.length);
         setDisplayedScript(fullScript.slice(0, charIndex));
-
-        if (charIndex >= fullScript.length) {
-          clearInterval(typeInterval);
-        }
+        if (charIndex >= fullScript.length) clearInterval(typeInterval);
       }, 16);
     }, 2000);
 
@@ -43,7 +43,11 @@ export default function DemoScriptPage() {
       clearInterval(typeInterval);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [regenCount]);
+
+  function handleRegenerate() {
+    setRegenCount((c) => c + 1);
+  }
 
   useEffect(() => {
     if (scriptContainerRef.current) {
@@ -148,11 +152,20 @@ export default function DemoScriptPage() {
       {scriptDone && (
         <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3 px-4 sm:px-8"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
-          <div className="max-w-3xl mx-auto">
+          <div className="max-w-3xl mx-auto flex gap-3">
+            <button
+              onClick={handleRegenerate}
+              disabled={navigating}
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all hover:opacity-90 flex items-center justify-center gap-2"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              <RefreshCw size={14} strokeWidth={2.5} />
+              Regenerate
+            </button>
             <button
               onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/visuals"), 500); }}
               disabled={navigating}
-              className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 transition-all"
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 transition-all hover:opacity-90"
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
             >
               {navigating ? (
