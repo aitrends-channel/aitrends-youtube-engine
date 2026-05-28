@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 
 export function useStreamingScript() {
   const [script, setScript] = useState("");
@@ -9,6 +9,12 @@ export function useStreamingScript() {
   const [error, setError] = useState<string | null>(null);
   // Prevents DB-loaded project data from overwriting an in-progress stream
   const streamingRef = useRef(false);
+
+  // Recompute word count when script is set externally (e.g. loaded from DB)
+  useEffect(() => {
+    if (isStreaming) return;
+    setWordCount(script ? script.trim().split(/\s+/).filter(Boolean).length : 0);
+  }, [script, isStreaming]);
 
   const startStreaming = useCallback(
     async (projectId: string, analysis: unknown, topic: string) => {
