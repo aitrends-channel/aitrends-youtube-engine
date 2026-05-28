@@ -104,34 +104,49 @@ export async function DELETE(
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  // Collect all Supabase storage URLs and extract their paths
+  // Collect Supabase storage paths before we drop the DB rows
   const supabaseStorageBase = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/assets/`;
-  const supabasePaths: string[] = [];
-
-  const allUrls = [
+  const supabasePaths = [
     projectRes.data.tts_url,
     ...(beatsRes.data ?? []).flatMap((b) => [b.image_url, b.video_url, b.audio_url]),
     ...(thumbsRes.data ?? []).map((t) => t.image_url),
-  ].filter((url): url is string => !!url && url.startsWith(supabaseStorageBase));
+  ]
+    .filter((url): url is string => !!url && url.startsWith(supabaseStorageBase))
+    .map((url) => url.replace(supabaseStorageBase, ""));
 
-  for (const url of allUrls) {
-    supabasePaths.push(url.replace(supabaseStorageBase, ""));
-  }
-
-  // Delete Supabase storage files
-  if (supabasePaths.length > 0) {
-    await supabase.storage.from("assets").remove(supabasePaths);
-  }
-
-  // Delete R2 files
-  await deleteFolder(`${projectId}/`);
-
-  // Delete database records
-  await Promise.all([
+  // DB cleanup first — children before parent. If storage cleanup later fails,
+  // we leave orphan files (benign) rather than orphan DB rows (broken UI).
+  const childrenRes = await Promise.allSettled([
     supabase.from("project_beats").delete().eq("project_id", projectId),
     supabase.from("project_thumbnails").delete().eq("project_id", projectId),
   ]);
-  await supabase.from("projects").delete().eq("id", projectId).eq("user_id", user.id);
 
-  return NextResponse.json({ success: true });
+  const childErrors = childrenRes
+    .map((r) => r.status === "rejected" ? String(r.reason) : (r.value.error?.message ?? null))
+    .filter((e): e is string => !!e);
+
+  if (childErrors.length > 0) {
+    return NextResponse.json({ error: `Failed to delete child rows: ${childErrors.join("; ")}` }, { status: 500 });
+  }
+
+  const projectDelete = await supabase.from("projects").delete().eq("id", projectId).eq("user_id", user.id);
+  if (projectDelete.error) {
+    return NextResponse.json({ error: projectDelete.error.message }, { status: 500 });
+  }
+
+  // Storage cleanup — best-effort, won't fail the request if it errors out
+  const warnings: string[] = [];
+
+  if (supabasePaths.length > 0) {
+    const { error } = await supabase.storage.from("assets").remove(supabasePaths);
+    if (error) warnings.push(`Supabase storage: ${error.message}`);
+  }
+
+  try {
+    await deleteFolder(`${projectId}/`);
+  } catch (err) {
+    warnings.push(`R2 storage: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  return NextResponse.json({ success: true, ...(warnings.length > 0 ? { warnings } : {}) });
 }

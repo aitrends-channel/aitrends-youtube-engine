@@ -6,7 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
 import { Settings, LogOut, BarChart3, Trash2, Download } from "lucide-react";
-import useSWR from "swr";
+import useSWR, { mutate as globalMutate } from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
@@ -591,20 +591,60 @@ export default function HomePage() {
     requireSubscription(() => doCreateVideoForChannel(group));
   }
 
+  async function deleteOne(id: string): Promise<{ id: string; ok: boolean; error?: string; warnings?: string[] }> {
+    try {
+      const res = await fetch(`/api/projects/${id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({})) as { error?: string; warnings?: string[] };
+      if (!res.ok) return { id, ok: false, error: data.error ?? `HTTP ${res.status}` };
+      return { id, ok: true, warnings: data.warnings };
+    } catch (err) {
+      return { id, ok: false, error: err instanceof Error ? err.message : "Network error" };
+    }
+  }
+
   async function confirmDelete() {
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      if (deleteTarget.type === "video") {
-        await fetch(`/api/projects/${deleteTarget.id}`, { method: "DELETE" });
-        mutateProjects((prev) => prev?.filter((p) => p.id !== deleteTarget.id), false);
-      } else {
-        await Promise.all(deleteTarget.projectIds.map((id) => fetch(`/api/projects/${id}`, { method: "DELETE" })));
-        mutateProjects((prev) => prev?.filter((p) => p.channel_name !== deleteTarget.channelName), false);
+      const ids = deleteTarget.type === "video" ? [deleteTarget.id] : deleteTarget.projectIds;
+
+      // Chunk parallel deletes to avoid hammering Supabase/R2
+      const CONCURRENCY = 3;
+      const results: { id: string; ok: boolean; error?: string; warnings?: string[] }[] = [];
+      for (let i = 0; i < ids.length; i += CONCURRENCY) {
+        const chunk = ids.slice(i, i + CONCURRENCY);
+        const chunkResults = await Promise.all(chunk.map(deleteOne));
+        results.push(...chunkResults);
       }
-      setDeleteTarget(null);
-    } catch {
-      toast.error("Failed to delete");
+
+      const succeeded = results.filter((r) => r.ok).map((r) => r.id);
+      const failed = results.filter((r) => !r.ok);
+      const warnings = results.flatMap((r) => r.warnings ?? []);
+
+      // Optimistic UI update for successfully deleted projects
+      if (succeeded.length > 0) {
+        mutateProjects((prev) => prev?.filter((p) => !succeeded.includes(p.id)), false);
+        // Wipe per-project SWR caches so any open project page sees the deletion
+        for (const id of succeeded) {
+          globalMutate(`/api/projects/${id}`, undefined, false);
+        }
+      }
+
+      // Surface partial failures clearly
+      if (failed.length === 0) {
+        if (warnings.length > 0) {
+          toast.warning(`Deleted, but some cleanup warnings: ${warnings[0]}${warnings.length > 1 ? ` (+${warnings.length - 1} more)` : ""}`);
+        }
+        setDeleteTarget(null);
+      } else if (failed.length === ids.length) {
+        toast.error(`Failed to delete: ${failed[0].error}`);
+      } else {
+        toast.error(`${succeeded.length} deleted, ${failed.length} failed — ${failed[0].error}`);
+        setDeleteTarget(null);
+      }
+
+      // Revalidate to catch any silent server-side discrepancies
+      mutateProjects();
     } finally {
       setDeleting(false);
     }
