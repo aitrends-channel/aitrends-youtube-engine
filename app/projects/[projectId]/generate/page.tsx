@@ -318,7 +318,11 @@ export default function GeneratePage({ params }: PageProps) {
   }, [videosSubmitted, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function generateVoiceover(voiceId = selectedTtsModel) {
-    if (!voiceId || !script) return;
+    if (!voiceId) return;
+    // Force a fresh fetch to ensure we have the latest script, not a stale SWR cache
+    const fresh = await mutate();
+    const latestScript = fresh?.script ?? script;
+    if (!latestScript) return;
     setGeneratingTts(true);
     setPendingTtsUrl(null);
     setPendingTtsCleanedUrl(null);
@@ -329,7 +333,7 @@ export default function GeneratePage({ params }: PageProps) {
       const res = await fetch("/api/generate/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, script, voiceId }),
+        body: JSON.stringify({ projectId, script: latestScript, voiceId }),
       });
       if (!res.ok || !res.body) throw new Error("Failed to start TTS");
 
