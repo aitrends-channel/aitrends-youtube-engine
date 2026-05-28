@@ -632,7 +632,7 @@ export default function GeneratePage({ params }: PageProps) {
             </div>
             <button
               onClick={exportDocx}
-              className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all mt-0.5"
+              className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all mt-0.9"
               style={{ background: "var(--bg-control)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
             >
               Export Doc
