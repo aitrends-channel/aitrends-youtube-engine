@@ -304,27 +304,16 @@ body {
   animation: shimmer 1.5s infinite;
 }
 
-/* Indeterminate progress bar for wizard analysis steps */
-@keyframes wizard-progress {
-  0%   { transform: translateX(-100%); }
-  100% { transform: translateX(300%); }
+/* Incremental fill progress for wizard analysis steps.
+   Uses an aggressive ease-out curve so the bar feels responsive early
+   but never reaches 100% until the actual operation completes. */
+@keyframes wizard-progress-fill {
+  0%   { width: 0%; }
+  100% { width: 92%; }
 }
 
-.wizard-progress-bar {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-}
-
-.wizard-progress-bar::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  height: 100%;
-  width: 33%;
-  background: linear-gradient(90deg, transparent, oklch(0.72 0.25 285), oklch(0.58 0.28 300), transparent);
-  animation: wizard-progress 1.6s ease-in-out infinite;
+.wizard-progress-fill {
+  width: 0%;
+  animation: wizard-progress-fill 20s cubic-bezier(0.05, 0.7, 0.1, 0.95) forwards;
   border-radius: 9999px;
 }
