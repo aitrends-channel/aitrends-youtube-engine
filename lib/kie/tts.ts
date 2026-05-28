@@ -4,7 +4,6 @@ import type { KieModel } from "@/lib/types";
 const EL_BASE = "https://api.elevenlabs.io";
 const TTS_MODEL = "eleven_turbo_v2_5";
 const MAX_CHARS = 5000;
-const DEV_MAX_CHARS = process.env.MAX_TTS_CHARS ? parseInt(process.env.MAX_TTS_CHARS, 10) : null;
 
 function v(id: string, name: string, tags: string[]): KieModel {
   return { id, name, type: "tts", tags, previewUrl: `https://static.aiquickdraw.com/elevenlabs/voice/${id}.mp3` };
@@ -133,14 +132,7 @@ export async function generateTTS(
 
   if (!apiKey) throw new Error("ElevenLabs API key not configured. Add it in Settings.");
 
-  let normalized = normalizeText(text);
-  if (DEV_MAX_CHARS && normalized.length > DEV_MAX_CHARS) {
-    const cut = normalized.slice(0, DEV_MAX_CHARS);
-    const lastSentence = cut.search(/[.!?][^.!?]*$/);
-    normalized = lastSentence > 0 ? cut.slice(0, lastSentence + 1) : cut;
-    console.log(`[TTS] Trimmed to ${normalized.length} chars (MAX_TTS_CHARS=${DEV_MAX_CHARS})`);
-  }
-
+  const normalized = normalizeText(text);
   const chunks = splitIntoChunks(normalized);
   console.log(`[TTS] ${chunks.length} chunk(s) | chars: ${normalized.length} | voice: ${voiceId}`);
 

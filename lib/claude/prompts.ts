@@ -80,7 +80,7 @@ export function buildScriptPrompt(
   analysis: ChannelAnalysisOutput,
   topic: string
 ): string {
-  const targetWordCount = Math.min(analysis.targetWordCount ?? 900, parseInt(process.env.MAX_SCRIPT_WORDS ?? "1200", 10));
+  const targetWordCount = analysis.targetWordCount ?? 900;
   return `Generate a FULL YouTube video script for the topic: "${topic}"
 
 STYLE DNA (MUST FOLLOW EXACTLY):
