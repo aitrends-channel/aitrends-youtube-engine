@@ -189,7 +189,7 @@ export default function ChannelPage({ params }: PageProps) {
       const createRes = await fetch("/api/projects", { method: "POST" });
       const created = await createRes.json();
       if (createRes.status === 403 && created.limitReached) {
-        toast.error("You've reached your niche limit. Upgrade your plan to add more.");
+        toast.error(created.error ?? "You've reached your niche limit. Upgrade your plan to add more.");
         setIsWorking(false);
         return;
       }

@@ -58,24 +58,29 @@ export async function POST(req: Request) {
     return NextResponse.json(data);
   }
 
-  // Enforce niche limit for non-fork project creation
+  // Enforce niche limit for non-fork project creation.
+  // Uses a lifetime counter on app_settings so deletions don't free up
+  // slots — preventing users from exploiting deletion to exceed their plan.
   const isAdmin = user.email === ADMIN_EMAIL;
-  if (!isAdmin) {
-    const plan = (user.app_metadata?.plan as string) ?? "starter";
-    const limit = PLAN_LIMITS[plan] ?? 5;
-    if (limit !== null) {
-      const { data: existing } = await supabase
-        .from("projects")
-        .select("channel_name")
-        .eq("user_id", user.id);
-      const rows = existing ?? [];
-      const namedNiches = new Set(rows.filter((p) => p.channel_name).map((p) => p.channel_name)).size;
-      const hasUnnamed = rows.some((p) => !p.channel_name);
-      const nicheCount = namedNiches + (hasUnnamed ? 1 : 0);
-      if (nicheCount >= limit) {
-        return NextResponse.json({ error: "Niche limit reached", limitReached: true }, { status: 403 });
-      }
-    }
+  const plan = (user.app_metadata?.plan as string) ?? "starter";
+  const limit = isAdmin ? null : (PLAN_LIMITS[plan] ?? 5);
+
+  const { data: rpcData, error: rpcError } = await supabase
+    .rpc("try_use_niche", { uid: user.id, plan_limit: limit })
+    .single();
+
+  if (rpcError) {
+    return NextResponse.json({ error: rpcError.message }, { status: 500 });
+  }
+
+  const result = rpcData as { success: boolean; niches_used: number } | null;
+  if (!result?.success) {
+    return NextResponse.json({
+      error: `You've reached your ${limit}-niche lifetime limit. Deleted niches still count toward your plan total — upgrade to add more.`,
+      limitReached: true,
+      nichesUsed: result?.niches_used ?? 0,
+      limit,
+    }, { status: 403 });
   }
 
   const { data, error } = await supabase
@@ -84,6 +89,10 @@ export async function POST(req: Request) {
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    // Roll back the counter so we don't lose the slot to a transient DB error.
+    await supabase.rpc("decrement_niches_used", { uid: user.id });
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   return NextResponse.json(data);
 }
