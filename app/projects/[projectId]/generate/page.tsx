@@ -617,26 +617,31 @@ export default function GeneratePage({ params }: PageProps) {
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
-      <WizardNav projectId={projectId} currentState={14} highestState={project?.current_state} channelName={project?.channel_name} />
+      <WizardNav
+        projectId={projectId}
+        currentState={14}
+        highestState={project?.current_state}
+        channelName={project?.channel_name}
+        topRightExtra={
+          <button
+            onClick={exportDocx}
+            className="flex items-center px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+            style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+          >
+            Export Doc
+          </button>
+        }
+      />
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
         {/* Header */}
         <div className="shrink-0 px-4 sm:px-8 md:pr-44 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h1 className="font-bold text-base sm:text-lg">Generate Assets</h1>
-              <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                Select a model for each service, then generate your final content
-              </p>
-            </div>
-            <button
-              onClick={exportDocx}
-              className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all mt-0.9"
-              style={{ background: "var(--bg-control)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
-            >
-              Export Doc
-            </button>
+          <div>
+            <h1 className="font-bold text-base sm:text-lg">Generate Assets</h1>
+            <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+              Select a model for each service, then generate your final content
+            </p>
           </div>
         </div>
 

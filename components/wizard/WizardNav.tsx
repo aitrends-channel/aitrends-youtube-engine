@@ -47,9 +47,10 @@ interface WizardNavProps {
   channelName?: string;
   activeOverridePath?: string;
   progressComplete?: boolean;
+  topRightExtra?: React.ReactNode;
 }
 
-export function WizardNav({ projectId, currentState, highestState, channelName, activeOverridePath, progressComplete }: WizardNavProps) {
+export function WizardNav({ projectId, currentState, highestState, channelName, activeOverridePath, progressComplete, topRightExtra }: WizardNavProps) {
   const reached = highestState ?? currentState;
   const router = useRouter();
   const pathname = usePathname();
@@ -227,6 +228,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
     <>
       {/* ── Desktop top-right: Back to Dashboard + Profile ──────────── */}
       <div className="hidden md:flex fixed top-4 right-4 z-50 items-center gap-2">
+        {topRightExtra}
         <button
           onClick={() => router.push("/dashboard")}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
@@ -299,6 +301,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
           </button>
 
           <div className="flex items-center gap-2">
+            {topRightExtra}
             <button
               onClick={() => router.push("/dashboard")}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
