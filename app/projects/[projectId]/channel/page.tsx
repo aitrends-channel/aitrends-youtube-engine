@@ -233,6 +233,7 @@ export default function ChannelPage({ params }: PageProps) {
   const allDone = steps.every((s) => s.status === "done");
   const hasError = steps.some((s) => s.status === "error");
   const isRunning = steps.some((s) => s.status === "running");
+  const isAnalyzed = !!(project?.channel_name && project?.channel_info);
 
   return (
     <div className="flex h-screen overflow-x-hidden">
@@ -262,25 +263,28 @@ export default function ChannelPage({ params }: PageProps) {
                   type="text"
                   placeholder="https://youtube.com/@channelname"
                   value={channelUrl}
-                  onChange={(e) => setChannelUrl(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && !isWorking && runFullAnalysis()}
+                  readOnly={isAnalyzed}
+                  onChange={(e) => !isAnalyzed && setChannelUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && !isWorking && !isAnalyzed && runFullAnalysis()}
                   className="flex-1 min-w-0 px-4 py-2.5 rounded-xl text-sm outline-none transition-all"
                   style={{
                     background: "var(--bg-progress)",
                     border: "1px solid var(--bd-8)",
                     color: "var(--c-90)",
+                    opacity: isAnalyzed ? 0.6 : 1,
+                    cursor: isAnalyzed ? "default" : undefined,
                   }}
-                  onFocus={(e) => { (e.target as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.4)"; }}
+                  onFocus={(e) => { if (!isAnalyzed) (e.target as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.4)"; }}
                   onBlur={(e) => { (e.target as HTMLElement).style.borderColor = "var(--bd-8)"; }}
                 />
                 <button
                   onClick={runFullAnalysis}
-                  disabled={isWorking || !channelUrl.trim()}
+                  disabled={isWorking || !channelUrl.trim() || isAnalyzed}
                   className="shrink-0 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40"
                   style={{
                     background: "oklch(0.72 0.25 285)",
                     color: "var(--bg-page-2)",
-                    boxShadow: isWorking ? "none" : "0 0 16px oklch(0.72 0.25 285 / 0.3)"
+                    boxShadow: isWorking || isAnalyzed ? "none" : "0 0 16px oklch(0.72 0.25 285 / 0.3)"
                   }}
                 >
                   {isWorking ? (
@@ -288,7 +292,7 @@ export default function ChannelPage({ params }: PageProps) {
                       <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                       Running…
                     </span>
-                  ) : "Analyze"}
+                  ) : isAnalyzed ? "Analyzed" : "Analyze"}
                 </button>
               </div>
             </div>
