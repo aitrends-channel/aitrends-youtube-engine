@@ -34,6 +34,7 @@ interface Props {
 
 export function NicheLimitModal({ email, currentPlan, nichesUsed, nicheLimit, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
+  const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
   // Single source of truth: the active flag. When inactive, spots_left
   // comes back as 0 and the UI hides Founder. null = still loading or
   // fetch failed → treat as available so a transient error doesn't strip
@@ -57,6 +58,7 @@ export function NicheLimitModal({ email, currentPlan, nichesUsed, nicheLimit, on
       setError("Payment not configured for this plan. Contact support.");
       return;
     }
+    setLoadingPlanId(planId);
     try { sessionStorage.setItem("dodo_pending_plan", planId); } catch {}
     const callbackUrl = `${window.location.origin}/payment/callback`;
     const url = new URL(base);
@@ -176,18 +178,24 @@ export function NicheLimitModal({ email, currentPlan, nichesUsed, nicheLimit, on
 
                   <button
                     onClick={() => handlePurchase(planId)}
-                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
-                    style={isCurrent ? {
-                      background: "var(--bg-progress)",
-                      color: "var(--c-70)",
-                      border: "1px solid var(--bd-8)",
-                    } : {
+                    disabled={loadingPlanId !== null}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-70 disabled:cursor-not-allowed"
+                    style={{
                       background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
                       color: "var(--c-98)",
                     }}
                   >
-                    {isCurrent ? <RotateCcw size={12} /> : <ArrowUp size={12} />}
-                    {isCurrent ? "Repurchase" : "Upgrade"}
+                    {loadingPlanId === planId ? (
+                      <>
+                        <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Loading…
+                      </>
+                    ) : (
+                      <>
+                        {isCurrent ? <RotateCcw size={12} /> : <ArrowUp size={12} />}
+                        {isCurrent ? "Repurchase" : "Upgrade"}
+                      </>
+                    )}
                   </button>
                 </div>
               );

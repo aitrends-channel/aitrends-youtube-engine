@@ -60,6 +60,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
   const [spotsLeft, setSpotsLeft] = useState<number | null>(null);
   const [founderActive, setFounderActive] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [subscribing, setSubscribing] = useState(false);
 
   useEffect(() => {
     fetch("/api/founder-spots")
@@ -85,6 +86,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
       setError("Payment not configured for this plan. Contact support.");
       return;
     }
+    setSubscribing(true);
     try { sessionStorage.setItem("dodo_pending_plan", selectedPlan); } catch {}
     const callbackUrl = `${window.location.origin}/payment/callback`;
     const url = new URL(base);
@@ -225,13 +227,21 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
 
         <button
           onClick={handleSubscribe}
-          className="w-full py-3 rounded-xl text-sm font-bold transition-all hover:opacity-90 cursor-pointer"
+          disabled={subscribing}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
           style={{
             background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
             color: "var(--c-98)",
           }}
         >
-          {`Subscribe to ${PLANS.find(p => p.id === selectedPlan)?.name}`}
+          {subscribing ? (
+            <>
+              <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              Loading…
+            </>
+          ) : (
+            `Subscribe to ${PLANS.find(p => p.id === selectedPlan)?.name}`
+          )}
         </button>
 
         </div>
