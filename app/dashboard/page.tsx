@@ -343,6 +343,25 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
                   }}>
                   {stateLabel}
                 </span>
+                {isComplete && (
+                  <span
+                    role="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const link = document.createElement("a");
+                      link.href = "/demo/assemble/Heclus demo video.mp4";
+                      link.download = "Heclus demo video.mp4";
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }}
+                    className="p-1 rounded-lg transition-all hover:opacity-90"
+                    style={{ color: "oklch(0.65 0.15 145)", cursor: "pointer" }}
+                    title="Download assembled video"
+                  >
+                    <Download size={13} />
+                  </span>
+                )}
               </div>
               <p className="text-lg font-semibold leading-snug mb-5" style={{ color: "var(--c-88)" }}>{title}</p>
               <div className="space-y-1.5">
@@ -397,6 +416,9 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
                   <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
                     style={{ background: "oklch(0.3 0 0 / 0.3)", color: "oklch(0.45 0 0)", border: "1px solid oklch(0.3 0 0 / 0.2)" }}>
                     {v.state}
+                  </span>
+                  <span className="p-1 rounded-lg" style={{ color: "oklch(0.45 0 0)" }} title="Download video">
+                    <Download size={13} />
                   </span>
                 </div>
                 <p className="text-lg font-semibold leading-snug mb-5" style={{ color: "var(--c-88)" }}>{v.title}</p>

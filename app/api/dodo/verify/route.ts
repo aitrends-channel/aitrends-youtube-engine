@@ -65,7 +65,7 @@ export async function POST(request: Request) {
     }
     if (claimed === null || typeof claimed !== "number") {
       return NextResponse.json(
-        { error: "Founder promo has ended — all 100 spots have been claimed.", promoEnded: true },
+        { error: "Founder promo has ended — all spots have been claimed.", promoEnded: true },
         { status: 409 },
       );
     }

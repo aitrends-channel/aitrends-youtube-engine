@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 
-const FOUNDER_LIMIT = 100;
+// Opt out of static prerendering — without this, Next.js renders this
+// route at build time and Vercel's edge serves the build-time response
+// forever (until the next deploy), so the counter appears frozen.
+export const dynamic = "force-dynamic";
+
+// TEST CONFIGURATION — revert to 100 to restore the original cap.
+// Migration 019 also caps the DB functions at this number.
+const FOUNDER_LIMIT = 1;
 
 export async function GET() {
   // O(1) read from the product_config singleton row — no user list scan.
