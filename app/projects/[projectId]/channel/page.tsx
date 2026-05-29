@@ -2,6 +2,7 @@
 
 import { useState, use, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { AlertCircle } from "lucide-react";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -9,6 +10,132 @@ import { toast } from "sonner";
 import { useProject } from "@/hooks/useProject";
 import type { ChannelInfo } from "@/lib/types";
 import type { SupadataTranscript } from "@/lib/youtube/supadata";
+
+type FailedStage = "channel" | "transcripts" | "analyze";
+type HumanError = { title: string; body: string; hint?: string };
+
+function humanizeAnalysisError(stage: FailedStage, raw: string | null): HumanError {
+  const msg = (raw ?? "").trim();
+  const lower = msg.toLowerCase();
+
+  if (/failed to fetch|networkerror|err_internet|err_network/.test(lower)) {
+    return {
+      title: "Couldn't reach the server",
+      body: "We weren't able to contact the backend.",
+      hint: "Check your internet connection and try again.",
+    };
+  }
+
+  if (stage === "channel") {
+    if (/not found|404|invalid channel|no channel/.test(lower)) {
+      return {
+        title: "Channel not found",
+        body: "We couldn't find a YouTube channel at that URL.",
+        hint: "Double-check the link — formats like youtube.com/@handle or a channel URL work best.",
+      };
+    }
+    if (/quota|rate limit|429/.test(lower)) {
+      return {
+        title: "YouTube quota reached",
+        body: "Our YouTube API quota has been used up for now.",
+        hint: "Please try again in a few hours.",
+      };
+    }
+    if (/401|403|unauthorized|api key/.test(lower)) {
+      return {
+        title: "YouTube rejected the request",
+        body: "Our YouTube API credentials were refused.",
+        hint: "Contact support so we can refresh the key.",
+      };
+    }
+    if (/5\d\d|unavailable|timeout/.test(lower)) {
+      return {
+        title: "YouTube is temporarily unavailable",
+        body: "We couldn't reach YouTube to fetch this channel.",
+        hint: "Wait a moment and try again.",
+      };
+    }
+    return {
+      title: "Couldn't fetch the channel",
+      body: msg || "Something went wrong while loading the channel.",
+      hint: "Try again, or check the channel URL.",
+    };
+  }
+
+  if (stage === "transcripts") {
+    const body = msg.replace(/^transcripts:\s*/i, "");
+    const bodyLower = body.toLowerCase();
+    if (/no transcripts|no captions|no subtitles/.test(bodyLower)) {
+      return {
+        title: "No captions available",
+        body: "None of the recent videos on this channel have captions we can read.",
+        hint: "Try a channel whose videos include subtitles.",
+      };
+    }
+    if (/quota|rate limit|429/.test(bodyLower)) {
+      return {
+        title: "Transcript service is rate-limited",
+        body: "Our transcript provider is throttling requests right now.",
+        hint: "Wait a minute and try again.",
+      };
+    }
+    if (/5\d\d|unavailable|timeout|gateway/.test(bodyLower)) {
+      return {
+        title: "Transcript service is unreachable",
+        body: "Our transcript provider isn't responding.",
+        hint: "Please try again in a moment.",
+      };
+    }
+    return {
+      title: "Couldn't fetch transcripts",
+      body: body || "Something went wrong while collecting captions.",
+      hint: "Try again — this is usually a transient issue.",
+    };
+  }
+
+  if (/anthropic|claude/.test(lower)) {
+    if (/401|invalid api key|unauthorized/.test(lower)) {
+      return {
+        title: "AI authentication failed",
+        body: "Our AI provider rejected the request.",
+        hint: "Contact support so we can refresh the credentials.",
+      };
+    }
+    if (/overloaded|529/.test(lower)) {
+      return {
+        title: "AI provider is overloaded",
+        body: "The AI service is under heavy load.",
+        hint: "Give it a few seconds and try again.",
+      };
+    }
+    if (/rate limit|429/.test(lower)) {
+      return {
+        title: "AI rate limit reached",
+        body: "We've hit our request limit with the AI provider.",
+        hint: "Wait a minute and try again.",
+      };
+    }
+  }
+  if (/token.*(limit|max|exceed)/.test(lower)) {
+    return {
+      title: "Too much content to analyze",
+      body: "The combined transcripts exceeded the AI's input size.",
+      hint: "Try a channel with shorter videos, or contact support.",
+    };
+  }
+  if (/5\d\d|unavailable|timeout/.test(lower)) {
+    return {
+      title: "Analysis service unavailable",
+      body: "Our analysis backend isn't responding right now.",
+      hint: "Wait a moment and try again.",
+    };
+  }
+  return {
+    title: "Analysis failed",
+    body: msg || "We couldn't finish the channel DNA analysis.",
+    hint: "Try again — this is often transient.",
+  };
+}
 
 interface PageProps {
   params: { projectId: string };
@@ -437,12 +564,27 @@ export default function ChannelPage({ params }: PageProps) {
                   Analysis complete — redirecting to script editor...
                 </div>
               )}
-              {hasError && !isRunning && (
-                <div className="mt-2 px-3 py-2 rounded-lg text-sm"
-                  style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.2)", color: "oklch(0.7 0.22 25)" }}>
-                  {analysisError ?? "Something went wrong. Please try again."}
-                </div>
-              )}
+              {hasError && !isRunning && (() => {
+                const failedId = steps.find((s) => s.status === "error")?.id;
+                const stage: FailedStage =
+                  failedId === "channel" ? "channel"
+                    : failedId === "transcripts" ? "transcripts"
+                    : "analyze";
+                const err = humanizeAnalysisError(stage, analysisError);
+                return (
+                  <div className="mt-3 rounded-xl p-4 flex gap-3"
+                    style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)" }}>
+                    <AlertCircle size={20} className="shrink-0 mt-0.5" style={{ color: "oklch(0.65 0.22 25)" }} />
+                    <div className="min-w-0 space-y-1">
+                      <p className="text-sm font-semibold" style={{ color: "oklch(0.78 0.22 25)" }}>{err.title}</p>
+                      <p className="text-sm" style={{ color: "oklch(0.65 0.18 25)" }}>{err.body}</p>
+                      {err.hint && (
+                        <p className="text-xs pt-1" style={{ color: "oklch(0.6 0.10 25)" }}>{err.hint}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
