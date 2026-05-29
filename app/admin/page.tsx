@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
-  DollarSign, SlidersHorizontal,
+  DollarSign, SlidersHorizontal, Sparkles,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import useSWR from "swr";
@@ -194,17 +194,17 @@ function AddUserForm({ onSuccess }: { onSuccess: () => void }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="p-5 rounded-2xl space-y-3"
+    <form onSubmit={handleSubmit} className="p-5 rounded-2xl space-y-3 w-full"
       style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
       <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Email address</label>
-      <div className="flex gap-2">
+      <div className="flex flex-col sm:flex-row gap-2">
         <input
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
           placeholder="user@example.com"
-          className="flex-1 px-3 py-2.5 rounded-lg text-sm outline-none transition-all"
+          className="w-full sm:flex-1 min-w-0 px-3 py-2.5 rounded-lg text-sm outline-none transition-all"
           style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
           onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
           onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
@@ -212,7 +212,7 @@ function AddUserForm({ onSuccess }: { onSuccess: () => void }) {
         <button
           type="submit"
           disabled={adding}
-          className="px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center gap-2"
+          className="shrink-0 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer flex items-center justify-center gap-2 whitespace-nowrap"
           style={{ background: "oklch(0.52 0.20 145)", color: "white" }}
         >
           <UserPlus size={14} />
@@ -668,6 +668,11 @@ export default function AdminPage() {
   );
   const productKeys: ProductApiKey[] = Array.isArray(productKeysRaw) ? productKeysRaw : [];
 
+  const { data: founderSpots } = useSWR<{ active: boolean; spots_left: number; limit: number }>(
+    authChecked ? "/api/founder-spots" : null,
+    fetcher,
+  );
+
   const [removing, setRemoving] = useState<string | null>(null);
   const [usersPage, setUsersPage] = useState(1);
   const [projectsPage, setProjectsPage] = useState(1);
@@ -675,25 +680,6 @@ export default function AdminPage() {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [hoveredRevIdx, setHoveredRevIdx] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState("stats");
-  const [tabsFixed, setTabsFixed] = useState(false);
-  const tabsRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!authChecked) return;
-    const tabs = tabsRef.current;
-    if (!tabs) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setTabsFixed(!entry.isIntersecting),
-      { threshold: 0 }
-    );
-    observer.observe(tabs);
-    return () => observer.disconnect();
-  }, [authChecked]);
-
-  function scrollTo(id: string) {
-    setActiveTab(id);
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
 
   async function handleSignOut() {
     const supabase = createSupabaseBrowserClient();
@@ -830,7 +816,7 @@ export default function AdminPage() {
           const tabButtons = (TAB_ITEMS).map(({ id, label, icon: Icon }) => (
             <button
               key={id}
-              onClick={() => scrollTo(id)}
+              onClick={() => setActiveTab(id)}
               className="flex-1 flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all cursor-pointer"
               style={activeTab === id
                 ? { background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.35)" }
@@ -842,46 +828,74 @@ export default function AdminPage() {
           ));
 
           return (
-            <>
-              <div
-                ref={tabsRef}
-                className="flex items-center gap-1 p-1 rounded-xl w-full"
-                style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}
-              >
-                {tabButtons}
-              </div>
-
-              {/* Fixed clone — only shown when original is scrolled out of view */}
-              {tabsFixed && (
-                <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999 }}>
-                  <div className="w-full max-w-6xl mx-auto px-4 sm:px-8 pt-2">
-                    <div
-                      className="flex items-center gap-1 p-1 rounded-xl"
-                      style={{
-                        background: "white",
-                        border: "1px solid oklch(0 0 0 / 0.07)",
-                        boxShadow: "0 8px 32px oklch(0 0 0 / 0.18), 0 2px 8px oklch(0 0 0 / 0.10)",
-                      }}
-                    >
-                      {tabButtons}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </>
+            <div
+              className="flex items-center gap-1 p-1 rounded-xl w-full"
+              style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}
+            >
+              {tabButtons}
+            </div>
           );
         })()}
 
         {/* Stats cards */}
-        <div id="stats" className="rounded-2xl space-y-3" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+        <div id="stats" className="rounded-2xl space-y-3" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "stats" ? undefined : "none" }}>
           <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "oklch(0.50 0 0)" }}>Stats</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-[10px]">
+            <StatCard label="Total Niches"      value={stats?.totalProjects}    icon={FolderOpen}                    />
             <StatCard label="Access Granted"    value={stats?.accessGranted}    icon={Users}         accent="purple" />
             <StatCard label="Active Accounts"   value={stats?.activeAccounts}   icon={UserCheck}                     />
-            <StatCard label="Total Niches"      value={stats?.totalProjects}    icon={FolderOpen}                    />
             <StatCard label="Total Videos"      value={stats?.totalProjects}    icon={Film}                          />
             <StatCard label="Videos in Progress" value={stats?.videosInProgress} icon={Clock}        accent="amber"  />
             <StatCard label="Videos Completed"  value={stats?.completed}        icon={CheckCircle2}  accent="green"  />
+          </div>
+
+          {/* Full-width: Available Founder promo slots */}
+          <div
+            className="flex items-center justify-between gap-3 rounded-xl px-4 py-3"
+            style={{
+              background: founderSpots?.active === false
+                ? "oklch(0.6 0.22 25 / 0.06)"
+                : "oklch(0.55 0.15 145 / 0.06)",
+              border: founderSpots?.active === false
+                ? "1px solid oklch(0.6 0.22 25 / 0.2)"
+                : "1px solid oklch(0.55 0.15 145 / 0.2)",
+            }}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                style={{
+                  background: founderSpots?.active === false ? "oklch(0.6 0.22 25 / 0.12)" : "oklch(0.55 0.15 145 / 0.12)",
+                  color: founderSpots?.active === false ? "oklch(0.55 0.22 25)" : "oklch(0.5 0.15 145)",
+                }}
+              >
+                <Sparkles size={16} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "oklch(0.50 0 0)" }}>
+                  Founders Promo Slots
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "oklch(0.45 0 0)" }}>
+                  {founderSpots
+                    ? `${founderSpots.spots_left} of ${founderSpots.limit} Founder slot${founderSpots.limit === 1 ? "" : "s"} remaining`
+                    : "Loading…"}
+                </p>
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <p
+                className="text-2xl font-bold tabular-nums"
+                style={{
+                  color: founderSpots?.active === false ? "oklch(0.55 0.22 25)" : "oklch(0.20 0 0)",
+                }}
+              >
+                {founderSpots ? founderSpots.spots_left : "—"}
+              </p>
+              <p className="text-[10px] font-medium uppercase tracking-wider mt-0.5"
+                style={{ color: founderSpots?.active === false ? "oklch(0.55 0.22 25)" : "oklch(0.5 0.15 145)" }}>
+                {founderSpots?.active === false ? "Promo Ended" : "Available"}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -951,7 +965,7 @@ export default function AdminPage() {
           const slotW = n > 1 ? plotW / (n - 1) : plotW;
 
           return (
-            <div id="activity" className="p-5 rounded-2xl space-y-4" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+            <div id="activity" className="p-5 rounded-2xl space-y-4" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "activity" ? undefined : "none" }}>
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "oklch(0.50 0 0)" }}>Activity — {periodLabel}</p>
@@ -1095,7 +1109,7 @@ export default function AdminPage() {
         })()}
 
         {/* Users section */}
-        <section id="users" className="rounded-2xl space-y-5" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+        <section id="users" className="rounded-2xl space-y-5 max-w-full min-w-0" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "users" ? undefined : "none" }}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
               style={{ background: "oklch(0.72 0.25 285 / 0.1)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
@@ -1115,7 +1129,7 @@ export default function AdminPage() {
           ) : users.length === 0 ? (
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No users yet.</div>
           ) : (
-            <div className="rounded-2xl overflow-x-auto"
+            <div className="rounded-2xl overflow-x-auto w-full max-w-full"
               style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
               <table className="w-full border-collapse min-w-[520px]">
                 <thead>
@@ -1188,7 +1202,7 @@ export default function AdminPage() {
         </section>
 
         {/* Projects section */}
-        <section id="projects" className="rounded-2xl space-y-5 pb-[10px]" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+        <section id="projects" className="rounded-2xl space-y-5 pb-[10px] max-w-full min-w-0" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "projects" ? undefined : "none" }}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
               style={{ background: "oklch(0.55 0.15 145 / 0.1)", border: "1px solid oklch(0.55 0.15 145 / 0.2)" }}>
@@ -1206,7 +1220,7 @@ export default function AdminPage() {
           ) : projects.length === 0 ? (
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No projects yet.</div>
           ) : (
-            <div className="rounded-2xl overflow-x-auto"
+            <div className="rounded-2xl overflow-x-auto w-full max-w-full"
               style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
               <table className="w-full border-collapse min-w-[640px]">
                 <thead>
@@ -1342,7 +1356,7 @@ export default function AdminPage() {
           const slotW = n > 1 ? plotW / (n - 1) : plotW;
 
           return (
-            <section id="revenue" className="rounded-2xl space-y-5" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+            <section id="revenue" className="rounded-2xl space-y-5" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "revenue" ? undefined : "none" }}>
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
                   style={{ background: "oklch(0.55 0.18 65 / 0.1)", border: "1px solid oklch(0.55 0.18 65 / 0.2)" }}>
@@ -1500,7 +1514,9 @@ export default function AdminPage() {
         })()}
 
         {/* Setup section — product-wide API key management */}
-        <SetupSection productKeys={productKeys} keysLoading={keysLoading} mutateKeys={mutateKeys} />
+        {activeTab === "setup" && (
+          <SetupSection productKeys={productKeys} keysLoading={keysLoading} mutateKeys={mutateKeys} />
+        )}
       </main>
     </div>
   );
