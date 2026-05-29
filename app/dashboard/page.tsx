@@ -977,7 +977,7 @@ export default function HomePage() {
                             </p>
                           </div>
                           <div className="flex flex-col items-center gap-1.5 shrink-0">
-                            {isAdmin && (
+                            {unlimited && (
                               <span
                                 className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider"
                                 style={{
@@ -1004,7 +1004,7 @@ export default function HomePage() {
                               <PieRing id="nicheGrad" pct={nichePct} color={nicheColor}
                                 centerText={`${nichesUsed}/${nicheLimit}`} />
                             )}
-                            {!isAdmin && (
+                            {!unlimited && (
                               <span
                                 className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider"
                                 style={{

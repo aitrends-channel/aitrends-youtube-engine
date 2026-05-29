@@ -92,6 +92,7 @@ export default function ChannelPage({ params }: PageProps) {
   const [topicHint, setTopicHint] = useState("");
   const [customTopic, setCustomTopic] = useState("");
   const [isWorking, setIsWorking] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState("");
   const [showNicheLimitModal, setShowNicheLimitModal] = useState(false);
   const [limitInfo, setLimitInfo] = useState<{ nichesUsed: number; nicheLimit: number; currentPlan: string } | null>(null);
@@ -127,6 +128,7 @@ export default function ChannelPage({ params }: PageProps) {
   async function runFullAnalysis() {
     if (!channelUrl.trim()) return;
     setIsWorking(true);
+    setAnalysisError(null);
     setSteps((prev) => prev.map((s) => ({ ...s, status: "idle" })));
 
     let fetchedInfo: ChannelInfo | null = null;
@@ -147,7 +149,9 @@ export default function ChannelPage({ params }: PageProps) {
       setStep("channel", "done");
     } catch (err) {
       setStep("channel", "error");
-      toast.error(err instanceof Error ? err.message : "Failed to fetch channel");
+      const msg = err instanceof Error ? err.message : "Failed to fetch channel";
+      setAnalysisError(msg);
+      toast.error(msg);
       setIsWorking(false);
       return;
     }
@@ -156,7 +160,9 @@ export default function ChannelPage({ params }: PageProps) {
     setStep("transcripts", "running");
     if (!fetchedInfo!.topVideos.length) {
       setStep("transcripts", "error");
-      toast.error("No videos found for this channel");
+      const msg = "No videos found for this channel";
+      setAnalysisError(msg);
+      toast.error(msg);
       setIsWorking(false);
       return;
     } else {
@@ -174,6 +180,7 @@ export default function ChannelPage({ params }: PageProps) {
       } catch (err) {
         setStep("transcripts", "error");
         const msg = err instanceof Error ? err.message : "Transcript fetch failed";
+        setAnalysisError(`Transcripts: ${msg}`);
         toast.error(`Transcripts: ${msg}`);
         setIsWorking(false);
         return;
@@ -281,7 +288,9 @@ export default function ChannelPage({ params }: PageProps) {
     } catch (err) {
       setStep("analyze", "error");
       setStep("dna", "error");
-      toast.error(err instanceof Error ? err.message : "Analysis failed");
+      const msg = err instanceof Error ? err.message : "Analysis failed";
+      setAnalysisError(msg);
+      toast.error(msg);
     } finally {
       setIsWorking(false);
     }
@@ -431,7 +440,7 @@ export default function ChannelPage({ params }: PageProps) {
               {hasError && !isRunning && (
                 <div className="mt-2 px-3 py-2 rounded-lg text-sm"
                   style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.2)", color: "oklch(0.7 0.22 25)" }}>
-                  Some steps failed. Check the errors above and try again.
+                  {analysisError ?? "Something went wrong. Please try again."}
                 </div>
               )}
             </div>

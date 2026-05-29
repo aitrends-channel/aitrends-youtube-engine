@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
-  DollarSign, SlidersHorizontal, Sparkles,
+  DollarSign, SlidersHorizontal, Sparkles, RotateCcw,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import useSWR from "swr";
@@ -668,10 +668,31 @@ export default function AdminPage() {
   );
   const productKeys: ProductApiKey[] = Array.isArray(productKeysRaw) ? productKeysRaw : [];
 
-  const { data: founderSpots } = useSWR<{ active: boolean; spots_left: number; limit: number }>(
+  const { data: founderSpots, mutate: mutateFounderSpots } = useSWR<{ active: boolean; spots_left: number; limit: number }>(
     authChecked ? "/api/founder-spots" : null,
     fetcher,
   );
+
+  const [resettingSlots, setResettingSlots] = useState(false);
+  async function handleResetFounderSlots() {
+    if (resettingSlots) return;
+    const limit = founderSpots?.limit ?? 0;
+    if (!window.confirm(
+      `Reset Founder slots?\n\nThis will:\n• Set the counter back to 0 of ${limit}\n• Re-arm the promo so new claims can come in\n• Clear the claims log (old payment_ids can be reused for testing)\n\nProceed?`
+    )) return;
+    setResettingSlots(true);
+    try {
+      const res = await fetch("/api/admin/reset-founder-slots", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `Reset failed (${res.status})`);
+      await mutateFounderSpots();
+      toast.success("Founder slots reset");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Reset failed");
+    } finally {
+      setResettingSlots(false);
+    }
+  }
 
   const [removing, setRemoving] = useState<string | null>(null);
   const [usersPage, setUsersPage] = useState(1);
@@ -882,19 +903,40 @@ export default function AdminPage() {
                 </p>
               </div>
             </div>
-            <div className="text-right shrink-0">
-              <p
-                className="text-2xl font-bold tabular-nums"
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={handleResetFounderSlots}
+                disabled={resettingSlots || !founderSpots}
+                title="Reset slot counter to 0 and clear the claims log"
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
-                  color: founderSpots?.active === false ? "oklch(0.55 0.22 25)" : "oklch(0.20 0 0)",
+                  background: "oklch(0.97 0.005 240)",
+                  border: "1px solid oklch(0.88 0.01 240)",
+                  color: "oklch(0.35 0 0)",
                 }}
               >
-                {founderSpots ? founderSpots.spots_left : "—"}
-              </p>
-              <p className="text-[10px] font-medium uppercase tracking-wider mt-0.5"
-                style={{ color: founderSpots?.active === false ? "oklch(0.55 0.22 25)" : "oklch(0.5 0.15 145)" }}>
-                {founderSpots?.active === false ? "Promo Ended" : "Available"}
-              </p>
+                {resettingSlots ? (
+                  <Spinner size={12} />
+                ) : (
+                  <RotateCcw size={12} />
+                )}
+                Reset Slots
+              </button>
+              <div className="text-right">
+                <p
+                  className="text-2xl font-bold tabular-nums"
+                  style={{
+                    color: founderSpots?.active === false ? "oklch(0.55 0.22 25)" : "oklch(0.20 0 0)",
+                  }}
+                >
+                  {founderSpots ? founderSpots.spots_left : "—"}
+                </p>
+                <p className="text-[10px] font-medium uppercase tracking-wider mt-0.5"
+                  style={{ color: founderSpots?.active === false ? "oklch(0.55 0.22 25)" : "oklch(0.5 0.15 145)" }}>
+                  {founderSpots?.active === false ? "Promo Ended" : "Available"}
+                </p>
+              </div>
             </div>
           </div>
         </div>
