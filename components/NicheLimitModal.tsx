@@ -149,9 +149,8 @@ export function NicheLimitModal({ email, currentPlan, nichesUsed, nicheLimit, on
                   <span
                     className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
                     style={isCurrent ? {
-                      background: "oklch(0.35 0 0)",
-                      color: "var(--c-80)",
-                      border: "1px solid var(--bd-8)",
+                      background: "oklch(0.55 0.15 145)",
+                      color: "white",
                     } : isFounder ? {
                       background: "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
                       color: "white",
@@ -180,7 +179,10 @@ export function NicheLimitModal({ email, currentPlan, nichesUsed, nicheLimit, on
                     onClick={() => handlePurchase(planId)}
                     disabled={loadingPlanId !== null}
                     className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-70 disabled:cursor-not-allowed"
-                    style={{
+                    style={isCurrent ? {
+                      background: "linear-gradient(135deg, oklch(0.55 0.15 145), oklch(0.45 0.15 145))",
+                      color: "white",
+                    } : {
                       background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
                       color: "var(--c-98)",
                     }}
