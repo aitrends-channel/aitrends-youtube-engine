@@ -3,7 +3,7 @@
 import { useState, use, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
-import { SubscriptionModal } from "@/components/SubscriptionModal";
+import { NicheLimitModal } from "@/components/NicheLimitModal";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { toast } from "sonner";
 import { useProject } from "@/hooks/useProject";
@@ -93,7 +93,7 @@ export default function ChannelPage({ params }: PageProps) {
   const [customTopic, setCustomTopic] = useState("");
   const [isWorking, setIsWorking] = useState(false);
   const [userEmail, setUserEmail] = useState("");
-  const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [showNicheLimitModal, setShowNicheLimitModal] = useState(false);
   const [limitInfo, setLimitInfo] = useState<{ nichesUsed: number; nicheLimit: number; currentPlan: string } | null>(null);
 
   useEffect(() => {
@@ -207,7 +207,7 @@ export default function ChannelPage({ params }: PageProps) {
           nicheLimit: created.limit ?? 0,
           currentPlan: created.plan ?? "starter",
         });
-        setShowSubscriptionModal(true);
+        setShowNicheLimitModal(true);
         return;
       }
       if (!created.id) {
@@ -472,21 +472,17 @@ export default function ChannelPage({ params }: PageProps) {
         </div>
       </main>
 
-      {showSubscriptionModal && (
-        <SubscriptionModal
+      {showNicheLimitModal && limitInfo && (
+        <NicheLimitModal
           email={userEmail}
-          onClose={() => setShowSubscriptionModal(false)}
+          currentPlan={limitInfo.currentPlan}
+          nichesUsed={limitInfo.nichesUsed}
+          nicheLimit={limitInfo.nicheLimit}
+          onClose={() => setShowNicheLimitModal(false)}
           onSuccess={() => {
-            setShowSubscriptionModal(false);
-            // Plan changed — return to dashboard so the new limit refreshes.
+            setShowNicheLimitModal(false);
             router.push("/dashboard");
           }}
-          context={limitInfo ? {
-            type: "niche-limit",
-            currentPlan: limitInfo.currentPlan,
-            nichesUsed: limitInfo.nichesUsed,
-            nicheLimit: limitInfo.nicheLimit,
-          } : undefined}
         />
       )}
     </div>

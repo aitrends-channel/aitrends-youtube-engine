@@ -66,8 +66,10 @@ export async function POST(request: Request) {
 
   if (event === "payment.succeeded") {
     const metadata = { ...baseMetadata, paid: true, paid_at: updatedAt, dodo: dodoMeta };
+    let userId: string | null = null;
     if (existing) {
       await supabase.auth.admin.updateUserById(existing.id, { app_metadata: metadata });
+      userId = existing.id;
     } else {
       const { origin } = new URL(request.url);
       const appUrl = process.env.APP_URL ?? origin;
@@ -76,11 +78,20 @@ export async function POST(request: Request) {
       });
       if (invite?.user) {
         await supabase.auth.admin.updateUserById(invite.user.id, { app_metadata: metadata });
+        userId = invite.user.id;
       } else if (inviteError) {
         return NextResponse.json({ error: inviteError.message }, { status: 500 });
       }
     }
     await supabase.from("allowed_emails").upsert({ email });
+
+    // Reset the niches_used counter so the user gets a fresh allocation
+    // matching their new (or renewed) plan. Covers initial purchase,
+    // repurchase, upgrade, and monthly auto-renewal.
+    if (userId) {
+      await supabase.rpc("reset_niches_used", { uid: userId });
+    }
+
     return NextResponse.json({ success: true, event });
   }
 

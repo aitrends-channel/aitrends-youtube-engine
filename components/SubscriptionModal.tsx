@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { X, Check, Zap, PlayCircle, AlertCircle } from "lucide-react";
+import { X, Check, Zap, PlayCircle } from "lucide-react";
 
 const FOUNDER_LIMIT = 100;
 
@@ -45,30 +45,18 @@ const DODO_PAYMENT_LINKS: Record<string, string> = {
   pro:     process.env.NEXT_PUBLIC_DODO_LINK_PRO     ?? "",
 };
 
-type ModalContext =
-  | { type: "subscribe" }
-  | { type: "niche-limit"; currentPlan: string; nichesUsed: number; nicheLimit: number };
-
 interface Props {
   email: string;
   onClose: () => void;
   onSuccess: () => void;
   defaultPlan?: string;
   hideTryDemo?: boolean;
-  context?: ModalContext;
 }
 
-// When a paid user hits their niche limit, suggest the next tier up.
-function suggestNextPlan(currentPlan: string): string {
-  if (currentPlan === "starter" || currentPlan === "founder") return "pro";
-  return "founder";
-}
 
-export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hideTryDemo, context }: Props) {
+export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hideTryDemo }: Props) {
   const router = useRouter();
-  const isNicheLimit = context?.type === "niche-limit";
-  const computedDefault = defaultPlan ?? (isNicheLimit ? suggestNextPlan(context.currentPlan) : "founder");
-  const [selectedPlan, setSelectedPlan] = useState(computedDefault);
+  const [selectedPlan, setSelectedPlan] = useState(defaultPlan ?? "founder");
   const [spotsLeft, setSpotsLeft] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -113,69 +101,31 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
         <div className="overflow-y-auto p-8" style={{ maxHeight: "90vh" }}>
 
 
-        {isNicheLimit ? (
-          <>
-            <div className="text-center mb-6">
-              <h2 className="text-xl font-bold mb-1" style={{ color: "var(--c-90)" }}>Niche limit reached</h2>
-              <p className="text-sm" style={{ color: "var(--c-45)" }}>
-                You&apos;ve used all {context.nicheLimit} of your <span className="capitalize">{context.currentPlan}</span> plan&apos;s niche slots. Upgrade or renew to keep going — your existing niches stay intact.
-              </p>
-            </div>
+        <div className="text-center mb-6">
+          <h2 className="text-xl font-bold mb-1" style={{ color: "var(--c-90)" }}>Unlock Heclus</h2>
+          <p className="text-sm" style={{ color: "var(--c-45)" }}>Pick the plan that fits your workflow.</p>
+        </div>
 
-            {/* Usage alert (replaces Try Demo when fired due to niche limit) */}
-            <div
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl"
-              style={{
-                background: "oklch(0.6 0.22 25 / 0.08)",
-                border: "1px solid oklch(0.6 0.22 25 / 0.2)",
-                marginBottom: "30px",
-              }}
-            >
-              <div
-                className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                style={{ background: "oklch(0.6 0.22 25 / 0.15)", color: "oklch(0.7 0.22 25)" }}
-              >
-                <AlertCircle size={16} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold" style={{ color: "var(--c-80)" }}>
-                  {context.nichesUsed} / {context.nicheLimit} niches used
-                </p>
-                <p className="text-xs" style={{ color: "var(--c-45)" }}>
-                  Deleted niches still count toward your lifetime plan total.
-                </p>
-              </div>
+        {/* Try Demo */}
+        {!hideTryDemo && <button
+          onClick={() => { onClose(); router.push("/demo/channel"); }}
+          className="w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all hover:opacity-90 cursor-pointer"
+          style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.08)", marginBottom: "30px" }}
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" }}>
+              <PlayCircle size={16} />
             </div>
-          </>
-        ) : (
-          <>
-            <div className="text-center mb-6">
-              <h2 className="text-xl font-bold mb-1" style={{ color: "var(--c-90)" }}>Unlock Heclus</h2>
-              <p className="text-sm" style={{ color: "var(--c-45)" }}>Pick the plan that fits your workflow.</p>
+            <div className="text-left">
+              <p className="text-sm font-semibold" style={{ color: "var(--c-80)" }}>Try end-to-end workflow</p>
+              <p className="text-xs" style={{ color: "var(--c-40)" }}>Explore Heclus with a guided walkthrough — free</p>
             </div>
-
-            {/* Try Demo */}
-            {!hideTryDemo && <button
-              onClick={() => { onClose(); router.push("/demo/channel"); }}
-              className="w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all hover:opacity-90 cursor-pointer"
-              style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.08)", marginBottom: "30px" }}
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-                  style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" }}>
-                  <PlayCircle size={16} />
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-semibold" style={{ color: "var(--c-80)" }}>Try end-to-end workflow</p>
-                  <p className="text-xs" style={{ color: "var(--c-40)" }}>Explore Heclus with a guided walkthrough — free</p>
-                </div>
-              </div>
-              <span className="text-xs font-medium shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>
-                Free →
-              </span>
-            </button>}
-          </>
-        )}
+          </div>
+          <span className="text-xs font-medium shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>
+            Free →
+          </span>
+        </button>}
 
         {/* Plan selector */}
         <div className="grid grid-cols-3 gap-3 mb-6">
@@ -269,7 +219,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
             color: "var(--c-98)",
           }}
         >
-          {`${isNicheLimit ? "Upgrade to" : "Subscribe to"} ${PLANS.find(p => p.id === selectedPlan)?.name}`}
+          {`Subscribe to ${PLANS.find(p => p.id === selectedPlan)?.name}`}
         </button>
 
         </div>

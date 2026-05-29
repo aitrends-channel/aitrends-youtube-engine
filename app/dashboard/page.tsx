@@ -10,6 +10,7 @@ import useSWR, { mutate as globalMutate } from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
+import { NicheLimitModal } from "@/components/NicheLimitModal";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
@@ -113,14 +114,24 @@ function timeAgo(date: string) {
 function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: { onSubscribe: () => void; demoProgress: DemoProgress; demoNicheCreated: boolean }) {
   const router = useRouter();
   const [hoveredBar, setHoveredBar] = useState(false);
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
+
+  // Prefetch the demo entry + the current resumable demo step so navigation
+  // feels immediate. The parent already prefetches /demo/channel, but this
+  // catches the resumable href (different per progress) as well.
+  const step       = Math.min(demoProgress.highestStep, 7);
+  const href       = DEMO_STEP_HREFS[step];
+
+  useEffect(() => {
+    router.prefetch("/demo/channel");
+    if (href) router.prefetch(href);
+  }, [router, href]);
 
   const hasStartedDemo = demoNicheCreated || demoProgress.topic !== "" || demoProgress.highestStep > 0;
 
-  const step       = Math.min(demoProgress.highestStep, 7);
   const isComplete = step === 7;
   const progress   = Math.round(((step + 1) / 8) * 100);
   const stateLabel = DEMO_STEP_LABELS[step];
-  const href       = DEMO_STEP_HREFS[step];
   const title      = demoProgress.topic || DEMO_DEFAULT_TOPIC;
 
   const total     = hasStartedDemo ? 1 : 0;
@@ -165,17 +176,17 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
             <div>
               <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{completed}</p>
               <p className="text-xs" style={{ color: "var(--c-42)" }}>Completed</p>
-              <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>{Math.round((completed / total) * 100)}% of total</p>
+              <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>{total > 0 ? `${Math.round((completed / total) * 100)}% of total` : "0%"}</p>
             </div>
-            <DemoPieRing id="dcComp" pct={completed / total} color="#5bc48a" centerText={`${Math.round((completed / total) * 100)}%`} />
+            <DemoPieRing id="dcComp" pct={total > 0 ? completed / total : 0} color="#5bc48a" centerText={total > 0 ? `${Math.round((completed / total) * 100)}%` : "0%"} />
           </div>
           <div className="rounded-xl px-5 py-4 flex items-center justify-between" style={cardStyle}>
             <div>
               <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{inProg}</p>
               <p className="text-xs" style={{ color: "var(--c-42)" }}>In Progress</p>
-              <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>{Math.round((inProg / total) * 100)}% of total</p>
+              <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>{total > 0 ? `${Math.round((inProg / total) * 100)}% of total` : "0%"}</p>
             </div>
-            <DemoPieRing id="dcProg" pct={inProg / total} color="#f0a855" centerText={`${Math.round((inProg / total) * 100)}%`} />
+            <DemoPieRing id="dcProg" pct={total > 0 ? inProg / total : 0} color="#f0a855" centerText={total > 0 ? `${Math.round((inProg / total) * 100)}%` : "0%"} />
           </div>
           <div className="rounded-xl px-5 py-4 flex items-center justify-between" style={cardStyle}>
             <div>
@@ -268,11 +279,12 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
           <p className="text-xs mb-6" style={{ color: "var(--c-30)" }}>Try the demo to see how a niche looks, or subscribe to create your first one.</p>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => router.push("/demo/channel")}
-              className="px-4 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 cursor-pointer"
+              onClick={() => { setNavigatingTo("try-demo"); router.push("/demo/channel"); }}
+              disabled={navigatingTo === "try-demo"}
+              className="px-4 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-60 cursor-pointer"
               style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
             >
-              Try demo →
+              {navigatingTo === "try-demo" ? "Loading…" : "Try demo →"}
             </button>
             <button
               onClick={onSubscribe}
@@ -315,8 +327,9 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <button
-              onClick={() => router.push(href)}
-              className="text-left p-4 sm:p-6 rounded-2xl transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+              onClick={() => { setNavigatingTo("resume-demo"); router.push(href); }}
+              disabled={navigatingTo === "resume-demo"}
+              className="text-left p-4 sm:p-6 rounded-2xl transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer disabled:opacity-70"
               style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)"; }}
@@ -417,7 +430,16 @@ export default function HomePage() {
   const [demoNicheCreated, setDemoNicheCreated] = useState(false);
   const [userEmail, setUserEmail] = useState("");
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
-  const [modalContext, setModalContext] = useState<{ type: "niche-limit"; currentPlan: string; nichesUsed: number; nicheLimit: number } | undefined>(undefined);
+  const [showNicheLimitModal, setShowNicheLimitModal] = useState(false);
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
+
+  // Prefetch the most common destinations so navigation is near-instant once
+  // the user clicks. Forks (/projects/[id]/topic) prefetch via the dynamic
+  // segment's shared bundle.
+  useEffect(() => {
+    router.prefetch("/projects/new/channel");
+    router.prefetch("/demo/channel");
+  }, [router]);
   const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string | undefined>(undefined);
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
@@ -584,18 +606,13 @@ export default function HomePage() {
   }
 
   function doCreateProject() {
+    setNavigatingTo("new-niche");
     router.push("/projects/new/channel");
   }
 
   function createProject() {
     if (atNicheLimit && nicheLimit !== null) {
-      setModalContext({
-        type: "niche-limit",
-        currentPlan: usage?.plan ?? "starter",
-        nichesUsed,
-        nicheLimit,
-      });
-      setShowSubscriptionModal(true);
+      setShowNicheLimitModal(true);
       return;
     }
     requireSubscription(doCreateProject);
@@ -603,6 +620,7 @@ export default function HomePage() {
 
   function doCreateVideoForChannel(group: ChannelGroup) {
     const source = [...group.projects].sort((a, b) => b.current_state - a.current_state)[0];
+    setNavigatingTo(`new-video-${group.channelName}`);
     router.push(`/projects/new-fork/topic?from=${source.id}`);
   }
 
@@ -785,15 +803,15 @@ export default function HomePage() {
           </div>
           <button
             onClick={createProject}
-            disabled={creating || !authReady}
+            disabled={creating || !authReady || navigatingTo === "new-niche"}
             className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
           >
             <span className="w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
               style={{ background: "white", color: "oklch(0.55 0.15 145)" }}>
-              {creating ? "…" : "+"}
+              {creating || navigatingTo === "new-niche" ? "…" : "+"}
             </span>
-            <span className="hidden sm:inline">{creating ? "Creating…" : "Niche"}</span>
+            <span className="hidden sm:inline">{navigatingTo === "new-niche" ? "Loading…" : creating ? "Creating…" : "Niche"}</span>
           </button>
         </div>
       </header>
@@ -801,25 +819,40 @@ export default function HomePage() {
       <main className="flex-1 w-full px-4 sm:px-8 lg:px-24 py-6 sm:py-12 space-y-8 sm:space-y-12">
 
         {/* ── Demo banner for free users ──────────────────────────────── */}
-        {showDemo && (
-          <div
-            className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 py-3 rounded-xl text-sm"
-            style={{
-              background: "oklch(0.72 0.25 285 / 0.08)",
-              border: "1px solid oklch(0.72 0.25 285 / 0.2)",
-              color: "var(--c-65)",
-            }}
-          >
-            <span>This dashboard is a <strong style={{ color: "oklch(0.85 0.12 285)" }}>demo</strong> — subscribe to populate it with your real data.</span>
-            <button
-              onClick={() => setShowSubscriptionModal(true)}
-              className="shrink-0 w-full sm:w-auto px-4 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
-              style={{ background: "oklch(0.72 0.25 285)", color: "oklch(0.06 0 0)" }}
+        {showDemo && (() => {
+          const hasStartedDemo = demoNicheCreated || demoProgress.channelDone || demoProgress.topic !== "" || demoProgress.highestStep > 0;
+          return (
+            <div
+              className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-5 py-3 rounded-xl text-sm"
+              style={{
+                background: "oklch(0.72 0.25 285 / 0.08)",
+                border: "1px solid oklch(0.72 0.25 285 / 0.2)",
+                color: "var(--c-65)",
+              }}
             >
-              Subscribe Now →
-            </button>
-          </div>
-        )}
+              <span>This dashboard is a <strong style={{ color: "oklch(0.85 0.12 285)" }}>demo</strong> — subscribe to populate it with your real data.</span>
+              <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+                {!hasStartedDemo && (
+                  <button
+                    onClick={() => { setNavigatingTo("try-demo"); router.push("/demo/channel"); }}
+                    disabled={navigatingTo === "try-demo"}
+                    className="flex-1 sm:flex-initial px-4 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-60"
+                    style={{ background: "transparent", color: "var(--c-70)", border: "1px solid oklch(0.72 0.25 285 / 0.35)" }}
+                  >
+                    {navigatingTo === "try-demo" ? "Loading…" : "Try Demo →"}
+                  </button>
+                )}
+                <button
+                  onClick={() => setShowSubscriptionModal(true)}
+                  className="flex-1 sm:flex-initial px-4 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "oklch(0.06 0 0)" }}
+                >
+                  Subscribe Now →
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
         {showDemo ? (
           <DemoDashboardContent onSubscribe={() => setShowSubscriptionModal(true)} demoProgress={demoProgress} demoNicheCreated={demoNicheCreated} />
@@ -1257,11 +1290,11 @@ export default function HomePage() {
                       </button>
                       <button
                         onClick={() => createVideoForChannel(group)}
-                        disabled={creating || !authReady}
+                        disabled={creating || !authReady || navigatingTo === `new-video-${group.channelName}`}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
                         style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
                       >
-                        + New Video
+                        {navigatingTo === `new-video-${group.channelName}` ? "Loading…" : "+ New Video"}
                       </button>
                     </div>
                   </div>
@@ -1434,11 +1467,11 @@ export default function HomePage() {
               )}
               <button
                 onClick={createProject}
-                disabled={creating || !authReady}
+                disabled={creating || !authReady || navigatingTo === "new-niche"}
                 className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
                 style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
               >
-                {creating ? "Creating…" : isPaid || isAdmin ? "New Project →" : "Subscribe & Start →"}
+                {navigatingTo === "new-niche" ? "Loading…" : creating ? "Creating…" : isPaid || isAdmin ? "New Project →" : "Subscribe & Start →"}
               </button>
             </div>
           </div>
@@ -1491,8 +1524,18 @@ export default function HomePage() {
           email={userEmail}
           defaultPlan={selectedPlan}
           hideTryDemo={demoNicheCreated || demoProgress.channelDone || demoProgress.topic !== "" || demoProgress.highestStep > 0}
-          context={modalContext}
-          onClose={() => { setShowSubscriptionModal(false); setPendingAction(null); setModalContext(undefined); }}
+          onClose={() => { setShowSubscriptionModal(false); setPendingAction(null); }}
+          onSuccess={handleSubscriptionSuccess}
+        />
+      )}
+
+      {showNicheLimitModal && nicheLimit !== null && (
+        <NicheLimitModal
+          email={userEmail}
+          currentPlan={usage?.plan ?? "starter"}
+          nichesUsed={nichesUsed}
+          nicheLimit={nicheLimit}
+          onClose={() => setShowNicheLimitModal(false)}
           onSuccess={handleSubscriptionSuccess}
         />
       )}
