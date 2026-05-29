@@ -39,20 +39,34 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Payment not successful (status: ${result.status})` }, { status: 400 });
   }
 
+  // Cross-check the paid amount against the claimed plan's price.
+  // Dodo reports amounts in the smallest currency unit (cents).
+  // Configurable via env so prices can change without redeploy.
+  const paidCents = Number(result.total_amount ?? result.amount ?? 0);
+  const PLAN_PRICES_CENTS: Record<string, number> = {
+    starter: Number(process.env.DODO_STARTER_PRICE_CENTS ?? 1900),  // $19
+    founder: Number(process.env.DODO_FOUNDER_PRICE_CENTS ?? 4000),  // $40
+    pro:     Number(process.env.DODO_PRO_PRICE_CENTS ?? 4900),      // $49
+  };
+  const claimedPlanPrice = PLAN_PRICES_CENTS[plan ?? ""];
+
+  if (paidCents > 0 && claimedPlanPrice > 0 && paidCents < claimedPlanPrice) {
+    // Try to identify which plan the amount actually matches — helps support
+    // figure out the right correction without spelunking through Dodo logs.
+    const actualPlan = Object.entries(PLAN_PRICES_CENTS).find(([, cents]) => paidCents === cents)?.[0];
+    return NextResponse.json({
+      error: actualPlan
+        ? `Plan mismatch: paid amount ($${paidCents / 100}) matches '${actualPlan}', not '${plan}'. Contact support to correct.`
+        : `Paid amount ($${paidCents / 100}) is below the '${plan}' price ($${claimedPlanPrice / 100}). Contact support.`,
+      paidCents,
+      claimedPlan: plan,
+      actualPlan: actualPlan ?? null,
+    }, { status: 400 });
+  }
+
   const isFounder = plan === "founder";
 
-  // For Founder claims, defend against a user paying for a cheaper plan
-  // and then asking us to mark them as Founder. Dodo reports amounts in
-  // the smallest currency unit (cents). Founder is $40 → 4000 cents.
   if (isFounder) {
-    const paidCents = Number(result.total_amount ?? result.amount ?? 0);
-    const FOUNDER_PRICE_CENTS = Number(process.env.DODO_FOUNDER_PRICE_CENTS ?? 4000);
-    if (paidCents > 0 && paidCents < FOUNDER_PRICE_CENTS) {
-      return NextResponse.json(
-        { error: `Paid amount (${paidCents}) is below the Founder price (${FOUNDER_PRICE_CENTS}).` },
-        { status: 400 },
-      );
-    }
 
     // Atomically claim a Founder spot. Returns NULL if the 100-spot
     // promo is already inactive.

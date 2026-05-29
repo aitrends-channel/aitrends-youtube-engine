@@ -946,42 +946,7 @@ export default function HomePage() {
 
                 return (
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    {/* Total Videos — plain */}
-                    <div className="rounded-xl px-5 py-4"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
-                      <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{total}</p>
-                      <p className="text-xs" style={{ color: "var(--c-42)" }}>Total Videos</p>
-                    </div>
-
-                    {/* Completed */}
-                    <div className="rounded-xl px-5 py-4 flex items-center justify-between"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
-                      <div>
-                        <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{completed}</p>
-                        <p className="text-xs" style={{ color: "var(--c-42)" }}>Completed</p>
-                        <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>
-                          {total > 0 ? `${Math.round(completedPct * 100)}% of total` : "0%"}
-                        </p>
-                      </div>
-                      <PieRing id="compGrad" pct={completedPct} color="#5bc48a"
-                        centerText={total > 0 ? `${Math.round(completedPct * 100)}%` : "0%"} />
-                    </div>
-
-                    {/* In Progress */}
-                    <div className="rounded-xl px-5 py-4 flex items-center justify-between"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
-                      <div>
-                        <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{inProgress}</p>
-                        <p className="text-xs" style={{ color: "var(--c-42)" }}>In Progress</p>
-                        <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>
-                          {total > 0 ? `${Math.round(inProgressPct * 100)}% of total` : "0%"}
-                        </p>
-                      </div>
-                      <PieRing id="progGrad" pct={inProgressPct} color="#f0a855"
-                        centerText={total > 0 ? `${Math.round(inProgressPct * 100)}%` : "0%"} />
-                    </div>
-
-                    {/* Niches Used (lifetime — deletions don't decrement) */}
+                    {/* Niches Used (lifetime — deletions don't decrement) — first */}
                     {(() => {
                       const planLabel = isAdmin
                         ? "Admin"
@@ -1028,6 +993,41 @@ export default function HomePage() {
                         </div>
                       );
                     })()}
+
+                    {/* Total Videos — plain */}
+                    <div className="rounded-xl px-5 py-4"
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                      <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{total}</p>
+                      <p className="text-xs" style={{ color: "var(--c-42)" }}>Total Videos</p>
+                    </div>
+
+                    {/* Completed */}
+                    <div className="rounded-xl px-5 py-4 flex items-center justify-between"
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                      <div>
+                        <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{completed}</p>
+                        <p className="text-xs" style={{ color: "var(--c-42)" }}>Completed</p>
+                        <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>
+                          {total > 0 ? `${Math.round(completedPct * 100)}% of total` : "0%"}
+                        </p>
+                      </div>
+                      <PieRing id="compGrad" pct={completedPct} color="#5bc48a"
+                        centerText={total > 0 ? `${Math.round(completedPct * 100)}%` : "0%"} />
+                    </div>
+
+                    {/* In Progress */}
+                    <div className="rounded-xl px-5 py-4 flex items-center justify-between"
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                      <div>
+                        <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{inProgress}</p>
+                        <p className="text-xs" style={{ color: "var(--c-42)" }}>In Progress</p>
+                        <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>
+                          {total > 0 ? `${Math.round(inProgressPct * 100)}% of total` : "0%"}
+                        </p>
+                      </div>
+                      <PieRing id="progGrad" pct={inProgressPct} color="#f0a855"
+                        centerText={total > 0 ? `${Math.round(inProgressPct * 100)}%` : "0%"} />
+                    </div>
                   </div>
                 );
               })()}

@@ -31,9 +31,18 @@ function CallbackContent() {
     }
 
     (async () => {
-      let plan = "pro";
-      try { plan = sessionStorage.getItem("dodo_pending_plan") ?? "pro"; } catch {}
-      try { sessionStorage.removeItem("dodo_pending_plan"); } catch {}
+      // Read the plan the user selected before redirecting to Dodo.
+      // Do NOT remove it until verify succeeds — on a transient failure +
+      // page refresh, we'd lose the selection and a fallback default could
+      // mark the user on the wrong tier even though they paid for another.
+      let plan: string | null = null;
+      try { plan = sessionStorage.getItem("dodo_pending_plan"); } catch {}
+
+      if (!plan) {
+        setStage("failed");
+        setErrorMsg("Plan selection was lost. Please contact support with your payment ID — do not retry payment.");
+        return;
+      }
 
       try {
         const res = await fetch("/api/dodo/verify", {
@@ -52,6 +61,9 @@ function CallbackContent() {
         setErrorMsg("Could not reach verification service. Contact support.");
         return;
       }
+
+      // Only clear the pending plan after verification confirmed success.
+      try { sessionStorage.removeItem("dodo_pending_plan"); } catch {}
 
       const supabase = createSupabaseBrowserClient();
       await supabase.auth.refreshSession();
