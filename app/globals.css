@@ -224,6 +224,42 @@
   html {
     @apply font-sans;
   }
+
+  /* Tailwind v4 drops the browser default pointer cursor on buttons.
+     Restore it for every interactive element across the app so users
+     always get the pointing-hand affordance on hover. */
+  button,
+  a[href],
+  summary,
+  label[for],
+  select,
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"],
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="file"],
+  [role="button"],
+  [role="link"],
+  [role="tab"],
+  [role="menuitem"],
+  [role="option"],
+  [role="switch"],
+  [role="checkbox"],
+  [role="radio"] {
+    cursor: pointer;
+  }
+
+  /* Disabled / aria-disabled interactives should signal "no" instead. */
+  button:disabled,
+  input:disabled,
+  select:disabled,
+  textarea:disabled,
+  [aria-disabled="true"],
+  [data-disabled],
+  [data-disabled="true"] {
+    cursor: not-allowed;
+  }
 }
 
 /* Prevent ANY horizontal overflow from expanding the viewport on mobile */

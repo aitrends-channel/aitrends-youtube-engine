@@ -11,6 +11,7 @@ import {
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import useSWR from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
@@ -674,12 +675,9 @@ export default function AdminPage() {
   );
 
   const [resettingSlots, setResettingSlots] = useState(false);
-  async function handleResetFounderSlots() {
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  async function confirmResetFounderSlots() {
     if (resettingSlots) return;
-    const limit = founderSpots?.limit ?? 0;
-    if (!window.confirm(
-      `Reset Founder slots?\n\nThis will:\n• Set the counter back to 0 of ${limit}\n• Re-arm the promo so new claims can come in\n• Clear the claims log (old payment_ids can be reused for testing)\n\nProceed?`
-    )) return;
     setResettingSlots(true);
     try {
       const res = await fetch("/api/admin/reset-founder-slots", { method: "POST" });
@@ -687,6 +685,7 @@ export default function AdminPage() {
       if (!res.ok) throw new Error(json.error ?? `Reset failed (${res.status})`);
       await mutateFounderSpots();
       toast.success("Founder slots reset");
+      setResetConfirmOpen(false);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Reset failed");
     } finally {
@@ -903,36 +902,32 @@ export default function AdminPage() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-end gap-3 shrink-0">
               <button
                 type="button"
-                onClick={handleResetFounderSlots}
-                disabled={resettingSlots || !founderSpots}
+                onClick={() => setResetConfirmOpen(true)}
+                disabled={!founderSpots}
                 title="Reset slot counter to 0 and clear the claims log"
-                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[10px] font-semibold uppercase tracking-wider transition disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{
                   background: "oklch(0.97 0.005 240)",
                   border: "1px solid oklch(0.88 0.01 240)",
                   color: "oklch(0.35 0 0)",
                 }}
               >
-                {resettingSlots ? (
-                  <Spinner size={12} />
-                ) : (
-                  <RotateCcw size={12} />
-                )}
+                <RotateCcw size={10} />
                 Reset Slots
               </button>
-              <div className="text-right">
+              <div className="flex flex-col items-center text-center">
                 <p
-                  className="text-2xl font-bold tabular-nums"
+                  className="text-2xl font-bold tabular-nums leading-none"
                   style={{
                     color: founderSpots?.active === false ? "oklch(0.55 0.22 25)" : "oklch(0.20 0 0)",
                   }}
                 >
                   {founderSpots ? founderSpots.spots_left : "—"}
                 </p>
-                <p className="text-[10px] font-medium uppercase tracking-wider mt-0.5"
+                <p className="text-[10px] font-medium uppercase tracking-wider mt-1 leading-none"
                   style={{ color: founderSpots?.active === false ? "oklch(0.55 0.22 25)" : "oklch(0.5 0.15 145)" }}>
                   {founderSpots?.active === false ? "Promo Ended" : "Available"}
                 </p>
@@ -1560,6 +1555,48 @@ export default function AdminPage() {
           <SetupSection productKeys={productKeys} keysLoading={keysLoading} mutateKeys={mutateKeys} />
         )}
       </main>
+
+      <Dialog
+        open={resetConfirmOpen}
+        onOpenChange={(open) => { if (!open && !resettingSlots) setResetConfirmOpen(false); }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Reset Founder slots?</DialogTitle>
+            <DialogDescription>This will:</DialogDescription>
+          </DialogHeader>
+          <ul className="space-y-1 pl-5 list-disc text-sm" style={{ color: "var(--c-55)" }}>
+            <li>
+              Set the counter back to <span className="font-semibold">0 of {founderSpots?.limit ?? 0}</span>
+            </li>
+            <li>Re-arm the promo so new claims can come in</li>
+            <li>Clear the claims log so old payment IDs can be reused for testing</li>
+          </ul>
+          <DialogFooter>
+            <button
+              onClick={() => setResetConfirmOpen(false)}
+              disabled={resettingSlots}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmResetFounderSlots}
+              disabled={resettingSlots}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
+            >
+              {resettingSlots ? (
+                <span className="inline-flex items-center justify-center gap-2">
+                  <Spinner size={14} className="text-white" />
+                  Resetting…
+                </span>
+              ) : "Reset Slots"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
