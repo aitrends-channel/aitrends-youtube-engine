@@ -7,8 +7,8 @@ import { supabase } from "@/lib/supabase/client";
 export const dynamic = "force-dynamic";
 
 // TEST CONFIGURATION — revert to 100 to restore the original cap.
-// Migration 019 also caps the DB functions at this number.
-const FOUNDER_LIMIT = 1;
+// Migration 020 also caps the DB functions at this number.
+const FOUNDER_LIMIT = 2;
 
 export async function GET() {
   // O(1) read from the product_config singleton row — no user list scan.
