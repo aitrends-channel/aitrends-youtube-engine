@@ -74,12 +74,30 @@ function formatSubscribers(count: number): string {
 }
 
 function parseChannelUrl(channelUrl: string): { type: "id" | "handle" | "username"; value: string } {
+  // Normalise the input so users can paste in whatever form they have.
+  const raw = channelUrl.trim();
+
+  // Bare channel ID: starts with UC, no spaces, length > 20. Skip URL parsing.
+  if (/^UC[\w-]{20,}$/.test(raw)) return { type: "id", value: raw };
+
+  // Bare handle / handle with @ prefix and no path → treat as handle directly.
+  // e.g. "@thebaseEnglish" or "thebaseEnglish"
+  if (/^@?[\w.-]+$/.test(raw) && !raw.includes("/") && !raw.includes(":")) {
+    return { type: "handle", value: raw.replace(/^@/, "") };
+  }
+
+  // Schemeless URL (youtube.com/@foo, www.youtube.com/@foo, m.youtube.com/@foo,
+  // youtu.be/...) — prepend https:// so URL() can parse the path correctly.
+  let normalised = raw;
+  if (!/^https?:\/\//i.test(normalised) && /^(www\.|m\.)?(youtube\.com|youtu\.be)\//i.test(normalised)) {
+    normalised = "https://" + normalised;
+  }
+
   let url: URL;
   try {
-    url = new URL(channelUrl.startsWith("http") ? channelUrl : `https://youtube.com/${channelUrl}`);
+    url = new URL(normalised.startsWith("http") ? normalised : `https://youtube.com/${normalised}`);
   } catch {
-    if (channelUrl.startsWith("UC") && channelUrl.length > 20) return { type: "id", value: channelUrl };
-    return { type: "handle", value: channelUrl.replace(/^@/, "") };
+    return { type: "handle", value: raw.replace(/^@/, "") };
   }
 
   const p = url.pathname;

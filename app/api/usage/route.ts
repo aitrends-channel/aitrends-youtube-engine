@@ -13,7 +13,14 @@ export async function GET() {
 
   const isAdmin = user.email === ADMIN_EMAIL;
   const plan = (user.app_metadata?.plan as string) ?? "starter";
-  const niche_limit = isAdmin ? null : (PLAN_LIMITS[plan] ?? 5);
+  // Use 'in' to distinguish 'pro' (whose limit is legitimately null = unlimited)
+  // from an unknown plan name (which should fall back to the Starter cap of 5).
+  // Plain '?? 5' incorrectly catches Pro's null and converts it to 5.
+  const niche_limit: number | null = isAdmin
+    ? null
+    : plan in PLAN_LIMITS
+      ? PLAN_LIMITS[plan]
+      : 5;
 
   const { data: settings } = await supabase
     .from("app_settings")

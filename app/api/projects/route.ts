@@ -63,7 +63,14 @@ export async function POST(req: Request) {
   // slots — preventing users from exploiting deletion to exceed their plan.
   const isAdmin = user.email === ADMIN_EMAIL;
   const plan = (user.app_metadata?.plan as string) ?? "starter";
-  const limit = isAdmin ? null : (PLAN_LIMITS[plan] ?? 5);
+  // Use 'in' to distinguish 'pro' (whose limit is legitimately null = unlimited)
+  // from an unknown plan name (which should fall back to the Starter cap of 5).
+  // Plain '?? 5' incorrectly catches Pro's null and converts it to 5.
+  const limit: number | null = isAdmin
+    ? null
+    : plan in PLAN_LIMITS
+      ? PLAN_LIMITS[plan]
+      : 5;
 
   const { data: rpcData, error: rpcError } = await supabase
     .rpc("try_use_niche", { uid: user.id, plan_limit: limit })

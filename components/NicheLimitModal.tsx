@@ -91,10 +91,27 @@ export function NicheLimitModal({ email, currentPlan, nichesUsed, nicheLimit, on
       >
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 z-10 p-1.5 rounded-lg transition-opacity hover:opacity-60 cursor-pointer"
-          style={{ color: "var(--c-40)" }}
+          aria-label="Close"
+          title="Close"
+          className="absolute top-4 right-4 z-10 h-8 px-3 rounded-full flex items-center gap-1.5 text-xs font-medium transition-all cursor-pointer hover:scale-105 active:scale-95"
+          style={{
+            background: "oklch(1 0 0 / 0.06)",
+            border: "1px solid oklch(1 0 0 / 0.08)",
+            color: "var(--c-60)",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "oklch(0.6 0.22 25 / 0.15)";
+            e.currentTarget.style.borderColor = "oklch(0.6 0.22 25 / 0.35)";
+            e.currentTarget.style.color = "oklch(0.7 0.22 25)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "oklch(1 0 0 / 0.06)";
+            e.currentTarget.style.borderColor = "oklch(1 0 0 / 0.08)";
+            e.currentTarget.style.color = "var(--c-60)";
+          }}
         >
-          <X size={16} />
+          <X size={14} />
+          Close
         </button>
 
         <div className="overflow-y-auto p-8" style={{ maxHeight: "90vh" }}>

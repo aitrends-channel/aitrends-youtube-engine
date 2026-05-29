@@ -982,18 +982,52 @@ export default function HomePage() {
                     </div>
 
                     {/* Niches Used (lifetime — deletions don't decrement) */}
-                    <div className="rounded-xl px-5 py-4 flex items-center justify-between"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
-                      <div>
-                        <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{nichesUsed}</p>
-                        <p className="text-xs" style={{ color: "var(--c-42)" }}>Niches Used</p>
-                        <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>
-                          {unlimited ? "Unlimited" : `of ${nicheLimit} (lifetime)`}
-                        </p>
-                      </div>
-                      <PieRing id="nicheGrad" pct={nichePct} color={nicheColor}
-                        centerText={unlimited ? "∞" : `${nichesUsed}/${nicheLimit}`} full={unlimited} />
-                    </div>
+                    {(() => {
+                      const planLabel = isAdmin
+                        ? "Admin"
+                        : usage?.plan
+                          ? usage.plan.charAt(0).toUpperCase() + usage.plan.slice(1)
+                          : "Free";
+                      return (
+                        <div className="rounded-xl px-5 py-4 flex items-center justify-between"
+                          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                          <div className="min-w-0">
+                            <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{nichesUsed}</p>
+                            <p className="text-xs" style={{ color: "var(--c-42)" }}>Niches Used</p>
+                            <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                              <span
+                                className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider"
+                                style={{
+                                  background: "oklch(0.72 0.25 285 / 0.12)",
+                                  color: "oklch(0.72 0.25 285)",
+                                  border: "1px solid oklch(0.72 0.25 285 / 0.25)",
+                                }}
+                              >
+                                {planLabel}
+                              </span>
+                              <span className="text-[10px]" style={{ color: "var(--c-35)" }}>
+                                {unlimited ? "· Unlimited" : `· of ${nicheLimit} lifetime`}
+                              </span>
+                            </div>
+                          </div>
+                          {unlimited ? (
+                            <span
+                              className="px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider shrink-0"
+                              style={{
+                                background: "oklch(0.55 0.15 145 / 0.15)",
+                                color: "oklch(0.65 0.15 145)",
+                                border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                              }}
+                            >
+                              Unlimited
+                            </span>
+                          ) : (
+                            <PieRing id="nicheGrad" pct={nichePct} color={nicheColor}
+                              centerText={`${nichesUsed}/${nicheLimit}`} />
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })()}
