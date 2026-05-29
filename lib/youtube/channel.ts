@@ -24,7 +24,7 @@ async function youtubeGet<T>(url: URL): Promise<T> {
 
 async function getYouTubeKeyRow(): Promise<{ id: string; keys: string[]; current_index: number } | null> {
   const { data } = await supabase
-    .from("product_api_keys")
+    .from("product_config")
     .select("id, keys, current_index")
     .eq("service", "youtube_data_api_key")
     .eq("active", true)
@@ -36,7 +36,7 @@ async function getYouTubeKeyRow(): Promise<{ id: string; keys: string[]; current
 async function advanceKey(rowId: string, failedIndex: number, total: number): Promise<void> {
   const next = (failedIndex + 1) % total;
   await supabase
-    .from("product_api_keys")
+    .from("product_config")
     .update({ current_index: next })
     .eq("id", rowId);
 }
@@ -45,7 +45,7 @@ async function recordQuotaUsage(rowId: string, keyIndex: number, units: number):
   const today = new Date().toISOString().slice(0, 10);
 
   const { data: row } = await supabase
-    .from("product_api_keys")
+    .from("product_config")
     .select("keys, quota_tracking")
     .eq("id", rowId)
     .single();
@@ -64,7 +64,7 @@ async function recordQuotaUsage(rowId: string, keyIndex: number, units: number):
     date: today,
   };
 
-  await supabase.from("product_api_keys").update({ quota_tracking: tracking }).eq("id", rowId);
+  await supabase.from("product_config").update({ quota_tracking: tracking }).eq("id", rowId);
 }
 
 function formatSubscribers(count: number): string {

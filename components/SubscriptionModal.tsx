@@ -58,14 +58,28 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState(defaultPlan ?? "founder");
   const [spotsLeft, setSpotsLeft] = useState<number | null>(null);
+  const [founderActive, setFounderActive] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/founder-spots")
       .then(r => r.json())
-      .then(d => setSpotsLeft(d.remaining))
+      .then(d => {
+        if (typeof d.remaining === "number") setSpotsLeft(d.remaining);
+        if (typeof d.active === "boolean") setFounderActive(d.active);
+      })
       .catch(() => {});
   }, []);
+
+  // Hide Founder when confirmed sold out OR promo flag is off.
+  const founderAvailable =
+    (spotsLeft === null || spotsLeft > 0) &&
+    (founderActive === null || founderActive === true);
+
+  // If the default lands on Founder but it's no longer available, fall back to Pro.
+  useEffect(() => {
+    if (selectedPlan === "founder" && !founderAvailable) setSelectedPlan("pro");
+  }, [founderAvailable, selectedPlan]);
 
   function handleSubscribe() {
     const base = DODO_PAYMENT_LINKS[selectedPlan];
@@ -128,8 +142,8 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
         </button>}
 
         {/* Plan selector */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          {PLANS.map((plan) => (
+        <div className={`grid ${founderAvailable ? "grid-cols-3" : "grid-cols-2"} gap-3 mb-6`}>
+          {PLANS.filter((p) => p.id !== "founder" || founderAvailable).map((plan) => (
             <button
               key={plan.id}
               onClick={() => !plan.disabled && setSelectedPlan(plan.id)}

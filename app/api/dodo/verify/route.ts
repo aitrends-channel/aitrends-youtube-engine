@@ -40,6 +40,37 @@ export async function POST(request: Request) {
   }
 
   const isFounder = plan === "founder";
+
+  // For Founder claims, defend against a user paying for a cheaper plan
+  // and then asking us to mark them as Founder. Dodo reports amounts in
+  // the smallest currency unit (cents). Founder is $40 → 4000 cents.
+  if (isFounder) {
+    const paidCents = Number(result.total_amount ?? result.amount ?? 0);
+    const FOUNDER_PRICE_CENTS = Number(process.env.DODO_FOUNDER_PRICE_CENTS ?? 4000);
+    if (paidCents > 0 && paidCents < FOUNDER_PRICE_CENTS) {
+      return NextResponse.json(
+        { error: `Paid amount (${paidCents}) is below the Founder price (${FOUNDER_PRICE_CENTS}).` },
+        { status: 400 },
+      );
+    }
+
+    // Atomically claim a Founder spot. Returns NULL if the 100-spot
+    // promo is already inactive.
+    const { data: claimed, error: claimError } = await supabase
+      .rpc("claim_founder_spot")
+      .single();
+
+    if (claimError) {
+      return NextResponse.json({ error: `Founder claim failed: ${claimError.message}` }, { status: 500 });
+    }
+    if (claimed === null || typeof claimed !== "number") {
+      return NextResponse.json(
+        { error: "Founder promo has ended — all 100 spots have been claimed.", promoEnded: true },
+        { status: 409 },
+      );
+    }
+  }
+
   const planExpiry = isFounder
     ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
     : null;

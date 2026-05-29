@@ -20,7 +20,7 @@ export async function PATCH(
   // Toggle active
   if ("active" in body) {
     const { error } = await supabase
-      .from("product_api_keys")
+      .from("product_config")
       .update({ active: body.active })
       .eq("id", params.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -30,7 +30,7 @@ export async function PATCH(
   // Remove a key by index
   if ("removeKeyIndex" in body) {
     const { data: row } = await supabase
-      .from("product_api_keys")
+      .from("product_config")
       .select("keys, current_index")
       .eq("id", params.id)
       .single();
@@ -39,7 +39,7 @@ export async function PATCH(
     const keys = (row.keys as string[]).filter((_, i) => i !== body.removeKeyIndex);
     const current_index = Math.min(row.current_index, Math.max(0, keys.length - 1));
     const { error } = await supabase
-      .from("product_api_keys")
+      .from("product_config")
       .update({ keys, current_index })
       .eq("id", params.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -49,7 +49,7 @@ export async function PATCH(
   // Reset current_index to 0
   if ("resetIndex" in body) {
     const { error } = await supabase
-      .from("product_api_keys")
+      .from("product_config")
       .update({ current_index: 0 })
       .eq("id", params.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -68,7 +68,7 @@ export async function DELETE(
   if (user.email !== ADMIN_EMAIL) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { error } = await supabase
-    .from("product_api_keys")
+    .from("product_config")
     .delete()
     .eq("id", params.id);
 

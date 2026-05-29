@@ -13,8 +13,9 @@ export async function GET() {
   if (user.email !== ADMIN_EMAIL) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { data, error } = await supabase
-    .from("product_api_keys")
+    .from("product_config")
     .select("id, service, label, keys, current_index, quota_tracking, active, created_at")
+    .neq("service", "_global")
     .order("service", { ascending: true })
     .order("created_at", { ascending: true });
 
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
 
   // Check if a row already exists for this service
   const { data: existing } = await supabase
-    .from("product_api_keys")
+    .from("product_config")
     .select("id, keys")
     .eq("service", service.trim())
     .single();
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
     // Append the new key to the existing array
     const updatedKeys = [...((existing.keys as string[]) ?? []), trimmedKey];
     const { data, error } = await supabase
-      .from("product_api_keys")
+      .from("product_config")
       .update({ keys: updatedKeys })
       .eq("id", existing.id)
       .select()
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
 
   // Create a new row for this service
   const { data, error } = await supabase
-    .from("product_api_keys")
+    .from("product_config")
     .insert({
       service: service.trim(),
       label: label?.trim() || null,

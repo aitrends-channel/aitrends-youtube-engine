@@ -21,8 +21,7 @@ export async function GET(request: Request) {
     paid: metadata.paid === true,
     paid_at: metadata.paid_at ?? null,
     plan: metadata.plan ?? null,
-    subscription_code: metadata.paystack?.subscription_code ?? null,
-    status: metadata.paystack?.status ?? null,
-    paystack: metadata.paystack ?? null,
+    plan_expires_at: metadata.plan_expires_at ?? null,
+    dodo: metadata.dodo ?? null,
   });
 }

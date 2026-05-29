@@ -35,13 +35,18 @@ interface Props {
 export function NicheLimitModal({ email, currentPlan, nichesUsed, nicheLimit, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   // null = still loading or fetch failed; treat as available so we don't
-  // hide Founder on a transient error. Only hide when confirmed sold out.
+  // hide Founder on a transient error. Only hide when confirmed sold out
+  // (remaining === 0 OR the active flag is false).
   const [founderSpotsLeft, setFounderSpotsLeft] = useState<number | null>(null);
+  const [founderActive, setFounderActive] = useState<boolean | null>(null);
 
   useEffect(() => {
     fetch("/api/founder-spots")
       .then((r) => r.json())
-      .then((d) => setFounderSpotsLeft(typeof d.remaining === "number" ? d.remaining : null))
+      .then((d) => {
+        if (typeof d.remaining === "number") setFounderSpotsLeft(d.remaining);
+        if (typeof d.active === "boolean") setFounderActive(d.active);
+      })
       .catch(() => {});
   }, []);
 
@@ -59,9 +64,11 @@ export function NicheLimitModal({ email, currentPlan, nichesUsed, nicheLimit, on
     window.location.href = url.toString();
   }
 
-  // Founder is hidden only when confirmed sold out (0 spots). null = loading
-  // or fetch error → show optimistically so a transient blip doesn't strip it.
-  const founderAvailable = founderSpotsLeft === null || founderSpotsLeft > 0;
+  // Founder is hidden when confirmed sold out OR when the promo flag is off.
+  // null = loading / fetch error → show optimistically.
+  const founderAvailable =
+    (founderSpotsLeft === null || founderSpotsLeft > 0) &&
+    (founderActive === null || founderActive === true);
   const currentRank = PLAN_RANK[currentPlan] ?? 0;
 
   const visiblePlans = (["starter", "founder", "pro"] as const)
