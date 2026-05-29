@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import Image from "next/image";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
@@ -14,8 +14,14 @@ function CallbackContent() {
   const router = useRouter();
   const [stage, setStage] = useState<Stage>("verifying");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Guard against React StrictMode firing this effect twice in dev (and
+  // any other accidental remount). Server idempotency is the real fix,
+  // but this avoids two network roundtrips per legitimate verification.
+  const verifyStartedRef = useRef(false);
 
   useEffect(() => {
+    if (verifyStartedRef.current) return;
+    verifyStartedRef.current = true;
     const status = searchParams.get("status");
     const paymentId = searchParams.get("payment_id");
 

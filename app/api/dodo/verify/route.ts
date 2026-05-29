@@ -68,10 +68,13 @@ export async function POST(request: Request) {
 
   if (isFounder) {
 
-    // Atomically claim a Founder spot. Returns NULL if the 100-spot
-    // promo is already inactive.
+    // Atomically claim a Founder spot, keyed on payment_id for
+    // idempotency. First call for a given payment_id consumes a slot;
+    // duplicate calls (React StrictMode, user reload, network retry,
+    // serverless cold-start retry) return the current count without
+    // touching it. Returns NULL only when the promo is already inactive.
     const { data: claimed, error: claimError } = await supabase
-      .rpc("claim_founder_spot")
+      .rpc("claim_founder_spot", { p_payment_id: payment_id, p_user_id: user.id })
       .single();
 
     if (claimError) {
