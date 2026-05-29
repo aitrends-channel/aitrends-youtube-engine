@@ -65,16 +65,14 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
     fetch("/api/founder-spots")
       .then(r => r.json())
       .then(d => {
-        if (typeof d.remaining === "number") setSpotsLeft(d.remaining);
         if (typeof d.active === "boolean") setFounderActive(d.active);
+        if (typeof d.spots_left === "number") setSpotsLeft(d.spots_left);
       })
       .catch(() => {});
   }, []);
 
-  // Hide Founder when confirmed sold out OR promo flag is off.
-  const founderAvailable =
-    (spotsLeft === null || spotsLeft > 0) &&
-    (founderActive === null || founderActive === true);
+  // Founder visibility gated by the single 'active' flag from the server.
+  const founderAvailable = founderActive === null || founderActive === true;
 
   // If the default lands on Founder but it's no longer available, fall back to Pro.
   useEffect(() => {

@@ -17,12 +17,20 @@ export async function GET() {
     .single();
 
   if (error || !data) {
-    return NextResponse.json({ taken: 0, remaining: FOUNDER_LIMIT, limit: FOUNDER_LIMIT, active: true });
+    // Defensive default: if the DB read fails, claim active=true so a
+    // transient error doesn't strip Founder from the UI optimistically.
+    return NextResponse.json({ active: true, spots_left: FOUNDER_LIMIT, limit: FOUNDER_LIMIT });
   }
 
   const row = data as { taken: number; remaining: number; active: boolean };
+
+  // 'active' is the single source of truth. When inactive, spots_left is
+  // 0 regardless of the underlying counter — that's the value the UI
+  // displays and the value the modals use to decide visibility.
+  const spots_left = row.active ? row.remaining : 0;
+
   return NextResponse.json(
-    { taken: row.taken, remaining: row.remaining, limit: FOUNDER_LIMIT, active: row.active },
+    { active: row.active, spots_left, limit: FOUNDER_LIMIT },
     { headers: { "Cache-Control": "public, max-age=60" } },
   );
 }
