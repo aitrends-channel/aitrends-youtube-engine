@@ -185,9 +185,81 @@ async function errorsResponse() {
   return NextResponse.json({ events: all });
 }
 
-function workerResponse() {
-  return NextResponse.json({
-    events: [],
-    notice: "Worker log integration not yet configured. Connect the Render API or have the worker write to a worker_logs table to surface stdout here.",
-  });
+export interface WorkerEvent {
+  id: string;
+  timestamp: string;
+  level: "error" | "warn" | "info";
+  source: string;
+  message: string;
+}
+
+async function workerResponse() {
+  const apiKey = process.env.RENDER_API_KEY;
+  const ownerId = process.env.RENDER_OWNER_ID;
+  const serviceId = process.env.RENDER_WORKER_SERVICE_ID;
+
+  if (!apiKey || !ownerId || !serviceId) {
+    return NextResponse.json({
+      events: [],
+      notice: "Render API integration not configured. Set RENDER_API_KEY, RENDER_OWNER_ID, and RENDER_WORKER_SERVICE_ID in env.",
+    });
+  }
+
+  // Render's logs API requires a bounded time range. 24h window keeps
+  // the response size sane and matches typical incident-investigation
+  // needs. limit=100 caps the visible list.
+  const end = new Date().toISOString();
+  const start = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  const url = new URL("https://api.render.com/v1/logs");
+  url.searchParams.set("ownerId", ownerId);
+  url.searchParams.set("resource", serviceId);
+  url.searchParams.set("startTime", start);
+  url.searchParams.set("endTime", end);
+  url.searchParams.set("limit", "100");
+  url.searchParams.set("direction", "backward");
+
+  try {
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      return NextResponse.json({
+        events: [] as WorkerEvent[],
+        notice: `Render API ${res.status}: ${body.slice(0, 200)}`,
+      });
+    }
+    const data = await res.json() as {
+      logs?: Array<{
+        id: string;
+        labels?: Array<{ name: string; value: string }>;
+        message: string;
+        timestamp: string;
+      }>;
+    };
+    const events: WorkerEvent[] = (data.logs ?? []).map((l) => {
+      const rawLevel = l.labels?.find((x) => x.name === "level")?.value?.toLowerCase();
+      const level: WorkerEvent["level"] =
+        rawLevel === "error" ? "error"
+        : rawLevel === "warning" || rawLevel === "warn" ? "warn"
+        : "info";
+      const type = l.labels?.find((x) => x.name === "type")?.value;
+      const instance = l.labels?.find((x) => x.name === "instance")?.value;
+      const source = [type, instance && instance.slice(0, 8)].filter(Boolean).join(":") || "worker";
+      return {
+        id: l.id,
+        timestamp: l.timestamp,
+        level,
+        source,
+        message: l.message,
+      };
+    });
+    return NextResponse.json({ events });
+  } catch (err) {
+    return NextResponse.json({
+      events: [] as WorkerEvent[],
+      notice: `Failed to reach Render: ${err instanceof Error ? err.message : String(err)}`,
+    });
+  }
 }

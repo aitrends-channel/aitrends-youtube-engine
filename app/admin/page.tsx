@@ -243,6 +243,13 @@ interface ErrorEvent {
   user_email: string | null;
   project_id: string | null;
 }
+interface WorkerEvent {
+  id: string;
+  timestamp: string;
+  level: "error" | "warn" | "info";
+  source: string;
+  message: string;
+}
 
 const ACTIVITY_LABEL: Record<ActivityEvent["type"], string> = {
   signup: "Signed up",
@@ -272,7 +279,7 @@ const ACTIVITY_BG: Record<ActivityEvent["type"], string> = {
 
 function LogsSection() {
   const [logTab, setLogTab] = useState<LogSubTab>("activity");
-  const { data, isLoading } = useSWR<{ events: (ActivityEvent | ErrorEvent)[]; notice?: string }>(
+  const { data, isLoading } = useSWR<{ events: (ActivityEvent | ErrorEvent | WorkerEvent)[]; notice?: string }>(
     `/api/admin/logs?type=${logTab}`,
     fetcher,
     { revalidateOnFocus: false }
@@ -327,9 +334,13 @@ function LogsSection() {
         <p className="text-xs italic px-3 py-6 text-center" style={{ color: "var(--c-35)" }}>
           No {logTab === "activity" ? "activity" : logTab === "errors" ? "errors" : "worker events"} yet.
         </p>
-      ) : logTab === "errors" || logTab === "worker" ? (
+      ) : logTab === "errors" ? (
         <div className="space-y-2">
           {(events as ErrorEvent[]).map((e) => <ErrorRow key={e.id} event={e} />)}
+        </div>
+      ) : logTab === "worker" ? (
+        <div className="space-y-2">
+          {(events as WorkerEvent[]).map((e) => <WorkerRow key={e.id} event={e} />)}
         </div>
       ) : (
         <div className="space-y-2">
@@ -374,6 +385,27 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
           {summary && <span style={{ color: "var(--c-42)" }}> — {summary}</span>}
         </p>
       </div>
+      <span className="text-xs shrink-0 tabular-nums" style={{ color: "var(--c-42)" }}>
+        {timeAgo(event.timestamp)}
+      </span>
+    </div>
+  );
+}
+
+function WorkerRow({ event }: { event: WorkerEvent }) {
+  const tone = event.level === "error"
+    ? { fg: "oklch(0.65 0.22 25)",  bg: "oklch(0.6 0.22 25 / 0.12)",  border: "oklch(0.6 0.22 25 / 0.15)" }
+    : event.level === "warn"
+    ? { fg: "oklch(0.65 0.18 65)",  bg: "oklch(0.72 0.18 65 / 0.12)", border: "oklch(0.72 0.18 65 / 0.15)" }
+    : { fg: "oklch(0.50 0 0)",      bg: "oklch(0 0 0 / 0.05)",        border: "oklch(0 0 0 / 0.06)" };
+  return (
+    <div className="flex items-start gap-3 px-3 py-2 rounded-xl"
+      style={{ background: "oklch(0 0 0 / 0.02)", border: `1px solid ${tone.border}` }}>
+      <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 mt-0.5"
+        style={{ background: tone.bg, color: tone.fg }}>
+        {event.source}
+      </span>
+      <p className="flex-1 text-sm font-mono break-words" style={{ color: "var(--c-65)" }}>{event.message}</p>
       <span className="text-xs shrink-0 tabular-nums" style={{ color: "var(--c-42)" }}>
         {timeAgo(event.timestamp)}
       </span>
