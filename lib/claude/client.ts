@@ -90,7 +90,7 @@ export async function getAnthropicClient(userId: string): Promise<Anthropic> {
   });
 }
 
-export const MODEL = "claude-haiku-4-5";
+export const MODEL = "claude-sonnet-4-6";
 
 export const SYSTEM_PROMPT = `You are an advanced AI YouTube Content Engine. Your purpose is to analyze YouTube channel transcripts, extract the channel's unique style DNA, and generate fully original content that matches the channel's voice, pacing, and emotional arc.
 
