@@ -18,15 +18,9 @@ interface KeyField {
 
 const KEY_FIELDS: KeyField[] = [
   {
-    key: "anthropic_api_key",
-    label: "Anthropic API Key",
-    description: "Used for Claude AI — script generation, channel analysis, and prompt creation",
-    placeholder: "sk-ant-api03-…",
-  },
-  {
     key: "kie_api_key",
     label: "KIE API Key",
-    description: "Used for TTS voiceover, AI image generation, and video clip generation",
+    description: "Powers Claude AI (scripts & channel analysis), TTS voiceover, image generation, and video clips — all through one provider",
     placeholder: "kie-…",
   },
   {
@@ -38,13 +32,11 @@ const KEY_FIELDS: KeyField[] = [
 ];
 
 interface FormState {
-  anthropic_api_key: string;
   kie_api_key: string;
   elevenlabs_api_key: string;
 }
 
 const EMPTY_FORM: FormState = {
-  anthropic_api_key: "",
   kie_api_key: "",
   elevenlabs_api_key: "",
 };
@@ -393,30 +385,18 @@ export default function SettingsPage() {
             {[
               {
                 num: 1,
-                title: "Anthropic API Key",
-                sub: "Claude AI · scripts & analysis",
-                href: "https://console.anthropic.com",
-                linkLabel: "console.anthropic.com",
-                steps: [
-                  "Sign in and go to API Keys.",
-                  "Click Create Key, name it anything, copy it.",
-                  <>Top up billing with ~$5 — you&apos;re only charged per request.</>,
-                ],
-              },
-              {
-                num: 2,
                 title: "Kie AI API Key",
-                sub: "Voiceovers, images & video clips",
+                sub: "Claude AI, voiceovers, images & video clips",
                 href: "https://kie.ai",
                 linkLabel: "kie.ai",
                 steps: [
                   "Sign in and go to API Keys.",
                   "Create a key, name it, copy it.",
-                  "Top up credits as needed.",
+                  "Top up credits — covers Claude calls plus all media generation.",
                 ],
               },
               {
-                num: 3,
+                num: 2,
                 title: "ElevenLabs API Key",
                 sub: "Caption timing & assembly",
                 href: "https://elevenlabs.io",

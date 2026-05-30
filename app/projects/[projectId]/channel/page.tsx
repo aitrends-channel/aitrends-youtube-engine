@@ -93,6 +93,13 @@ function humanizeAnalysisError(stage: FailedStage, raw: string | null): HumanErr
     };
   }
 
+  if (/credits? insufficient|insufficient credits?|top up|402/.test(lower)) {
+    return {
+      title: "AI credits exhausted",
+      body: "Your KIE balance isn't enough to run this analysis.",
+      hint: "Top up your KIE account at kie.ai and try again.",
+    };
+  }
   if (/anthropic|claude/.test(lower)) {
     if (/401|invalid api key|unauthorized/.test(lower)) {
       return {

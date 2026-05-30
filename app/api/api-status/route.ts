@@ -5,7 +5,6 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 
 export interface ApiStatusResult {
-  anthropic:  { configured: boolean; valid: boolean | null; billingModel: "per-token" };
   kie:        { configured: boolean; valid: boolean | null; credits?: number };
   elevenlabs: { configured: boolean; valid: boolean | null; charUsed?: number; charLimit?: number; tier?: string };
 }
@@ -16,32 +15,16 @@ export async function GET() {
 
   const s = await getSettings(user.id);
 
-  const [anthropic, kie, elevenlabs] = await Promise.all([
-    checkAnthropic(s.anthropic_api_key),
+  const [kie, elevenlabs] = await Promise.all([
     checkKie(s.kie_api_key),
     checkElevenLabs(s.elevenlabs_api_key),
   ]);
 
-  return NextResponse.json({ anthropic, kie, elevenlabs } satisfies ApiStatusResult);
+  return NextResponse.json({ kie, elevenlabs } satisfies ApiStatusResult);
 }
-
-async function checkAnthropic(key: string) {
-  const base = { billingModel: "per-token" as const };
-  if (!key) return { configured: false, valid: null, ...base };
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/models", {
-      headers: { "x-api-key": key, "anthropic-version": "2023-06-01" },
-    });
-    return { configured: true, valid: res.ok, ...base };
-  } catch {
-    return { configured: true, valid: false, ...base };
-  }
-}
-
 
 async function checkKie(key: string) {
   if (!key) return { configured: false, valid: null };
-  // Try known balance endpoints in order
   const endpoints = [
     "/api/v1/account",
     "/api/v1/user/balance",

@@ -1231,7 +1231,6 @@ export default function HomePage() {
               {(() => {
                 const el    = apiStatus?.elevenlabs as { configured: boolean; valid: boolean | null; charUsed?: number; charLimit?: number; tier?: string } | undefined;
                 const kie   = apiStatus?.kie        as { configured: boolean; valid: boolean | null; credits?: number } | undefined;
-                const anth  = apiStatus?.anthropic  as { configured: boolean; valid: boolean | null } | undefined;
 
                 function StatusBadge({ data, color }: { data: { configured: boolean; valid: boolean | null } | undefined; color: string }) {
                   const loading = !apiStatus;
@@ -1274,20 +1273,7 @@ export default function HomePage() {
                 return (
                   <div style={{ marginTop: "40px" }}>
                     <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Keys Status</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-
-                      {/* Anthropic */}
-                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="w-2 h-2 rounded-full" style={{ background: "#c084fc" }} />
-                          <StatusBadge data={anth} color="#c084fc" />
-                        </div>
-                        <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>Anthropic</p>
-                        {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mb-1" style={{ color: "#f0a855" }}>Pending setup</p>}
-                        <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>Claude AI — scripts & analysis</p>
-                        <StaticInfo label="Billing" value="Pay-per-token" color="#c084fc" />
-                        <p className="text-[10px] mt-0.5" style={{ color: "var(--c-30)" }}>No credit pool — billed by usage</p>
-                      </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
                       {/* KIE */}
                       <div className="rounded-xl px-5 py-4" style={cardStyle}>
@@ -1297,7 +1283,7 @@ export default function HomePage() {
                         </div>
                         <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>KIE</p>
                         {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mb-1" style={{ color: "#f0a855" }}>Pending setup</p>}
-                        <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>TTS, images & video generation</p>
+                        <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>Claude AI, TTS, images & video</p>
                         {kie?.configured && kie.valid && kie.credits !== undefined ? (
                           <StaticInfo label="Credits remaining" value={kie.credits.toLocaleString()} color="#60a5fa" />
                         ) : kie?.configured && kie.valid ? (
