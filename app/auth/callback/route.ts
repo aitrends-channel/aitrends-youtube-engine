@@ -44,7 +44,16 @@ export async function GET(request: Request) {
 
     if (user && !isSetPasswordFlow) {
       const isPaid = user.app_metadata?.paid === true || isAdminEmail(user.email);
-      if (!isPaid) {
+
+      // Skip the allowlist gate for OAuth users. The allowlist exists to
+      // restrict email/password signups to manually invited addresses;
+      // OAuth users already proved their identity via the provider, so
+      // we let them through and rely on the subscription paywall
+      // downstream to gate actual product usage.
+      const provider = user.app_metadata?.provider;
+      const isOAuth = typeof provider === "string" && provider !== "email";
+
+      if (!isPaid && !isOAuth) {
         const { data: allowed } = await serviceClient
           .from("allowed_emails")
           .select("email")
