@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { logSystemEvent } from "@/lib/system-logger";
 
 export const maxDuration = 120;
 import { channelAnalysisInputSchema, videoIdeasInputSchema } from "@/lib/claude/anthropicSchemas";
@@ -74,6 +75,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ analysis, videoIdeas });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Analysis failed";
+    await logSystemEvent({
+      level: "error",
+      source: "channel_analysis",
+      message,
+      userId: user.id,
+    });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

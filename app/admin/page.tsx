@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
-  DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil,
+  DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -220,6 +220,185 @@ function AddUserForm({ onSuccess }: { onSuccess: () => void }) {
         </button>
       </div>
     </form>
+  );
+}
+
+type LogSubTab = "activity" | "errors" | "worker";
+
+interface ActivityEvent {
+  id: string;
+  timestamp: string;
+  type: "signup" | "niche_created" | "video_completed" | "video_failed" | "founder_claim" | "subscription";
+  actor_email: string | null;
+  actor_user_id: string | null;
+  details?: Record<string, unknown>;
+}
+interface ErrorEvent {
+  id: string;
+  timestamp: string;
+  source: string;
+  level: string;
+  message: string;
+  user_id: string | null;
+  user_email: string | null;
+  project_id: string | null;
+}
+
+const ACTIVITY_LABEL: Record<ActivityEvent["type"], string> = {
+  signup: "Signed up",
+  niche_created: "Created niche",
+  video_completed: "Video completed",
+  video_failed: "Video failed",
+  founder_claim: "Founder claim",
+  subscription: "Subscribed",
+};
+
+const ACTIVITY_FG: Record<ActivityEvent["type"], string> = {
+  signup:          "oklch(0.55 0.15 220)",
+  niche_created:   "oklch(0.72 0.25 285)",
+  video_completed: "oklch(0.55 0.15 145)",
+  video_failed:    "oklch(0.65 0.22 25)",
+  founder_claim:   "oklch(0.72 0.18 65)",
+  subscription:    "oklch(0.55 0.15 145)",
+};
+const ACTIVITY_BG: Record<ActivityEvent["type"], string> = {
+  signup:          "oklch(0.55 0.15 220 / 0.12)",
+  niche_created:   "oklch(0.72 0.25 285 / 0.12)",
+  video_completed: "oklch(0.55 0.15 145 / 0.12)",
+  video_failed:    "oklch(0.65 0.22 25 / 0.12)",
+  founder_claim:   "oklch(0.72 0.18 65 / 0.12)",
+  subscription:    "oklch(0.55 0.15 145 / 0.12)",
+};
+
+function LogsSection() {
+  const [logTab, setLogTab] = useState<LogSubTab>("activity");
+  const { data, isLoading } = useSWR<{ events: (ActivityEvent | ErrorEvent)[]; notice?: string }>(
+    `/api/admin/logs?type=${logTab}`,
+    fetcher,
+    { revalidateOnFocus: false }
+  );
+
+  const events = data?.events ?? [];
+
+  const subTabs: { id: LogSubTab; label: string; icon: typeof Activity }[] = [
+    { id: "activity", label: "Activity", icon: Activity },
+    { id: "errors",   label: "Errors",   icon: AlertCircle },
+    { id: "worker",   label: "Worker",   icon: Server },
+  ];
+
+  return (
+    <section id="logs" className="rounded-2xl space-y-4"
+      style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+      <div className="flex items-center gap-3">
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: "oklch(0.55 0.15 220 / 0.1)", border: "1px solid oklch(0.55 0.15 220 / 0.2)" }}>
+          <FileText size={16} style={{ color: "oklch(0.62 0.15 220)" }} />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Logs</h2>
+          <p className="text-xs" style={{ color: "var(--c-42)" }}>Recent activity, system errors, and worker output</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1 p-1 rounded-xl w-full sm:w-auto sm:inline-flex"
+        style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+        {subTabs.map(({ id, label, icon: Icon }) => (
+          <button key={id} onClick={() => setLogTab(id)}
+            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
+            style={logTab === id
+              ? { background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.35)" }
+              : { color: "oklch(0.50 0 0)" }}
+          >
+            <Icon size={13} />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {data?.notice && (
+        <p className="text-xs italic px-3 py-2 rounded-lg" style={{ color: "var(--c-42)", background: "oklch(0 0 0 / 0.03)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+          {data.notice}
+        </p>
+      )}
+
+      {isLoading ? (
+        <SkeletonRows cols={4} rows={6} />
+      ) : events.length === 0 ? (
+        <p className="text-xs italic px-3 py-6 text-center" style={{ color: "var(--c-35)" }}>
+          No {logTab === "activity" ? "activity" : logTab === "errors" ? "errors" : "worker events"} yet.
+        </p>
+      ) : logTab === "errors" || logTab === "worker" ? (
+        <div className="space-y-2">
+          {(events as ErrorEvent[]).map((e) => <ErrorRow key={e.id} event={e} />)}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {(events as ActivityEvent[]).map((e) => <ActivityRow key={e.id} event={e} />)}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ActivityRow({ event }: { event: ActivityEvent }) {
+  const fg = ACTIVITY_FG[event.type] ?? "oklch(0.55 0 0)";
+  const bg = ACTIVITY_BG[event.type] ?? "oklch(0 0 0 / 0.06)";
+  const label = ACTIVITY_LABEL[event.type] ?? event.type;
+  const summary = (() => {
+    if (event.type === "niche_created") {
+      const d = event.details as { channel_name?: string; topic?: string } | undefined;
+      return [d?.channel_name, d?.topic && `"${d.topic}"`].filter(Boolean).join(" · ");
+    }
+    if (event.type === "video_completed" || event.type === "video_failed") {
+      const d = event.details as { topic?: string; channel_name?: string } | undefined;
+      return d?.topic ?? d?.channel_name ?? "";
+    }
+    if (event.type === "subscription") {
+      const d = event.details as { plan?: string } | undefined;
+      return d?.plan ? `${d.plan} plan` : "";
+    }
+    if (event.type === "founder_claim") return "Founder plan";
+    return "";
+  })();
+
+  return (
+    <div className="flex items-start gap-3 px-3 py-2 rounded-xl"
+      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.05)" }}>
+      <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 mt-0.5"
+        style={{ background: bg, color: fg }}>
+        {label}
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm truncate" style={{ color: "var(--c-65)" }}>
+          {event.actor_email ?? "Unknown user"}
+          {summary && <span style={{ color: "var(--c-42)" }}> — {summary}</span>}
+        </p>
+      </div>
+      <span className="text-xs shrink-0 tabular-nums" style={{ color: "var(--c-42)" }}>
+        {timeAgo(event.timestamp)}
+      </span>
+    </div>
+  );
+}
+
+function ErrorRow({ event }: { event: ErrorEvent }) {
+  return (
+    <div className="flex items-start gap-3 px-3 py-2 rounded-xl"
+      style={{ background: "oklch(0.6 0.22 25 / 0.04)", border: "1px solid oklch(0.6 0.22 25 / 0.15)" }}>
+      <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 mt-0.5"
+        style={{ background: "oklch(0.6 0.22 25 / 0.12)", color: "oklch(0.65 0.22 25)" }}>
+        {event.source}
+      </span>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm" style={{ color: "var(--c-65)" }}>{event.message}</p>
+        {event.user_email && (
+          <p className="text-xs mt-0.5" style={{ color: "var(--c-42)" }}>{event.user_email}</p>
+        )}
+      </div>
+      <span className="text-xs shrink-0 tabular-nums" style={{ color: "var(--c-42)" }}>
+        {timeAgo(event.timestamp)}
+      </span>
+    </div>
   );
 }
 
@@ -901,6 +1080,7 @@ export default function AdminPage() {
             { id: "users",    label: "Users",    icon: Users },
             { id: "projects", label: "Videos",   icon: Clapperboard },
             { id: "revenue",  label: "Revenue",  icon: DollarSign },
+            { id: "logs",     label: "Logs",     icon: FileText },
             { id: "setup",    label: "Setup",    icon: SlidersHorizontal },
           ] as const;
 
@@ -1635,6 +1815,11 @@ export default function AdminPage() {
             </section>
           );
         })()}
+
+        {/* Logs section — recent activity, system errors, worker output */}
+        {activeTab === "logs" && (
+          <LogsSection />
+        )}
 
         {/* Setup section — product-wide API key management */}
         {activeTab === "setup" && (
