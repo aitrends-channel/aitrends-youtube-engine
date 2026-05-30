@@ -1,43 +1,83 @@
-import { getSettings } from "@/lib/settings";
+import { kieRequest } from "./client";
 import type { KieModel } from "@/lib/types";
 
-const EL_BASE = "https://api.elevenlabs.io";
-const TTS_MODEL = "eleven_turbo_v2_5";
+const TTS_MODEL = "elevenlabs/text-to-speech-turbo-2-5";
 const MAX_CHARS = 5000;
+const POLL_INTERVAL_MS = 2000;
+const POLL_DEADLINE_MS = 5 * 60 * 1000; // 5 minutes per chunk
 
 function v(id: string, name: string, tags: string[]): KieModel {
   return { id, name, type: "tts", tags, previewUrl: `https://static.aiquickdraw.com/elevenlabs/voice/${id}.mp3` };
 }
 
 const VOICES: KieModel[] = [
-  v("nPczCjzI2devNBz1zQrb", "Brian",     ["Male",   "Deep, Resonant"]),
-  v("FGY2WhTYpPnrIDTdsKH5", "Laura",     ["Female", "Enthusiastic"]),
-  v("TX3LPaxmHKxFdv7VOQHJ", "Liam",      ["Male",   "Energetic"]),
-  v("N2lVS1w4EtoT3dr4eOWO", "Callum",    ["Male",   "Husky"]),
-  v("EkK5I93UQWFDigLMpZcX", "James",     ["Male",   "Bold, Engaging"]),
-  v("Z3R5wn05IrDiVCyEkUrK", "Arabella",  ["Female", "Mysterious"]),
-  v("hpp4J3VqNfWAUOO0d1Us", "Bella",     ["Female", "Warm, Professional"]),
-  v("uYXf8XasLslADfZ2MB4u", "Hope",      ["Female", "Bubbly, Energetic"]),
-  v("gs0tAILXbY5DNrJrsM6F", "Jeff",      ["Male",   "Classy, Strong"]),
-  v("DTKMou8ccj1ZaWGBiotd", "Jamahal",   ["Male",   "Vibrant, Natural"]),
-  v("vBKc2FfBKJfcZNyEt1n6", "Finn",      ["Male",   "Youthful, Eager"]),
-  v("DYkrAHD8iwork3YSUBbs", "Tom",       ["Male",   "Conversational"]),
-  v("56AoDkrOh6qfVPDXZ7Pt", "Cassidy",   ["Female", "Crisp, Direct"]),
-  v("lcMyyd2HUfFzxdCaC4Ta", "Lucy",      ["Female", "Fresh, Casual"]),
-  v("6aDn1KB0hjpdcocrUkmq", "Tiffany",   ["Female", "Natural, Welcoming"]),
-  v("Sq93GQT4X1lKDXsQcixO", "Felix",     ["Male",   "Warm, Positive"]),
-  v("LruHrtVF6PSyGItzMNHS", "Benjamin",  ["Male",   "Deep, Calming"]),
-  v("1wGbFxmAM3Fgw63G1zZJ", "Allison",   ["Female", "Calm, Soothing"]),
-  v("MJ0RnG71ty4LH3dvNfSd", "Leon",      ["Male",   "Soothing, Grounded"]),
-  v("NNl6r8mD7vthiJatiJt1", "Bradford",  ["Male",   "Expressive"]),
-  v("Sm1seazb4gs7RSlUVw7c", "Anika",     ["Female", "Animated, Friendly"]),
-  v("5l5f8iK3YPeGga21rQIX", "Adeline",   ["Female", "Conversational"]),
-  v("aD6riP1btT197c6dACmy", "Rachel M",  ["Female", "British, Radio"]),
-  v("AeRdCCKzvd23BpJoofzx", "Nathaniel", ["Male",   "British, Calm"]),
-  v("BZgkqPqms7Kj9ulSkVzn", "Eve",       ["Female", "Authentic, Happy"]),
-  v("6F5Zhi321D3Oq7v1oNT4", "Hank",      ["Male",   "Deep, Narrator"]),
-  v("pPdl9cQBQq4p6mRkZy2Z", "Emma",      ["Female", "Adorable, Upbeat"]),
-  v("nzeAacJi50IvxcyDnMXa", "Marshal",   ["Male",   "Friendly, Warm"]),
+  v("eR40ATw9ArzDf9h3v7t7", "Addison 2.0",                          ["Female","Australian Audiobook & Podcast"]),
+  v("5l5f8iK3YPeGga21rQIX", "Adeline",                              ["Female","Feminine and Conversational"]),
+  v("1wGbFxmAM3Fgw63G1zZJ", "Allison",                              ["Female","Calm, Soothing and Meditative"]),
+  v("wJqPPQ618aTW29mptyoc", "Ana Rita",                             ["Female","Smooth, Expressive and Bright"]),
+  v("Sm1seazb4gs7RSlUVw7c", "Anika",                                ["Female","Animated, Friendly and Engaging"]),
+  v("Z3R5wn05IrDiVCyEkUrK", "Arabella",                             ["Female","Mysterious and Emotive"]),
+  v("TC0Zp7WVFzhA8zpTlRqV", "Aria",                                 ["Female","Sultry Villain"]),
+  v("hpp4J3VqNfWAUOO0d1Us", "Bella",                                ["Female","Warm, Professional"]),
+  v("esy0r39YPLQjOczyOib8", "Britney",                              ["Female","Calm and Calculative Villain"]),
+  v("kPzsL2i3teMYv0FxEYQ6", "Brittney",                             ["Female","Social Media Voice - Fun, Youthful & Informative"]),
+  v("56AoDkrOh6qfVPDXZ7Pt", "Cassidy",                              ["Female","Crisp, Direct and Clear"]),
+  v("pPdl9cQBQq4p6mRkZy2Z", "Emma",                                 ["Female","Adorable and Upbeat"]),
+  v("BZgkqPqms7Kj9ulSkVzn", "Eve",                                  ["Female","Authentic, Energetic and Happy"]),
+  v("uYXf8XasLslADfZ2MB4u", "Hope",                                 ["Female","Bubbly, Gossipy and Girly"]),
+  v("iCrDUkL56s3C8sCRl7wb", "Hope",                                 ["Female","Poetic, Romantic and Captivating"]),
+  v("eVItLK1UvXctxuaRV2Oq", "Jean",                                 ["Female","Alluring and Playful Femme Fatale"]),
+  v("g6xIsTj2HwM6VR4iXFCw", "Jessica Anne Bogart",                  ["Female","Chatty and Friendly"]),
+  v("flHkNRp1BlvT73UL6gyz", "Jessica Anne Bogart",                  ["Female","Eloquent Villain"]),
+  v("B8gJV1IhpuegLxdpXFOE", "Kuon",                                 ["Female","Cheerful, Clear and Steady"]),
+  v("FGY2WhTYpPnrIDTdsKH5", "Laura",                                ["Female","Enthusiastic"]),
+  v("lcMyyd2HUfFzxdCaC4Ta", "Lucy",                                 ["Female","Fresh & Casual"]),
+  v("2zRM7PkgwBPiau2jvVXc", "Monika Sogam",                         ["Female","Deep and Natural"]),
+  v("aD6riP1btT197c6dACmy", "Rachel M",                             ["Female","Pro British Radio Presenter"]),
+  v("6aDn1KB0hjpdcocrUkmq", "Tiffany",                              ["Female","Natural and Welcoming"]),
+  v("LruHrtVF6PSyGItzMNHS", "Benjamin",                             ["Male","Deep, Warm, Calming"]),
+  v("NNl6r8mD7vthiJatiJt1", "Bradford",                             ["Male","Expressive and Articulate"]),
+  v("nPczCjzI2devNBz1zQrb", "Brian",                                ["Male","Deep, Resonant"]),
+  v("gU0LNdkMOQCOrPrwtbee", "British Football Announcer",           ["Male","Excited, Characters animation"]),
+  v("DGzg6RaUqxGRTHSBjfgF", "Brock",                                ["Male","Commanding and Loud Sergeant"]),
+  v("4YYIPFl9wE5c4L2eu2Gb", "Burt Reynolds",                        ["Male","Deep, Smooth and Clear"]),
+  v("N2lVS1w4EtoT3dr4eOWO", "Callum",                               ["Male","Husky"]),
+  v("dHd5gvgSOzSfduK4CvEg", "Ed",                                   ["Male","Late Night Announcer"]),
+  v("zYcjlYFOd3taleS0gkk3", "Edward",                               ["Male","Loud, Confident and Cocky"]),
+  v("Sq93GQT4X1lKDXsQcixO", "Felix",                                ["Male","Warm, Positive & Contemporary RP"]),
+  v("vBKc2FfBKJfcZNyEt1n6", "Finn",                                 ["Male","Youthful, Eager and Energetic"]),
+  v("6F5Zhi321D3Oq7v1oNT4", "Hank",                                 ["Male","Deep and Engaging Narrator"]),
+  v("DTKMou8ccj1ZaWGBiotd", "Jamahal",                              ["Male","Young, Vibrant, and Natural"]),
+  v("EkK5I93UQWFDigLMpZcX", "James",                                ["Male","Husky, Engaging and Bold"]),
+  v("gs0tAILXbY5DNrJrsM6F", "Jeff",                                 ["Male","Classy, Resonating and Strong"]),
+  v("EiNlNiXeDU1pqqOPrYMO", "John Doe",                             ["Male","Deep"]),
+  v("ruirxsoakN0GWmGNIo04", "John Morgan",                          ["Male","Gritty, Rugged Cowboy"]),
+  v("CeNX9CMwmxDxUF5Q2Inm", "Johnny Dynamite",                      ["Male","Vintage Radio DJ"]),
+  v("8JVbfL6oEdmuxKn5DK2C", "Johnny Kid",                           ["Male","Serious and Calm Narrator"]),
+  v("MJ0RnG71ty4LH3dvNfSd", "Leon",                                 ["Male","Soothing and Grounded"]),
+  v("TX3LPaxmHKxFdv7VOQHJ", "Liam",                                 ["Male","Energetic"]),
+  v("9yzdeviXkFddZ4Oz8Mok", "Lutz",                                 ["Male","Chuckling, Giggly and Cheerful"]),
+  v("1SM7GgM6IMuvQlz2BwM3", "Mark",                                 ["Male","Casual, Relaxed and Light"]),
+  v("UgBBYS2sOqTuMpoF3BR0", "Mark",                                 ["Male","Natural Conversations"]),
+  v("nzeAacJi50IvxcyDnMXa", "Marshal",                              ["Male","Friendly, Funny Professor"]),
+  v("x70vRnQBMBu4FAYhjJbO", "Nathan",                               ["Male","Confident Virtual Radio Host"]),
+  v("AeRdCCKzvd23BpJoofzx", "Nathaniel",                            ["Male","Engaging, British and Calm"]),
+  v("wo6udizrrtpIxWGp2qJk", "Northern Terry",                       ["Male","Husky, Characters animation"]),
+  v("LG95yZDEHg6fCZdQjLqj", "Phil",                                 ["Male","Explosive, Passionate Announcer"]),
+  v("PPzYpIqttlTYA83688JI", "Pirate Marshal",                       ["Male","Upbeat, Characters animation"]),
+  v("mtrellq69YZsNwzUSyXh", "Rex Thunder",                          ["Male","Deep N Tough"]),
+  v("scOwDtmlUjD3prqpp97I", "Sam",                                  ["Male","Support Agent"]),
+  v("NOpBlnGInO9m6vDvFkFC", "Spuds Oxley",                          ["Male","Wise and Approachable"]),
+  v("Tsns2HvNFKfGiNjllgqo", "Sven",                                 ["Male","Emotional and Nice"]),
+  v("qDuRKMlYmrm8trt5QyBn", "Taksh",                                ["Male","Calm, Serious and Smooth"]),
+  v("hqfrgApggtO1785R4Fsn", "Theodore HQ",                          ["Male","Serene and Grounded"]),
+  v("DYkrAHD8iwork3YSUBbs", "Tom",                                  ["Male","Conversations & Books"]),
+  v("ljo9gAlSqKOvF6D8sOsX", "Viking Bjorn",                         ["Male","Epic Medieval Raider"]),
+  v("P1bg08DkjqiVEzOn76yG", "Viraj",                                ["Male","Rich and Soft"]),
+  v("1U02n4nD6AdIZ9CjF053", "Viraj",                                ["Male","Smooth and Gentle"]),
+  v("YXpFCvM1S3JbWEJhoskW", "Wyatt",                                ["Male","Wise Rustic Cowboy"]),
+  v("YOq2y2Up4RgXP2HyXjE5", "Xavier",                               ["Male","Dominating, Metalic Announcer"]),
+  v("qXpMhyvQqiRxWQs4qSSB", "Horatius",                             ["Neutral","Energetic Character Voice"]),
 ];
 
 function normalizeText(text: string): string {
@@ -78,41 +118,102 @@ function splitIntoChunks(text: string): string[] {
   return chunks;
 }
 
+interface KieTaskResponse {
+  code: number;
+  msg: string;
+  data: { taskId: string };
+}
+
+interface KieRecordResponse {
+  code: number;
+  data: {
+    state?: string;
+    status?: string;
+    resultJson?: string;
+    output?: string | string[];
+    failReason?: string;
+    error?: string;
+  };
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((r) => setTimeout(r, ms));
+}
+
+function extractAudioUrl(d: KieRecordResponse["data"] | undefined): string | undefined {
+  if (!d) return undefined;
+  if (typeof d.resultJson === "string") {
+    try {
+      const parsed = JSON.parse(d.resultJson) as { resultUrls?: string[]; url?: string; audioUrl?: string };
+      const url = parsed.resultUrls?.[0] ?? parsed.url ?? parsed.audioUrl;
+      if (url) return url;
+    } catch {
+      if (d.resultJson.startsWith("http")) return d.resultJson;
+    }
+  }
+  if (Array.isArray(d.output)) return d.output[0];
+  if (typeof d.output === "string") return d.output;
+  return undefined;
+}
+
 async function generateChunk(
   text: string,
   voiceId: string,
-  apiKey: string,
-  onStatus?: (msg: string) => void
+  userId: string | undefined,
+  onStatus?: (msg: string) => void,
 ): Promise<ArrayBuffer> {
-  onStatus?.("Generating audio...");
-  console.log(`[TTS] ElevenLabs direct | model: ${TTS_MODEL} | voice: ${voiceId} | chars: ${text.length}`);
+  onStatus?.("Submitting…");
+  console.log(`[TTS] KIE submit | model: ${TTS_MODEL} | voice: ${voiceId} | chars: ${text.length}`);
 
-  const res = await fetch(`${EL_BASE}/v1/text-to-speech/${voiceId}`, {
+  const submit = await kieRequest<KieTaskResponse>("/api/v1/jobs/createTask", {
     method: "POST",
-    headers: {
-      "xi-api-key": apiKey,
-      "Content-Type": "application/json",
-      Accept: "audio/mpeg",
-    },
     body: JSON.stringify({
-      text,
-      model_id: TTS_MODEL,
-      voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+      model: TTS_MODEL,
+      input: {
+        text,
+        voice: voiceId,
+        stability: 0.5,
+        similarity_boost: 0.75,
+        speed: 1,
+      },
     }),
-  });
+  }, userId);
 
-  if (!res.ok) {
-    const body = await res.text();
-    let message = `ElevenLabs error ${res.status}`;
-    try {
-      const parsed = JSON.parse(body);
-      const inner = parsed?.detail?.message ?? parsed?.message ?? parsed?.detail;
-      if (typeof inner === "string") message = inner;
-    } catch { /* keep default */ }
-    throw new Error(message);
+  if (submit.code !== 200 || !submit.data?.taskId) {
+    throw new Error(submit.msg || `TTS submit failed (${submit.code})`);
+  }
+  const taskId = submit.data.taskId;
+
+  const DONE = ["succeed", "success", "completed", "done", "finish", "finished", "complete"];
+  const FAIL = ["failed", "error", "fail"];
+  const deadline = Date.now() + POLL_DEADLINE_MS;
+
+  while (Date.now() < deadline) {
+    await sleep(POLL_INTERVAL_MS);
+    onStatus?.("Generating…");
+
+    const status = await kieRequest<KieRecordResponse>(
+      `/api/v1/jobs/recordInfo?taskId=${taskId}`,
+      {},
+      userId,
+    );
+    const d = status.data;
+    const state = (d?.state ?? d?.status ?? "").toLowerCase();
+
+    if (DONE.includes(state)) {
+      const url = extractAudioUrl(d);
+      if (!url) throw new Error("TTS finished but no audio URL was returned");
+      onStatus?.("Downloading…");
+      const audioRes = await fetch(url);
+      if (!audioRes.ok) throw new Error(`Failed to download audio: ${audioRes.status}`);
+      return audioRes.arrayBuffer();
+    }
+    if (FAIL.includes(state)) {
+      throw new Error(d?.failReason ?? d?.error ?? "TTS generation failed");
+    }
   }
 
-  return res.arrayBuffer();
+  throw new Error("TTS generation timed out after 5 minutes");
 }
 
 export async function listTTSVoices(): Promise<KieModel[]> {
@@ -126,19 +227,13 @@ export async function generateTTS(
   onStatus?: (msg: string) => void,
   userId?: string
 ): Promise<ArrayBuffer> {
-  const apiKey = userId
-    ? (await getSettings(userId)).elevenlabs_api_key
-    : (process.env.ELEVENLABS_API_KEY ?? "");
-
-  if (!apiKey) throw new Error("ElevenLabs API key not configured. Add it in Settings.");
-
   const normalized = normalizeText(text);
   const chunks = splitIntoChunks(normalized);
   console.log(`[TTS] ${chunks.length} chunk(s) | chars: ${normalized.length} | voice: ${voiceId}`);
 
   if (chunks.length === 1) {
     onProgress?.(0, 1);
-    const result = await generateChunk(chunks[0], voiceId, apiKey, onStatus);
+    const result = await generateChunk(chunks[0], voiceId, userId, onStatus);
     onProgress?.(1, 1);
     return result;
   }
@@ -146,17 +241,18 @@ export async function generateTTS(
   const buffers: ArrayBuffer[] = [];
   for (let i = 0; i < chunks.length; i++) {
     onProgress?.(i, chunks.length);
-    onStatus?.(`Chunk ${i + 1} of ${chunks.length}...`);
-    buffers.push(await generateChunk(chunks[i], voiceId, apiKey, onStatus));
+    onStatus?.(`Chunk ${i + 1} of ${chunks.length}…`);
+    const buf = await generateChunk(chunks[i], voiceId, userId, onStatus);
+    buffers.push(buf);
   }
   onProgress?.(chunks.length, chunks.length);
 
-  const totalBytes = buffers.reduce((sum, b) => sum + b.byteLength, 0);
-  const combined = new Uint8Array(totalBytes);
+  const totalLength = buffers.reduce((sum, b) => sum + b.byteLength, 0);
+  const merged = new Uint8Array(totalLength);
   let offset = 0;
-  for (const buf of buffers) {
-    combined.set(new Uint8Array(buf), offset);
-    offset += buf.byteLength;
+  for (const b of buffers) {
+    merged.set(new Uint8Array(b), offset);
+    offset += b.byteLength;
   }
-  return combined.buffer;
+  return merged.buffer;
 }

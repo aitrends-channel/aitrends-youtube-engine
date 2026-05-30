@@ -1229,8 +1229,7 @@ export default function HomePage() {
 
               {/* API Keys Status */}
               {(() => {
-                const el    = apiStatus?.elevenlabs as { configured: boolean; valid: boolean | null; charUsed?: number; charLimit?: number; tier?: string } | undefined;
-                const kie   = apiStatus?.kie        as { configured: boolean; valid: boolean | null; credits?: number } | undefined;
+                const kie = apiStatus?.kie as { configured: boolean; valid: boolean | null; credits?: number } | undefined;
 
                 function StatusBadge({ data, color }: { data: { configured: boolean; valid: boolean | null } | undefined; color: string }) {
                   const loading = !apiStatus;
@@ -1272,8 +1271,8 @@ export default function HomePage() {
 
                 return (
                   <div style={{ marginTop: "40px" }}>
-                    <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Keys Status</h3>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Key Status</h3>
+                    <div className="grid grid-cols-1 gap-4">
 
                       {/* KIE */}
                       <div className="rounded-xl px-5 py-4" style={cardStyle}>
@@ -1288,23 +1287,6 @@ export default function HomePage() {
                           <StaticInfo label="Credits remaining" value={kie.credits.toLocaleString()} color="#60a5fa" />
                         ) : kie?.configured && kie.valid ? (
                           <p className="text-[10px]" style={{ color: "var(--c-30)" }}>Check balance in KIE dashboard</p>
-                        ) : null}
-                      </div>
-
-                      {/* ElevenLabs */}
-                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="w-2 h-2 rounded-full" style={{ background: "#34d399" }} />
-                          <StatusBadge data={el} color="#34d399" />
-                        </div>
-                        <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>ElevenLabs</p>
-                        {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mb-1" style={{ color: "#f0a855" }}>Pending setup</p>}
-                        <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>Voiceover & captions</p>
-                        {el?.configured && el.valid && el.charLimit !== undefined ? (
-                          <div>
-                            <UsageBar used={el.charUsed ?? 0} limit={el.charLimit} color="#34d399" />
-                            {el.tier && <p className="text-[10px] mt-1.5 capitalize" style={{ color: "var(--c-35)" }}>{el.tier} plan</p>}
-                          </div>
                         ) : null}
                       </div>
 

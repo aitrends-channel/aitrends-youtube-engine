@@ -20,25 +20,17 @@ const KEY_FIELDS: KeyField[] = [
   {
     key: "kie_api_key",
     label: "KIE API Key",
-    description: "Powers Claude AI (scripts & channel analysis), TTS voiceover, image generation, and video clips — all through one provider",
+    description: "Powers everything: Claude AI for scripts & analysis, ElevenLabs TTS for voiceover, plus image and video generation — all through one provider",
     placeholder: "kie-…",
-  },
-  {
-    key: "elevenlabs_api_key",
-    label: "ElevenLabs API Key",
-    description: "Used for voiceover transcription and caption timing alignment",
-    placeholder: "sk_…",
   },
 ];
 
 interface FormState {
   kie_api_key: string;
-  elevenlabs_api_key: string;
 }
 
 const EMPTY_FORM: FormState = {
   kie_api_key: "",
-  elevenlabs_api_key: "",
 };
 
 function AddUserSection() {
@@ -392,18 +384,7 @@ export default function SettingsPage() {
                 steps: [
                   "Sign in and go to API Keys.",
                   "Create a key, name it, copy it.",
-                  "Top up credits — covers Claude calls plus all media generation.",
-                ],
-              },
-              {
-                num: 2,
-                title: "ElevenLabs API Key",
-                sub: "Caption timing & assembly",
-                href: "https://elevenlabs.io",
-                linkLabel: "elevenlabs.io",
-                steps: [
-                  "Go to Developers → API Keys.",
-                  "Copy the default developer key (free tier is fine).",
+                  "Top up credits — covers every AI call across the app.",
                 ],
               },
             ].map(({ num, title, sub, href, linkLabel, steps }) => (

@@ -19,11 +19,9 @@ const fetcher = (url: string) =>
 
 function friendlyError(raw: string | undefined | null): string {
   const msg = (raw ?? "").toLowerCase();
-if (msg.includes("paid_plan_required") || msg.includes("free users cannot use library voices") || (msg.includes("payment_required") && msg.includes("elevenlabs")))
-    return "ElevenLabs paid plan required — a paid subscription is needed to use voices via the API. Upgrade at elevenlabs.io";
+  if (msg.includes("credits insufficient") || msg.includes("insufficient credits") || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit"))))
+    return "Insufficient KIE credits — top up your account at kie.ai";
   if (msg.includes("quota_exceeded") || msg.includes("quota exceeded") || msg.includes("credits remaining") || msg.includes("credit balance"))
-    return "Your ElevenLabs credits are exhausted — top up your account at elevenlabs.io";
-  if (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit")))
     return "Insufficient KIE credits — top up your account at kie.ai";
   if (msg.includes("invalid_api_key") || msg.includes("invalid api key") || msg.includes("unauthorized") || (msg.includes("api key") && msg.includes("invalid")))
     return "API key is invalid — go to Settings to update it";
