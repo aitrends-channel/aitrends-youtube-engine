@@ -21,7 +21,7 @@ const KEY_FIELDS: KeyField[] = [
   {
     key: "kie_api_key",
     label: "KIE API Key",
-    description: "Powers everything: Claude AI for scripts & analysis, ElevenLabs TTS for voiceover, plus image and video generation — all through one provider",
+    description: "Powers everything: Claude AI for scripts & analysis, TTS voiceover, plus image and video generation — all through one provider",
     placeholder: "kie-…",
   },
 ];

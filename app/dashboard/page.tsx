@@ -264,23 +264,18 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
         )}
 
         <div style={{ marginTop: "40px" }}>
-          <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Keys Status</h3>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            {[
-              { name: "Anthropic",   color: "#c084fc", desc: "Claude AI — scripts & analysis" },
-              { name: "KIE",         color: "#60a5fa", desc: "TTS, images & video generation" },
-              { name: "ElevenLabs",  color: "#34d399", desc: "Voiceover & captions" },
-            ].map(({ name, color, desc }) => (
-              <div key={name} className="rounded-xl px-5 py-4" style={cardStyle}>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="w-2 h-2 rounded-full" style={{ background: color }} />
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#94a3b822", color: "#94a3b8" }}>Not set</span>
+          <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Key Status</h3>
+          <div className="grid grid-cols-1 gap-4">
+            <div className="rounded-xl px-5 py-4" style={cardStyle}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>KIE</p>
+                  <p className="text-[10px] font-medium mt-0.5" style={{ color: "#f0a855" }}>Pending setup</p>
+                  <p className="text-[10px] mt-0.5" style={{ color: "var(--c-38)" }}>Claude AI, TTS, images & video</p>
                 </div>
-                <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>{name}</p>
-                <p className="text-[10px] font-medium mb-2" style={{ color: "#f0a855" }}>Pending setup</p>
-                <p className="text-[10px]" style={{ color: "var(--c-38)" }}>{desc}</p>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0" style={{ background: "#94a3b822", color: "#94a3b8" }}>Not set</span>
               </div>
-            ))}
+            </div>
           </div>
         </div>
 
@@ -1261,6 +1256,36 @@ export default function HomePage() {
                   );
                 }
 
+                // KIE doesn't expose a credit cap — only the live balance.
+                // We render against a fixed reference so users get a visual
+                // sense of how far they are from running out. The bar fills
+                // as credits deplete (it's a danger meter, not a fuel gauge):
+                //   <50% depleted → green (healthy headroom)
+                //   50–80%       → yellow (running low)
+                //   >80%         → red (urgent — top up)
+                // Tweak REFERENCE if 1000 ends up feeling too high/low.
+                function CreditsBar({ credits }: { credits: number }) {
+                  const REFERENCE = 1000;
+                  const depletion = Math.max(0, Math.min(1 - credits / REFERENCE, 1));
+                  const barColor = depletion < 0.5 ? "#34d399"
+                    : depletion < 0.8 ? "#f0a855"
+                    : "#f87171";
+                  const stateLabel = depletion < 0.5 ? "Healthy"
+                    : depletion < 0.8 ? "Low"
+                    : "Critical";
+                  return (
+                    <div>
+                      <div className="flex justify-between text-[10px] mb-1" style={{ color: "var(--c-40)" }}>
+                        <span>Credit health</span>
+                        <span style={{ color: barColor }}>{stateLabel}</span>
+                      </div>
+                      <div className="w-full rounded-full h-1.5" style={{ background: "oklch(1 0 0 / 0.08)" }}>
+                        <div className="h-1.5 rounded-full transition-all" style={{ width: `${depletion * 100}%`, background: barColor }} />
+                      </div>
+                    </div>
+                  );
+                }
+
                 function StaticInfo({ label, value, color }: { label: string; value: string; color: string }) {
                   return (
                     <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
@@ -1278,9 +1303,13 @@ export default function HomePage() {
 
                       {/* KIE */}
                       <div className="rounded-xl px-5 py-4" style={cardStyle}>
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="w-2 h-2 rounded-full mt-1.5" style={{ background: "#60a5fa" }} />
-                          <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>KIE</p>
+                            {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mt-0.5" style={{ color: "#f0a855" }}>Pending setup</p>}
+                            <p className="text-[10px] mt-0.5" style={{ color: "var(--c-38)" }}>Claude AI, TTS, images & video</p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
                             <StatusBadge data={kie} color="#60a5fa" />
                             {kie?.configured && kie.valid && typeof kie.credits === "number" && (
                               <span className="text-[10px] font-medium tabular-nums"
@@ -1290,9 +1319,9 @@ export default function HomePage() {
                             )}
                           </div>
                         </div>
-                        <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>KIE</p>
-                        {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mb-1" style={{ color: "#f0a855" }}>Pending setup</p>}
-                        <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>Claude AI, TTS, images & video</p>
+                        {kie?.configured && kie.valid && typeof kie.credits === "number" && (
+                          <CreditsBar credits={kie.credits} />
+                        )}
                         {kie?.configured && kie.valid && kie.credits === undefined && (
                           <p className="text-[10px]" style={{ color: "var(--c-30)" }}>Check balance in KIE dashboard</p>
                         )}

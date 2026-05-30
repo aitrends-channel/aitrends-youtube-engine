@@ -230,7 +230,7 @@ export default function DemoDashboardPage() {
                     <button
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all hover:opacity-80"
                       style={{ color: "var(--c-60)" }}
-                      onClick={() => { setShowProfileMenu(false); router.push("/demo/channel"); }}
+                      onClick={() => { setShowProfileMenu(false); setShowSubModal(true); }}
                     >
                       <Settings size={15} />
                       <span>Setup</span>
@@ -387,13 +387,14 @@ export default function DemoDashboardPage() {
 
               {/* KIE */}
               <div className="rounded-xl px-5 py-4" style={cardStyle}>
-                <div className="flex items-center justify-between mb-2">
-                  <div className="w-2 h-2 rounded-full" style={{ background: "#60a5fa" }} />
-                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full" style={{ background: "#94a3b822", color: "#94a3b8" }}>Not set</span>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>KIE</p>
+                    <p className="text-[10px] font-medium mt-0.5" style={{ color: "#f0a855" }}>Pending setup</p>
+                    <p className="text-[10px] mt-0.5" style={{ color: "var(--c-38)" }}>Claude AI, TTS, images & video</p>
+                  </div>
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0" style={{ background: "#94a3b822", color: "#94a3b8" }}>Not set</span>
                 </div>
-                <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>KIE</p>
-                <p className="text-[10px] font-medium mb-2" style={{ color: "#f0a855" }}>Pending setup</p>
-                <p className="text-[10px]" style={{ color: "var(--c-38)" }}>Claude AI, TTS, images & video</p>
               </div>
 
             </div>
