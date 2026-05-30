@@ -13,6 +13,7 @@ import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Spinner } from "@/components/ui/spinner";
 
 const ADMIN_EMAIL = "prioritylearn@gmail.com";
 
@@ -731,14 +732,14 @@ export default function HomePage() {
       {/* Header */}
       <header className="flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 sticky top-0 z-10"
         style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
-        <div className="flex items-center gap-3">
+        <Link href="/dashboard" className="flex items-center gap-3 transition-opacity hover:opacity-80">
           <div className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center">
             <Image src="/heclus-icon-white.svg" alt="Heclus" width={32} height={32} className="object-cover w-full h-full" />
           </div>
           <div>
             <span className="font-bold text-sm tracking-tight text-foreground">Heclus</span>
           </div>
-        </div>
+        </Link>
         <div className="flex items-center gap-3">
           {isAdmin && (
             <Link
@@ -1375,13 +1376,16 @@ export default function HomePage() {
                       const progress = assembled ? 100 : Math.round(((PHASE_RANK[path] ?? 0) + 1) / 8 * 100);
                       const isComplete = assembled;
 
+                      const isNavigating = navigatingTo === `open-video-${p.id}`;
                       return (
-                        <div
+                        <Link
                           key={p.id}
-                          className="text-left p-6 rounded-2xl transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+                          href={`/projects/${p.id}/${path}`}
+                          prefetch
+                          onClick={() => setNavigatingTo(`open-video-${p.id}`)}
+                          className={`block relative text-left p-6 rounded-2xl transition-all ${isNavigating ? "pointer-events-none" : "hover:scale-[1.01] active:scale-[0.99]"}`}
                           style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}
-                          onClick={() => router.push(`/projects/${p.id}/${path}`)}
-                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
+                          onMouseEnter={(e) => { if (!isNavigating) (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
                           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)"; }}
                         >
                           <div className="flex items-start justify-between mb-3">
@@ -1402,7 +1406,7 @@ export default function HomePage() {
                               <span className="text-xs" style={{ color: "var(--c-38)" }}>{timeAgo(p.created_at)}</span>
                               {isComplete && p.assembled_url && (
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); downloadVideo(p.id, p.assembled_url!, p.selected_topic ?? "video"); }}
+                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); downloadVideo(p.id, p.assembled_url!, p.selected_topic ?? "video"); }}
                                   disabled={downloadingId === p.id}
                                   className="p-1 rounded-lg transition-all hover:opacity-90 disabled:opacity-50"
                                   style={{ color: "oklch(0.65 0.15 145)" }}
@@ -1414,7 +1418,7 @@ export default function HomePage() {
                                 </button>
                               )}
                               <button
-                                onClick={(e) => { e.stopPropagation(); setDeleteTarget({ type: "video", id: p.id, label: p.selected_topic ?? "this video" }); }}
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget({ type: "video", id: p.id, label: p.selected_topic ?? "this video" }); }}
                                 className="p-1 rounded-lg transition-all hover:opacity-90"
                                 style={{ color: "var(--c-55)" }}
                                 title="Delete video"
@@ -1445,7 +1449,15 @@ export default function HomePage() {
                               />
                             </div>
                           </div>
-                        </div>
+
+                          {isNavigating && (
+                            <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-2xl"
+                              style={{ background: "oklch(0.06 0 0 / 0.55)", backdropFilter: "blur(2px)" }}>
+                              <Spinner size={16} />
+                              <span className="text-xs font-medium" style={{ color: "var(--c-90)" }}>Opening…</span>
+                            </div>
+                          )}
+                        </Link>
                       );
                     })}
 
