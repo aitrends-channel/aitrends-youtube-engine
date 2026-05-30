@@ -7,6 +7,7 @@ import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { Spinner } from "@/components/ui/spinner";
 import { PageLoader } from "@/components/PageLoader";
+import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 
 function LoginForm() {
   const router = useRouter();
@@ -76,7 +77,7 @@ function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-3">
       {errorParam === "unauthorized" && (
         <p className="text-xs px-3 py-2 rounded-lg"
           style={{ background: "oklch(0.6 0.22 25 / 0.1)", color: "oklch(0.7 0.2 25)", border: "1px solid oklch(0.6 0.22 25 / 0.2)" }}>
@@ -142,6 +143,14 @@ function LoginForm() {
         {loading ? <><Spinner size={14} />Signing in…</> : "Sign In"}
       </button>
 
+      <div className="flex items-center gap-3">
+        <div className="flex-1 h-px" style={{ background: "var(--bd-8)" }} />
+        <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--c-40)" }}>or</span>
+        <div className="flex-1 h-px" style={{ background: "var(--bd-8)" }} />
+      </div>
+
+      <GoogleSignInButton next={searchParams.get("next") ?? "/dashboard"} onError={setError} />
+
       <p className="text-center text-xs" style={{ color: "var(--c-40)" }}>
         Don&apos;t have an account?{" "}
         <a href="/signup" className="transition-colors hover:underline" style={{ color: "var(--c-55)" }}>
@@ -170,16 +179,16 @@ export default function LoginPage() {
   if (!ready) return <PageLoader />;
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4"
+    <div className="min-h-screen flex items-center justify-center px-4 pt-24"
       style={{ background: "var(--bg-page)" }}>
       <div className="w-full max-w-sm">
-        <Link href="/login" className="flex flex-col items-center mb-8 gap-3 transition-opacity hover:opacity-80">
-          <div className="w-14 h-14 rounded-xl overflow-hidden" style={{ marginLeft: "6px" }}>
-            <Image src="/heclus-icon-white.svg" alt="Heclus" width={56} height={56} className="object-cover w-full h-full" />
+        <Link href="/login" className="flex flex-col items-center mb-5 gap-2 transition-opacity hover:opacity-80">
+          <div className="w-12 h-12 rounded-xl overflow-hidden" style={{ marginLeft: "6px" }}>
+            <Image src="/heclus-icon-white.svg" alt="Heclus" width={48} height={48} className="object-cover w-full h-full" />
           </div>
           <div className="flex flex-col items-center gap-0.5">
-            <p className="font-bold text-lg tracking-tight">Heclus</p>
-            <p className="text-xs font-medium tracking-wide" style={{ color: "#888" }}>by aiTrends</p>
+            <p className="font-bold text-base tracking-tight">Heclus</p>
+            <p className="text-[10px] font-medium tracking-wide" style={{ color: "#888" }}>by aiTrends</p>
           </div>
         </Link>
 

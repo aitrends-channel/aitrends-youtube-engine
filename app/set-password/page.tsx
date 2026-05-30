@@ -90,7 +90,7 @@ function SetPasswordForm() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4"
+    <div className="min-h-screen flex items-center justify-center px-4 pt-24"
       style={{ background: "var(--bg-page)" }}>
       <div className="w-full max-w-sm">
         <Link href="/login" className="flex flex-col items-center mb-8 space-y-3 transition-opacity hover:opacity-80">
