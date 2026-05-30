@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { Spinner } from "@/components/ui/spinner";
 
 function SignupForm({ onSuccess }: { onSuccess: (email: string) => void }) {
@@ -169,7 +170,7 @@ export default function SignupPage() {
       style={{ background: "var(--bg-page)" }}
     >
       <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center mb-8 gap-3">
+        <Link href="/login" className="flex flex-col items-center mb-8 gap-3 transition-opacity hover:opacity-80">
           <div className="w-14 h-14 rounded-xl overflow-hidden" style={{ marginLeft: "6px" }}>
             <Image src="/heclus-icon-white.svg" alt="Heclus" width={56} height={56} className="object-cover w-full h-full" />
           </div>
@@ -177,7 +178,7 @@ export default function SignupPage() {
             <p className="font-bold text-lg tracking-tight">Heclus</p>
             <p className="text-xs font-medium tracking-wide" style={{ color: "#888" }}>by aiTrends</p>
           </div>
-        </div>
+        </Link>
 
         <div
           className="rounded-2xl p-6"

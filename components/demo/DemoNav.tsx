@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, LayoutTemplate, CheckCircle2, RotateCcw, X, Settings, LogOut, ArrowLeft } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -279,14 +280,14 @@ export function DemoNav({ currentStep }: DemoNavProps) {
             style={{ background: "var(--bg-nav)", borderRight: "1px solid var(--bd-7)" }}
           >
             <div className="px-5 py-5 flex items-center justify-between border-b" style={{ borderColor: "var(--bd-7)" }}>
-              <div className="flex items-center gap-3">
+              <Link href="/demo/dashboard" className="flex items-center gap-3 transition-opacity hover:opacity-80">
                 <div className="w-9 h-9 shrink-0 rounded-xl flex items-center justify-center">
                   <Image src="/heclus-icon-white.svg" alt="Heclus" width={36} height={36} className="object-cover w-full h-full" />
                 </div>
                 <div>
                   <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-90)" }}>Heclus</p>
                 </div>
-              </div>
+              </Link>
               <button
                 onClick={() => { setDrawerOpen(false); setDrawerHighlightStep(-1); }}
                 className="p-1.5 rounded-lg transition-all hover:opacity-80"

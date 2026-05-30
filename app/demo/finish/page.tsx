@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 export default function DemoFinishPage() {
@@ -15,9 +16,11 @@ export default function DemoFinishPage() {
 
         {/* Logo */}
         <div className="flex justify-center">
-          <div className="w-[52px] h-[52px] rounded-2xl overflow-hidden">
-            <Image src="/heclus-icon-white.svg" alt="Heclus" width={52} height={52} className="w-full h-full object-cover" />
-          </div>
+          <Link href="/demo/dashboard" className="block transition-opacity hover:opacity-80">
+            <div className="w-[52px] h-[52px] rounded-2xl overflow-hidden">
+              <Image src="/heclus-icon-white.svg" alt="Heclus" width={52} height={52} className="w-full h-full object-cover" />
+            </div>
+          </Link>
         </div>
 
         {/* Heading */}

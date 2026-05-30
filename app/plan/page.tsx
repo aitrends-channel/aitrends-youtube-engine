@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { ArrowLeft, Check, LogOut, Zap, CalendarDays, RefreshCw, Settings } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { PageLoader } from "@/components/PageLoader";
@@ -96,7 +97,7 @@ export default function PlanPage() {
       {/* Header */}
       <header className="flex items-center justify-between px-8 py-4 sticky top-0 z-10"
         style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
-        <div className="flex items-center gap-3">
+        <Link href="/dashboard" className="flex items-center gap-3 transition-opacity hover:opacity-80">
           <div className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center">
             <Image src="/heclus-icon-white.svg" alt="Heclus" width={32} height={32} className="object-cover w-full h-full" />
           </div>
@@ -104,7 +105,7 @@ export default function PlanPage() {
             <span className="font-bold text-sm tracking-tight text-foreground">Heclus</span>
             <span className="text-sm tracking-tight ml-1" style={{ color: "var(--c-50)" }}>Plan</span>
           </div>
-        </div>
+        </Link>
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => router.push("/dashboard")}

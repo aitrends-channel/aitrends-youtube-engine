@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, Fragment } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import {
   Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film,
   Check, CheckCircle2, LayoutTemplate, ArrowLeft, X, Settings, LogOut,
@@ -437,7 +438,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
             style={{ background: "var(--bg-nav)", borderRight: "1px solid var(--bd-7)" }}
           >
             <div className="px-5 py-5 flex items-center justify-between border-b" style={{ borderColor: "var(--bd-7)" }}>
-              <div className="flex items-center gap-3">
+              <Link href="/dashboard" className="flex items-center gap-3 transition-opacity hover:opacity-80">
                 <div className="w-9 h-9 shrink-0 rounded-xl flex items-center justify-center">
                   <Image src="/heclus-icon-white.svg" alt="Heclus" width={36} height={36} className="object-cover w-full h-full" />
                 </div>
@@ -449,7 +450,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                     </p>
                   )}
                 </div>
-              </div>
+              </Link>
               <button
                 onClick={closeDrawer}
                 className="p-1.5 rounded-lg transition-all hover:opacity-80 shrink-0"

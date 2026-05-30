@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { Spinner } from "@/components/ui/spinner";
 
@@ -92,7 +93,7 @@ function SetPasswordForm() {
     <div className="min-h-screen flex items-center justify-center px-4"
       style={{ background: "var(--bg-page)" }}>
       <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center mb-8 space-y-3">
+        <Link href="/login" className="flex flex-col items-center mb-8 space-y-3 transition-opacity hover:opacity-80">
           <div className="w-14 h-14 rounded-xl">
             <Image src="/heclus-icon-white.svg" alt="Heclus" width={56} height={56} className="object-cover w-full h-full" />
           </div>
@@ -102,7 +103,7 @@ function SetPasswordForm() {
               {isReset ? "Reset your password" : "Create your password"}
             </p>
           </div>
-        </div>
+        </Link>
 
         <div className="rounded-2xl p-6"
           style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}>
