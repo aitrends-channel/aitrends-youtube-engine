@@ -179,7 +179,7 @@ export default function LoginPage() {
   if (!ready) return <PageLoader />;
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 pt-24"
+    <div className="min-h-screen flex items-center justify-center px-4"
       style={{ background: "var(--bg-page)" }}>
       <div className="w-full max-w-sm">
         <Link href="/login" className="flex flex-col items-center mb-5 gap-2 transition-opacity hover:opacity-80">
