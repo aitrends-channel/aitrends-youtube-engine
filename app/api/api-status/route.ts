@@ -19,26 +19,23 @@ export async function GET() {
 
 async function checkKie(key: string) {
   if (!key) return { configured: false, valid: null };
-  const endpoints = [
-    "/api/v1/account",
-    "/api/v1/user/balance",
-    "/api/v1/user/info",
-    "/api/v1/credits",
-  ];
-  for (const endpoint of endpoints) {
-    try {
-      const res = await fetch(`https://api.kie.ai${endpoint}`, {
-        headers: { Authorization: `Bearer ${key}` },
-      });
-      if (res.ok) {
-        const data = await res.json() as Record<string, unknown>;
-        const credits = (data.credits ?? data.balance ?? data.remaining_credits ?? data.credit_balance) as number | undefined;
-        return { configured: true, valid: true, ...(credits !== undefined ? { credits } : {}) };
-      }
-      if (res.status === 401 || res.status === 403) {
-        return { configured: true, valid: false };
-      }
-    } catch { /* try next */ }
+  try {
+    // KIE returns the balance directly in `data` as a number (can be
+    // negative when the account is overdrawn). Endpoint name is unintuitive
+    // — `/chat/credit` is the global account balance, not chat-specific.
+    const res = await fetch("https://api.kie.ai/api/v1/chat/credit", {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (res.status === 401 || res.status === 403) {
+      return { configured: true, valid: false };
+    }
+    if (!res.ok) {
+      return { configured: true, valid: true };
+    }
+    const body = await res.json() as { code?: number; data?: unknown };
+    const credits = typeof body.data === "number" ? body.data : undefined;
+    return { configured: true, valid: true, ...(credits !== undefined ? { credits } : {}) };
+  } catch {
+    return { configured: true, valid: true };
   }
-  return { configured: true, valid: true };
 }

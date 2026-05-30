@@ -1232,6 +1232,7 @@ export default function HomePage() {
                 const kie = apiStatus?.kie as { configured: boolean; valid: boolean | null; credits?: number } | undefined;
 
                 function StatusBadge({ data, color }: { data: { configured: boolean; valid: boolean | null } | undefined; color: string }) {
+                  void color;
                   const loading = !apiStatus;
                   const statusColor = loading ? "var(--c-35)" : !data?.configured ? "#94a3b8" : data.valid === false ? "#f87171" : "#34d399";
                   const label      = loading ? "Checking…"   : !data?.configured ? "Not set"              : data.valid === false ? "Invalid key"          : "Active";
@@ -1276,18 +1277,24 @@ export default function HomePage() {
 
                       {/* KIE */}
                       <div className="rounded-xl px-5 py-4" style={cardStyle}>
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="w-2 h-2 rounded-full" style={{ background: "#60a5fa" }} />
-                          <StatusBadge data={kie} color="#60a5fa" />
+                        <div className="flex items-start justify-between mb-2">
+                          <div className="w-2 h-2 rounded-full mt-1.5" style={{ background: "#60a5fa" }} />
+                          <div className="flex flex-col items-end gap-1">
+                            <StatusBadge data={kie} color="#60a5fa" />
+                            {kie?.configured && kie.valid && typeof kie.credits === "number" && (
+                              <span className="text-[10px] font-medium tabular-nums"
+                                style={{ color: kie.credits <= 0 ? "#f87171" : "var(--c-50)" }}>
+                                Credits: {kie.credits.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <p className="text-sm font-bold mb-0.5" style={{ color: "var(--c-88)" }}>KIE</p>
                         {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mb-1" style={{ color: "#f0a855" }}>Pending setup</p>}
                         <p className="text-[10px] mb-3" style={{ color: "var(--c-38)" }}>Claude AI, TTS, images & video</p>
-                        {kie?.configured && kie.valid && kie.credits !== undefined ? (
-                          <StaticInfo label="Credits remaining" value={kie.credits.toLocaleString()} color="#60a5fa" />
-                        ) : kie?.configured && kie.valid ? (
+                        {kie?.configured && kie.valid && kie.credits === undefined && (
                           <p className="text-[10px]" style={{ color: "var(--c-30)" }}>Check balance in KIE dashboard</p>
-                        ) : null}
+                        )}
                       </div>
 
                     </div>
