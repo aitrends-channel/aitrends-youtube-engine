@@ -33,34 +33,67 @@ function extractText(content: string | TranscriptChunk[]): string {
   return content.map(c => c.text).join(" ");
 }
 
+// How long a known-failure stays cached before we re-try Supadata.
+// Successes never expire — captions don't change. Failures expire so
+// videos that get captions added later eventually get picked up again.
+const NEGATIVE_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 async function getCached(videoIds: string[]): Promise<Map<string, SupadataTranscript>> {
   const { data } = await supabase
     .from("transcript_cache")
-    .select("video_id, title, text, word_count")
+    .select("video_id, title, text, word_count, success, error_code, cached_at")
     .in("video_id", videoIds);
 
   const map = new Map<string, SupadataTranscript>();
+  const cutoff = Date.now() - NEGATIVE_CACHE_TTL_MS;
   for (const row of data ?? []) {
-    map.set(row.video_id, {
-      videoId: row.video_id,
-      title: row.title,
-      text: row.text,
-      wordCount: row.word_count,
-      success: true,
-    });
+    if (row.success) {
+      map.set(row.video_id, {
+        videoId: row.video_id,
+        title: row.title,
+        text: row.text ?? "",
+        wordCount: row.word_count ?? 0,
+        success: true,
+      });
+    } else {
+      const cachedAtMs = row.cached_at ? new Date(row.cached_at).getTime() : 0;
+      if (cachedAtMs >= cutoff) {
+        map.set(row.video_id, {
+          videoId: row.video_id,
+          title: row.title,
+          text: "",
+          wordCount: 0,
+          success: false,
+          error: row.error_code ?? "No transcript available",
+        });
+      }
+      // else: stale negative entry — treat as cache miss, fall through to refetch.
+    }
   }
   return map;
 }
 
 async function writeCache(transcripts: SupadataTranscript[]): Promise<void> {
-  const rows = transcripts
-    .filter(t => t.success && t.text.length > 0)
-    .map(t => ({
-      video_id: t.videoId,
-      title: t.title,
-      text: t.text,
-      word_count: t.wordCount,
-    }));
+  const now = new Date().toISOString();
+  const rows = transcripts.map(t => t.success
+    ? {
+        video_id: t.videoId,
+        title: t.title,
+        text: t.text,
+        word_count: t.wordCount,
+        success: true,
+        error_code: null,
+        cached_at: now,
+      }
+    : {
+        video_id: t.videoId,
+        title: t.title,
+        text: null,
+        word_count: null,
+        success: false,
+        error_code: t.error ?? "No transcript available",
+        cached_at: now,
+      });
 
   if (rows.length > 0) {
     await supabase.from("transcript_cache").upsert(rows, { onConflict: "video_id" });
@@ -108,7 +141,8 @@ export async function fetchTranscriptsViaSupadata(
     throw err;
   }
 
-  // Store successful fetches in cache
+  // Store fresh results — both successes and failures — so we don't
+  // re-bill Supadata for the same caption-less videos on every analysis.
   await writeCache(fresh);
 
   // Merge cached + fresh, preserving original order
