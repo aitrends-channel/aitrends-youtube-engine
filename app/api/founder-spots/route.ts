@@ -6,9 +6,11 @@ import { supabase } from "@/lib/supabase/client";
 // forever (until the next deploy), so the counter appears frozen.
 export const dynamic = "force-dynamic";
 
-// TEST CONFIGURATION — revert to 100 to restore the original cap.
-// Migration 020 also caps the DB functions at this number.
-const FOUNDER_LIMIT = 2;
+// Defensive fallback used only when the RPC read itself fails. The
+// real cap lives in product_config.founders_promo_limit and is
+// returned by get_founder_promo_state — admin-configurable from the
+// admin stats card.
+const FALLBACK_LIMIT = 100;
 
 export async function GET() {
   // O(1) read from the product_config singleton row — no user list scan.
@@ -19,10 +21,18 @@ export async function GET() {
   if (error || !data) {
     // Defensive default: if the DB read fails, claim active=true so a
     // transient error doesn't strip Founder from the UI optimistically.
-    return NextResponse.json({ active: true, spots_left: FOUNDER_LIMIT, limit: FOUNDER_LIMIT });
+    return NextResponse.json({ active: true, spots_left: FALLBACK_LIMIT, limit: FALLBACK_LIMIT });
   }
 
-  const row = data as { taken: number; remaining: number; active: boolean };
+  const row = data as { taken: number; remaining: number; active: boolean; limit?: number };
+  // Prefer the explicit `limit` from the RPC (post-migration 025). For
+  // older RPCs that only return taken/remaining/active, derive the cap
+  // from taken + remaining — they always sum to the configured limit.
+  const limit = typeof row.limit === "number"
+    ? row.limit
+    : (typeof row.taken === "number" && typeof row.remaining === "number"
+      ? row.taken + row.remaining
+      : FALLBACK_LIMIT);
 
   // 'active' is the single source of truth. When inactive, spots_left is
   // 0 regardless of the underlying counter — that's the value the UI
@@ -30,7 +40,7 @@ export async function GET() {
   const spots_left = row.active ? row.remaining : 0;
 
   return NextResponse.json(
-    { active: row.active, spots_left, limit: FOUNDER_LIMIT },
+    { active: row.active, spots_left, limit },
     { headers: { "Cache-Control": "public, max-age=60" } },
   );
 }

@@ -1258,26 +1258,17 @@ export default function HomePage() {
 
                 // KIE doesn't expose a credit cap — only the live balance.
                 // We render against a fixed reference so users get a visual
-                // sense of how far they are from running out. The bar fills
-                // as credits deplete (it's a danger meter, not a fuel gauge):
-                //   <50% depleted → green (healthy headroom)
-                //   50–80%       → yellow (running low)
-                //   >80%         → red (urgent — top up)
+                // sense of how far they are from running out. Bar fills as
+                // credits deplete; always green regardless of fill level.
                 // Tweak REFERENCE if 1000 ends up feeling too high/low.
                 function CreditsBar({ credits }: { credits: number }) {
                   const REFERENCE = 1000;
                   const depletion = Math.max(0, Math.min(1 - credits / REFERENCE, 1));
-                  const barColor = depletion < 0.5 ? "#34d399"
-                    : depletion < 0.8 ? "#f0a855"
-                    : "#f87171";
-                  const stateLabel = depletion < 0.5 ? "Healthy"
-                    : depletion < 0.8 ? "Low"
-                    : "Critical";
+                  const barColor = "#34d399";
                   return (
                     <div>
                       <div className="flex justify-between text-[10px] mb-1" style={{ color: "var(--c-40)" }}>
                         <span>Credit health</span>
-                        <span style={{ color: barColor }}>{stateLabel}</span>
                       </div>
                       <div className="w-full rounded-full h-1.5" style={{ background: "oklch(1 0 0 / 0.08)" }}>
                         <div className="h-1.5 rounded-full transition-all" style={{ width: `${depletion * 100}%`, background: barColor }} />

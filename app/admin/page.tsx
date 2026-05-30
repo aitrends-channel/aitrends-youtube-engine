@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
-  DollarSign, SlidersHorizontal, Sparkles, RotateCcw,
+  DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -86,13 +86,12 @@ interface ProductApiKey {
   created_at: string;
 }
 
-const SERVICES = ["youtube_data_api_key", "supadata_api_key", "kie"] as const;
+const SERVICES = ["youtube_data_api_key", "supadata_api_key"] as const;
 type Service = typeof SERVICES[number];
 
 const SERVICE_LABELS: Record<Service, string> = {
   youtube_data_api_key: "YouTube Data API Key",
   supadata_api_key: "Supadata API Key",
-  kie: "KIE",
 };
 
 interface ActivityPoint {
@@ -239,6 +238,15 @@ function SetupSection({
   const [removingKey, setRemovingKey] = useState<string | null>(null); // "rowId:index"
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
+
+  // Live Supadata account usage — there's only one key + the billing
+  // model is account-wide credits (not per-key daily quota), so we just
+  // query Supadata's /v1/me endpoint once for the whole row.
+  const { data: supadataStatus } = useSWR<{ plan: string; usedCredits: number; maxCredits: number; error?: string }>(
+    "/api/admin/supadata-status",
+    fetcher,
+    { revalidateOnFocus: false }
+  );
 
   const serviceMap = new Map(productKeys.map(k => [k.service, k]));
   const totalKeys = productKeys.reduce((s, k) => s + k.keys.length, 0);
@@ -397,7 +405,7 @@ function SetupSection({
                   <span className="text-xs font-semibold tracking-wide" style={{ color: "oklch(0.62 0.15 220)" }}>
                     {SERVICE_LABELS[service]}
                   </span>
-                  {row && (
+                  {row && service !== "supadata_api_key" && (
                     <span className="text-xs px-2 py-0.5 rounded-full ml-1"
                       style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-42)" }}>
                       {row.keys.length} key{row.keys.length !== 1 ? "s" : ""}
@@ -433,9 +441,43 @@ function SetupSection({
                   </div>
                 </div>
 
+                {/* Supadata account usage — fetched live from /v1/me */}
+                {service === "supadata_api_key" && supadataStatus && !supadataStatus.error && (() => {
+                  const used = supadataStatus.usedCredits;
+                  const max = supadataStatus.maxCredits || 1;
+                  const pct = Math.min(100, (used / max) * 100);
+                  const barColor = "oklch(0.55 0.15 145)";
+                  const remaining = Math.max(0, max - used);
+                  return (
+                    <div className="px-4 py-3 space-y-2"
+                      style={{ background: "oklch(0 0 0 / 0.015)", borderBottom: row && row.keys.length > 0 ? "1px solid oklch(0 0 0 / 0.05)" : "none" }}>
+                      <div className="flex items-center justify-between text-xs">
+                        <span style={{ color: "var(--c-42)" }}>Account usage</span>
+                        <span style={{ color: "var(--c-42)" }}>
+                          Plan:{" "}
+                          <span className="font-semibold" style={{ color: "oklch(0.62 0.15 220)" }}>{supadataStatus.plan}</span>
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "oklch(0 0 0 / 0.08)" }}>
+                          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: barColor }} />
+                        </div>
+                        <span className="text-xs shrink-0 tabular-nums" style={{ color: "var(--c-42)", minWidth: 140, textAlign: "right" }}>
+                          {used.toLocaleString()} / {max.toLocaleString()} credits
+                        </span>
+                        <span className="text-xs shrink-0 font-medium tabular-nums" style={{ color: barColor, minWidth: 80, textAlign: "right" }}>
+                          {remaining.toLocaleString()} left
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Keys list */}
                 {!row || row.keys.length === 0 ? (
-                  <p className="text-xs italic px-4 py-3" style={{ color: "var(--c-35)" }}>No keys yet — add one above.</p>
+                  service === "supadata_api_key" ? null : (
+                    <p className="text-xs italic px-4 py-3" style={{ color: "var(--c-35)" }}>No keys yet — add one above.</p>
+                  )
                 ) : (
                   <div>
                     {row.keys.map((k, i) => {
@@ -448,11 +490,7 @@ function SetupSection({
                       const tracking = (row.quota_tracking ?? [])[i];
                       const unitsUsed = (tracking?.date === today ? tracking.units_used : 0);
                       const pct = Math.min(100, (unitsUsed / 10_000) * 100);
-                      const barColor = pct >= 90
-                        ? "oklch(0.65 0.22 25)"
-                        : pct >= 70
-                        ? "oklch(0.72 0.18 65)"
-                        : "oklch(0.55 0.15 145)";
+                      const barColor = "oklch(0.55 0.15 145)";
                       const remaining = Math.max(0, 10_000 - unitsUsed);
 
                       return (
@@ -693,6 +731,39 @@ export default function AdminPage() {
     }
   }
 
+  const [editLimitOpen, setEditLimitOpen] = useState(false);
+  const [limitInput, setLimitInput] = useState("");
+  const [savingLimit, setSavingLimit] = useState(false);
+  function openEditLimit() {
+    setLimitInput(String(founderSpots?.limit ?? ""));
+    setEditLimitOpen(true);
+  }
+  async function confirmSetFounderLimit() {
+    if (savingLimit) return;
+    const parsed = Number(limitInput);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      toast.error("Enter a whole number ≥ 0");
+      return;
+    }
+    setSavingLimit(true);
+    try {
+      const res = await fetch("/api/admin/founder-limit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: parsed }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `Update failed (${res.status})`);
+      await mutateFounderSpots();
+      toast.success(`Founder cap set to ${parsed}`);
+      setEditLimitOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Update failed");
+    } finally {
+      setSavingLimit(false);
+    }
+  }
+
   const [removing, setRemoving] = useState<string | null>(null);
   const [usersPage, setUsersPage] = useState(1);
   const [projectsPage, setProjectsPage] = useState(1);
@@ -902,7 +973,22 @@ export default function AdminPage() {
                 </p>
               </div>
             </div>
-            <div className="flex items-end gap-3 shrink-0">
+            <div className="flex items-end gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={openEditLimit}
+                disabled={!founderSpots}
+                title="Change the total Founder slot cap"
+                className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[10px] font-semibold uppercase tracking-wider transition disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{
+                  background: "oklch(0.97 0.005 240)",
+                  border: "1px solid oklch(0.88 0.01 240)",
+                  color: "oklch(0.35 0 0)",
+                }}
+              >
+                <Pencil size={10} />
+                Edit Limit
+              </button>
               <button
                 type="button"
                 onClick={() => setResetConfirmOpen(true)}
@@ -1574,14 +1660,6 @@ export default function AdminPage() {
           </ul>
           <DialogFooter>
             <button
-              onClick={() => setResetConfirmOpen(false)}
-              disabled={resettingSlots}
-              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
-              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
-            >
-              Cancel
-            </button>
-            <button
               onClick={confirmResetFounderSlots}
               disabled={resettingSlots}
               className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
@@ -1593,6 +1671,71 @@ export default function AdminPage() {
                   Resetting…
                 </span>
               ) : "Reset Slots"}
+            </button>
+            <button
+              onClick={() => setResetConfirmOpen(false)}
+              disabled={resettingSlots}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Cancel
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editLimitOpen}
+        onOpenChange={(open) => { if (!open && !savingLimit) setEditLimitOpen(false); }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Set Founder slot cap</DialogTitle>
+            <DialogDescription>
+              Total number of Founder spots offered. Already-claimed spots are preserved — only the ceiling changes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>
+              New cap
+            </label>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={limitInput}
+              onChange={(e) => setLimitInput(e.target.value)}
+              disabled={savingLimit}
+              className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all tabular-nums"
+              style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
+            />
+            <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
+              Current cap: <span className="font-semibold tabular-nums">{founderSpots?.limit ?? "—"}</span>
+              {" · "}
+              Setting below the already-claimed count will mark the promo as ended.
+            </p>
+          </div>
+          <DialogFooter>
+            <button
+              onClick={confirmSetFounderLimit}
+              disabled={savingLimit}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
+            >
+              {savingLimit ? (
+                <span className="inline-flex items-center justify-center gap-2">
+                  <Spinner size={14} className="text-white" />
+                  Saving…
+                </span>
+              ) : "Save cap"}
+            </button>
+            <button
+              onClick={() => setEditLimitOpen(false)}
+              disabled={savingLimit}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Cancel
             </button>
           </DialogFooter>
         </DialogContent>
