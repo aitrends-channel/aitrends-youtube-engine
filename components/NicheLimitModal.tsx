@@ -43,7 +43,9 @@ export function NicheLimitModal({ email, currentPlan, nichesUsed, nicheLimit, on
   const [founderSpotsLeft, setFounderSpotsLeft] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch("/api/founder-spots")
+    // cache: "no-store" so admin edits to the founder cap reflect
+    // immediately on the next open instead of behind the browser cache.
+    fetch("/api/founder-spots", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
         if (typeof d.active === "boolean") setFounderActive(d.active);

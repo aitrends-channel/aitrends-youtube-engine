@@ -6,6 +6,10 @@
 ALTER TABLE product_config
   ADD COLUMN IF NOT EXISTS founders_promo_limit INTEGER NOT NULL DEFAULT 100;
 
+-- Postgres won't change a function's return columns via CREATE OR
+-- REPLACE — adding `limit` to the OUT tuple needs an explicit DROP.
+DROP FUNCTION IF EXISTS get_founder_promo_state();
+
 -- Return the limit alongside taken/remaining/active so the API and UI
 -- can render it without keeping their own hardcoded fallback in sync.
 CREATE OR REPLACE FUNCTION get_founder_promo_state()

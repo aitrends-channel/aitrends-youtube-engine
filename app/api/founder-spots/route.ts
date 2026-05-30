@@ -39,8 +39,9 @@ export async function GET() {
   // displays and the value the modals use to decide visibility.
   const spots_left = row.active ? row.remaining : 0;
 
-  return NextResponse.json(
-    { active: row.active, spots_left, limit },
-    { headers: { "Cache-Control": "public, max-age=60" } },
-  );
+  // Intentionally no cache headers — admin-edited values (the cap, the
+  // counter) need to reflect on the UI immediately after a mutate; a
+  // public 60s cache here made the SubscriptionModal / dashboard
+  // counter look stale after every change.
+  return NextResponse.json({ active: row.active, spots_left, limit });
 }

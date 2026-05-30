@@ -4,8 +4,6 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { X, Check, Zap, PlayCircle } from "lucide-react";
 
-const FOUNDER_LIMIT = 100;
-
 const PLANS = [
   {
     id: "founder",
@@ -63,7 +61,10 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
   const [subscribing, setSubscribing] = useState(false);
 
   useEffect(() => {
-    fetch("/api/founder-spots")
+    // cache: "no-store" so admin edits to the founder cap or slot
+    // count reflect immediately on the next modal open instead of
+    // sitting behind whatever the browser cached from a prior fetch.
+    fetch("/api/founder-spots", { cache: "no-store" })
       .then(r => r.json())
       .then(d => {
         if (typeof d.active === "boolean") setFounderActive(d.active);
@@ -174,12 +175,12 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
                 cursor: plan.disabled ? "not-allowed" : "pointer",
               }}
             >
-              {plan.founder && (
+              {plan.founder && spotsLeft !== null && (
                 <span
                   className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
                   style={{ background: "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))", color: "white" }}
                 >
-                  🔥 {spotsLeft !== null ? `${spotsLeft} spots left` : "First 100"}
+                  🔥 {spotsLeft} spots left
                 </span>
               )}
               {plan.highlighted && (
