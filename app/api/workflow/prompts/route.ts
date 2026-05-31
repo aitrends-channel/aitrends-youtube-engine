@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import Anthropic from "@anthropic-ai/sdk";
 import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 import {
   buildImagePromptsPrompt,
@@ -26,6 +27,57 @@ function assertComplete(stopReason: string | null | undefined, label: string) {
   if (stopReason === "max_tokens") {
     throw new Error(`Response was cut off during "${label}". Please try again.`);
   }
+}
+
+// KIE+Opus occasionally ignores tool_choice forcing and emits a *fake*
+// tool-call structure as plain text (e.g. `<tool_calls>[{"input":
+// {"beats":[...]}}]</tool_calls>`). A naive greedy regex either grabs
+// too much (post-amble commentary) or too little (truncated tail). This
+// parser:
+//   1. Locates `"beats"` anywhere in the text (handles wrapper formats).
+//   2. Bracket-counts (string-aware) to find the matching `]`.
+//   3. Falls back to extracting complete beat objects via regex when
+//      the array is truncated mid-write.
+function extractBeatsFromText(raw: string): { beats: Array<{ beatNumber: number; videoPrompt: string }> } | null {
+  const beatsKeyIdx = raw.indexOf('"beats"');
+  if (beatsKeyIdx === -1) return null;
+  const arrStart = raw.indexOf("[", beatsKeyIdx);
+  if (arrStart === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let arrEnd = -1;
+  for (let j = arrStart; j < raw.length; j++) {
+    const ch = raw[j];
+    if (escape) { escape = false; continue; }
+    if (ch === "\\") { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "[") depth++;
+    else if (ch === "]") { depth--; if (depth === 0) { arrEnd = j; break; } }
+  }
+
+  if (arrEnd !== -1) {
+    try {
+      const arr = JSON.parse(raw.slice(arrStart, arrEnd + 1));
+      if (Array.isArray(arr) && arr.length > 0) return { beats: arr };
+    } catch { /* fall through to per-beat recovery */ }
+  }
+
+  const beats: Array<{ beatNumber: number; videoPrompt: string }> = [];
+  const beatRe = /\{\s*"beatNumber"\s*:\s*(\d+)\s*,\s*"videoPrompt"\s*:\s*"((?:[^"\\]|\\.)*)"\s*\}/g;
+  const partial = raw.slice(arrStart);
+  let m: RegExpExecArray | null;
+  while ((m = beatRe.exec(partial)) !== null) {
+    try {
+      beats.push({
+        beatNumber: parseInt(m[1], 10),
+        videoPrompt: JSON.parse(`"${m[2]}"`),
+      });
+    } catch { /* skip malformed beat */ }
+  }
+  return beats.length > 0 ? { beats } : null;
 }
 
 function sseStream(handler: (send: (data: object) => void) => Promise<void>): Response {
@@ -123,7 +175,13 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
     imagePrompt: b.image_prompt as string,
   }));
 
-  const CHUNK_SIZE = 20;
+  // Smaller chunks + more output headroom. Opus occasionally ignores
+  // tool_choice and emits a fake `<tool_calls>` text format; when that
+  // happens, larger chunks are more likely to truncate mid-JSON and
+  // become unparseable. 5 beats per chunk keeps each call well below
+  // the model's tendency to drift, with extractBeatsFromText as the
+  // text-mode safety net.
+  const CHUNK_SIZE = 5;
   const chunks: typeof beats[] = [];
   for (let i = 0; i < beats.length; i += CHUNK_SIZE) chunks.push(beats.slice(i, i + CHUNK_SIZE));
 
@@ -134,20 +192,47 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
   for (let i = 0; i < chunks.length; i++) {
     if (chunks.length > 1) send({ type: "progress", current: i + 1, total: chunks.length });
 
-    const res = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 4096,
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-      tools: [{ name: "save_video_prompts", description: "Save video prompts for all beats", input_schema: videoPromptsInputSchema }],
-      tool_choice: { type: "tool", name: "save_video_prompts" },
-      messages: [{ role: "user", content: buildVideoPromptsPrompt(chunks[i], visualProfile) }],
-    });
+    // One retry on tool-use miss — KIE occasionally returns text-only
+    // even with tool_choice forced. A fresh call usually picks the tool.
+    let res!: Anthropic.Messages.Message;
+    let tool: Anthropic.Messages.ContentBlock | undefined;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      res = await anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 8192,
+        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        tools: [{ name: "save_video_prompts", description: "Save video prompts for all beats", input_schema: videoPromptsInputSchema }],
+        tool_choice: { type: "tool", name: "save_video_prompts" },
+        messages: [{ role: "user", content: buildVideoPromptsPrompt(chunks[i], visualProfile) }],
+      });
+      tool = res.content.find((b) => b.type === "tool_use");
+      const blockTypes = res.content.map((b) => b.type).join(",");
+      console.log(`[video-prompts] batch ${i + 1}/${chunks.length} attempt ${attempt + 1} stop=${res.stop_reason} blocks=${blockTypes} tool_use=${!!tool}`);
+      if (tool && tool.type === "tool_use") break;
+    }
 
     assertComplete(res.stop_reason, `video batch ${i + 1}/${chunks.length}`);
 
-    const tool = res.content.find((b) => b.type === "tool_use");
-    if (!tool || tool.type !== "tool_use") throw new Error(`No video prompts for batch ${i + 1}`);
-    const input = tool.input as Record<string, unknown>;
+    // Preferred path: model used the tool, take its input directly.
+    let input: Record<string, unknown> | null = null;
+    if (tool && tool.type === "tool_use") {
+      input = tool.input as Record<string, unknown>;
+    } else {
+      // Fallback path: KIE+Opus sometimes emits the JSON as text instead
+      // of invoking the tool, wrapped in a fake `<tool_calls>` shell.
+      // extractBeatsFromText handles wrapper detection, string-aware
+      // bracket counting, and per-beat recovery for truncated tails.
+      const textBlock = res.content.find((b) => b.type === "text");
+      const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
+      console.log(`[video-prompts] batch ${i + 1} fallback parsing text len=${raw.length} head=${raw.slice(0, 200)}`);
+      const parsed = extractBeatsFromText(raw);
+      if (parsed) {
+        input = parsed as unknown as Record<string, unknown>;
+        console.log(`[video-prompts] batch ${i + 1} fallback recovered ${parsed.beats.length} beats`);
+      }
+    }
+
+    if (!input) throw new Error(`No video prompts for batch ${i + 1} after retry`);
     if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Empty video prompts for batch ${i + 1}`);
 
     allVideoBeats.push(...VideoPromptsSchema.parse(input).beats);

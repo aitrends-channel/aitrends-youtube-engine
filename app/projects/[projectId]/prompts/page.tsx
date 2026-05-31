@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, use } from "react";
+import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
@@ -145,6 +145,31 @@ function StepCard({ num, title, description, state, doneLabel, disabled, optiona
   const isDone = state.status === "done";
   const isError = state.status === "error";
 
+  // Time-based fake progress when the route doesn't emit real progress
+  // events. Image prompts is one API call (no chunks), video prompts
+  // only emits progress when there are >20 beats. Without this the bar
+  // wouldn't render for typical-sized work. Defaults assume Opus + a
+  // moderate beat count.
+  const EXPECTED_MS = 35000;
+  const [fakePct, setFakePct] = useState(0);
+  useEffect(() => {
+    if (isDone) { setFakePct(100); return; }
+    if (!isRunning) { setFakePct(0); return; }
+    const startedAt = Date.now();
+    setFakePct(0);
+    const t = setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      setFakePct(Math.min(92, (elapsed / EXPECTED_MS) * 100));
+    }, 80);
+    return () => clearInterval(t);
+  }, [isRunning, isDone]);
+
+  // Prefer real progress when the route reports it; else use fake.
+  const realPct = state.progress
+    ? Math.round((state.progress.current / state.progress.total) * 100)
+    : null;
+  const shownPct = realPct ?? Math.round(fakePct);
+
   const borderColor = isDone
     ? "oklch(0.55 0.15 145 / 0.25)"
     : isRunning
@@ -192,20 +217,19 @@ function StepCard({ num, title, description, state, doneLabel, disabled, optiona
         {isRunning && (
           <div className="space-y-1.5">
             <p className="text-xs" style={{ color: "oklch(0.65 0.15 75)" }}>{state.message}</p>
-            {state.progress && (
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-progress)" }}>
-                  <div className="h-full rounded-full transition-all duration-300"
-                    style={{
-                      width: `${(state.progress.current / state.progress.total) * 100}%`,
-                      background: "oklch(0.72 0.25 285)",
-                    }} />
-                </div>
-                <span className="text-xs shrink-0" style={{ color: "var(--c-40)" }}>
-                  {state.progress.current}/{state.progress.total}
-                </span>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-progress)" }}>
+                <div className="h-full rounded-full transition-all duration-200"
+                  style={{
+                    width: `${shownPct}%`,
+                    background: "oklch(0.55 0.15 145)",
+                  }} />
               </div>
-            )}
+              <span className="text-xs shrink-0 tabular-nums font-mono"
+                style={{ color: "oklch(0.7 0.15 145)" }}>
+                {state.progress ? `${state.progress.current}/${state.progress.total}` : `${shownPct}%`}
+              </span>
+            </div>
           </div>
         )}
         {isDone && doneLabel && (

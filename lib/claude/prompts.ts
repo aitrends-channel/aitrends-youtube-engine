@@ -73,7 +73,7 @@ Rules:
 - Make titles that create genuine curiosity gaps
 - NO generic titles — each must feel native to this specific channel
 
-Return a JSON object with an "ideas" array of exactly 25 title strings.`;
+Call the save_video_ideas tool with an "ideas" array of exactly 25 title strings. Do not write any text outside the tool call.`;
 }
 
 export function buildScriptPrompt(
@@ -132,7 +132,7 @@ ${includesThumbnails ? `Also analyze the thumbnail images separately:
 - Color contrast strategy
 - Emotion triggers used` : ""}
 
-Return a JSON object with the visual profile. Be specific — these descriptions will be used as direct instructions for AI image generation.`;
+Call the save_visual_analysis tool with the structured profile. Be specific — these descriptions will be used as direct instructions for AI image generation. Do not write any text outside the tool call.`;
 }
 
 export function buildImagePromptsPrompt(
@@ -163,7 +163,7 @@ FIELD RULES:
 - mood: single short phrase (e.g. "tense, urgent")
 - action: single short phrase (e.g. "subject leans forward")
 
-Number beats from ${startBeat}, no gaps. Return a JSON object with a "beats" array.`;
+Number beats from ${startBeat}, no gaps. Call the save_image_prompts tool with a "beats" array. Do not write any text outside the tool call.`;
 }
 
 export function buildVideoPromptsPrompt(
@@ -195,7 +195,7 @@ RULES:
 - Duration: 3-5 seconds, smooth and cinematic
 - Stay within the existing image scene — only add motion
 
-Return a JSON object with a "beats" array of { beatNumber, videoPrompt }.`;
+Call the save_video_prompts tool with a "beats" array of { beatNumber, videoPrompt }. Do not write any text outside the tool call.`;
 }
 
 export function buildThumbnailsPrompt(
@@ -238,7 +238,7 @@ For each thumbnail, provide:
 - emotionTrigger: the core emotion this thumbnail triggers (fear, curiosity, inspiration, shock, etc.)
 - stylePrompt: a COMPLETE, DETAILED AI image generation prompt for the thumbnail image (4-6 sentences). Must include: subject description, scene/background, lighting, composition, color palette, art style, text placement guidance, and technical quality tags. Write it as if you're instructing an image AI with full context — no shortcuts.
 
-Return a JSON object with a "thumbnails" array.`;
+Call the save_thumbnails tool with a "thumbnails" array. Do not write any text outside the tool call.`;
 }
 
 export function buildPromptsPrompt(
@@ -286,5 +286,5 @@ ${thumbnailAnalysis ? `Based on thumbnail analysis:
 - Emotion triggers: ${thumbnailAnalysis.emotionTriggers.join(", ")}` : "Match the channel's visual style"}
 - Each thumbnail needs: title, visual concept, text overlay with colors, emotion trigger, full style-matched prompt
 
-Return a JSON object with "beats" array and "thumbnails" array.`;
+Call the tool with "beats" array and "thumbnails" array. Do not write any text outside the tool call.`;
 }
