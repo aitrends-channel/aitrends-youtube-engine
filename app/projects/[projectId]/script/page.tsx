@@ -161,6 +161,26 @@ export default function ScriptPage({ params }: PageProps) {
                     <span className="text-xs font-medium" style={{ color: "var(--c-50)" }}>
                       {isStreaming ? "Generating..." : "Script"}
                     </span>
+                    {isStreaming && (() => {
+                      const pct = Math.min(100, Math.round((wordCount / targetWordCount) * 100));
+                      return (
+                        <>
+                          <div className="w-24 sm:w-32 h-1 rounded-full overflow-hidden ml-1"
+                            style={{ background: "var(--bg-track)" }}>
+                            <div className="h-full rounded-full transition-all duration-200"
+                              style={{
+                                width: `${pct}%`,
+                                background: "oklch(0.55 0.15 145)",
+                              }}
+                            />
+                          </div>
+                          <span className="text-xs font-mono tabular-nums"
+                            style={{ color: "oklch(0.7 0.15 145)", minWidth: "2.5em" }}>
+                            {pct}%
+                          </span>
+                        </>
+                      );
+                    })()}
                   </div>
                   <div className="flex items-center gap-2">
                     {script && (

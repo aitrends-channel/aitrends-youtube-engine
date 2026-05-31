@@ -311,6 +311,16 @@ body {
   pointer-events: none;
 }
 
+/* Indeterminate progress stripe — used while waiting for first token */
+@keyframes progress-indeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+.progress-indeterminate {
+  width: 30%;
+  animation: progress-indeterminate 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }

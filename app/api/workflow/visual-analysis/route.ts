@@ -73,10 +73,17 @@ export async function POST(req: Request) {
     const toolUse = response.content.find((b) => b.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") throw new Error("No visual analysis returned");
 
-    const result = toolUse.input as { visualProfile: unknown; thumbnailAnalysis?: unknown };
-    const visualProfile = VisualProfileSchema.parse(result.visualProfile);
-    const thumbnailAnalysis = hasThumbnails && result.thumbnailAnalysis
-      ? ThumbnailAnalysisSchema.parse(result.thumbnailAnalysis)
+    const result = toolUse.input as { visualProfile?: unknown; thumbnailAnalysis?: unknown; [k: string]: unknown };
+
+    // Defensive: if the model ignored the wrapper and returned the
+    // visualProfile fields flat at the root, treat `result` itself as
+    // the visualProfile. Same fallback for thumbnailAnalysis.
+    const visualProfileRaw = result.visualProfile ?? result;
+    const visualProfile = VisualProfileSchema.parse(visualProfileRaw);
+
+    const thumbnailRaw = result.thumbnailAnalysis;
+    const thumbnailAnalysis = hasThumbnails && thumbnailRaw
+      ? ThumbnailAnalysisSchema.parse(thumbnailRaw)
       : null;
 
     await supabase

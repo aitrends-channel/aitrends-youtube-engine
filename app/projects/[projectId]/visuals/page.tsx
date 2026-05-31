@@ -20,7 +20,23 @@ interface AutoShot {
   frameUrls: string[];
 }
 
-function StepRow({ label, sublabel, status }: { label: string; sublabel: string; status: StepStatus }) {
+function StepRow({ label, sublabel, status, expectedMs = 12000 }: { label: string; sublabel: string; status: StepStatus; expectedMs?: number }) {
+  // Time-based fake-progress: we don't get real % from Claude's vision
+  // call, so we interpolate 0 → 92% over expectedMs (linear), then snap
+  // to 100% the moment status flips to "done". Reset on idle/error.
+  const [pct, setPct] = useState(0);
+  useEffect(() => {
+    if (status === "done") { setPct(100); return; }
+    if (status !== "running") { setPct(0); return; }
+    const startedAt = Date.now();
+    setPct(0);
+    const t = setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      setPct(Math.min(92, (elapsed / expectedMs) * 100));
+    }, 80);
+    return () => clearInterval(t);
+  }, [status, expectedMs]);
+
   return (
     <div className="flex items-center gap-3">
       <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-sm"
@@ -35,9 +51,23 @@ function StepRow({ label, sublabel, status }: { label: string; sublabel: string;
          status === "running" ? <span className="block w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" /> :
          status === "error" ? "✕" : "○"}
       </div>
-      <div>
+      <div className="min-w-0 flex-1">
         <p className="text-sm font-medium" style={{ color: status === "idle" ? "var(--c-40)" : "var(--c-85)" }}>{label}</p>
-        <p className="text-xs" style={{ color: "var(--c-40)" }}>{sublabel}</p>
+        {status === "running" ? (
+          <div className="mt-1.5 flex items-center gap-2">
+            <div className="w-40 sm:w-56 h-1 rounded-full overflow-hidden"
+              style={{ background: "var(--bg-track)" }}>
+              <div className="h-full rounded-full transition-all duration-200"
+                style={{ width: `${pct}%`, background: "oklch(0.55 0.15 145)" }}
+              />
+            </div>
+            <span className="text-xs font-mono tabular-nums" style={{ color: "oklch(0.7 0.15 145)" }}>
+              {Math.round(pct)}%
+            </span>
+          </div>
+        ) : (
+          <p className="text-xs" style={{ color: "var(--c-40)" }}>{sublabel}</p>
+        )}
       </div>
     </div>
   );

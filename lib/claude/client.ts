@@ -119,10 +119,12 @@ export async function getAnthropicClient(userId: string): Promise<Anthropic> {
 
 export const MODEL = "claude-opus-4-7";
 
-// Vision/structured-output tasks don't need Opus-tier reasoning and
-// blow past Vercel's function timeout when Opus has to chew on 10+
-// image blocks. Haiku handles the same input ~10× faster at a tiny
-// fraction of the credit cost.
+// Vision analysis stays on Haiku — Opus + 10 image blocks routinely
+// blows past Vercel's outbound-fetch timeout and the SDK reports the
+// dropped connection as "Connection error." Haiku is fast enough to
+// finish well within budget. Its occasional "returns flat shape"
+// quirk is absorbed by the defensive parse in the visual-analysis
+// route, so a non-nested response no longer crashes Zod.
 export const VISION_MODEL = "claude-haiku-4-5";
 
 export const SYSTEM_PROMPT = `You are an advanced AI YouTube Content Engine. Your purpose is to analyze YouTube channel transcripts, extract the channel's unique style DNA, and generate fully original content that matches the channel's voice, pacing, and emotional arc.
