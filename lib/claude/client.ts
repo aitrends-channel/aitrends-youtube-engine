@@ -53,10 +53,6 @@ const fetchViaKie: typeof fetch = async (input, init) => {
   // Consume the body exactly once.
   const text = await upstream.text();
 
-  // ── TEMP DIAGNOSTIC v2 ─────────────────────────────────────────
-  console.log("[KIE.v2]", upstream.status, "len=", text.length, "encoding=", upstream.headers.get("content-encoding") ?? "none");
-  // ────────────────────────────────────────────────────────────────
-
   if (!upstream.ok) return rebuild(upstream, text);
 
   let parsed: unknown;
@@ -121,7 +117,7 @@ export async function getAnthropicClient(userId: string): Promise<Anthropic> {
   });
 }
 
-export const MODEL = "claude-sonnet-4-6";
+export const MODEL = "claude-opus-4-7";
 
 export const SYSTEM_PROMPT = `You are an advanced AI YouTube Content Engine. Your purpose is to analyze YouTube channel transcripts, extract the channel's unique style DNA, and generate fully original content that matches the channel's voice, pacing, and emotional arc.
 
