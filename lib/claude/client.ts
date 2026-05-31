@@ -20,29 +20,33 @@ const KIE_CLAUDE_BASE_URL = "https://api.kie.ai/claude";
 //       The SDK would parse that as the top-level message and find no
 //       `content`. We unwrap to the native Anthropic shape before handing
 //       the response back.
+// Build a fresh Response from a body string while preserving the
+// upstream status/headers. We never hand `res` itself back to the SDK
+// because reading the body for envelope-detection consumes the stream;
+// even .clone() is flaky on large responses under undici (Next.js).
+function rebuild(upstream: Response, body: string): Response {
+  return new Response(body, {
+    status: upstream.status,
+    statusText: upstream.statusText,
+    headers: upstream.headers,
+  });
+}
+
 const fetchViaKie: typeof fetch = async (input, init) => {
   const headers = new Headers(init?.headers);
   headers.set("User-Agent", "heclus-engine/1.0");
 
-  const res = await fetch(input, { ...init, headers });
+  const upstream = await fetch(input, { ...init, headers });
+  // Consume the body exactly once.
+  const text = await upstream.text();
 
-  // ── TEMP DIAGNOSTIC ──────────────────────────────────────────────
-  const debugText = await res.clone().text();
-  const debugKeys = (() => {
-    try { return Object.keys(JSON.parse(debugText)); }
-    catch { return ["<non-json>"]; }
-  })();
-  console.log("[KIE]", res.status, "keys=", debugKeys.join(","), "head=", debugText.slice(0, 240));
-  // ─────────────────────────────────────────────────────────────────
+  if (!upstream.ok) return rebuild(upstream, text);
 
-  if (!res.ok) return res;
-
-  const text = debugText;
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    return res; // Not JSON — pass through.
+    return rebuild(upstream, text); // Not JSON — pass through.
   }
 
   const isEnvelope =
@@ -52,7 +56,7 @@ const fetchViaKie: typeof fetch = async (input, init) => {
     typeof (parsed as { code: unknown }).code === "number" &&
     ("data" in parsed || "msg" in parsed);
 
-  if (!isEnvelope) return res; // Already native Anthropic shape.
+  if (!isEnvelope) return rebuild(upstream, text); // Already native Anthropic shape.
 
   const env = parsed as { code: number; msg?: string; data?: unknown };
 
