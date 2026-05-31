@@ -36,7 +36,18 @@ export async function POST(req: Request) {
       messages: [{ role: "user", content: buildAnalysisPrompt(transcripts) }],
     });
 
-    const analysisToolUse = analysisResponse.content.find((b) => b.type === "tool_use");
+    // ── TEMP DIAGNOSTIC ──────────────────────────────────────────
+    console.log("[analyze.sdk]",
+      "type=", typeof analysisResponse,
+      "isArr=", Array.isArray(analysisResponse),
+      "keys=", analysisResponse && typeof analysisResponse === "object"
+        ? Object.keys(analysisResponse as object).join(",")
+        : "<none>",
+      "head=", JSON.stringify(analysisResponse).slice(0, 400)
+    );
+    // ─────────────────────────────────────────────────────────────
+
+    const analysisToolUse = analysisResponse.content?.find((b) => b.type === "tool_use");
     if (!analysisToolUse || analysisToolUse.type !== "tool_use") {
       throw new Error("No structured analysis returned");
     }
