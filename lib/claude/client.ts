@@ -24,11 +24,24 @@ const KIE_CLAUDE_BASE_URL = "https://api.kie.ai/claude";
 // upstream status/headers. We never hand `res` itself back to the SDK
 // because reading the body for envelope-detection consumes the stream;
 // even .clone() is flaky on large responses under undici (Next.js).
+//
+// Headers about the wire encoding of the original body (content-encoding,
+// content-length, transfer-encoding) are dropped — undici has already
+// decompressed when we did `.text()`, so forwarding e.g. `gzip` would
+// tell the SDK's reader to decompress an already-plain string and
+// silently fail.
 function rebuild(upstream: Response, body: string): Response {
+  const headers = new Headers();
+  upstream.headers.forEach((value, name) => {
+    const lower = name.toLowerCase();
+    if (lower === "content-encoding" || lower === "content-length" || lower === "transfer-encoding") return;
+    headers.set(name, value);
+  });
+  headers.set("content-type", upstream.headers.get("content-type") ?? "application/json");
   return new Response(body, {
     status: upstream.status,
     statusText: upstream.statusText,
-    headers: upstream.headers,
+    headers,
   });
 }
 
@@ -39,6 +52,10 @@ const fetchViaKie: typeof fetch = async (input, init) => {
   const upstream = await fetch(input, { ...init, headers });
   // Consume the body exactly once.
   const text = await upstream.text();
+
+  // ── TEMP DIAGNOSTIC v2 ─────────────────────────────────────────
+  console.log("[KIE.v2]", upstream.status, "len=", text.length, "encoding=", upstream.headers.get("content-encoding") ?? "none");
+  // ────────────────────────────────────────────────────────────────
 
   if (!upstream.ok) return rebuild(upstream, text);
 
