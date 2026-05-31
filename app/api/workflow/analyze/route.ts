@@ -37,13 +37,11 @@ export async function POST(req: Request) {
     });
 
     // ── TEMP DIAGNOSTIC ──────────────────────────────────────────
-    console.log("[analyze.sdk]",
-      "type=", typeof analysisResponse,
-      "isArr=", Array.isArray(analysisResponse),
-      "keys=", analysisResponse && typeof analysisResponse === "object"
-        ? Object.keys(analysisResponse as object).join(",")
-        : "<none>",
-      "head=", JSON.stringify(analysisResponse).slice(0, 400)
+    console.log("[analyze.sdk] stop_reason=", analysisResponse.stop_reason,
+      "content_blocks=", analysisResponse.content?.map(b => b.type).join(",") ?? "<none>",
+      "first_block_head=", analysisResponse.content?.[0]
+        ? JSON.stringify(analysisResponse.content[0]).slice(0, 400)
+        : "<empty>"
     );
     // ─────────────────────────────────────────────────────────────
 
