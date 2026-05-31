@@ -17,8 +17,9 @@ export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),
   icons: {
     icon: [
-      { url: "/heclus.ico" },
-      { url: "/heclus-icon.png", type: "image/png", sizes: "512x512" },
+      { url: "/heclus-white.ico" },
+      { url: "/heclus-icon-white.svg", type: "image/svg+xml" },
+      { url: "/heclus-icon-white.png", type: "image/png", sizes: "512x512" },
     ],
     apple: "/heclus-icon-white.png",
   },
@@ -49,7 +50,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="h-full" style={{ fontFamily: "'Inter Variable', sans-serif" }}>
       <head>
-        <link rel="icon" href="/heclus.ico" />
+        <link rel="icon" href="/heclus-white.ico" />
         <meta name="theme-color" content="#0f0a0f" />
         <meta name="mobile-web-app-capable" content="yes" />
         <script
