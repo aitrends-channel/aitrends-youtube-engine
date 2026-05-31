@@ -25,9 +25,19 @@ const fetchViaKie: typeof fetch = async (input, init) => {
   headers.set("User-Agent", "heclus-engine/1.0");
 
   const res = await fetch(input, { ...init, headers });
+
+  // ── TEMP DIAGNOSTIC ──────────────────────────────────────────────
+  const debugText = await res.clone().text();
+  const debugKeys = (() => {
+    try { return Object.keys(JSON.parse(debugText)); }
+    catch { return ["<non-json>"]; }
+  })();
+  console.log("[KIE]", res.status, "keys=", debugKeys.join(","), "head=", debugText.slice(0, 240));
+  // ─────────────────────────────────────────────────────────────────
+
   if (!res.ok) return res;
 
-  const text = await res.clone().text();
+  const text = debugText;
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
