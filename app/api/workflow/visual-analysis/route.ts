@@ -21,10 +21,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "At least one video image URL is required" }, { status: 400 });
     }
 
+    // Cap the screenshot count we send to vision. Beyond ~10 images
+    // marginal DNA quality drops fast while latency + credit cost
+    // climb. The caller can send more for richness; we only analyze
+    // the first batch.
+    const MAX_VIDEO_IMAGES = 10;
+    const cappedVideoImages = (videoImageUrls as string[]).slice(0, MAX_VIDEO_IMAGES);
+
     const hasThumbnails = thumbnailImageUrls?.length > 0;
 
     const imageBlocks = [
-      ...videoImageUrls.map((url: string) => ({
+      ...cappedVideoImages.map((url: string) => ({
         type: "image" as const,
         source: { type: "url" as const, url },
       })),
