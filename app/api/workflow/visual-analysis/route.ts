@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { getAnthropicClient, VISION_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 import { visualProfileInputSchema } from "@/lib/claude/anthropicSchemas";
 import { buildVisualAnalysisPrompt } from "@/lib/claude/prompts";
 import { VisualProfileSchema, ThumbnailAnalysisSchema } from "@/lib/claude/schemas";
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
         };
 
     const response = await anthropic.messages.create({
-      model: MODEL,
+      model: VISION_MODEL,
       max_tokens: 2048,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       tools: [{
