@@ -41,8 +41,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "videos and projectId required" }, { status: 400 });
     }
 
+    // Each video produces 1 thumbnail + 3 frame stills (4 images). The
+    // visual-analysis route only feeds the first 10 to the model, so
+    // pulling beyond ~3 videos is wasted YouTube fetches + R2 uploads.
+    // Slice here so we never do the wasted work in the first place.
+    const MAX_VIDEOS = 3;
+    const limitedVideos = videos.slice(0, MAX_VIDEOS);
+
     const results: VideoScreenshots[] = await Promise.all(
-      videos.map(async ({ videoId, title }) => {
+      limitedVideos.map(async ({ videoId, title }) => {
         const base = `${projectId}/auto-frames/${videoId}`;
 
         // Thumbnail — try maxresdefault, fall back to hqdefault
