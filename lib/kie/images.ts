@@ -24,7 +24,60 @@ interface KieRecordResponse {
     failMsg?: string;
     failCode?: string;
     error?: string;
+    // flux-kontext shape
+    successFlag?: number;
+    response?: { resultImageUrl?: string; originImageUrl?: string } | null;
+    errorMessage?: string | null;
+    errorCode?: string | number | null;
   };
+}
+
+// Normalize KIE's two response shapes into a single decision.
+//   • jobs/recordInfo uses `state`/`status` strings.
+//   • flux/kontext/record-info uses `successFlag` (0=pending, 1=success,
+//     others=fail) plus `response.resultImageUrl` and `errorMessage`.
+function classifyImageRecord(d: KieRecordResponse["data"]):
+  | { kind: "done"; url: string }
+  | { kind: "failed"; error: string }
+  | { kind: "pending" } {
+  const DONE = ["succeed", "success", "completed", "done", "finish", "finished", "complete"];
+  const FAIL = ["failed", "error", "fail"];
+
+  // flux-kontext path — recognized by presence of successFlag.
+  if (typeof d.successFlag === "number") {
+    if (d.successFlag === 1) {
+      const url = d.response?.resultImageUrl;
+      if (!url) return { kind: "failed", error: "Image task completed but no URL in response" };
+      return { kind: "done", url };
+    }
+    if (d.successFlag === 0) return { kind: "pending" };
+    return { kind: "failed", error: d.errorMessage ?? `flux error code ${d.errorCode ?? d.successFlag}` };
+  }
+
+  // jobs/recordInfo path — string state/status.
+  const normalized = (d.state ?? d.status ?? "").toLowerCase();
+  if (DONE.includes(normalized)) {
+    let url: string | undefined;
+    if (typeof d.resultJson === "string") {
+      if (d.resultJson.startsWith("http")) {
+        url = d.resultJson;
+      } else {
+        try {
+          const parsed = JSON.parse(d.resultJson) as { url?: string; resultUrls?: string[] };
+          url = parsed.url ?? parsed.resultUrls?.[0];
+        } catch { /* fall through */ }
+      }
+    }
+    if (!url && typeof d.output === "string") url = d.output;
+    if (!url && d.output && typeof d.output === "object") url = d.output.url ?? d.output.image_url;
+    if (!url) return { kind: "failed", error: "Image task completed but no URL in response" };
+    return { kind: "done", url };
+  }
+  if (FAIL.includes(normalized)) {
+    const detail = d.failMsg ?? d.failReason ?? d.error ?? `fail code ${d.failCode ?? "unknown"}`;
+    return { kind: "failed", error: detail };
+  }
+  return { kind: "pending" };
 }
 
 function sleep(ms: number) {
@@ -81,48 +134,24 @@ export async function checkImageTask(
   userId?: string,
   modelId?: string
 ): Promise<{ status: "pending" | "done" | "failed"; url?: string; error?: string }> {
-  const DONE = ["succeed", "success", "completed", "done", "finish", "finished", "complete"];
-  const FAIL = ["failed", "error", "fail"];
-
   const pollEndpoint = modelId?.startsWith("flux-kontext")
     ? `/api/v1/flux/kontext/record-info?taskId=${taskId}`
     : `/api/v1/jobs/recordInfo?taskId=${taskId}`;
 
   const statusRes = await kieRequest<KieRecordResponse>(pollEndpoint, {}, userId);
-  const rawLog = JSON.stringify(statusRes).slice(0, 300);
 
   if (!statusRes.data) {
-    console.log(`[images] no data from poll — raw=${rawLog}`);
+    console.log(`[images] no data from poll — raw=${JSON.stringify(statusRes).slice(0, 300)}`);
     return { status: "pending" };
   }
-  const d = statusRes.data;
-  const normalized = (d.state ?? d.status ?? "").toLowerCase();
 
-  if (DONE.includes(normalized)) {
-    let url: string | undefined;
-    if (typeof d.resultJson === "string") {
-      if (d.resultJson.startsWith("http")) {
-        url = d.resultJson;
-      } else {
-        try {
-          const parsed = JSON.parse(d.resultJson) as { url?: string; resultUrls?: string[] };
-          url = parsed.url ?? parsed.resultUrls?.[0];
-        } catch { /* fall through */ }
-      }
-    }
-    if (!url && typeof d.output === "string") url = d.output;
-    if (!url && d.output && typeof d.output === "object") url = d.output.url ?? d.output.image_url;
-    if (!url) return { status: "failed", error: "Image task completed but no URL in response" };
-    return { status: "done", url };
+  const verdict = classifyImageRecord(statusRes.data);
+  if (verdict.kind === "done") return { status: "done", url: verdict.url };
+  if (verdict.kind === "failed") {
+    console.error(`[images] task failed: ${verdict.error}`);
+    return { status: "failed", error: verdict.error };
   }
-
-  if (FAIL.includes(normalized)) {
-    const detail = d.failMsg ?? d.failReason ?? d.error ?? `fail code ${d.failCode ?? "unknown"}`;
-    console.error(`[images] task failed: ${detail}`);
-    return { status: "failed", error: detail };
-  }
-
-  console.log(`[images] poll state="${normalized}" raw=${JSON.stringify(d)}`);
+  console.log(`[images] poll pending raw=${JSON.stringify(statusRes.data).slice(0, 300)}`);
   return { status: "pending" };
 }
 
@@ -168,42 +197,19 @@ export async function generateImage(
     taskId = res.data.taskId;
   }
 
-  const DONE = ["succeed", "success", "completed", "done", "finish", "finished", "complete"];
-  const FAIL = ["failed", "error", "fail"];
+  const pollEndpoint = modelId.startsWith("flux-kontext")
+    ? `/api/v1/flux/kontext/record-info?taskId=${taskId}`
+    : `/api/v1/jobs/recordInfo?taskId=${taskId}`;
 
   for (let i = 0; i < 15; i++) {
     await sleep(3000);
 
-    const statusRes = await kieRequest<KieRecordResponse>(
-      `/api/v1/jobs/recordInfo?taskId=${taskId}`,
-      {},
-      userId
-    );
+    const statusRes = await kieRequest<KieRecordResponse>(pollEndpoint, {}, userId);
     if (!statusRes.data) continue;
-    const d = statusRes.data;
-    const normalized = (d.state ?? d.status ?? "").toLowerCase();
 
-    if (DONE.includes(normalized)) {
-      let url: string | undefined;
-      if (typeof d.resultJson === "string") {
-        if (d.resultJson.startsWith("http")) {
-          url = d.resultJson;
-        } else {
-          try {
-            const parsed = JSON.parse(d.resultJson) as { url?: string; resultUrls?: string[] };
-            url = parsed.url ?? parsed.resultUrls?.[0];
-          } catch { /* fall through */ }
-        }
-      }
-      if (!url && typeof d.output === "string") url = d.output;
-      if (!url && d.output && typeof d.output === "object") url = d.output.url ?? d.output.image_url;
-      if (!url) throw new Error("Image task completed but no URL in response");
-      return url;
-    }
-
-    if (FAIL.includes(normalized)) {
-      throw new Error(d.failReason ?? d.error ?? "Image generation failed");
-    }
+    const verdict = classifyImageRecord(statusRes.data);
+    if (verdict.kind === "done") return verdict.url;
+    if (verdict.kind === "failed") throw new Error(verdict.error);
   }
 
   throw new Error("Image generation timed out after 5 minutes");

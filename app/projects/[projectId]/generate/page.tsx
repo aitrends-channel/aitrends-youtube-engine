@@ -248,6 +248,10 @@ export default function GeneratePage({ params }: PageProps) {
   const generatedImages = beats.filter((b) => b.imageUrl).length;
   const generatedVideos = beats.filter((b) => b.videoUrl).length;
   const videoBeats = beats.filter((b) => b.videoPrompt).length;
+  const failedVideos = beats.filter((b) => b.videoPrompt && b.videoStatus === "failed").length;
+  const pendingVideos = beats.filter((b) => b.videoPrompt && !b.videoUrl).length;
+  const queuedVideos = beats.filter((b) => b.videoStatus === "queued").length;
+  const pausedVideos = beats.filter((b) => b.videoStatus === "paused").length;
 
   // Derive display URLs from DB data; use pending state only during active operations
   const ttsUrl = generatingTts ? null : (pendingTtsUrl ?? project?.tts_url ?? null);
@@ -311,7 +315,7 @@ export default function GeneratePage({ params }: PageProps) {
       await mutate();
     };
     poll();
-    const id = setInterval(poll, 10000);
+    const id = setInterval(poll, 4000);
     return () => clearInterval(id);
   }, [videosSubmitted, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -563,17 +567,65 @@ export default function GeneratePage({ params }: PageProps) {
     }
   }
 
-  async function queueVideos() {
+  async function pauseVideos() {
+    try {
+      const res = await fetch("/api/generate/videos/pause", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      const data = await res.json().catch(() => ({})) as { paused?: number; error?: string };
+      if (!res.ok) throw new Error(data.error ?? `Pause failed (HTTP ${res.status})`);
+      toast.success(`Paused ${data.paused ?? 0} pending clips`);
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Pause failed");
+    }
+  }
+
+  async function resumeVideos() {
+    if (!selectedVideoModel) return;
+    try {
+      const res = await fetch("/api/generate/videos/resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          modelId: selectedVideoModel,
+          aspectRatio: selectedVideoAspectRatio,
+          ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
+        }),
+      });
+      const data = await res.json().catch(() => ({})) as { resumed?: number; error?: string };
+      if (!res.ok) throw new Error(data.error ?? `Resume failed (HTTP ${res.status})`);
+      toast.success(`Resumed ${data.resumed ?? 0} clips`);
+      setVideosSubmitted(true);
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Resume failed");
+    }
+  }
+
+  async function queueVideos(mode: "all" | "failed" = "all") {
     if (!selectedVideoModel || !beats.length) return;
     setQueuingVideos(true);
     try {
-      const beatsWithVideos = beats.filter((b) => b.videoPrompt);
+      // "all" means everything that still needs a video (no URL yet),
+      // not literally every beat — re-submitting a done beat would wipe
+      // its video_url on the server. "failed" only retries failures.
+      const eligible = beats.filter((b) => {
+        if (!b.videoPrompt) return false;
+        if (b.videoUrl) return false;
+        if (mode === "failed") return b.videoStatus === "failed";
+        return true;
+      });
+      if (eligible.length === 0) return;
       const res = await fetch("/api/generate/videos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
-          beats: beatsWithVideos.map((b) => ({ beatNumber: b.beatNumber, videoPrompt: b.videoPrompt, imageUrl: b.imageUrl })),
+          beats: eligible.map((b) => ({ beatNumber: b.beatNumber, videoPrompt: b.videoPrompt, imageUrl: b.imageUrl })),
           modelId: selectedVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
@@ -582,7 +634,8 @@ export default function GeneratePage({ params }: PageProps) {
       const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? `Request failed (HTTP ${res.status})`);
       setVideosSubmitted(true);
-      if ((data.submitted ?? 0) > 0) toast.success(`${data.submitted ?? 0} video clips submitted`);
+      const verb = mode === "failed" ? "re-submitted" : "submitted";
+      if ((data.submitted ?? 0) > 0) toast.success(`${data.submitted ?? 0} video clips ${verb}`);
       if (data.failures?.length) {
         toast.error(`${data.failures.length} clip(s) failed — ${friendlyError(data.failures[0].error)}`);
       }
@@ -1005,26 +1058,88 @@ export default function GeneratePage({ params }: PageProps) {
                 </>
               )}
               <p className="text-xs mt-3" style={{ color: "var(--c-40)" }}>
-                Runs in background — clips appear as each job completes.
+                {(() => {
+                  const workingId = project?.video_model_id as string | undefined;
+                  const workingName = videoModels?.find((m) => m.id === workingId)?.name ?? workingId;
+                  return workingName ? (
+                    <>Using <span style={{ color: "var(--c-65)", fontWeight: 600 }}>{workingName}</span> — clips appear as each job completes.</>
+                  ) : (
+                    "Runs in background — clips appear as each job completes."
+                  );
+                })()}
               </p>
               {videosSubmitted && (
                 <div className="mt-2">
                   <ProgressBar value={generatedVideos} total={videoBeats} />
                 </div>
               )}
-              <button
-                onClick={queueVideos}
-                disabled={queuingVideos || !selectedVideoModel || !videoBeats}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-3"
-                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-              >
-                {queuingVideos ? (
+              {/* Primary action morphs by state:
+                  - queuing-in-flight: spinner
+                  - paused beats exist: Resume (green)
+                  - queued beats exist: Pause (orange)
+                  - pending work remains: Queue (purple)
+                  - nothing to do: disabled Queue
+                  Retry Failed stays as a secondary button when applicable. */}
+              {queuingVideos ? (
+                <button
+                  disabled
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-3"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                >
                   <span className="flex items-center justify-center gap-2">
                     <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                     Queuing clips…
                   </span>
-                ) : `Queue ${videoBeats} Video Clips`}
-              </button>
+                </button>
+              ) : pausedVideos > 0 ? (
+                <button
+                  onClick={resumeVideos}
+                  disabled={!selectedVideoModel}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-3"
+                  style={{ background: "oklch(0.7 0.15 145)", color: "var(--bg-page-2)" }}
+                >
+                  Resume {pausedVideos} Clip{pausedVideos === 1 ? "" : "s"}
+                </button>
+              ) : queuedVideos > 0 ? (
+                <button
+                  onClick={pauseVideos}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all mt-3"
+                  style={{ background: "transparent", color: "oklch(0.7 0.2 25)", border: "1px solid oklch(0.7 0.2 25)" }}
+                >
+                  Pause {queuedVideos} Pending
+                </button>
+              ) : failedVideos > 0 && pendingVideos === failedVideos ? (
+                <button
+                  onClick={() => queueVideos("failed")}
+                  disabled={!selectedVideoModel}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-3"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                >
+                  Re-queue {failedVideos} Clip{failedVideos === 1 ? "" : "s"}
+                </button>
+              ) : (
+                <button
+                  onClick={() => queueVideos("all")}
+                  disabled={!selectedVideoModel || !pendingVideos || hasActiveVideos}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-3"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                >
+                  Queue {pendingVideos} Video Clip{pendingVideos === 1 ? "" : "s"}
+                </button>
+              )}
+              {/* Show the secondary "Retry Failed" only when there are also some
+                  never-attempted beats — otherwise the primary "Re-queue" already
+                  covers the failed-only case. */}
+              {failedVideos > 0 && pendingVideos > failedVideos && !hasActiveVideos && !queuingVideos && (
+                <button
+                  onClick={() => queueVideos("failed")}
+                  disabled={!selectedVideoModel}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-2"
+                  style={{ background: "transparent", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285)" }}
+                >
+                  Retry {failedVideos} Failed
+                </button>
+              )}
             </div>
           </div>
         </div>
