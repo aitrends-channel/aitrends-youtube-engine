@@ -1,16 +1,16 @@
 import { getSettings } from "@/lib/settings";
 
-// Gemini-via-KIE for long-form text generation. We route through KIE
-// using its OpenAI-compatible chat-completions endpoint (the standard
-// "all providers behind one /v1/chat/completions" pattern). If KIE
-// actually exposes Gemini under a different path, flip BASE_URL here.
+// Gemini-via-KIE for long-form text generation. KIE uses model-prefixed
+// paths (the same way Claude lives at /claude/v1/messages), so each
+// model has its own /<model-id>/v1/chat/completions endpoint that
+// accepts an OpenAI-compatible body and streams SSE with delta.content
+// frames when `stream: true` is set.
 //
-// Gemini 2.5 Flash is the chosen variant — output ceiling is 65,536
-// tokens (≈40k words at 1.6 tok/word) which comfortably covers
-// long-form script targets that exceed Opus's 8,192-token ceiling.
-const BASE_URL = "https://api.kie.ai/v1/chat/completions";
-
+// Gemini 2.5 Flash output ceiling is 65,536 tokens (≈40k words at 1.6
+// tok/word) — covers long-form script targets that exceed Opus's
+// 8,192-token ceiling.
 export const GEMINI_MODEL = "gemini-2.5-flash";
+const BASE_URL = `https://api.kie.ai/${GEMINI_MODEL}/v1/chat/completions`;
 export const GEMINI_MAX_OUTPUT_TOKENS = 65536;
 
 interface ChatMessage {
