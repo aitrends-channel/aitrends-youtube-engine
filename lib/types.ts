@@ -97,7 +97,7 @@ export interface Beat {
   imageUrl?: string;
   videoUrl?: string;
   imageStatus?: "pending" | "generating" | "done" | "failed";
-  videoStatus?: "pending" | "queued" | "rendering" | "done" | "failed";
+  videoStatus?: "pending" | "queued" | "rendering" | "done" | "failed" | "paused";
   videoJobId?: string;
   videoError?: string;
   audioUrl?: string;
