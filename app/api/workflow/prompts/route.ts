@@ -29,6 +29,31 @@ function assertComplete(stopReason: string | null | undefined, label: string) {
   }
 }
 
+// Retry helper for upstream KIE transients. KIE intermittently returns
+// 500s ("Server exception, please try again later") that clear within
+// a few seconds. We retry transient failures (5xx, network) up to N
+// times with exponential backoff; auth/validation errors (4xx) fail
+// fast since retrying won't help.
+async function retryClaudeCall<T>(label: string, fn: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      const status =
+        (err as { status?: number })?.status ??
+        (err as { response?: { status?: number } })?.response?.status;
+      const isTransient = !status || (status >= 500 && status < 600) || status === 429;
+      if (!isTransient || i === attempts - 1) throw err;
+      const delayMs = 1000 * Math.pow(2, i); // 1s, 2s, 4s
+      console.warn(`[prompts] ${label} attempt ${i + 1}/${attempts} failed (status=${status ?? "network"}); retrying in ${delayMs}ms`);
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
+}
+
 // KIE+Opus occasionally ignores tool_choice forcing and emits a *fake*
 // tool-call structure as plain text (e.g. `<tool_calls>[{"input":
 // {"beats":[...]}}]</tool_calls>`). A naive greedy regex either grabs
@@ -151,14 +176,16 @@ async function generateImages(
   for (let i = 0; i < chunks.length; i++) {
     if (chunks.length > 1) send({ type: "progress", current: i + 1, total: chunks.length });
 
-    const res = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 8192,
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-      tools: [{ name: "save_image_prompts", description: "Save image prompts for every visual beat in the chunk", input_schema: imagePromptsInputSchema }],
-      tool_choice: { type: "tool", name: "save_image_prompts" },
-      messages: [{ role: "user", content: buildImagePromptsPrompt(chunks[i], visualProfile, nextBeatNumber) }],
-    });
+    const res = await retryClaudeCall(`image prompts chunk ${i + 1}/${chunks.length}`, () =>
+      anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 8192,
+        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        tools: [{ name: "save_image_prompts", description: "Save image prompts for every visual beat in the chunk", input_schema: imagePromptsInputSchema }],
+        tool_choice: { type: "tool", name: "save_image_prompts" },
+        messages: [{ role: "user", content: buildImagePromptsPrompt(chunks[i], visualProfile, nextBeatNumber) }],
+      })
+    );
 
     assertComplete(res.stop_reason, `image prompts chunk ${i + 1}/${chunks.length}`);
 
@@ -232,14 +259,16 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
     let res!: Anthropic.Messages.Message;
     let tool: Anthropic.Messages.ContentBlock | undefined;
     for (let attempt = 0; attempt < 2; attempt++) {
-      res = await anthropic.messages.create({
-        model: MODEL,
-        max_tokens: 8192,
-        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-        tools: [{ name: "save_video_prompts", description: "Save video prompts for all beats", input_schema: videoPromptsInputSchema }],
-        tool_choice: { type: "tool", name: "save_video_prompts" },
-        messages: [{ role: "user", content: buildVideoPromptsPrompt(chunks[i], visualProfile) }],
-      });
+      res = await retryClaudeCall(`video batch ${i + 1}/${chunks.length} (try ${attempt + 1})`, () =>
+        anthropic.messages.create({
+          model: MODEL,
+          max_tokens: 8192,
+          system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+          tools: [{ name: "save_video_prompts", description: "Save video prompts for all beats", input_schema: videoPromptsInputSchema }],
+          tool_choice: { type: "tool", name: "save_video_prompts" },
+          messages: [{ role: "user", content: buildVideoPromptsPrompt(chunks[i], visualProfile) }],
+        })
+      );
       tool = res.content.find((b) => b.type === "tool_use");
       const blockTypes = res.content.map((b) => b.type).join(",");
       console.log(`[video-prompts] batch ${i + 1}/${chunks.length} attempt ${attempt + 1} stop=${res.stop_reason} blocks=${blockTypes} tool_use=${!!tool}`);
@@ -294,14 +323,16 @@ async function generateThumbnails(
   const anthropic = await getAnthropicClient(userId);
   send({ type: "status", message: "Generating 5 thumbnail concepts..." });
 
-  const res = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 8192,
-    system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-    tools: [{ name: "save_thumbnails", description: "Save 5 thumbnail concepts", input_schema: thumbnailsInputSchema }],
-    tool_choice: { type: "tool", name: "save_thumbnails" },
-    messages: [{ role: "user", content: buildThumbnailsPrompt(script, visualProfile, thumbnailAnalysis) }],
-  });
+  const res = await retryClaudeCall("thumbnail concepts", () =>
+    anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 8192,
+      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      tools: [{ name: "save_thumbnails", description: "Save 5 thumbnail concepts", input_schema: thumbnailsInputSchema }],
+      tool_choice: { type: "tool", name: "save_thumbnails" },
+      messages: [{ role: "user", content: buildThumbnailsPrompt(script, visualProfile, thumbnailAnalysis) }],
+    })
+  );
 
   assertComplete(res.stop_reason, "thumbnails");
 
