@@ -7,6 +7,7 @@ import { channelAnalysisInputSchema, videoIdeasInputSchema } from "@/lib/claude/
 import { buildAnalysisPrompt, buildVideoIdeasPrompt } from "@/lib/claude/prompts";
 import { ChannelAnalysisSchema, VideoIdeasSchema } from "@/lib/claude/schemas";
 import { extractToolInputFromText } from "@/lib/claude/textFallback";
+import { retryClaudeCall } from "@/lib/claude/retry";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { ChannelAnalysisOutput } from "@/lib/claude/schemas";
@@ -24,18 +25,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Video transcripts are required" }, { status: 400 });
     }
 
-    const analysisResponse = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 4096,
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-      tools: [{
-        name: "save_channel_analysis",
-        description: "Save the structured channel analysis results",
-        input_schema: channelAnalysisInputSchema,
-      }],
-      tool_choice: { type: "tool", name: "save_channel_analysis" },
-      messages: [{ role: "user", content: buildAnalysisPrompt(transcripts) }],
-    });
+    const analysisResponse = await retryClaudeCall("channel analysis", () =>
+      anthropic.messages.create({
+        model: MODEL,
+        max_tokens: 4096,
+        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        tools: [{
+          name: "save_channel_analysis",
+          description: "Save the structured channel analysis results",
+          input_schema: channelAnalysisInputSchema,
+        }],
+        tool_choice: { type: "tool", name: "save_channel_analysis" },
+        messages: [{ role: "user", content: buildAnalysisPrompt(transcripts) }],
+      })
+    );
 
     const analysisToolUse = analysisResponse.content?.find((b) => b.type === "tool_use");
     let analysisInput: unknown = null;
@@ -56,7 +59,8 @@ export async function POST(req: Request) {
     let videoIdeas: string[] | undefined;
 
     if (topicMode === "generate") {
-      const ideasResponse = await anthropic.messages.create({
+      const ideasResponse = await retryClaudeCall("video ideas", () =>
+        anthropic.messages.create({
         model: MODEL,
         max_tokens: 2048,
         system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
@@ -67,7 +71,8 @@ export async function POST(req: Request) {
         }],
         tool_choice: { type: "tool", name: "save_video_ideas" },
         messages: [{ role: "user", content: buildVideoIdeasPrompt(analysis, topicHint) }],
-      });
+      })
+      );
 
       const ideasToolUse = ideasResponse.content.find((b) => b.type === "tool_use");
       let ideasInput: unknown = null;

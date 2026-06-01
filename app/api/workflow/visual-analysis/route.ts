@@ -5,6 +5,7 @@ export const maxDuration = 800;
 import { visualProfileInputSchema } from "@/lib/claude/anthropicSchemas";
 import { buildVisualAnalysisPrompt } from "@/lib/claude/prompts";
 import { VisualProfileSchema, ThumbnailAnalysisSchema } from "@/lib/claude/schemas";
+import { retryClaudeCall } from "@/lib/claude/retry";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
@@ -69,24 +70,26 @@ export async function POST(req: Request) {
       required,
     };
 
-    const response = await anthropic.messages.create({
-      model: VISION_MODEL,
-      max_tokens: 2048,
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-      tools: [{
-        name: "save_visual_analysis",
-        description: "Save the extracted visual style profile",
-        input_schema: combinedSchema,
-      }],
-      tool_choice: { type: "tool", name: "save_visual_analysis" },
-      messages: [{
-        role: "user",
-        content: [
-          ...imageBlocks,
-          { type: "text", text: buildVisualAnalysisPrompt({ video: hasVideo, thumbnails: hasThumbnails }) },
-        ],
-      }],
-    });
+    const response = await retryClaudeCall("visual analysis", () =>
+      anthropic.messages.create({
+        model: VISION_MODEL,
+        max_tokens: 2048,
+        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        tools: [{
+          name: "save_visual_analysis",
+          description: "Save the extracted visual style profile",
+          input_schema: combinedSchema,
+        }],
+        tool_choice: { type: "tool", name: "save_visual_analysis" },
+        messages: [{
+          role: "user",
+          content: [
+            ...imageBlocks,
+            { type: "text", text: buildVisualAnalysisPrompt({ video: hasVideo, thumbnails: hasThumbnails }) },
+          ],
+        }],
+      })
+    );
 
     const toolUse = response.content.find((b) => b.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") throw new Error("No visual analysis returned");

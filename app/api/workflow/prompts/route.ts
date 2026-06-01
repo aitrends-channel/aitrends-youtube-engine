@@ -18,6 +18,7 @@ import {
 } from "@/lib/claude/anthropicSchemas";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { retryClaudeCall } from "@/lib/claude/retry";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 
@@ -27,31 +28,6 @@ function assertComplete(stopReason: string | null | undefined, label: string) {
   if (stopReason === "max_tokens") {
     throw new Error(`Response was cut off during "${label}". Please try again.`);
   }
-}
-
-// Retry helper for upstream KIE transients. KIE intermittently returns
-// 500s ("Server exception, please try again later") that clear within
-// a few seconds. We retry transient failures (5xx, network) up to N
-// times with exponential backoff; auth/validation errors (4xx) fail
-// fast since retrying won't help.
-async function retryClaudeCall<T>(label: string, fn: () => Promise<T>, attempts = 3): Promise<T> {
-  let lastErr: unknown;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      return await fn();
-    } catch (err) {
-      lastErr = err;
-      const status =
-        (err as { status?: number })?.status ??
-        (err as { response?: { status?: number } })?.response?.status;
-      const isTransient = !status || (status >= 500 && status < 600) || status === 429;
-      if (!isTransient || i === attempts - 1) throw err;
-      const delayMs = 1000 * Math.pow(2, i); // 1s, 2s, 4s
-      console.warn(`[prompts] ${label} attempt ${i + 1}/${attempts} failed (status=${status ?? "network"}); retrying in ${delayMs}ms`);
-      await new Promise((r) => setTimeout(r, delayMs));
-    }
-  }
-  throw lastErr;
 }
 
 // KIE+Opus occasionally ignores tool_choice forcing and emits a *fake*
@@ -146,76 +122,117 @@ async function generateImages(
 ) {
   const anthropic = await getAnthropicClient(userId);
 
-  // Each beat's structured output runs ~80-120 output tokens (segment +
-  // imagePrompt + camera + lighting + mood + action). Opus's per-call
-  // ceiling is 8192 — chunking the script at ~1500 words keeps the
-  // expected ~60-100 beats per chunk well under that ceiling with
-  // headroom for the model's preamble and JSON overhead.
+  // Each beat's structured output runs ~80-120 output tokens. Opus's
+  // per-call ceiling is 8192 — chunking the script at ~1500 words keeps
+  // the expected ~60-100 beats per chunk well under that ceiling.
   const SCRIPT_CHUNK_WORDS = 1500;
   const words = script.trim().split(/\s+/).filter(Boolean);
-  const chunks: string[] = [];
+  const allChunks: string[] = [];
   for (let i = 0; i < words.length; i += SCRIPT_CHUNK_WORDS) {
-    chunks.push(words.slice(i, i + SCRIPT_CHUNK_WORDS).join(" "));
+    allChunks.push(words.slice(i, i + SCRIPT_CHUNK_WORDS).join(" "));
   }
-  if (chunks.length === 0) chunks.push(script);
+  if (allChunks.length === 0) allChunks.push(script);
 
-  send({ type: "status", message: `Generating image prompts across ${chunks.length} script segment${chunks.length === 1 ? "" : "s"}...` });
+  // Resume support: if this project already has beats from an earlier
+  // (timed-out) run, count their cumulative script-segment word count
+  // and skip the chunks that prefix has already covered. This way a
+  // retry only generates the remaining chunks instead of redoing work.
+  const { data: existingBeats } = await supabase
+    .from("project_beats")
+    .select("beat_number, script_segment")
+    .eq("project_id", projectId)
+    .order("beat_number", { ascending: true });
 
-  type ImageBeat = {
-    beatNumber: number;
-    scriptSegment: string;
-    imagePrompt: string;
-    camera: string;
-    lighting: string;
-    mood: string;
-    action: string;
-  };
-  const allBeats: ImageBeat[] = [];
+  let coveredWords = 0;
   let nextBeatNumber = 1;
+  if (existingBeats && existingBeats.length > 0) {
+    for (const b of existingBeats) {
+      coveredWords += (b.script_segment as string).trim().split(/\s+/).filter(Boolean).length;
+    }
+    nextBeatNumber = (existingBeats[existingBeats.length - 1].beat_number as number) + 1;
+  }
 
-  for (let i = 0; i < chunks.length; i++) {
-    if (chunks.length > 1) send({ type: "progress", current: i + 1, total: chunks.length });
+  // Walk through chunks; skip ones whose end-of-script position is
+  // already covered. We don't try to be exact — script_segments may
+  // not perfectly tile the script — but this is good enough to skip
+  // the bulk of redone work.
+  const chunksToProcess: { content: string; chunkIndex: number; totalChunks: number }[] = [];
+  let walkedWords = 0;
+  for (let i = 0; i < allChunks.length; i++) {
+    const chunkWords = allChunks[i].split(/\s+/).filter(Boolean).length;
+    const chunkEnd = walkedWords + chunkWords;
+    // Skip if this chunk's end is already covered by existing beats
+    // (with a small slack so near-misses don't force a full redo).
+    if (chunkEnd <= coveredWords - 50) {
+      walkedWords = chunkEnd;
+      continue;
+    }
+    chunksToProcess.push({ content: allChunks[i], chunkIndex: i, totalChunks: allChunks.length });
+    walkedWords = chunkEnd;
+  }
 
-    const res = await retryClaudeCall(`image prompts chunk ${i + 1}/${chunks.length}`, () =>
+  if (chunksToProcess.length === 0 && existingBeats && existingBeats.length > 0) {
+    // Already fully done — just bump state and report.
+    await supabase.from("projects").update({ current_state: 14 }).eq("id", projectId).eq("user_id", userId);
+    send({ type: "done", beatCount: existingBeats.length });
+    return;
+  }
+
+  const isResume = existingBeats && existingBeats.length > 0 && chunksToProcess.length < allChunks.length;
+  send({
+    type: "status",
+    message: isResume
+      ? `Resuming — ${chunksToProcess.length} script segment${chunksToProcess.length === 1 ? "" : "s"} left to process...`
+      : `Generating image prompts across ${chunksToProcess.length} script segment${chunksToProcess.length === 1 ? "" : "s"}...`,
+  });
+
+  let totalBeatCount = existingBeats?.length ?? 0;
+
+  for (const { content, chunkIndex, totalChunks } of chunksToProcess) {
+    if (totalChunks > 1) send({ type: "progress", current: chunkIndex + 1, total: totalChunks });
+
+    const res = await retryClaudeCall(`image prompts chunk ${chunkIndex + 1}/${totalChunks}`, () =>
       anthropic.messages.create({
         model: MODEL,
         max_tokens: 8192,
         system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
         tools: [{ name: "save_image_prompts", description: "Save image prompts for every visual beat in the chunk", input_schema: imagePromptsInputSchema }],
         tool_choice: { type: "tool", name: "save_image_prompts" },
-        messages: [{ role: "user", content: buildImagePromptsPrompt(chunks[i], visualProfile, nextBeatNumber) }],
+        messages: [{ role: "user", content: buildImagePromptsPrompt(content, visualProfile, nextBeatNumber) }],
       })
     );
 
-    assertComplete(res.stop_reason, `image prompts chunk ${i + 1}/${chunks.length}`);
+    assertComplete(res.stop_reason, `image prompts chunk ${chunkIndex + 1}/${totalChunks}`);
 
     const tool = res.content.find((b) => b.type === "tool_use");
-    if (!tool || tool.type !== "tool_use") throw new Error(`No image prompts returned for chunk ${i + 1}. Try again.`);
+    if (!tool || tool.type !== "tool_use") throw new Error(`No image prompts returned for chunk ${chunkIndex + 1}. Try again — any beats saved so far are preserved.`);
     const input = tool.input as Record<string, unknown>;
-    if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Chunk ${i + 1} returned no beats. Try again.`);
+    if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Chunk ${chunkIndex + 1} returned no beats. Try again — any beats saved so far are preserved.`);
 
     const chunkBeats = ImagePromptsSchema.parse(input).beats;
-    allBeats.push(...chunkBeats);
+
+    // Persist this chunk's beats immediately so a later failure
+    // doesn't undo this chunk's work.
+    const { error: insertError } = await supabase.from("project_beats").insert(
+      chunkBeats.map((b) => ({
+        project_id: projectId,
+        beat_number: b.beatNumber,
+        script_segment: b.scriptSegment,
+        image_prompt: b.imagePrompt,
+        camera: b.camera,
+        lighting: b.lighting,
+        mood: b.mood,
+        action: b.action,
+      }))
+    );
+    if (insertError) throw new Error(`Failed to save beats for chunk ${chunkIndex + 1}: ${insertError.message}`);
+
+    totalBeatCount += chunkBeats.length;
     nextBeatNumber = (chunkBeats[chunkBeats.length - 1]?.beatNumber ?? nextBeatNumber + chunkBeats.length - 1) + 1;
   }
 
-  await supabase.from("project_beats").delete().eq("project_id", projectId);
-  const { error: insertError } = await supabase.from("project_beats").insert(
-    allBeats.map((b) => ({
-      project_id: projectId,
-      beat_number: b.beatNumber,
-      script_segment: b.scriptSegment,
-      image_prompt: b.imagePrompt,
-      camera: b.camera,
-      lighting: b.lighting,
-      mood: b.mood,
-      action: b.action,
-    }))
-  );
-  if (insertError) throw new Error(`Failed to save beats: ${insertError.message}`);
-
   await supabase.from("projects").update({ current_state: 14 }).eq("id", projectId).eq("user_id", userId);
-  send({ type: "done", beatCount: allBeats.length });
+  send({ type: "done", beatCount: totalBeatCount });
 }
 
 // ── Step 2: Video prompts ──────────────────────────────────────────────────

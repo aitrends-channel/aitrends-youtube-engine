@@ -1,6 +1,7 @@
 import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 import { streamGeminiText, GEMINI_MAX_OUTPUT_TOKENS, GEMINI_MODEL } from "@/lib/gemini/client";
 import { buildScriptPrompt } from "@/lib/claude/prompts";
+import { retryClaudeCall } from "@/lib/claude/retry";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { ChannelAnalysisOutput } from "@/lib/claude/schemas";
@@ -134,32 +135,43 @@ export async function POST(req: Request) {
             : initialPrompt;
 
           if (useGemini) {
-            await streamGeminiText({
-              userId: user.id,
-              maxTokens,
-              messages: [
-                { role: "system", content: SYSTEM_PROMPT },
-                { role: "user", content: userPrompt },
-              ],
-              onDelta: sendText,
+            // Retry only wraps the initial connection. The accumulated-
+            // length guard ensures retries don't re-emit text — if the
+            // first attempt died mid-stream after emitting deltas, we
+            // accept the partial; the outer save path persists what we
+            // have.
+            await retryClaudeCall("script (Gemini)", async () => {
+              if (accumulated.length > 0) return;
+              await streamGeminiText({
+                userId: user.id,
+                maxTokens,
+                messages: [
+                  { role: "system", content: SYSTEM_PROMPT },
+                  { role: "user", content: userPrompt },
+                ],
+                onDelta: sendText,
+              });
             });
           } else {
             const anthropic = await getAnthropicClient(user.id);
-            const stream = anthropic.messages.stream({
-              model: MODEL,
-              max_tokens: maxTokens,
-              system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-              messages: [{ role: "user", content: userPrompt }],
+            await retryClaudeCall("script (Opus)", async () => {
+              if (accumulated.length > 0) return; // already past first attempt with content emitted; skip retries
+              const stream = anthropic.messages.stream({
+                model: MODEL,
+                max_tokens: maxTokens,
+                system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+                messages: [{ role: "user", content: userPrompt }],
+              });
+              for await (const event of stream) {
+                if (spiralAborted) {
+                  try { stream.abort(); } catch { /* ignore */ }
+                  break;
+                }
+                if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+                  sendText(event.delta.text);
+                }
+              }
             });
-            for await (const event of stream) {
-              if (spiralAborted) {
-                try { stream.abort(); } catch { /* ignore */ }
-                break;
-              }
-              if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-                sendText(event.delta.text);
-              }
-            }
           }
 
           // If we detected a spiral mid-stream, trim it back to clean
