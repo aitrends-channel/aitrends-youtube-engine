@@ -71,12 +71,32 @@ export async function POST(req: Request) {
           }
 
           if (useGemini) {
+            // Gemini 2.5 Flash heavily under-delivers on length when
+            // given Claude-shaped prompts. We reinforce the target with
+            // structural scaffolding so it can't bail out at 10% of the
+            // ask: explicit section count, per-section word budget, and
+            // an unambiguous "MUST" framing on length.
+            const targetSections = Math.max(6, Math.ceil(target / 800));
+            const wordsPerSection = Math.round(target / targetSections);
+            const longFormDirective =
+`CRITICAL — LENGTH IS NON-NEGOTIABLE
+This script MUST be approximately ${target.toLocaleString()} words. Channels in this niche publish scripts of this length and viewers expect that pacing. Do NOT summarize, condense, or wrap up early.
+
+STRUCTURE
+- Break the script into roughly ${targetSections} narrative sections, each ~${wordsPerSection} words.
+- Each section explores the topic from a different angle: history, mechanics, daily life, anecdotes, edge cases, sensory detail, then a closing reflection.
+- Keep transitions seamless — do NOT label or number the sections in the output.
+- Maintain the channel's pacing throughout. If you finish a thought before hitting the per-section budget, deepen the detail rather than moving on.
+
+Continue writing until you have produced at least ${target.toLocaleString()} words of script. The user will reject anything substantially shorter.
+
+`;
             await streamGeminiText({
               userId: user.id,
               maxTokens,
               messages: [
                 { role: "system", content: SYSTEM_PROMPT },
-                { role: "user", content: initialPrompt },
+                { role: "user", content: longFormDirective + initialPrompt },
               ],
               onDelta: sendText,
             });
