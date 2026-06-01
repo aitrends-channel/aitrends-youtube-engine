@@ -119,14 +119,16 @@ export async function getAnthropicClient(userId: string): Promise<Anthropic> {
 
 export const MODEL = "claude-opus-4-7";
 
-// Vision analysis runs on Opus 4.7 now that we're on Vercel Pro (800s
-// per-function ceiling). Earlier we forced Haiku here because Opus +
-// 10 image blocks blew past the old 60s/120s/300s caps and surfaced as
-// "Connection error" from the SDK. Opus produces tighter structured
-// output and the wrapper/flat-shape quirk that Haiku has should
-// disappear with this model. The defensive parser in the route stays
-// as a safety net.
-export const VISION_MODEL = "claude-opus-4-7";
+// Vision analysis runs on Haiku 4.5. We briefly switched to Opus 4.7
+// after the Pro upgrade lifted the function-timeout ceiling to 800s,
+// expecting that to unlock the latency headroom Opus needed. In
+// practice Opus + 10 image blocks routinely takes long enough that
+// the SDK / KIE proxy drops the connection mid-call and surfaces as
+// "network error" to the user. Haiku finishes well within budget.
+// Its occasional flat-shape vs visualProfile-wrapped quirk is handled
+// by the defensive parser + mode-aware prompt in the visual-analysis
+// route, so we don't need Opus's tightness here.
+export const VISION_MODEL = "claude-haiku-4-5";
 
 export const SYSTEM_PROMPT = `You are an advanced AI YouTube Content Engine. Your purpose is to analyze YouTube channel transcripts, extract the channel's unique style DNA, and generate fully original content that matches the channel's voice, pacing, and emotional arc.
 
