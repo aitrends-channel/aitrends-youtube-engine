@@ -7,14 +7,22 @@ import type { User } from "@supabase/supabase-js";
 
 export const maxDuration = 300;
 
-// Generate the script in two sequential Claude calls so users see
-// text land in distinct waves instead of one big buffered burst at
-// the end. The client makes ONE fetch and consumes ONE continuous
-// stream — the segmentation is entirely server-side. The second call
-// uses Claude's assistant-prefill pattern: the first half is passed
-// as a leading assistant message and Claude continues from where it
-// left off — coherent, no visible section seams.
-const TOTAL_SECTIONS = 2;
+// Generate the script in N sequential Claude calls. The client makes
+// ONE fetch and consumes ONE continuous stream — segmentation is
+// entirely server-side. Each section after the first uses Claude's
+// assistant-prefill pattern: prior text is passed as a leading
+// assistant message and Claude continues from where it left off,
+// coherent and seamless.
+//
+// Section count scales with target length so each section's max_tokens
+// stays comfortably under Opus's 8192-per-call ceiling.
+//
+// 300s Vercel cap + ~30-60 tok/sec Opus streaming = ~9000-18000 tokens
+// reliably in budget. Scripts past that ceiling will hit timeout, so we
+// hard-cap target word count to what we can deliver and tell the user.
+const SAFE_TOKENS_PER_SECTION = 6000;       // under Opus 8192 ceiling
+const SAFE_TOTAL_TOKEN_BUDGET = 9000;       // conservative 300s ceiling
+const MAX_TARGET_WORDS = Math.floor(SAFE_TOTAL_TOKEN_BUDGET / 1.6); // ≈ 5625
 
 export async function POST(req: Request) {
   let user: User;
@@ -32,11 +40,15 @@ export async function POST(req: Request) {
       return new Response("Missing analysis or topic", { status: 400 });
     }
 
-    const target = analysis.targetWordCount ?? 900;
-    // ~1.6 tokens per word + a small buffer per section so Claude can
-    // close out a thought cleanly. Last section gets a touch more so
-    // the CTA always lands.
-    const tokensPerSection = Math.ceil((target / TOTAL_SECTIONS) * 1.6) + 60;
+    const rawTarget = analysis.targetWordCount ?? 900;
+    const target = Math.min(rawTarget, MAX_TARGET_WORDS);
+    const targetWasCapped = rawTarget > MAX_TARGET_WORDS;
+
+    // Pick the smallest section count that keeps each section's token
+    // budget under SAFE_TOKENS_PER_SECTION. ~1.6 tokens per word.
+    const totalTokens = Math.ceil(target * 1.6) + 120;
+    const TOTAL_SECTIONS = Math.max(2, Math.ceil(totalTokens / SAFE_TOKENS_PER_SECTION));
+    const tokensPerSection = Math.ceil(totalTokens / TOTAL_SECTIONS);
     const initialPrompt = buildScriptPrompt(analysis, topic);
 
     const readable = new ReadableStream({
@@ -45,6 +57,14 @@ export async function POST(req: Request) {
         let accumulated = "";
 
         try {
+          if (targetWasCapped) {
+            // Tell the client up front that the script will be shorter
+            // than the channel's natural length. UI can surface this.
+            controller.enqueue(encoder.encode(
+              `data: ${JSON.stringify({ notice: `Channel analysis suggested ${rawTarget.toLocaleString()} words — capped to ${MAX_TARGET_WORDS.toLocaleString()} to fit within generation limits.` })}\n\n`
+            ));
+          }
+
           for (let i = 0; i < TOTAL_SECTIONS; i++) {
             // Optional: client can use this to show "Section 3 of 5" if
             // it wants — current useStreamingScript ignores unknown keys.

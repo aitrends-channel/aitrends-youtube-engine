@@ -89,16 +89,23 @@ export function useStreamingScript() {
           const lines = buffer.split("\n");
           buffer = lines.pop() ?? "";
 
+          let serverError: string | null = null;
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
             try {
               const payload = JSON.parse(line.slice(6));
               if (payload.text) bufferedRef.current += payload.text;
+              // The route emits { error: "..." } when generation throws
+              // mid-stream. Without handling it the UI just sits there
+              // looking "done" with no script and no message, because
+              // the animator drains an empty buffer.
+              if (payload.error) serverError = payload.error;
               // payload.done is handled by streamDoneRef + final tick below
             } catch {
               // ignore partial chunk parse errors
             }
           }
+          if (serverError) throw new Error(serverError);
         }
         streamDoneRef.current = true;
       } catch (err) {
