@@ -3,6 +3,7 @@
 import { useState, use, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
+import { NextVideoPanel } from "@/components/NextVideoPanel";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -671,6 +672,12 @@ export default function ThumbnailsPage({ params }: PageProps) {
                     Click Generate in Step 1 to create 5 thumbnail concepts, then generate images in Step 2.
                   </p>
                 </div>
+              </div>
+            )}
+
+            {hasConcepts && (
+              <div className="max-w-md mx-auto pt-4">
+                <NextVideoPanel projectId={projectId} project={project} />
               </div>
             )}
           </div>

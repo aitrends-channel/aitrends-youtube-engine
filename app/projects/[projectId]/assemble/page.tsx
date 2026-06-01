@@ -56,6 +56,19 @@ export default function AssemblePage({ params }: PageProps) {
   const generatedVideos = beats.filter((b) => b.videoUrl).length;
   const videoBeats = beats.filter((b) => b.videoPrompt).length;
 
+  // Bump current_state to 15 the first time the user lands here so the
+  // Generate step ticks done in the WizardNav. No-op on subsequent visits.
+  useEffect(() => {
+    const reached = project?.current_state as number | undefined;
+    if (reached !== undefined && reached < 15) {
+      fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_state: 15 }),
+      }).then(() => mutate()).catch(() => { /* non-blocking */ });
+    }
+  }, [project?.current_state, projectId, mutate]);
+
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
   const [voiceoverType, setVoiceoverType] = useState<"cleaned" | "original">("cleaned");
   const [captionsEnabled, setCaptionsEnabled] = useState(false);
@@ -72,10 +85,6 @@ export default function AssemblePage({ params }: PageProps) {
   const [trimmingAudio, setTrimmingAudio] = useState(false);
   const [trimAudioStatus, setTrimAudioStatus] = useState("");
 
-  const [nextTopic, setNextTopic] = useState("");
-  const [extraIdeas, setExtraIdeas] = useState<string[]>([]);
-  const [generatingIdeas, setGeneratingIdeas] = useState(false);
-  const [creatingNext, setCreatingNext] = useState(false);
 
   useEffect(() => {
     const status = project?.assembly_status as string | undefined;
@@ -110,57 +119,6 @@ export default function AssemblePage({ params }: PageProps) {
   useEffect(() => {
     if (project && !project.tts_cleaned_url) setVoiceoverType("original");
   }, [project?.tts_cleaned_url]);
-
-  const allIdeas: string[] = [...(project?.video_ideas ?? []), ...extraIdeas];
-
-  async function generateMoreIdeas() {
-    setGeneratingIdeas(true);
-    try {
-      const res = await fetch("/api/workflow/ideas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId }),
-      });
-      const data = await res.json() as { ideas?: string[]; error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Failed to generate ideas");
-      setExtraIdeas((prev) => [...prev, ...(data.ideas ?? [])]);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to generate ideas");
-    } finally {
-      setGeneratingIdeas(false);
-    }
-  }
-
-  async function startNextVideo() {
-    const topic = nextTopic.trim();
-    if (!topic) return;
-    setCreatingNext(true);
-    try {
-      const res = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fork: {
-            channelUrl:        project?.channel_url,
-            channelName:       project?.channel_name,
-            channelAnalysis:   project?.channel_analysis,
-            channelInfo:       project?.channel_info,
-            transcripts:       project?.transcripts,
-            visualProfile:     project?.visual_profile,
-            thumbnailAnalysis: project?.thumbnail_analysis,
-            videoIdeas:        allIdeas.filter((idea) => idea !== topic),
-            selectedTopic:     topic,
-          },
-        }),
-      });
-      const data = await res.json() as { id?: string; error?: string };
-      if (!res.ok) throw new Error(data.error ?? "Failed to create project");
-      router.push(`/projects/${data.id}/script`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create project");
-      setCreatingNext(false);
-    }
-  }
 
   async function trimVoiceoverToVideo() {
     const videoEl = assembledVideoRef.current;
@@ -232,7 +190,29 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }
 
+  async function retryUpload() {
+    if (assembling) return;
+    setAssembling(true);
+    setAssembleStatus("Uploading…");
+    try {
+      const res = await fetch("/api/generate/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to start upload");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+      setAssembling(false);
+      setAssembleStatus("");
+    }
+  }
+
   const hasVoiceover = voiceoverType === "original" ? !!ttsUrl : !!(ttsCleanedUrl || ttsUrl);
+  const uploadFailedPreview = project?.assembly_status === "preview" && !project?.assembled_url;
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
@@ -532,7 +512,35 @@ export default function AssemblePage({ params }: PageProps) {
                 </div>
               )}
 
-              {!assembledUrl && !assembling && (
+              {!assembledUrl && !assembling && uploadFailedPreview && (
+                <div className="space-y-2">
+                  <div className="rounded-xl p-3" style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)" }}>
+                    <p className="text-xs font-semibold" style={{ color: "oklch(0.7 0.2 25)" }}>
+                      Upload to cloud failed
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: "var(--c-55)" }}>
+                      Your assembled video is preserved on the worker. Retry just the upload — no need to re-render.
+                    </p>
+                    {project?.assembly_error && (
+                      <p className="text-[10px] mt-1.5 font-mono break-all" style={{ color: "var(--c-40)" }}>
+                        {project.assembly_error as string}
+                      </p>
+                    )}
+                  </div>
+                  <button onClick={retryUpload}
+                    className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all"
+                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                    Retry Upload
+                  </button>
+                  <button onClick={assembleVideo}
+                    className="w-full py-2 rounded-xl text-xs font-medium transition-all"
+                    style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}>
+                    Or reassemble from scratch
+                  </button>
+                </div>
+              )}
+
+              {!assembledUrl && !assembling && !uploadFailedPreview && (
                 <>
                   {!hasVoiceover && (
                     <p className="text-xs text-center py-1" style={{ color: "var(--c-40)" }}>
@@ -550,75 +558,6 @@ export default function AssemblePage({ params }: PageProps) {
 
           </div>{/* end left column */}
 
-          {/* Right sticky sidebar: Next Video */}
-          {!assembling && (
-            <div className="w-full lg:w-80 shrink-0 lg:sticky lg:top-8">
-              <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-                <div>
-                  <p className="text-sm font-semibold">Start Your Next Video</p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                    Same channel — pick a topic and jump straight to the script
-                  </p>
-                </div>
-
-                {allIdeas.length > 0 && (
-                  <div className="space-y-1 max-h-52 overflow-y-auto pr-0.5">
-                    {allIdeas.map((idea, i) => (
-                      <button key={i} onClick={() => setNextTopic(idea)}
-                        className="w-full text-left px-3 py-2.5 rounded-xl text-xs transition-all"
-                        style={nextTopic === idea ? {
-                          background: "oklch(0.72 0.25 285 / 0.12)",
-                          border: "1px solid oklch(0.72 0.25 285 / 0.35)",
-                          color: "var(--c-90)",
-                        } : {
-                          background: "var(--bg-input)",
-                          border: "1px solid var(--bd-7)",
-                          color: "var(--c-55)",
-                        }}>
-                        <span className="font-mono text-[9px] mr-2 shrink-0"
-                          style={{ color: "oklch(0.72 0.25 285 / 0.5)" }}>
-                          {String(i + 1).padStart(2, "0")}
-                        </span>
-                        {idea}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                <input
-                  type="text"
-                  value={nextTopic}
-                  onChange={(e) => setNextTopic(e.target.value)}
-                  placeholder={allIdeas.length > 0 ? "Or type a custom topic…" : "Type your next topic…"}
-                  className="w-full px-3 py-2.5 rounded-xl text-sm outline-none transition-all"
-                  style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
-                />
-
-                <div className="flex flex-col gap-2">
-                  <button onClick={startNextVideo} disabled={!nextTopic.trim() || creatingNext}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40"
-                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                    {creatingNext ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        Creating…
-                      </span>
-                    ) : "Start Next Video →"}
-                  </button>
-                  <button onClick={generateMoreIdeas} disabled={generatingIdeas || !project?.channel_analysis}
-                    className="w-full py-2 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
-                    style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}>
-                    {generatingIdeas ? (
-                      <span className="flex items-center justify-center gap-1.5">
-                        <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        Generating…
-                      </span>
-                    ) : "Generate More Ideas"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </main>
     </div>
