@@ -120,6 +120,7 @@ async function generateImages(
   visualProfile: VisualProfileOutput,
   send: (data: object) => void
 ) {
+  console.log(`[image-prompts] start project=${projectId} scriptWords=${script.trim().split(/\s+/).filter(Boolean).length}`);
   const anthropic = await getAnthropicClient(userId);
 
   // Each beat's structured output runs ~80-120 output tokens. Opus's
@@ -179,6 +180,7 @@ async function generateImages(
   }
 
   const isResume = existingBeats && existingBeats.length > 0 && chunksToProcess.length < allChunks.length;
+  console.log(`[image-prompts] plan totalChunks=${allChunks.length} toProcess=${chunksToProcess.length} resume=${isResume} existingBeats=${existingBeats?.length ?? 0} nextBeatNumber=${nextBeatNumber}`);
   send({
     type: "status",
     message: isResume
@@ -191,6 +193,9 @@ async function generateImages(
   for (const { content, chunkIndex, totalChunks } of chunksToProcess) {
     if (totalChunks > 1) send({ type: "progress", current: chunkIndex + 1, total: totalChunks });
 
+    const t0 = Date.now();
+    console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} startBeat=${nextBeatNumber} words=${content.split(/\s+/).length}`);
+
     const res = await retryClaudeCall(`image prompts chunk ${chunkIndex + 1}/${totalChunks}`, () =>
       anthropic.messages.create({
         model: MODEL,
@@ -202,6 +207,7 @@ async function generateImages(
       })
     );
 
+    console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} done in ${Date.now() - t0}ms stop=${res.stop_reason}`);
     assertComplete(res.stop_reason, `image prompts chunk ${chunkIndex + 1}/${totalChunks}`);
 
     const tool = res.content.find((b) => b.type === "tool_use");
