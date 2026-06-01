@@ -25,14 +25,22 @@ async function getKieKey(userId: string): Promise<string> {
 }
 
 // Streams text deltas from Gemini-via-KIE. Calls onDelta for each new
-// chunk of generated content. Resolves when the stream completes.
+// chunk of generated content. Resolves when the stream completes, or
+// when onDelta returns "abort" — used by the script route to break out
+// of repetition death-spirals (Gemini loops on short closing phrases
+// when it runs out of content but still has token budget).
+//
+// presence_penalty + frequency_penalty are set on every call to
+// discourage that behavior at sampling time. Spiral-detection in the
+// caller is the safety net.
 export async function streamGeminiText(opts: {
   userId: string;
   messages: ChatMessage[];
   maxTokens: number;
-  onDelta: (text: string) => void;
+  onDelta: (text: string) => void | "abort";
 }): Promise<void> {
   const apiKey = await getKieKey(opts.userId);
+  const controller = new AbortController();
 
   const res = await fetch(BASE_URL, {
     method: "POST",
@@ -46,7 +54,10 @@ export async function streamGeminiText(opts: {
       messages: opts.messages,
       max_tokens: Math.min(opts.maxTokens, GEMINI_MAX_OUTPUT_TOKENS),
       stream: true,
+      presence_penalty: 0.6,
+      frequency_penalty: 0.3,
     }),
+    signal: controller.signal,
   });
 
   if (!res.ok) {
@@ -76,7 +87,13 @@ export async function streamGeminiText(opts: {
           choices?: { delta?: { content?: string } }[];
         };
         const text = parsed.choices?.[0]?.delta?.content;
-        if (text) opts.onDelta(text);
+        if (text) {
+          const verdict = opts.onDelta(text);
+          if (verdict === "abort") {
+            try { controller.abort(); } catch { /* ignore */ }
+            return;
+          }
+        }
       } catch { /* ignore partial chunk parse errors */ }
     }
   }

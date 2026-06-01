@@ -184,16 +184,30 @@ export default function ScriptPage({ params }: PageProps) {
                   </div>
                   <div className="flex items-center gap-2">
                     {script && (
-                      <div className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-mono"
-                        style={{
-                          background: wordCountOk ? "oklch(0.55 0.15 145 / 0.1)" : "oklch(0.72 0.25 285 / 0.1)",
-                          border: `1px solid ${wordCountOk ? "oklch(0.55 0.15 145 / 0.3)" : "oklch(0.72 0.25 285 / 0.3)"}`,
-                          color: wordCountOk ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)",
-                        }}>
-                        <span>{wordCount}</span>
-                        <span style={{ opacity: 0.5 }}>/</span>
-                        <span>{targetWordCount}</span>
-                        <span className="hidden sm:inline ml-1" style={{ opacity: 0.5 }}>words</span>
+                      <div className="flex items-stretch gap-1.5 text-[10px] font-mono">
+                        {(() => {
+                          const showGreen = isStreaming || wordCountOk;
+                          return (
+                            <div className="flex flex-col items-center px-2.5 py-1 rounded-lg"
+                              style={{
+                                background: showGreen ? "oklch(0.55 0.15 145 / 0.1)" : "oklch(0.72 0.25 285 / 0.1)",
+                                border: `1px solid ${showGreen ? "oklch(0.55 0.15 145 / 0.3)" : "oklch(0.72 0.25 285 / 0.3)"}`,
+                                color: showGreen ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)",
+                              }}>
+                              <span className="text-[9px] uppercase tracking-wide" style={{ opacity: 0.7 }}>Your Script</span>
+                              <span className="tabular-nums font-semibold">{wordCount.toLocaleString()}</span>
+                            </div>
+                          );
+                        })()}
+                        <div className="flex flex-col items-center px-2.5 py-1 rounded-lg"
+                          style={{
+                            background: "var(--bg-control)",
+                            border: "1px solid var(--bd-8)",
+                            color: "var(--c-55)",
+                          }}>
+                          <span className="text-[9px] uppercase tracking-wide" style={{ opacity: 0.6 }}>Channel Avg</span>
+                          <span className="tabular-nums font-semibold" style={{ color: "var(--c-80)" }}>{targetWordCount.toLocaleString()}</span>
+                        </div>
                       </div>
                     )}
                     {script && (

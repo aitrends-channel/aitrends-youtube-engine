@@ -95,10 +95,16 @@ export function useStreamingScript() {
             try {
               const payload = JSON.parse(line.slice(6));
               if (payload.text) bufferedRef.current += payload.text;
-              // The route emits { error: "..." } when generation throws
-              // mid-stream. Without handling it the UI just sits there
-              // looking "done" with no script and no message, because
-              // the animator drains an empty buffer.
+              // Length-policing trim: route emits { replace: "<final
+              // trimmed script>" } when the streamed text overshot the
+              // target and got trimmed back to a sentence boundary.
+              // Overwrite the buffer so the displayed script matches
+              // what landed in the DB. displayedLen reset triggers the
+              // animator to repaint from the start.
+              if (typeof payload.replace === "string") {
+                bufferedRef.current = payload.replace;
+                displayedLen.current = 0;
+              }
               if (payload.error) serverError = payload.error;
               // payload.done is handled by streamDoneRef + final tick below
             } catch {
