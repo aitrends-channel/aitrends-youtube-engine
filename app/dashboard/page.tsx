@@ -1262,8 +1262,11 @@ export default function HomePage() {
                 // credits deplete; always green regardless of fill level.
                 // Tweak REFERENCE if 1000 ends up feeling too high/low.
                 function CreditsBar({ credits }: { credits: number }) {
+                  // Bar fills with remaining credits, not depletion. 1000
+                  // is the reference for "fully healthy" — any balance at
+                  // or above caps the bar at 100%.
                   const REFERENCE = 1000;
-                  const depletion = Math.max(0, Math.min(1 - credits / REFERENCE, 1));
+                  const health = Math.max(0, Math.min(credits / REFERENCE, 1));
                   const barColor = "#34d399";
                   return (
                     <div>
@@ -1271,7 +1274,7 @@ export default function HomePage() {
                         <span>Credit health</span>
                       </div>
                       <div className="w-full rounded-full h-1.5" style={{ background: "oklch(1 0 0 / 0.08)" }}>
-                        <div className="h-1.5 rounded-full transition-all" style={{ width: `${depletion * 100}%`, background: barColor }} />
+                        <div className="h-1.5 rounded-full transition-all" style={{ width: `${health * 100}%`, background: barColor }} />
                       </div>
                     </div>
                   );
