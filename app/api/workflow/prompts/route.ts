@@ -124,10 +124,14 @@ async function generateImages(
   console.log(`[image-prompts] start project=${projectId} scriptWords=${script.trim().split(/\s+/).filter(Boolean).length}`);
   const anthropic = await getAnthropicClient(userId);
 
-  // Each beat's structured output runs ~80-120 output tokens. Opus's
-  // per-call ceiling is 8192 — chunking the script at ~1500 words keeps
-  // the expected ~60-100 beats per chunk well under that ceiling.
-  const SCRIPT_CHUNK_WORDS = 1500;
+  // Each beat's structured output runs ~80-150 output tokens (Haiku
+  // tends to be more verbose per beat than Opus). 8192 max_tokens
+  // ceiling on the model side means each chunk needs to stay safely
+  // under ~50 beats. At ~15 words/beat per the prompt's density target,
+  // that's ~750 script words per chunk. 1316 words in one chunk was
+  // overflowing — Haiku hit max_tokens and we lost everything past
+  // that point.
+  const SCRIPT_CHUNK_WORDS = 750;
   const words = script.trim().split(/\s+/).filter(Boolean);
   const allChunks: string[] = [];
   for (let i = 0; i < words.length; i += SCRIPT_CHUNK_WORDS) {
