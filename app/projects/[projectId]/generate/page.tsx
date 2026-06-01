@@ -230,6 +230,8 @@ export default function GeneratePage({ params }: PageProps) {
   const [removePausesStatus, setRemovePausesStatus] = useState("");
   const [generatingImages, setGeneratingImages] = useState(false);
   const [queuingVideos, setQueuingVideos] = useState(false);
+  const [pausingVideos, setPausingVideos] = useState(false);
+  const [resumingVideos, setResumingVideos] = useState(false);
   const [imagesProgress, setImagesProgress] = useState(0);
   // Pending URLs are only set during active generation; otherwise fall back to DB values via project
   const [pendingTtsUrl, setPendingTtsUrl] = useState<string | null>(null);
@@ -568,6 +570,8 @@ export default function GeneratePage({ params }: PageProps) {
   }
 
   async function pauseVideos() {
+    if (pausingVideos) return;
+    setPausingVideos(true);
     try {
       const res = await fetch("/api/generate/videos/pause", {
         method: "POST",
@@ -580,11 +584,14 @@ export default function GeneratePage({ params }: PageProps) {
       await mutate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Pause failed");
+    } finally {
+      setPausingVideos(false);
     }
   }
 
   async function resumeVideos() {
-    if (!selectedVideoModel) return;
+    if (!selectedVideoModel || resumingVideos) return;
+    setResumingVideos(true);
     try {
       const res = await fetch("/api/generate/videos/resume", {
         method: "POST",
@@ -603,6 +610,8 @@ export default function GeneratePage({ params }: PageProps) {
       await mutate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Resume failed");
+    } finally {
+      setResumingVideos(false);
     }
   }
 
@@ -1094,19 +1103,30 @@ export default function GeneratePage({ params }: PageProps) {
               ) : pausedVideos > 0 ? (
                 <button
                   onClick={resumeVideos}
-                  disabled={!selectedVideoModel}
+                  disabled={!selectedVideoModel || resumingVideos}
                   className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-3"
                   style={{ background: "oklch(0.7 0.15 145)", color: "var(--bg-page-2)" }}
                 >
-                  Resume {pausedVideos} Clip{pausedVideos === 1 ? "" : "s"}
+                  {resumingVideos ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      Resuming…
+                    </span>
+                  ) : `Resume ${pausedVideos} Clip${pausedVideos === 1 ? "" : "s"}`}
                 </button>
               ) : queuedVideos > 0 ? (
                 <button
                   onClick={pauseVideos}
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all mt-3"
+                  disabled={pausingVideos}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-3"
                   style={{ background: "transparent", color: "oklch(0.7 0.2 25)", border: "1px solid oklch(0.7 0.2 25)" }}
                 >
-                  Pause {queuedVideos} Pending
+                  {pausingVideos ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      Pausing…
+                    </span>
+                  ) : `Pause ${queuedVideos} Pending`}
                 </button>
               ) : failedVideos > 0 && pendingVideos === failedVideos ? (
                 <button

@@ -3,7 +3,6 @@
 import { useState, use, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
-import { NextVideoPanel } from "@/components/NextVideoPanel";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -335,6 +334,22 @@ export default function ThumbnailsPage({ params }: PageProps) {
 
   const { data: imageModels } = useSWR<KieModel[]>("/api/kie/models?type=image", fetcher);
 
+  // If the user came from Assemble (current_state >= 15), bump to 16 so the
+  // WizardNav's Assemble phase satisfies `reached > Math.max(...states)` and
+  // ticks done. Thumbnails has state 13 (it's a side-branch) so we can't
+  // rely on its own state to mark prior phases complete. No-op if the user
+  // visited Thumbnails before completing Assemble.
+  useEffect(() => {
+    const reached = project?.current_state as number | undefined;
+    if (reached !== undefined && reached >= 15 && reached < 16) {
+      fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_state: 16 }),
+      }).then(() => mutate()).catch(() => { /* non-blocking */ });
+    }
+  }, [project?.current_state, projectId, mutate]);
+
   const [conceptStep, setConceptStep] = useState<StepState>(IDLE);
   const [imageStep, setImageStep] = useState<StepState>(IDLE);
 
@@ -349,6 +364,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
   const thumbnails: ThumbnailConcept[] = project?.thumbnails ?? [];
   const hasConcepts = thumbnails.length > 0;
   const hasImages = thumbnails.some((t) => t.imageUrl);
+  const allImagesGenerated = hasConcepts && thumbnails.every((t) => !!t.imageUrl);
   const isConceptRunning = conceptStep.status === "running";
   const isImageRunning = imageStep.status === "running";
 
@@ -472,7 +488,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
           onNav={setPreviewIndex}
         />
       )}
-      <WizardNav projectId={projectId} currentState={13} highestState={project?.current_state} channelName={project?.channel_name} />
+      <WizardNav projectId={projectId} currentState={13} highestState={project?.current_state} channelName={project?.channel_name} progressComplete={allImagesGenerated} />
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
         {/* Header */}
@@ -541,7 +557,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
                       <div className="flex items-center gap-2">
                         <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-progress)" }}>
                           <div className="h-full rounded-full transition-all"
-                            style={{ width: `${Math.round((imageProgress.done / imageProgress.total) * 100)}%`, background: "oklch(0.72 0.25 285)" }} />
+                            style={{ width: `${Math.min(99, Math.round((imageProgress.done / imageProgress.total) * 100))}%`, background: "oklch(0.72 0.25 285)" }} />
                         </div>
                         <span className="text-xs shrink-0" style={{ color: "var(--c-40)" }}>
                           {imageProgress.done}/{imageProgress.total}
@@ -674,12 +690,6 @@ export default function ThumbnailsPage({ params }: PageProps) {
                 </div>
               </div>
             )}
-
-            {hasConcepts && (
-              <div className="max-w-md mx-auto pt-4">
-                <NextVideoPanel projectId={projectId} project={project} />
-              </div>
-            )}
           </div>
         </div>
       </main>
@@ -690,7 +700,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
           <div className="px-4 sm:px-8 max-w-5xl mx-auto">
             <button
-              onClick={() => { setNavigating(true); router.push("/projects"); }}
+              onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/next`); }}
               disabled={navigating}
               className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-80"
               style={{ background: "oklch(0.55 0.15 145)", color: "var(--bg-page-2)" }}

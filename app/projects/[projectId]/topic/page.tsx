@@ -158,44 +158,56 @@ export default function TopicPage({ params }: PageProps) {
               {/* Ideas list */}
               {allIdeas.length > 0 && (
                 <div className="space-y-2">
-                  {allIdeas.map((idea, i) => (
-                    <button
-                      key={i}
-                      onClick={() => setSelectedTopic(idea)}
-                      className="w-full text-left p-4 rounded-xl transition-all"
-                      style={selectedTopic === idea ? {
-                        background: "oklch(0.72 0.25 285 / 0.12)",
-                        border: "1px solid oklch(0.72 0.25 285 / 0.35)",
-                      } : {
-                        background: "var(--bg-panel)",
-                        border: "1px solid var(--bd-7)",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (selectedTopic !== idea)
-                          (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.2)";
-                      }}
-                      onMouseLeave={(e) => {
-                        if (selectedTopic !== idea)
-                          (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)";
-                      }}
-                    >
-                      <div className="flex items-start gap-3">
-                        <span className="text-xs font-mono mt-0.5 shrink-0"
-                          style={{
-                            color: "oklch(0.72 0.25 285)",
-                            background: "oklch(0.72 0.25 285 / 0.1)",
-                            padding: "2px 6px",
-                            borderRadius: "4px",
-                          }}>
-                          {String(i + 1).padStart(2, "0")}
-                        </span>
-                        <span className="text-sm leading-relaxed"
-                          style={{ color: selectedTopic === idea ? "var(--c-90)" : "var(--c-65)" }}>
-                          {idea}
-                        </span>
-                      </div>
-                    </button>
-                  ))}
+                  {allIdeas.map((idea, i) => {
+                    const selected = selectedTopic === idea;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => setSelectedTopic(idea)}
+                        className="w-full text-left p-4 rounded-xl transition-all"
+                        style={selected ? {
+                          background: "oklch(0.72 0.25 285 / 0.12)",
+                          border: "1px solid oklch(0.72 0.25 285 / 0.35)",
+                        } : {
+                          background: "var(--bg-panel)",
+                          border: "1px solid var(--bd-7)",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!selected)
+                            (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.2)";
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!selected)
+                            (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)";
+                        }}
+                      >
+                        <div className="flex items-start gap-3">
+                          {selected ? (
+                            <span className="shrink-0 mt-0.5 w-5 h-5 rounded-full flex items-center justify-center"
+                              style={{ background: "oklch(0.55 0.15 145)", color: "var(--bg-page-2)" }}>
+                              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                                <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </span>
+                          ) : (
+                            <span className="text-xs font-mono mt-0.5 shrink-0"
+                              style={{
+                                color: "oklch(0.72 0.25 285)",
+                                background: "oklch(0.72 0.25 285 / 0.1)",
+                                padding: "2px 6px",
+                                borderRadius: "4px",
+                              }}>
+                              {String(i + 1).padStart(2, "0")}
+                            </span>
+                          )}
+                          <span className="text-sm leading-relaxed"
+                            style={{ color: selected ? "var(--c-90)" : "var(--c-65)" }}>
+                            {idea}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
 
@@ -221,21 +233,36 @@ export default function TopicPage({ params }: PageProps) {
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
                   {allIdeas.length > 0 ? "Or enter a custom topic" : "Your topic"}
                 </p>
-                <input
-                  type="text"
-                  value={selectedTopic}
-                  onChange={(e) => setSelectedTopic(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && !saving && handleContinue()}
-                  placeholder="Type a video topic…"
-                  className="w-full px-4 py-2.5 rounded-xl text-sm outline-none transition-all"
-                  style={{
-                    background: "var(--bg-progress)",
-                    border: "1px solid var(--bd-8)",
-                    color: "var(--c-90)",
-                  }}
-                  onFocus={(e) => { (e.target as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.4)"; }}
-                  onBlur={(e) => { (e.target as HTMLElement).style.borderColor = "var(--bd-8)"; }}
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={selectedTopic}
+                    onChange={(e) => setSelectedTopic(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && !saving && handleContinue()}
+                    placeholder="Type a video topic…"
+                    className="w-full px-4 py-2.5 rounded-xl text-sm outline-none transition-all"
+                    style={{
+                      background: "var(--bg-progress)",
+                      border: `1px solid ${selectedTopic.trim() ? "oklch(0.55 0.15 145 / 0.45)" : "var(--bd-8)"}`,
+                      color: "var(--c-90)",
+                      paddingRight: selectedTopic.trim() ? "2.5rem" : undefined,
+                    }}
+                    onFocus={(e) => {
+                      if (!selectedTopic.trim()) (e.target as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.4)";
+                    }}
+                    onBlur={(e) => {
+                      if (!selectedTopic.trim()) (e.target as HTMLElement).style.borderColor = "var(--bd-8)";
+                    }}
+                  />
+                  {selectedTopic.trim() && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full flex items-center justify-center"
+                      style={{ background: "oklch(0.55 0.15 145)", color: "var(--bg-page-2)" }}>
+                      <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* Continue button */}

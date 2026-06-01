@@ -1384,7 +1384,7 @@ export default function HomePage() {
                     {group.projects.map((p) => {
                       const assembled = p.assembly_status === "done";
                       const path = assembled
-                        ? "assemble"
+                        ? "thumbnails"
                         : (p.current_state === 6 && p.selected_topic)
                           ? "script"
                           : (PHASE_PATHS[p.current_state] ?? "channel");

@@ -228,8 +228,8 @@ export default function AssemblePage({ params }: PageProps) {
           </p>
         </div>
 
-        <div className="p-4 sm:p-8 pb-24 flex flex-col lg:flex-row gap-6 items-start">
-          <div className="flex-1 min-w-0 w-full max-w-2xl space-y-6">
+        <div className="p-4 sm:p-8 pb-24">
+          <div className="w-full max-w-2xl mx-auto space-y-6">
 
             {/* Status cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
@@ -527,15 +527,20 @@ export default function AssemblePage({ params }: PageProps) {
                       </p>
                     )}
                   </div>
-                  <button onClick={retryUpload}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all"
+                  <button onClick={retryUpload} disabled={assembling}
+                    className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 transition-all"
                     style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                    Retry Upload
+                    {assembling ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Uploading…
+                      </span>
+                    ) : "Retry Upload"}
                   </button>
-                  <button onClick={assembleVideo}
-                    className="w-full py-2 rounded-xl text-xs font-medium transition-all"
+                  <button onClick={assembleVideo} disabled={assembling}
+                    className="w-full py-2 rounded-xl text-xs font-medium disabled:opacity-60 transition-all"
                     style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}>
-                    Or reassemble from scratch
+                    {assembling ? "Queuing…" : "Or reassemble from scratch"}
                   </button>
                 </div>
               )}
@@ -547,10 +552,15 @@ export default function AssemblePage({ params }: PageProps) {
                       Generate a voiceover on the Generate page first.
                     </p>
                   )}
-                  <button onClick={assembleVideo} disabled={!hasVoiceover}
+                  <button onClick={assembleVideo} disabled={!hasVoiceover || assembling}
                     className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                     style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                    Assemble Final Video
+                    {assembling ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Queuing…
+                      </span>
+                    ) : "Assemble Final Video"}
                   </button>
                 </>
               )}

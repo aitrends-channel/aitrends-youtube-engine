@@ -101,17 +101,26 @@ export default function DemoTopicPage() {
                       }}
                     >
                       <div className="flex items-start gap-3">
-                        <span
-                          className="text-xs font-mono mt-0.5 shrink-0"
-                          style={{
-                            color: locked ? "var(--c-35)" : "oklch(0.72 0.25 285)",
-                            background: locked ? "var(--bg-track)" : "oklch(0.72 0.25 285 / 0.1)",
-                            padding: "2px 6px",
-                            borderRadius: "4px",
-                          }}
-                        >
-                          {String(i + 1).padStart(2, "0")}
-                        </span>
+                        {selected ? (
+                          <span className="shrink-0 mt-0.5 w-5 h-5 rounded-full flex items-center justify-center"
+                            style={{ background: "oklch(0.55 0.15 145)", color: "var(--bg-page-2)" }}>
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                              <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </span>
+                        ) : (
+                          <span
+                            className="text-xs font-mono mt-0.5 shrink-0"
+                            style={{
+                              color: locked ? "var(--c-35)" : "oklch(0.72 0.25 285)",
+                              background: locked ? "var(--bg-track)" : "oklch(0.72 0.25 285 / 0.1)",
+                              padding: "2px 6px",
+                              borderRadius: "4px",
+                            }}
+                          >
+                            {String(i + 1).padStart(2, "0")}
+                          </span>
+                        )}
                         <span
                           className="text-sm leading-relaxed"
                           style={{ color: selected ? "var(--c-90)" : locked ? "var(--c-35)" : "var(--c-65)" }}
