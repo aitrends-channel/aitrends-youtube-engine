@@ -121,14 +121,12 @@ export default function VisualsPage({ params }: PageProps) {
 
   // Manual upload state
   const [videoImages, setVideoImages] = useState<File[]>([]);
-  const [thumbnailImages, setThumbnailImages] = useState<File[]>([]);
 
   // Analysis state
   const [steps, setSteps] = useState<{ upload: StepStatus; analyze: StepStatus }>({ upload: "idle", analyze: "idle" });
   const [visualProfile, setVisualProfile] = useState<Record<string, unknown> | null>(null);
 
   const videoInputRef = useRef<HTMLInputElement>(null);
-  const thumbInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (project?.visual_profile) setVisualProfile(project.visual_profile);
@@ -146,23 +144,23 @@ export default function VisualsPage({ params }: PageProps) {
       const res = await fetch("/api/youtube/screenshots", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videos: topVideos, projectId }),
+        body: JSON.stringify({ videos: topVideos, projectId, kinds: ["frames"] }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setAutoShots(data.screenshots);
 
-      // Auto-select all unique images by default
+      // Frame stills only — channel thumbnails are now fetched at the
+      // Thumbnails step for thumbnail-style analysis.
       const all = new Set<string>();
       for (const shot of data.screenshots as AutoShot[]) {
-        if (shot.thumbnailUrl) all.add(shot.thumbnailUrl);
         for (const f of shot.frameUrls) all.add(f);
       }
       setSelectedImages(all);
       if (all.size === 0) {
-        toast.error("No images could be fetched — video frames may be unavailable for this channel");
+        toast.error("No frame stills could be fetched — they may be unavailable for this channel");
       } else {
-        toast.success(`Fetched ${all.size} images from ${data.screenshots.length} videos`);
+        toast.success(`Fetched ${all.size} frame stills from ${data.screenshots.length} videos`);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to fetch screenshots");
@@ -196,20 +194,16 @@ export default function VisualsPage({ params }: PageProps) {
 
   async function analyzeVisuals() {
     let videoImageUrls: string[];
-    let thumbnailImageUrls: string[];
 
     if (mode === "auto") {
       if (selectedImages.size < 3) { toast.error("Select at least 3 images"); return; }
-      const thumbUrlSet = new Set(autoShots.map((s) => s.thumbnailUrl).filter(Boolean));
-      videoImageUrls = [...selectedImages].filter((u) => !thumbUrlSet.has(u));
-      thumbnailImageUrls = [...selectedImages].filter((u) => thumbUrlSet.has(u));
+      videoImageUrls = [...selectedImages];
       setStep("upload", "done"); // already uploaded during fetch
     } else {
       if (videoImages.length < 3) { toast.error("Upload at least 3 video screenshots"); return; }
       setStep("upload", "running");
       try {
         videoImageUrls = await Promise.all(videoImages.map((f) => uploadFileToSupabase(f, "visual-refs")));
-        thumbnailImageUrls = await Promise.all(thumbnailImages.map((f) => uploadFileToSupabase(f, "thumbnail-refs")));
         setStep("upload", "done");
       } catch (err) {
         setStep("upload", "error");
@@ -223,7 +217,7 @@ export default function VisualsPage({ params }: PageProps) {
       const res = await fetch("/api/workflow/visual-analysis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, videoImageUrls, thumbnailImageUrls }),
+        body: JSON.stringify({ projectId, videoImageUrls }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -291,7 +285,7 @@ export default function VisualsPage({ params }: PageProps) {
                   <div>
                     <p className="font-semibold text-sm">Auto-capture from Channel Videos</p>
                     <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                      Fetches thumbnails + 3 frame stills from each of the top {topVideos.length || "10"} videos
+                      Fetches 3 frame stills from each of the top {topVideos.length || "10"} videos
                     </p>
                   </div>
                   <button
@@ -313,9 +307,8 @@ export default function VisualsPage({ params }: PageProps) {
 
                 {/* Info about what it does */}
                 {!autoShots.length && !fetching && (
-                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {[
-                      { icon: "◎", label: "Thumbnail images", desc: "Official YouTube thumbnail per video" },
                       { icon: "◈", label: "Video frame stills", desc: "3 auto-frames from ~25%, 50%, 75% of each video" },
                       { icon: "✦", label: "Style extraction", desc: "Claude analyzes colors, lighting, mood, composition" },
                     ].map((item) => (
@@ -332,10 +325,7 @@ export default function VisualsPage({ params }: PageProps) {
 
               {/* Fetched screenshots grid */}
               {autoShots.length > 0 && (() => {
-                const allImages = [...new Set(autoShots.flatMap((s) => [
-                  ...(s.thumbnailUrl ? [s.thumbnailUrl] : []),
-                  ...s.frameUrls,
-                ]))];
+                const allImages = [...new Set(autoShots.flatMap((s) => s.frameUrls))];
                 return (
                   <div className="space-y-5">
                     <div className="flex items-center justify-between">
@@ -452,50 +442,6 @@ export default function VisualsPage({ params }: PageProps) {
                 </div>
               </div>
 
-              {/* Thumbnails */}
-              <div className="rounded-2xl overflow-hidden"
-                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-                <div className="px-5 py-4 flex items-center justify-between"
-                  style={{ borderBottom: "1px solid var(--bd-6)" }}>
-                  <div>
-                    <p className="font-semibold text-sm">Thumbnail Images <span className="text-xs font-normal" style={{ color: "var(--c-45)" }}>(optional)</span></p>
-                    <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>2–3 thumbnails for style matching</p>
-                  </div>
-                  <div className="px-2.5 py-1 rounded-full text-xs"
-                    style={{ background: "var(--bg-progress)", color: "var(--c-45)", border: "1px solid var(--bd-6)" }}>
-                    {thumbnailImages.length} / 3
-                  </div>
-                </div>
-                <div className="p-5 space-y-4">
-                  <div
-                    onClick={() => thumbInputRef.current?.click()}
-                    className="rounded-xl p-5 text-center cursor-pointer transition-all"
-                    style={{ border: "1.5px dashed var(--bd-10)", background: "oklch(0.09 0 0)" }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.3)"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-10)"; }}
-                  >
-                    <p className="text-sm" style={{ color: "var(--c-50)" }}>
-                      Drop thumbnails or <span style={{ color: "oklch(0.72 0.25 285)" }}>click to upload</span>
-                    </p>
-                  </div>
-                  <input ref={thumbInputRef} type="file" accept="image/*" multiple className="hidden"
-                    onChange={(e) => setThumbnailImages(Array.from(e.target.files ?? []).slice(0, 3))} />
-                  {thumbnailImages.length > 0 && (
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      {thumbnailImages.map((f, i) => (
-                        <div key={i} className="relative aspect-video rounded-lg overflow-hidden"
-                          style={{ border: "1px solid var(--bd-10)" }}>
-                          <img src={URL.createObjectURL(f)} alt="" className="w-full h-full object-cover" />
-                          <button
-                            onClick={() => setThumbnailImages((p) => p.filter((_, j) => j !== i))}
-                            className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center text-xs"
-                            style={{ background: "var(--bg-overlay)", color: "white" }}>×</button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
             </div>
           )}
 

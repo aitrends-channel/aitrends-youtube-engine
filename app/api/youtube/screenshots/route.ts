@@ -15,11 +15,12 @@ interface VideoScreenshots {
   frameUrls: string[];
 }
 
+type Kind = "frames" | "thumbnails";
+
 async function tryUpload(path: string, url: string): Promise<string | null> {
   try {
     return await uploadFromUrl(path, url, "image/jpeg");
   } catch {
-    // R2 upload failed — verify the source URL is accessible and return it directly as fallback
     try {
       const check = await fetch(url, { method: "HEAD" });
       return check.ok ? url : null;
@@ -34,17 +35,29 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   try {
-    const { videos, projectId }: { videos: VideoInput[]; projectId: string } = await req.json();
+    const { videos, projectId, kinds }: {
+      videos: VideoInput[];
+      projectId: string;
+      kinds?: Kind[];
+    } = await req.json();
 
     if (!videos?.length || !projectId) {
       return NextResponse.json({ error: "videos and projectId required" }, { status: 400 });
     }
 
-    // Each video produces 1 thumbnail + 3 frame stills (4 images). The
-    // visual-analysis route only feeds the first 10 to the model, so
-    // pulling beyond ~3 videos is wasted YouTube fetches + R2 uploads.
-    // Slice here so we never do the wasted work in the first place.
-    const MAX_VIDEOS = 3;
+    // `kinds` controls which image classes to fetch. Visuals step asks
+    // for ["frames"] only (video style DNA). Thumbnails step asks for
+    // ["thumbnails"] only (channel thumbnail conventions). Default keeps
+    // both for backwards compatibility, but no caller should rely on it.
+    const want = new Set<Kind>(kinds ?? ["frames", "thumbnails"]);
+    const wantFrames = want.has("frames");
+    const wantThumbs = want.has("thumbnails");
+
+    // Frame stills are heavy (3 per video → cap at 3 videos = 9 frames,
+    // well within the vision-analysis 10-image budget). Thumbnail-only
+    // calls are light (1 image per video) so we pull 5 from the top of
+    // the channel's view-count list.
+    const MAX_VIDEOS = wantFrames ? 3 : 5;
     const limitedVideos = videos.slice(0, MAX_VIDEOS);
     const userFolder = userFolderFor(user);
 
@@ -52,19 +65,17 @@ export async function POST(req: Request) {
       limitedVideos.map(async ({ videoId, title }) => {
         const base = `${userFolder}/${projectId}/auto-frames/${videoId}`;
 
-        // Thumbnail — try maxresdefault, fall back to hqdefault
-        const thumbnailUrl =
-          (await tryUpload(`${base}-thumb.jpg`, `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`)) ??
-          (await tryUpload(`${base}-thumb.jpg`, `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`)) ??
-          "";
+        const thumbnailUrl = wantThumbs
+          ? ((await tryUpload(`${base}-thumb.jpg`, `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`)) ??
+             (await tryUpload(`${base}-thumb.jpg`, `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`)) ??
+             "")
+          : "";
 
-        // Auto-generated frames at ~25%, ~50%, ~75% through the video
-        const frameResults = await Promise.all(
-          [1, 2, 3].map((n) =>
-            tryUpload(`${base}-frame-${n}.jpg`, `https://img.youtube.com/vi/${videoId}/${n}.jpg`)
-          )
-        );
-        const frameUrls = frameResults.filter((u): u is string => u !== null);
+        const frameUrls = wantFrames
+          ? (await Promise.all([1, 2, 3].map((n) =>
+              tryUpload(`${base}-frame-${n}.jpg`, `https://img.youtube.com/vi/${videoId}/${n}.jpg`)
+            ))).filter((u): u is string => u !== null)
+          : [];
 
         return { videoId, title, thumbnailUrl, frameUrls };
       })

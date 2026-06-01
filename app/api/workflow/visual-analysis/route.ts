@@ -15,41 +15,59 @@ export async function POST(req: Request) {
 
   try {
     const anthropic = await getAnthropicClient(user.id);
-    const { projectId, videoImageUrls, thumbnailImageUrls } = await req.json();
+    const { projectId, videoImageUrls, thumbnailImageUrls } = await req.json() as {
+      projectId: string;
+      videoImageUrls?: string[];
+      thumbnailImageUrls?: string[];
+    };
 
-    if (!videoImageUrls?.length) {
-      return NextResponse.json({ error: "At least one video image URL is required" }, { status: 400 });
+    const hasVideo = !!videoImageUrls?.length;
+    const hasThumbnails = !!thumbnailImageUrls?.length;
+    if (!hasVideo && !hasThumbnails) {
+      return NextResponse.json({ error: "At least one image URL is required" }, { status: 400 });
     }
 
-    // Cap the screenshot count we send to vision. Beyond ~10 images
-    // marginal DNA quality drops fast while latency + credit cost
-    // climb. The caller can send more for richness; we only analyze
-    // the first batch.
     const MAX_VIDEO_IMAGES = 10;
-    const cappedVideoImages = (videoImageUrls as string[]).slice(0, MAX_VIDEO_IMAGES);
-
-    const hasThumbnails = thumbnailImageUrls?.length > 0;
+    const cappedVideoImages = hasVideo ? (videoImageUrls as string[]).slice(0, MAX_VIDEO_IMAGES) : [];
 
     const imageBlocks = [
-      ...cappedVideoImages.map((url: string) => ({
+      ...cappedVideoImages.map((url) => ({
         type: "image" as const,
         source: { type: "url" as const, url },
       })),
       ...(hasThumbnails
-        ? thumbnailImageUrls.map((url: string) => ({
+        ? (thumbnailImageUrls as string[]).map((url) => ({
             type: "image" as const,
             source: { type: "url" as const, url },
           }))
         : []),
     ];
 
-    const combinedSchema = hasThumbnails
-      ? visualProfileInputSchema
-      : {
-          type: "object" as const,
-          properties: { visualProfile: visualProfileInputSchema.properties.visualProfile },
-          required: ["visualProfile"],
-        };
+    // Build the combined schema dynamically — only ask Claude for the
+    // pieces of analysis we have inputs for. The thumbnails step calls
+    // with thumbnail images only, in which case we just produce
+    // thumbnail_analysis and leave visual_profile alone.
+    const visualProperty = visualProfileInputSchema.properties.visualProfile;
+    const thumbnailProperty = "thumbnailAnalysis" in visualProfileInputSchema.properties
+      ? (visualProfileInputSchema.properties as Record<string, unknown>).thumbnailAnalysis
+      : null;
+
+    const properties: Record<string, unknown> = {};
+    const required: string[] = [];
+    if (hasVideo) {
+      properties.visualProfile = visualProperty;
+      required.push("visualProfile");
+    }
+    if (hasThumbnails && thumbnailProperty) {
+      properties.thumbnailAnalysis = thumbnailProperty;
+      required.push("thumbnailAnalysis");
+    }
+
+    const combinedSchema = {
+      type: "object" as const,
+      properties,
+      required,
+    };
 
     const response = await anthropic.messages.create({
       model: VISION_MODEL,
@@ -65,7 +83,7 @@ export async function POST(req: Request) {
         role: "user",
         content: [
           ...imageBlocks,
-          { type: "text", text: buildVisualAnalysisPrompt(hasThumbnails) },
+          { type: "text", text: buildVisualAnalysisPrompt(hasThumbnails && hasVideo) },
         ],
       }],
     });
@@ -77,20 +95,25 @@ export async function POST(req: Request) {
 
     // Defensive: if the model ignored the wrapper and returned the
     // visualProfile fields flat at the root, treat `result` itself as
-    // the visualProfile. Same fallback for thumbnailAnalysis.
-    const visualProfileRaw = result.visualProfile ?? result;
-    const visualProfile = VisualProfileSchema.parse(visualProfileRaw);
+    // the visualProfile (only when we expected a visualProfile).
+    const visualProfileRaw = hasVideo ? (result.visualProfile ?? result) : null;
+    const visualProfile = visualProfileRaw ? VisualProfileSchema.parse(visualProfileRaw) : null;
 
-    const thumbnailRaw = result.thumbnailAnalysis;
-    const thumbnailAnalysis = hasThumbnails && thumbnailRaw
-      ? ThumbnailAnalysisSchema.parse(thumbnailRaw)
-      : null;
+    const thumbnailRaw = hasThumbnails ? (result.thumbnailAnalysis ?? (hasVideo ? null : result)) : null;
+    const thumbnailAnalysis = thumbnailRaw ? ThumbnailAnalysisSchema.parse(thumbnailRaw) : null;
 
-    await supabase
-      .from("projects")
-      .update({ visual_profile: visualProfile, thumbnail_analysis: thumbnailAnalysis, current_state: 9 })
-      .eq("id", projectId)
-      .eq("user_id", user.id);
+    // Only update DB fields we actually analyzed — don't clobber
+    // previously-stored values for the other axis.
+    const updates: Record<string, unknown> = {};
+    if (visualProfile) updates.visual_profile = visualProfile;
+    if (thumbnailAnalysis) updates.thumbnail_analysis = thumbnailAnalysis;
+    // current_state bump only on the visual-style branch (the original
+    // step-9 gate). Thumbnail-only calls don't advance the workflow.
+    if (hasVideo) updates.current_state = 9;
+
+    if (Object.keys(updates).length > 0) {
+      await supabase.from("projects").update(updates).eq("id", projectId).eq("user_id", user.id);
+    }
 
     return NextResponse.json({ visualProfile, thumbnailAnalysis });
   } catch (err) {

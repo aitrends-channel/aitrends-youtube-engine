@@ -382,12 +382,46 @@ export default function ThumbnailsPage({ params }: PageProps) {
     }
     setConceptStep({ status: "running", message: "Starting..." });
     try {
+      // Lazy thumbnail-style analysis: the visuals step now only extracts
+      // video-style DNA. Fetch the channel's actual thumbnails the first
+      // time we need them here, run analysis, persist to the project,
+      // then proceed to concept generation. No-op on subsequent runs.
+      let thumbnailAnalysis = project.thumbnail_analysis as Record<string, unknown> | null;
+      const channelInfo = project.channel_info as { topVideos?: { videoId: string; title: string }[] } | undefined;
+      const topVideos = channelInfo?.topVideos ?? [];
+      if (!thumbnailAnalysis && topVideos.length > 0) {
+        setConceptStep({ status: "running", message: "Analyzing channel thumbnails…" });
+        const shotsRes = await fetch("/api/youtube/screenshots", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ videos: topVideos, projectId, kinds: ["thumbnails"] }),
+        });
+        const shotsData = await shotsRes.json();
+        if (!shotsRes.ok) throw new Error(shotsData.error ?? "Failed to fetch channel thumbnails");
+        const thumbnailImageUrls: string[] = (shotsData.screenshots ?? [])
+          .map((s: { thumbnailUrl?: string }) => s.thumbnailUrl)
+          .filter((u: string | undefined): u is string => !!u);
+
+        if (thumbnailImageUrls.length > 0) {
+          const analysisRes = await fetch("/api/workflow/visual-analysis", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId, thumbnailImageUrls }),
+          });
+          const analysisData = await analysisRes.json();
+          if (analysisRes.ok && analysisData.thumbnailAnalysis) {
+            thumbnailAnalysis = analysisData.thumbnailAnalysis;
+          }
+        }
+      }
+
+      setConceptStep({ status: "running", message: "Generating concepts…" });
       await streamStep("/api/workflow/prompts", {
         step: "thumbnails",
         projectId,
         script: project.script,
         visualProfile: project.visual_profile,
-        thumbnailAnalysis: project.thumbnail_analysis,
+        thumbnailAnalysis,
       }, setConceptStep);
       await mutate();
       setConceptStep({ status: "done", message: "" });
