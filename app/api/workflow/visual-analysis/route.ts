@@ -83,7 +83,7 @@ export async function POST(req: Request) {
         role: "user",
         content: [
           ...imageBlocks,
-          { type: "text", text: buildVisualAnalysisPrompt(hasThumbnails && hasVideo) },
+          { type: "text", text: buildVisualAnalysisPrompt({ video: hasVideo, thumbnails: hasThumbnails }) },
         ],
       }],
     });
@@ -93,13 +93,57 @@ export async function POST(req: Request) {
 
     const result = toolUse.input as { visualProfile?: unknown; thumbnailAnalysis?: unknown; [k: string]: unknown };
 
-    // Defensive: if the model ignored the wrapper and returned the
-    // visualProfile fields flat at the root, treat `result` itself as
-    // the visualProfile (only when we expected a visualProfile).
-    const visualProfileRaw = hasVideo ? (result.visualProfile ?? result) : null;
-    const visualProfile = visualProfileRaw ? VisualProfileSchema.parse(visualProfileRaw) : null;
+    // Pick the visualProfile from whichever shape the model returned.
+    // Haiku (the vision model) sometimes:
+    //   1. Wraps as { visualProfile: {...} } — happy path
+    //   2. Returns the fields flat at the root — fallback to result
+    //   3. Returns something else entirely (rare; logs help diagnose)
+    function pickVisualProfile(): Record<string, unknown> | null {
+      if (result.visualProfile && typeof result.visualProfile === "object") {
+        return result.visualProfile as Record<string, unknown>;
+      }
+      // Flat shape — only treat the root as a visualProfile if it
+      // actually has the signature fields.
+      if (typeof result.artStyle === "string" && Array.isArray(result.colorPalette)) {
+        return result as Record<string, unknown>;
+      }
+      return null;
+    }
 
-    const thumbnailRaw = hasThumbnails ? (result.thumbnailAnalysis ?? (hasVideo ? null : result)) : null;
+    function pickThumbnailAnalysis(): Record<string, unknown> | null {
+      if (result.thumbnailAnalysis && typeof result.thumbnailAnalysis === "object") {
+        return result.thumbnailAnalysis as Record<string, unknown>;
+      }
+      // Flat shape — only if signature fields are present and we
+      // weren't also expecting a visualProfile (which would have its
+      // own shape and could collide).
+      if (!hasVideo && typeof result.textStyle === "string" && typeof result.composition === "string") {
+        return result as Record<string, unknown>;
+      }
+      return null;
+    }
+
+    let visualProfileRaw: Record<string, unknown> | null = null;
+    let thumbnailRaw: Record<string, unknown> | null = null;
+
+    if (hasVideo) {
+      visualProfileRaw = pickVisualProfile();
+      if (!visualProfileRaw) {
+        const keys = Object.keys(result).join(", ") || "(empty)";
+        console.warn(`[visual-analysis] unexpected tool input keys=${keys}`);
+        throw new Error(`Visual analysis returned an unrecognized shape (keys: ${keys}). Retry.`);
+      }
+    }
+    if (hasThumbnails) {
+      thumbnailRaw = pickThumbnailAnalysis();
+      if (!thumbnailRaw && !hasVideo) {
+        const keys = Object.keys(result).join(", ") || "(empty)";
+        console.warn(`[visual-analysis] unexpected tool input keys=${keys}`);
+        throw new Error(`Thumbnail analysis returned an unrecognized shape (keys: ${keys}). Retry.`);
+      }
+    }
+
+    const visualProfile = visualProfileRaw ? VisualProfileSchema.parse(visualProfileRaw) : null;
     const thumbnailAnalysis = thumbnailRaw ? ThumbnailAnalysisSchema.parse(thumbnailRaw) : null;
 
     // Only update DB fields we actually analyzed — don't clobber

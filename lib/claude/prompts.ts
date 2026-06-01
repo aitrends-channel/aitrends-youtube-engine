@@ -113,11 +113,9 @@ Begin writing the script now. Output ONLY the script text.`;
 }
 
 export function buildVisualAnalysisPrompt(
-  includesThumbnails: boolean
+  mode: { video: boolean; thumbnails: boolean }
 ): string {
-  return `Analyze the uploaded video screenshots and extract the visual style profile.
-
-Analyze and extract:
+  const videoBlock = mode.video ? `Analyze the uploaded video screenshots and extract the visual style profile:
 - Art style (realistic, illustrated, animated, mixed, etc.)
 - Color palette (list the dominant colors with descriptions)
 - Lighting style (warm, cool, dramatic, soft, divine glow, etc.)
@@ -126,11 +124,19 @@ Analyze and extract:
 - Detail level (minimal/clean, moderate, highly detailed)
 - Overall mood
 
-${includesThumbnails ? `Also analyze the thumbnail images separately:
+Return these fields inside a "visualProfile" object.` : "";
+
+  const thumbBlock = mode.thumbnails ? `Analyze the uploaded thumbnail images and extract the thumbnail style profile:
 - Text style and placement
 - Composition approach
 - Color contrast strategy
-- Emotion triggers used` : ""}
+- Emotion triggers used
+
+Return these fields inside a "thumbnailAnalysis" object.` : "";
+
+  const joiner = mode.video && mode.thumbnails ? "\n\n" : "";
+
+  return `${videoBlock}${joiner}${thumbBlock}
 
 Call the save_visual_analysis tool with the structured profile. Be specific — these descriptions will be used as direct instructions for AI image generation. Do not write any text outside the tool call.`;
 }
