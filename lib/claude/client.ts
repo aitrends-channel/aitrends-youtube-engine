@@ -120,10 +120,12 @@ export async function getAnthropicClient(userId: string): Promise<Anthropic> {
     // attempts, turning one failed chunk into 9 KIE calls and 6+
     // minutes of wasted compute on a transient outage.
     maxRetries: 0,
-    // KIE's upstream is returning 500 at ~45s when it can't fulfill a
-    // request, so anything past ~90s is just a stuck connection.
-    // The SDK default is 600s; that's far too generous for our setup.
-    timeout: 90_000,
+    // KIE returns 500 at ~45s when it can't fulfill a request, but
+    // legitimate Opus calls on large structured outputs (image prompts
+    // emitting 50-100 beats, channel analysis on long transcripts) can
+    // legitimately take 60-120 seconds. 180s gives those headroom while
+    // still failing fast on a hung connection (SDK default is 600s).
+    timeout: 180_000,
   });
 }
 
