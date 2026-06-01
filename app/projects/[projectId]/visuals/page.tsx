@@ -248,7 +248,7 @@ export default function VisualsPage({ params }: PageProps) {
           <div>
             <h1 className="font-bold text-base sm:text-lg">Visual Style Extraction</h1>
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-              Upload or auto-capture screenshots so Claude can extract the channel&apos;s visual signature
+              Upload or auto-capture screenshots so we can extract the channel&apos;s visual signature
             </p>
           </div>
         </div>
@@ -310,7 +310,7 @@ export default function VisualsPage({ params }: PageProps) {
                   <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {[
                       { icon: "◈", label: "Video frame stills", desc: "3 auto-frames from ~25%, 50%, 75% of each video" },
-                      { icon: "✦", label: "Style extraction", desc: "Claude analyzes colors, lighting, mood, composition" },
+                      { icon: "✦", label: "Style extraction", desc: "Analyzes colors, lighting, mood, and composition" },
                     ].map((item) => (
                       <div key={item.label} className="p-3 rounded-xl"
                         style={{ background: "oklch(0.09 0 0)", border: "1px solid var(--bd-6)" }}>
@@ -456,7 +456,7 @@ export default function VisualsPage({ params }: PageProps) {
                 {mode === "manual" && (
                   <StepRow label="Upload images" sublabel="Storing to cloud storage" status={steps.upload} />
                 )}
-                <StepRow label="Extract visual style" sublabel="Claude analyzes art direction, lighting, mood, composition" status={steps.analyze} />
+                <StepRow label="Extract visual style" sublabel="Analyzing art direction, lighting, mood, and composition" status={steps.analyze} />
               </div>
             </div>
           )}

@@ -271,7 +271,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
                 <div className="min-w-0">
                   <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>KIE</p>
                   <p className="text-[10px] font-medium mt-0.5" style={{ color: "#f0a855" }}>Pending setup</p>
-                  <p className="text-[10px] mt-0.5" style={{ color: "var(--c-38)" }}>Claude AI, TTS, images & video</p>
+                  <p className="text-[10px] mt-0.5" style={{ color: "var(--c-38)" }}>Script generation, TTS, images & video</p>
                 </div>
                 <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0" style={{ background: "#94a3b822", color: "#94a3b8" }}>Not set</span>
               </div>
@@ -1301,7 +1301,7 @@ export default function HomePage() {
                           <div className="min-w-0">
                             <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>KIE</p>
                             {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mt-0.5" style={{ color: "#f0a855" }}>Pending setup</p>}
-                            <p className="text-[10px] mt-0.5" style={{ color: "var(--c-38)" }}>Claude AI, TTS, images & video</p>
+                            <p className="text-[10px] mt-0.5" style={{ color: "var(--c-38)" }}>Script generation, TTS, images & video</p>
                           </div>
                           <div className="flex flex-col items-end gap-1 shrink-0">
                             <StatusBadge data={kie} color="#60a5fa" />

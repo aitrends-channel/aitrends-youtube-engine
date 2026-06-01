@@ -10,7 +10,7 @@ import { useDemoState } from "@/lib/demo-context";
 type StepStatus = "idle" | "running" | "done";
 
 const ANALYZE_STEPS = [
-  { key: "analyze", label: "Extract visual style", sublabel: "Claude analyses art direction, lighting, mood, composition" },
+  { key: "analyze", label: "Extract visual style", sublabel: "Analyzing art direction, lighting, mood, and composition" },
 ] as const;
 
 function StepRow({ label, sublabel, status }: { label: string; sublabel: string; status: StepStatus }) {
@@ -123,7 +123,7 @@ export default function DemoVisualsPage() {
           >
             <h1 className="font-bold text-lg">Visual Style Extraction</h1>
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-              Auto-capture screenshots so Claude can extract the channel&apos;s visual signature
+              Auto-capture screenshots so we can extract the channel&apos;s visual signature
             </p>
           </div>
 
@@ -183,7 +183,7 @@ export default function DemoVisualsPage() {
                   {[
                     { icon: "◎", label: "Thumbnail images",   desc: "Official YouTube thumbnail per video" },
                     { icon: "◈", label: "Video frame stills", desc: "2 auto-frames per video" },
-                    { icon: "✦", label: "Style extraction",   desc: "Claude analyses colors, lighting, mood, composition" },
+                    { icon: "✦", label: "Style extraction",   desc: "Analyzes colors, lighting, mood, and composition" },
                   ].map((item) => (
                     <div key={item.label} className="p-3 rounded-xl"
                       style={{ background: "oklch(0.09 0 0)", border: "1px solid var(--bd-6)" }}>

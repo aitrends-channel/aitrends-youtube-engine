@@ -21,7 +21,7 @@ const KEY_FIELDS: KeyField[] = [
   {
     key: "kie_api_key",
     label: "KIE API Key",
-    description: "Powers everything: Claude AI for scripts & analysis, TTS voiceover, plus image and video generation — all through one provider",
+    description: "Powers everything: script generation & channel analysis, TTS voiceover, plus image and video generation — all through one provider",
     placeholder: "kie-…",
   },
 ];
@@ -379,7 +379,7 @@ export default function SettingsPage() {
               {
                 num: 1,
                 title: "Kie AI API Key",
-                sub: "Claude AI, voiceovers, images & video clips",
+                sub: "Script generation, voiceovers, images & video clips",
                 href: "https://kie.ai",
                 linkLabel: "kie.ai",
                 steps: [
