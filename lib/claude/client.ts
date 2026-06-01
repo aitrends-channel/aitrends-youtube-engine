@@ -114,6 +114,16 @@ export async function getAnthropicClient(userId: string): Promise<Anthropic> {
     authToken: kie_api_key,
     baseURL: KIE_CLAUDE_BASE_URL,
     fetch: fetchViaKie,
+    // Disable the SDK's built-in retries — we have retryClaudeCall on
+    // every call site doing its own backoff with logs. Without this,
+    // the SDK silently does 1 + 2 retries inside each of our 3 retry
+    // attempts, turning one failed chunk into 9 KIE calls and 6+
+    // minutes of wasted compute on a transient outage.
+    maxRetries: 0,
+    // KIE's upstream is returning 500 at ~45s when it can't fulfill a
+    // request, so anything past ~90s is just a stuck connection.
+    // The SDK default is 600s; that's far too generous for our setup.
+    timeout: 90_000,
   });
 }
 
