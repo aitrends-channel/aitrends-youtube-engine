@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { checkImageTask } from "@/lib/kie/images";
-import { uploadFromUrl } from "@/lib/supabase/storage";
+import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     console.log(`[images/poll] beat=${beatNumber} taskId=${taskId} status=${result.status}${result.error ? ` error=${result.error}` : ""}`);
 
     if (result.status === "done" && result.url) {
-      const storagePath = `${projectId}/images/beat-${beatNumber}_${Date.now()}.png`;
+      const storagePath = `${userFolderFor(user)}/${projectId}/images/beat-${beatNumber}_${Date.now()}.png`;
       const publicUrl = await uploadFromUrl(storagePath, result.url, "image/png");
 
       await supabase.from("project_beats")

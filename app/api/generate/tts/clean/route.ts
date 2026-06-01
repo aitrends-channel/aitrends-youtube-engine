@@ -1,4 +1,4 @@
-import { uploadBuffer } from "@/lib/supabase/storage";
+import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   const audioBytes = await req.arrayBuffer();
   if (!audioBytes.byteLength) return Response.json({ error: "No audio data received" }, { status: 400 });
 
-  const path = `${projectId}/voiceover-cleaned_${Date.now()}.mp3`;
+  const path = `${userFolderFor(user)}/${projectId}/voiceover-cleaned_${Date.now()}.mp3`;
   const publicUrl = await uploadBuffer(path, audioBytes, "audio/mpeg");
 
   const { error: dbError } = await supabase

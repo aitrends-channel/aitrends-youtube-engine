@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateImage } from "@/lib/kie/images";
-import { uploadFromUrl } from "@/lib/supabase/storage";
+import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
           await supabase.from("project_beats").update({ image_status: "generating" }).eq("project_id", projectId).eq("beat_number", beat.beatNumber);
 
           const imageUrl = await generateImage(beat.imagePrompt, modelId, aspectRatio, resolution, user.id);
-          const storagePath = `${projectId}/images/beat-${beat.beatNumber}_${Date.now()}.png`;
+          const storagePath = `${userFolderFor(user)}/${projectId}/images/beat-${beat.beatNumber}_${Date.now()}.png`;
           const publicUrl = await uploadFromUrl(storagePath, imageUrl, "image/png");
 
           await supabase.from("project_beats").update({ image_url: publicUrl, image_status: "done" }).eq("project_id", projectId).eq("beat_number", beat.beatNumber);

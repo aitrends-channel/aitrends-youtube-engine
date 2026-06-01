@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { uploadBuffer } from "@/lib/supabase/storage";
+import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
@@ -23,7 +23,7 @@ export async function POST(req: Request) {
 
     const buffer = await file.arrayBuffer();
     const ext = file.name.split(".").pop() ?? "jpg";
-    const path = `${projectId}/${folder ?? "uploads"}/${Date.now()}.${ext}`;
+    const path = `${userFolderFor(user)}/${projectId}/${folder ?? "uploads"}/${Date.now()}.${ext}`;
     const publicUrl = await uploadBuffer(path, buffer, file.type);
 
     return NextResponse.json({ url: publicUrl });

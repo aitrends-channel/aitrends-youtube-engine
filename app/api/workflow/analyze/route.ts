@@ -6,6 +6,7 @@ export const maxDuration = 120;
 import { channelAnalysisInputSchema, videoIdeasInputSchema } from "@/lib/claude/anthropicSchemas";
 import { buildAnalysisPrompt, buildVideoIdeasPrompt } from "@/lib/claude/prompts";
 import { ChannelAnalysisSchema, VideoIdeasSchema } from "@/lib/claude/schemas";
+import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { ChannelAnalysisOutput } from "@/lib/claude/schemas";
@@ -37,11 +38,20 @@ export async function POST(req: Request) {
     });
 
     const analysisToolUse = analysisResponse.content?.find((b) => b.type === "tool_use");
-    if (!analysisToolUse || analysisToolUse.type !== "tool_use") {
-      throw new Error("No structured analysis returned");
+    let analysisInput: unknown = null;
+    if (analysisToolUse && analysisToolUse.type === "tool_use") {
+      analysisInput = analysisToolUse.input;
+    } else {
+      // Fallback: KIE+Opus sometimes ignores tool_choice and emits the
+      // structured payload as text. Recover it before giving up.
+      const textBlock = analysisResponse.content?.find((b) => b.type === "text");
+      const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
+      console.log(`[analyze] fallback parsing text len=${raw.length} head=${raw.slice(0, 200)}`);
+      analysisInput = extractToolInputFromText(raw);
     }
+    if (!analysisInput) throw new Error("No structured analysis returned");
 
-    const analysis = ChannelAnalysisSchema.parse(analysisToolUse.input) as ChannelAnalysisOutput;
+    const analysis = ChannelAnalysisSchema.parse(analysisInput) as ChannelAnalysisOutput;
 
     let videoIdeas: string[] | undefined;
 
@@ -60,8 +70,17 @@ export async function POST(req: Request) {
       });
 
       const ideasToolUse = ideasResponse.content.find((b) => b.type === "tool_use");
+      let ideasInput: unknown = null;
       if (ideasToolUse && ideasToolUse.type === "tool_use") {
-        const parsed = VideoIdeasSchema.parse(ideasToolUse.input);
+        ideasInput = ideasToolUse.input;
+      } else {
+        const textBlock = ideasResponse.content?.find((b) => b.type === "text");
+        const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
+        console.log(`[analyze.ideas] fallback parsing text len=${raw.length} head=${raw.slice(0, 200)}`);
+        ideasInput = extractToolInputFromText(raw);
+      }
+      if (ideasInput) {
+        const parsed = VideoIdeasSchema.parse(ideasInput);
         videoIdeas = parsed.ideas;
       }
     }

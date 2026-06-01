@@ -12,6 +12,13 @@ const r2 = new S3Client({
 const BUCKET = process.env.R2_BUCKET_NAME!;
 const PUBLIC_URL = (process.env.R2_PUBLIC_URL ?? "").replace(/\/$/, "");
 
+// Per-user folder name for R2 keys. Email is preferred (human-readable
+// when browsing the bucket); user.id is the safe fallback. Lowercased
+// to avoid case-mismatch surprises.
+export function userFolderFor(user: { email?: string | null; id: string }): string {
+  return ((user.email ?? user.id) || user.id).trim().toLowerCase();
+}
+
 export async function uploadBuffer(
   path: string,
   buffer: ArrayBuffer,

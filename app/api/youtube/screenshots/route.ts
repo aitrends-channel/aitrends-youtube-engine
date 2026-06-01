@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { uploadFromUrl } from "@/lib/supabase/storage";
+import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 
@@ -32,7 +32,6 @@ async function tryUpload(path: string, url: string): Promise<string | null> {
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
-  void user;
 
   try {
     const { videos, projectId }: { videos: VideoInput[]; projectId: string } = await req.json();
@@ -47,10 +46,11 @@ export async function POST(req: Request) {
     // Slice here so we never do the wasted work in the first place.
     const MAX_VIDEOS = 3;
     const limitedVideos = videos.slice(0, MAX_VIDEOS);
+    const userFolder = userFolderFor(user);
 
     const results: VideoScreenshots[] = await Promise.all(
       limitedVideos.map(async ({ videoId, title }) => {
-        const base = `${projectId}/auto-frames/${videoId}`;
+        const base = `${userFolder}/${projectId}/auto-frames/${videoId}`;
 
         // Thumbnail — try maxresdefault, fall back to hqdefault
         const thumbnailUrl =

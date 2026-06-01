@@ -1,5 +1,5 @@
 import { generateTTS } from "@/lib/kie/tts";
-import { uploadBuffer } from "@/lib/supabase/storage";
+import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
           );
 
           send({ type: "status", message: "Uploading audio..." });
-          const path = `${projectId}/voiceover_${Date.now()}.mp3`;
+          const path = `${userFolderFor(user)}/${projectId}/voiceover_${Date.now()}.mp3`;
           const publicUrl = await uploadBuffer(path, audioBuffer, "audio/mpeg");
 
           const { error: dbError } = await supabase
