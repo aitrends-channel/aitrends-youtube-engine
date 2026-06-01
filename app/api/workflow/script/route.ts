@@ -1,4 +1,5 @@
 import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { streamGeminiText, GEMINI_MAX_OUTPUT_TOKENS, GEMINI_MODEL } from "@/lib/gemini/client";
 import { buildScriptPrompt } from "@/lib/claude/prompts";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
@@ -7,30 +8,26 @@ import type { User } from "@supabase/supabase-js";
 
 export const maxDuration = 800;
 
-// Generate the script in N sequential Claude calls. The client makes
-// ONE fetch and consumes ONE continuous stream — segmentation is
-// entirely server-side. Each section after the first uses Claude's
-// assistant-prefill pattern: prior text is passed as a leading
-// assistant message and Claude continues from where it left off,
-// coherent and seamless.
+// Single-call script generation with model switching:
+//   • target ≤ 8000 words  → Claude Opus 4.7 (sharper prose, capped at
+//                            8192 output tokens ≈ ~5,045 words)
+//   • target > 8000 words  → Gemini 2.5 Flash (output ceiling 65,536
+//                            tokens ≈ ~40k words; covers long-form
+//                            channels like sleep history compilations)
 //
-// Section count scales with target length so each section's max_tokens
-// stays comfortably under Opus's 8192-per-call ceiling.
-//
-// 800s Vercel Pro cap + ~30-60 tok/sec Opus streaming = ~24000-48000
-// tokens reliably in budget. Scripts past that ceiling will hit timeout,
-// so we hard-cap target word count to what we can deliver and tell the
-// user. Tuned conservatively against the slow end of Opus throughput.
-const SAFE_TOKENS_PER_SECTION = 6000;       // under Opus 8192 ceiling
-const SAFE_TOTAL_TOKEN_BUDGET = 22000;      // conservative 800s ceiling
-const MAX_TARGET_WORDS = Math.floor(SAFE_TOTAL_TOKEN_BUDGET / 1.6); // ≈ 13,750
+// 8000 is chosen as the threshold because Opus's 8192-token ceiling
+// translates to roughly 5,000 words — anything beyond that needs a
+// model with a higher per-call output limit.
+const LONG_FORM_THRESHOLD = 8000;
+const OPUS_MAX_OUTPUT_TOKENS = 8192;
+const OPUS_MAX_WORDS = Math.floor((OPUS_MAX_OUTPUT_TOKENS - 120) / 1.6);   // ≈ 5,045
+const GEMINI_MAX_WORDS = Math.floor((GEMINI_MAX_OUTPUT_TOKENS - 120) / 1.6); // ≈ 40,885
 
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   try {
-    const anthropic = await getAnthropicClient(user.id);
     const { projectId, analysis, topic } = await req.json() as {
       projectId: string;
       analysis: ChannelAnalysisOutput;
@@ -42,61 +39,58 @@ export async function POST(req: Request) {
     }
 
     const rawTarget = analysis.targetWordCount ?? 900;
-    const target = Math.min(rawTarget, MAX_TARGET_WORDS);
-    const targetWasCapped = rawTarget > MAX_TARGET_WORDS;
-
-    // Pick the smallest section count that keeps each section's token
-    // budget under SAFE_TOKENS_PER_SECTION. ~1.6 tokens per word.
-    const totalTokens = Math.ceil(target * 1.6) + 120;
-    const TOTAL_SECTIONS = Math.max(2, Math.ceil(totalTokens / SAFE_TOKENS_PER_SECTION));
-    const tokensPerSection = Math.ceil(totalTokens / TOTAL_SECTIONS);
+    const useGemini = rawTarget > LONG_FORM_THRESHOLD;
+    const modelCap = useGemini ? GEMINI_MAX_WORDS : OPUS_MAX_WORDS;
+    const modelMaxTokens = useGemini ? GEMINI_MAX_OUTPUT_TOKENS : OPUS_MAX_OUTPUT_TOKENS;
+    const target = Math.min(rawTarget, modelCap);
+    const targetWasCapped = rawTarget > modelCap;
+    const maxTokens = Math.min(modelMaxTokens, Math.ceil(target * 1.6) + 120);
     const initialPrompt = buildScriptPrompt(analysis, topic);
+    const activeModel = useGemini ? GEMINI_MODEL : MODEL;
 
     const readable = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
         let accumulated = "";
 
+        const sendText = (text: string) => {
+          accumulated += text;
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
+        };
+
         try {
+          // Up-front notice frames so the UI knows which model is doing
+          // the work and whether the target had to be trimmed.
+          controller.enqueue(encoder.encode(
+            `data: ${JSON.stringify({ model: activeModel, target, useGemini })}\n\n`
+          ));
           if (targetWasCapped) {
-            // Tell the client up front that the script will be shorter
-            // than the channel's natural length. UI can surface this.
             controller.enqueue(encoder.encode(
-              `data: ${JSON.stringify({ notice: `Channel analysis suggested ${rawTarget.toLocaleString()} words — capped to ${MAX_TARGET_WORDS.toLocaleString()} to fit within generation limits.` })}\n\n`
+              `data: ${JSON.stringify({ notice: `Channel analysis suggested ${rawTarget.toLocaleString()} words — capped to ${modelCap.toLocaleString()} (${useGemini ? "Gemini" : "Opus"} per-call ceiling).` })}\n\n`
             ));
           }
 
-          for (let i = 0; i < TOTAL_SECTIONS; i++) {
-            // Optional: client can use this to show "Section 3 of 5" if
-            // it wants — current useStreamingScript ignores unknown keys.
-            controller.enqueue(encoder.encode(
-              `data: ${JSON.stringify({ section: i + 1, total: TOTAL_SECTIONS })}\n\n`
-            ));
-
-            const messages: { role: "user" | "assistant"; content: string }[] = [
-              { role: "user", content: initialPrompt },
-            ];
-            if (accumulated.length > 0) {
-              messages.push({ role: "assistant", content: accumulated });
-            }
-
-            // Final section gets headroom to close out the CTA cleanly.
-            const maxTokens = i === TOTAL_SECTIONS - 1
-              ? tokensPerSection + 150
-              : tokensPerSection;
-
+          if (useGemini) {
+            await streamGeminiText({
+              userId: user.id,
+              maxTokens,
+              messages: [
+                { role: "system", content: SYSTEM_PROMPT },
+                { role: "user", content: initialPrompt },
+              ],
+              onDelta: sendText,
+            });
+          } else {
+            const anthropic = await getAnthropicClient(user.id);
             const stream = anthropic.messages.stream({
               model: MODEL,
               max_tokens: maxTokens,
               system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-              messages,
+              messages: [{ role: "user", content: initialPrompt }],
             });
-
             for await (const event of stream) {
               if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-                const text = event.delta.text;
-                accumulated += text;
-                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text })}\n\n`));
+                sendText(event.delta.text);
               }
             }
           }
