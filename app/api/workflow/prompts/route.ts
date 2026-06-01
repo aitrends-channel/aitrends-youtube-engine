@@ -19,6 +19,7 @@ import {
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { retryClaudeCall } from "@/lib/claude/retry";
+import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 
@@ -210,9 +211,23 @@ async function generateImages(
     console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} done in ${Date.now() - t0}ms stop=${res.stop_reason}`);
     assertComplete(res.stop_reason, `image prompts chunk ${chunkIndex + 1}/${totalChunks}`);
 
+    // Preferred path: real tool_use block. Fallback: KIE+Opus sometimes
+    // returns the tool call as plain text in a `<tool_calls>` wrapper
+    // with stop_reason=end_turn. extractToolInputFromText recovers the
+    // inner input object so we don't lose the whole chunk.
+    let input: Record<string, unknown> | null = null;
     const tool = res.content.find((b) => b.type === "tool_use");
-    if (!tool || tool.type !== "tool_use") throw new Error(`No image prompts returned for chunk ${chunkIndex + 1}. Try again — any beats saved so far are preserved.`);
-    const input = tool.input as Record<string, unknown>;
+    if (tool && tool.type === "tool_use") {
+      input = tool.input as Record<string, unknown>;
+    } else {
+      const textBlock = res.content.find((b) => b.type === "text");
+      const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
+      console.log(`[image-prompts] chunk ${chunkIndex + 1} fallback parsing text len=${raw.length} head=${raw.slice(0, 200)}`);
+      input = extractToolInputFromText(raw);
+      if (input) console.log(`[image-prompts] chunk ${chunkIndex + 1} fallback recovered ${(input.beats as unknown[])?.length ?? 0} beats`);
+    }
+
+    if (!input) throw new Error(`No image prompts returned for chunk ${chunkIndex + 1}. Try again — any beats saved so far are preserved.`);
     if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Chunk ${chunkIndex + 1} returned no beats. Try again — any beats saved so far are preserved.`);
 
     const chunkBeats = ImagePromptsSchema.parse(input).beats;
