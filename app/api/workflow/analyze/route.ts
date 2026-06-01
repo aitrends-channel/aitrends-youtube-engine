@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 import { logSystemEvent } from "@/lib/system-logger";
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 import { channelAnalysisInputSchema, videoIdeasInputSchema } from "@/lib/claude/anthropicSchemas";
 import { buildAnalysisPrompt, buildVideoIdeasPrompt } from "@/lib/claude/prompts";
 import { ChannelAnalysisSchema, VideoIdeasSchema } from "@/lib/claude/schemas";
