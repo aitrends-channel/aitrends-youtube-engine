@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAnthropicClient, VISION_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 
-export const maxDuration = 300;
+export const maxDuration = 800;
 import { visualProfileInputSchema } from "@/lib/claude/anthropicSchemas";
 import { buildVisualAnalysisPrompt } from "@/lib/claude/prompts";
 import { VisualProfileSchema, ThumbnailAnalysisSchema } from "@/lib/claude/schemas";

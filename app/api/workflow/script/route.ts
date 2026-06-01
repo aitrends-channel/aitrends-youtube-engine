@@ -5,7 +5,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import type { ChannelAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 // Generate the script in N sequential Claude calls. The client makes
 // ONE fetch and consumes ONE continuous stream — segmentation is
@@ -17,12 +17,13 @@ export const maxDuration = 300;
 // Section count scales with target length so each section's max_tokens
 // stays comfortably under Opus's 8192-per-call ceiling.
 //
-// 300s Vercel cap + ~30-60 tok/sec Opus streaming = ~9000-18000 tokens
-// reliably in budget. Scripts past that ceiling will hit timeout, so we
-// hard-cap target word count to what we can deliver and tell the user.
+// 800s Vercel Pro cap + ~30-60 tok/sec Opus streaming = ~24000-48000
+// tokens reliably in budget. Scripts past that ceiling will hit timeout,
+// so we hard-cap target word count to what we can deliver and tell the
+// user. Tuned conservatively against the slow end of Opus throughput.
 const SAFE_TOKENS_PER_SECTION = 6000;       // under Opus 8192 ceiling
-const SAFE_TOTAL_TOKEN_BUDGET = 9000;       // conservative 300s ceiling
-const MAX_TARGET_WORDS = Math.floor(SAFE_TOTAL_TOKEN_BUDGET / 1.6); // ≈ 5625
+const SAFE_TOTAL_TOKEN_BUDGET = 22000;      // conservative 800s ceiling
+const MAX_TARGET_WORDS = Math.floor(SAFE_TOTAL_TOKEN_BUDGET / 1.6); // ≈ 13,750
 
 export async function POST(req: Request) {
   let user: User;
