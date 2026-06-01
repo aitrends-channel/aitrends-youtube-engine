@@ -131,6 +131,14 @@ export async function getAnthropicClient(userId: string): Promise<Anthropic> {
 
 export const MODEL = "claude-opus-4-7";
 
+// Fast model for high-volume structured output where Opus's latency
+// (and Opus + KIE's intermittent 500 storms) becomes the bottleneck.
+// Image-prompts uses this — the route can produce 50-150+ beats per
+// run, and Haiku's faster per-token speed combined with the route's
+// text-mode fallback (which absorbs Haiku's looser tool_choice
+// adherence) wins on overall reliability for that workload.
+export const FAST_MODEL = "claude-haiku-4-5";
+
 // Vision analysis runs on Haiku 4.5. We briefly switched to Opus 4.7
 // after the Pro upgrade lifted the function-timeout ceiling to 800s,
 // expecting that to unlock the latency headroom Opus needed. In

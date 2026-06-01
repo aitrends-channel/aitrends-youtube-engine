@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { getAnthropicClient, MODEL, FAST_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 import {
   buildImagePromptsPrompt,
   buildVideoPromptsPrompt,
@@ -199,7 +199,7 @@ async function generateImages(
 
     const res = await retryClaudeCall(`image prompts chunk ${chunkIndex + 1}/${totalChunks}`, () =>
       anthropic.messages.create({
-        model: MODEL,
+        model: FAST_MODEL,
         max_tokens: 8192,
         system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
         tools: [{ name: "save_image_prompts", description: "Save image prompts for every visual beat in the chunk", input_schema: imagePromptsInputSchema }],
