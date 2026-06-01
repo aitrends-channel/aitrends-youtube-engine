@@ -104,6 +104,14 @@ function sseStream(handler: (send: (data: object) => void) => Promise<void>): Re
 }
 
 // ── Step 1: Image prompts ──────────────────────────────────────────────────
+//
+// Beats are identified semantically (one per new action/subject/fact/etc)
+// rather than mechanically by word count. The model decides how many
+// beats each script chunk needs; we never cap or summarize. For
+// long-form scripts that would produce 50-150+ beats overall, we chunk
+// the script BEFORE sending so each Claude call's output stays under
+// the 8192-token ceiling. The startBeat parameter keeps numbering
+// continuous across chunks.
 async function generateImages(
   projectId: string,
   userId: string,
@@ -112,34 +120,61 @@ async function generateImages(
   send: (data: object) => void
 ) {
   const anthropic = await getAnthropicClient(userId);
-  const words = script.trim().split(/\s+/);
-  const WORDS_PER_BEAT = parseInt(process.env.WORDS_PER_BEAT ?? "25", 10);
-  const targetBeats = Math.max(1, Math.round(words.length / WORDS_PER_BEAT));
 
-  send({ type: "status", message: `Generating image prompts for ~${targetBeats} beats...` });
+  // Each beat's structured output runs ~80-120 output tokens (segment +
+  // imagePrompt + camera + lighting + mood + action). Opus's per-call
+  // ceiling is 8192 — chunking the script at ~1500 words keeps the
+  // expected ~60-100 beats per chunk well under that ceiling with
+  // headroom for the model's preamble and JSON overhead.
+  const SCRIPT_CHUNK_WORDS = 1500;
+  const words = script.trim().split(/\s+/).filter(Boolean);
+  const chunks: string[] = [];
+  for (let i = 0; i < words.length; i += SCRIPT_CHUNK_WORDS) {
+    chunks.push(words.slice(i, i + SCRIPT_CHUNK_WORDS).join(" "));
+  }
+  if (chunks.length === 0) chunks.push(script);
 
-  const res = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 8192,
-    system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-    tools: [{ name: "save_image_prompts", description: "Save image prompts for all beats", input_schema: imagePromptsInputSchema }],
-    tool_choice: { type: "tool", name: "save_image_prompts" },
-    messages: [{ role: "user", content: buildImagePromptsPrompt(script, visualProfile, 1, targetBeats) }],
-  });
+  send({ type: "status", message: `Generating image prompts across ${chunks.length} script segment${chunks.length === 1 ? "" : "s"}...` });
 
-  assertComplete(res.stop_reason, "image prompts");
+  type ImageBeat = {
+    beatNumber: number;
+    scriptSegment: string;
+    imagePrompt: string;
+    camera: string;
+    lighting: string;
+    mood: string;
+    action: string;
+  };
+  const allBeats: ImageBeat[] = [];
+  let nextBeatNumber = 1;
 
-  const tool = res.content.find((b) => b.type === "tool_use");
-  if (!tool || tool.type !== "tool_use") throw new Error("No image prompts returned from Claude. Try again.");
-  const input = tool.input as Record<string, unknown>;
-  if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error("Claude returned no beats. Try again.");
+  for (let i = 0; i < chunks.length; i++) {
+    if (chunks.length > 1) send({ type: "progress", current: i + 1, total: chunks.length });
 
-  const beats = ImagePromptsSchema.parse(input).beats;
-  const totalSaved = beats.length;
+    const res = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 8192,
+      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      tools: [{ name: "save_image_prompts", description: "Save image prompts for every visual beat in the chunk", input_schema: imagePromptsInputSchema }],
+      tool_choice: { type: "tool", name: "save_image_prompts" },
+      messages: [{ role: "user", content: buildImagePromptsPrompt(chunks[i], visualProfile, nextBeatNumber) }],
+    });
+
+    assertComplete(res.stop_reason, `image prompts chunk ${i + 1}/${chunks.length}`);
+
+    const tool = res.content.find((b) => b.type === "tool_use");
+    if (!tool || tool.type !== "tool_use") throw new Error(`No image prompts returned for chunk ${i + 1}. Try again.`);
+    const input = tool.input as Record<string, unknown>;
+    if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Chunk ${i + 1} returned no beats. Try again.`);
+
+    const chunkBeats = ImagePromptsSchema.parse(input).beats;
+    allBeats.push(...chunkBeats);
+    nextBeatNumber = (chunkBeats[chunkBeats.length - 1]?.beatNumber ?? nextBeatNumber + chunkBeats.length - 1) + 1;
+  }
 
   await supabase.from("project_beats").delete().eq("project_id", projectId);
   const { error: insertError } = await supabase.from("project_beats").insert(
-    beats.map((b) => ({
+    allBeats.map((b) => ({
       project_id: projectId,
       beat_number: b.beatNumber,
       script_segment: b.scriptSegment,
@@ -153,7 +188,7 @@ async function generateImages(
   if (insertError) throw new Error(`Failed to save beats: ${insertError.message}`);
 
   await supabase.from("projects").update({ current_state: 14 }).eq("id", projectId).eq("user_id", userId);
-  send({ type: "done", beatCount: totalSaved });
+  send({ type: "done", beatCount: allBeats.length });
 }
 
 // ── Step 2: Video prompts ──────────────────────────────────────────────────

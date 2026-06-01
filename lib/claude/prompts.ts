@@ -138,15 +138,35 @@ Call the save_visual_analysis tool with the structured profile. Be specific — 
 export function buildImagePromptsPrompt(
   script: string,
   visualProfile: VisualProfileOutput,
-  startBeat: number = 1,
-  targetBeats: number = 8
+  startBeat: number = 1
 ): string {
-  return `Split this script portion into beats (aim for around ${targetBeats}, but use as many as needed to cover all content — minimum 1) and generate an image prompt for each beat.
+  return `Identify every VISUAL BEAT in this script chunk and generate one image prompt for each.
 
-SCRIPT:
+WHAT COUNTS AS A VISUAL BEAT
+A visual beat is any individual narration unit that introduces a NEW:
+- Action, subject, character, or location
+- Camera perspective, emotion, or object
+- Historical event, statistic, date, fact, or study
+- Transition, cause-and-effect relationship, or visual concept
+
+RULES (NON-NEGOTIABLE)
+1. NEVER generate visuals by scene. NEVER summarize multiple beats into a single prompt.
+2. Every beat receives exactly ONE image prompt. No narration may be left without visual coverage.
+3. If a sentence contains multiple distinct visual ideas, split it into multiple beats.
+4. Each fact, statistic, date, location, study, or historical example gets its OWN dedicated beat.
+5. Storytelling sections typically produce 1+ beats per sentence — often multiple when a sentence contains several visual changes.
+6. Educational sections: each concept, mechanism, or example is its own beat with a visual that aids understanding (not generic stock).
+7. Do NOT optimize for fewer prompts. Complete visual coverage is the goal.
+
+DENSITY
+- Minimum: 1 beat per sentence.
+- Preferred: ~1 beat every 3–6 seconds of narration (≈10–15 words of script per beat).
+- This chunk may produce many beats; long-form scripts commonly total 50–150+ across all chunks.
+
+SCRIPT (THIS CHUNK):
 ${script}
 
-VISUAL STYLE:
+VISUAL STYLE
 Art Style: ${visualProfile.artStyle}
 Colors: ${visualProfile.colorPalette.join(", ")}
 Lighting: ${visualProfile.lightingStyle}
@@ -155,15 +175,26 @@ Composition: ${visualProfile.composition}
 Mood: ${visualProfile.mood}
 Detail: ${visualProfile.detailLevel}
 
-FIELD RULES:
-- scriptSegment: exact words from the script for that beat (~20-25 words)
-- imagePrompt: 1-2 sentences. Describe the specific scene, subject, and action. Apply the visual style above — incorporate the art style, colors, lighting, and camera as a direct AI image generator prompt.
-- camera: single short phrase (e.g. "tight close-up")
-- lighting: single short phrase (e.g. "warm golden rim light")
-- mood: single short phrase (e.g. "tense, urgent")
-- action: single short phrase (e.g. "subject leans forward")
+PER-BEAT FIELDS
+- scriptSegment: the exact words from the script for this beat (typically 8–20 words). Must be a verbatim substring of the chunk above.
+- imagePrompt: 1–2 cinematic sentences. Visualize the narration LITERALLY whenever possible. For abstract concepts, use concrete visual metaphors. Apply the visual style above as direct AI-image-generator instructions. Be specific (subject, action, environment, framing).
+- camera: single short phrase (e.g. "tight close-up", "low-angle wide", "overhead aerial")
+- lighting: single short phrase (e.g. "warm golden rim light", "cold blue moonlight")
+- mood: single short phrase (e.g. "tense, urgent", "quiet, reverent")
+- action: single short phrase (e.g. "subject leans forward", "dust settles after the strike")
 
-Number beats from ${startBeat}, no gaps. Call the save_image_prompts tool with a "beats" array. Do not write any text outside the tool call.`;
+QUALITY
+- Maintain continuity between neighboring beats — characters, locations, lighting, and props carry forward unless the narration introduces a change.
+- Historical sections: historically accurate environments, clothing, tools, architecture, lighting — no anachronisms.
+- Educational sections: visuals must help the viewer UNDERSTAND the narration, not just decorate it.
+
+VALIDATION (DO THIS BEFORE RETURNING)
+Step 1: Walk the script chunk and identify every visual beat using the definition above.
+Step 2: Count them.
+Step 3: Confirm your "beats" array has exactly that many entries — one image prompt per beat.
+If the counts do not match, keep adding beats until coverage is complete.
+
+Number beats sequentially starting from ${startBeat}, with no gaps. Call the save_image_prompts tool with a "beats" array. Do not write any text outside the tool call.`;
 }
 
 export function buildVideoPromptsPrompt(
