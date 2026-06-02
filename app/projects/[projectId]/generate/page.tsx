@@ -885,7 +885,7 @@ export default function GeneratePage({ params }: PageProps) {
           {/* Image Gen Panel */}
           <div className="rounded-2xl flex flex-col overflow-hidden h-full"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-            <div className="p-5" style={{ borderBottom: "1px solid var(--bd-6)" }}>
+            <div className="p-5 min-h-[460px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon="◈" title="AI Images" subtitle={`${totalBeats} images from script beats`} />
               <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
                 Select Model
@@ -1067,7 +1067,7 @@ export default function GeneratePage({ params }: PageProps) {
           {/* Video Gen Panel */}
           <div className="rounded-2xl flex flex-col overflow-hidden h-full"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-            <div className="p-5" style={{ borderBottom: "1px solid var(--bd-6)" }}>
+            <div className="p-5 min-h-[460px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon="⚡" title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
               <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
                 Select Model
