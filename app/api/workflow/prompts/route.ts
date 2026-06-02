@@ -276,7 +276,8 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
     supabase.from("projects").select("visual_profile").eq("id", projectId).eq("user_id", userId).single(),
   ]);
 
-  if (beatsRes.error || !beatsRes.data?.length) throw new Error("No image beats found — generate image prompts first.");
+  if (beatsRes.error) throw new Error(`Could not load beats: ${beatsRes.error.message}`);
+  if (!beatsRes.data?.length) throw new Error("No image beats found. Image prompts may have been cleared or never generated — run the Image Prompts step before this one.");
 
   const visualProfile = (projectRes.data?.visual_profile ?? null) as VisualProfileOutput | null;
 

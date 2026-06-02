@@ -369,7 +369,10 @@ export default function PromptsPage({ params }: PageProps) {
   const imageActionLabel = imageStep.status === "error"
     ? "Generate Remaining"
     : null;
-  const videoActionLabel = videoStep.status === "error" && videoRemaining > 0
+  // Video resume requires image beats to actually exist on the server.
+  // If they were cleared or never generated, fall back to the plain
+  // "Retry" so users don't fire a request that can't possibly succeed.
+  const videoActionLabel = videoStep.status === "error" && videoRemaining > 0 && hasImageBeats
     ? `Generate Remaining ${videoRemaining}`
     : null;
 
@@ -443,8 +446,14 @@ export default function PromptsPage({ params }: PageProps) {
   }
 
   async function runVideoStep() {
-    if (!hasImageBeats) {
-      toast.error("Generate image prompts first");
+    // Re-check server state — image beats may have been cleared since
+    // the page rendered. Pull fresh data and read the latest from the
+    // response rather than relying on the SWR-cached `beats` closure.
+    const fresh = await mutate();
+    const freshBeats = (fresh?.beats ?? []) as Beat[];
+    if (freshBeats.length === 0) {
+      toast.error("Image prompts are missing — generate them first.");
+      setVideoStep(IDLE);
       return;
     }
     setVideoStep({ status: "running", message: "Starting..." });
