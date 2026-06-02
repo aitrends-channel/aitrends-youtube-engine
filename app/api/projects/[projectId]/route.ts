@@ -72,6 +72,28 @@ export async function PATCH(
     return NextResponse.json({ success: true });
   }
 
+  // Wipe all image-prompt beats for this project so the prompts step can
+  // start over from a clean slate. Also implicitly clears any video
+  // prompts since they live on the same rows.
+  if (body.clear_image_prompts) {
+    const { error: delErr } = await supabase
+      .from("project_beats")
+      .delete()
+      .eq("project_id", projectId);
+    if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
+    return NextResponse.json({ success: true });
+  }
+
+  // Clear only video prompts; keep the beats and their image prompts.
+  if (body.clear_video_prompts) {
+    const { error: updErr } = await supabase
+      .from("project_beats")
+      .update({ video_prompt: null })
+      .eq("project_id", projectId);
+    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+    return NextResponse.json({ success: true });
+  }
+
   const { data, error } = await supabase
     .from("projects")
     .update(body)

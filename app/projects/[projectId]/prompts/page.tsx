@@ -139,10 +139,12 @@ interface StepCardProps {
   optional?: boolean;
   /** Custom button label for non-running, non-done states (e.g. "Generate Remaining 9"). */
   actionLabel?: string | null;
+  /** When set, renders a secondary "Clear" button. The handler should wipe persisted state for this step. */
+  onClear?: (() => Promise<void> | void) | null;
   onGenerate: () => void;
 }
 
-function StepCard({ num, title, description, state, doneLabel, disabled, optional, actionLabel, onGenerate }: StepCardProps) {
+function StepCard({ num, title, description, state, doneLabel, disabled, optional, actionLabel, onClear, onGenerate }: StepCardProps) {
   const isRunning = state.status === "running";
   const isDone = state.status === "done";
   const isError = state.status === "error";
@@ -243,8 +245,20 @@ function StepCard({ num, title, description, state, doneLabel, disabled, optiona
         )}
       </div>
 
-      {/* Action button */}
-      <div className="shrink-0 flex items-start">
+      {/* Action buttons */}
+      <div className="shrink-0 flex items-start gap-2">
+        {onClear && !isRunning && (isDone || isError) && (
+          <button
+            onClick={() => {
+              if (typeof window !== "undefined" && !window.confirm("Clear generated prompts? This wipes them from the database and can't be undone.")) return;
+              Promise.resolve(onClear()).catch(() => { /* surfaced via toast in caller */ });
+            }}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-opacity"
+            style={{ background: "transparent", color: "var(--c-50)", border: "1px solid var(--bd-8)" }}
+          >
+            Clear
+          </button>
+        )}
         <button
           onClick={onGenerate}
           disabled={disabled || isRunning}
@@ -396,6 +410,45 @@ export default function PromptsPage({ params }: PageProps) {
     }
   }
 
+  async function clearImagePrompts() {
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear_image_prompts: true }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to clear image prompts");
+      }
+      setImageStep(IDLE);
+      setVideoStep(IDLE); // video prompts live on the same rows
+      await mutate();
+      toast.success("Cleared image prompts");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to clear");
+    }
+  }
+
+  async function clearVideoPrompts() {
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear_video_prompts: true }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to clear video prompts");
+      }
+      setVideoStep(IDLE);
+      await mutate();
+      toast.success("Cleared video prompts");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to clear");
+    }
+  }
+
   async function runVideoStep() {
     if (!hasImageBeats) {
       toast.error("Generate image prompts first");
@@ -454,6 +507,7 @@ export default function PromptsPage({ params }: PageProps) {
             state={effectiveImage}
             doneLabel={beats.length > 0 ? `${beats.length} beats ready` : undefined}
             actionLabel={imageActionLabel}
+            onClear={hasImageBeats ? clearImagePrompts : null}
             onGenerate={runImageStep}
           />
           <StepCard
@@ -463,6 +517,7 @@ export default function PromptsPage({ params }: PageProps) {
             state={effectiveVideo}
             doneLabel={videoBeats.length > 0 ? `${videoBeats.length} beats ready` : undefined}
             actionLabel={videoActionLabel}
+            onClear={hasVideoBeats ? clearVideoPrompts : null}
             disabled={!hasImageBeats}
             optional
             onGenerate={runVideoStep}
