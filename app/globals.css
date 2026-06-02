@@ -329,6 +329,18 @@ body {
 [data-theme="light"] ::-webkit-scrollbar-thumb { background: oklch(0.7 0 0); }
 [data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: oklch(0.6 0 0); }
 
+/* Always-visible scrollbar for overflow containers that benefit from a
+   clear scroll affordance (image / video grids on the generate page). */
+.scroll-visible { scrollbar-width: thin; scrollbar-color: oklch(0.45 0 0) transparent; }
+.scroll-visible::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll-visible::-webkit-scrollbar-track { background: oklch(0.2 0 0 / 0.4); border-radius: 4px; }
+.scroll-visible::-webkit-scrollbar-thumb { background: oklch(0.45 0 0); border-radius: 4px; }
+.scroll-visible::-webkit-scrollbar-thumb:hover { background: oklch(0.55 0 0); }
+[data-theme="light"] .scroll-visible { scrollbar-color: oklch(0.55 0 0) transparent; }
+[data-theme="light"] .scroll-visible::-webkit-scrollbar-track { background: oklch(0.85 0 0 / 0.6); }
+[data-theme="light"] .scroll-visible::-webkit-scrollbar-thumb { background: oklch(0.6 0 0); }
+[data-theme="light"] .scroll-visible::-webkit-scrollbar-thumb:hover { background: oklch(0.5 0 0); }
+
 /* Light mode hover overrides for Tailwind opacity classes */
 [data-theme="light"] .hover\:bg-white\/5:hover { background-color: oklch(0 0 0 / 0.04) !important; }
 
