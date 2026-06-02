@@ -219,6 +219,7 @@ export default function GeneratePage({ params }: PageProps) {
   const [selectedVideoModel, setSelectedVideoModel] = useState<string | null>(null);
   const [selectedVideoAspectRatio, setSelectedVideoAspectRatio] = useState("16:9");
   const [selectedDuration, setSelectedDuration] = useState<string | number | null>(null);
+  const [voiceTab, setVoiceTab] = useState<"female" | "male">("female");
 
   const initialTtsSelected = useRef(false);
 
@@ -280,6 +281,16 @@ export default function GeneratePage({ params }: PageProps) {
       setSelectedTtsModel(ttsModels[0].id);
     }
   }, [ttsModels]);
+  // When the user switches the Male/Female tab and the currently-selected
+  // voice is in the other gender, snap selection to the first voice of the
+  // visible tab so they don't end up generating with a voice they can't see.
+  useEffect(() => {
+    if (!ttsModels) return;
+    const currentInTab = ttsModels.some((m) => m.id === selectedTtsModel && m.tags?.[0]?.toLowerCase() === voiceTab);
+    if (currentInTab) return;
+    const firstInTab = ttsModels.find((m) => m.tags?.[0]?.toLowerCase() === voiceTab);
+    if (firstInTab) setSelectedTtsModel(firstInTab.id);
+  }, [voiceTab, ttsModels]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (imageModels?.length && !selectedImageModel) setSelectedImageModel(imageModels[0].id); }, [imageModels]);
 
   useEffect(() => {
@@ -755,6 +766,26 @@ export default function GeneratePage({ params }: PageProps) {
               <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
                 Select Voice
               </p>
+              <div className="flex gap-1 mb-2">
+                {(["female", "male"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setVoiceTab(tab)}
+                    className="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium capitalize transition-all"
+                    style={voiceTab === tab ? {
+                      background: "oklch(0.72 0.25 285 / 0.15)",
+                      border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                      color: "oklch(0.88 0.12 285)",
+                    } : {
+                      background: "var(--bg-input)",
+                      border: "1px solid var(--bd-7)",
+                      color: "var(--c-50)",
+                    }}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
               <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
                 {ttsError ? (
                   <p className="text-xs px-1" style={{ color: "oklch(0.65 0.15 25)" }}>
@@ -762,14 +793,16 @@ export default function GeneratePage({ params }: PageProps) {
                   </p>
                 ) : !ttsModels ? (
                   <p className="text-xs px-1" style={{ color: "var(--c-40)" }}>Loading voices...</p>
-                ) : ttsModels.length === 0 ? (
-                  <p className="text-xs px-1" style={{ color: "var(--c-40)" }}>No voices available</p>
-                ) : (
-                  ttsModels.map((m) => (
+                ) : (() => {
+                  const filtered = ttsModels.filter((m) => m.tags?.[0]?.toLowerCase() === voiceTab);
+                  if (filtered.length === 0) {
+                    return <p className="text-xs px-1" style={{ color: "var(--c-40)" }}>No {voiceTab} voices available</p>;
+                  }
+                  return filtered.map((m) => (
                     <VoiceOption key={m.id} model={m} selected={selectedTtsModel === m.id} onSelect={() => setSelectedTtsModel(m.id)}
                       isPlaying={playingVoiceId === m.id} onPlayToggle={setPlayingVoiceId} />
-                  ))
-                )}
+                  ));
+                })()}
               </div>
             </div>
             {/* Middle block — mirrors image/video panel structure.
@@ -1085,12 +1118,12 @@ export default function GeneratePage({ params }: PageProps) {
                         <p className="text-xs font-semibold uppercase tracking-wider mt-3 mb-2" style={{ color: "var(--c-40)" }}>
                           Duration
                         </p>
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex gap-1">
                           {config.durations.map((d) => (
                             <button
                               key={String(d.value)}
                               onClick={() => setSelectedDuration(d.value)}
-                              className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                              className="flex-1 px-1.5 py-1 rounded-lg text-xs font-medium transition-all whitespace-nowrap"
                               style={selectedDuration === d.value ? {
                                 background: "oklch(0.72 0.25 285 / 0.15)",
                                 border: "1px solid oklch(0.72 0.25 285 / 0.4)",
