@@ -132,6 +132,10 @@ interface KieRecordResponse {
     status?: string;
     resultJson?: string;
     output?: string | string[];
+    // KIE actually returns failMsg/failCode; failReason/error are
+    // kept for forward-compat in case they ever add them.
+    failMsg?: string;
+    failCode?: string;
     failReason?: string;
     error?: string;
   };
@@ -210,12 +214,14 @@ async function generateChunk(
       return audioRes.arrayBuffer();
     }
     if (FAIL.includes(state)) {
-      // KIE often sets state=failed with no failReason/error string,
-      // which surfaces as the useless "TTS generation failed". Log the
-      // full data shape so the underlying cause (rate limit, policy
-      // refusal, voice ID issue, etc.) is visible in Vercel logs.
       console.error(`[TTS] chunk failed | taskId=${taskId} | full data:`, JSON.stringify(d));
-      throw new Error(d?.failReason ?? d?.error ?? `TTS chunk failed (state=${state}). Check logs for full KIE response.`);
+      // KIE returns failMsg + failCode (not failReason/error). Use
+      // failMsg as the primary user-facing message; include failCode
+      // for context. ElevenLabs' transient "internal error, please
+      // try again later" lands here and is genuinely retryable.
+      const detail = d?.failMsg ?? d?.failReason ?? d?.error ?? "no detail";
+      const code = d?.failCode ? ` (${d.failCode})` : "";
+      throw new Error(`TTS chunk failed${code}: ${detail}`);
     }
   }
 
@@ -245,7 +251,10 @@ async function generateChunkWithRetry(
         throw err;
       }
       if (attempt === CHUNK_RETRY_ATTEMPTS - 1) break;
-      const delay = 2000 * Math.pow(2, attempt);
+      // 5s / 15s / 30s — bigger gaps than the Claude retry path
+      // because KIE TTS' "internal error, please try again later"
+      // tends to need ~10-30s to clear, not 1-2s.
+      const delay = attempt === 0 ? 5000 : attempt === 1 ? 15000 : 30000;
       console.warn(`[TTS] chunk attempt ${attempt + 1}/${CHUNK_RETRY_ATTEMPTS} failed: ${msg}; retrying in ${delay}ms`);
       onStatus?.(`Retrying (${attempt + 2}/${CHUNK_RETRY_ATTEMPTS})…`);
       await sleep(delay);
