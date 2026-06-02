@@ -956,18 +956,18 @@ function AnthropicRoutingPanel() {
   const options: { id: Routing; title: string; description: string; requires?: string }[] = [
     {
       id: "client_kie",
-      title: "Client's KIE account",
+      title: "Via Client's KIE account",
       description: "Each user's own KIE API key (from their Settings) is used. Calls are billed to the end user. This is the default behavior.",
     },
     {
       id: "heclus_kie",
-      title: "Heclus KIE account",
+      title: "Via Heclus KIE account",
       description: "All Anthropic calls go through Heclus's KIE key, regardless of who triggered them. Calls are billed to Heclus's KIE account.",
       requires: "Add a key under API Keys → Heclus KIE API Key.",
     },
     {
       id: "heclus_direct",
-      title: "Heclus Anthropic key (direct)",
+      title: "Via Heclus Anthropic key (direct)",
       description: "Bypasses KIE entirely — calls hit api.anthropic.com directly with Heclus's Anthropic API key. Avoids KIE's envelope quirks and rate limits.",
       requires: "Add a key under API Keys → Anthropic API Key (direct).",
     },
