@@ -86,12 +86,14 @@ interface ProductApiKey {
   created_at: string;
 }
 
-const SERVICES = ["youtube_data_api_key", "supadata_api_key"] as const;
+const SERVICES = ["youtube_data_api_key", "supadata_api_key", "heclus_kie_api_key", "anthropic_api_key"] as const;
 type Service = typeof SERVICES[number];
 
 const SERVICE_LABELS: Record<Service, string> = {
   youtube_data_api_key: "YouTube Data API Key",
   supadata_api_key: "Supadata API Key",
+  heclus_kie_api_key: "Heclus KIE API Key",
+  anthropic_api_key: "Anthropic API Key (direct)",
 };
 
 interface ActivityPoint {
@@ -443,7 +445,7 @@ function SetupSection({
   keysLoading: boolean;
   mutateKeys: () => void;
 }) {
-  const [setupTab, setSetupTab] = useState<"keys" | "models">("keys");
+  const [setupTab, setSetupTab] = useState<"keys" | "models" | "anthropic">("keys");
   const [serviceInput, setServiceInput] = useState<Service>("youtube_data_api_key");
   const [keyInput, setKeyInput] = useState("");
   const [adding, setAdding] = useState(false);
@@ -570,6 +572,7 @@ function SetupSection({
         {([
           { id: "keys", label: "API Keys" },
           { id: "models", label: "Models" },
+          { id: "anthropic", label: "Anthropic" },
         ] as const).map((t) => (
           <button
             key={t.id}
@@ -590,6 +593,7 @@ function SetupSection({
       </div>
 
       {setupTab === "models" && <ModelDefaultsPanel />}
+      {setupTab === "anthropic" && <AnthropicRoutingPanel />}
 
       {setupTab === "keys" && <>
 
@@ -909,6 +913,124 @@ function ModelDefaultsPanel() {
         style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
       >
         {saving ? "Saving…" : "Save defaults"}
+      </button>
+    </div>
+  );
+}
+
+function AnthropicRoutingPanel() {
+  type Routing = "client_kie" | "heclus_kie" | "heclus_direct";
+  const { data, mutate, isLoading } = useSWR<{ routing: Routing }>("/api/admin/anthropic-routing", fetcher, { revalidateOnFocus: false });
+
+  const [sel, setSel] = useState<Routing>("client_kie");
+  const [saving, setSaving] = useState(false);
+
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (!data || hydratedRef.current) return;
+    hydratedRef.current = true;
+    setSel(data.routing ?? "client_kie");
+  }, [data]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/anthropic-routing", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ routing: sel }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? "Failed to save");
+      }
+      toast.success("Anthropic routing saved");
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const options: { id: Routing; title: string; description: string; requires?: string }[] = [
+    {
+      id: "client_kie",
+      title: "Client's KIE account",
+      description: "Each user's own KIE API key (from their Settings) is used. Calls are billed to the end user. This is the default behavior.",
+    },
+    {
+      id: "heclus_kie",
+      title: "Heclus KIE account",
+      description: "All Anthropic calls go through Heclus's KIE key, regardless of who triggered them. Calls are billed to Heclus's KIE account.",
+      requires: "Add a key under API Keys → Heclus KIE API Key.",
+    },
+    {
+      id: "heclus_direct",
+      title: "Heclus Anthropic key (direct)",
+      description: "Bypasses KIE entirely — calls hit api.anthropic.com directly with Heclus's Anthropic API key. Avoids KIE's envelope quirks and rate limits.",
+      requires: "Add a key under API Keys → Anthropic API Key (direct).",
+    },
+  ];
+
+  const dirty = (data?.routing ?? "client_kie") !== sel;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs" style={{ color: "var(--c-50)" }}>
+        Pick how Claude (Anthropic) calls are routed. Applies to all users globally.
+      </p>
+
+      {isLoading && <p className="text-xs" style={{ color: "var(--c-42)" }}>Loading…</p>}
+
+      <div className="space-y-2">
+        {options.map((opt) => {
+          const active = sel === opt.id;
+          return (
+            <button
+              key={opt.id}
+              onClick={() => setSel(opt.id)}
+              className="w-full text-left p-3 rounded-xl transition-all cursor-pointer"
+              style={{
+                background: active ? "oklch(0.62 0.15 220 / 0.08)" : "white",
+                border: `1px solid ${active ? "oklch(0.62 0.15 220 / 0.45)" : "oklch(0 0 0 / 0.07)"}`,
+                boxShadow: active ? "0 1px 4px oklch(0.62 0.15 220 / 0.12)" : "0 1px 2px oklch(0 0 0 / 0.04)",
+              }}
+            >
+              <div className="flex items-start gap-3">
+                <span className="w-4 h-4 mt-0.5 rounded-full shrink-0 flex items-center justify-center"
+                  style={{
+                    background: active ? "oklch(0.62 0.15 220)" : "transparent",
+                    border: `1.5px solid ${active ? "oklch(0.62 0.15 220)" : "oklch(0 0 0 / 0.2)"}`,
+                  }}>
+                  {active && <span className="w-1.5 h-1.5 rounded-full" style={{ background: "white" }} />}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold" style={{ color: active ? "oklch(0.62 0.15 220)" : "var(--c-90)" }}>
+                    {opt.title}
+                  </p>
+                  <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--c-50)" }}>
+                    {opt.description}
+                  </p>
+                  {opt.requires && (
+                    <p className="text-[11px] mt-1.5" style={{ color: "oklch(0.6 0.15 60)" }}>
+                      ⓘ {opt.requires}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <button
+        onClick={save}
+        disabled={saving || !dirty}
+        className="px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
+        style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
+      >
+        {saving ? "Saving…" : "Save routing"}
       </button>
     </div>
   );

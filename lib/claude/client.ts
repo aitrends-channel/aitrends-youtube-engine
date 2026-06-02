@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getSettings } from "@/lib/settings";
+import { getAnthropicRouting, getActiveProductKey } from "./routing";
 
 const KIE_CLAUDE_BASE_URL = "https://api.kie.ai/claude";
 
@@ -102,8 +103,37 @@ const fetchViaKie: typeof fetch = async (input, init) => {
 };
 
 export async function getAnthropicClient(userId: string): Promise<Anthropic> {
-  const { kie_api_key } = await getSettings(userId);
-  if (!kie_api_key) throw new Error("KIE API key not configured. Add it in Settings.");
+  const routing = await getAnthropicRouting();
+
+  // Heclus's Anthropic key, native API, bypassing KIE entirely. Useful
+  // when KIE is degraded or for high-volume workloads we want billed to
+  // Heclus directly. No envelope unwrapping needed — Anthropic returns
+  // its native shape, so we don't install fetchViaKie.
+  if (routing === "heclus_direct") {
+    const anthropicKey = await getActiveProductKey("anthropic_api_key");
+    if (!anthropicKey) {
+      throw new Error("Heclus Anthropic key not configured — set one in Config → API Keys (service: Anthropic API Key (direct)).");
+    }
+    return new Anthropic({
+      apiKey: anthropicKey,
+      maxRetries: 0,
+      timeout: 180_000,
+    });
+  }
+
+  // KIE-mediated paths. The only difference between client_kie and
+  // heclus_kie is whose key signs the request.
+  let kieKey: string | null | undefined;
+  if (routing === "heclus_kie") {
+    kieKey = await getActiveProductKey("heclus_kie_api_key");
+    if (!kieKey) {
+      throw new Error("Heclus KIE key not configured — set one in Config → API Keys (service: Heclus KIE API Key).");
+    }
+  } else {
+    kieKey = (await getSettings(userId)).kie_api_key;
+    if (!kieKey) throw new Error("KIE API key not configured. Add it in Settings.");
+  }
+
   // KIE expects `Authorization: Bearer <key>`. The SDK's `apiKey` option
   // sends `x-api-key` (Anthropic's native scheme), which KIE rejects with
   // 403. `authToken` swaps the SDK to its bearer-auth path natively. We
@@ -111,7 +141,7 @@ export async function getAnthropicClient(userId: string): Promise<Anthropic> {
   // doesn't get picked up and double-send the old header.
   return new Anthropic({
     apiKey: null,
-    authToken: kie_api_key,
+    authToken: kieKey,
     baseURL: KIE_CLAUDE_BASE_URL,
     fetch: fetchViaKie,
     // Disable the SDK's built-in retries — we have retryClaudeCall on
