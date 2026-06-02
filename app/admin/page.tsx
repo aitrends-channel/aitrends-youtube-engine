@@ -443,6 +443,7 @@ function SetupSection({
   keysLoading: boolean;
   mutateKeys: () => void;
 }) {
+  const [setupTab, setSetupTab] = useState<"keys" | "models">("keys");
   const [serviceInput, setServiceInput] = useState<Service>("youtube_data_api_key");
   const [keyInput, setKeyInput] = useState("");
   const [adding, setAdding] = useState(false);
@@ -556,11 +557,41 @@ function SetupSection({
           <h2 className="text-lg font-bold text-foreground">Setup</h2>
           <p className="text-xs" style={{ color: "var(--c-42)" }}>Product-wide API keys — first key is default, auto-rotates on quota exceeded</p>
         </div>
-        <span className="ml-auto text-xs px-2.5 py-0.5 rounded-full"
-          style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
-          {totalKeys} key{totalKeys !== 1 ? "s" : ""}
-        </span>
+        {setupTab === "keys" && (
+          <span className="ml-auto text-xs px-2.5 py-0.5 rounded-full"
+            style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
+            {totalKeys} key{totalKeys !== 1 ? "s" : ""}
+          </span>
+        )}
       </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 p-1 rounded-xl" style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+        {([
+          { id: "keys", label: "API Keys" },
+          { id: "models", label: "Models" },
+        ] as const).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setSetupTab(t.id)}
+            className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
+            style={setupTab === t.id ? {
+              background: "white",
+              color: "oklch(0.62 0.15 220)",
+              boxShadow: "0 1px 3px oklch(0 0 0 / 0.06)",
+            } : {
+              background: "transparent",
+              color: "var(--c-50)",
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {setupTab === "models" && <ModelDefaultsPanel />}
+
+      {setupTab === "keys" && <>
 
       {/* Add key form */}
       <form onSubmit={handleAdd} className="p-4 rounded-2xl space-y-3"
@@ -768,7 +799,118 @@ function SetupSection({
           })}
         </div>
       )}
+
+      </>}
     </section>
+  );
+}
+
+function ModelDefaultsPanel() {
+  const { data: defaults, mutate: mutateDefaults, isLoading: defaultsLoading } = useSWR<{
+    default_image_model: string | null;
+    default_video_model: string | null;
+  }>("/api/admin/default-models", fetcher, { revalidateOnFocus: false });
+  const { data: imageModels } = useSWR<{ id: string; name: string }[]>("/api/kie/models?type=image", fetcher);
+  const { data: videoModels } = useSWR<{ id: string; name: string }[]>("/api/kie/models?type=video", fetcher);
+
+  const [imageSel, setImageSel] = useState<string>("");
+  const [videoSel, setVideoSel] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+
+  // Hydrate selections from server. We only run this when defaults arrive
+  // so a quick "save → revalidate" round-trip doesn't clobber the user's
+  // unsaved pick (mid-edit revalidation race).
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (!defaults || hydratedRef.current) return;
+    hydratedRef.current = true;
+    setImageSel(defaults.default_image_model ?? "");
+    setVideoSel(defaults.default_video_model ?? "");
+  }, [defaults]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/default-models", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          default_image_model: imageSel || null,
+          default_video_model: videoSel || null,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? "Failed to save");
+      }
+      toast.success("Default models saved");
+      mutateDefaults();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const selectStyle = {
+    background: "var(--bg-input)",
+    border: "1px solid var(--bd-10)",
+    color: "var(--c-90)",
+  } as const;
+
+  const dirty =
+    (defaults?.default_image_model ?? "") !== imageSel ||
+    (defaults?.default_video_model ?? "") !== videoSel;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs" style={{ color: "var(--c-50)" }}>
+        Set the models that show up first in the generate page&apos;s model picker. Users can still change them per-project.
+      </p>
+
+      <div className="space-y-3">
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold" style={{ color: "var(--c-50)" }}>Default Image Model</label>
+          <select
+            value={imageSel}
+            onChange={(e) => setImageSel(e.target.value)}
+            disabled={defaultsLoading || !imageModels}
+            className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all"
+            style={selectStyle}
+          >
+            <option value="">— No default (use catalog order) —</option>
+            {(imageModels ?? []).map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold" style={{ color: "var(--c-50)" }}>Default Video Model</label>
+          <select
+            value={videoSel}
+            onChange={(e) => setVideoSel(e.target.value)}
+            disabled={defaultsLoading || !videoModels}
+            className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all"
+            style={selectStyle}
+          >
+            <option value="">— No default (use catalog order) —</option>
+            {(videoModels ?? []).map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <button
+        onClick={save}
+        disabled={saving || !dirty}
+        className="px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
+        style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
+      >
+        {saving ? "Saving…" : "Save defaults"}
+      </button>
+    </div>
   );
 }
 
