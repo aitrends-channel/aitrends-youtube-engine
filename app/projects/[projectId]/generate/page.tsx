@@ -435,15 +435,30 @@ export default function GeneratePage({ params }: PageProps) {
     }
   }
 
-  async function generateImages() {
+  async function generateImages(opts: { mode?: "all" | "remaining" } = {}) {
     if (!selectedImageModel || !beats.length) return;
-    const isRegen = generatedImages > 0;
+
+    // Determine which beats to process:
+    // - "remaining" (default when some imageUrls exist): only beats
+    //   without an imageUrl. Failed/missing ones get retried; already-
+    //   successful images stay intact, user doesn't re-pay for them.
+    // - "all" (regenerate): wipe existing images first, then process
+    //   every beat. Used when all images succeeded and user wants a
+    //   fresh take.
+    const targetBeats = opts.mode === "all"
+      ? beats
+      : beats.filter((b) => !b.imageUrl);
+
+    if (targetBeats.length === 0) return;
+
+    const shouldClear = opts.mode === "all" && generatedImages > 0;
+
     setGeneratingImages(true);
     setImagesProgress(0);
-    if (isRegen) setClearingImages(true);
+    if (shouldClear) setClearingImages(true);
     let successCount = 0;
     try {
-      if (isRegen) {
+      if (shouldClear) {
         await fetch(`/api/projects/${projectId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
@@ -457,8 +472,8 @@ export default function GeneratePage({ params }: PageProps) {
       const pending: { beatNumber: number; taskId: string }[] = [];
       let firstSubmitError: string | null = null;
 
-      for (let i = 0; i < beats.length; i += SUBMIT_BATCH) {
-        const batch = beats.slice(i, i + SUBMIT_BATCH);
+      for (let i = 0; i < targetBeats.length; i += SUBMIT_BATCH) {
+        const batch = targetBeats.slice(i, i + SUBMIT_BATCH);
         const batchResults = await Promise.allSettled(
           batch.map(async (beat) => {
             const res = await fetch("/api/generate/images/submit", {
@@ -482,14 +497,14 @@ export default function GeneratePage({ params }: PageProps) {
           if (r.status === "fulfilled") pending.push(r.value);
           else if (!firstSubmitError) firstSubmitError = r.reason instanceof Error ? r.reason.message : "Unknown error";
         }
-        if (i + SUBMIT_BATCH < beats.length) await new Promise((r) => setTimeout(r, 1500));
+        if (i + SUBMIT_BATCH < targetBeats.length) await new Promise((r) => setTimeout(r, 1500));
       }
 
       if (pending.length === 0) {
         throw new Error(firstSubmitError ?? "unknown error");
       }
       if (firstSubmitError) {
-        toast.warning(`${pending.length}/${beats.length} tasks submitted — ${friendlyError(firstSubmitError)}`);
+        toast.warning(`${pending.length}/${targetBeats.length} tasks submitted — ${friendlyError(firstSubmitError)}`);
       }
 
       // Poll all pending tasks in parallel every 3s until all complete
@@ -529,11 +544,11 @@ export default function GeneratePage({ params }: PageProps) {
       await mutate();
       if (successCount === 0) {
         const reason = firstPollError ?? firstSubmitError ?? "timed out";
-        toast.error(`0/${beats.length} images generated — ${friendlyError(reason)}`);
-      } else if (successCount < beats.length) {
-        toast.warning(`${successCount}/${beats.length} images generated — some failed`);
+        toast.error(`0/${targetBeats.length} images generated — ${friendlyError(reason)}`);
+      } else if (successCount < targetBeats.length) {
+        toast.warning(`${successCount}/${targetBeats.length} images generated — some failed`);
       } else {
-        toast.success(`${successCount}/${beats.length} images generated`);
+        toast.success(`${successCount}/${targetBeats.length} images generated`);
       }
     } catch (err) {
       toast.error(friendlyError(err instanceof Error ? err.message : null));
@@ -945,23 +960,52 @@ export default function GeneratePage({ params }: PageProps) {
               </div>
             )}
 
-            <div className="p-5 mt-auto">
-              <button
-                onClick={generateImages}
-                disabled={generatingImages || generatingTts || !selectedImageModel || !beats.length}
-                title={generatingTts ? "Voiceover is generating — wait for it to finish before starting image generation" : undefined}
-                className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
-                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-              >
-                {generatingImages ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    {`Generating… ${clearingImages ? 0 : generatedImages}/${totalBeats}`}
-                  </span>
-                ) : generatedImages > 0
-                  ? `Regenerate All (${totalBeats})`
-                  : `Generate ${totalBeats} Images`}
-              </button>
+            <div className="p-5 mt-auto space-y-2">
+              {(() => {
+                // Three button states keyed off pendingCount:
+                //   • pendingCount === totalBeats → first-time run: "Generate N Images"
+                //   • 0 < pendingCount < totalBeats → partial fail: "Generate Remaining N"
+                //   • pendingCount === 0 → all done: "Regenerate All" (this one wipes)
+                const pendingCount = totalBeats - generatedImages;
+                const isPartial = generatedImages > 0 && pendingCount > 0;
+                const isAllDone = generatedImages > 0 && pendingCount === 0;
+                return (
+                  <>
+                    <button
+                      onClick={() => generateImages({ mode: isAllDone ? "all" : "remaining" })}
+                      disabled={generatingImages || generatingTts || !selectedImageModel || !beats.length}
+                      title={generatingTts ? "Voiceover is generating — wait for it to finish before starting image generation" : undefined}
+                      className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+                      style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                    >
+                      {generatingImages ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          {`Generating… ${clearingImages ? 0 : generatedImages}/${totalBeats}`}
+                        </span>
+                      ) : isPartial
+                        ? `Generate Remaining ${pendingCount}`
+                        : isAllDone
+                        ? `Regenerate All (${totalBeats})`
+                        : `Generate ${totalBeats} Images`}
+                    </button>
+                    {/* Secondary "Regenerate All" affordance when some images
+                        succeeded but others failed — gives users a way to
+                        explicitly start over if they don't trust the
+                        partial state. Wipes existing images. */}
+                    {isPartial && !generatingImages && (
+                      <button
+                        onClick={() => generateImages({ mode: "all" })}
+                        disabled={generatingTts || !selectedImageModel}
+                        className="w-full py-2 rounded-xl text-xs font-medium disabled:opacity-40 transition-all"
+                        style={{ background: "transparent", color: "var(--c-50)", border: "1px solid var(--bd-8)" }}
+                      >
+                        {`Regenerate All (${totalBeats}) — wipes existing`}
+                      </button>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
 
