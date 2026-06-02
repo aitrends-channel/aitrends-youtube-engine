@@ -858,6 +858,9 @@ export default function GeneratePage({ params }: PageProps) {
                 ))}
                 {!imageModels && <p className="text-xs" style={{ color: "var(--c-40)" }}>Loading models...</p>}
               </div>
+              <p className="text-[11px] mt-2 leading-snug" style={{ color: "var(--c-40)" }}>
+                Tip: if a model keeps failing, pick another above and re-run — successful images stay.
+              </p>
               {(() => {
                 const config = selectedImageModel ? getModelConfig(selectedImageModel) : null;
                 return config ? (
@@ -976,8 +979,15 @@ export default function GeneratePage({ params }: PageProps) {
                 const pendingCount = totalBeats - generatedImages;
                 const isPartial = generatedImages > 0 && pendingCount > 0;
                 const isAllDone = generatedImages > 0 && pendingCount === 0;
+                const workingImageName = imageModels?.find((m) => m.id === selectedImageModel)?.name ?? "the selected model";
                 return (
                   <>
+                    {isPartial && !generatingImages && (
+                      <div className="px-3 py-2 rounded-lg text-xs leading-snug"
+                        style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "oklch(0.78 0.12 25)" }}>
+                        {pendingCount} image{pendingCount === 1 ? "" : "s"} didn't generate on <span style={{ fontWeight: 600 }}>{workingImageName}</span>. Try switching to a different model above, then run again.
+                      </div>
+                    )}
                     <button
                       onClick={() => generateImages({ mode: isAllDone ? "all" : "remaining" })}
                       disabled={generatingImages || generatingTts || !selectedImageModel || !beats.length}
@@ -1030,6 +1040,9 @@ export default function GeneratePage({ params }: PageProps) {
                 ))}
                 {!videoModels && <p className="text-xs" style={{ color: "var(--c-40)" }}>Loading models...</p>}
               </div>
+              <p className="text-[11px] mt-2 leading-snug" style={{ color: "var(--c-40)" }}>
+                Tip: if a model keeps failing, pick another above and re-queue — existing clips stay.
+              </p>
               {(() => {
                 if (!selectedVideoModel) return null;
                 const config = getVideoModelConfig(selectedVideoModel);
@@ -1148,6 +1161,16 @@ export default function GeneratePage({ params }: PageProps) {
                   <ProgressBar value={generatedVideos} total={videoBeats} />
                 </div>
               )}
+              {failedVideos > 0 && !hasActiveVideos && (() => {
+                const workingId = project?.video_model_id as string | undefined;
+                const workingName = videoModels?.find((m) => m.id === workingId)?.name ?? "the selected model";
+                return (
+                  <div className="mt-3 px-3 py-2 rounded-lg text-xs leading-snug"
+                    style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "oklch(0.78 0.12 25)" }}>
+                    {failedVideos} clip{failedVideos === 1 ? "" : "s"} failed on <span style={{ fontWeight: 600 }}>{workingName}</span>. Try switching to a different model above, then retry.
+                  </div>
+                );
+              })()}
               {/* Primary action morphs by state:
                   - queuing-in-flight: spinner
                   - paused beats exist: Resume (green)
