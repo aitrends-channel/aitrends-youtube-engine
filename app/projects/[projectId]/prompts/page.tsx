@@ -346,15 +346,16 @@ export default function PromptsPage({ params }: PageProps) {
   const hasImageBeats = beats.length > 0;
   const hasVideoBeats = videoBeats.length > 0;
 
-  // Remaining-work counts for resume labels. Image-prompts doesn't know
-  // its total beat count upfront (the model decides), so we only show
-  // "Continue" when an error happened mid-run. Video-prompts knows the
-  // total (= number of image beats), so we can show the exact remainder.
-  const videoRemaining = beats.length - videoBeats.length;
-  const imageActionLabel = imageStep.status === "error" && hasImageBeats
+  // Remaining-work counts for resume labels. Both stages are resumable
+  // server-side (per-chunk DB writes), so on any failure — including
+  // credit/quota limits or upstream 500s — the retry picks up from
+  // where we left off. The action label always reflects that, even
+  // when zero work has been saved yet (first-chunk failure).
+  const videoRemaining = beats.length > 0 ? beats.length - videoBeats.length : 0;
+  const imageActionLabel = imageStep.status === "error"
     ? "Generate Remaining"
     : null;
-  const videoActionLabel = videoStep.status === "error" && hasVideoBeats && videoRemaining > 0
+  const videoActionLabel = videoStep.status === "error" && videoRemaining > 0
     ? `Generate Remaining ${videoRemaining}`
     : null;
 
