@@ -347,6 +347,23 @@ export default function PromptsPage({ params }: PageProps) {
   const router = useRouter();
   const { project, mutate } = useProject(projectId);
 
+  // Bump current_state to 13 the first time the user lands here so the
+  // Visuals phase ticks done in the WizardNav. The visuals phase's
+  // states array tops out at 12, but visual-analysis only bumps to 9
+  // — leaving Visuals visually locked when the user is past it. State
+  // 13 keeps the project past the Visuals "done" threshold without
+  // crossing into Generate/Assemble territory.
+  useEffect(() => {
+    const reached = project?.current_state as number | undefined;
+    if (reached !== undefined && reached < 13) {
+      fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_state: 13 }),
+      }).then(() => mutate()).catch(() => { /* non-blocking */ });
+    }
+  }, [project?.current_state, projectId, mutate]);
+
   const [imageStep, setImageStep] = useState<StepState>(IDLE);
   const [videoStep, setVideoStep] = useState<StepState>(IDLE);
   const [activeTab, setActiveTab] = useState<Tab>("beats");
