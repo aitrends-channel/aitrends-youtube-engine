@@ -139,16 +139,14 @@ export const MODEL = "claude-opus-4-7";
 // adherence) wins on overall reliability for that workload.
 export const FAST_MODEL = "claude-haiku-4-5";
 
-// Vision analysis runs on Haiku 4.5. We briefly switched to Opus 4.7
-// after the Pro upgrade lifted the function-timeout ceiling to 800s,
-// expecting that to unlock the latency headroom Opus needed. In
-// practice Opus + 10 image blocks routinely takes long enough that
-// the SDK / KIE proxy drops the connection mid-call and surfaces as
-// "network error" to the user. Haiku finishes well within budget.
-// Its occasional flat-shape vs visualProfile-wrapped quirk is handled
-// by the defensive parser + mode-aware prompt in the visual-analysis
-// route, so we don't need Opus's tightness here.
-export const VISION_MODEL = "claude-haiku-4-5";
+// Vision analysis runs on Opus 4.7 (per user request). We previously
+// ran Haiku here because Opus + ~10 image blocks could exceed the
+// old function-timeout caps and surface as "network error". With the
+// 800s Pro ceiling that risk is much smaller, but it's still real on
+// extended outages or KIE blips. The route already has a defensive
+// parser + mode-aware prompt as safety nets, so the model swap is
+// the only thing that changes here.
+export const VISION_MODEL = "claude-opus-4-7";
 
 export const SYSTEM_PROMPT = `You are an advanced AI YouTube Content Engine. Your purpose is to analyze YouTube channel transcripts, extract the channel's unique style DNA, and generate fully original content that matches the channel's voice, pacing, and emotional arc.
 
