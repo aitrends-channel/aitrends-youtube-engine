@@ -137,20 +137,23 @@ interface StepCardProps {
   doneLabel?: string;
   disabled?: boolean;
   optional?: boolean;
+  /** Custom button label for non-running, non-done states (e.g. "Generate Remaining 9"). */
+  actionLabel?: string | null;
   onGenerate: () => void;
 }
 
-function StepCard({ num, title, description, state, doneLabel, disabled, optional, onGenerate }: StepCardProps) {
+function StepCard({ num, title, description, state, doneLabel, disabled, optional, actionLabel, onGenerate }: StepCardProps) {
   const isRunning = state.status === "running";
   const isDone = state.status === "done";
   const isError = state.status === "error";
 
   // Time-based fake progress when the route doesn't emit real progress
-  // events. Image prompts is one API call (no chunks), video prompts
-  // only emits progress when there are >20 beats. Without this the bar
-  // wouldn't render for typical-sized work. Defaults assume Opus + a
-  // moderate beat count.
-  const EXPECTED_MS = 35000;
+  // events (single-chunk runs). Asymptotic curve so the bar never
+  // visually stalls — even on long runs (multi-chunk image prompts,
+  // KIE retries) it keeps creeping closer to 95% without ever pinning.
+  // Time-to-target: ~50% at 45s, ~75% at 90s, ~95% at 3min.
+  const RATE_CONSTANT_MS = 45000;
+  const ASYMPTOTE = 95;
   const [fakePct, setFakePct] = useState(0);
   useEffect(() => {
     if (isDone) { setFakePct(100); return; }
@@ -159,7 +162,7 @@ function StepCard({ num, title, description, state, doneLabel, disabled, optiona
     setFakePct(0);
     const t = setInterval(() => {
       const elapsed = Date.now() - startedAt;
-      setFakePct(Math.min(92, (elapsed / EXPECTED_MS) * 100));
+      setFakePct(ASYMPTOTE * (1 - Math.exp(-elapsed / RATE_CONSTANT_MS)));
     }, 80);
     return () => clearInterval(t);
   }, [isRunning, isDone]);
@@ -252,7 +255,7 @@ function StepCard({ num, title, description, state, doneLabel, disabled, optiona
               : { background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }
           }
         >
-          {isRunning ? "Running..." : isDone ? "Regenerate" : isError ? "Retry" : "Generate"}
+          {isRunning ? "Running..." : (actionLabel ?? (isDone ? "Regenerate" : isError ? "Retry" : "Generate"))}
         </button>
       </div>
     </div>
@@ -342,6 +345,18 @@ export default function PromptsPage({ params }: PageProps) {
 
   const hasImageBeats = beats.length > 0;
   const hasVideoBeats = videoBeats.length > 0;
+
+  // Remaining-work counts for resume labels. Image-prompts doesn't know
+  // its total beat count upfront (the model decides), so we only show
+  // "Continue" when an error happened mid-run. Video-prompts knows the
+  // total (= number of image beats), so we can show the exact remainder.
+  const videoRemaining = beats.length - videoBeats.length;
+  const imageActionLabel = imageStep.status === "error" && hasImageBeats
+    ? "Generate Remaining"
+    : null;
+  const videoActionLabel = videoStep.status === "error" && hasVideoBeats && videoRemaining > 0
+    ? `Generate Remaining ${videoRemaining}`
+    : null;
 
   // Derive effective step state: prefer live state, fall back to DB presence
   const effectiveImage: StepState =
@@ -437,6 +452,7 @@ export default function PromptsPage({ params }: PageProps) {
             description="One AI image prompt per script beat, matched to your channel's visual style"
             state={effectiveImage}
             doneLabel={beats.length > 0 ? `${beats.length} beats ready` : undefined}
+            actionLabel={imageActionLabel}
             onGenerate={runImageStep}
           />
           <StepCard
@@ -445,6 +461,7 @@ export default function PromptsPage({ params }: PageProps) {
             description="Camera movement and motion instructions layered on top of each image beat"
             state={effectiveVideo}
             doneLabel={videoBeats.length > 0 ? `${videoBeats.length} beats ready` : undefined}
+            actionLabel={videoActionLabel}
             disabled={!hasImageBeats}
             optional
             onGenerate={runVideoStep}

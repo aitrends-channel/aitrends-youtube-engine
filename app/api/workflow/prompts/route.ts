@@ -310,7 +310,13 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
   const chunks: typeof pendingBeats[] = [];
   for (let i = 0; i < pendingBeats.length; i += CHUNK_SIZE) chunks.push(pendingBeats.slice(i, i + CHUNK_SIZE));
 
-  console.log(`[video-prompts] start project=${projectId} totalBeats=${allBeats.length} alreadyDone=${alreadyDoneCount} pending=${pendingBeats.length} chunks=${chunks.length}`);
+  // Emit progress as ABSOLUTE chunk-index over the full total (including
+  // already-done chunks from a prior run). UI shows e.g. `16/24` on
+  // resume instead of restarting at `1/9`.
+  const totalChunksAbsolute = Math.ceil(allBeats.length / CHUNK_SIZE);
+  const startChunkIdx = Math.floor(alreadyDoneCount / CHUNK_SIZE);
+
+  console.log(`[video-prompts] start project=${projectId} totalBeats=${allBeats.length} alreadyDone=${alreadyDoneCount} pending=${pendingBeats.length} pendingChunks=${chunks.length} totalChunksAbs=${totalChunksAbsolute} startChunkIdx=${startChunkIdx}`);
 
   send({
     type: "status",
@@ -320,7 +326,7 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
   });
 
   for (let i = 0; i < chunks.length; i++) {
-    if (chunks.length > 1) send({ type: "progress", current: i + 1, total: chunks.length });
+    if (totalChunksAbsolute > 1) send({ type: "progress", current: startChunkIdx + i + 1, total: totalChunksAbsolute });
 
     // One retry on tool-use miss — KIE occasionally returns text-only
     // even with tool_choice forced. A fresh call usually picks the tool.
