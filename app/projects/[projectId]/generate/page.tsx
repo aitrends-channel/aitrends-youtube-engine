@@ -1112,44 +1112,45 @@ export default function GeneratePage({ params }: PageProps) {
             </div>
 
             {/* Video clip grid */}
-            <div className="px-5 pt-4 pb-[50px]">
-              {beats.some((b) => b.videoUrl || b.videoStatus) && (
-                <>
-                  <ProgressBar value={generatedVideos} total={videoBeats} />
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-72 overflow-y-auto scroll-visible pr-1">
-                    {beats.filter((b) => b.videoPrompt).map((b) => (
-                      <div
-                        key={b.beatNumber}
-                        className="aspect-video rounded-lg overflow-hidden flex items-center justify-center"
-                        style={{ background: "var(--bg-progress)" }}
-                        onMouseEnter={() => {
-                          if (!b.videoUrl) return;
-                          if (videoHideTimer.current) clearTimeout(videoHideTimer.current);
-                          setHoveredVideoBeat(b);
-                        }}
-                        onMouseLeave={() => {
-                          videoHideTimer.current = setTimeout(() => setHoveredVideoBeat(null), 200);
-                        }}
-                      >
-                        {b.videoUrl ? (
-                          <video src={b.videoUrl} title={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
-                        ) : (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded"
-                            title={b.videoStatus === "failed" && b.videoError ? b.videoError : undefined}
-                            style={{
-                              background: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285 / 0.1)" : b.videoStatus === "done" ? "oklch(0.55 0.15 145 / 0.1)" : b.videoStatus === "failed" ? "oklch(0.6 0.22 25 / 0.1)" : "var(--bg-track)",
-                              color: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285)" : b.videoStatus === "done" ? "oklch(0.7 0.15 145)" : b.videoStatus === "failed" ? "oklch(0.7 0.2 25)" : "var(--c-35)",
-                              cursor: b.videoStatus === "failed" && b.videoError ? "help" : undefined,
-                            }}>
-                            {b.videoStatus ?? "—"}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              )}
-              <p className="text-xs mt-3" style={{ color: "var(--c-40)" }}>
+            {beats.some((b) => b.videoUrl || b.videoStatus) && (
+              <div className="px-5 pt-4">
+                <ProgressBar value={generatedVideos} total={videoBeats} />
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-72 overflow-y-auto scroll-visible pr-1">
+                  {beats.filter((b) => b.videoPrompt).map((b) => (
+                    <div
+                      key={b.beatNumber}
+                      className="aspect-video rounded-lg overflow-hidden flex items-center justify-center"
+                      style={{ background: "var(--bg-progress)" }}
+                      onMouseEnter={() => {
+                        if (!b.videoUrl) return;
+                        if (videoHideTimer.current) clearTimeout(videoHideTimer.current);
+                        setHoveredVideoBeat(b);
+                      }}
+                      onMouseLeave={() => {
+                        videoHideTimer.current = setTimeout(() => setHoveredVideoBeat(null), 200);
+                      }}
+                    >
+                      {b.videoUrl ? (
+                        <video src={b.videoUrl} title={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
+                      ) : (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded"
+                          title={b.videoStatus === "failed" && b.videoError ? b.videoError : undefined}
+                          style={{
+                            background: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285 / 0.1)" : b.videoStatus === "done" ? "oklch(0.55 0.15 145 / 0.1)" : b.videoStatus === "failed" ? "oklch(0.6 0.22 25 / 0.1)" : "var(--bg-track)",
+                            color: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285)" : b.videoStatus === "done" ? "oklch(0.7 0.15 145)" : b.videoStatus === "failed" ? "oklch(0.7 0.2 25)" : "var(--c-35)",
+                            cursor: b.videoStatus === "failed" && b.videoError ? "help" : undefined,
+                          }}>
+                          {b.videoStatus ?? "—"}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="p-5 mt-auto space-y-2">
+              <p className="text-xs" style={{ color: "var(--c-40)" }}>
                 {(() => {
                   const workingId = project?.video_model_id as string | undefined;
                   const workingName = videoModels?.find((m) => m.id === workingId)?.name ?? workingId;
@@ -1161,15 +1162,13 @@ export default function GeneratePage({ params }: PageProps) {
                 })()}
               </p>
               {videosSubmitted && (
-                <div className="mt-2">
-                  <ProgressBar value={generatedVideos} total={videoBeats} />
-                </div>
+                <ProgressBar value={generatedVideos} total={videoBeats} />
               )}
               {failedVideos > 0 && !hasActiveVideos && (() => {
                 const workingId = project?.video_model_id as string | undefined;
                 const workingName = videoModels?.find((m) => m.id === workingId)?.name ?? "the selected model";
                 return (
-                  <div className="mt-3 px-3 py-2 rounded-lg text-xs leading-snug"
+                  <div className="px-3 py-2 rounded-lg text-xs leading-snug"
                     style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "oklch(0.78 0.12 25)" }}>
                     {failedVideos} clip{failedVideos === 1 ? "" : "s"} failed on <span style={{ fontWeight: 600 }}>{workingName}</span>. Try switching to a different model above, then retry.
                   </div>
@@ -1185,7 +1184,7 @@ export default function GeneratePage({ params }: PageProps) {
               {queuingVideos ? (
                 <button
                   disabled
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-3"
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                   style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                 >
                   <span className="flex items-center justify-center gap-2">
@@ -1198,7 +1197,7 @@ export default function GeneratePage({ params }: PageProps) {
                   onClick={resumeVideos}
                   disabled={!selectedVideoModel || resumingVideos || videosBlockedByImages}
                   title={videoBlockReason}
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-3"
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                   style={{ background: "oklch(0.7 0.15 145)", color: "var(--bg-page-2)" }}
                 >
                   {resumingVideos ? (
@@ -1212,7 +1211,7 @@ export default function GeneratePage({ params }: PageProps) {
                 <button
                   onClick={pauseVideos}
                   disabled={pausingVideos}
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-3"
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                   style={{ background: "transparent", color: "oklch(0.7 0.2 25)", border: "1px solid oklch(0.7 0.2 25)" }}
                 >
                   {pausingVideos ? (
@@ -1227,7 +1226,7 @@ export default function GeneratePage({ params }: PageProps) {
                   onClick={() => queueVideos("failed")}
                   disabled={!selectedVideoModel || videosBlockedByImages}
                   title={videoBlockReason}
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-3"
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                   style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                 >
                   Re-queue {failedVideos} Clip{failedVideos === 1 ? "" : "s"}
@@ -1237,7 +1236,7 @@ export default function GeneratePage({ params }: PageProps) {
                   onClick={() => queueVideos("all")}
                   disabled={!selectedVideoModel || !pendingVideos || hasActiveVideos || videosBlockedByImages}
                   title={videoBlockReason}
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-3"
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                   style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                 >
                   {videosBlockedByImages
@@ -1253,7 +1252,7 @@ export default function GeneratePage({ params }: PageProps) {
                   onClick={() => queueVideos("failed")}
                   disabled={!selectedVideoModel || videosBlockedByImages}
                   title={videoBlockReason}
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-2"
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                   style={{ background: "transparent", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285)" }}
                 >
                   Retry {failedVideos} Failed
