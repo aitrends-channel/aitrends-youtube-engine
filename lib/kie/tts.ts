@@ -3,8 +3,9 @@ import type { KieModel } from "@/lib/types";
 
 const TTS_MODEL = "elevenlabs/text-to-speech-turbo-2-5";
 const MAX_CHARS = 5000;
-const POLL_INTERVAL_MS = 2000;
+const POLL_INTERVAL_MS = 1000;
 const POLL_DEADLINE_MS = 5 * 60 * 1000; // 5 minutes per chunk
+const CHUNK_RETRY_ATTEMPTS = 3;
 
 function v(id: string, name: string, tags: string[]): KieModel {
   return { id, name, type: "tts", tags, previewUrl: `https://static.aiquickdraw.com/elevenlabs/voice/${id}.mp3` };
@@ -209,11 +210,48 @@ async function generateChunk(
       return audioRes.arrayBuffer();
     }
     if (FAIL.includes(state)) {
-      throw new Error(d?.failReason ?? d?.error ?? "TTS generation failed");
+      // KIE often sets state=failed with no failReason/error string,
+      // which surfaces as the useless "TTS generation failed". Log the
+      // full data shape so the underlying cause (rate limit, policy
+      // refusal, voice ID issue, etc.) is visible in Vercel logs.
+      console.error(`[TTS] chunk failed | taskId=${taskId} | full data:`, JSON.stringify(d));
+      throw new Error(d?.failReason ?? d?.error ?? `TTS chunk failed (state=${state}). Check logs for full KIE response.`);
     }
   }
 
   throw new Error("TTS generation timed out after 5 minutes");
+}
+
+// Retry wrapper around generateChunk — KIE TTS occasionally returns
+// state=failed for transient reasons that clear within seconds.
+// Exponential backoff (2s/4s/8s), 3 attempts. Fails fast on non-
+// transient errors (auth, voice-not-found, etc.) since retrying
+// won't help.
+async function generateChunkWithRetry(
+  text: string,
+  voiceId: string,
+  userId: string | undefined,
+  onStatus?: (msg: string) => void,
+): Promise<ArrayBuffer> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < CHUNK_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await generateChunk(text, voiceId, userId, onStatus);
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      // Non-transient errors — abort early.
+      if (/voice|api key|unauthorized|forbidden|invalid/i.test(msg)) {
+        throw err;
+      }
+      if (attempt === CHUNK_RETRY_ATTEMPTS - 1) break;
+      const delay = 2000 * Math.pow(2, attempt);
+      console.warn(`[TTS] chunk attempt ${attempt + 1}/${CHUNK_RETRY_ATTEMPTS} failed: ${msg}; retrying in ${delay}ms`);
+      onStatus?.(`Retrying (${attempt + 2}/${CHUNK_RETRY_ATTEMPTS})…`);
+      await sleep(delay);
+    }
+  }
+  throw lastErr;
 }
 
 export async function listTTSVoices(): Promise<KieModel[]> {
@@ -233,7 +271,7 @@ export async function generateTTS(
 
   if (chunks.length === 1) {
     onProgress?.(0, 1);
-    const result = await generateChunk(chunks[0], voiceId, userId, onStatus);
+    const result = await generateChunkWithRetry(chunks[0], voiceId, userId, onStatus);
     onProgress?.(1, 1);
     return result;
   }
@@ -242,7 +280,7 @@ export async function generateTTS(
   for (let i = 0; i < chunks.length; i++) {
     onProgress?.(i, chunks.length);
     onStatus?.(`Chunk ${i + 1} of ${chunks.length}…`);
-    const buf = await generateChunk(chunks[i], voiceId, userId, onStatus);
+    const buf = await generateChunkWithRetry(chunks[i], voiceId, userId, onStatus);
     buffers.push(buf);
   }
   onProgress?.(chunks.length, chunks.length);
