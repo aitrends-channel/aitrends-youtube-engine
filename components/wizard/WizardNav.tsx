@@ -106,7 +106,13 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
   }
 
   const currentPhaseIndex = PHASES.findIndex((p) => pathname.endsWith(`/${p.path}`));
-  const progressPct = progressComplete ? 100 : Math.max(0, Math.round(((currentPhaseIndex + 1) / PHASES.length) * 100));
+  // Cap at 99% until progressComplete signals everything is truly done.
+  // Thumbnails is the final phase (index 7 of 8) so the raw fraction would
+  // be 100% the moment the user lands on the page — even before any
+  // thumbnails have generated. Hold at 99 until the parent confirms.
+  const progressPct = progressComplete
+    ? 100
+    : Math.min(99, Math.max(0, Math.round(((currentPhaseIndex + 1) / PHASES.length) * 100)));
 
   function navigate(href: string) {
     setDrawerOpen(false);
