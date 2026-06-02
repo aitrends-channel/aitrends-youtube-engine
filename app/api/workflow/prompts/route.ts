@@ -201,16 +201,24 @@ async function generateImages(
     const t0 = Date.now();
     console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} startBeat=${nextBeatNumber} words=${content.split(/\s+/).length}`);
 
-    const res = await retryClaudeCall(`image prompts chunk ${chunkIndex + 1}/${totalChunks}`, () =>
-      anthropic.messages.create({
+    // Streaming keeps the KIE proxy connection warm with continuous
+    // delta events, sidestepping the ~45s idle-timeout we hit when
+    // using messages.create on heavier payloads. The SDK rebuilds the
+    // full message on stream.finalMessage(), so the rest of the parse
+    // logic is unchanged.
+    const res = await retryClaudeCall(`image prompts chunk ${chunkIndex + 1}/${totalChunks}`, async () => {
+      const stream = anthropic.messages.stream({
         model: MODEL,
         max_tokens: 8192,
         system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
         tools: [{ name: "save_image_prompts", description: "Save image prompts for every visual beat in the chunk", input_schema: imagePromptsInputSchema }],
         tool_choice: { type: "tool", name: "save_image_prompts" },
         messages: [{ role: "user", content: buildImagePromptsPrompt(content, visualProfile, nextBeatNumber) }],
-      })
-    );
+      });
+      // Drain events so the SDK actually pulls deltas from the wire.
+      for await (const _event of stream) { void _event; }
+      return stream.finalMessage();
+    });
 
     console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} done in ${Date.now() - t0}ms stop=${res.stop_reason}`);
     assertComplete(res.stop_reason, `image prompts chunk ${chunkIndex + 1}/${totalChunks}`);
