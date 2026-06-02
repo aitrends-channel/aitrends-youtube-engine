@@ -332,7 +332,7 @@ body {
 /* Always-visible scrollbar for overflow containers that benefit from a
    clear scroll affordance (image / video grids on the generate page). */
 .scroll-visible { scrollbar-width: thin; scrollbar-color: oklch(0.45 0 0) transparent; }
-.scroll-visible::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll-visible::-webkit-scrollbar { width: 12px; height: 12px; }
 .scroll-visible::-webkit-scrollbar-track { background: oklch(0.2 0 0 / 0.4); border-radius: 4px; }
 .scroll-visible::-webkit-scrollbar-thumb { background: oklch(0.45 0 0); border-radius: 4px; }
 .scroll-visible::-webkit-scrollbar-thumb:hover { background: oklch(0.55 0 0); }
