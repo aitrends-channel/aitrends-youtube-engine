@@ -32,7 +32,7 @@ function friendlyError(raw: string | undefined | null): string {
   if (msg.includes("this field is required"))
     return "Video model rejected the request — try a different video model";
   if (msg.includes("timed out") || msg.includes("timeout"))
-    return "Generation timed out — try again or use a simpler prompt";
+    return "Generation timed out — try a different model";
   if (msg.includes("no task id") || msg.includes("no taskid"))
     return "Failed to queue task — the model may be unavailable, try another";
   if (msg.includes("no url") || msg.includes("no image url") || msg.includes("completed but no url"))
