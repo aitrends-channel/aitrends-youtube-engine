@@ -509,26 +509,54 @@ export default function AssemblePage({ params }: PageProps) {
                       </div>
                     </div>
 
-                    <ul className="space-y-1.5">
+                    <ul className="space-y-2">
                       {stages.map((s, i) => {
                         const done = i < currentIdx;
                         const doing = i === currentIdx;
+                        /* Per-stage progress: parse "X of N" out of the status
+                           when possible (clips stage). Otherwise we show an
+                           indeterminate animated stripe so the user still sees
+                           the stage is actively working. */
+                        const clipMatch = doing ? assembleStatus.match(/(\d+)\s+of\s+(\d+)/i) : null;
+                        const stagePct = done
+                          ? 100
+                          : doing && clipMatch
+                          ? Math.round((parseInt(clipMatch[1], 10) / parseInt(clipMatch[2], 10)) * 100)
+                          : 0;
+                        const showIndeterminate = doing && !clipMatch;
                         return (
-                          <li key={s.key} className="flex items-center gap-2 text-xs">
-                            <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
-                              style={{
-                                background: done ? "oklch(0.55 0.15 145 / 0.15)" : doing ? "oklch(0.72 0.25 285 / 0.15)" : "var(--bg-track)",
-                                border: `1px solid ${done ? "oklch(0.55 0.15 145 / 0.4)" : doing ? "oklch(0.72 0.25 285 / 0.4)" : "var(--bd-7)"}`,
-                                color: done ? "oklch(0.7 0.15 145)" : doing ? "oklch(0.88 0.12 285)" : "var(--c-35)",
-                                fontSize: "9px",
-                              }}>
-                              {done ? "✓" : doing ? (
-                                <span className="w-2 h-2 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" />
-                              ) : i + 1}
-                            </span>
-                            <span style={{ color: done ? "var(--c-55)" : doing ? "var(--c-65)" : "var(--c-40)", fontWeight: doing ? 600 : 400 }}>
-                              {s.label}
-                            </span>
+                          <li key={s.key} className="space-y-1">
+                            <div className="flex items-center gap-2 text-xs">
+                              <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
+                                style={{
+                                  background: done ? "oklch(0.55 0.15 145 / 0.15)" : doing ? "oklch(0.72 0.25 285 / 0.15)" : "var(--bg-track)",
+                                  border: `1px solid ${done ? "oklch(0.55 0.15 145 / 0.4)" : doing ? "oklch(0.72 0.25 285 / 0.4)" : "var(--bd-7)"}`,
+                                  color: done ? "oklch(0.7 0.15 145)" : doing ? "oklch(0.88 0.12 285)" : "var(--c-35)",
+                                  fontSize: "9px",
+                                }}>
+                                {done ? "✓" : doing ? (
+                                  <span className="w-2 h-2 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" />
+                                ) : i + 1}
+                              </span>
+                              <span className="flex-1" style={{ color: done ? "var(--c-55)" : doing ? "var(--c-65)" : "var(--c-40)", fontWeight: doing ? 600 : 400 }}>
+                                {s.label}
+                              </span>
+                              {doing && clipMatch && (
+                                <span className="text-[10px]" style={{ color: "var(--c-55)" }}>{stagePct}%</span>
+                              )}
+                            </div>
+                            <div className="ml-6 h-1 rounded-full overflow-hidden relative" style={{ background: "var(--bg-track)" }}>
+                              {showIndeterminate ? (
+                                <div className="progress-indeterminate h-full"
+                                  style={{ background: "oklch(0.72 0.25 285)" }} />
+                              ) : (
+                                <div className="h-full transition-all duration-500"
+                                  style={{
+                                    width: `${stagePct}%`,
+                                    background: done ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)",
+                                  }} />
+                              )}
+                            </div>
                           </li>
                         );
                       })}
