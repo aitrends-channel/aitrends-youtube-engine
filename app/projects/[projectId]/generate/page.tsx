@@ -772,78 +772,79 @@ export default function GeneratePage({ params }: PageProps) {
                 )}
               </div>
             </div>
-            <div className="p-5 mt-auto space-y-3">
-              {ttsUrl ? (
-                <div className="space-y-3">
-                  {/* Original voiceover */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Original</span>
-                      <a href={ttsUrl} download="voiceover-original.mp3"
-                        className="text-xs" style={{ color: "var(--c-45)" }}>
-                        ↓ Download
-                      </a>
-                    </div>
-                    <audio controls src={ttsUrl} className="w-full h-8" />
-                  </div>
-
-                  {/* Trimmed voiceover */}
-                  {ttsCleanedUrl && (
+            {/* Middle block — mirrors image/video panel structure.
+                Audio players when ready, or in-flight status while generating. */}
+            {(ttsUrl || generatingTts) && (
+              <div className="px-5 pt-4 space-y-3">
+                {ttsUrl ? (
+                  <>
                     <div className="space-y-1">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Trimmed</span>
-                        <a href={ttsCleanedUrl} download="voiceover-trimmed.mp3"
+                        <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Original</span>
+                        <a href={ttsUrl} download="voiceover-original.mp3"
                           className="text-xs" style={{ color: "var(--c-45)" }}>
                           ↓ Download
                         </a>
                       </div>
-                      <audio controls src={ttsCleanedUrl} className="w-full h-8" />
+                      <audio controls src={ttsUrl} className="w-full h-8" />
                     </div>
-                  )}
-
-                  {/* Actions */}
-                  <div className="flex gap-2">
-                    <button onClick={removePauses} disabled={removingPauses || generatingTts}
-                      className="flex-1 py-2 rounded-lg text-xs font-medium disabled:opacity-40 transition-all"
-                      style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
-                      {removingPauses ? (
-                        <span className="flex items-center justify-center gap-1.5">
-                          <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                          {removePausesStatus || "Trimming…"}
-                        </span>
-                      ) : ttsCleanedUrl ? "Re-trim" : "Trim Pauses"}
-                    </button>
-                    <button onClick={() => generateVoiceover(selectedTtsModel)} disabled={generatingTts}
-                      className="px-3 py-2 rounded-lg text-xs disabled:opacity-40"
-                      style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
-                      Regen
-                    </button>
+                    {ttsCleanedUrl && (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Trimmed</span>
+                          <a href={ttsCleanedUrl} download="voiceover-trimmed.mp3"
+                            className="text-xs" style={{ color: "var(--c-45)" }}>
+                            ↓ Download
+                          </a>
+                        </div>
+                        <audio controls src={ttsCleanedUrl} className="w-full h-8" />
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="space-y-1.5">
+                    <p className="text-xs text-center" style={{ color: "var(--c-55)" }}>{ttsStatusMsg}</p>
+                    {ttsProgress && ttsProgress.total > 1 && (
+                      <ProgressBar value={ttsProgress.current} total={ttsProgress.total} />
+                    )}
                   </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {generatingTts && (
-                    <div className="space-y-1.5">
-                      <p className="text-xs text-center" style={{ color: "var(--c-55)" }}>{ttsStatusMsg}</p>
-                      {ttsProgress && ttsProgress.total > 1 && (
-                        <ProgressBar value={ttsProgress.current} total={ttsProgress.total} />
-                      )}
-                    </div>
-                  )}
-                  <button
-                    onClick={() => generateVoiceover(selectedTtsModel)}
-                    disabled={generatingTts || !selectedTtsModel || !script}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
-                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-                  >
-                    {generatingTts ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        Generating…
+                )}
+              </div>
+            )}
+
+            <div className="p-5 mt-auto space-y-2">
+              {ttsUrl ? (
+                <div className="flex gap-2">
+                  <button onClick={removePauses} disabled={removingPauses || generatingTts}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-medium disabled:opacity-40 transition-all"
+                    style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
+                    {removingPauses ? (
+                      <span className="flex items-center justify-center gap-1.5">
+                        <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        {removePausesStatus || "Trimming…"}
                       </span>
-                    ) : "Generate Voiceover"}
+                    ) : ttsCleanedUrl ? "Re-trim" : "Trim Pauses"}
+                  </button>
+                  <button onClick={() => generateVoiceover(selectedTtsModel)} disabled={generatingTts}
+                    className="px-4 py-2.5 rounded-xl text-sm font-medium disabled:opacity-40"
+                    style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
+                    Regen
                   </button>
                 </div>
+              ) : (
+                <button
+                  onClick={() => generateVoiceover(selectedTtsModel)}
+                  disabled={generatingTts || !selectedTtsModel || !script}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                >
+                  {generatingTts ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      Generating…
+                    </span>
+                  ) : "Generate Voiceover"}
+                </button>
               )}
             </div>
           </div>
@@ -1111,59 +1112,48 @@ export default function GeneratePage({ params }: PageProps) {
               })()}
             </div>
 
-            {/* Video clip grid */}
-            {beats.some((b) => b.videoUrl || b.videoStatus) && (
+            {/* Video clip grid — mirrors image panel structure: progress + grid in one block,
+                shown whenever there's any video activity OR a queue has been submitted. */}
+            {(beats.some((b) => b.videoUrl || b.videoStatus) || videosSubmitted) && (
               <div className="px-5 pt-4">
                 <ProgressBar value={generatedVideos} total={videoBeats} />
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-72 overflow-y-auto scroll-visible pr-1">
-                  {beats.filter((b) => b.videoPrompt).map((b) => (
-                    <div
-                      key={b.beatNumber}
-                      className="aspect-video rounded-lg overflow-hidden flex items-center justify-center"
-                      style={{ background: "var(--bg-progress)" }}
-                      onMouseEnter={() => {
-                        if (!b.videoUrl) return;
-                        if (videoHideTimer.current) clearTimeout(videoHideTimer.current);
-                        setHoveredVideoBeat(b);
-                      }}
-                      onMouseLeave={() => {
-                        videoHideTimer.current = setTimeout(() => setHoveredVideoBeat(null), 200);
-                      }}
-                    >
-                      {b.videoUrl ? (
-                        <video src={b.videoUrl} title={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
-                      ) : (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded"
-                          title={b.videoStatus === "failed" && b.videoError ? b.videoError : undefined}
-                          style={{
-                            background: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285 / 0.1)" : b.videoStatus === "done" ? "oklch(0.55 0.15 145 / 0.1)" : b.videoStatus === "failed" ? "oklch(0.6 0.22 25 / 0.1)" : "var(--bg-track)",
-                            color: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285)" : b.videoStatus === "done" ? "oklch(0.7 0.15 145)" : b.videoStatus === "failed" ? "oklch(0.7 0.2 25)" : "var(--c-35)",
-                            cursor: b.videoStatus === "failed" && b.videoError ? "help" : undefined,
-                          }}>
-                          {b.videoStatus ?? "—"}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                {beats.some((b) => b.videoUrl || b.videoStatus) && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-72 overflow-y-auto scroll-visible pr-1">
+                    {beats.filter((b) => b.videoPrompt).map((b) => (
+                      <div
+                        key={b.beatNumber}
+                        className="aspect-video rounded-lg overflow-hidden flex items-center justify-center"
+                        style={{ background: "var(--bg-progress)" }}
+                        onMouseEnter={() => {
+                          if (!b.videoUrl) return;
+                          if (videoHideTimer.current) clearTimeout(videoHideTimer.current);
+                          setHoveredVideoBeat(b);
+                        }}
+                        onMouseLeave={() => {
+                          videoHideTimer.current = setTimeout(() => setHoveredVideoBeat(null), 200);
+                        }}
+                      >
+                        {b.videoUrl ? (
+                          <video src={b.videoUrl} title={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
+                        ) : (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded"
+                            title={b.videoStatus === "failed" && b.videoError ? b.videoError : undefined}
+                            style={{
+                              background: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285 / 0.1)" : b.videoStatus === "done" ? "oklch(0.55 0.15 145 / 0.1)" : b.videoStatus === "failed" ? "oklch(0.6 0.22 25 / 0.1)" : "var(--bg-track)",
+                              color: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285)" : b.videoStatus === "done" ? "oklch(0.7 0.15 145)" : b.videoStatus === "failed" ? "oklch(0.7 0.2 25)" : "var(--c-35)",
+                              cursor: b.videoStatus === "failed" && b.videoError ? "help" : undefined,
+                            }}>
+                            {b.videoStatus ?? "—"}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
             <div className="p-5 mt-auto space-y-2">
-              <p className="text-xs" style={{ color: "var(--c-40)" }}>
-                {(() => {
-                  const workingId = project?.video_model_id as string | undefined;
-                  const workingName = videoModels?.find((m) => m.id === workingId)?.name ?? workingId;
-                  return workingName ? (
-                    <>Using <span style={{ color: "var(--c-65)", fontWeight: 600 }}>{workingName}</span> — clips appear as each job completes.</>
-                  ) : (
-                    "Runs in background — clips appear as each job completes."
-                  );
-                })()}
-              </p>
-              {videosSubmitted && (
-                <ProgressBar value={generatedVideos} total={videoBeats} />
-              )}
               {failedVideos > 0 && !hasActiveVideos && (() => {
                 const workingId = project?.video_model_id as string | undefined;
                 const workingName = videoModels?.find((m) => m.id === workingId)?.name ?? "the selected model";
