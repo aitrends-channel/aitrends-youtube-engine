@@ -728,8 +728,8 @@ export default function ThumbnailsPage({ params }: PageProps) {
         </div>
       </main>
 
-      {/* Fixed Done bar */}
-      {hasImages && (
+      {/* Fixed Done bar — only when every thumbnail concept has rendered */}
+      {allImagesGenerated && (
         <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
           <div className="px-4 sm:px-8 max-w-5xl mx-auto">
