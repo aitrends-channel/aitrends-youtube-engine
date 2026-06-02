@@ -6,5 +6,11 @@
       "permanent": true,
       "has": [{ "type": "host", "value": "aitrends-youtube-engine.vercel.app" }]
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/worker-keepalive",
+      "schedule": "*/10 * * * *"
+    }
   ]
 }
