@@ -554,7 +554,7 @@ function SetupSection({
           <SlidersHorizontal size={16} style={{ color: "oklch(0.62 0.15 220)" }} />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-foreground">Setup</h2>
+          <h2 className="text-lg font-bold text-foreground">Config</h2>
           <p className="text-xs" style={{ color: "var(--c-42)" }}>Product-wide API keys — first key is default, auto-rotates on quota exceeded</p>
         </div>
         {setupTab === "keys" && (
@@ -1255,7 +1255,7 @@ export default function AdminPage() {
             { id: "projects", label: "Videos",   icon: Clapperboard },
             { id: "revenue",  label: "Revenue",  icon: DollarSign },
             { id: "logs",     label: "Logs",     icon: FileText },
-            { id: "setup",    label: "Setup",    icon: SlidersHorizontal },
+            { id: "setup",    label: "Config",   icon: SlidersHorizontal },
           ] as const;
 
           const tabButtons = (TAB_ITEMS).map(({ id, label, icon: Icon }) => (
