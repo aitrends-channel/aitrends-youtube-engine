@@ -272,18 +272,33 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
   send({ type: "status", message: "Loading beats..." });
 
   const [beatsRes, projectRes] = await Promise.all([
-    supabase.from("project_beats").select("beat_number, script_segment, image_prompt").eq("project_id", projectId).order("beat_number"),
+    supabase.from("project_beats").select("beat_number, script_segment, image_prompt, video_prompt").eq("project_id", projectId).order("beat_number"),
     supabase.from("projects").select("visual_profile").eq("id", projectId).eq("user_id", userId).single(),
   ]);
 
   if (beatsRes.error || !beatsRes.data?.length) throw new Error("No image beats found — generate image prompts first.");
 
   const visualProfile = (projectRes.data?.visual_profile ?? null) as VisualProfileOutput | null;
-  const beats = beatsRes.data.map((b) => ({
+
+  // Resume support: skip beats that already have a video_prompt from a
+  // prior (timed-out / errored) run. Only build chunks from the beats
+  // that still need processing.
+  const allBeats = beatsRes.data.map((b) => ({
     beatNumber: b.beat_number as number,
     scriptSegment: b.script_segment as string,
     imagePrompt: b.image_prompt as string,
+    hasVideoPrompt: !!b.video_prompt,
   }));
+  const alreadyDoneCount = allBeats.filter((b) => b.hasVideoPrompt).length;
+  const pendingBeats = allBeats
+    .filter((b) => !b.hasVideoPrompt)
+    .map((b) => ({ beatNumber: b.beatNumber, scriptSegment: b.scriptSegment, imagePrompt: b.imagePrompt }));
+
+  if (pendingBeats.length === 0) {
+    send({ type: "status", message: "All video prompts already generated." });
+    send({ type: "done", beatCount: allBeats.length });
+    return;
+  }
 
   // Smaller chunks + more output headroom. Opus occasionally ignores
   // tool_choice and emits a fake `<tool_calls>` text format; when that
@@ -292,12 +307,17 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
   // the model's tendency to drift, with extractBeatsFromText as the
   // text-mode safety net.
   const CHUNK_SIZE = 5;
-  const chunks: typeof beats[] = [];
-  for (let i = 0; i < beats.length; i += CHUNK_SIZE) chunks.push(beats.slice(i, i + CHUNK_SIZE));
+  const chunks: typeof pendingBeats[] = [];
+  for (let i = 0; i < pendingBeats.length; i += CHUNK_SIZE) chunks.push(pendingBeats.slice(i, i + CHUNK_SIZE));
 
-  send({ type: "status", message: `Generating motion prompts for ${beats.length} beats...` });
+  console.log(`[video-prompts] start project=${projectId} totalBeats=${allBeats.length} alreadyDone=${alreadyDoneCount} pending=${pendingBeats.length} chunks=${chunks.length}`);
 
-  const allVideoBeats: Array<{ beatNumber: number; videoPrompt: string }> = [];
+  send({
+    type: "status",
+    message: alreadyDoneCount > 0
+      ? `Resuming — ${pendingBeats.length} motion prompt${pendingBeats.length === 1 ? "" : "s"} left (${alreadyDoneCount} already done)...`
+      : `Generating motion prompts for ${pendingBeats.length} beats...`,
+  });
 
   for (let i = 0; i < chunks.length; i++) {
     if (chunks.length > 1) send({ type: "progress", current: i + 1, total: chunks.length });
@@ -344,19 +364,25 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
       }
     }
 
-    if (!input) throw new Error(`No video prompts for batch ${i + 1} after retry`);
-    if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Empty video prompts for batch ${i + 1}`);
+    if (!input) throw new Error(`No video prompts for batch ${i + 1} after retry. Try again — any prompts saved so far are preserved.`);
+    if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Empty video prompts for batch ${i + 1}. Try again — any prompts saved so far are preserved.`);
 
-    allVideoBeats.push(...VideoPromptsSchema.parse(input).beats);
+    const chunkBeats = VideoPromptsSchema.parse(input).beats;
+
+    // Persist this chunk's video prompts immediately so a later failure
+    // doesn't undo this chunk's work.
+    await Promise.all(
+      chunkBeats.map((b) =>
+        supabase
+          .from("project_beats")
+          .update({ video_prompt: b.videoPrompt })
+          .eq("project_id", projectId)
+          .eq("beat_number", b.beatNumber)
+      )
+    );
   }
 
-  await Promise.all(
-    allVideoBeats.map((b) =>
-      supabase.from("project_beats").update({ video_prompt: b.videoPrompt }).eq("project_id", projectId).eq("beat_number", b.beatNumber)
-    )
-  );
-
-  send({ type: "done", beatCount: allVideoBeats.length });
+  send({ type: "done", beatCount: allBeats.length });
 }
 
 // ── Step 3: Thumbnails ─────────────────────────────────────────────────────
