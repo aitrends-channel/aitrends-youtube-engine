@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import type { Beat } from "@/lib/types";
 
 // ── Sub-components ─────────────────────────────────────────────────────────
@@ -249,10 +250,7 @@ function StepCard({ num, title, description, state, doneLabel, disabled, optiona
       <div className="shrink-0 flex items-start gap-2">
         {onClear && !isRunning && (isDone || isError) && (
           <button
-            onClick={() => {
-              if (typeof window !== "undefined" && !window.confirm("Clear generated prompts? This wipes them from the database and can't be undone.")) return;
-              Promise.resolve(onClear()).catch(() => { /* surfaced via toast in caller */ });
-            }}
+            onClick={() => { Promise.resolve(onClear()).catch(() => { /* surfaced via toast in caller */ }); }}
             className="px-3 py-1.5 rounded-lg text-xs font-medium transition-opacity"
             style={{ background: "transparent", color: "var(--c-50)", border: "1px solid var(--bd-8)" }}
           >
@@ -353,6 +351,8 @@ export default function PromptsPage({ params }: PageProps) {
   const [videoStep, setVideoStep] = useState<StepState>(IDLE);
   const [activeTab, setActiveTab] = useState<Tab>("beats");
   const [navigating, setNavigating] = useState(false);
+  const [clearTarget, setClearTarget] = useState<"image" | "video" | null>(null);
+  const [clearing, setClearing] = useState(false);
 
   const beats: Beat[] = project?.beats ?? [];
   const videoBeats = beats.filter((b) => b.videoPrompt);
@@ -410,42 +410,35 @@ export default function PromptsPage({ params }: PageProps) {
     }
   }
 
-  async function clearImagePrompts() {
+  async function confirmClear() {
+    if (!clearTarget) return;
+    setClearing(true);
     try {
+      const body = clearTarget === "image"
+        ? { clear_image_prompts: true }
+        : { clear_video_prompts: true };
       const res = await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clear_image_prompts: true }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(err.error ?? "Failed to clear image prompts");
+        throw new Error(err.error ?? "Failed to clear");
       }
-      setImageStep(IDLE);
-      setVideoStep(IDLE); // video prompts live on the same rows
+      if (clearTarget === "image") {
+        setImageStep(IDLE);
+        setVideoStep(IDLE); // video prompts live on the same rows
+      } else {
+        setVideoStep(IDLE);
+      }
       await mutate();
-      toast.success("Cleared image prompts");
+      toast.success(clearTarget === "image" ? "Cleared image prompts" : "Cleared video prompts");
+      setClearTarget(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to clear");
-    }
-  }
-
-  async function clearVideoPrompts() {
-    try {
-      const res = await fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clear_video_prompts: true }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({})) as { error?: string };
-        throw new Error(err.error ?? "Failed to clear video prompts");
-      }
-      setVideoStep(IDLE);
-      await mutate();
-      toast.success("Cleared video prompts");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to clear");
+    } finally {
+      setClearing(false);
     }
   }
 
@@ -507,7 +500,7 @@ export default function PromptsPage({ params }: PageProps) {
             state={effectiveImage}
             doneLabel={beats.length > 0 ? `${beats.length} beats ready` : undefined}
             actionLabel={imageActionLabel}
-            onClear={hasImageBeats ? clearImagePrompts : null}
+            onClear={hasImageBeats ? () => setClearTarget("image") : null}
             onGenerate={runImageStep}
           />
           <StepCard
@@ -517,7 +510,7 @@ export default function PromptsPage({ params }: PageProps) {
             state={effectiveVideo}
             doneLabel={videoBeats.length > 0 ? `${videoBeats.length} beats ready` : undefined}
             actionLabel={videoActionLabel}
-            onClear={hasVideoBeats ? clearVideoPrompts : null}
+            onClear={hasVideoBeats ? () => setClearTarget("video") : null}
             disabled={!hasImageBeats}
             optional
             onGenerate={runVideoStep}
@@ -627,6 +620,44 @@ export default function PromptsPage({ params }: PageProps) {
           </div>
         </div>
       )}
+
+      <Dialog open={!!clearTarget} onOpenChange={(open) => { if (!open && !clearing) setClearTarget(null); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>
+              {clearTarget === "image" ? "Clear image prompts?" : "Clear video prompts?"}
+            </DialogTitle>
+            <DialogDescription>
+              {clearTarget === "image"
+                ? `This permanently removes all ${beats.length} image beat${beats.length === 1 ? "" : "s"} from the database. Video prompts attached to those beats will also be cleared. This can't be undone.`
+                : `This removes the video prompts from all ${videoBeats.length} beat${videoBeats.length === 1 ? "" : "s"}. Image prompts and beat metadata stay intact. This can't be undone.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setClearTarget(null)}
+              disabled={clearing}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmClear}
+              disabled={clearing}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.5 0.22 25)", color: "white" }}
+            >
+              {clearing ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  Clearing…
+                </span>
+              ) : "Clear"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
