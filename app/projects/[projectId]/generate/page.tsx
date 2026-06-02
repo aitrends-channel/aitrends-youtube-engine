@@ -254,6 +254,13 @@ export default function GeneratePage({ params }: PageProps) {
   const pendingVideos = beats.filter((b) => b.videoPrompt && !b.videoUrl).length;
   const queuedVideos = beats.filter((b) => b.videoStatus === "queued").length;
   const pausedVideos = beats.filter((b) => b.videoStatus === "paused").length;
+  // Video clips need an image to motion-render off of. Block all video
+  // actions until every beat has its image done.
+  const imagesReady = totalBeats > 0 && generatedImages === totalBeats;
+  const videosBlockedByImages = !imagesReady;
+  const videoBlockReason = videosBlockedByImages
+    ? `Waiting on images — ${generatedImages}/${totalBeats} done`
+    : undefined;
 
   // Derive display URLs from DB data; use pending state only during active operations
   const ttsUrl = generatingTts ? null : (pendingTtsUrl ?? project?.tts_url ?? null);
@@ -1162,7 +1169,8 @@ export default function GeneratePage({ params }: PageProps) {
               ) : pausedVideos > 0 ? (
                 <button
                   onClick={resumeVideos}
-                  disabled={!selectedVideoModel || resumingVideos}
+                  disabled={!selectedVideoModel || resumingVideos || videosBlockedByImages}
+                  title={videoBlockReason}
                   className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-3"
                   style={{ background: "oklch(0.7 0.15 145)", color: "var(--bg-page-2)" }}
                 >
@@ -1190,7 +1198,8 @@ export default function GeneratePage({ params }: PageProps) {
               ) : failedVideos > 0 && pendingVideos === failedVideos ? (
                 <button
                   onClick={() => queueVideos("failed")}
-                  disabled={!selectedVideoModel}
+                  disabled={!selectedVideoModel || videosBlockedByImages}
+                  title={videoBlockReason}
                   className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-3"
                   style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                 >
@@ -1199,11 +1208,14 @@ export default function GeneratePage({ params }: PageProps) {
               ) : (
                 <button
                   onClick={() => queueVideos("all")}
-                  disabled={!selectedVideoModel || !pendingVideos || hasActiveVideos}
+                  disabled={!selectedVideoModel || !pendingVideos || hasActiveVideos || videosBlockedByImages}
+                  title={videoBlockReason}
                   className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-3"
                   style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                 >
-                  Queue {pendingVideos} Video Clip{pendingVideos === 1 ? "" : "s"}
+                  {videosBlockedByImages
+                    ? `Waiting on images (${generatedImages}/${totalBeats})`
+                    : `Queue ${pendingVideos} Video Clip${pendingVideos === 1 ? "" : "s"}`}
                 </button>
               )}
               {/* Show the secondary "Retry Failed" only when there are also some
@@ -1212,7 +1224,8 @@ export default function GeneratePage({ params }: PageProps) {
               {failedVideos > 0 && pendingVideos > failedVideos && !hasActiveVideos && !queuingVideos && (
                 <button
                   onClick={() => queueVideos("failed")}
-                  disabled={!selectedVideoModel}
+                  disabled={!selectedVideoModel || videosBlockedByImages}
+                  title={videoBlockReason}
                   className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all mt-2"
                   style={{ background: "transparent", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285)" }}
                 >
@@ -1228,7 +1241,6 @@ export default function GeneratePage({ params }: PageProps) {
       {/* Fixed bottom bar */}
       {(() => {
         const voiceoverReady = !!ttsUrl;
-        const imagesReady = totalBeats > 0 && generatedImages === totalBeats;
         const videosReady = videoBeats === 0 || generatedVideos === videoBeats;
         const canContinue = voiceoverReady && imagesReady && videosReady;
         const missing = [
