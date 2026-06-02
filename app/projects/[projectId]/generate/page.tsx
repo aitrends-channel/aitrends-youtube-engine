@@ -1264,7 +1264,12 @@ export default function GeneratePage({ params }: PageProps) {
       {/* Fixed bottom bar */}
       {(() => {
         const voiceoverReady = !!ttsUrl;
-        const videosReady = videoBeats === 0 || generatedVideos === videoBeats;
+        // Videos are "ready enough" to assemble when every beat is either
+        // done or terminally failed and nothing is in flight. Failed beats
+        // fall back to their image at assembly time on the worker.
+        const videosResolved = generatedVideos + failedVideos;
+        const videosReady = videoBeats === 0 || (videosResolved === videoBeats && !hasActiveVideos && !pausedVideos && !queuedVideos);
+        const proceedingWithFailures = videosReady && failedVideos > 0;
         const canContinue = voiceoverReady && imagesReady && videosReady;
         const missing = [
           !voiceoverReady && "voiceover",
@@ -1279,6 +1284,11 @@ export default function GeneratePage({ params }: PageProps) {
               {!canContinue && !navigating && (
                 <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
                   Still needed: {missing}
+                </p>
+              )}
+              {proceedingWithFailures && !navigating && (
+                <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
+                  {failedVideos} clip{failedVideos === 1 ? "" : "s"} failed — the matching image{failedVideos === 1 ? "" : "s"} will be used in those spots.
                 </p>
               )}
               <button
