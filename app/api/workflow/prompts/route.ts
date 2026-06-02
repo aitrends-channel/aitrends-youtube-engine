@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
-import { streamGeminiText } from "@/lib/gemini/client";
 import {
   buildImagePromptsPrompt,
   buildVideoPromptsPrompt,
@@ -123,15 +122,14 @@ async function generateImages(
   send: (data: object) => void
 ) {
   console.log(`[image-prompts] start project=${projectId} scriptWords=${script.trim().split(/\s+/).filter(Boolean).length}`);
+  const anthropic = await getAnthropicClient(userId);
 
-  // Each beat's structured output runs ~80-150 output tokens (Haiku
-  // tends to be more verbose per beat than Opus). 8192 max_tokens
-  // ceiling on the model side means each chunk needs to stay safely
-  // under ~50 beats. At ~15 words/beat per the prompt's density target,
-  // that's ~750 script words per chunk. 1316 words in one chunk was
-  // overflowing — Haiku hit max_tokens and we lost everything past
-  // that point.
-  const SCRIPT_CHUNK_WORDS = 750;
+  // Smaller chunks = smaller per-call payload = more chances of getting
+  // past KIE+Opus's intermittent 500s. ~500 words/chunk produces ~30
+  // beats × ~150 tokens ≈ 4500 output tokens, well under the 8192
+  // ceiling, and each call finishes faster (30-60s typical) reducing
+  // the surface area for KIE to drop the connection.
+  const SCRIPT_CHUNK_WORDS = 500;
   const words = script.trim().split(/\s+/).filter(Boolean);
   const allChunks: string[] = [];
   for (let i = 0; i < words.length; i += SCRIPT_CHUNK_WORDS) {
@@ -201,47 +199,41 @@ async function generateImages(
     const t0 = Date.now();
     console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} startBeat=${nextBeatNumber} words=${content.split(/\s+/).length}`);
 
-    // Image-prompts runs on Gemini 2.5 Flash via KIE's OpenAI-compat
-    // endpoint. We tried Opus through the Claude proxy and Haiku too,
-    // both hit sustained KIE-side issues today (500 storms, idle
-    // timeouts on long structured outputs). Gemini runs on a different
-    // inference path — no Anthropic dependency, no tool_use forcing,
-    // just streamed JSON output we parse with the same helper used by
-    // the analyze + video-prompts text-mode fallbacks.
-    let rawText = "";
-    const jsonPrompt =
-      `${buildImagePromptsPrompt(content, visualProfile, nextBeatNumber)}\n\n` +
-      `OUTPUT FORMAT\n` +
-      `Return ONLY a single JSON object — no markdown fences, no commentary, no preamble.\n` +
-      `Shape: {"beats":[{"beatNumber":1,"scriptSegment":"...","imagePrompt":"...","camera":"...","lighting":"...","mood":"...","action":"..."}, ...]}\n` +
-      `Every field is required on every beat.`;
+    // Streaming + tool_use on Opus. Streaming keeps KIE's connection
+    // warm with continuous delta events, and the SDK rebuilds the full
+    // Message via finalMessage() so the parse logic stays the same.
+    // Retry policy is bumped specifically for image-prompts (the chunk
+    // most affected by KIE upstream blips): 5 attempts with longer
+    // backoff buys time for transient KIE issues to clear.
+    const res = await retryClaudeCall(
+      `image prompts chunk ${chunkIndex + 1}/${totalChunks}`,
+      async () => {
+        const stream = anthropic.messages.stream({
+          model: MODEL,
+          max_tokens: 8192,
+          system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+          tools: [{ name: "save_image_prompts", description: "Save image prompts for every visual beat in the chunk", input_schema: imagePromptsInputSchema }],
+          tool_choice: { type: "tool", name: "save_image_prompts" },
+          messages: [{ role: "user", content: buildImagePromptsPrompt(content, visualProfile, nextBeatNumber) }],
+        });
+        for await (const _event of stream) { void _event; }
+        return stream.finalMessage();
+      },
+      5
+    );
 
-    await retryClaudeCall(`image prompts chunk ${chunkIndex + 1}/${totalChunks}`, async () => {
-      rawText = "";
-      await streamGeminiText({
-        userId: userId,
-        maxTokens: 16384,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: jsonPrompt },
-        ],
-        onDelta: (delta) => { rawText += delta; },
-      });
-    });
-
-    console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} done in ${Date.now() - t0}ms streamedChars=${rawText.length}`);
+    console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} done in ${Date.now() - t0}ms stop=${res.stop_reason}`);
+    assertComplete(res.stop_reason, `image prompts chunk ${chunkIndex + 1}/${totalChunks}`);
 
     let input: Record<string, unknown> | null = null;
-    try {
-      // Gemini sometimes wraps the JSON in ```json fences despite the
-      // explicit instruction. Strip them before parsing.
-      const cleaned = rawText.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
-      input = JSON.parse(cleaned) as Record<string, unknown>;
-    } catch {
-      // Fallback: use the generic tool-input extractor (handles partial
-      // JSON, leading commentary, etc.)
-      console.log(`[image-prompts] chunk ${chunkIndex + 1} fallback parsing text head=${rawText.slice(0, 200)}`);
-      input = extractToolInputFromText(rawText);
+    const tool = res.content.find((b) => b.type === "tool_use");
+    if (tool && tool.type === "tool_use") {
+      input = tool.input as Record<string, unknown>;
+    } else {
+      const textBlock = res.content.find((b) => b.type === "text");
+      const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
+      console.log(`[image-prompts] chunk ${chunkIndex + 1} fallback parsing text len=${raw.length} head=${raw.slice(0, 200)}`);
+      input = extractToolInputFromText(raw);
       if (input) console.log(`[image-prompts] chunk ${chunkIndex + 1} fallback recovered ${(input.beats as unknown[])?.length ?? 0} beats`);
     }
 
