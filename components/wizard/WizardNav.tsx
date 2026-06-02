@@ -210,7 +210,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
   const progressFooter = (
     <>
       <div className="px-5 py-4 border-t" style={{ borderColor: "var(--bd-7)" }}>
-        <div className="flex justify-between text-xs mb-2" style={{ color: "var(--c-45)" }}>
+        <div className="flex justify-between text-xs mb-2" style={{ color: progressPct === 100 ? "oklch(0.7 0.15 145)" : "var(--c-45)" }}>
           <span>Progress</span>
           <span>{progressPct}%</span>
         </div>
@@ -219,7 +219,9 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
             className="h-full rounded-full transition-all duration-500"
             style={{
               width: `${progressPct}%`,
-              background: "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+              background: progressPct === 100
+                ? "linear-gradient(90deg, oklch(0.55 0.15 145), oklch(0.65 0.18 155))"
+                : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
               boxShadow: "0 0 8px oklch(0.72 0.25 285 / 0.5)",
             }}
           />
