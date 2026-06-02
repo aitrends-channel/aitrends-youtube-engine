@@ -472,21 +472,81 @@ export default function AssemblePage({ params }: PageProps) {
                 />
               )}
 
-              {assembling && (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-center gap-2">
-                    <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin shrink-0"
-                      style={{ color: "oklch(0.72 0.25 285)" }} />
-                    <p className="text-xs text-center" style={{ color: "var(--c-55)" }}>{assembleStatus}</p>
+              {assembling && (() => {
+                /* Stage-aware progress: the worker emits short status strings
+                   for each phase via setProgress(); we match the current one
+                   to a known stage and render every stage with a done/doing/
+                   pending indicator + an overall % bar. */
+                const stages = [
+                  { key: "load",       label: "Load project",        match: (s: string) => s.startsWith("Loading") || s === "Queued…" || s === "Starting…" },
+                  { key: "voiceover",  label: "Download voiceover",  match: (s: string) => s.startsWith("Downloading") },
+                  ...(captionsEnabled ? [{ key: "transcribe", label: "Transcribe voiceover", match: (s: string) => s.startsWith("Transcribing") }] : []),
+                  { key: "clips",      label: "Process video clips", match: (s: string) => s.startsWith("Processing") },
+                  { key: "join",       label: "Join clips",          match: (s: string) => s.startsWith("Joining") },
+                  { key: "mix",        label: "Mix voiceover",       match: (s: string) => s.startsWith("Mixing") },
+                  ...(captionsEnabled ? [
+                    { key: "gencap",   label: "Generate captions",   match: (s: string) => s.startsWith("Generating") || s.startsWith("Translating") },
+                    { key: "burncap",  label: "Burn captions",       match: (s: string) => s.startsWith("Burning") },
+                  ] : []),
+                  { key: "upload",     label: "Upload to cloud",     match: (s: string) => s.startsWith("Uploading") },
+                ];
+                const currentIdx = (() => {
+                  const i = stages.findIndex((s) => s.match(assembleStatus));
+                  return i === -1 ? 0 : i;
+                })();
+                const pct = Math.round((currentIdx / stages.length) * 100);
+
+                return (
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-xs" style={{ color: "var(--c-45)" }}>
+                        <span>Step {currentIdx + 1} of {stages.length}</span>
+                        <span>{pct}%</span>
+                      </div>
+                      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
+                        <div className="h-full transition-all duration-500"
+                          style={{ width: `${pct}%`, background: "oklch(0.72 0.25 285)" }} />
+                      </div>
+                    </div>
+
+                    <ul className="space-y-1.5">
+                      {stages.map((s, i) => {
+                        const done = i < currentIdx;
+                        const doing = i === currentIdx;
+                        return (
+                          <li key={s.key} className="flex items-center gap-2 text-xs">
+                            <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
+                              style={{
+                                background: done ? "oklch(0.55 0.15 145 / 0.15)" : doing ? "oklch(0.72 0.25 285 / 0.15)" : "var(--bg-track)",
+                                border: `1px solid ${done ? "oklch(0.55 0.15 145 / 0.4)" : doing ? "oklch(0.72 0.25 285 / 0.4)" : "var(--bd-7)"}`,
+                                color: done ? "oklch(0.7 0.15 145)" : doing ? "oklch(0.88 0.12 285)" : "var(--c-35)",
+                                fontSize: "9px",
+                              }}>
+                              {done ? "✓" : doing ? (
+                                <span className="w-2 h-2 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" />
+                              ) : i + 1}
+                            </span>
+                            <span style={{ color: done ? "var(--c-55)" : doing ? "var(--c-65)" : "var(--c-40)", fontWeight: doing ? 600 : 400 }}>
+                              {s.label}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+
+                    <p className="text-[11px] text-center leading-snug" style={{ color: "var(--c-45)" }}>
+                      {assembleStatus || "Working…"}
+                    </p>
+
+                    <button onClick={() => { setAssembling(false); setAssembleStatus(""); }}
+                      className="w-full py-2 rounded-xl text-xs font-medium transition-all"
+                      style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-45)" }}>
+                      Cancel / Restart
+                    </button>
+                    <p className="text-[11px] text-center" style={{ color: "var(--c-35)" }}>Progress updates every ~5 seconds…</p>
                   </div>
-                  <button onClick={() => { setAssembling(false); setAssembleStatus(""); }}
-                    className="w-full py-2 rounded-xl text-xs font-medium transition-all"
-                    style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-45)" }}>
-                    Cancel / Restart
-                  </button>
-                  <p className="text-xs text-center" style={{ color: "var(--c-35)" }}>Progress updates every ~5 seconds…</p>
-                </div>
-              )}
+                );
+              })()}
 
               {!assembling && assembledUrl && (
                 <div>
