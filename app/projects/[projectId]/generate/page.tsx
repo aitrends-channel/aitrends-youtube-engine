@@ -344,6 +344,10 @@ export default function GeneratePage({ params }: PageProps) {
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      // Track whether the stream sent a terminal event. Without this,
+      // a function timeout that drops the connection mid-stream looks
+      // like a silent success — reader exits, no toast, no result.
+      let receivedTerminal = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -353,19 +357,29 @@ export default function GeneratePage({ params }: PageProps) {
         buffer = lines.pop() ?? "";
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
-          const event = JSON.parse(line.slice(6));
+          let event: { type?: string; current?: number; total?: number; message?: string; url?: string };
+          try {
+            event = JSON.parse(line.slice(6));
+          } catch {
+            continue; // skip partial / malformed chunk
+          }
           if (event.type === "progress") {
-            setTtsProgress({ current: event.current, total: event.total });
-            setTtsStatusMsg(`Generating part ${event.current + 1} of ${event.total}...`);
+            setTtsProgress({ current: event.current ?? 0, total: event.total ?? 1 });
+            setTtsStatusMsg(`Generating part ${(event.current ?? 0) + 1} of ${event.total ?? 1}...`);
           } else if (event.type === "status") {
-            setTtsStatusMsg(event.message);
+            setTtsStatusMsg(event.message ?? "");
           } else if (event.type === "done") {
-            setPendingTtsUrl(event.url);
+            receivedTerminal = true;
+            if (event.url) setPendingTtsUrl(event.url);
             toast.success("Voiceover generated!");
           } else if (event.type === "error") {
-            throw new Error(event.message);
+            receivedTerminal = true;
+            throw new Error(event.message ?? "Voiceover generation failed");
           }
         }
+      }
+      if (!receivedTerminal) {
+        throw new Error("Voiceover generation ended unexpectedly — the connection closed before completing. Try again.");
       }
     } catch (err) {
       toast.error(friendlyError(err instanceof Error ? err.message : null));
@@ -915,8 +929,8 @@ export default function GeneratePage({ params }: PageProps) {
                             style={{ background: b.imageUrl ? "oklch(0 0 0 / 0.45)" : "transparent" }}>
                             <button
                               onClick={() => regenerateImage(b)}
-                              disabled={!selectedImageModel || generatingImages}
-                              title={`Regenerate beat ${b.beatNumber}`}
+                              disabled={!selectedImageModel || generatingImages || generatingTts}
+                              title={generatingTts ? "Voiceover is generating — wait for it to finish" : `Regenerate beat ${b.beatNumber}`}
                               className="w-5 h-5 rounded flex items-center justify-center disabled:opacity-40 transition-transform hover:scale-110"
                               style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)", fontSize: "11px", lineHeight: 1 }}
                             >
@@ -934,7 +948,8 @@ export default function GeneratePage({ params }: PageProps) {
             <div className="p-5 mt-auto">
               <button
                 onClick={generateImages}
-                disabled={generatingImages || !selectedImageModel || !beats.length}
+                disabled={generatingImages || generatingTts || !selectedImageModel || !beats.length}
+                title={generatingTts ? "Voiceover is generating — wait for it to finish before starting image generation" : undefined}
                 className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                 style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
               >
