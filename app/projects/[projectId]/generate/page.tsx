@@ -250,7 +250,11 @@ export default function GeneratePage({ params }: PageProps) {
   const generatedImages = beats.filter((b) => b.imageUrl).length;
   const generatedVideos = beats.filter((b) => b.videoUrl).length;
   const videoBeats = beats.filter((b) => b.videoPrompt).length;
-  const failedVideos = beats.filter((b) => b.videoPrompt && b.videoStatus === "failed").length;
+  // A beat that holds a videoUrl is logically done, even if a stale
+  // "failed" status is still on the row from an earlier retry — the
+  // worker doesn't clear video_url when writing a failure, so we have
+  // to gate failure on "no URL produced" here.
+  const failedVideos = beats.filter((b) => b.videoPrompt && b.videoStatus === "failed" && !b.videoUrl).length;
   const pendingVideos = beats.filter((b) => b.videoPrompt && !b.videoUrl).length;
   const queuedVideos = beats.filter((b) => b.videoStatus === "queued").length;
   const pausedVideos = beats.filter((b) => b.videoStatus === "paused").length;
