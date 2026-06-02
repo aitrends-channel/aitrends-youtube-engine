@@ -1255,7 +1255,7 @@ export default function AdminPage() {
             { id: "projects", label: "Videos",   icon: Clapperboard },
             { id: "revenue",  label: "Revenue",  icon: DollarSign },
             { id: "logs",     label: "Logs",     icon: FileText },
-            { id: "setup",    label: "Config",   icon: SlidersHorizontal },
+            { id: "setup",    label: "Config",   icon: Settings },
           ] as const;
 
           const tabButtons = (TAB_ITEMS).map(({ id, label, icon: Icon }) => (
