@@ -9,6 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
+  Crown,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -59,6 +60,10 @@ interface AdminUser {
   plan: string | null;
   paidAt: string | null;
   planExpiresAt: string | null;
+  nichesUsed: number;
+  planDefaultLimit: number | null;
+  nicheLimitOverride: number | null;
+  effectiveNicheLimit: number | null;
 }
 
 interface AdminProject {
@@ -1096,6 +1101,154 @@ function AnthropicRoutingPanel() {
   );
 }
 
+function NicheLimitOverrideModal({
+  user,
+  onClose,
+  onSaved,
+}: {
+  user: AdminUser;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  // Pre-fill with the current override; blank means "no override".
+  const [input, setInput] = useState<string>(
+    user.nicheLimitOverride !== null ? String(user.nicheLimitOverride) : ""
+  );
+  const [saving, setSaving] = useState(false);
+
+  const planLimitLabel = user.planDefaultLimit === null
+    ? "Unlimited"
+    : `${user.planDefaultLimit}`;
+  const effectiveLabel = user.effectiveNicheLimit === null
+    ? "Unlimited"
+    : `${user.effectiveNicheLimit}`;
+
+  async function submit(override: number | null) {
+    setSaving(true);
+    try {
+      const res = await fetch(
+        `/api/admin/users/${encodeURIComponent(user.email)}/niche-limit`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ override }),
+        }
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `Save failed (${res.status})`);
+      toast.success(override === null ? "Override cleared" : `Niche limit set to ${override}`);
+      onSaved();
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleApply() {
+    const trimmed = input.trim();
+    if (trimmed === "") {
+      submit(null);
+      return;
+    }
+    const n = Number(trimmed);
+    if (!Number.isInteger(n) || n < 0) {
+      toast.error("Enter a non-negative integer, or leave blank to clear the override.");
+      return;
+    }
+    submit(n);
+  }
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => { if (!open && !saving) onClose(); }}
+    >
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Override niche limit</DialogTitle>
+          <DialogDescription>
+            Replace the user&apos;s plan-derived niche cap with a custom value. Leave blank to clear the
+            override and fall back to the plan default.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="rounded-xl p-3 space-y-3"
+          style={{ background: "oklch(0 0 0 / 0.03)", border: "1px solid var(--bd-7)" }}>
+          <p className="text-xs font-mono text-center truncate" style={{ color: "var(--c-78)" }}>{user.email}</p>
+          <div className="grid grid-cols-4 gap-2 text-[10px]" style={{ color: "var(--c-50)" }}>
+            {[
+              { label: "Plan", value: user.plan ?? "—" },
+              { label: "Plan default", value: planLimitLabel },
+              { label: "Active", value: effectiveLabel },
+              { label: "Used", value: String(user.nichesUsed) },
+            ].map((cell) => (
+              <div key={cell.label} className="flex flex-col items-center text-center gap-1">
+                <p className="uppercase tracking-wide leading-none">{cell.label}</p>
+                <p className="text-sm font-semibold tabular-nums leading-none" style={{ color: "var(--c-90)" }}>
+                  {cell.value}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>
+            New override (blank = clear)
+          </label>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            disabled={saving}
+            placeholder="e.g. 50"
+            className="w-full px-3 py-2.5 rounded-lg text-sm outline-none tabular-nums"
+            style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
+          />
+        </div>
+
+        <DialogFooter>
+          <button
+            onClick={handleApply}
+            disabled={saving}
+            className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+            style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
+          >
+            {saving ? (
+              <span className="inline-flex items-center justify-center gap-2">
+                <Spinner size={14} className="text-white" />
+                Saving…
+              </span>
+            ) : "Apply"}
+          </button>
+          {user.nicheLimitOverride !== null && (
+            <button
+              onClick={() => submit(null)}
+              disabled={saving}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+              style={{ background: "oklch(0.6 0.22 25 / 0.1)", color: "oklch(0.55 0.22 25)", border: "1px solid oklch(0.6 0.22 25 / 0.25)" }}
+            >
+              Clear override
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+            style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+          >
+            Cancel
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 const SK = { background: "oklch(0 0 0 / 0.07)" };
 const PER_PAGE = 10;
 
@@ -1300,7 +1453,12 @@ export default function AdminPage() {
   }
 
   const [removing, setRemoving] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<AdminUser | null>(null);
   const [usersPage, setUsersPage] = useState(1);
+  const [userSearch, setUserSearch] = useState("");
+  type PlanBucket = "all" | "admin" | "founder" | "pro" | "starter" | "free" | "pending";
+  const [planFilter, setPlanFilter] = useState<PlanBucket>("all");
+  const [nicheLimitUser, setNicheLimitUser] = useState<AdminUser | null>(null);
   const [projectsPage, setProjectsPage] = useState(1);
   const [activityView, setActivityView] = useState<"daily" | "weekly" | "monthly">("daily");
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
@@ -1321,6 +1479,7 @@ export default function AdminPage() {
       if (!res.ok) throw new Error(json.error ?? "Failed to remove");
       toast.success(`Removed ${email}`);
       setUsersPage(1);
+      setRemoveTarget(null);
       mutate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to remove user");
@@ -1348,10 +1507,37 @@ export default function AdminPage() {
   );
 
   const stats = data?.stats;
-  const users = data?.users ?? [];
+  const users: AdminUser[] = data?.users ?? [];
   const projects = data?.projects ?? [];
-  const pagedUsers = users.slice((usersPage - 1) * PER_PAGE, usersPage * PER_PAGE);
+
+  // Single source of truth for which bucket a row belongs to. Used by
+  // both the count strip and the active filter; keeping them aligned
+  // means a click on "Founder · 3" always yields exactly 3 rows.
+  function bucketOf(u: AdminUser): Exclude<PlanBucket, "all"> {
+    if (u.status === "Pending") return "pending";
+    if (u.email === ADMIN_EMAIL) return "admin";
+    if (u.plan === "founder") return "founder";
+    if (u.plan === "pro") return "pro";
+    if (u.plan === "starter") return "starter";
+    return "free";
+  }
+
+  const userSearchLower = userSearch.trim().toLowerCase();
+  const filteredUsers = users.filter((u) => {
+    if (planFilter !== "all" && bucketOf(u) !== planFilter) return false;
+    if (userSearchLower && !u.email.toLowerCase().includes(userSearchLower)) return false;
+    return true;
+  });
+  const pagedUsers = filteredUsers.slice((usersPage - 1) * PER_PAGE, usersPage * PER_PAGE);
   const pagedProjects = projects.slice((projectsPage - 1) * PER_PAGE, projectsPage * PER_PAGE);
+
+  // Top-of-Users-tab breakdown so the admin can see plan distribution
+  // and pending invites at a glance without scanning the table. Same
+  // source of truth as the table itself.
+  const userBreakdown = users.reduce(
+    (acc, u) => { acc[bucketOf(u)]++; return acc; },
+    { admin: 0, founder: 0, pro: 0, starter: 0, free: 0, pending: 0 }
+  );
 
   return (
     <div className="min-h-screen flex flex-col" data-theme="light" style={{ background: "var(--bg-page)" }}>
@@ -1781,19 +1967,88 @@ export default function AdminPage() {
             </span>
           </div>
 
+          {/* Plan-distribution strip. Colors mirror the row badges so
+              admin can map a stat back to its rows at a glance. Clicking
+              a pill filters the table to that bucket; clicking the
+              active pill (or Total) clears the filter. */}
+          <div className="flex flex-wrap gap-2 text-xs">
+            {([
+              { id: "all",     label: "Total",     value: users.length,          accent: "oklch(0.55 0.15 220)", bg: "oklch(0 0 0 / 0.04)",          color: "var(--c-65)",       border: "oklch(0 0 0 / 0.08)" },
+              { id: "admin",   label: "Admin",     value: userBreakdown.admin,   accent: "oklch(0.72 0.18 75)",  bg: "oklch(0.72 0.18 75 / 0.15)",   color: "oklch(0.6 0.18 75)",  border: "oklch(0.72 0.18 75 / 0.4)" },
+              { id: "founder", label: "Founder",   value: userBreakdown.founder, accent: "oklch(0.55 0.15 145)", bg: "oklch(0.55 0.15 145 / 0.15)",  color: "oklch(0.65 0.15 145)", border: "oklch(0.55 0.15 145 / 0.3)" },
+              { id: "pro",     label: "Pro",       value: userBreakdown.pro,     accent: "oklch(0.55 0.15 145)", bg: "oklch(0.55 0.15 145 / 0.15)",  color: "oklch(0.65 0.15 145)", border: "oklch(0.55 0.15 145 / 0.3)" },
+              { id: "starter", label: "Starter",   value: userBreakdown.starter, accent: "oklch(0.55 0.15 145)", bg: "oklch(0.55 0.15 145 / 0.15)",  color: "oklch(0.65 0.15 145)", border: "oklch(0.55 0.15 145 / 0.3)" },
+              { id: "free",    label: "Free/Demo", value: userBreakdown.free,    accent: "oklch(0.5 0 0)",       bg: "oklch(0 0 0 / 0.05)",          color: "var(--c-55)",       border: "oklch(0 0 0 / 0.12)" },
+              { id: "pending", label: "Pending",   value: userBreakdown.pending, accent: "oklch(0.72 0.25 285)", bg: "oklch(0.72 0.25 285 / 0.1)",   color: "oklch(0.72 0.25 285)", border: "oklch(0.72 0.25 285 / 0.2)" },
+            ] as const).map((s) => {
+              const isActive = planFilter === s.id;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => { setPlanFilter(isActive ? "all" : s.id); setUsersPage(1); }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-medium tabular-nums transition-all hover:opacity-80 cursor-pointer"
+                  style={{
+                    background: s.bg,
+                    color: s.color,
+                    border: `1px solid ${s.border}`,
+                    boxShadow: isActive ? `0 0 0 2px ${s.accent}` : "none",
+                  }}
+                >
+                  <span>{s.label}</span>
+                  <span className="font-semibold">{s.value}</span>
+                </button>
+              );
+            })}
+          </div>
+
           <AddUserForm onSuccess={mutate} />
+
+          {/* Filter the table by email substring — useful once the list
+              grows past a page or two. Resets pagination on every change
+              so an active filter never shows an empty page. */}
+          <div className="relative">
+            <input
+              type="search"
+              value={userSearch}
+              onChange={(e) => { setUserSearch(e.target.value); setUsersPage(1); }}
+              placeholder="Search users by email…"
+              className="w-full pl-9 pr-3 py-2.5 rounded-lg text-sm outline-none transition-all"
+              style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
+            />
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--c-40)" }}>
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            {userSearch && (
+              <button
+                onClick={() => { setUserSearch(""); setUsersPage(1); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-xs cursor-pointer transition-opacity hover:opacity-80"
+                style={{ color: "var(--c-50)", background: "oklch(0 0 0 / 0.05)" }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
 
           {isLoading ? (
             <SkeletonRows cols={5} />
           ) : users.length === 0 ? (
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No users yet.</div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>
+              {userSearch
+                ? <>No users match &ldquo;{userSearch}&rdquo;{planFilter !== "all" ? ` in ${planFilter}` : ""}.</>
+                : <>No users in this filter.</>}
+            </div>
           ) : (
             <div className="rounded-2xl overflow-x-auto w-full max-w-full"
               style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
               <table className="w-full border-collapse min-w-[520px]">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
-                    {["Email", "Status", "Niches", "Last Sign-in", ""].map((h) => (
+                    {["Email", "Plan", "Niches", "Niches overwrite", "Last Sign-in", ""].map((h) => (
                       <th key={h} className="text-left py-3 px-4 text-xs font-medium uppercase tracking-wider"
                         style={{ color: "var(--c-40)" }}>
                         {h}
@@ -1809,28 +2064,67 @@ export default function AdminPage() {
                       onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                     >
                       <td className="py-3 px-4 text-sm font-mono" style={{ color: "var(--c-78)" }}>
-                        {u.email}
-                      </td>
-                      <td className="py-3 px-4">
-                        <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
-                          style={u.status === "Paid" ? {
-                            background: "oklch(0.55 0.18 65 / 0.15)",
-                            color: "oklch(0.75 0.18 65)",
-                            border: "1px solid oklch(0.55 0.18 65 / 0.3)",
-                          } : u.status === "Registered" ? {
-                            background: "oklch(0.55 0.15 145 / 0.15)",
-                            color: "oklch(0.65 0.15 145)",
-                            border: "1px solid oklch(0.55 0.15 145 / 0.3)",
-                          } : {
-                            background: "oklch(0.72 0.25 285 / 0.1)",
-                            color: "oklch(0.72 0.25 285)",
-                            border: "1px solid oklch(0.72 0.25 285 / 0.2)",
-                          }}>
-                          {u.status}
+                        <span className="inline-flex items-center gap-1.5">
+                          {u.email}
+                          {u.email === ADMIN_EMAIL && (
+                            <Crown size={12} aria-label="Admin account" style={{ color: "oklch(0.72 0.18 75)" }} />
+                          )}
                         </span>
                       </td>
+                      <td className="py-3 px-4">
+                        {(() => {
+                          // Plan → label/color mapping. Admins get a gold
+                          // tag matching the crown icon and aren't
+                          // editable. Every paid tier shares the green
+                          // palette; Free/Demo is muted gray and Pending
+                          // (user hasn't signed up) is purple.
+                          const paidGreen = { bg: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "oklch(0.55 0.15 145 / 0.3)" };
+                          const isAdmin = u.email === ADMIN_EMAIL;
+                          const planBadge = isAdmin
+                            ? { label: "Admin", bg: "oklch(0.72 0.18 75 / 0.15)", color: "oklch(0.6 0.18 75)", border: "oklch(0.72 0.18 75 / 0.4)" }
+                            : u.status === "Pending"
+                            ? { label: "Pending", bg: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "oklch(0.72 0.25 285 / 0.2)" }
+                            : u.plan === "founder"
+                            ? { label: "Founder", ...paidGreen }
+                            : u.plan === "pro"
+                            ? { label: "Pro", ...paidGreen }
+                            : u.plan === "starter"
+                            ? { label: "Starter", ...paidGreen }
+                            : { label: "Free/Demo", bg: "oklch(0 0 0 / 0.05)", color: "var(--c-55)", border: "oklch(0 0 0 / 0.12)" };
+                          const lockedReason = isAdmin
+                            ? "Admin accounts have unlimited niches and can't be overridden"
+                            : u.status === "Pending"
+                              ? "User hasn't signed up yet"
+                              : null;
+                          return (
+                            <button
+                              onClick={() => setNicheLimitUser(u)}
+                              disabled={lockedReason !== null}
+                              title={lockedReason ?? "Click to override niche limit"}
+                              className="inline-flex items-center justify-center gap-1.5 w-[160px] h-7 rounded-full text-xs font-medium transition-opacity hover:opacity-80 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                              style={{ background: planBadge.bg, color: planBadge.color, border: `1px solid ${planBadge.border}` }}
+                            >
+                              {planBadge.label}
+                            </button>
+                          );
+                        })()}
+                      </td>
                       <td className="py-3 px-4 text-sm" style={{ color: "var(--c-60)" }}>
-                        {u.projectCount}
+                        {u.status === "Pending" ? (
+                          "—"
+                        ) : (
+                          <span className="tabular-nums">
+                            {u.nichesUsed}
+                            <span style={{ color: "var(--c-35)" }}>
+                              {" / "}{u.planDefaultLimit === null ? "∞" : u.planDefaultLimit}
+                            </span>
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-sm tabular-nums" style={{ color: "var(--c-60)" }}>
+                        {u.nicheLimitOverride === null
+                          ? <span style={{ color: "var(--c-35)" }}>—</span>
+                          : u.nicheLimitOverride}
                       </td>
                       <td className="py-3 px-4 text-sm" style={{ color: "var(--c-45)" }}>
                         {u.lastSignIn ? timeAgo(u.lastSignIn) : "Never"}
@@ -1838,7 +2132,7 @@ export default function AdminPage() {
                       <td className="py-3 px-4">
                         {u.email !== ADMIN_EMAIL && (
                           <button
-                            onClick={() => handleRemoveUser(u.email)}
+                            onClick={() => setRemoveTarget(u)}
                             disabled={removing === u.email}
                             className="text-xs px-2.5 py-1 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
                             style={{
@@ -1855,7 +2149,7 @@ export default function AdminPage() {
                   ))}
                 </tbody>
               </table>
-              <Pagination page={usersPage} total={users.length} onChange={setUsersPage} />
+              <Pagination page={usersPage} total={filteredUsers.length} onChange={setUsersPage} />
             </div>
           )}
         </section>
@@ -2273,6 +2567,63 @@ export default function AdminPage() {
             <button
               onClick={() => setEditLimitOpen(false)}
               disabled={savingLimit}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Cancel
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {nicheLimitUser && (
+        <NicheLimitOverrideModal
+          user={nicheLimitUser}
+          onClose={() => setNicheLimitUser(null)}
+          onSaved={() => mutate()}
+        />
+      )}
+
+      <Dialog
+        open={removeTarget !== null}
+        onOpenChange={(open) => { if (!open && removing === null) setRemoveTarget(null); }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Remove user?</DialogTitle>
+            <DialogDescription>
+              This permanently deletes the auth account and cascades to all of their projects, beats,
+              thumbnails, and app settings. This can&apos;t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          {removeTarget && (
+            <div className="rounded-xl p-3 space-y-1.5"
+              style={{ background: "oklch(0.6 0.22 25 / 0.06)", border: "1px solid oklch(0.6 0.22 25 / 0.2)" }}>
+              <p className="text-xs font-mono truncate" style={{ color: "var(--c-78)" }}>{removeTarget.email}</p>
+              <div className="flex items-center gap-3 text-[11px] flex-wrap" style={{ color: "var(--c-55)" }}>
+                <span>Plan: <span className="font-semibold" style={{ color: "var(--c-90)" }}>{removeTarget.plan ?? "—"}</span></span>
+                <span>Projects: <span className="font-semibold tabular-nums" style={{ color: "var(--c-90)" }}>{removeTarget.projectCount}</span></span>
+                <span>Niches used: <span className="font-semibold tabular-nums" style={{ color: "var(--c-90)" }}>{removeTarget.nichesUsed}</span></span>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <button
+              onClick={() => { if (removeTarget) handleRemoveUser(removeTarget.email); }}
+              disabled={removing !== null}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.55 0.22 25)", color: "white" }}
+            >
+              {removing !== null ? (
+                <span className="inline-flex items-center justify-center gap-2">
+                  <Spinner size={14} className="text-white" />
+                  Removing…
+                </span>
+              ) : "Remove user"}
+            </button>
+            <button
+              onClick={() => setRemoveTarget(null)}
+              disabled={removing !== null}
               className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
               style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
             >
