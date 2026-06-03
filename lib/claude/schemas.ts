@@ -98,23 +98,27 @@ export const PromptsOutputSchema = z.object({
   thumbnails: z.array(ThumbnailConceptSchema),
 });
 
-// Split schemas for phased generation
+// Split schemas for phased generation. Required string fields use
+// .min(1) — Claude occasionally emits empty strings when the tool input
+// is truncated or partially parsed. Empty prompts would otherwise pass
+// validation, hit the DB, and trip the client's "missing prompts"
+// completeness check at the very end.
 export const ImagePromptsSchema = z.object({
   beats: z.array(z.object({
     beatNumber: z.number(),
-    scriptSegment: z.string(),
-    imagePrompt: z.string(),
-    camera: z.string(),
-    lighting: z.string(),
-    mood: z.string(),
-    action: z.string(),
+    scriptSegment: z.string().min(1),
+    imagePrompt: z.string().min(1),
+    camera: z.string().min(1),
+    lighting: z.string().min(1),
+    mood: z.string().min(1),
+    action: z.string().min(1),
   })),
 });
 
 export const VideoPromptsSchema = z.object({
   beats: z.array(z.object({
     beatNumber: z.number(),
-    videoPrompt: z.string(),
+    videoPrompt: z.string().min(1),
   })),
 });
 

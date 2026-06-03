@@ -286,7 +286,24 @@ async function generateImages(
     if (!input) throw new Error(`No image prompts returned for chunk ${chunkIndex + 1}. Try again — any beats saved so far are preserved.`);
     if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Chunk ${chunkIndex + 1} returned no beats. Try again — any beats saved so far are preserved.`);
 
-    const chunkBeats = ImagePromptsSchema.parse(input).beats;
+    const parsed = ImagePromptsSchema.safeParse(input);
+    if (!parsed.success) {
+      // Surface which beats Claude returned blank so the next retry has
+      // signal beyond the generic Zod issue list.
+      const rawBeats = (input.beats as Array<Record<string, unknown>>) ?? [];
+      const blankFields = rawBeats.map((b, i) => {
+        const missing = ["imagePrompt", "camera", "lighting", "mood", "action", "scriptSegment"]
+          .filter((k) => !b[k] || (typeof b[k] === "string" && (b[k] as string).trim() === ""));
+        return missing.length ? `beat#${b.beatNumber ?? i}: missing=${missing.join(",")}` : null;
+      }).filter(Boolean);
+      console.error(`[image-prompts] chunk ${chunkIndex + 1} schema validation failed`, {
+        beatCount: rawBeats.length,
+        blankFields,
+        zodIssues: parsed.error.issues,
+      });
+      throw new Error(`Chunk ${chunkIndex + 1} returned beats with missing fields (${blankFields.slice(0, 3).join("; ") || "schema mismatch"}). Try again — any beats saved so far are preserved.`);
+    }
+    const chunkBeats = parsed.data.beats;
 
     // Final cancellation check before persistence — the Claude call can
     // take 30-60s, plenty of time for the user to clear the step.
@@ -426,7 +443,20 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
     if (!input) throw new Error(`No video prompts for batch ${i + 1} after retry. Try again — any prompts saved so far are preserved.`);
     if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Empty video prompts for batch ${i + 1}. Try again — any prompts saved so far are preserved.`);
 
-    const chunkBeats = VideoPromptsSchema.parse(input).beats;
+    const parsed = VideoPromptsSchema.safeParse(input);
+    if (!parsed.success) {
+      const rawBeats = (input.beats as Array<Record<string, unknown>>) ?? [];
+      const blank = rawBeats
+        .filter((b) => !b.videoPrompt || (typeof b.videoPrompt === "string" && (b.videoPrompt as string).trim() === ""))
+        .map((b) => `beat#${b.beatNumber ?? "?"}`);
+      console.error(`[video-prompts] batch ${i + 1} schema validation failed`, {
+        beatCount: rawBeats.length,
+        blankVideoPrompts: blank,
+        zodIssues: parsed.error.issues,
+      });
+      throw new Error(`Batch ${i + 1} returned beats with missing videoPrompt (${blank.slice(0, 3).join(", ") || "schema mismatch"}). Try again — any prompts saved so far are preserved.`);
+    }
+    const chunkBeats = parsed.data.beats;
 
     await assertPromptsRunActive(projectId, runId);
 
