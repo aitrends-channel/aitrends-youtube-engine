@@ -54,7 +54,24 @@ export async function POST(req: Request) {
     }
     if (!analysisInput) throw new Error("No structured analysis returned");
 
-    const analysis = ChannelAnalysisSchema.parse(analysisInput) as ChannelAnalysisOutput;
+    const parsedAnalysis = ChannelAnalysisSchema.safeParse(analysisInput);
+    if (!parsedAnalysis.success) {
+      const root = analysisInput as Record<string, unknown>;
+      const styleDNA = root?.styleDNA;
+      console.error("[analyze] schema validation failed", {
+        topLevelKeys: Object.keys(root ?? {}),
+        styleDNAType: styleDNA === null ? "null" : Array.isArray(styleDNA) ? "array" : typeof styleDNA,
+        styleDNAPreview:
+          typeof styleDNA === "string"
+            ? styleDNA.slice(0, 500)
+            : styleDNA && typeof styleDNA === "object"
+              ? JSON.stringify(styleDNA).slice(0, 500)
+              : String(styleDNA),
+        zodIssues: parsedAnalysis.error.issues,
+      });
+      throw parsedAnalysis.error;
+    }
+    const analysis = parsedAnalysis.data as ChannelAnalysisOutput;
 
     let videoIdeas: string[] | undefined;
 
