@@ -40,22 +40,34 @@ function assertComplete(stopReason: string | null | undefined, label: string) {
 // rather than a real failure.
 const CANCELLED_MSG = "Prompts generation was cancelled — the step was cleared while in flight.";
 
-async function claimPromptsRun(projectId: string, userId: string): Promise<string> {
+async function claimPromptsRun(projectId: string, userId: string): Promise<string | null> {
   const runId = randomUUID();
-  await supabase
+  const { error } = await supabase
     .from("projects")
     .update({ prompts_active_run_id: runId })
     .eq("id", projectId)
     .eq("user_id", userId);
+  if (error) {
+    // Likely the migration hasn't run yet (column missing) — degrade to
+    // no-cancellation rather than breaking every generation. Log so the
+    // operator can spot and apply the migration.
+    console.warn("[prompts-cancel] could not claim run id; cancellation disabled for this run", error);
+    return null;
+  }
   return runId;
 }
 
-async function assertPromptsRunActive(projectId: string, runId: string): Promise<void> {
-  const { data } = await supabase
+async function assertPromptsRunActive(projectId: string, runId: string | null): Promise<void> {
+  if (!runId) return;
+  const { data, error } = await supabase
     .from("projects")
     .select("prompts_active_run_id")
     .eq("id", projectId)
     .single();
+  if (error) {
+    console.warn("[prompts-cancel] could not read run id; skipping check", error);
+    return;
+  }
   if (!data || data.prompts_active_run_id !== runId) {
     throw new Error(CANCELLED_MSG);
   }
