@@ -180,6 +180,23 @@ async function generateImages(
   }
   if (allChunks.length === 0) allChunks.push(script);
 
+  // Sweep partially-written beats from a prior failed run before the
+  // resume math looks at them. Without this, a beat with NULL or empty
+  // image_prompt counts toward "covered words" — the route skips its
+  // chunk and the bad beat is preserved forever. Two narrow deletes
+  // keep this explicit; .or() syntax for the empty-string side gets
+  // fussy with quoting.
+  await supabase
+    .from("project_beats")
+    .delete()
+    .eq("project_id", projectId)
+    .is("image_prompt", null);
+  await supabase
+    .from("project_beats")
+    .delete()
+    .eq("project_id", projectId)
+    .eq("image_prompt", "");
+
   // Resume support: if this project already has beats from an earlier
   // (timed-out) run, count their cumulative script-segment word count
   // and skip the chunks that prefix has already covered. This way a
