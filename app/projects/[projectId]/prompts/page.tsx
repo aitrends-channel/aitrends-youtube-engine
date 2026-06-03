@@ -276,11 +276,15 @@ function StepCard({ num, title, description, state, doneLabel, disabled, optiona
 
 // ── SSE helper ─────────────────────────────────────────────────────────────
 
+// Returns true when the server signaled `done`, false when the stream
+// ended without one (truncated by a proxy, idle-timeout, etc.). The
+// caller decides what to do — typically refetching project state and
+// trusting the DB over the SSE channel.
 async function streamStep(
   url: string,
   body: object,
   onUpdate: (s: StepState) => void
-): Promise<void> {
+): Promise<boolean> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -295,41 +299,55 @@ async function streamStep(
   let buffer = "";
   let doneReceived = false;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  // Idle watchdog: if no bytes arrive for IDLE_MS, abort the reader and
+  // exit. Some proxies leave the connection technically open but stop
+  // forwarding data, which made reader.read() hang forever.
+  const IDLE_MS = 60_000;
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  const resetIdle = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => { reader.cancel().catch(() => {}); }, IDLE_MS);
+  };
+  resetIdle();
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      resetIdle();
 
-    for (const line of lines) {
-      if (!line.startsWith("data: ")) continue;
-      try {
-        const event = JSON.parse(line.slice(6));
-        if (event.type === "status") {
-          onUpdate({ status: "running", message: event.message });
-        } else if (event.type === "progress") {
-          onUpdate({
-            status: "running",
-            message: `Section ${event.current} of ${event.total}`,
-            progress: { current: event.current, total: event.total },
-          });
-        } else if (event.type === "error") {
-          throw new Error(event.message);
-        } else if (event.type === "done") {
-          doneReceived = true;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+          if (event.type === "status") {
+            onUpdate({ status: "running", message: event.message });
+          } else if (event.type === "progress") {
+            onUpdate({
+              status: "running",
+              message: `Section ${event.current} of ${event.total}`,
+              progress: { current: event.current, total: event.total },
+            });
+          } else if (event.type === "error") {
+            throw new Error(event.message);
+          } else if (event.type === "done") {
+            doneReceived = true;
+          }
+        } catch (e) {
+          if (e instanceof SyntaxError) continue;
+          throw e;
         }
-      } catch (e) {
-        if (e instanceof SyntaxError) continue;
-        throw e;
       }
     }
+  } finally {
+    if (idleTimer) clearTimeout(idleTimer);
   }
 
-  if (!doneReceived) {
-    throw new Error("Generation timed out — the server closed the connection before finishing. Any beats saved so far are preserved. Try again to complete the rest.");
-  }
+  return doneReceived;
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────
@@ -409,20 +427,24 @@ export default function PromptsPage({ params }: PageProps) {
     }
     setImageStep({ status: "running", message: "Starting..." });
     try {
-      await streamStep("/api/workflow/prompts", {
+      const doneReceived = await streamStep("/api/workflow/prompts", {
         step: "images",
         projectId,
         script: project.script,
         visualProfile: project.visual_profile,
       }, setImageStep);
 
-      await mutate();
-      setImageStep({ status: "done", message: "" });
-      toast.success("Image prompts generated");
+      // Always refetch — the server may have finished writing beats even
+      // if the SSE `done` event never reached us (proxy truncation).
+      const fresh = await mutate();
+      const completedOnServer = (fresh?.current_state ?? 0) >= 14;
 
-      // Regenerating images invalidates any existing video prompts
-      if (hasVideoBeats) {
-        setVideoStep(IDLE);
+      if (doneReceived || completedOnServer) {
+        setImageStep({ status: "done", message: "" });
+        toast.success("Image prompts generated");
+        if (hasVideoBeats) setVideoStep(IDLE);
+      } else {
+        throw new Error("Generation timed out — the server closed the connection before finishing. Any beats saved so far are preserved. Try again to complete the rest.");
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed";
@@ -475,13 +497,22 @@ export default function PromptsPage({ params }: PageProps) {
     }
     setVideoStep({ status: "running", message: "Starting..." });
     try {
-      await streamStep("/api/workflow/prompts", {
+      const doneReceived = await streamStep("/api/workflow/prompts", {
         step: "videos",
         projectId,
       }, setVideoStep);
-      await mutate();
-      setVideoStep({ status: "done", message: "" });
-      toast.success("Video prompts generated");
+
+      const updated = await mutate();
+      const updatedBeats = (updated?.beats ?? []) as Beat[];
+      const completedOnServer =
+        updatedBeats.length > 0 && updatedBeats.every((b) => !!b.videoPrompt);
+
+      if (doneReceived || completedOnServer) {
+        setVideoStep({ status: "done", message: "" });
+        toast.success("Video prompts generated");
+      } else {
+        throw new Error("Generation timed out — the server closed the connection before finishing. Any prompts saved so far are preserved. Try again to complete the rest.");
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed";
       setVideoStep({ status: "error", message: "", error: msg });
