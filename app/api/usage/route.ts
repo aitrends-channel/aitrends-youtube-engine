@@ -38,6 +38,8 @@ export async function GET() {
   return NextResponse.json({
     niches_used,
     niche_limit,
+    plan_default_limit: planLimit,
+    niche_limit_override: override,
     at_limit,
     plan,
     is_admin: isAdmin,

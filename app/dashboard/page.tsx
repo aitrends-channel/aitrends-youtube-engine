@@ -610,6 +610,8 @@ export default function HomePage() {
   const { data: usage, mutate: mutateUsage } = useSWR<{
     niches_used: number;
     niche_limit: number | null;
+    plan_default_limit?: number | null;
+    niche_limit_override?: number | null;
     at_limit: boolean;
     plan: string;
     is_admin: boolean;
@@ -618,6 +620,14 @@ export default function HomePage() {
   const nicheLimit = usage?.niche_limit ?? null;
   const nichesUsed = usage?.niches_used ?? 0;
   const atNicheLimit = !!usage?.at_limit;
+  // When the admin has set a niche-limit override, show the original
+  // plan-derived ratio in the headline (so the user sees their plan
+  // honoured) and call out the override separately. `niche_limit` is
+  // already the effective value (override ?? plan default) and stays
+  // the basis for at-limit gating.
+  const planDefaultLimit = usage?.plan_default_limit ?? null;
+  const nicheLimitOverride = usage?.niche_limit_override ?? null;
+  const hasOverride = nicheLimitOverride !== null;
 
   function requireSubscription(action: () => void) {
     if (isPaid || isAdmin) {
@@ -944,11 +954,23 @@ export default function HomePage() {
                   );
                 }
 
-                // Use the outer nicheLimit/nichesUsed from /api/usage so the
-                // displayed stats reflect the lifetime counter, not active count.
-                const unlimited = nicheLimit === null;
-                const nichePct = unlimited ? 1 : Math.min(nichesUsed / nicheLimit!, 1);
+                // Show the original plan ratio in the card and call out the
+                // override separately, so the user sees their plan honoured
+                // and any admin grant on top. When the plan is unlimited
+                // (admin / pro) but an override has narrowed it, fall back
+                // to the override as the visible denominator so the ratio
+                // isn't misleadingly "Unlimited".
+                const ratioDenominator = planDefaultLimit ?? nicheLimitOverride;
+                const unlimited = ratioDenominator === null;
+                const nichePct = unlimited ? 1 : Math.min(nichesUsed / ratioDenominator!, 1);
                 const nicheColor = nichePct >= 1 ? "#e8745a" : "#9b7ff5";
+                const showOverrideBadge = hasOverride && planDefaultLimit !== null;
+                // niches_used is a lifetime counter — deletions never
+                // decrement it. The current channel-group count is the
+                // live count, so the difference is how many niches have
+                // been deleted. Clamp at zero for the post-renewal case
+                // where reset_niches_used has zeroed the lifetime counter.
+                const deletedNiches = Math.max(0, nichesUsed - niches);
 
                 const completedPct = total > 0 ? completed / total : 0;
                 const inProgressPct = total > 0 ? inProgress / total : 0;
@@ -965,12 +987,26 @@ export default function HomePage() {
                       return (
                         <div className="rounded-xl px-5 py-4 flex items-center justify-between gap-3"
                           style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
-                          <div className="min-w-0">
-                            <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{nichesUsed}</p>
-                            <p className="text-xs" style={{ color: "var(--c-42)" }}>Niches Used</p>
-                            <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>
-                              {unlimited ? "Unlimited" : `of ${nicheLimit} lifetime`}
+                          <div className="min-w-0 space-y-1">
+                            <p className="leading-none">
+                              <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{nichesUsed}</span>
+                              <span className="text-xs ml-1.5" style={{ color: "var(--c-50)" }}>used</span>
                             </p>
+                            {deletedNiches > 0 && (
+                              <p className="leading-none">
+                                <span className="text-2xl font-bold" style={{ color: "var(--c-60)" }}>{deletedNiches}</span>
+                                <span className="text-xs ml-1.5" style={{ color: "var(--c-45)" }}>deleted</span>
+                              </p>
+                            )}
+                            <p className="text-[10px] pt-1" style={{ color: "var(--c-35)" }}>
+                              {unlimited ? "Unlimited" : `of ${ratioDenominator} lifetime`}
+                            </p>
+                            {showOverrideBadge && (
+                              <p className="text-[10px] font-semibold"
+                                style={{ color: "oklch(0.6 0.18 75)" }}>
+                                Override: {nicheLimitOverride}
+                              </p>
+                            )}
                           </div>
                           <div className="flex flex-col items-center gap-1.5 shrink-0">
                             {unlimited && (
@@ -998,7 +1034,7 @@ export default function HomePage() {
                               </span>
                             ) : (
                               <PieRing id="nicheGrad" pct={nichePct} color={nicheColor}
-                                centerText={`${nichesUsed}/${nicheLimit}`} />
+                                centerText={`${nichesUsed}/${ratioDenominator}`} />
                             )}
                             {!unlimited && (
                               <span
