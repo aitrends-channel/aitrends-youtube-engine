@@ -937,7 +937,7 @@ function AnthropicRoutingPanel() {
     {
       id: "client_kie",
       title: "Via Client's KIE account",
-      description: "Each user's own KIE API key (from their Settings) is used. Calls are billed to the end user. This is the default behavior.",
+      description: "Each user's own KIE API key (from their Settings) is used. Calls are billed to the end user.",
     },
     {
       id: "heclus_kie",
@@ -989,6 +989,7 @@ function AnthropicRoutingPanel() {
       <div className="space-y-2">
         {options.map((opt) => {
           const active = sel === opt.id;
+          const isServerActive = data?.routing === opt.id;
           return (
             <button
               key={opt.id}
@@ -1010,9 +1011,21 @@ function AnthropicRoutingPanel() {
                   {active && <span className="w-1.5 h-1.5 rounded-full" style={{ background: "white" }} />}
                 </span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold" style={{ color: active ? "oklch(0.62 0.15 220)" : "var(--c-90)" }}>
-                    {opt.title}
-                  </p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold" style={{ color: active ? "oklch(0.62 0.15 220)" : "var(--c-90)" }}>
+                      {opt.title}
+                    </p>
+                    {isServerActive && (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                        style={{
+                          background: "oklch(0.55 0.15 145 / 0.15)",
+                          color: "oklch(0.45 0.15 145)",
+                          border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                        }}>
+                        Active
+                      </span>
+                    )}
+                  </div>
                   <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--c-50)" }}>
                     {opt.description}
                   </p>
