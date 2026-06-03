@@ -28,9 +28,26 @@ async function pollBatch(client: Supadata, jobId: string): Promise<YoutubeBatchR
   throw new Error("Transcript batch job timed out");
 }
 
+// YouTube auto-captions sprinkle SFX markers like [Music], [Applause],
+// (laughter) into the transcript text. They're not the creator's words —
+// leaving them in teaches the analyzer that "drop a [Music] cue" is part
+// of the channel's style, which then shows up verbatim in generated
+// scripts. Strip the known set on the way in.
+const CAPTION_CUE = /[\[(]\s*(?:music|applause|laughter|laughs?|laughing|cheering|cheers?|inaudible|unintelligible|crosstalk|silence|pause|sigh|sighs|gasp|gasps|cough|coughs|grunt|grunts|chuckle|chuckles|breathing|footsteps|noise|background\s+(?:music|noise|chatter)|music\s+playing|sound\s+effects?|sfx|♪[^\])]*|[^\])]*♪)\s*[\])][.,!?]?/gi;
+
+export function stripCaptionCues(text: string): string {
+  return text
+    .replace(CAPTION_CUE, " ")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/ +([.,!?;:])/g, "$1")
+    .replace(/\n[ \t]+\n/g, "\n\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function extractText(content: string | TranscriptChunk[]): string {
-  if (typeof content === "string") return content;
-  return content.map(c => c.text).join(" ");
+  const raw = typeof content === "string" ? content : content.map(c => c.text).join(" ");
+  return stripCaptionCues(raw);
 }
 
 // How long a known-failure stays cached before we re-try Supadata.
@@ -48,11 +65,12 @@ async function getCached(videoIds: string[]): Promise<Map<string, SupadataTransc
   const cutoff = Date.now() - NEGATIVE_CACHE_TTL_MS;
   for (const row of data ?? []) {
     if (row.success) {
+      const cleaned = stripCaptionCues(row.text ?? "");
       map.set(row.video_id, {
         videoId: row.video_id,
         title: row.title,
-        text: row.text ?? "",
-        wordCount: row.word_count ?? 0,
+        text: cleaned,
+        wordCount: cleaned ? cleaned.split(/\s+/).filter(Boolean).length : (row.word_count ?? 0),
         success: true,
       });
     } else {

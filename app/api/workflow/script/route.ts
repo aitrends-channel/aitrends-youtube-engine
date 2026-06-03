@@ -2,6 +2,7 @@ import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 import { streamGeminiText, GEMINI_MAX_OUTPUT_TOKENS, GEMINI_MODEL } from "@/lib/gemini/client";
 import { buildScriptPrompt } from "@/lib/claude/prompts";
 import { retryClaudeCall } from "@/lib/claude/retry";
+import { stripCaptionCues } from "@/lib/youtube/supadata";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { ChannelAnalysisOutput } from "@/lib/claude/schemas";
@@ -182,6 +183,15 @@ export async function POST(req: Request) {
           const trimmed = trimRepetitionTail(finalScript);
           if (trimmed !== finalScript && trimmed.length > 0) {
             finalScript = trimmed;
+            send({ replace: finalScript });
+          }
+          // Strip any [Music] / [Applause] / etc. SFX cues the model
+          // picked up from training transcripts. Belt-and-suspenders on
+          // top of the source-transcript strip — old cached projects
+          // can still produce them.
+          const stripped = stripCaptionCues(finalScript);
+          if (stripped !== finalScript && stripped.length > 0) {
+            finalScript = stripped;
             send({ replace: finalScript });
           }
           const wordCount = countWords(finalScript);
