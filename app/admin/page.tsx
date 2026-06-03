@@ -923,6 +923,7 @@ function AnthropicRoutingPanel() {
   const { data, mutate, isLoading } = useSWR<{ routing: Routing }>("/api/admin/anthropic-routing", fetcher, { revalidateOnFocus: false });
 
   const [sel, setSel] = useState<Routing>("client_kie");
+  const [pending, setPending] = useState<Routing | null>(null);
   const [saving, setSaving] = useState(false);
 
   const hydratedRef = useRef(false);
@@ -931,27 +932,6 @@ function AnthropicRoutingPanel() {
     hydratedRef.current = true;
     setSel(data.routing ?? "client_kie");
   }, [data]);
-
-  async function save() {
-    setSaving(true);
-    try {
-      const res = await fetch("/api/admin/anthropic-routing", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ routing: sel }),
-      });
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}));
-        throw new Error(d.error ?? "Failed to save");
-      }
-      toast.success("Anthropic routing saved");
-      mutate();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save");
-    } finally {
-      setSaving(false);
-    }
-  }
 
   const options: { id: Routing; title: string; description: string; requires?: string }[] = [
     {
@@ -973,7 +953,30 @@ function AnthropicRoutingPanel() {
     },
   ];
 
-  const dirty = (data?.routing ?? "client_kie") !== sel;
+  const pendingOption = pending ? options.find((o) => o.id === pending) ?? null : null;
+
+  async function applyRouting(target: Routing) {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/anthropic-routing", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ routing: target }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? "Failed to save");
+      }
+      setSel(target);
+      toast.success("Anthropic routing saved");
+      mutate();
+      setPending(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -989,8 +992,9 @@ function AnthropicRoutingPanel() {
           return (
             <button
               key={opt.id}
-              onClick={() => setSel(opt.id)}
-              className="w-full text-left p-3 rounded-xl transition-all cursor-pointer"
+              onClick={() => { if (!active) setPending(opt.id); }}
+              disabled={saving}
+              className="w-full text-left p-3 rounded-xl transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
               style={{
                 background: active ? "oklch(0.62 0.15 220 / 0.08)" : "white",
                 border: `1px solid ${active ? "oklch(0.62 0.15 220 / 0.45)" : "oklch(0 0 0 / 0.07)"}`,
@@ -1024,14 +1028,57 @@ function AnthropicRoutingPanel() {
         })}
       </div>
 
-      <button
-        onClick={save}
-        disabled={saving || !dirty}
-        className="px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
-        style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
+      <Dialog
+        open={pending !== null}
+        onOpenChange={(open) => { if (!open && !saving) setPending(null); }}
       >
-        {saving ? "Saving…" : "Save routing"}
-      </button>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Switch Anthropic routing?</DialogTitle>
+            <DialogDescription>
+              This change applies to all users globally and takes effect immediately.
+            </DialogDescription>
+          </DialogHeader>
+          {pendingOption && (
+            <div className="rounded-xl p-3" style={{ background: "oklch(0.62 0.15 220 / 0.06)", border: "1px solid oklch(0.62 0.15 220 / 0.25)" }}>
+              <p className="text-sm font-semibold" style={{ color: "oklch(0.62 0.15 220)" }}>
+                {pendingOption.title}
+              </p>
+              <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--c-55)" }}>
+                {pendingOption.description}
+              </p>
+              {pendingOption.requires && (
+                <p className="text-[11px] mt-1.5" style={{ color: "oklch(0.6 0.15 60)" }}>
+                  ⓘ {pendingOption.requires}
+                </p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <button
+              onClick={() => { if (pending) applyRouting(pending); }}
+              disabled={saving}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
+            >
+              {saving ? (
+                <span className="inline-flex items-center justify-center gap-2">
+                  <Spinner size={14} className="text-white" />
+                  Switching…
+                </span>
+              ) : "Switch routing"}
+            </button>
+            <button
+              onClick={() => setPending(null)}
+              disabled={saving}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Cancel
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
