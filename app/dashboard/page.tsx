@@ -1054,7 +1054,7 @@ export default function HomePage() {
                     })()}
 
                     {/* Total Videos — plain */}
-                    <div className="rounded-xl px-5 py-4"
+                    <div className="rounded-xl px-5 py-4 flex flex-col items-center justify-center text-center"
                       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
                       <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{total}</p>
                       <p className="text-xs" style={{ color: "var(--c-42)" }}>Total Videos</p>
