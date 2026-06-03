@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 import {
@@ -28,6 +29,35 @@ export const maxDuration = 800;
 function assertComplete(stopReason: string | null | undefined, label: string) {
   if (stopReason === "max_tokens") {
     throw new Error(`Response was cut off during "${label}". Please try again.`);
+  }
+}
+
+// Cancellation signal for in-flight prompts generation. claimPromptsRun
+// writes a fresh UUID on the project at start; assertPromptsRunActive
+// re-reads it between chunks and throws if it's been replaced (newer
+// run) or nulled (user cleared the step). The error message is unique
+// so the SSE wrapper / client can recognize it as a user-driven cancel
+// rather than a real failure.
+const CANCELLED_MSG = "Prompts generation was cancelled — the step was cleared while in flight.";
+
+async function claimPromptsRun(projectId: string, userId: string): Promise<string> {
+  const runId = randomUUID();
+  await supabase
+    .from("projects")
+    .update({ prompts_active_run_id: runId })
+    .eq("id", projectId)
+    .eq("user_id", userId);
+  return runId;
+}
+
+async function assertPromptsRunActive(projectId: string, runId: string): Promise<void> {
+  const { data } = await supabase
+    .from("projects")
+    .select("prompts_active_run_id")
+    .eq("id", projectId)
+    .single();
+  if (!data || data.prompts_active_run_id !== runId) {
+    throw new Error(CANCELLED_MSG);
   }
 }
 
@@ -122,6 +152,7 @@ async function generateImages(
   send: (data: object) => void
 ) {
   console.log(`[image-prompts] start project=${projectId} scriptWords=${script.trim().split(/\s+/).filter(Boolean).length}`);
+  const runId = await claimPromptsRun(projectId, userId);
   const anthropic = await getAnthropicClient(userId);
 
   // Smaller chunks = smaller per-call payload = more chances of getting
@@ -194,6 +225,9 @@ async function generateImages(
   let totalBeatCount = existingBeats?.length ?? 0;
 
   for (const { content, chunkIndex, totalChunks } of chunksToProcess) {
+    // Cheap round-trip to check whether we've been cancelled — bail
+    // before paying for the next Claude call.
+    await assertPromptsRunActive(projectId, runId);
     if (totalChunks > 1) send({ type: "progress", current: chunkIndex + 1, total: totalChunks });
 
     const t0 = Date.now();
@@ -242,6 +276,10 @@ async function generateImages(
 
     const chunkBeats = ImagePromptsSchema.parse(input).beats;
 
+    // Final cancellation check before persistence — the Claude call can
+    // take 30-60s, plenty of time for the user to clear the step.
+    await assertPromptsRunActive(projectId, runId);
+
     // Persist this chunk's beats immediately so a later failure
     // doesn't undo this chunk's work.
     const { error: insertError } = await supabase.from("project_beats").insert(
@@ -268,6 +306,7 @@ async function generateImages(
 
 // ── Step 2: Video prompts ──────────────────────────────────────────────────
 async function generateVideos(projectId: string, userId: string, send: (data: object) => void) {
+  const runId = await claimPromptsRun(projectId, userId);
   const anthropic = await getAnthropicClient(userId);
   send({ type: "status", message: "Loading beats..." });
 
@@ -327,6 +366,7 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
   });
 
   for (let i = 0; i < chunks.length; i++) {
+    await assertPromptsRunActive(projectId, runId);
     if (totalChunksAbsolute > 1) send({ type: "progress", current: startChunkIdx + i + 1, total: totalChunksAbsolute });
 
     // One retry on tool-use miss — KIE occasionally returns text-only
@@ -375,6 +415,8 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
     if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Empty video prompts for batch ${i + 1}. Try again — any prompts saved so far are preserved.`);
 
     const chunkBeats = VideoPromptsSchema.parse(input).beats;
+
+    await assertPromptsRunActive(projectId, runId);
 
     // Persist this chunk's video prompts immediately so a later failure
     // doesn't undo this chunk's work.

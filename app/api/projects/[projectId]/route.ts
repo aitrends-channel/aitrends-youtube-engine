@@ -74,13 +74,21 @@ export async function PATCH(
 
   // Wipe all image-prompt beats for this project so the prompts step can
   // start over from a clean slate. Also implicitly clears any video
-  // prompts since they live on the same rows.
+  // prompts since they live on the same rows. Nulling
+  // prompts_active_run_id signals any in-flight prompts route for this
+  // project to abort at its next checkpoint instead of writing more
+  // beats on top of the wiped state.
   if (body.clear_image_prompts) {
     const { error: delErr } = await supabase
       .from("project_beats")
       .delete()
       .eq("project_id", projectId);
     if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
+    await supabase
+      .from("projects")
+      .update({ prompts_active_run_id: null })
+      .eq("id", projectId)
+      .eq("user_id", user.id);
     return NextResponse.json({ success: true });
   }
 
@@ -91,6 +99,11 @@ export async function PATCH(
       .update({ video_prompt: null })
       .eq("project_id", projectId);
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+    await supabase
+      .from("projects")
+      .update({ prompts_active_run_id: null })
+      .eq("id", projectId)
+      .eq("user_id", user.id);
     return NextResponse.json({ success: true });
   }
 
