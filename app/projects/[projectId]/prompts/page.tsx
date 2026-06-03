@@ -443,11 +443,20 @@ export default function PromptsPage({ params }: PageProps) {
       // if the SSE `done` event never reached us (proxy truncation).
       const fresh = await mutate();
       const completedOnServer = (fresh?.current_state ?? 0) >= 14;
+      const freshBeats = (fresh?.beats ?? []) as Beat[];
+      // Don't trust the SSE or current_state signal alone — only flip to
+      // done when every beat in the DB actually carries a non-empty
+      // imagePrompt. Catches silent insert failures or partial writes.
+      const beatsReady = freshBeats.length > 0 && freshBeats.every((b) => !!b.imagePrompt);
 
-      if (doneReceived || completedOnServer) {
+      if ((doneReceived || completedOnServer) && beatsReady) {
         setImageStep({ status: "done", message: "" });
         toast.success("Image prompts generated");
         if (hasVideoBeats) setVideoStep(IDLE);
+      } else if (doneReceived || completedOnServer) {
+        // Server said done but beats aren't all populated — partial
+        // success. Surface it instead of misleadingly showing complete.
+        throw new Error("Generation reported done but some beats are missing prompts. Try again — the existing beats are preserved.");
       } else {
         throw new Error("Generation timed out — the server closed the connection before finishing. Any beats saved so far are preserved. Try again to complete the rest.");
       }
