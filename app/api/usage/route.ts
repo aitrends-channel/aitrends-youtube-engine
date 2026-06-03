@@ -16,18 +16,22 @@ export async function GET() {
   // Use 'in' to distinguish 'pro' (whose limit is legitimately null = unlimited)
   // from an unknown plan name (which should fall back to the Starter cap of 5).
   // Plain '?? 5' incorrectly catches Pro's null and converts it to 5.
-  const niche_limit: number | null = isAdmin
+  const planLimit: number | null = isAdmin
     ? null
     : plan in PLAN_LIMITS
       ? PLAN_LIMITS[plan]
       : 5;
 
   const { data: settings } = await supabase
-    .from("app_settings")
-    .select("niches_used")
+    .from("account_settings")
+    .select("niches_used, niche_limit_override")
     .eq("user_id", user.id)
     .maybeSingle();
 
+  // Admin-set per-user override takes precedence over the plan default.
+  // NULL override means "no override, use the plan limit".
+  const override = settings?.niche_limit_override ?? null;
+  const niche_limit: number | null = override !== null ? override : planLimit;
   const niches_used = settings?.niches_used ?? 0;
   const at_limit = niche_limit !== null && niches_used >= niche_limit;
 

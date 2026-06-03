@@ -59,18 +59,28 @@ export async function POST(req: Request) {
   }
 
   // Enforce niche limit for non-fork project creation.
-  // Uses a lifetime counter on app_settings so deletions don't free up
-  // slots — preventing users from exploiting deletion to exceed their plan.
+  // Uses a lifetime counter on account_settings so deletions don't free
+  // up slots — preventing users from exploiting deletion to exceed
+  // their plan.
   const isAdmin = user.email === ADMIN_EMAIL;
   const plan = (user.app_metadata?.plan as string) ?? "starter";
   // Use 'in' to distinguish 'pro' (whose limit is legitimately null = unlimited)
   // from an unknown plan name (which should fall back to the Starter cap of 5).
   // Plain '?? 5' incorrectly catches Pro's null and converts it to 5.
-  const limit: number | null = isAdmin
+  const planLimit: number | null = isAdmin
     ? null
     : plan in PLAN_LIMITS
       ? PLAN_LIMITS[plan]
       : 5;
+
+  // Admin-set per-user override takes precedence over the plan default.
+  const { data: settings } = await supabase
+    .from("account_settings")
+    .select("niche_limit_override")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const override = settings?.niche_limit_override ?? null;
+  const limit: number | null = override !== null ? override : planLimit;
 
   const { data: rpcData, error: rpcError } = await supabase
     .rpc("try_use_niche", { uid: user.id, plan_limit: limit })

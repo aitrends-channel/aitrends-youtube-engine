@@ -16,7 +16,7 @@ export async function getSettings(userId: string): Promise<AppSettings> {
   if (cached && Date.now() - cached.at < TTL_MS) return cached.data;
 
   const { data, error } = await supabase
-    .from("app_settings")
+    .from("account_settings")
     .select("kie_api_key")
     .eq("user_id", userId)
     .single();

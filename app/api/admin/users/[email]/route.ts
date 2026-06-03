@@ -26,7 +26,7 @@ export async function DELETE(
   const { error } = await supabase.from("allowed_emails").delete().eq("email", decoded);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Delete the auth user entirely (cascades projects and app_settings)
+  // Delete the auth user entirely (cascades projects and account_settings)
   const { data: listData } = await supabase.auth.admin.listUsers({ perPage: 1000 });
   const authUser = listData?.users.find((u) => u.email?.toLowerCase() === decoded);
   if (authUser) {

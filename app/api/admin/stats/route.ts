@@ -7,6 +7,8 @@ export const dynamic = "force-dynamic";
 
 const ADMIN_EMAIL = "prioritylearn@gmail.com";
 
+const PLAN_LIMITS: Record<string, number | null> = { founder: 20, starter: 5, pro: null };
+
 const PHASE_LABELS: Record<number, string> = {
   1: "Setup", 2: "Setup", 3: "Setup", 4: "Analyzing", 5: "Analyzing",
   6: "Topic", 7: "Visuals", 8: "Visuals", 9: "Prompts", 10: "Prompts",
@@ -27,15 +29,42 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const [emailsRes, authUsersRes, projectsRes] = await Promise.all([
+  const [emailsRes, authUsersRes, projectsRes, settingsRes] = await Promise.all([
     supabase.from("allowed_emails").select("email"),
     supabase.auth.admin.listUsers({ perPage: 1000 }),
     supabase.from("projects").select("id, user_id, channel_name, current_state, selected_topic, created_at, assembled_url").order("created_at", { ascending: true }),
+    supabase.from("account_settings").select("user_id, niches_used, niche_limit_override"),
   ]);
 
   const allowedEmails: string[] = (emailsRes.data ?? []).map((r) => r.email as string);
   const authUsers = authUsersRes.data?.users ?? [];
   const projects = projectsRes.data ?? [];
+
+  // If migration 032 hasn't run yet the combined select fails entirely
+  // (column doesn't exist) and every user would silently show 0 niches
+  // used. Detect that case and retry without the override column so the
+  // numerator still renders correctly; overrides just default to null.
+  let settingsRows: Array<{ user_id: string; niches_used: number; niche_limit_override: number | null }> = [];
+  if (settingsRes.error) {
+    console.warn("[admin/stats] account_settings full select failed; falling back to niches_used only", settingsRes.error);
+    const fallback = await supabase.from("account_settings").select("user_id, niches_used");
+    if (fallback.error) {
+      console.error("[admin/stats] account_settings fallback select also failed", fallback.error);
+    } else {
+      settingsRows = (fallback.data ?? []).map((s) => ({
+        user_id: s.user_id as string,
+        niches_used: (s.niches_used as number) ?? 0,
+        niche_limit_override: null,
+      }));
+    }
+  } else {
+    settingsRows = (settingsRes.data ?? []).map((s) => ({
+      user_id: s.user_id as string,
+      niches_used: (s.niches_used as number) ?? 0,
+      niche_limit_override: (s.niche_limit_override as number | null) ?? null,
+    }));
+  }
+  const settingsByUserId = new Map(settingsRows.map((s) => [s.user_id, s]));
 
   // Build lookup maps
   const emailToAuthUser = new Map(authUsers.map((u) => [u.email?.toLowerCase() ?? "", u]));
@@ -54,14 +83,27 @@ export async function GET() {
     ...authUsers.map((authUser) => {
       const email = authUser.email ?? "Unknown";
       const isPaid = authUser.app_metadata?.paid === true;
+      const isAdmin = authUser.email === ADMIN_EMAIL;
+      const plan = (authUser.app_metadata?.plan as string | undefined) ?? null;
+      const planDefaultLimit: number | null = isAdmin
+        ? null
+        : plan && plan in PLAN_LIMITS
+          ? PLAN_LIMITS[plan]
+          : 5;
+      const settings = settingsByUserId.get(authUser.id);
+      const override = settings?.niche_limit_override ?? null;
       return {
         email,
         status: isPaid ? "Paid" : "Registered",
         projectCount: projectCountByUserId.get(authUser.id) ?? 0,
         lastSignIn: authUser.last_sign_in_at ?? null,
-        plan: (authUser.app_metadata?.plan as string | undefined) ?? null,
+        plan,
         paidAt: (authUser.app_metadata?.paid_at as string | undefined) ?? null,
         planExpiresAt: (authUser.app_metadata?.plan_expires_at as string | undefined) ?? null,
+        nichesUsed: settings?.niches_used ?? 0,
+        planDefaultLimit,
+        nicheLimitOverride: override,
+        effectiveNicheLimit: override !== null ? override : planDefaultLimit,
       };
     }),
     // Emails in allowed_emails that haven't signed up yet
@@ -75,6 +117,10 @@ export async function GET() {
         plan: null,
         paidAt: null,
         planExpiresAt: null,
+        nichesUsed: 0,
+        planDefaultLimit: null,
+        nicheLimitOverride: null,
+        effectiveNicheLimit: null,
       })),
   ];
 

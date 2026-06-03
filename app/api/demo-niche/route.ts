@@ -9,7 +9,7 @@ export async function GET() {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   const { data, error } = await supabase
-    .from("app_settings")
+    .from("account_settings")
     .select("demo_niche_created")
     .eq("user_id", user.id)
     .single();
@@ -26,7 +26,7 @@ export async function POST() {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   const { error } = await supabase
-    .from("app_settings")
+    .from("account_settings")
     .upsert({ user_id: user.id, demo_niche_created: true });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

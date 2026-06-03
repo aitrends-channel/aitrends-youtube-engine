@@ -42,7 +42,7 @@ export async function POST(req: Request) {
     }
 
     const { error } = await supabase
-      .from("app_settings")
+      .from("account_settings")
       .upsert({ user_id: user.id, ...update });
 
     if (error) throw new Error(error.message);
