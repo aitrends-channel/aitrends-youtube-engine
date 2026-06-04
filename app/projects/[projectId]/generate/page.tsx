@@ -489,8 +489,12 @@ export default function GeneratePage({ params }: PageProps) {
         setClearingImages(false);
       }
 
-      // Submit beats in batches of 3 with a 1.5s gap to avoid kie.ai rate limits
-      const SUBMIT_BATCH = 3;
+      // Submit beats in batches. KIE returns 429 "call frequency is too
+      // high" once sustained submission rate climbs past ~10 req/s
+      // (observed: 8+500ms tripped at request #48). 5+1000ms = ~5 req/s
+      // sustained, comfortably under the cap while still ~2.5× faster
+      // than the previous 3+1500ms baseline.
+      const SUBMIT_BATCH = 5;
       const pending: { beatNumber: number; taskId: string }[] = [];
       let firstSubmitError: string | null = null;
 
@@ -519,7 +523,7 @@ export default function GeneratePage({ params }: PageProps) {
           if (r.status === "fulfilled") pending.push(r.value);
           else if (!firstSubmitError) firstSubmitError = r.reason instanceof Error ? r.reason.message : "Unknown error";
         }
-        if (i + SUBMIT_BATCH < targetBeats.length) await new Promise((r) => setTimeout(r, 1500));
+        if (i + SUBMIT_BATCH < targetBeats.length) await new Promise((r) => setTimeout(r, 1000));
       }
 
       if (pending.length === 0) {
