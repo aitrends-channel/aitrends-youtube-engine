@@ -3,8 +3,7 @@ import { supabase } from "@/lib/supabase/client";
 
 const YOUTUBE_DAILY_QUOTA = 10_000;
 // Quota units per call type (YouTube Data API v3)
-const QUOTA = { channels_list: 1, search_list: 100, videos_list: 1 } as const;
-const QUOTA_FULL_RESOLVE = QUOTA.channels_list + QUOTA.search_list + QUOTA.videos_list; // 102
+const QUOTA = { channels_list: 1, search_list: 100, videos_list: 1, playlistItems_list: 1 } as const;
 const QUOTA_CACHED_RESOLVE = QUOTA.channels_list; // 1 (only channels.list runs before cache hit)
 
 export { YOUTUBE_DAILY_QUOTA };
@@ -13,11 +12,18 @@ class YouTubeQuotaError extends Error {
   constructor() { super("YouTube API quota exceeded"); }
 }
 
+class YouTubeNotFoundError extends Error {
+  constructor(public reason: string, message: string) { super(message); }
+}
+
 async function youtubeGet<T>(url: URL): Promise<T> {
   const res = await fetch(url.toString());
   const data = await res.json() as { error?: { message?: string; errors?: { reason?: string }[] } };
   const reason = data?.error?.errors?.[0]?.reason;
   if (reason === "quotaExceeded" || reason === "rateLimitExceeded") throw new YouTubeQuotaError();
+  if (reason === "playlistNotFound" || reason === "playlistItemsNotAccessible") {
+    throw new YouTubeNotFoundError(reason, data.error?.message ?? "Playlist not found");
+  }
   if (data?.error) throw new Error(`YouTube API: ${data.error.message ?? "unknown error"}`);
   return data as T;
 }
@@ -119,11 +125,11 @@ function parseChannelUrl(channelUrl: string): { type: "id" | "handle" | "usernam
 async function fetchChannelInfo(
   channelUrl: string,
   apiKey: string
-): Promise<{ id: string; name: string; subscribers: string; description: string }> {
+): Promise<{ id: string; name: string; subscribers: string; description: string; uploadsPlaylistId: string }> {
   const { type, value } = parseChannelUrl(channelUrl);
 
   const url = new URL("https://www.googleapis.com/youtube/v3/channels");
-  url.searchParams.set("part", "snippet,statistics");
+  url.searchParams.set("part", "snippet,statistics,contentDetails");
   url.searchParams.set("key", apiKey);
   if (type === "id") url.searchParams.set("id", value);
   else if (type === "handle") url.searchParams.set("forHandle", value);
@@ -134,6 +140,7 @@ async function fetchChannelInfo(
       id: string;
       snippet: { title: string; description: string };
       statistics: { subscriberCount?: string; hiddenSubscriberCount?: boolean };
+      contentDetails: { relatedPlaylists: { uploads?: string } };
     }[];
   }>(url);
 
@@ -144,10 +151,22 @@ async function fetchChannelInfo(
     ? "Hidden"
     : formatSubscribers(parseInt(channel.statistics.subscriberCount ?? "0", 10));
 
-  return { id: channel.id, name: channel.snippet.title, subscribers, description: channel.snippet.description };
+  return {
+    id: channel.id,
+    name: channel.snippet.title,
+    subscribers,
+    description: channel.snippet.description,
+    uploadsPlaylistId: channel.contentDetails.relatedPlaylists.uploads ?? "",
+  };
 }
 
-async function fetchTopVideos(channelId: string, apiKey: string): Promise<TopVideo[]> {
+async function fetchTopVideos(
+  channelId: string,
+  uploadsPlaylistId: string,
+  apiKey: string
+): Promise<{ videos: TopVideo[]; quotaUsed: number }> {
+  let quotaUsed = QUOTA.search_list;
+
   const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
   searchUrl.searchParams.set("part", "snippet");
   searchUrl.searchParams.set("channelId", channelId);
@@ -157,8 +176,38 @@ async function fetchTopVideos(channelId: string, apiKey: string): Promise<TopVid
   searchUrl.searchParams.set("key", apiKey);
 
   const searchData = await youtubeGet<{ items?: { id: { videoId: string } }[] }>(searchUrl);
-  const videoIds = (searchData.items ?? []).map(i => i.id.videoId);
-  if (!videoIds.length) return [];
+  let videoIds = (searchData.items ?? []).map(i => i.id.videoId);
+
+  // search.list with type=video silently drops Shorts on some channels
+  // (and returns nothing for channels with only livestreams or very new
+  // uploads). Fall back to the uploads playlist, which lists every
+  // upload regardless of format.
+  if (!videoIds.length && uploadsPlaylistId) {
+    const playlistUrl = new URL("https://www.googleapis.com/youtube/v3/playlistItems");
+    playlistUrl.searchParams.set("part", "contentDetails");
+    playlistUrl.searchParams.set("playlistId", uploadsPlaylistId);
+    playlistUrl.searchParams.set("maxResults", "50");
+    playlistUrl.searchParams.set("key", apiKey);
+
+    try {
+      const playlistData = await youtubeGet<{
+        items?: { contentDetails: { videoId: string } }[];
+      }>(playlistUrl);
+      quotaUsed += QUOTA.playlistItems_list;
+      videoIds = (playlistData.items ?? []).map(i => i.contentDetails.videoId);
+    } catch (err) {
+      // Uploads playlist 404s when the channel has no public uploads at
+      // all (or is terminated/region-blocked). Treat as "no videos" so
+      // the caller surfaces a real reason instead of a 500.
+      if (err instanceof YouTubeNotFoundError) {
+        quotaUsed += QUOTA.playlistItems_list;
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  if (!videoIds.length) return { videos: [], quotaUsed };
 
   const videosUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
   videosUrl.searchParams.set("part", "snippet,statistics,contentDetails");
@@ -173,13 +222,20 @@ async function fetchTopVideos(channelId: string, apiKey: string): Promise<TopVid
       contentDetails: { duration: string };
     }[];
   }>(videosUrl);
+  quotaUsed += QUOTA.videos_list;
 
-  return (videosData.items ?? []).map(v => ({
+  const videos = (videosData.items ?? []).map(v => ({
     videoId: v.id,
     title: v.snippet.title,
     viewCount: parseInt(v.statistics.viewCount ?? "0", 10) || 0,
     duration: v.contentDetails.duration,
   }));
+
+  // The uploads-playlist path returns items in upload order, not view
+  // order. Sort by viewCount desc and cap at 10 so downstream sees the
+  // channel's strongest videos either way.
+  videos.sort((a, b) => b.viewCount - a.viewCount);
+  return { videos: videos.slice(0, 10), quotaUsed };
 }
 
 async function getCachedChannel(channelId: string): Promise<ChannelInfo | null> {
@@ -225,10 +281,10 @@ export async function resolveChannel(channelUrl: string): Promise<ChannelInfo> {
         return cached;
       }
 
-      const topVideos = await fetchTopVideos(channel.id, apiKey);
+      const { videos: topVideos, quotaUsed } = await fetchTopVideos(channel.id, channel.uploadsPlaylistId, apiKey);
 
-      // Fire-and-forget quota tracking (full resolve)
-      if (row) recordQuotaUsage(row.id, absoluteIndex, QUOTA_FULL_RESOLVE).catch(() => {});
+      // Fire-and-forget quota tracking (channels.list + whatever the top-videos path actually consumed)
+      if (row) recordQuotaUsage(row.id, absoluteIndex, QUOTA.channels_list + quotaUsed).catch(() => {});
 
       return {
         channelId: channel.id,
