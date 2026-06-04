@@ -27,6 +27,33 @@ export async function PATCH(
     return NextResponse.json({ ok: true });
   }
 
+  // Replace a single key's value in place
+  if ("editKeyIndex" in body) {
+    const newKey = typeof body.newKey === "string" ? body.newKey.trim() : "";
+    if (!newKey) return NextResponse.json({ error: "New key is required" }, { status: 400 });
+
+    const { data: row } = await supabase
+      .from("product_config")
+      .select("keys")
+      .eq("id", params.id)
+      .single();
+    if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    const keys = [...((row.keys as string[]) ?? [])];
+    const idx = body.editKeyIndex;
+    if (typeof idx !== "number" || idx < 0 || idx >= keys.length) {
+      return NextResponse.json({ error: "Invalid key index" }, { status: 400 });
+    }
+    keys[idx] = newKey;
+
+    const { error } = await supabase
+      .from("product_config")
+      .update({ keys })
+      .eq("id", params.id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   // Remove a key by index
   if ("removeKeyIndex" in body) {
     const { data: row } = await supabase

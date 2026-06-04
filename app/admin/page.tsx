@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown,
+  Crown, MoreVertical, Trash2,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -457,6 +457,30 @@ function SetupSection({
   const [removingKey, setRemovingKey] = useState<string | null>(null); // "rowId:index"
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
+  const [editingKey, setEditingKey] = useState<string | null>(null); // "rowId:index"
+  const [editValue, setEditValue] = useState("");
+  const [savingEdit, setSavingEdit] = useState<string | null>(null); // "rowId:index"
+  const [openMenuTag, setOpenMenuTag] = useState<string | null>(null); // "rowId:index"
+
+  // Close the per-row menu on outside click / Escape so it behaves like a
+  // normal popover without dragging in a heavier dropdown primitive.
+  useEffect(() => {
+    if (!openMenuTag) return;
+    function onDocClick(e: MouseEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("[data-key-menu]")) return;
+      setOpenMenuTag(null);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpenMenuTag(null);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [openMenuTag]);
 
   // Live Supadata account usage — there's only one key + the billing
   // model is account-wide credits (not per-key daily quota), so we just
@@ -488,6 +512,33 @@ function SetupSection({
       toast.error(err instanceof Error ? err.message : "Failed to add key");
     } finally {
       setAdding(false);
+    }
+  }
+
+  async function handleSaveEdit(rowId: string, keyIndex: number) {
+    const tag = `${rowId}:${keyIndex}`;
+    const trimmed = editValue.trim();
+    if (!trimmed) {
+      toast.error("Key can't be empty");
+      return;
+    }
+    setSavingEdit(tag);
+    try {
+      const res = await fetch(`/api/admin/product-keys/${rowId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ editKeyIndex: keyIndex, newKey: trimmed }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? "Failed to save key");
+      toast.success("Key updated");
+      setEditingKey(null);
+      setEditValue("");
+      mutateKeys();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save key");
+    } finally {
+      setSavingEdit(null);
     }
   }
 
@@ -774,16 +825,76 @@ function SetupSection({
                                 Standby
                               </span>
                             )}
-                            <span className="flex-1 text-sm font-mono truncate" style={{ color: "var(--c-55)", letterSpacing: "0.02em" }}>
-                              {maskKey(k)}
-                            </span>
-                            <button
-                              onClick={() => handleRemoveKey(row.id, i)}
-                              disabled={removingKey === tag}
-                              className="text-xs px-2 py-1 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 cursor-pointer shrink-0 flex items-center gap-1"
-                              style={{ background: "oklch(0.6 0.22 25 / 0.08)", color: "oklch(0.7 0.22 25)", border: "1px solid oklch(0.6 0.22 25 / 0.15)" }}>
-                              {removingKey === tag ? <Spinner size={11} /> : "✕"}
-                            </button>
+                            {editingKey === tag ? (
+                              <>
+                                <input
+                                  type="text"
+                                  autoFocus
+                                  value={editValue}
+                                  onChange={(e) => setEditValue(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") handleSaveEdit(row.id, i);
+                                    else if (e.key === "Escape") { setEditingKey(null); setEditValue(""); }
+                                  }}
+                                  disabled={savingEdit === tag}
+                                  className="flex-1 text-sm font-mono px-2 py-1 rounded-md outline-none"
+                                  style={{ background: "white", border: "1px solid oklch(0.62 0.15 220 / 0.4)", color: "oklch(0.2 0 0)" }}
+                                />
+                                <button
+                                  onClick={() => handleSaveEdit(row.id, i)}
+                                  disabled={savingEdit === tag || !editValue.trim()}
+                                  className="text-xs px-2 py-1 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 cursor-pointer shrink-0 flex items-center gap-1"
+                                  style={{ background: "oklch(0.55 0.15 145 / 0.12)", color: "oklch(0.5 0.15 145)", border: "1px solid oklch(0.55 0.15 145 / 0.25)" }}>
+                                  {savingEdit === tag ? <Spinner size={11} /> : "Save"}
+                                </button>
+                                <button
+                                  onClick={() => { setEditingKey(null); setEditValue(""); }}
+                                  disabled={savingEdit === tag}
+                                  className="text-xs px-2 py-1 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 cursor-pointer shrink-0"
+                                  style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-50)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+                                  Cancel
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <span className="flex-1 text-sm font-mono truncate" style={{ color: "var(--c-55)", letterSpacing: "0.02em" }}>
+                                  {maskKey(k)}
+                                </span>
+                                <div className="relative shrink-0" data-key-menu>
+                                  <button
+                                    onClick={() => setOpenMenuTag(openMenuTag === tag ? null : tag)}
+                                    disabled={removingKey === tag}
+                                    aria-label="Key actions"
+                                    aria-haspopup="menu"
+                                    aria-expanded={openMenuTag === tag}
+                                    className="p-1.5 rounded-lg transition-all hover:bg-black/5 disabled:opacity-40 cursor-pointer flex items-center justify-center"
+                                    style={{ color: "var(--c-50)" }}>
+                                    {removingKey === tag ? <Spinner size={14} /> : <MoreVertical size={16} />}
+                                  </button>
+                                  {openMenuTag === tag && (
+                                    <div
+                                      role="menu"
+                                      className="absolute right-0 top-full mt-1 z-20 min-w-[140px] rounded-lg overflow-hidden py-1"
+                                      style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.08)", boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)" }}>
+                                      <button
+                                        role="menuitem"
+                                        onClick={() => { setOpenMenuTag(null); setEditingKey(tag); setEditValue(k); }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-all hover:bg-black/5 cursor-pointer"
+                                        style={{ color: "oklch(0.3 0 0)" }}>
+                                        <Pencil size={13} /> Edit
+                                      </button>
+                                      <button
+                                        role="menuitem"
+                                        onClick={() => { setOpenMenuTag(null); handleRemoveKey(row.id, i); }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-all hover:bg-black/5 cursor-pointer"
+                                        style={{ color: "oklch(0.6 0.22 25)" }}>
+                                        <Trash2 size={13} /> Delete
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            )}
                           </div>
 
                           {/* Quota bar */}
