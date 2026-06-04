@@ -1,6 +1,7 @@
 import { Supadata, SupadataError } from "@supadata/js";
 import type { YoutubeBatchResults, TranscriptChunk } from "@supadata/js";
 import { supabase } from "@/lib/supabase/client";
+import { getActiveProductKey } from "@/lib/claude/routing";
 
 export interface SupadataTranscript {
   videoId: string;
@@ -11,8 +12,12 @@ export interface SupadataTranscript {
   error?: string;
 }
 
-function getClient(): Supadata {
-  const key = process.env.SUPADATA_API_KEY;
+async function getClient(): Promise<Supadata> {
+  // Admin-managed key in product_config is the source of truth; env var
+  // is a fallback for local dev / pre-DB setups (mirrors the admin
+  // supadata-status route).
+  const dbKey = await getActiveProductKey("supadata_api_key");
+  const key = dbKey || process.env.SUPADATA_API_KEY;
   if (!key) throw new Error("SUPADATA_API_KEY is not configured");
   return new Supadata({ apiKey: key });
 }
@@ -134,7 +139,7 @@ export async function fetchTranscriptsViaSupadata(
   }
 
   // Fetch only uncached videos from Supadata
-  const client = getClient();
+  const client = await getClient();
   let fresh: SupadataTranscript[] = [];
 
   try {
