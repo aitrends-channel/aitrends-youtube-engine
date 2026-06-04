@@ -271,11 +271,19 @@ async function generateImages(
 
   let totalBeatCount = existingBeats?.length ?? 0;
 
+  // Seed the progress bar with the count of chunks the resume math
+  // already considers covered. Without this, a retry-from-chunk-N run
+  // would render 0% until the first persistence event lands —
+  // misleading users into thinking the work restarted.
+  const alreadyDoneChunks = allChunks.length - chunksToProcess.length;
+  if (allChunks.length > 1) {
+    send({ type: "progress", current: alreadyDoneChunks, total: allChunks.length });
+  }
+
   for (const { content, chunkIndex, totalChunks } of chunksToProcess) {
     // Cheap round-trip to check whether we've been cancelled — bail
     // before paying for the next Claude call.
     await assertPromptsRunActive(projectId, runId);
-    if (totalChunks > 1) send({ type: "progress", current: chunkIndex + 1, total: totalChunks });
 
     const t0 = Date.now();
     console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} startBeat=${nextBeatNumber} words=${content.split(/\s+/).length}`);
@@ -362,6 +370,10 @@ async function generateImages(
 
     totalBeatCount += chunkBeats.length;
     nextBeatNumber = (chunkBeats[chunkBeats.length - 1]?.beatNumber ?? nextBeatNumber + chunkBeats.length - 1) + 1;
+
+    // Emit progress AFTER persistence so the value tracks completed
+    // work rather than chunks-just-starting (the old position).
+    if (totalChunks > 1) send({ type: "progress", current: chunkIndex + 1, total: totalChunks });
   }
 
   await supabase.from("projects").update({ current_state: 14 }).eq("id", projectId).eq("user_id", userId);
@@ -429,9 +441,13 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
       : `Generating motion prompts for ${pendingBeats.length} beats...`,
   });
 
+  // Seed the progress bar with the chunks already covered (resume).
+  if (totalChunksAbsolute > 1) {
+    send({ type: "progress", current: startChunkIdx, total: totalChunksAbsolute });
+  }
+
   for (let i = 0; i < chunks.length; i++) {
     await assertPromptsRunActive(projectId, runId);
-    if (totalChunksAbsolute > 1) send({ type: "progress", current: startChunkIdx + i + 1, total: totalChunksAbsolute });
 
     // One retry on tool-use miss — KIE occasionally returns text-only
     // even with tool_choice forced. A fresh call usually picks the tool.
@@ -506,6 +522,9 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
           .eq("beat_number", b.beatNumber)
       )
     );
+
+    // Emit progress AFTER persistence so the bar tracks completed work.
+    if (totalChunksAbsolute > 1) send({ type: "progress", current: startChunkIdx + i + 1, total: totalChunksAbsolute });
   }
 
   send({ type: "done", beatCount: allBeats.length });
