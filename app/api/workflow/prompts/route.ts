@@ -129,14 +129,32 @@ function sseStream(handler: (send: (data: object) => void) => Promise<void>): Re
   return new Response(
     new ReadableStream({
       async start(controller) {
+        let closed = false;
         function send(data: object) {
+          if (closed) return;
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
         }
+        // SSE comment heartbeat. Image-prompt chunks spend 30-60s
+        // blocked inside the Claude streaming call without emitting any
+        // SSE bytes; Vercel's edge and intermediate proxies drop quiet
+        // connections after ~30s, which the client then reports as a
+        // "server closed the connection before finishing" timeout. A
+        // ': keepalive\n\n' line every 15s keeps the stream warm
+        // without triggering the client's JSON parse path (lines that
+        // don't start with `data: ` are ignored).
+        const HEARTBEAT_MS = 15_000;
+        const heartbeat = setInterval(() => {
+          if (closed) return;
+          try { controller.enqueue(encoder.encode(`: keepalive\n\n`)); }
+          catch { /* controller may already be torn down */ }
+        }, HEARTBEAT_MS);
         try {
           await handler(send);
         } catch (err) {
           send({ type: "error", message: err instanceof Error ? err.message : "Generation failed" });
         } finally {
+          closed = true;
+          clearInterval(heartbeat);
           controller.close();
         }
       },
