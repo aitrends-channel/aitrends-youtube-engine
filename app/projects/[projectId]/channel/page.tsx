@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertCircle } from "lucide-react";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { toast } from "sonner";
 import { useProject } from "@/hooks/useProject";
@@ -230,6 +231,11 @@ export default function ChannelPage({ params }: PageProps) {
   const [userEmail, setUserEmail] = useState("");
   const [showNicheLimitModal, setShowNicheLimitModal] = useState(false);
   const [limitInfo, setLimitInfo] = useState<{ nichesUsed: number; nicheLimit: number; currentPlan: string } | null>(null);
+  // Set when a fresh /projects/new run lands on a channel the user
+  // already has a niche for; modal redirects them to fork that niche
+  // instead of creating a duplicate. Only fires before any expensive
+  // pipeline step (transcripts, Claude calls) runs.
+  const [existingNiche, setExistingNiche] = useState<{ projectId: string; channelName: string } | null>(null);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -288,6 +294,32 @@ export default function ChannelPage({ params }: PageProps) {
       toast.error(msg);
       setIsWorking(false);
       return;
+    }
+
+    // Dedup guard for fresh-niche flow: if the user already has a
+    // project for this channel, redirect them to fork it instead of
+    // burning a niche slot + Claude calls on a duplicate. We do this
+    // BEFORE transcripts so we don't hit Supadata uselessly.
+    if (projectId === "new" && fetchedInfo) {
+      const target = fetchedInfo.channelName.trim().toLowerCase();
+      try {
+        const res = await fetch("/api/projects");
+        if (res.ok) {
+          const userProjects = await res.json() as Array<{ id: string; channel_name: string | null }>;
+          const match = userProjects.find((p) => (p.channel_name ?? "").trim().toLowerCase() === target);
+          if (match) {
+            // Reset the pipeline back to idle and surface the redirect
+            // modal. The user picks: fork the existing niche or cancel.
+            setSteps((prev) => prev.map((s) => ({ ...s, status: "idle" })));
+            setExistingNiche({ projectId: match.id, channelName: fetchedInfo.channelName });
+            setIsWorking(false);
+            return;
+          }
+        }
+      } catch {
+        // Non-fatal — if the lookup itself errors, we'd rather continue
+        // and let the user create than block them on a transient.
+      }
     }
 
     // Step 2: Fetch video metadata
@@ -458,43 +490,64 @@ export default function ChannelPage({ params }: PageProps) {
               <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
                 YouTube Channel URL
               </label>
-              <div className="flex gap-3">
-                <input
-                  type="text"
-                  placeholder="https://youtube.com/@channelname"
-                  value={channelUrl}
-                  readOnly={isAnalyzed}
-                  onChange={(e) => !isAnalyzed && setChannelUrl(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && !isWorking && !isAnalyzed && runFullAnalysis()}
-                  className="flex-1 min-w-0 px-4 py-2.5 rounded-xl text-sm outline-none transition-all"
-                  style={{
-                    background: "var(--bg-progress)",
-                    border: "1px solid var(--bd-8)",
-                    color: "var(--c-90)",
-                    opacity: isAnalyzed ? 0.6 : 1,
-                    cursor: isAnalyzed ? "default" : undefined,
-                  }}
-                  onFocus={(e) => { if (!isAnalyzed) (e.target as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.4)"; }}
-                  onBlur={(e) => { (e.target as HTMLElement).style.borderColor = "var(--bd-8)"; }}
-                />
-                <button
-                  onClick={runFullAnalysis}
-                  disabled={isWorking || !channelUrl.trim() || isAnalyzed}
-                  className="shrink-0 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40"
-                  style={{
-                    background: "oklch(0.72 0.25 285)",
-                    color: "var(--bg-page-2)",
-                    boxShadow: isWorking || isAnalyzed ? "none" : "0 0 16px oklch(0.72 0.25 285 / 0.3)"
-                  }}
-                >
-                  {isWorking ? (
-                    <span className="flex items-center gap-2">
-                      <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      Running…
-                    </span>
-                  ) : isAnalyzed ? "Analyzed" : "Analyze"}
-                </button>
-              </div>
+              {/* On a failed analysis we lock the channel URL so the user
+                  can't swap channels mid-error (the project row is
+                  already tied to this URL) but keep the action button
+                  active so they can retry with the same input. */}
+              {(() => {
+                const inputLocked = isAnalyzed || hasError;
+                // Keep the button actionable in every state except an
+                // in-flight run or an empty URL — that way the user can
+                // re-analyse an existing niche or retry after a failure
+                // without having to clear state first.
+                const buttonDisabled = isWorking || !channelUrl.trim();
+                const buttonLabel = isWorking
+                  ? null
+                  : hasError
+                    ? "Retry"
+                    : isAnalyzed
+                      ? "Re-analyze"
+                      : "Analyze";
+                return (
+                  <div className="flex gap-3">
+                    <input
+                      type="text"
+                      placeholder="https://youtube.com/@channelname"
+                      value={channelUrl}
+                      readOnly={inputLocked}
+                      onChange={(e) => !inputLocked && setChannelUrl(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && !buttonDisabled && runFullAnalysis()}
+                      className="flex-1 min-w-0 px-4 py-2.5 rounded-xl text-sm outline-none transition-all"
+                      style={{
+                        background: "var(--bg-progress)",
+                        border: "1px solid var(--bd-8)",
+                        color: "var(--c-90)",
+                        opacity: inputLocked ? 0.6 : 1,
+                        cursor: inputLocked ? "default" : undefined,
+                      }}
+                      onFocus={(e) => { if (!inputLocked) (e.target as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.4)"; }}
+                      onBlur={(e) => { (e.target as HTMLElement).style.borderColor = "var(--bd-8)"; }}
+                    />
+                    <button
+                      onClick={runFullAnalysis}
+                      disabled={buttonDisabled}
+                      className="shrink-0 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+                      style={{
+                        background: "oklch(0.72 0.25 285)",
+                        color: "var(--bg-page-2)",
+                        boxShadow: buttonDisabled ? "none" : "0 0 16px oklch(0.72 0.25 285 / 0.3)",
+                      }}
+                    >
+                      {isWorking ? (
+                        <span className="flex items-center gap-2">
+                          <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          Running…
+                        </span>
+                      ) : buttonLabel}
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Topic selection */}
@@ -643,6 +696,50 @@ export default function ChannelPage({ params }: PageProps) {
           }}
         />
       )}
+
+      <Dialog
+        open={existingNiche !== null}
+        onOpenChange={(open) => { if (!open) setExistingNiche(null); }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>You already have this niche</DialogTitle>
+            <DialogDescription>
+              A project for this channel already exists in your dashboard. Add a new video to it
+              instead of creating a duplicate niche — it preserves your niche slot and reuses the
+              channel analysis you&apos;ve already paid for.
+            </DialogDescription>
+          </DialogHeader>
+          {existingNiche && (
+            <div className="rounded-xl p-3"
+              style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+              <p className="text-xs uppercase tracking-wide" style={{ color: "var(--c-45)" }}>Existing niche</p>
+              <p className="text-sm font-semibold mt-1" style={{ color: "var(--c-90)" }}>
+                {existingNiche.channelName}
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <button
+              onClick={() => {
+                if (!existingNiche) return;
+                router.push(`/projects/new-fork/topic?from=${existingNiche.projectId}`);
+              }}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              Add video to existing niche
+            </button>
+            <button
+              onClick={() => setExistingNiche(null)}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80"
+              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Cancel
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
