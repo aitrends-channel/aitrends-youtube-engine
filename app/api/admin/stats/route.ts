@@ -85,11 +85,14 @@ export async function GET() {
       const isPaid = authUser.app_metadata?.paid === true;
       const isAdmin = authUser.email === ADMIN_EMAIL;
       const plan = (authUser.app_metadata?.plan as string | undefined) ?? null;
+      // Demo cap (1 niche) for registered users without a paid plan;
+      // matches the demo dashboard's hardcoded nicheLimit = 1. Paid
+      // tiers come from PLAN_LIMITS; admin is unlimited.
       const planDefaultLimit: number | null = isAdmin
         ? null
         : plan && plan in PLAN_LIMITS
           ? PLAN_LIMITS[plan]
-          : 5;
+          : 1;
       const settings = settingsByUserId.get(authUser.id);
       const override = settings?.niche_limit_override ?? null;
       return {

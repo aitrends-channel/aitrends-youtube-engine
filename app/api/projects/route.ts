@@ -63,15 +63,16 @@ export async function POST(req: Request) {
   // up slots — preventing users from exploiting deletion to exceed
   // their plan.
   const isAdmin = user.email === ADMIN_EMAIL;
-  const plan = (user.app_metadata?.plan as string) ?? "starter";
-  // Use 'in' to distinguish 'pro' (whose limit is legitimately null = unlimited)
-  // from an unknown plan name (which should fall back to the Starter cap of 5).
-  // Plain '?? 5' incorrectly catches Pro's null and converts it to 5.
+  const plan = (user.app_metadata?.plan as string) ?? "demo";
+  // Demo cap (1 niche) for registered-but-not-paid users. Use 'in' to
+  // distinguish 'pro' (whose limit is legitimately null = unlimited)
+  // from an unknown plan name. Plain '?? 1' would incorrectly catch
+  // Pro's null and clamp it to the demo cap.
   const planLimit: number | null = isAdmin
     ? null
     : plan in PLAN_LIMITS
       ? PLAN_LIMITS[plan]
-      : 5;
+      : 1;
 
   // Admin-set per-user override takes precedence over the plan default.
   const { data: settings } = await supabase
