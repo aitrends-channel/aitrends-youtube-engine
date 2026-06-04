@@ -48,7 +48,32 @@ STATE 5 — Extract deep writing behavior directly from the transcript text:
 - Direct address style (how they speak to "you" — formal, intimate, commanding, friendly?)
 - Detail level (abstract concepts only? specific numbers and examples? anecdotes?)
 
-Return a single JSON object with the extracted analysis. Be precise and pull from the actual text — these values will directly govern script generation.`;
+Be precise and pull from the actual text — these values will directly govern script generation.
+
+CALL the save_channel_analysis tool with EVERY field populated. The schema requires every key — omitting any field is an error. If a transcript doesn't give you a value, estimate based on what's most plausible for this niche; never leave a field out. The complete set of required fields is:
+
+Top-level (all required):
+- niche (string)
+- targetAudience (string)
+- hookStyle (string)
+- scriptFlow (string)
+- sentenceStyle (string)
+- emotionalPacingCurve (string)
+- retentionTechniques (array of strings)
+- wordsPerSecond (number, typically 1.5–2.5)
+- targetWordCount (number, integer)
+- styleDNA (object)
+
+styleDNA must contain:
+- sentenceRhythm (string)
+- flowPattern (string)
+- repetitionStyle (string)
+- tone (string)
+- transitions (string)
+- curiosityGaps (string)
+- emotionalTriggers (array of strings)
+- directAddress (string)
+- detailLevel (string)`;
 }
 
 export function buildVideoIdeasPrompt(

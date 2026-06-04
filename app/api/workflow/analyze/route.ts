@@ -25,40 +25,64 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Video transcripts are required" }, { status: 400 });
     }
 
-    const analysisResponse = await retryClaudeCall("channel analysis", () =>
-      anthropic.messages.create({
-        model: MODEL,
-        max_tokens: 4096,
-        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-        tools: [{
-          name: "save_channel_analysis",
-          description: "Save the structured channel analysis results",
-          input_schema: channelAnalysisInputSchema,
-        }],
-        tool_choice: { type: "tool", name: "save_channel_analysis" },
-        messages: [{ role: "user", content: buildAnalysisPrompt(transcripts) }],
-      })
-    );
+    // KIE+Opus occasionally returns an empty or differently-shaped tool
+    // input that fails our schema (every field "Invalid input"). The
+    // inner retryClaudeCall only handles transient transport errors —
+    // it doesn't re-roll on a successful-but-malformed response. Loop
+    // up to MAX_ATTEMPTS times around the whole call + parse so a
+    // single bad sample doesn't sink the analysis. Each iteration
+    // still benefits from retryClaudeCall's own retries underneath.
+    const MAX_ATTEMPTS = 3;
+    let analysis: ChannelAnalysisOutput | null = null;
+    let lastShapeError: Error | null = null;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const analysisResponse = await retryClaudeCall(`channel analysis attempt ${attempt}/${MAX_ATTEMPTS}`, () =>
+        anthropic.messages.create({
+          model: MODEL,
+          // 4096 was tight for the full styleDNA nested object plus all
+          // top-level required fields — Claude was selectively dropping
+          // targetAudience / wordsPerSecond / targetWordCount / styleDNA
+          // even on non-truncated responses. 8192 gives plenty of room.
+          max_tokens: 8192,
+          system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+          tools: [{
+            name: "save_channel_analysis",
+            description: "Save the structured channel analysis results",
+            input_schema: channelAnalysisInputSchema,
+          }],
+          tool_choice: { type: "tool", name: "save_channel_analysis" },
+          messages: [{ role: "user", content: buildAnalysisPrompt(transcripts) }],
+        })
+      );
 
-    const analysisToolUse = analysisResponse.content?.find((b) => b.type === "tool_use");
-    let analysisInput: unknown = null;
-    if (analysisToolUse && analysisToolUse.type === "tool_use") {
-      analysisInput = analysisToolUse.input;
-    } else {
-      // Fallback: KIE+Opus sometimes ignores tool_choice and emits the
-      // structured payload as text. Recover it before giving up.
-      const textBlock = analysisResponse.content?.find((b) => b.type === "text");
-      const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
-      console.log(`[analyze] fallback parsing text len=${raw.length} head=${raw.slice(0, 200)}`);
-      analysisInput = extractToolInputFromText(raw);
-    }
-    if (!analysisInput) throw new Error("No structured analysis returned");
+      const analysisToolUse = analysisResponse.content?.find((b) => b.type === "tool_use");
+      let analysisInput: unknown = null;
+      if (analysisToolUse && analysisToolUse.type === "tool_use") {
+        analysisInput = analysisToolUse.input;
+      } else {
+        // KIE+Opus sometimes ignores tool_choice and emits the structured
+        // payload as text. Recover it before giving up on this attempt.
+        const textBlock = analysisResponse.content?.find((b) => b.type === "text");
+        const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
+        console.log(`[analyze] attempt ${attempt} fallback parsing text len=${raw.length} head=${raw.slice(0, 200)}`);
+        analysisInput = extractToolInputFromText(raw);
+      }
 
-    const parsedAnalysis = ChannelAnalysisSchema.safeParse(analysisInput);
-    if (!parsedAnalysis.success) {
+      if (!analysisInput) {
+        lastShapeError = new Error("No structured analysis returned");
+        console.warn(`[analyze] attempt ${attempt}/${MAX_ATTEMPTS} returned no input; will retry`);
+        continue;
+      }
+
+      const parsedAnalysis = ChannelAnalysisSchema.safeParse(analysisInput);
+      if (parsedAnalysis.success) {
+        analysis = parsedAnalysis.data as ChannelAnalysisOutput;
+        break;
+      }
+
       const root = analysisInput as Record<string, unknown>;
       const styleDNA = root?.styleDNA;
-      console.error("[analyze] schema validation failed", {
+      console.warn(`[analyze] attempt ${attempt}/${MAX_ATTEMPTS} schema validation failed`, {
         topLevelKeys: Object.keys(root ?? {}),
         styleDNAType: styleDNA === null ? "null" : Array.isArray(styleDNA) ? "array" : typeof styleDNA,
         styleDNAPreview:
@@ -67,11 +91,18 @@ export async function POST(req: Request) {
             : styleDNA && typeof styleDNA === "object"
               ? JSON.stringify(styleDNA).slice(0, 500)
               : String(styleDNA),
-        zodIssues: parsedAnalysis.error.issues,
+        zodIssueCount: parsedAnalysis.error.issues.length,
       });
-      throw parsedAnalysis.error;
+      lastShapeError = parsedAnalysis.error;
     }
-    const analysis = parsedAnalysis.data as ChannelAnalysisOutput;
+
+    if (!analysis) {
+      // All attempts exhausted — surface a friendly message; humanize on
+      // the client falls through to "Try again — this is often
+      // transient" which now actually means "we already retried 3
+      // times, so retrying might not help; consider regenerating".
+      throw lastShapeError ?? new Error("Channel analysis returned unexpected shape after retries");
+    }
 
     let videoIdeas: string[] | undefined;
 
