@@ -1513,12 +1513,22 @@ export default function AdminPage() {
   // Single source of truth for which bucket a row belongs to. Used by
   // both the count strip and the active filter; keeping them aligned
   // means a click on "Founder · 3" always yields exactly 3 rows.
+  //
+  // The plan check is lowercased+trimmed so casing/whitespace in
+  // app_metadata.plan doesn't push a paid user into the Free/Demo
+  // bucket. Paid users whose plan field is missing entirely (the Dodo
+  // webhook sets paid:true but not plan; only /api/dodo/verify writes
+  // the plan, and that only fires if the user lands on the callback)
+  // fall back to "starter" — the cheapest paid tier — instead of
+  // Free/Demo, since they did pay something.
   function bucketOf(u: AdminUser): Exclude<PlanBucket, "all"> {
     if (u.status === "Pending") return "pending";
     if (u.email === ADMIN_EMAIL) return "admin";
-    if (u.plan === "founder") return "founder";
-    if (u.plan === "pro") return "pro";
-    if (u.plan === "starter") return "starter";
+    const planNorm = (u.plan ?? "").toLowerCase().trim();
+    if (planNorm === "founder") return "founder";
+    if (planNorm === "pro") return "pro";
+    if (planNorm === "starter") return "starter";
+    if (u.status === "Paid") return "starter";
     return "free";
   }
 
@@ -2080,16 +2090,25 @@ export default function AdminPage() {
                           // (user hasn't signed up) is purple.
                           const paidGreen = { bg: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "oklch(0.55 0.15 145 / 0.3)" };
                           const isAdmin = u.email === ADMIN_EMAIL;
+                          // Lower+trim so casing/whitespace in
+                          // app_metadata.plan doesn't fall through.
+                          const planNorm = (u.plan ?? "").toLowerCase().trim();
                           const planBadge = isAdmin
                             ? { label: "Admin", bg: "oklch(0.72 0.18 75 / 0.15)", color: "oklch(0.6 0.18 75)", border: "oklch(0.72 0.18 75 / 0.4)" }
                             : u.status === "Pending"
                             ? { label: "Pending", bg: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "oklch(0.72 0.25 285 / 0.2)" }
-                            : u.plan === "founder"
+                            : planNorm === "founder"
                             ? { label: "Founder", ...paidGreen }
-                            : u.plan === "pro"
+                            : planNorm === "pro"
                             ? { label: "Pro", ...paidGreen }
-                            : u.plan === "starter"
+                            : planNorm === "starter"
                             ? { label: "Starter", ...paidGreen }
+                            : u.status === "Paid"
+                            // Paid user with no recognised plan — still
+                            // surface as a paying customer (not Free/Demo)
+                            // since they did pay. Indicates a data gap
+                            // worth fixing manually.
+                            ? { label: "Paid", ...paidGreen }
                             : { label: "Free/Demo", bg: "oklch(0 0 0 / 0.05)", color: "var(--c-55)", border: "oklch(0 0 0 / 0.12)" };
                           const lockedReason = isAdmin
                             ? "Admin accounts have unlimited niches and can't be overridden"

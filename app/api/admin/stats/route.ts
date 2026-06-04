@@ -85,14 +85,20 @@ export async function GET() {
       const isPaid = authUser.app_metadata?.paid === true;
       const isAdmin = authUser.email === ADMIN_EMAIL;
       const plan = (authUser.app_metadata?.plan as string | undefined) ?? null;
-      // Demo cap (1 niche) for registered users without a paid plan;
-      // matches the demo dashboard's hardcoded nicheLimit = 1. Paid
-      // tiers come from PLAN_LIMITS; admin is unlimited.
+      // Lowercase + trim so " Starter " / "STARTER" still resolves
+      // against PLAN_LIMITS instead of slipping through to the demo
+      // fallback. Paid users with no recognised plan (the Dodo
+      // webhook only writes paid=true; plan is set by the verify
+      // callback that may not have fired) get the Starter cap as
+      // the safest fallback for someone who actually paid.
+      const planNorm = (plan ?? "").toLowerCase().trim();
       const planDefaultLimit: number | null = isAdmin
         ? null
-        : plan && plan in PLAN_LIMITS
-          ? PLAN_LIMITS[plan]
-          : 1;
+        : planNorm in PLAN_LIMITS
+          ? PLAN_LIMITS[planNorm]
+          : isPaid
+            ? PLAN_LIMITS.starter
+            : 1;
       const settings = settingsByUserId.get(authUser.id);
       const override = settings?.niche_limit_override ?? null;
       return {

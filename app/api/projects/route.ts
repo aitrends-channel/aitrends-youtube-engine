@@ -64,15 +64,21 @@ export async function POST(req: Request) {
   // their plan.
   const isAdmin = user.email === ADMIN_EMAIL;
   const plan = (user.app_metadata?.plan as string) ?? "demo";
-  // Demo cap (1 niche) for registered-but-not-paid users. Use 'in' to
-  // distinguish 'pro' (whose limit is legitimately null = unlimited)
-  // from an unknown plan name. Plain '?? 1' would incorrectly catch
-  // Pro's null and clamp it to the demo cap.
+  const isPaid = user.app_metadata?.paid === true;
+  // Lowercase + trim so " Starter " / "STARTER" still resolves against
+  // PLAN_LIMITS. Paid users with no recognised plan name (the Dodo
+  // webhook writes paid:true but not plan; the verify callback that
+  // sets plan may not have fired) get the Starter cap as the safest
+  // fallback. Unpaid users with no plan get the demo cap of 1.
+  // Use 'in' (not '?? 1') so Pro's legitimate null isn't clamped.
+  const planNorm = plan.toLowerCase().trim();
   const planLimit: number | null = isAdmin
     ? null
-    : plan in PLAN_LIMITS
-      ? PLAN_LIMITS[plan]
-      : 1;
+    : planNorm in PLAN_LIMITS
+      ? PLAN_LIMITS[planNorm]
+      : isPaid
+        ? PLAN_LIMITS.starter
+        : 1;
 
   // Admin-set per-user override takes precedence over the plan default.
   const { data: settings } = await supabase
