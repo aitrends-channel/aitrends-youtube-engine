@@ -3,8 +3,10 @@ import { randomUUID } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 import {
-  buildImagePromptsPrompt,
-  buildVideoPromptsPrompt,
+  buildImagePromptsCached,
+  buildImagePromptsDynamic,
+  buildVideoPromptsCached,
+  buildVideoPromptsDynamic,
   buildThumbnailsPrompt,
 } from "@/lib/claude/prompts";
 import {
@@ -280,20 +282,36 @@ async function generateImages(
     send({ type: "progress", current: alreadyDoneChunks, total: allChunks.length });
   }
 
-  for (const { content, chunkIndex, totalChunks } of chunksToProcess) {
-    // Cheap round-trip to check whether we've been cancelled — bail
-    // before paying for the next Claude call.
+  // Cache the static portion (instructions + visual style + rules)
+  // once per run. After the first chunk's call lands, every subsequent
+  // chunk hits Anthropic's ephemeral cache for this prefix.
+  const cachedUserBlock = buildImagePromptsCached(visualProfile);
+
+  // Per-chunk persist gates: chunk i's persist step waits on chunk
+  // i-1's gate so beat_number assignment stays monotonic in script
+  // order regardless of which Claude call finishes first.
+  const persistGates: Array<{ promise: Promise<void>; resolve: () => void; reject: (e: Error) => void }> = [];
+  for (let i = 0; i < chunksToProcess.length; i++) {
+    let resolve!: () => void;
+    let reject!: (e: Error) => void;
+    const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej; });
+    persistGates.push({ promise, resolve, reject });
+  }
+
+  // Running counter — only mutated inside the gated persist step.
+  let runningBeatNumber = nextBeatNumber;
+
+  async function processChunk(taskIdx: number): Promise<number> {
+    const { content, chunkIndex, totalChunks } = chunksToProcess[taskIdx];
+
     await assertPromptsRunActive(projectId, runId);
 
     const t0 = Date.now();
-    console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} startBeat=${nextBeatNumber} words=${content.split(/\s+/).length}`);
+    console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} start (parallel) words=${content.split(/\s+/).length}`);
 
     // Streaming + tool_use on Opus. Streaming keeps KIE's connection
-    // warm with continuous delta events, and the SDK rebuilds the full
-    // Message via finalMessage() so the parse logic stays the same.
-    // Retry policy is bumped specifically for image-prompts (the chunk
-    // most affected by KIE upstream blips): 5 attempts with longer
-    // backoff buys time for transient KIE issues to clear.
+    // warm with continuous delta events. The cached prefix block hits
+    // Anthropic's ephemeral cache after the first chunk lands.
     const res = await retryClaudeCall(
       `image prompts chunk ${chunkIndex + 1}/${totalChunks}`,
       async () => {
@@ -303,7 +321,13 @@ async function generateImages(
           system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
           tools: [{ name: "save_image_prompts", description: "Save image prompts for every visual beat in the chunk", input_schema: imagePromptsInputSchema }],
           tool_choice: { type: "tool", name: "save_image_prompts" },
-          messages: [{ role: "user", content: buildImagePromptsPrompt(content, visualProfile, nextBeatNumber) }],
+          messages: [{
+            role: "user",
+            content: [
+              { type: "text", text: cachedUserBlock, cache_control: { type: "ephemeral" } },
+              { type: "text", text: buildImagePromptsDynamic(content) },
+            ],
+          }],
         });
         for await (const _event of stream) { void _event; }
         return stream.finalMessage();
@@ -311,7 +335,7 @@ async function generateImages(
       5
     );
 
-    console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} done in ${Date.now() - t0}ms stop=${res.stop_reason}`);
+    console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} claude done in ${Date.now() - t0}ms stop=${res.stop_reason}`);
     assertComplete(res.stop_reason, `image prompts chunk ${chunkIndex + 1}/${totalChunks}`);
 
     let input: Record<string, unknown> | null = null;
@@ -331,8 +355,6 @@ async function generateImages(
 
     const parsed = ImagePromptsSchema.safeParse(input);
     if (!parsed.success) {
-      // Surface which beats Claude returned blank so the next retry has
-      // signal beyond the generic Zod issue list.
       const rawBeats = (input.beats as Array<Record<string, unknown>>) ?? [];
       const blankFields = rawBeats.map((b, i) => {
         const missing = ["imagePrompt", "camera", "lighting", "mood", "action", "scriptSegment"]
@@ -346,35 +368,77 @@ async function generateImages(
       });
       throw new Error(`Chunk ${chunkIndex + 1} returned beats with missing fields (${blankFields.slice(0, 3).join("; ") || "schema mismatch"}). Try again — any beats saved so far are preserved.`);
     }
-    const chunkBeats = parsed.data.beats;
+    const localBeats = parsed.data.beats;
 
-    // Final cancellation check before persistence — the Claude call can
-    // take 30-60s, plenty of time for the user to clear the step.
-    await assertPromptsRunActive(projectId, runId);
+    // Wait my turn before assigning beat numbers and persisting.
+    if (taskIdx > 0) await persistGates[taskIdx - 1].promise;
 
-    // Persist this chunk's beats immediately so a later failure
-    // doesn't undo this chunk's work.
-    const { error: insertError } = await supabase.from("project_beats").insert(
-      chunkBeats.map((b) => ({
-        project_id: projectId,
-        beat_number: b.beatNumber,
-        script_segment: b.scriptSegment,
-        image_prompt: b.imagePrompt,
-        camera: b.camera,
-        lighting: b.lighting,
-        mood: b.mood,
-        action: b.action,
-      }))
-    );
-    if (insertError) throw new Error(`Failed to save beats for chunk ${chunkIndex + 1}: ${insertError.message}`);
+    try {
+      await assertPromptsRunActive(projectId, runId);
 
-    totalBeatCount += chunkBeats.length;
-    nextBeatNumber = (chunkBeats[chunkBeats.length - 1]?.beatNumber ?? nextBeatNumber + chunkBeats.length - 1) + 1;
+      // The model numbered beats 1..k locally; shift them into the
+      // global sequence starting at runningBeatNumber.
+      const offset = runningBeatNumber - 1;
+      const finalBeats = localBeats.map((b) => ({ ...b, beatNumber: b.beatNumber + offset }));
 
-    // Emit progress AFTER persistence so the value tracks completed
-    // work rather than chunks-just-starting (the old position).
-    if (totalChunks > 1) send({ type: "progress", current: chunkIndex + 1, total: totalChunks });
+      const { error: insertError } = await supabase.from("project_beats").insert(
+        finalBeats.map((b) => ({
+          project_id: projectId,
+          beat_number: b.beatNumber,
+          script_segment: b.scriptSegment,
+          image_prompt: b.imagePrompt,
+          camera: b.camera,
+          lighting: b.lighting,
+          mood: b.mood,
+          action: b.action,
+        }))
+      );
+      if (insertError) throw new Error(`Failed to save beats for chunk ${chunkIndex + 1}: ${insertError.message}`);
+
+      runningBeatNumber += finalBeats.length;
+      persistGates[taskIdx].resolve();
+      return finalBeats.length;
+    } catch (e) {
+      // Unblock every downstream gate so no other worker deadlocks
+      // waiting on us. The error itself surfaces via firstError below.
+      const err = e instanceof Error ? e : new Error(String(e));
+      for (let j = taskIdx; j < chunksToProcess.length; j++) {
+        persistGates[j].reject(err);
+      }
+      throw err;
+    }
   }
+
+  // Bounded concurrency worker pool. Claude calls overlap; persistence
+  // is gated in script order via persistGates so beat numbers stay
+  // monotonic.
+  const CONCURRENCY = 3;
+  let nextIdx = 0;
+  let completed = 0;
+  let firstError: Error | null = null;
+
+  async function worker() {
+    while (true) {
+      if (firstError) return;
+      const myIdx = nextIdx++;
+      if (myIdx >= chunksToProcess.length) return;
+      try {
+        const added = await processChunk(myIdx);
+        totalBeatCount += added;
+        completed++;
+        if (allChunks.length > 1) {
+          send({ type: "progress", current: alreadyDoneChunks + completed, total: allChunks.length });
+        }
+      } catch (err) {
+        if (!firstError) firstError = err instanceof Error ? err : new Error(String(err));
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, chunksToProcess.length) }, () => worker())
+  );
+  if (firstError) throw firstError;
 
   await supabase.from("projects").update({ current_state: 14 }).eq("id", projectId).eq("user_id", userId);
   send({ type: "done", beatCount: totalBeatCount });
@@ -446,7 +510,13 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
     send({ type: "progress", current: startChunkIdx, total: totalChunksAbsolute });
   }
 
-  for (let i = 0; i < chunks.length; i++) {
+  // Cache the static portion (instructions + visual style + rules) once
+  // per generation run. Anthropic ephemeral caching hits on the second
+  // request and onwards, so under concurrency this kicks in within a
+  // second or two of the first chunk landing.
+  const cachedUserBlock = buildVideoPromptsCached(visualProfile);
+
+  async function processChunk(i: number): Promise<void> {
     await assertPromptsRunActive(projectId, runId);
 
     // One retry on tool-use miss — KIE occasionally returns text-only
@@ -461,7 +531,13 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
           system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
           tools: [{ name: "save_video_prompts", description: "Save video prompts for all beats", input_schema: videoPromptsInputSchema }],
           tool_choice: { type: "tool", name: "save_video_prompts" },
-          messages: [{ role: "user", content: buildVideoPromptsPrompt(chunks[i], visualProfile) }],
+          messages: [{
+            role: "user",
+            content: [
+              { type: "text", text: cachedUserBlock, cache_control: { type: "ephemeral" } },
+              { type: "text", text: buildVideoPromptsDynamic(chunks[i]) },
+            ],
+          }],
         })
       );
       tool = res.content.find((b) => b.type === "tool_use");
@@ -472,15 +548,12 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
 
     assertComplete(res.stop_reason, `video batch ${i + 1}/${chunks.length}`);
 
-    // Preferred path: model used the tool, take its input directly.
     let input: Record<string, unknown> | null = null;
     if (tool && tool.type === "tool_use") {
       input = tool.input as Record<string, unknown>;
     } else {
       // Fallback path: KIE+Opus sometimes emits the JSON as text instead
       // of invoking the tool, wrapped in a fake `<tool_calls>` shell.
-      // extractBeatsFromText handles wrapper detection, string-aware
-      // bracket counting, and per-beat recovery for truncated tails.
       const textBlock = res.content.find((b) => b.type === "text");
       const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
       console.log(`[video-prompts] batch ${i + 1} fallback parsing text len=${raw.length} head=${raw.slice(0, 200)}`);
@@ -522,10 +595,40 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
           .eq("beat_number", b.beatNumber)
       )
     );
-
-    // Emit progress AFTER persistence so the bar tracks completed work.
-    if (totalChunksAbsolute > 1) send({ type: "progress", current: startChunkIdx + i + 1, total: totalChunksAbsolute });
   }
+
+  // Bounded concurrency: run up to CONCURRENCY chunks in parallel. The
+  // Claude call (30-60s) dominates each chunk's wall time, so 3 in flight
+  // collapses ~3× of the total. Persistence is a fast DB upsert and
+  // happens inside processChunk, so no global ordering lock is needed.
+  const CONCURRENCY = 3;
+  let nextIdx = 0;
+  let completed = 0;
+  let firstError: Error | null = null;
+
+  async function worker() {
+    while (true) {
+      if (firstError) return;
+      const myIdx = nextIdx++;
+      if (myIdx >= chunks.length) return;
+      try {
+        await processChunk(myIdx);
+        completed++;
+        // Progress tracks completions, not starts — parallel chunks may
+        // finish out of order, but the count is monotone.
+        if (totalChunksAbsolute > 1) {
+          send({ type: "progress", current: startChunkIdx + completed, total: totalChunksAbsolute });
+        }
+      } catch (err) {
+        if (!firstError) firstError = err instanceof Error ? err : new Error(String(err));
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, chunks.length) }, () => worker())
+  );
+  if (firstError) throw firstError;
 
   send({ type: "done", beatCount: allBeats.length });
 }

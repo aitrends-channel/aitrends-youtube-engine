@@ -166,6 +166,72 @@ Return these fields inside a "thumbnailAnalysis" object.` : "";
 Call the save_visual_analysis tool with the structured profile. Be specific — these descriptions will be used as direct instructions for AI image generation. Do not write any text outside the tool call.`;
 }
 
+// Split build for prompt caching. Static block (instructions + visual
+// style + per-beat fields + validation + tool call instruction) is
+// identical across every chunk of a single generation run and hits
+// Anthropic's ephemeral cache after the first call. Dynamic block is
+// just the script chunk content. Beats are always numbered from 1
+// locally; the route renumbers them to absolute beat_number values at
+// persistence time so chunks can run in parallel without coordination.
+export function buildImagePromptsCached(visualProfile: VisualProfileOutput): string {
+  return `Identify every VISUAL BEAT in the SCRIPT CHUNK that follows this message and generate one image prompt for each.
+
+WHAT COUNTS AS A VISUAL BEAT
+A visual beat is any individual narration unit that introduces a NEW:
+- Action, subject, character, or location
+- Camera perspective, emotion, or object
+- Historical event, statistic, date, fact, or study
+- Transition, cause-and-effect relationship, or visual concept
+
+RULES (NON-NEGOTIABLE)
+1. NEVER generate visuals by scene. NEVER summarize multiple beats into a single prompt.
+2. Every beat receives exactly ONE image prompt. No narration may be left without visual coverage.
+3. If a sentence contains multiple distinct visual ideas, split it into multiple beats.
+4. Each fact, statistic, date, location, study, or historical example gets its OWN dedicated beat.
+5. Storytelling sections typically produce 1+ beats per sentence — often multiple when a sentence contains several visual changes.
+6. Educational sections: each concept, mechanism, or example is its own beat with a visual that aids understanding (not generic stock).
+7. Do NOT optimize for fewer prompts. Complete visual coverage is the goal.
+
+DENSITY
+- Minimum: 1 beat per sentence.
+- Preferred: ~1 beat every 3–6 seconds of narration (≈10–15 words of script per beat).
+- This chunk may produce many beats; long-form scripts commonly total 50–150+ across all chunks.
+
+VISUAL STYLE
+Art Style: ${visualProfile.artStyle}
+Colors: ${visualProfile.colorPalette.join(", ")}
+Lighting: ${visualProfile.lightingStyle}
+Camera: ${visualProfile.cameraStyle}
+Composition: ${visualProfile.composition}
+Mood: ${visualProfile.mood}
+Detail: ${visualProfile.detailLevel}
+
+PER-BEAT FIELDS
+- scriptSegment: the exact words from the script for this beat (typically 8–20 words). Must be a verbatim substring of the chunk.
+- imagePrompt: 1–2 cinematic sentences. Visualize the narration LITERALLY whenever possible. For abstract concepts, use concrete visual metaphors. Apply the visual style above as direct AI-image-generator instructions. Be specific (subject, action, environment, framing).
+- camera: single short phrase (e.g. "tight close-up", "low-angle wide", "overhead aerial")
+- lighting: single short phrase (e.g. "warm golden rim light", "cold blue moonlight")
+- mood: single short phrase (e.g. "tense, urgent", "quiet, reverent")
+- action: single short phrase (e.g. "subject leans forward", "dust settles after the strike")
+
+QUALITY
+- Maintain continuity between neighboring beats — characters, locations, lighting, and props carry forward unless the narration introduces a change.
+- Historical sections: historically accurate environments, clothing, tools, architecture, lighting — no anachronisms.
+- Educational sections: visuals must help the viewer UNDERSTAND the narration, not just decorate it.
+
+VALIDATION (DO THIS BEFORE RETURNING)
+Step 1: Walk the script chunk and identify every visual beat using the definition above.
+Step 2: Count them.
+Step 3: Confirm your "beats" array has exactly that many entries — one image prompt per beat.
+If the counts do not match, keep adding beats until coverage is complete.
+
+Number beats sequentially starting from 1, with no gaps. Call the save_image_prompts tool with a "beats" array. Do not write any text outside the tool call.`;
+}
+
+export function buildImagePromptsDynamic(script: string): string {
+  return `SCRIPT (THIS CHUNK):\n${script}`;
+}
+
 export function buildImagePromptsPrompt(
   script: string,
   visualProfile: VisualProfileOutput,
@@ -226,6 +292,41 @@ Step 3: Confirm your "beats" array has exactly that many entries — one image p
 If the counts do not match, keep adding beats until coverage is complete.
 
 Number beats sequentially starting from ${startBeat}, with no gaps. Call the save_image_prompts tool with a "beats" array. Do not write any text outside the tool call.`;
+}
+
+// Split build for prompt caching: the cached block is identical across
+// all chunks of a single generation run (instructions + visual style +
+// rules), so it hits the Anthropic ephemeral cache after the first call.
+// Only the per-chunk beats list — the dynamic block — is re-tokenized.
+export function buildVideoPromptsCached(visualProfile: VisualProfileOutput | null): string {
+  const styleSection = visualProfile
+    ? `CHANNEL VISUAL STYLE:
+Art Style: ${visualProfile.artStyle}
+Lighting: ${visualProfile.lightingStyle}
+Camera Style: ${visualProfile.cameraStyle}
+Mood: ${visualProfile.mood}
+
+`
+    : "";
+
+  return `Generate a video motion prompt for each beat in the BEATS block that follows this message. Each prompt must describe camera movement and action WITHIN the exact scene from the image prompt — same subject, same environment, same lighting.
+
+${styleSection}RULES:
+- One prompt per beat — same beat numbers, no gaps
+- 2 sentences: (1) camera movement, (2) subject motion and expression
+- Duration: 3-5 seconds, smooth and cinematic
+- Stay within the existing image scene — only add motion
+
+Call the save_video_prompts tool with a "beats" array of { beatNumber, videoPrompt }. Do not write any text outside the tool call.`;
+}
+
+export function buildVideoPromptsDynamic(
+  beats: { beatNumber: number; scriptSegment: string; imagePrompt: string }[]
+): string {
+  const beatList = beats
+    .map((b) => `Beat ${b.beatNumber}:\n  Script: "${b.scriptSegment}"\n  Image scene: ${b.imagePrompt}`)
+    .join("\n\n");
+  return `BEATS:\n${beatList}`;
 }
 
 export function buildVideoPromptsPrompt(
