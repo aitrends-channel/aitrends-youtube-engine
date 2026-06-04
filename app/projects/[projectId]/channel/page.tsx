@@ -495,11 +495,13 @@ export default function ChannelPage({ params }: PageProps) {
                   already tied to this URL) but keep the action button
                   active so they can retry with the same input. */}
               {(() => {
-                const inputLocked = isAnalyzed || hasError;
-                // Keep the button actionable in every state except an
-                // in-flight run or an empty URL — that way the user can
-                // re-analyse an existing niche or retry after a failure
-                // without having to clear state first.
+                // Lock the URL field only when the niche has actually
+                // been persisted to the DB (project.channel_name +
+                // channel_info are set). On a pre-save failure the URL
+                // stays editable so the user can fix a typo and retry;
+                // on a post-save failure the URL is sticky but the
+                // button is still actionable for a Retry.
+                const inputLocked = isAnalyzed;
                 const buttonDisabled = isWorking || !channelUrl.trim();
                 const buttonLabel = isWorking
                   ? null
