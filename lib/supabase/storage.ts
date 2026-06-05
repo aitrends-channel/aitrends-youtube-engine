@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 const r2 = new S3Client({
   region: "auto",
@@ -44,6 +45,27 @@ export async function uploadFromUrl(path: string, url: string, contentType: stri
 
 export function getPublicUrl(path: string): string {
   return `${PUBLIC_URL}/${path}`;
+}
+
+// Presigned PUT URL for direct browser → R2 uploads. Use this when the
+// payload could exceed Vercel's serverless function body limit (~4.5MB)
+// — the browser PUTs straight to R2, bypassing our route entirely. The
+// returned publicUrl is what the row should point to once the PUT
+// succeeds; the caller is responsible for updating DB state afterwards.
+export async function createPresignedUpload(
+  path: string,
+  contentType: string,
+  expiresInSeconds: number = 600
+): Promise<{ uploadUrl: string; publicUrl: string }> {
+  if (!BUCKET) throw new Error("R2 storage is not configured — R2_BUCKET_NAME environment variable is missing");
+  if (!PUBLIC_URL) throw new Error("R2 storage is not configured — R2_PUBLIC_URL environment variable is missing");
+  const cmd = new PutObjectCommand({
+    Bucket: BUCKET,
+    Key: path,
+    ContentType: contentType,
+  });
+  const uploadUrl = await getSignedUrl(r2, cmd, { expiresIn: expiresInSeconds });
+  return { uploadUrl, publicUrl: `${PUBLIC_URL}/${path}` };
 }
 
 export async function deleteFolder(prefix: string): Promise<void> {

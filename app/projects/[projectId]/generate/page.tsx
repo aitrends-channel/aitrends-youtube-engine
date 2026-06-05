@@ -517,17 +517,36 @@ export default function GeneratePage({ params }: PageProps) {
       setRemovePausesStatus("Encoding audio...");
       const mp3Bytes = encodeMp3(channels, sampleRate);
 
+      setRemovePausesStatus("Preparing upload...");
+      // Two-step upload: get a presigned R2 URL, PUT the MP3 directly to
+      // R2 (bypasses Vercel's 4.5MB function body limit), then ping the
+      // route to update the DB row. Required for long voiceovers.
+      const presignRes = await fetch(`/api/generate/tts/clean?projectId=${projectId}`, { method: "POST" });
+      if (!presignRes.ok) {
+        const err = await presignRes.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to prepare upload");
+      }
+      const { uploadUrl, publicUrl: uploadedUrl } = await presignRes.json() as { uploadUrl: string; publicUrl: string };
+
       setRemovePausesStatus("Uploading...");
-      const uploadRes = await fetch(`/api/generate/tts/clean?projectId=${projectId}`, {
-        method: "POST",
+      const putRes = await fetch(uploadUrl, {
+        method: "PUT",
         body: mp3Bytes,
         headers: { "Content-Type": "audio/mpeg" },
       });
-      if (!uploadRes.ok) {
-        const err = await uploadRes.json().catch(() => ({})) as { error?: string };
-        throw new Error(err.error ?? "Upload failed");
+      if (!putRes.ok) throw new Error(`Upload failed (HTTP ${putRes.status})`);
+
+      setRemovePausesStatus("Saving...");
+      const finalizeRes = await fetch(`/api/generate/tts/clean?projectId=${projectId}&finalize=1`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ publicUrl: uploadedUrl }),
+      });
+      if (!finalizeRes.ok) {
+        const err = await finalizeRes.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to save trimmed audio");
       }
-      const { url } = await uploadRes.json().catch(() => ({})) as { url?: string };
+      const { url } = await finalizeRes.json().catch(() => ({})) as { url?: string };
       if (!url) throw new Error("Upload succeeded but no URL returned");
       setPendingTtsCleanedUrl(url);
       setCleanedUrlInvalidated(false);
