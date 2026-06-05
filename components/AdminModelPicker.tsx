@@ -82,13 +82,13 @@ export function AdminModelPicker({ storageKey, onChange, label = "Model" }: Admi
       >
         <Sparkles size={11} />
         <span style={{ opacity: 0.7 }}>{label}:</span>
-        <span>{displayName}</span>
+        <span style={{ color: "oklch(0.65 0.22 25)", fontWeight: 600 }}>{displayName}</span>
         <ChevronDown size={11} />
       </button>
       {open && (
         <div
           role="menu"
-          className="absolute right-0 top-full mt-1 z-30 min-w-[220px] rounded-lg overflow-hidden py-1 shadow-2xl"
+          className="absolute right-0 top-full mt-1 z-30 min-w-[220px] max-h-[60vh] overflow-y-auto rounded-lg py-1 shadow-2xl"
           style={{ background: "var(--bg-card)", border: "1px solid var(--bd-10)" }}
         >
           <button
@@ -98,10 +98,11 @@ export function AdminModelPicker({ storageKey, onChange, label = "Model" }: Admi
             className="w-full text-left px-3 py-2 text-xs transition-all hover:opacity-90"
             style={{
               background: selected === "" ? "oklch(0.72 0.25 285 / 0.08)" : "transparent",
-              color: "oklch(0.3 0 0)",
             }}
           >
-            <div className="font-semibold">Default ({DEFAULT_ANTHROPIC_MODEL})</div>
+            <div className="font-semibold" style={{ color: "oklch(0.65 0.22 25)" }}>
+              Default ({DEFAULT_ANTHROPIC_MODEL})
+            </div>
             <div className="text-[10px] mt-0.5" style={{ color: "var(--c-45)" }}>
               Use the hardcoded server default
             </div>
@@ -115,10 +116,9 @@ export function AdminModelPicker({ storageKey, onChange, label = "Model" }: Admi
               className="w-full text-left px-3 py-2 text-xs transition-all hover:opacity-90"
               style={{
                 background: selected === m.id ? "oklch(0.72 0.25 285 / 0.08)" : "transparent",
-                color: "oklch(0.3 0 0)",
               }}
             >
-              <div className="font-semibold">{m.name}</div>
+              <div className="font-semibold" style={{ color: "oklch(0.65 0.22 25)" }}>{m.name}</div>
               {m.notes && (
                 <div className="text-[10px] mt-0.5" style={{ color: "var(--c-45)" }}>
                   {m.notes}
