@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect, useRef, use } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
@@ -143,10 +143,12 @@ interface StepCardProps {
   actionLabel?: string | null;
   /** When set, renders a secondary "Clear" button. The handler should wipe persisted state for this step. */
   onClear?: (() => Promise<void> | void) | null;
+  /** Stop handler — when set and the step is running, renders a Stop button alongside the spinner. */
+  onStop?: (() => void | Promise<void>) | null;
   onGenerate: () => void;
 }
 
-function StepCard({ num, title, description, state, doneLabel, disabled, optional, actionLabel, onClear, onGenerate }: StepCardProps) {
+function StepCard({ num, title, description, state, doneLabel, disabled, optional, actionLabel, onClear, onStop, onGenerate }: StepCardProps) {
   const isRunning = state.status === "running";
   const isDone = state.status === "done";
   const isError = state.status === "error";
@@ -258,6 +260,15 @@ function StepCard({ num, title, description, state, doneLabel, disabled, optiona
             Clear
           </button>
         )}
+        {onStop && isRunning && (
+          <button
+            onClick={() => { Promise.resolve(onStop()).catch(() => { /* swallow — UI updates via state */ }); }}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-90"
+            style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
+          >
+            Stop
+          </button>
+        )}
         <button
           onClick={onGenerate}
           disabled={disabled || isRunning}
@@ -284,12 +295,14 @@ function StepCard({ num, title, description, state, doneLabel, disabled, optiona
 async function streamStep(
   url: string,
   body: object,
-  onUpdate: (s: StepState) => void
+  onUpdate: (s: StepState) => void,
+  signal?: AbortSignal
 ): Promise<boolean> {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!res.ok) throw new Error(await res.text());
@@ -388,6 +401,13 @@ export default function PromptsPage({ params }: PageProps) {
   const [activeTab, setActiveTab] = useState<Tab>("beats");
   const [navigating, setNavigating] = useState(false);
   const [adminModel, setAdminModel] = useState<string>("");
+  // Per-step AbortControllers so the user's Stop click can kill the
+  // local SSE fetch alongside the server-side run-id PATCH. Without
+  // the abort the fetch keeps the connection open until the server
+  // closes it (a few seconds later when its next assertPromptsRunActive
+  // fires); the abort makes the UI snap to "stopped" instantly.
+  const imageAbortRef = useRef<AbortController | null>(null);
+  const videoAbortRef = useRef<AbortController | null>(null);
   const [clearTarget, setClearTarget] = useState<"image" | "video" | null>(null);
   const [clearing, setClearing] = useState(false);
 
@@ -413,13 +433,35 @@ export default function PromptsPage({ params }: PageProps) {
     ? `Generate Remaining ${videoRemaining}`
     : null;
 
-  // Derive effective step state: prefer live state, fall back to DB presence
+  // Server-side run flag — set when ANY prompts generation is in flight
+  // (image OR video). On a fresh page load after refresh/nav-away, local
+  // step state is "idle" but project.prompts_active_run_id is still
+  // populated by the running route; surface that as "running" so the
+  // user sees a spinner instead of an idle StepCard with a Generate
+  // button they could accidentally double-click.
+  const remoteRunInProgress = !!project?.prompts_active_run_id;
+  const imageBeatsAllReady = hasImageBeats && beats.every((b) => !!b.imagePrompt);
+  const videoBeatsAllReady = hasImageBeats && beats.every((b) => !!b.videoPrompt);
+  // No local activity but a server run is going AND image prompts
+  // aren't fully present yet → must be the image step running.
+  const imageRemoteRunning =
+    remoteRunInProgress && imageStep.status === "idle" && videoStep.status === "idle" && !imageBeatsAllReady;
+  // Server run going AND image prompts already complete AND videos not
+  // yet complete → must be the video step running.
+  const videoRemoteRunning =
+    remoteRunInProgress && imageStep.status === "idle" && videoStep.status === "idle"
+    && imageBeatsAllReady && !videoBeatsAllReady;
+
+  // Derive effective step state: prefer live state, then server-side
+  // remote run, then DB presence.
   const effectiveImage: StepState =
     imageStep.status !== "idle" ? imageStep :
+    imageRemoteRunning ? { status: "running", message: "Resuming — still generating in the background" } :
     hasImageBeats ? { status: "done", message: "" } : IDLE;
 
   const effectiveVideo: StepState =
     videoStep.status !== "idle" ? videoStep :
+    videoRemoteRunning ? { status: "running", message: "Resuming — still generating in the background" } :
     hasVideoBeats ? { status: "done", message: "" } : IDLE;
 
   async function runImageStep() {
@@ -428,6 +470,7 @@ export default function PromptsPage({ params }: PageProps) {
       return;
     }
     setImageStep({ status: "running", message: "Starting..." });
+    imageAbortRef.current = new AbortController();
     try {
       const doneReceived = await streamStep("/api/workflow/prompts", {
         step: "images",
@@ -435,7 +478,7 @@ export default function PromptsPage({ params }: PageProps) {
         script: project.script,
         visualProfile: project.visual_profile,
         ...(adminModel ? { model: adminModel } : {}),
-      }, setImageStep);
+      }, setImageStep, imageAbortRef.current.signal);
 
       // Always refetch — the server may have finished writing beats even
       // if the SSE `done` event never reached us (proxy truncation).
@@ -459,8 +502,18 @@ export default function PromptsPage({ params }: PageProps) {
         throw new Error("Generation timed out — the server closed the connection before finishing. Any beats saved so far are preserved. Try again to complete the rest.");
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed";
-      setImageStep({ status: "error", message: "", error: msg });
+      // User-initiated Stop comes through as an AbortError — don't
+      // surface that as a failure. Whatever was persisted before the
+      // abort is still in the DB.
+      if (err instanceof Error && err.name === "AbortError") {
+        setImageStep(IDLE);
+        await mutate();
+      } else {
+        const msg = err instanceof Error ? err.message : "Failed";
+        setImageStep({ status: "error", message: "", error: msg });
+      }
+    } finally {
+      imageAbortRef.current = null;
     }
   }
 
@@ -508,12 +561,13 @@ export default function PromptsPage({ params }: PageProps) {
       return;
     }
     setVideoStep({ status: "running", message: "Starting..." });
+    videoAbortRef.current = new AbortController();
     try {
       const doneReceived = await streamStep("/api/workflow/prompts", {
         step: "videos",
         projectId,
         ...(adminModel ? { model: adminModel } : {}),
-      }, setVideoStep);
+      }, setVideoStep, videoAbortRef.current.signal);
 
       const updated = await mutate();
       const updatedBeats = (updated?.beats ?? []) as Beat[];
@@ -527,8 +581,46 @@ export default function PromptsPage({ params }: PageProps) {
         throw new Error("Generation timed out — the server closed the connection before finishing. Any prompts saved so far are preserved. Try again to complete the rest.");
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed";
-      setVideoStep({ status: "error", message: "", error: msg });
+      if (err instanceof Error && err.name === "AbortError") {
+        setVideoStep(IDLE);
+        await mutate();
+      } else {
+        const msg = err instanceof Error ? err.message : "Failed";
+        setVideoStep({ status: "error", message: "", error: msg });
+      }
+    } finally {
+      videoAbortRef.current = null;
+    }
+  }
+
+  // Stop handler shared by both StepCards. Two-sided cancellation
+  // matching the script step:
+  //   1) Null prompts_active_run_id so the server-side run's next
+  //      assertPromptsRunActive throws and exits cleanly.
+  //   2) Abort the local SSE fetch (if any) so the UI snaps to "stopped"
+  //      instantly instead of waiting up to a chunk-cycle for the server
+  //      to close the stream.
+  // Beats already persisted to the DB are kept.
+  async function handleStopPrompts() {
+    if (imageAbortRef.current) {
+      try { imageAbortRef.current.abort(); } catch { /* ignore */ }
+      imageAbortRef.current = null;
+    }
+    if (videoAbortRef.current) {
+      try { videoAbortRef.current.abort(); } catch { /* ignore */ }
+      videoAbortRef.current = null;
+    }
+    setImageStep((s) => (s.status === "running" ? IDLE : s));
+    setVideoStep((s) => (s.status === "running" ? IDLE : s));
+    try {
+      await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompts_active_run_id: null }),
+      });
+      await mutate();
+    } catch {
+      // Best-effort — the local abort is the more important signal.
     }
   }
 
@@ -557,13 +649,15 @@ export default function PromptsPage({ params }: PageProps) {
               </p>
             )}
           </div>
-          <AdminModelPicker storageKey="prompts" label="Prompts model" onChange={setAdminModel} />
         </div>
 
         <div className="mx-5">
         {/* Step cards */}
         <div className="px-4 sm:px-8 py-4 sm:py-5 space-y-3"
           style={{ borderBottom: hasImageBeats ? "1px solid var(--bd-6)" : "none" }}>
+          <div className="flex justify-end">
+            <AdminModelPicker storageKey="prompts" label="Prompts model" onChange={setAdminModel} />
+          </div>
           <StepCard
             num={1}
             title="Image Prompts"
@@ -572,6 +666,7 @@ export default function PromptsPage({ params }: PageProps) {
             doneLabel={beats.length > 0 ? `${beats.length} beats ready` : undefined}
             actionLabel={imageActionLabel}
             onClear={hasImageBeats ? () => setClearTarget("image") : null}
+            onStop={handleStopPrompts}
             onGenerate={runImageStep}
           />
           <StepCard
@@ -582,6 +677,7 @@ export default function PromptsPage({ params }: PageProps) {
             doneLabel={videoBeats.length > 0 ? `${videoBeats.length} beats ready` : undefined}
             actionLabel={videoActionLabel}
             onClear={hasVideoBeats ? () => setClearTarget("video") : null}
+            onStop={handleStopPrompts}
             disabled={!hasImageBeats}
             optional
             onGenerate={runVideoStep}

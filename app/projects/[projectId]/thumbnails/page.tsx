@@ -529,21 +529,22 @@ export default function ThumbnailsPage({ params }: PageProps) {
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 shrink-0"
+        <div className="px-4 sm:px-8 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <div>
-            <h1 className="font-bold text-lg">Thumbnails</h1>
-            {hasConcepts && (
-              <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                {thumbnails.length} concepts · {thumbnails.filter((t) => t.imageUrl).length} images generated
-              </p>
-            )}
-          </div>
-          <AdminModelPicker storageKey="thumbnails" label="Thumbnails model" onChange={setAdminModel} />
+          <h1 className="font-bold text-lg">Thumbnails</h1>
+          {hasConcepts && (
+            <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+              {thumbnails.length} concepts · {thumbnails.filter((t) => t.imageUrl).length} images generated
+            </p>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto">
           <div className="px-4 sm:px-8 pt-4 sm:pt-6 pb-24 space-y-4 max-w-5xl mx-auto">
+
+            <div className="flex justify-end">
+              <AdminModelPicker storageKey="thumbnails" label="Thumbnails model" onChange={setAdminModel} />
+            </div>
 
             {/* Step 1 — Concepts */}
             <div className="rounded-xl p-4 flex gap-4"

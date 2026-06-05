@@ -115,6 +115,12 @@ export default function VisualsPage({ params }: PageProps) {
   const [mode, setMode] = useState<Mode>("auto");
   const [navigating, setNavigating] = useState(false);
   const [adminModel, setAdminModel] = useState<string>("");
+  const [stoppingAnalyze, setStoppingAnalyze] = useState(false);
+  // AbortController for the visual-analysis call so the user can halt
+  // it mid-flight. Direct Anthropic stops billing immediately on abort;
+  // KIE proxy may have already completed the upstream call but our
+  // fetch stops consuming the SSE stream either way.
+  const analyzeAbortRef = useRef<AbortController | null>(null);
 
   // Auto screenshot state
   const [fetching, setFetching] = useState(false);
@@ -215,11 +221,14 @@ export default function VisualsPage({ params }: PageProps) {
     }
 
     setStep("analyze", "running");
+    analyzeAbortRef.current = new AbortController();
+    const signal = analyzeAbortRef.current.signal;
     try {
       const res = await fetch("/api/workflow/visual-analysis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId, videoImageUrls, ...(adminModel ? { model: adminModel } : {}) }),
+        signal,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -227,9 +236,26 @@ export default function VisualsPage({ params }: PageProps) {
       setStep("analyze", "done");
       toast.success("Visual style extracted!");
     } catch (err) {
-      setStep("analyze", "error");
-      toast.error(err instanceof Error ? err.message : "Analysis failed");
+      // User-clicked Stop is intentional — reset to idle without a
+      // scary toast. Anything else is a real failure.
+      if (signal.aborted) {
+        setStep("analyze", "idle");
+        setStep("upload", "idle");
+        toast.info("Analysis stopped");
+      } else {
+        setStep("analyze", "error");
+        toast.error(err instanceof Error ? err.message : "Analysis failed");
+      }
+    } finally {
+      analyzeAbortRef.current = null;
+      setStoppingAnalyze(false);
     }
+  }
+
+  function handleStopAnalyze() {
+    if (!analyzeAbortRef.current || stoppingAnalyze) return;
+    setStoppingAnalyze(true);
+    try { analyzeAbortRef.current.abort(); } catch { /* ignore */ }
   }
 
   const analyzing = steps.upload === "running" || steps.analyze === "running";
@@ -245,15 +271,12 @@ export default function VisualsPage({ params }: PageProps) {
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
         {/* Header */}
-        <div className="shrink-0 px-4 sm:px-8 py-4 sm:py-5 flex items-start justify-between gap-2"
+        <div className="shrink-0 px-4 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <div>
-            <h1 className="font-bold text-base sm:text-lg">Visual Style Extraction</h1>
-            <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-              Upload or auto-capture screenshots so we can extract the channel&apos;s visual signature
-            </p>
-          </div>
-          <AdminModelPicker storageKey="visual-analysis" label="Vision model" onChange={setAdminModel} />
+          <h1 className="font-bold text-base sm:text-lg">Visual Style Extraction</h1>
+          <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+            Upload or auto-capture screenshots so we can extract the channel&apos;s visual signature
+          </p>
         </div>
 
         <div className="flex-1 overflow-y-auto pb-[70px]">
@@ -464,22 +487,38 @@ export default function VisualsPage({ params }: PageProps) {
             </div>
           )}
 
-          {/* Analyze button */}
+          {/* Analyze button + Stop */}
           {!visualProfile && (
-            <button
-              onClick={analyzeVisuals}
-              disabled={!canAnalyze}
-              className="w-full py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-40"
-              style={{ background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))", color: "var(--bg-page-2)" }}
-            >
-              {analyzing ? (
-                <span className="flex items-center justify-center gap-2">
-                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  Analyzing…
-                </span>
-              ) : mode === "auto" && !autoShots.length ? "Fetch screenshots first" :
-               `Analyze ${mode === "auto" ? `${totalSelected} selected images` : "Visual Style"}`}
-            </button>
+            <div className="space-y-2">
+              <div className="flex justify-end">
+                <AdminModelPicker storageKey="visual-analysis" label="Vision model" onChange={setAdminModel} />
+              </div>
+              <button
+                onClick={analyzeVisuals}
+                disabled={!canAnalyze}
+                className="w-full py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-40"
+                style={{ background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))", color: "var(--bg-page-2)" }}
+              >
+                {analyzing ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    Analyzing…
+                  </span>
+                ) : mode === "auto" && !autoShots.length ? "Fetch screenshots first" :
+                 `Analyze ${mode === "auto" ? `${totalSelected} selected images` : "Visual Style"}`}
+              </button>
+              {steps.analyze === "running" && (
+                <button
+                  onClick={handleStopAnalyze}
+                  disabled={stoppingAnalyze}
+                  title="Halt the in-flight Claude call"
+                  className="w-full py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-60"
+                  style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
+                >
+                  {stoppingAnalyze ? "Stopping…" : "Stop analysis"}
+                </button>
+              )}
+            </div>
           )}
 
           {/* Visual profile result */}

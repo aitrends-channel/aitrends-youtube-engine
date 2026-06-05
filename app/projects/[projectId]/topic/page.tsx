@@ -114,15 +114,12 @@ export default function TopicPage({ params }: PageProps) {
       <WizardNav projectId={isFork ? "new-fork" : projectId} currentState={6} highestState={isFork ? 6 : project?.current_state} channelName={project?.channel_name} />
 
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
-        <div className="px-4 sm:px-8 py-5 flex items-start justify-between gap-2"
+        <div className="px-4 sm:px-8 py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <div>
-            <h1 className="font-bold text-lg">Choose Your Topic</h1>
-            <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-              {isTopicLocked ? "Topic is locked — already used in script generation" : "Select a video idea or enter a custom topic"}
-            </p>
-          </div>
-          <AdminModelPicker storageKey="ideas" label="Ideas model" onChange={setAdminModel} />
+          <h1 className="font-bold text-lg">Choose Your Topic</h1>
+          <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+            {isTopicLocked ? "Topic is locked — already used in script generation" : "Select a video idea or enter a custom topic"}
+          </p>
         </div>
 
         <div className="max-w-2xl mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-24 space-y-5">
@@ -218,19 +215,24 @@ export default function TopicPage({ params }: PageProps) {
 
               {/* Generate more button */}
               {project?.channel_analysis && (
-                <button
-                  onClick={generateMoreIdeas}
-                  disabled={generatingIdeas}
-                  className="w-full py-2.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
-                  style={{ background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}
-                >
-                  {generatingIdeas ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      Generating ideas…
-                    </span>
-                  ) : allIdeas.length > 0 ? "Generate More Ideas" : "Generate Ideas"}
-                </button>
+                <div className="space-y-2">
+                  <div className="flex justify-end">
+                    <AdminModelPicker storageKey="ideas" label="Ideas model" onChange={setAdminModel} />
+                  </div>
+                  <button
+                    onClick={generateMoreIdeas}
+                    disabled={generatingIdeas}
+                    className="w-full py-2.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
+                    style={{ background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}
+                  >
+                    {generatingIdeas ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Generating ideas…
+                      </span>
+                    ) : allIdeas.length > 0 ? "Generate More Ideas" : "Generate Ideas"}
+                  </button>
+                </div>
               )}
 
               {/* Custom topic input */}

@@ -189,7 +189,6 @@ export default function ScriptPage({ params }: PageProps) {
               </p>
             )}
           </div>
-          <AdminModelPicker storageKey="script" label="Script model" onChange={setAdminModel} />
         </div>
 
         {/* Content */}
@@ -241,13 +240,16 @@ export default function ScriptPage({ params }: PageProps) {
                     <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Topic</p>
                     <p className="text-base font-medium text-foreground">{project.selected_topic}</p>
                   </div>
-                  <button
-                    onClick={() => generateScript(project.selected_topic!)}
-                    className="px-8 py-3 rounded-xl text-sm font-semibold"
-                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-                  >
-                    Generate Script
-                  </button>
+                  <div className="flex flex-col items-center gap-3">
+                    <AdminModelPicker storageKey="script" label="Script model" onChange={setAdminModel} />
+                    <button
+                      onClick={() => generateScript(project.selected_topic!)}
+                      className="px-8 py-3 rounded-xl text-sm font-semibold"
+                      style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                    >
+                      Generate Script
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="text-center p-10 space-y-4">
@@ -440,21 +442,24 @@ export default function ScriptPage({ params }: PageProps) {
               This will discard your current script and generate a fresh one. Any manual edits will be lost.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex gap-3 justify-end mt-2">
-            <button
-              onClick={() => setConfirmRegen(false)}
-              className="px-4 py-2 rounded-lg text-sm"
-              style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleRegenerate}
-              className="px-4 py-2 rounded-lg text-sm font-semibold"
-              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-            >
-              Regenerate
-            </button>
+          <div className="flex items-center justify-between gap-3 mt-2">
+            <AdminModelPicker storageKey="script" label="Script model" onChange={setAdminModel} />
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmRegen(false)}
+                className="px-4 py-2 rounded-lg text-sm"
+                style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRegenerate}
+                className="px-4 py-2 rounded-lg text-sm font-semibold"
+                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+              >
+                Regenerate
+              </button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>

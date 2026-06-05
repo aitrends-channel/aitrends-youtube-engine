@@ -478,14 +478,11 @@ export default function ChannelPage({ params }: PageProps) {
         <div className="max-w-2xl mx-auto px-4 sm:px-8 pt-6 sm:pt-10 pb-24 space-y-8">
 
           {/* Header */}
-          <div className="flex items-start justify-between gap-2">
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight">Channel Setup</h1>
-              <p className="text-sm mt-1" style={{ color: "var(--c-50)" }}>
-                Enter a YouTube channel URL to automatically extract style DNA and generate content.
-              </p>
-            </div>
-            <AdminModelPicker storageKey="analyze" label="Analyze model" onChange={setAdminModel} />
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Channel Setup</h1>
+            <p className="text-sm mt-1" style={{ color: "var(--c-50)" }}>
+              Enter a YouTube channel URL to automatically extract style DNA and generate content.
+            </p>
           </div>
 
           {/* URL input card */}
@@ -493,9 +490,12 @@ export default function ChannelPage({ params }: PageProps) {
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
 
             <div className="space-y-2">
-              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
-                YouTube Channel URL
-              </label>
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
+                  YouTube Channel URL
+                </label>
+                <AdminModelPicker storageKey="analyze" label="Analyze model" onChange={setAdminModel} />
+              </div>
               {/* On a failed analysis we lock the channel URL so the user
                   can't swap channels mid-error (the project row is
                   already tied to this URL) but keep the action button
