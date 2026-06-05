@@ -512,10 +512,10 @@ export default function GeneratePage({ params }: PageProps) {
       ctx.close();
 
       setRemovePausesStatus("Removing pauses...");
-      const { channels, sampleRate, originalDuration, newDuration } = removeLongPauses(audioBuffer);
+      const { channels, sampleRate, originalDuration, newDuration } = await removeLongPauses(audioBuffer);
 
       setRemovePausesStatus("Encoding audio...");
-      const mp3Bytes = encodeMp3(channels, sampleRate);
+      const mp3Bytes = await encodeMp3(channels, sampleRate);
 
       setRemovePausesStatus("Preparing upload...");
       // Two-step upload: get a presigned R2 URL, PUT the MP3 directly to
@@ -980,8 +980,17 @@ export default function GeneratePage({ params }: PageProps) {
               {ttsUrl ? (
                 <div className="flex gap-2">
                   <button onClick={removePauses} disabled={removingPauses || generatingTts}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-medium disabled:opacity-40 transition-all"
-                    style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
+                    className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all"
+                    style={{
+                      background: "var(--bg-progress)",
+                      color: removingPauses ? "var(--c-90)" : "var(--c-60)",
+                      border: "1px solid var(--bd-7)",
+                      // Disabled fade only applies when the button is
+                      // blocked by *another* operation (TTS gen). While
+                      // it's actively trimming itself, we want full
+                      // opacity so the status text is legible.
+                      opacity: !removingPauses && generatingTts ? 0.4 : 1,
+                    }}>
                     {removingPauses ? (
                       <span className="flex items-center justify-center gap-1.5">
                         <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />

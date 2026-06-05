@@ -145,7 +145,7 @@ export default function AssemblePage({ params }: PageProps) {
       const { channels, sampleRate, newDuration } = trimToLength(audioBuffer, duration);
 
       setTrimAudioStatus("Encoding MP3…");
-      const mp3Bytes = encodeMp3(channels, sampleRate);
+      const mp3Bytes = await encodeMp3(channels, sampleRate);
 
       setTrimAudioStatus("Uploading…");
       const uploadRes = await fetch(`/api/generate/tts/clean?projectId=${projectId}`, {

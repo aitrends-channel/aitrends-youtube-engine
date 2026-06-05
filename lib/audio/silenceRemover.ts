@@ -23,10 +23,19 @@ function chunkRms(data: Float32Array, start: number, end: number): number {
   return Math.sqrt(sum / (end - start));
 }
 
-export function removeLongPauses(
+// Lets the browser repaint / handle input between batches of work.
+// Without this, long voiceovers hold the main thread for 30-60s and
+// the browser shows "page unresponsive". setTimeout(0) is the most
+// portable way — requestIdleCallback isn't universal and scheduler.yield
+// is still behind a flag in some browsers.
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((r) => setTimeout(r, 0));
+}
+
+export async function removeLongPauses(
   buffer: AudioBuffer,
   options: RemovePausesOptions = {}
-): PauseRemovalResult {
+): Promise<PauseRemovalResult> {
   const maxPauseMs = options.maxPauseMs ?? 800;
   const targetPauseMs = options.targetPauseMs ?? 300;
   const threshold = options.threshold ?? SILENCE_THRESHOLD;
@@ -39,12 +48,18 @@ export function removeLongPauses(
   const ch0 = buffer.getChannelData(0);
   const numChunks = Math.ceil(totalSamples / chunkSize);
 
+  // Yield every N chunks to keep the UI thread responsive on long
+  // recordings. 2000 × 30ms ≈ 60s of audio per batch — well below the
+  // browser's "page unresponsive" threshold.
+  const YIELD_EVERY = 2000;
+
   // Classify each chunk as silent or not using channel 0
   const silent = new Uint8Array(numChunks);
   for (let i = 0; i < numChunks; i++) {
     const start = i * chunkSize;
     const end = Math.min(start + chunkSize, totalSamples);
     silent[i] = chunkRms(ch0, start, end) < threshold ? 1 : 0;
+    if (i > 0 && i % YIELD_EVERY === 0) await yieldToEventLoop();
   }
 
   // Build output regions, capping long silence runs
@@ -117,7 +132,7 @@ export function trimToLength(
   };
 }
 
-export function encodeMp3(channels: Float32Array[], sampleRate: number): ArrayBuffer {
+export async function encodeMp3(channels: Float32Array[], sampleRate: number): Promise<ArrayBuffer> {
   const numChannels = channels.length;
   const encoder = new Mp3Encoder(numChannels, sampleRate, 128);
   const BLOCK = 1152; // samples per MP3 frame
@@ -126,13 +141,21 @@ export function encodeMp3(channels: Float32Array[], sampleRate: number): ArrayBu
   const right = numChannels > 1 ? toInt16(channels[1]) : undefined;
   const numSamples = channels[0].length;
 
+  // Yield every N frames. 100 frames × 1152 samples / 44100Hz ≈ 2.6s of
+  // audio per batch — well below the browser's unresponsive threshold
+  // and small enough that UI input doesn't feel laggy.
+  const YIELD_EVERY = 100;
+
   const chunks: Uint8Array[] = [];
+  let frameIndex = 0;
   for (let i = 0; i < numSamples; i += BLOCK) {
     const l = left.subarray(i, i + BLOCK);
     const chunk = right
       ? encoder.encodeBuffer(l, right.subarray(i, i + BLOCK))
       : encoder.encodeBuffer(l);
     if (chunk.length > 0) chunks.push(chunk);
+    frameIndex++;
+    if (frameIndex % YIELD_EVERY === 0) await yieldToEventLoop();
   }
   const tail = encoder.flush();
   if (tail.length > 0) chunks.push(tail);
