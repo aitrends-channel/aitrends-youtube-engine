@@ -663,6 +663,31 @@ export default function PromptsPage({ params }: PageProps) {
     imageStep.status === "running" ||
     videoStep.status === "running";
 
+  // Hash the current script in the browser so we can compare it against
+  // the hash stored when these beats were generated. If they differ, the
+  // saved beats describe an older version of the script and the user
+  // should be warned before they continue downstream into images/videos.
+  // Mirrors the voiceover-stale detection on the generate page.
+  const [currentScriptHash, setCurrentScriptHash] = useState<string | null>(null);
+  useEffect(() => {
+    const script = project?.script as string | undefined;
+    if (!script) { setCurrentScriptHash(null); return; }
+    let cancelled = false;
+    (async () => {
+      const buf = new TextEncoder().encode(script);
+      const digest = await crypto.subtle.digest("SHA-256", buf);
+      const hex = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+      if (!cancelled) setCurrentScriptHash(hex);
+    })();
+    return () => { cancelled = true; };
+  }, [project?.script]);
+  const beatsStale = hasImageBeats
+    && !anyRunning
+    && !remoteRunInProgress
+    && !!project?.prompts_script_hash
+    && !!currentScriptHash
+    && project.prompts_script_hash !== currentScriptHash;
+
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={9} highestState={project?.current_state} channelName={project?.channel_name} />
@@ -688,6 +713,15 @@ export default function PromptsPage({ params }: PageProps) {
           <div className="flex justify-end">
             <AdminModelPicker storageKey="prompts" label="Prompts model" onChange={setAdminModel} />
           </div>
+          {beatsStale && (
+            <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
+              style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "oklch(0.85 0.12 70)" }}>
+              <span aria-hidden>⚠</span>
+              <span>
+                Script was edited after these beats were generated. The image prompts below no longer match your current script — click <strong>Regenerate</strong> to update them.
+              </span>
+            </div>
+          )}
           <StepCard
             num={1}
             title="Image Prompts"

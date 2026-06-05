@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 import { resolveAnthropicModel } from "@/lib/claude/modelOverride";
@@ -203,6 +203,23 @@ async function generateImages(
   const runId = await claimPromptsRun(projectId, userId);
   const anthropic = await getAnthropicClient(userId);
 
+  // Hash the current script and compare to the hash that was current when
+  // the existing beats were generated. If they differ, the script was
+  // edited after the previous run and the resume logic below MUST NOT
+  // reuse those beats — their script_segments reference content that may
+  // no longer exist. Drop them so the chunk walk starts from scratch.
+  const scriptHash = createHash("sha256").update(script).digest("hex");
+  const { data: priorHashRow } = await supabase
+    .from("projects")
+    .select("prompts_script_hash")
+    .eq("id", projectId)
+    .single();
+  const priorHash = (priorHashRow?.prompts_script_hash as string | null) ?? null;
+  if (priorHash && priorHash !== scriptHash) {
+    console.log(`[image-prompts] script changed since last run — discarding old beats project=${projectId}`);
+    await supabase.from("project_beats").delete().eq("project_id", projectId);
+  }
+
   // Smaller chunks = smaller per-call payload = more chances of getting
   // past KIE+Opus's intermittent 500s. ~500 words/chunk produces ~30
   // beats × ~150 tokens ≈ 4500 output tokens, well under the 8192
@@ -272,8 +289,14 @@ async function generateImages(
   }
 
   if (chunksToProcess.length === 0 && existingBeats && existingBeats.length > 0) {
-    // Already fully done — just bump state and report.
-    await supabase.from("projects").update({ current_state: 14 }).eq("id", projectId).eq("user_id", userId);
+    // Already fully done — just bump state and report. Also refresh
+    // prompts_script_hash so a noop re-run after a script edit doesn't
+    // leave the project flagged as stale by the UI.
+    await supabase
+      .from("projects")
+      .update({ current_state: 14, prompts_script_hash: scriptHash })
+      .eq("id", projectId)
+      .eq("user_id", userId);
     send({ type: "done", beatCount: existingBeats.length });
     return;
   }
@@ -458,7 +481,11 @@ async function generateImages(
   );
   if (firstError) throw firstError;
 
-  await supabase.from("projects").update({ current_state: 14 }).eq("id", projectId).eq("user_id", userId);
+  await supabase
+    .from("projects")
+    .update({ current_state: 14, prompts_script_hash: scriptHash })
+    .eq("id", projectId)
+    .eq("user_id", userId);
   send({ type: "done", beatCount: totalBeatCount });
 }
 
