@@ -87,7 +87,22 @@ export default function ScriptPage({ params }: PageProps) {
 
   async function handleRegenerate() {
     setConfirmRegen(false);
-    if (selectedTopic) await generateScript(selectedTopic);
+    if (!selectedTopic) return;
+    // Atomic clear before the new run: zero the DB script, the local
+    // hook state, and any stale script_active_run_id. Without this,
+    // a failed regen lets SWR re-hydrate the old text the next time
+    // isStreaming flips back to false, and the user sees stale content
+    // instead of being returned to the Generate button.
+    setScript("");
+    try {
+      await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ script: null, word_count: 0, script_active_run_id: null }),
+      });
+      await mutate();
+    } catch { /* best-effort — the new stream will overwrite on success */ }
+    await generateScript(selectedTopic);
   }
 
   // Two-sided stop: aborts the local SSE fetch (if any) and nulls
