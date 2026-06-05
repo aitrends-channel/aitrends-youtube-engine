@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { generateTTS } from "@/lib/kie/tts";
 import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
@@ -41,9 +42,11 @@ export async function POST(req: Request) {
           const path = `${userFolderFor(user)}/${projectId}/voiceover_${Date.now()}.mp3`;
           const publicUrl = await uploadBuffer(path, audioBuffer, "audio/mpeg");
 
+          const scriptHash = createHash("sha256").update(script).digest("hex");
+
           const { error: dbError } = await supabase
             .from("projects")
-            .update({ tts_url: publicUrl, tts_voice_id: voiceId, tts_cleaned_url: null })
+            .update({ tts_url: publicUrl, tts_voice_id: voiceId, tts_cleaned_url: null, tts_script_hash: scriptHash })
             .eq("id", projectId)
             .eq("user_id", user.id);
 

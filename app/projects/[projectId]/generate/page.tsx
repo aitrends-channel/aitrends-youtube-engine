@@ -304,6 +304,28 @@ export default function GeneratePage({ params }: PageProps) {
   const ttsUrl = generatingTts ? null : (pendingTtsUrl ?? project?.tts_url ?? null);
   const ttsCleanedUrl = removingPauses || cleanedUrlInvalidated ? null : (pendingTtsCleanedUrl ?? project?.tts_cleaned_url ?? null);
 
+  // Hash the current script in the browser so we can compare it against
+  // the hash stored when this voiceover was generated. If they differ,
+  // the saved tts_url is narration for an older version of the script
+  // and the user should be warned before they continue.
+  const [currentScriptHash, setCurrentScriptHash] = useState<string | null>(null);
+  useEffect(() => {
+    if (!script) { setCurrentScriptHash(null); return; }
+    let cancelled = false;
+    (async () => {
+      const buf = new TextEncoder().encode(script);
+      const digest = await crypto.subtle.digest("SHA-256", buf);
+      const hex = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+      if (!cancelled) setCurrentScriptHash(hex);
+    })();
+    return () => { cancelled = true; };
+  }, [script]);
+  const ttsStale = !!ttsUrl
+    && !generatingTts
+    && !!project?.tts_script_hash
+    && !!currentScriptHash
+    && project.tts_script_hash !== currentScriptHash;
+
   useEffect(() => {
     if (!generatingImages && project?.images_progress) setImagesProgress(project.images_progress);
   }, [project?.images_progress, generatingImages]);
@@ -988,6 +1010,15 @@ export default function GeneratePage({ params }: PageProps) {
                 Audio players when ready, or in-flight status while generating. */}
             {(ttsUrl || generatingTts) && (
               <div className="px-5 pt-4 space-y-3">
+                {ttsStale && (
+                  <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
+                    style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "oklch(0.85 0.12 70)" }}>
+                    <span aria-hidden>⚠</span>
+                    <span>
+                      Script was edited after this voiceover was generated. The narration below no longer matches your current script — click <strong>Regen</strong> to update it.
+                    </span>
+                  </div>
+                )}
                 {ttsUrl ? (
                   <>
                     <div className="space-y-1">
