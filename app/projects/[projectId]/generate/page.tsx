@@ -539,41 +539,54 @@ export default function GeneratePage({ params }: PageProps) {
         setClearingImages(false);
       }
 
-      // Submit beats in batches. KIE returns 429 "call frequency is too
-      // high" once sustained submission rate climbs past ~10 req/s
-      // (observed: 8+500ms tripped at request #48). 5+1000ms = ~5 req/s
-      // sustained, comfortably under the cap while still ~2.5× faster
-      // than the previous 3+1500ms baseline.
-      const SUBMIT_BATCH = 5;
+      // Submit beats in batches. KIE's "call frequency too high" 429
+      // can fire on sustained submission even at moderate rates, so we
+      // keep the batch conservative (4+1500ms = ~2.7 req/s baseline)
+      // AND retry per-beat on 429 with backoff. The retry honors
+      // Retry-After when present; otherwise it doubles 1s → 2s → 4s.
+      // Real (non-rate-limit) errors throw immediately.
+      const SUBMIT_BATCH = 4;
       const pending: { beatNumber: number; taskId: string }[] = [];
       let firstSubmitError: string | null = null;
 
+      async function submitOne(beat: Beat): Promise<{ beatNumber: number; taskId: string }> {
+        const MAX_RETRIES = 4;
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+          const res = await fetch("/api/generate/images/submit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              projectId,
+              beatNumber: beat.beatNumber,
+              imagePrompt: beat.imagePrompt,
+              modelId: selectedImageModel,
+              aspectRatio: selectedAspectRatio,
+              ...(selectedResolution ? { resolution: selectedResolution } : {}),
+            }),
+          });
+          if (res.status === 429 && attempt < MAX_RETRIES) {
+            const retryAfter = res.headers.get("Retry-After");
+            const waitMs = retryAfter && Number.isFinite(Number(retryAfter))
+              ? Number(retryAfter) * 1000
+              : Math.min(8000, 1000 * 2 ** attempt);
+            await new Promise((r) => setTimeout(r, waitMs));
+            continue;
+          }
+          const data = await res.json().catch(() => ({})) as { taskId?: string; error?: string };
+          if (!res.ok || !data.taskId) throw new Error(data.error ?? `HTTP ${res.status}`);
+          return { beatNumber: beat.beatNumber, taskId: data.taskId };
+        }
+        throw new Error(`Rate limited after ${MAX_RETRIES + 1} attempts`);
+      }
+
       for (let i = 0; i < targetBeats.length; i += SUBMIT_BATCH) {
         const batch = targetBeats.slice(i, i + SUBMIT_BATCH);
-        const batchResults = await Promise.allSettled(
-          batch.map(async (beat) => {
-            const res = await fetch("/api/generate/images/submit", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                projectId,
-                beatNumber: beat.beatNumber,
-                imagePrompt: beat.imagePrompt,
-                modelId: selectedImageModel,
-                aspectRatio: selectedAspectRatio,
-                ...(selectedResolution ? { resolution: selectedResolution } : {}),
-              }),
-            });
-            const data = await res.json().catch(() => ({})) as { taskId?: string; error?: string };
-            if (!res.ok || !data.taskId) throw new Error(data.error ?? `HTTP ${res.status}`);
-            return { beatNumber: beat.beatNumber, taskId: data.taskId };
-          })
-        );
+        const batchResults = await Promise.allSettled(batch.map(submitOne));
         for (const r of batchResults) {
           if (r.status === "fulfilled") pending.push(r.value);
           else if (!firstSubmitError) firstSubmitError = r.reason instanceof Error ? r.reason.message : "Unknown error";
         }
-        if (i + SUBMIT_BATCH < targetBeats.length) await new Promise((r) => setTimeout(r, 1000));
+        if (i + SUBMIT_BATCH < targetBeats.length) await new Promise((r) => setTimeout(r, 1500));
       }
 
       if (pending.length === 0) {
