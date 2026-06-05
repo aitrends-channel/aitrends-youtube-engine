@@ -18,16 +18,27 @@ export const maxDuration = 30;
 
 export async function POST(req: Request) {
   let user: User;
-  try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  try { user = await getRequiredUser(); } catch (e) {
+    console.warn("[tts/clean] unauthorized");
+    return e as Response;
+  }
 
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId");
-  if (!projectId) return Response.json({ error: "projectId is required" }, { status: 400 });
+  if (!projectId) {
+    console.warn(`[tts/clean] missing projectId user=${user.id}`);
+    return Response.json({ error: "projectId is required" }, { status: 400 });
+  }
 
   // Finalize path — small JSON body, fits inside Vercel's limit.
   if (searchParams.get("finalize") === "1") {
     const body = await req.json().catch(() => ({})) as { publicUrl?: string };
-    if (!body.publicUrl) return Response.json({ error: "publicUrl is required" }, { status: 400 });
+    if (!body.publicUrl) {
+      console.warn(`[tts/clean] finalize missing publicUrl user=${user.id} project=${projectId}`);
+      return Response.json({ error: "publicUrl is required" }, { status: 400 });
+    }
+
+    console.log(`[tts/clean] finalize user=${user.id} project=${projectId} url=${body.publicUrl}`);
 
     const { error: dbError } = await supabase
       .from("projects")
@@ -35,15 +46,24 @@ export async function POST(req: Request) {
       .eq("id", projectId)
       .eq("user_id", user.id);
     if (dbError) {
-      console.error("[TTS clean finalize] db update error:", dbError.message);
+      console.error(`[tts/clean] finalize db update error user=${user.id} project=${projectId}: ${dbError.message}`);
       return Response.json({ error: dbError.message }, { status: 500 });
     }
+    console.log(`[tts/clean] finalize done user=${user.id} project=${projectId}`);
     return Response.json({ url: body.publicUrl });
   }
 
   // Presign path — returns a short-lived PUT URL the browser can use
   // to upload the MP3 directly to R2.
   const path = `${userFolderFor(user)}/${projectId}/voiceover-cleaned_${Date.now()}.mp3`;
-  const { uploadUrl, publicUrl } = await createPresignedUpload(path, "audio/mpeg");
-  return Response.json({ uploadUrl, publicUrl, path });
+  console.log(`[tts/clean] presign user=${user.id} project=${projectId} path=${path}`);
+  try {
+    const { uploadUrl, publicUrl } = await createPresignedUpload(path, "audio/mpeg");
+    console.log(`[tts/clean] presign done user=${user.id} project=${projectId} publicUrl=${publicUrl}`);
+    return Response.json({ uploadUrl, publicUrl, path });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "presign failed";
+    console.error(`[tts/clean] presign error user=${user.id} project=${projectId}: ${message}`);
+    return Response.json({ error: message }, { status: 500 });
+  }
 }
