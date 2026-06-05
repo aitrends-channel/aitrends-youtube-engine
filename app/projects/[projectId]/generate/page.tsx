@@ -7,6 +7,7 @@ import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
+import type { ApiStatusResult } from "@/app/api/api-status/route";
 import { getModelConfig } from "@/lib/kie/imageModels";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
 import { removeLongPauses, encodeMp3 } from "@/lib/audio/silenceRemover";
@@ -16,6 +17,17 @@ const fetcher = (url: string) =>
     if (!r.ok) return r.json().catch(() => ({})).then((e: { error?: string }) => { throw new Error(e.error ?? `Failed to load (${r.status})`); });
     return r.json().catch(() => ({}));
   });
+
+function isCreditError(raw: string | undefined | null): boolean {
+  const msg = (raw ?? "").toLowerCase();
+  return msg.includes("credits insufficient")
+    || msg.includes("insufficient credits")
+    || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit")))
+    || msg.includes("quota_exceeded")
+    || msg.includes("quota exceeded")
+    || msg.includes("credits remaining")
+    || msg.includes("credit balance");
+}
 
 function friendlyError(raw: string | undefined | null): string {
   const msg = (raw ?? "").toLowerCase();
@@ -210,6 +222,14 @@ export default function GeneratePage({ params }: PageProps) {
   const { data: ttsModels, error: ttsError } = useSWR<KieModel[]>("/api/kie/models?type=tts", fetcher);
   const { data: imageModels } = useSWR<KieModel[]>("/api/kie/models?type=image", fetcher);
   const { data: videoModels } = useSWR<KieModel[]>("/api/kie/models?type=video", fetcher);
+  // KIE balance for the proactive credit display + warning banner.
+  // Refreshes every 30s so the number stays roughly current without
+  // hammering the credit endpoint.
+  const { data: apiStatus, mutate: mutateApiStatus } = useSWR<ApiStatusResult>(
+    "/api/api-status",
+    fetcher,
+    { revalidateOnFocus: false, refreshInterval: 30_000 }
+  );
 
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [selectedTtsModel, setSelectedTtsModel] = useState<string | null>(null);
@@ -241,6 +261,12 @@ export default function GeneratePage({ params }: PageProps) {
   const [videosSubmitted, setVideosSubmitted] = useState(false);
   const [regenBeats, setRegenBeats] = useState<Set<number>>(new Set());
   const [clearingImages, setClearingImages] = useState(false);
+  // Sticky "KIE has no credits" banner. Set when any submission fails
+  // with an insufficient-credit error and cleared on the next
+  // successful submit or balance refresh. We can't rely on the toast
+  // alone because it disappears in 4s — the user can miss it on a
+  // long-running job.
+  const [outOfCredits, setOutOfCredits] = useState(false);
   const [hoveredImageBeat, setHoveredImageBeat] = useState<Beat | null>(null);
   const [hoveredVideoBeat, setHoveredVideoBeat] = useState<Beat | null>(null);
   const videoHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -274,6 +300,14 @@ export default function GeneratePage({ params }: PageProps) {
   useEffect(() => {
     if (!generatingImages && project?.images_progress) setImagesProgress(project.images_progress);
   }, [project?.images_progress, generatingImages]);
+
+  // Auto-clear the sticky out-of-credits banner once the refreshed
+  // balance shows positive credits again. Avoids needing the user to
+  // dismiss it manually after they top up.
+  useEffect(() => {
+    const c = apiStatus?.kie?.credits;
+    if (outOfCredits && typeof c === "number" && c > 0) setOutOfCredits(false);
+  }, [apiStatus?.kie?.credits, outOfCredits]);
 
   // Resume polling for any image tasks that were in flight when the
   // page was last closed. Without this, taskIds only lived in the
@@ -573,7 +607,18 @@ export default function GeneratePage({ params }: PageProps) {
             continue;
           }
           const data = await res.json().catch(() => ({})) as { taskId?: string; error?: string };
-          if (!res.ok || !data.taskId) throw new Error(data.error ?? `HTTP ${res.status}`);
+          if (!res.ok || !data.taskId) {
+            const errMsg = data.error ?? `HTTP ${res.status}`;
+            // Surface KIE credit exhaustion as sticky UI state, not just
+            // a transient toast. We also kick the balance fetch so the
+            // displayed balance updates without waiting for the 30s
+            // refresh interval.
+            if (isCreditError(errMsg)) {
+              setOutOfCredits(true);
+              mutateApiStatus();
+            }
+            throw new Error(errMsg);
+          }
           return { beatNumber: beat.beatNumber, taskId: data.taskId };
         }
         throw new Error(`Rate limited after ${MAX_RETRIES + 1} attempts`);
@@ -1085,9 +1130,26 @@ export default function GeneratePage({ params }: PageProps) {
                 const isPartial = generatedImages > 0 && pendingCount > 0;
                 const isAllDone = generatedImages > 0 && pendingCount === 0;
                 const workingImageName = imageModels?.find((m) => m.id === selectedImageModel)?.name ?? "the selected model";
+                const kieCredits = apiStatus?.kie?.credits;
+                const showCreditBanner = outOfCredits || (typeof kieCredits === "number" && kieCredits <= 0);
                 return (
                   <>
-                    {isPartial && !generatingImages && (
+                    {showCreditBanner && (
+                      <div className="px-3 py-2 rounded-lg text-xs leading-snug flex items-start gap-2"
+                        style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.3)", color: "oklch(0.78 0.12 25)" }}>
+                        <span aria-hidden style={{ marginTop: "1px" }}>⚠</span>
+                        <span>
+                          <span style={{ fontWeight: 600 }}>KIE credits exhausted.</span>{" "}
+                          Top up your account at{" "}
+                          <a href="https://kie.ai/billing" target="_blank" rel="noopener noreferrer"
+                            style={{ textDecoration: "underline", fontWeight: 600 }}>
+                            kie.ai/billing
+                          </a>{" "}
+                          to keep generating.
+                        </span>
+                      </div>
+                    )}
+                    {isPartial && !generatingImages && !showCreditBanner && (
                       <div className="px-3 py-2 rounded-lg text-xs leading-snug"
                         style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "oklch(0.78 0.12 25)" }}>
                         {pendingCount} image{pendingCount === 1 ? "" : "s"} didn't generate on <span style={{ fontWeight: 600 }}>{workingImageName}</span>. Try switching to a different model above, then run again.
@@ -1095,8 +1157,8 @@ export default function GeneratePage({ params }: PageProps) {
                     )}
                     <button
                       onClick={() => generateImages({ mode: isAllDone ? "all" : "remaining" })}
-                      disabled={generatingImages || generatingTts || !selectedImageModel || !beats.length}
-                      title={generatingTts ? "Voiceover is generating — wait for it to finish before starting image generation" : undefined}
+                      disabled={generatingImages || generatingTts || !selectedImageModel || !beats.length || showCreditBanner}
+                      title={generatingTts ? "Voiceover is generating — wait for it to finish before starting image generation" : showCreditBanner ? "KIE credits exhausted — top up to continue" : undefined}
                       className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                       style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                     >
@@ -1118,12 +1180,21 @@ export default function GeneratePage({ params }: PageProps) {
                     {isPartial && !generatingImages && (
                       <button
                         onClick={() => generateImages({ mode: "all" })}
-                        disabled={generatingTts || !selectedImageModel}
+                        disabled={generatingTts || !selectedImageModel || showCreditBanner}
                         className="w-full py-2 rounded-xl text-xs font-medium disabled:opacity-40 transition-all"
                         style={{ background: "transparent", color: "var(--c-50)", border: "1px solid var(--bd-8)" }}
                       >
                         {`Regenerate All (${totalBeats}) — wipes existing`}
                       </button>
+                    )}
+                    {/* Persistent balance line so the user can spot a
+                        low-but-not-zero balance before kicking off a big
+                        run. Refreshes every 30s via the SWR config. */}
+                    {typeof kieCredits === "number" && (
+                      <p className="text-[11px] text-center pt-1"
+                        style={{ color: kieCredits <= 0 ? "oklch(0.7 0.18 25)" : kieCredits < 100 ? "oklch(0.72 0.18 65)" : "var(--c-45)" }}>
+                        KIE balance: {kieCredits.toLocaleString()} credit{kieCredits === 1 ? "" : "s"}
+                      </p>
                     )}
                   </>
                 );
