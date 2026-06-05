@@ -326,6 +326,20 @@ export default function GeneratePage({ params }: PageProps) {
     && !!currentScriptHash
     && project.tts_script_hash !== currentScriptHash;
 
+  // Beats are the parent of the image/video assets shown below. If the
+  // script changed after the prompts step ran, both the images and the
+  // motion clips were generated against an out-of-date beat list and
+  // need to be regenerated upstream (Prompt Studio → Regenerate) before
+  // images/videos can match the current script again.
+  const videosInFlight = queuingVideos
+    || beats.some((b) => b.videoStatus === "queued" || b.videoStatus === "rendering");
+  const beatsStale = beats.length > 0
+    && !generatingImages
+    && !videosInFlight
+    && !!project?.prompts_script_hash
+    && !!currentScriptHash
+    && project.prompts_script_hash !== currentScriptHash;
+
   useEffect(() => {
     if (!generatingImages && project?.images_progress) setImagesProgress(project.images_progress);
   }, [project?.images_progress, generatingImages]);
@@ -1177,6 +1191,18 @@ export default function GeneratePage({ params }: PageProps) {
               })()}
             </div>
 
+            {beatsStale && (
+              <div className="px-5 pt-4">
+                <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
+                  style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "oklch(0.85 0.12 70)" }}>
+                  <span aria-hidden>⚠</span>
+                  <span>
+                    Script was edited after these beats were generated. Any images below were prompted from the old script — regenerate the beats in <strong>Prompt Studio</strong> before re-running images.
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Image gallery */}
             {(beats.some((b) => b.imageUrl || b.imageStatus) || regenBeats.size > 0) && (
               <div className="px-5 pt-4">
@@ -1400,6 +1426,18 @@ export default function GeneratePage({ params }: PageProps) {
                 );
               })()}
             </div>
+
+            {beatsStale && (
+              <div className="px-5 pt-4">
+                <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
+                  style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "oklch(0.85 0.12 70)" }}>
+                  <span aria-hidden>⚠</span>
+                  <span>
+                    Script was edited after these beats were generated. Any clips below were prompted from the old script — regenerate the beats in <strong>Prompt Studio</strong> before re-running videos.
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Video clip grid — mirrors image panel structure: progress + grid in one block,
                 shown whenever there's any video activity OR a queue has been submitted. */}
