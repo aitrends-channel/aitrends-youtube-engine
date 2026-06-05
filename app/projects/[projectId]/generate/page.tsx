@@ -275,6 +275,56 @@ export default function GeneratePage({ params }: PageProps) {
     if (!generatingImages && project?.images_progress) setImagesProgress(project.images_progress);
   }, [project?.images_progress, generatingImages]);
 
+  // Resume polling for any image tasks that were in flight when the
+  // page was last closed. Without this, taskIds only lived in the
+  // generateImages() local state — a refresh / tab close / network
+  // glitch left the beat marked "generating" with no way to map the
+  // KIE result back to it. resumedRef gates the effect so we don't
+  // re-fire when beats reload after each poll.
+  const resumedRef = useRef(false);
+  useEffect(() => {
+    if (resumedRef.current) return;
+    if (generatingImages) return; // active local poller already running
+    if (!project?.beats) return;
+    const inflight = (project.beats as Beat[]).filter(
+      (b) => b.imageStatus === "generating" && b.imageTaskId && !b.imageUrl
+    );
+    if (inflight.length === 0) return;
+    resumedRef.current = true;
+
+    void (async () => {
+      const remaining = inflight.map((b) => ({
+        beatNumber: b.beatNumber,
+        taskId: b.imageTaskId as string,
+        modelId: b.imageModelId ?? selectedImageModel ?? "",
+      }));
+      const MAX_POLLS = 50;
+      for (let attempt = 0; attempt < MAX_POLLS && remaining.length > 0; attempt++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const results = await Promise.allSettled(
+          remaining.map(async ({ beatNumber, taskId, modelId }) => {
+            const res = await fetch("/api/generate/images/poll", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ projectId, beatNumber, taskId, modelId }),
+            });
+            const data = await res.json().catch(() => ({})) as { status?: string };
+            return { beatNumber, status: !res.ok ? "error" : (data.status ?? "pending") };
+          })
+        );
+        const toRemove: number[] = [];
+        for (let i = 0; i < results.length; i++) {
+          if (results[i].status === "fulfilled") {
+            const { status } = (results[i] as PromiseFulfilledResult<{ beatNumber: number; status: string }>).value;
+            if (status === "done" || status === "failed" || status === "error") toRemove.push(i);
+          }
+        }
+        for (let i = toRemove.length - 1; i >= 0; i--) remaining.splice(toRemove[i], 1);
+        await mutate();
+      }
+    })();
+  }, [project?.beats, projectId, mutate, generatingImages, selectedImageModel]);
+
   useEffect(() => {
     if (ttsModels?.length && !initialTtsSelected.current) {
       initialTtsSelected.current = true;

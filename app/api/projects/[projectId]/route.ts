@@ -39,6 +39,8 @@ export async function GET(
       videoUrl: b.video_url,
       imageStatus: b.image_status,
       videoStatus: b.video_status,
+      imageTaskId: b.image_task_id ?? undefined,
+      imageModelId: b.image_model_id ?? undefined,
       videoJobId: b.video_job_id,
       videoError: b.video_error ?? undefined,
       audioUrl: b.audio_url ?? undefined,

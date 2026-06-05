@@ -93,12 +93,15 @@ export async function submitImageTask(
   modelId: string,
   aspectRatio = "16:9",
   resolution?: string,
-  userId?: string
+  userId?: string,
+  callBackUrl?: string
 ): Promise<string> {
   if (modelId.startsWith("flux-kontext")) {
+    const body: Record<string, unknown> = { prompt, model: modelId, aspectRatio, outputFormat: "jpeg" };
+    if (callBackUrl) body.callBackUrl = callBackUrl;
     const res = await kieRequest<KieTaskResponse>("/api/v1/flux/kontext/generate", {
       method: "POST",
-      body: JSON.stringify({ prompt, model: modelId, aspectRatio, outputFormat: "jpeg" }),
+      body: JSON.stringify(body),
     }, userId);
     if (res.code !== 200) throw new Error(`KIE ${res.code}: ${res.msg ?? "Failed to create image task"}`);
     if (!res.data?.taskId) throw new Error("No task ID returned from image API");
@@ -109,9 +112,11 @@ export async function submitImageTask(
     if (modelId === "bytedance/seedream-v4-text-to-image" && resolution) {
       input.image_resolution = resolution;
     }
+    const body: Record<string, unknown> = { model: modelId, input };
+    if (callBackUrl) body.callBackUrl = callBackUrl;
     const res = await kieRequest<KieTaskResponse>("/api/v1/jobs/createTask", {
       method: "POST",
-      body: JSON.stringify({ model: modelId, input }),
+      body: JSON.stringify(body),
     }, userId);
     if (res.code !== 200) throw new Error(`KIE ${res.code}: ${res.msg ?? "Failed to create image task"}`);
     if (!res.data?.taskId) throw new Error("No task ID returned from image API");
@@ -119,9 +124,11 @@ export async function submitImageTask(
   } else {
     const input: Record<string, unknown> = { prompt, aspect_ratio: aspectRatio };
     if (resolution) input.resolution = resolution;
+    const body: Record<string, unknown> = { model: modelId, input };
+    if (callBackUrl) body.callBackUrl = callBackUrl;
     const res = await kieRequest<KieTaskResponse>("/api/v1/jobs/createTask", {
       method: "POST",
-      body: JSON.stringify({ model: modelId, input }),
+      body: JSON.stringify(body),
     }, userId);
     if (res.code !== 200) throw new Error(`KIE ${res.code}: ${res.msg ?? "Failed to create image task"}`);
     if (!res.data?.taskId) throw new Error("No task ID returned from image API");

@@ -2,6 +2,16 @@ import { getSettings } from "@/lib/settings";
 
 const KIE_BASE_URL = "https://api.kie.ai";
 
+// Carries the upstream HTTP status so route handlers can map it onto
+// an accurate response code (e.g. 429 from KIE → 429 from us, not 500).
+// Without this, every transient upstream blip alerts as a server bug.
+export class KieUpstreamError extends Error {
+  constructor(public upstreamStatus: number, public retryAfter: number | null, message: string) {
+    super(message);
+    this.name = "KieUpstreamError";
+  }
+}
+
 async function getKieKey(userId?: string): Promise<string> {
   if (userId) {
     const { kie_api_key } = await getSettings(userId);
@@ -31,7 +41,9 @@ export async function kieRequest<T>(
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`kie.ai error ${res.status}: ${body}`);
+    const retryAfterHeader = res.headers.get("retry-after");
+    const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : null;
+    throw new KieUpstreamError(res.status, Number.isFinite(retryAfter) ? retryAfter : null, `kie.ai error ${res.status}: ${body}`);
   }
 
   return res.json() as Promise<T>;
@@ -55,7 +67,9 @@ export async function kieRequestBinary(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`kie.ai error ${res.status}: ${text}`);
+    const retryAfterHeader = res.headers.get("retry-after");
+    const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : null;
+    throw new KieUpstreamError(res.status, Number.isFinite(retryAfter) ? retryAfter : null, `kie.ai error ${res.status}: ${text}`);
   }
 
   return res.arrayBuffer();

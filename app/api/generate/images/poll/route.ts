@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { checkImageTask } from "@/lib/kie/images";
-import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
-import { supabase } from "@/lib/supabase/client";
+import { finishImageTask } from "@/lib/kie/finishImageTask";
+import { KieUpstreamError } from "@/lib/kie/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 
@@ -20,32 +19,27 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "projectId, beatNumber, and taskId are required" }, { status: 400 });
     }
 
-    const result = await checkImageTask(taskId, user.id, modelId);
-    console.log(`[images/poll] beat=${beatNumber} taskId=${taskId} status=${result.status}${result.error ? ` error=${result.error}` : ""}`);
+    const result = await finishImageTask({
+      projectId, beatNumber, taskId, modelId,
+      userId: user.id, userEmail: user.email,
+    });
+    console.log(`[images/poll] beat=${beatNumber} taskId=${taskId} status=${result.status}`);
 
-    if (result.status === "done" && result.url) {
-      const storagePath = `${userFolderFor(user)}/${projectId}/images/beat-${beatNumber}_${Date.now()}.png`;
-      const publicUrl = await uploadFromUrl(storagePath, result.url, "image/png");
-
-      await supabase.from("project_beats")
-        .update({ image_url: publicUrl, image_status: "done" })
-        .eq("project_id", projectId)
-        .eq("beat_number", beatNumber);
-
-      return NextResponse.json({ status: "done", url: publicUrl });
-    }
-
-    if (result.status === "failed") {
-      await supabase.from("project_beats")
-        .update({ image_status: "failed" })
-        .eq("project_id", projectId)
-        .eq("beat_number", beatNumber);
-
-      return NextResponse.json({ status: "failed", error: result.error });
-    }
-
+    if (result.status === "done") return NextResponse.json({ status: "done", url: result.url });
+    if (result.status === "failed") return NextResponse.json({ status: "failed", error: result.error });
     return NextResponse.json({ status: "pending" });
   } catch (err) {
+    if (err instanceof KieUpstreamError) {
+      console.warn(`[images/poll] KIE upstream ${err.upstreamStatus}: ${err.message}`);
+      const headers: Record<string, string> = {};
+      if (err.upstreamStatus === 429 && err.retryAfter != null) {
+        headers["Retry-After"] = String(err.retryAfter);
+      }
+      // 429 stays 429 so the client treats this as a transient backoff
+      // and keeps polling rather than abandoning the task.
+      const status = err.upstreamStatus === 429 ? 429 : 502;
+      return NextResponse.json({ status: "error", error: err.message, upstreamStatus: err.upstreamStatus }, { status, headers });
+    }
     const message = err instanceof Error ? err.message : "Failed to poll image task";
     console.error("[images/poll] Error:", message);
     return NextResponse.json({ status: "error", error: message }, { status: 500 });
