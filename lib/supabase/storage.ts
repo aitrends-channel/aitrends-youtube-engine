@@ -8,6 +8,16 @@ const r2 = new S3Client({
     accessKeyId: process.env.R2_ACCESS_KEY_ID!,
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
   },
+  // AWS SDK v3 added a CRC32 integrity checksum to every PutObject by
+  // default. The checksum gets baked into presigned URLs as
+  // x-amz-checksum-crc32=AAAAAA== plus x-amz-sdk-checksum-algorithm=CRC32,
+  // which R2 enforces — but a browser doing a direct PUT can't easily
+  // compute and forward the matching checksum header, so the upload
+  // gets rejected. Setting these to WHEN_REQUIRED drops the auto-added
+  // checksum and lets R2 accept the body as-is. Server-side uploads via
+  // r2.send(...) are unaffected (R2 still validates the signature).
+  requestChecksumCalculation: "WHEN_REQUIRED",
+  responseChecksumValidation: "WHEN_REQUIRED",
 });
 
 const BUCKET = process.env.R2_BUCKET_NAME!;
