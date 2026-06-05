@@ -427,8 +427,10 @@ async function generateImages(
 
   // Bounded concurrency worker pool. Claude calls overlap; persistence
   // is gated in script order via persistGates so beat numbers stay
-  // monotonic.
-  const CONCURRENCY = 3;
+  // monotonic. 5 is comfortably under Anthropic's standard-tier
+  // per-account concurrency cap and retryClaudeCall already handles
+  // any 429s if KIE/Anthropic pushes back.
+  const CONCURRENCY = 5;
   let nextIdx = 0;
   let completed = 0;
   let firstError: Error | null = null;
@@ -614,10 +616,11 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
   }
 
   // Bounded concurrency: run up to CONCURRENCY chunks in parallel. The
-  // Claude call (30-60s) dominates each chunk's wall time, so 3 in flight
-  // collapses ~3× of the total. Persistence is a fast DB upsert and
-  // happens inside processChunk, so no global ordering lock is needed.
-  const CONCURRENCY = 3;
+  // Claude call (30-60s) dominates each chunk's wall time, so 5 in
+  // flight collapses ~5× of the total. Persistence is a fast DB
+  // upsert and happens inside processChunk, so no global ordering lock
+  // is needed. retryClaudeCall absorbs any 429s if we trip a rate cap.
+  const CONCURRENCY = 5;
   let nextIdx = 0;
   let completed = 0;
   let firstError: Error | null = null;
