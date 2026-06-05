@@ -6,6 +6,7 @@ import { Lock } from "lucide-react";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
+import { AdminModelPicker } from "@/components/AdminModelPicker";
 
 interface PageProps {
   params: { projectId: string };
@@ -25,6 +26,7 @@ export default function TopicPage({ params }: PageProps) {
   const [saving, setSaving] = useState(false);
   const [extraIdeas, setExtraIdeas] = useState<string[]>([]);
   const [generatingIdeas, setGeneratingIdeas] = useState(false);
+  const [adminModel, setAdminModel] = useState<string>("");
 
   const baseIdeas: string[] = project?.video_ideas ?? [];
   const allIdeas = [...baseIdeas, ...extraIdeas];
@@ -44,7 +46,7 @@ export default function TopicPage({ params }: PageProps) {
       const res = await fetch("/api/workflow/ideas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: ideasProjectId }),
+        body: JSON.stringify({ projectId: ideasProjectId, ...(adminModel ? { model: adminModel } : {}) }),
       });
       const data = await res.json() as { ideas?: string[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Failed to generate ideas");
@@ -112,12 +114,15 @@ export default function TopicPage({ params }: PageProps) {
       <WizardNav projectId={isFork ? "new-fork" : projectId} currentState={6} highestState={isFork ? 6 : project?.current_state} channelName={project?.channel_name} />
 
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
-        <div className="px-4 sm:px-8 py-5"
+        <div className="px-4 sm:px-8 py-5 flex items-start justify-between gap-2"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <h1 className="font-bold text-lg">Choose Your Topic</h1>
-          <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-            {isTopicLocked ? "Topic is locked — already used in script generation" : "Select a video idea or enter a custom topic"}
-          </p>
+          <div>
+            <h1 className="font-bold text-lg">Choose Your Topic</h1>
+            <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+              {isTopicLocked ? "Topic is locked — already used in script generation" : "Select a video idea or enter a custom topic"}
+            </p>
+          </div>
+          <AdminModelPicker storageKey="ideas" label="Ideas model" onChange={setAdminModel} />
         </div>
 
         <div className="max-w-2xl mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-24 space-y-5">

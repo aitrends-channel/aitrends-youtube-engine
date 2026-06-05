@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { resolveAnthropicModel } from "@/lib/claude/modelOverride";
 import {
   buildImagePromptsCached,
   buildImagePromptsDynamic,
@@ -181,7 +182,8 @@ async function generateImages(
   userId: string,
   script: string,
   visualProfile: VisualProfileOutput,
-  send: (data: object) => void
+  send: (data: object) => void,
+  model: string
 ) {
   console.log(`[image-prompts] start project=${projectId} scriptWords=${script.trim().split(/\s+/).filter(Boolean).length}`);
   const runId = await claimPromptsRun(projectId, userId);
@@ -316,7 +318,7 @@ async function generateImages(
       `image prompts chunk ${chunkIndex + 1}/${totalChunks}`,
       async () => {
         const stream = anthropic.messages.stream({
-          model: MODEL,
+          model: model,
           max_tokens: 8192,
           system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
           tools: [{ name: "save_image_prompts", description: "Save image prompts for every visual beat in the chunk", input_schema: imagePromptsInputSchema }],
@@ -445,7 +447,7 @@ async function generateImages(
 }
 
 // ── Step 2: Video prompts ──────────────────────────────────────────────────
-async function generateVideos(projectId: string, userId: string, send: (data: object) => void) {
+async function generateVideos(projectId: string, userId: string, send: (data: object) => void, model: string) {
   const runId = await claimPromptsRun(projectId, userId);
   const anthropic = await getAnthropicClient(userId);
   send({ type: "status", message: "Loading beats..." });
@@ -526,7 +528,7 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
     for (let attempt = 0; attempt < 2; attempt++) {
       res = await retryClaudeCall(`video batch ${i + 1}/${chunks.length} (try ${attempt + 1})`, () =>
         anthropic.messages.create({
-          model: MODEL,
+          model: model,
           max_tokens: 8192,
           system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
           tools: [{ name: "save_video_prompts", description: "Save video prompts for all beats", input_schema: videoPromptsInputSchema }],
@@ -640,14 +642,15 @@ async function generateThumbnails(
   script: string,
   visualProfile: VisualProfileOutput,
   thumbnailAnalysis: ThumbnailAnalysisOutput | undefined,
-  send: (data: object) => void
+  send: (data: object) => void,
+  model: string
 ) {
   const anthropic = await getAnthropicClient(userId);
   send({ type: "status", message: "Generating 5 thumbnail concepts..." });
 
   const res = await retryClaudeCall("thumbnail concepts", () =>
     anthropic.messages.create({
-      model: MODEL,
+      model: model,
       max_tokens: 8192,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       tools: [{ name: "save_thumbnails", description: "Save 5 thumbnail concepts", input_schema: thumbnailsInputSchema }],
@@ -690,24 +693,26 @@ export async function POST(req: Request) {
     script?: string;
     visualProfile?: VisualProfileOutput;
     thumbnailAnalysis?: ThumbnailAnalysisOutput;
+    model?: string;
   };
 
   const { step, projectId } = body;
   if (!projectId || !step) {
     return NextResponse.json({ error: "projectId and step are required" }, { status: 400 });
   }
+  const model = resolveAnthropicModel(user, body.model, MODEL);
 
   if (step === "images") {
     if (!body.script || !body.visualProfile) {
       return NextResponse.json({ error: "script and visualProfile are required" }, { status: 400 });
     }
     return sseStream((send) =>
-      generateImages(projectId, user.id, body.script!, body.visualProfile!, send)
+      generateImages(projectId, user.id, body.script!, body.visualProfile!, send, model)
     );
   }
 
   if (step === "videos") {
-    return sseStream((send) => generateVideos(projectId, user.id, send));
+    return sseStream((send) => generateVideos(projectId, user.id, send, model));
   }
 
   if (step === "thumbnails") {
@@ -715,7 +720,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "script and visualProfile are required" }, { status: 400 });
     }
     return sseStream((send) =>
-      generateThumbnails(projectId, user.id, body.script!, body.visualProfile!, body.thumbnailAnalysis, send)
+      generateThumbnails(projectId, user.id, body.script!, body.visualProfile!, body.thumbnailAnalysis, send, model)
     );
   }
 

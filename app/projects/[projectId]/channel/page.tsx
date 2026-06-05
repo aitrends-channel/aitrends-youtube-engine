@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { AlertCircle } from "lucide-react";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
+import { AdminModelPicker } from "@/components/AdminModelPicker";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { toast } from "sonner";
@@ -225,6 +226,7 @@ export default function ChannelPage({ params }: PageProps) {
   const [transcripts, setTranscripts] = useState<SupadataTranscript[]>([]);
   const [topicMode, setTopicMode] = useState<"generate" | "custom">("generate");
   const [topicHint, setTopicHint] = useState("");
+  const [adminModel, setAdminModel] = useState<string>("");
   const [customTopic, setCustomTopic] = useState("");
   const [isWorking, setIsWorking] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -415,6 +417,7 @@ export default function ChannelPage({ params }: PageProps) {
           transcripts: readyTranscripts,
           topicMode,
           topicHint: topicHint.trim() || undefined,
+          ...(adminModel ? { model: adminModel } : {}),
         }),
       });
       const data = await res.json();
@@ -475,11 +478,14 @@ export default function ChannelPage({ params }: PageProps) {
         <div className="max-w-2xl mx-auto px-4 sm:px-8 pt-6 sm:pt-10 pb-24 space-y-8">
 
           {/* Header */}
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Channel Setup</h1>
-            <p className="text-sm mt-1" style={{ color: "var(--c-50)" }}>
-              Enter a YouTube channel URL to automatically extract style DNA and generate content.
-            </p>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">Channel Setup</h1>
+              <p className="text-sm mt-1" style={{ color: "var(--c-50)" }}>
+                Enter a YouTube channel URL to automatically extract style DNA and generate content.
+              </p>
+            </div>
+            <AdminModelPicker storageKey="analyze" label="Analyze model" onChange={setAdminModel} />
           </div>
 
           {/* URL input card */}

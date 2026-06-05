@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
+import { AdminModelPicker } from "@/components/AdminModelPicker";
 
 interface PageProps {
   params: { projectId: string };
@@ -113,6 +114,7 @@ export default function VisualsPage({ params }: PageProps) {
 
   const [mode, setMode] = useState<Mode>("auto");
   const [navigating, setNavigating] = useState(false);
+  const [adminModel, setAdminModel] = useState<string>("");
 
   // Auto screenshot state
   const [fetching, setFetching] = useState(false);
@@ -217,7 +219,7 @@ export default function VisualsPage({ params }: PageProps) {
       const res = await fetch("/api/workflow/visual-analysis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, videoImageUrls }),
+        body: JSON.stringify({ projectId, videoImageUrls, ...(adminModel ? { model: adminModel } : {}) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -243,7 +245,7 @@ export default function VisualsPage({ params }: PageProps) {
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
         {/* Header */}
-        <div className="shrink-0 px-4 sm:px-8 py-4 sm:py-5"
+        <div className="shrink-0 px-4 sm:px-8 py-4 sm:py-5 flex items-start justify-between gap-2"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div>
             <h1 className="font-bold text-base sm:text-lg">Visual Style Extraction</h1>
@@ -251,6 +253,7 @@ export default function VisualsPage({ params }: PageProps) {
               Upload or auto-capture screenshots so we can extract the channel&apos;s visual signature
             </p>
           </div>
+          <AdminModelPicker storageKey="visual-analysis" label="Vision model" onChange={setAdminModel} />
         </div>
 
         <div className="flex-1 overflow-y-auto pb-[70px]">

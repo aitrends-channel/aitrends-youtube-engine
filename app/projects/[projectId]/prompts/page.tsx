@@ -6,6 +6,7 @@ import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { AdminModelPicker } from "@/components/AdminModelPicker";
 import type { Beat } from "@/lib/types";
 
 // ── Sub-components ─────────────────────────────────────────────────────────
@@ -386,6 +387,7 @@ export default function PromptsPage({ params }: PageProps) {
   const [videoStep, setVideoStep] = useState<StepState>(IDLE);
   const [activeTab, setActiveTab] = useState<Tab>("beats");
   const [navigating, setNavigating] = useState(false);
+  const [adminModel, setAdminModel] = useState<string>("");
   const [clearTarget, setClearTarget] = useState<"image" | "video" | null>(null);
   const [clearing, setClearing] = useState(false);
 
@@ -432,6 +434,7 @@ export default function PromptsPage({ params }: PageProps) {
         projectId,
         script: project.script,
         visualProfile: project.visual_profile,
+        ...(adminModel ? { model: adminModel } : {}),
       }, setImageStep);
 
       // Always refetch — the server may have finished writing beats even
@@ -509,6 +512,7 @@ export default function PromptsPage({ params }: PageProps) {
       const doneReceived = await streamStep("/api/workflow/prompts", {
         step: "videos",
         projectId,
+        ...(adminModel ? { model: adminModel } : {}),
       }, setVideoStep);
 
       const updated = await mutate();
@@ -553,6 +557,7 @@ export default function PromptsPage({ params }: PageProps) {
               </p>
             )}
           </div>
+          <AdminModelPicker storageKey="prompts" label="Prompts model" onChange={setAdminModel} />
         </div>
 
         <div className="mx-5">

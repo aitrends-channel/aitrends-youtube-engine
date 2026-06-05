@@ -7,6 +7,7 @@ import { useProject } from "@/hooks/useProject";
 import { useStreamingScript } from "@/hooks/useStreamingScript";
 import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
+import { AdminModelPicker } from "@/components/AdminModelPicker";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +29,7 @@ export default function ScriptPage({ params }: PageProps) {
 
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [adminModel, setAdminModel] = useState<string>("");
   const [navigating, setNavigating] = useState(false);
   const [confirmRegen, setConfirmRegen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -63,7 +65,7 @@ export default function ScriptPage({ params }: PageProps) {
 
   async function generateScript(topic: string) {
     setSelectedTopic(topic);
-    await startStreaming(projectId, project?.channel_analysis, topic);
+    await startStreaming(projectId, project?.channel_analysis, topic, { model: adminModel });
   }
 
   async function saveScript() {
@@ -115,6 +117,7 @@ export default function ScriptPage({ params }: PageProps) {
       await startStreaming(projectId, project?.channel_analysis, selectedTopic, {
         mode: "continue",
         startWith: script,
+        model: adminModel,
       });
     } finally {
       setResuming(false);
@@ -171,6 +174,7 @@ export default function ScriptPage({ params }: PageProps) {
               </p>
             )}
           </div>
+          <AdminModelPicker storageKey="script" label="Script model" onChange={setAdminModel} />
         </div>
 
         {/* Content */}

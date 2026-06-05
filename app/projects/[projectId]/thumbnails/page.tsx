@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import type { ThumbnailConcept, KieModel } from "@/lib/types";
 import { getModelConfig } from "@/lib/kie/imageModels";
+import { AdminModelPicker } from "@/components/AdminModelPicker";
 
 interface PageProps {
   params: { projectId: string };
@@ -352,6 +353,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
 
   const [conceptStep, setConceptStep] = useState<StepState>(IDLE);
   const [imageStep, setImageStep] = useState<StepState>(IDLE);
+  const [adminModel, setAdminModel] = useState<string>("");
 
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [selectedRatio, setSelectedRatio] = useState("16:9");
@@ -406,7 +408,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
           const analysisRes = await fetch("/api/workflow/visual-analysis", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ projectId, thumbnailImageUrls }),
+            body: JSON.stringify({ projectId, thumbnailImageUrls, ...(adminModel ? { model: adminModel } : {}) }),
           });
           const analysisData = await analysisRes.json();
           if (analysisRes.ok && analysisData.thumbnailAnalysis) {
@@ -422,6 +424,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
         script: project.script,
         visualProfile: project.visual_profile,
         thumbnailAnalysis,
+        ...(adminModel ? { model: adminModel } : {}),
       }, setConceptStep);
       await mutate();
       setConceptStep({ status: "done", message: "" });
@@ -536,6 +539,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
               </p>
             )}
           </div>
+          <AdminModelPicker storageKey="thumbnails" label="Thumbnails model" onChange={setAdminModel} />
         </div>
 
         <div className="flex-1 overflow-y-auto">
