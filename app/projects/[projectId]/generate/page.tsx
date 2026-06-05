@@ -250,6 +250,13 @@ export default function GeneratePage({ params }: PageProps) {
   const [removingPauses, setRemovingPauses] = useState(false);
   const [removePausesStatus, setRemovePausesStatus] = useState("");
   const [generatingImages, setGeneratingImages] = useState(false);
+  const [stoppingImages, setStoppingImages] = useState(false);
+  // AbortController for the image generation loop. Halts submission
+  // between batches (preventing further KIE charges on unsubmitted
+  // beats) and stops the local poll loop. Already-submitted beats keep
+  // running on KIE; their results land via the page-resume effect, the
+  // cron, or the webhook — no work or money is lost.
+  const imagesAbortRef = useRef<AbortController | null>(null);
   const [queuingVideos, setQueuingVideos] = useState(false);
   const [pausingVideos, setPausingVideos] = useState(false);
   const [resumingVideos, setResumingVideos] = useState(false);
@@ -581,6 +588,8 @@ export default function GeneratePage({ params }: PageProps) {
     setGeneratingImages(true);
     setImagesProgress(0);
     if (shouldClear) setClearingImages(true);
+    imagesAbortRef.current = new AbortController();
+    const abortSignal = imagesAbortRef.current.signal;
     let successCount = 0;
     try {
       if (shouldClear) {
@@ -644,6 +653,11 @@ export default function GeneratePage({ params }: PageProps) {
       }
 
       for (let i = 0; i < targetBeats.length; i += SUBMIT_BATCH) {
+        // Stop check between batches — every unsubmitted beat from
+        // here on saves a KIE credit. The four in this iteration are
+        // already mid-fetch and will resolve; that's the smallest
+        // possible "leak" given the in-flight nature.
+        if (abortSignal.aborted) break;
         const batch = targetBeats.slice(i, i + SUBMIT_BATCH);
         const batchResults = await Promise.allSettled(batch.map(submitOne));
         for (const r of batchResults) {
@@ -653,6 +667,12 @@ export default function GeneratePage({ params }: PageProps) {
         if (i + SUBMIT_BATCH < targetBeats.length) await new Promise((r) => setTimeout(r, 1500));
       }
 
+      // User stopped before any task submitted — nothing to poll, no
+      // error to surface (Stop is an intentional, expected action).
+      if (abortSignal.aborted && pending.length === 0) {
+        toast.info("Stopped — no images were submitted");
+        return;
+      }
       if (pending.length === 0) {
         throw new Error(firstSubmitError ?? "unknown error");
       }
@@ -665,6 +685,10 @@ export default function GeneratePage({ params }: PageProps) {
       let firstPollError: string | null = null;
       const MAX_POLLS = 50; // ~2.5 min max
       for (let attempt = 0; attempt < MAX_POLLS && remaining.length > 0; attempt++) {
+        // Stop also exits the poll loop — the in-flight KIE jobs are
+        // already paid for and the cron / webhook / page-resume effect
+        // will finish them server-side, so we're not losing work.
+        if (abortSignal.aborted) break;
         await new Promise((r) => setTimeout(r, 3000));
 
         const pollResults = await Promise.allSettled(
@@ -695,7 +719,14 @@ export default function GeneratePage({ params }: PageProps) {
       }
 
       await mutate();
-      if (successCount === 0) {
+      if (abortSignal.aborted) {
+        const inFlight = pending.length - successCount;
+        if (inFlight > 0) {
+          toast.info(`Stopped — ${successCount}/${pending.length} done, ${inFlight} still finishing in the background`);
+        } else {
+          toast.info(`Stopped — ${successCount}/${pending.length} done`);
+        }
+      } else if (successCount === 0) {
         const reason = firstPollError ?? firstSubmitError ?? "timed out";
         toast.error(`0/${targetBeats.length} images generated — ${friendlyError(reason)}`);
       } else if (successCount < targetBeats.length) {
@@ -704,10 +735,27 @@ export default function GeneratePage({ params }: PageProps) {
         toast.success(`${successCount}/${targetBeats.length} images generated`);
       }
     } catch (err) {
-      toast.error(friendlyError(err instanceof Error ? err.message : null));
+      // Abort errors are intentional Stop clicks — silenced by the
+      // aborted-branch above, so we only land here on real failures.
+      if (!abortSignal.aborted) {
+        toast.error(friendlyError(err instanceof Error ? err.message : null));
+      }
     } finally {
       setGeneratingImages(false);
       setClearingImages(false);
+      setStoppingImages(false);
+      imagesAbortRef.current = null;
+    }
+  }
+
+  // Stops the image submission loop immediately. Beats already
+  // submitted continue running on KIE and land via webhook / cron /
+  // page-resume polling — only unsubmitted ones save us money.
+  async function handleStopImages() {
+    if (!generatingImages || stoppingImages) return;
+    setStoppingImages(true);
+    if (imagesAbortRef.current) {
+      try { imagesAbortRef.current.abort(); } catch { /* ignore */ }
     }
   }
 
@@ -1182,6 +1230,17 @@ export default function GeneratePage({ params }: PageProps) {
                         style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "oklch(0.78 0.12 25)" }}>
                         {pendingCount} image{pendingCount === 1 ? "" : "s"} didn't generate on <span style={{ fontWeight: 600 }}>{workingImageName}</span>. Try switching to a different model above, then run again.
                       </div>
+                    )}
+                    {generatingImages && (
+                      <button
+                        onClick={handleStopImages}
+                        disabled={stoppingImages}
+                        title="Halt the submission loop — already-submitted beats keep running and land via webhook / cron"
+                        className="w-full py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-60"
+                        style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
+                      >
+                        {stoppingImages ? "Stopping…" : "Stop generation"}
+                      </button>
                     )}
                     <button
                       onClick={() => generateImages({ mode: isAllDone ? "all" : "remaining" })}
