@@ -17,35 +17,73 @@ export default function DemoScriptPage() {
     state.scriptPhase === "done" ? DEMO_DATA.script : ""
   );
   const [regenCount, setRegenCount] = useState(0);
+  // Pause/resume state mirrors the production script page so the demo
+  // shows the same Stop → Resume/Cancel pattern users will encounter in
+  // a real run. charIndexRef carries position across the pause so
+  // Resume picks up exactly where Stop left off.
+  const [isPaused, setIsPaused] = useState(false);
+  const charIndexRef = useRef(0);
+  const typeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scriptContainerRef = useRef<HTMLDivElement>(null);
+
+  function clearTyper() {
+    if (typeIntervalRef.current) {
+      clearInterval(typeIntervalRef.current);
+      typeIntervalRef.current = null;
+    }
+  }
+
+  function startTyping() {
+    clearTyper();
+    typeIntervalRef.current = setInterval(() => {
+      charIndexRef.current = Math.min(charIndexRef.current + 8, DEMO_DATA.script.length);
+      setDisplayedScript(DEMO_DATA.script.slice(0, charIndexRef.current));
+      if (charIndexRef.current >= DEMO_DATA.script.length) clearTyper();
+    }, 16);
+  }
 
   useEffect(() => {
     if (regenCount === 0 && state.scriptPhase === "done") return;
 
     update({ scriptPhase: "loading" });
     setDisplayedScript("");
-
-    let charIndex = 0;
-    const fullScript = DEMO_DATA.script;
-    let typeInterval: ReturnType<typeof setInterval>;
+    setIsPaused(false);
+    charIndexRef.current = 0;
 
     const loadingTimer = setTimeout(() => {
       update({ scriptPhase: "done" });
-      typeInterval = setInterval(() => {
-        charIndex = Math.min(charIndex + 8, fullScript.length);
-        setDisplayedScript(fullScript.slice(0, charIndex));
-        if (charIndex >= fullScript.length) clearInterval(typeInterval);
-      }, 16);
+      startTyping();
     }, 2000);
 
     return () => {
       clearTimeout(loadingTimer);
-      clearInterval(typeInterval);
+      clearTyper();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [regenCount]);
 
   function handleRegenerate() {
+    setRegenCount((c) => c + 1);
+  }
+
+  function handleStop() {
+    clearTyper();
+    setIsPaused(true);
+  }
+
+  function handleResume() {
+    setIsPaused(false);
+    startTyping();
+  }
+
+  function handleCancelDraft() {
+    setIsPaused(false);
+    clearTyper();
+    setDisplayedScript("");
+    charIndexRef.current = 0;
+    // Re-run the loading → typing cycle from scratch so the demo
+    // visibly returns to the "fresh start" state, mirroring what the
+    // production Cancel does.
     setRegenCount((c) => c + 1);
   }
 
@@ -57,6 +95,10 @@ export default function DemoScriptPage() {
 
   const phase = state.scriptPhase;
   const scriptDone = displayedScript.length >= DEMO_DATA.script.length;
+  // Active = typing right now, not paused, not finished.
+  const isStreaming = phase === "done" && !scriptDone && !isPaused;
+  // Paused-draft = some content shown, typing halted by user, not done.
+  const isPausedDraft = phase === "done" && !scriptDone && isPaused && displayedScript.length > 0;
 
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
@@ -108,17 +150,52 @@ export default function DemoScriptPage() {
                   className="flex items-center justify-between px-5 py-3"
                   style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-card-subtle)" }}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <div
                       className="w-2 h-2 rounded-full"
                       style={{
-                        background: scriptDone ? "oklch(0.55 0.15 145)" : "oklch(0.72 0.25 285)",
-                        boxShadow: scriptDone ? "none" : "0 0 6px oklch(0.72 0.25 285)",
+                        background: isStreaming
+                          ? "oklch(0.72 0.25 285)"
+                          : isPausedDraft
+                            ? "oklch(0.72 0.18 65)"
+                            : "oklch(0.55 0.15 145)",
+                        boxShadow: isStreaming
+                          ? "0 0 6px oklch(0.72 0.25 285)"
+                          : isPausedDraft
+                            ? "0 0 6px oklch(0.72 0.18 65 / 0.6)"
+                            : "none",
                       }}
                     />
                     <span className="text-xs font-medium" style={{ color: "var(--c-50)" }}>
-                      {scriptDone ? "Script" : "Generating…"}
+                      {isStreaming ? "Generating…" : isPausedDraft ? "Draft — paused" : "Script"}
                     </span>
+                    {isStreaming && (
+                      <button
+                        onClick={handleStop}
+                        className="ml-2 text-[10px] font-medium px-2 py-0.5 rounded-md transition-all hover:opacity-90"
+                        style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.3)", color: "oklch(0.7 0.22 25)" }}
+                      >
+                        Stop
+                      </button>
+                    )}
+                    {isPausedDraft && (
+                      <>
+                        <button
+                          onClick={handleResume}
+                          className="ml-1 text-[11px] font-semibold px-2.5 py-1 rounded-md transition-all hover:opacity-90"
+                          style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                        >
+                          Resume
+                        </button>
+                        <button
+                          onClick={handleCancelDraft}
+                          className="text-[11px] font-medium px-2.5 py-1 rounded-md transition-all hover:opacity-90"
+                          style={{ background: "transparent", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    )}
                   </div>
                   {!scriptDone && (
                     <span className="text-xs font-mono" style={{ color: "oklch(0.72 0.25 285)" }}>
@@ -134,7 +211,7 @@ export default function DemoScriptPage() {
                     style={{ color: "var(--c-90)" }}
                   >
                     {displayedScript}
-                    {!scriptDone && (
+                    {!scriptDone && !isPausedDraft && (
                       <span
                         className="inline-block w-0.5 h-[18px] align-middle rounded-full animate-pulse ml-0.5"
                         style={{ background: "oklch(0.72 0.25 285)" }}
