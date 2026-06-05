@@ -453,15 +453,27 @@ export default function PromptsPage({ params }: PageProps) {
     && imageBeatsAllReady && !videoBeatsAllReady;
 
   // Derive effective step state: prefer live state, then server-side
-  // remote run, then DB presence.
+  // remote run, then DB presence. The "running" branch here only fires
+  // on refresh / nav-away → return; in that case we synthesize a fresh
+  // running state with real progress derived from the persisted beat
+  // count so the user sees actual work instead of an idle bar.
   const effectiveImage: StepState =
     imageStep.status !== "idle" ? imageStep :
-    imageRemoteRunning ? { status: "running", message: "Resuming — still generating in the background" } :
+    imageRemoteRunning ? {
+      status: "running",
+      message: hasImageBeats
+        ? `Resuming — ${beats.length} beats so far, still generating`
+        : "Resuming — still generating in the background",
+    } :
     hasImageBeats ? { status: "done", message: "" } : IDLE;
 
   const effectiveVideo: StepState =
     videoStep.status !== "idle" ? videoStep :
-    videoRemoteRunning ? { status: "running", message: "Resuming — still generating in the background" } :
+    videoRemoteRunning ? {
+      status: "running",
+      message: `Resuming — ${videoBeats.length}/${beats.length} motion prompts done`,
+      progress: { current: videoBeats.length, total: beats.length },
+    } :
     hasVideoBeats ? { status: "done", message: "" } : IDLE;
 
   async function runImageStep() {

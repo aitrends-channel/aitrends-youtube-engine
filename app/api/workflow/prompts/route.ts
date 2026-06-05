@@ -133,9 +133,23 @@ function sseStream(handler: (send: (data: object) => void) => Promise<void>): Re
     new ReadableStream({
       async start(controller) {
         let closed = false;
+        // Wrap enqueue in try/catch so a client disconnect doesn't
+        // unwind the generation. When the browser navigates away the
+        // controller goes into errored state and any further enqueue
+        // throws — without this guard the exception bubbled out of
+        // send() into the worker pool and halted server-side work,
+        // defeating the whole point of the per-chunk DB persistence
+        // and the prompts_active_run_id resume signal.
         function send(data: object) {
           if (closed) return;
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          } catch {
+            // Client disconnected — silently stop trying to push but
+            // let the generation keep running. The DB is the source of
+            // truth and per-chunk writes carry the work forward.
+            closed = true;
+          }
         }
         // SSE comment heartbeat. Image-prompt chunks spend 30-60s
         // blocked inside the Claude streaming call without emitting any
@@ -149,7 +163,7 @@ function sseStream(handler: (send: (data: object) => void) => Promise<void>): Re
         const heartbeat = setInterval(() => {
           if (closed) return;
           try { controller.enqueue(encoder.encode(`: keepalive\n\n`)); }
-          catch { /* controller may already be torn down */ }
+          catch { closed = true; }
         }, HEARTBEAT_MS);
         try {
           await handler(send);
@@ -158,7 +172,7 @@ function sseStream(handler: (send: (data: object) => void) => Promise<void>): Re
         } finally {
           closed = true;
           clearInterval(heartbeat);
-          controller.close();
+          try { controller.close(); } catch { /* already torn down */ }
         }
       },
     }),
