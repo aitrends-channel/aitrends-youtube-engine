@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { useIconThemeStore } from "@/store/iconThemeStore";
 import { type PhaseKey } from "@/lib/iconThemes";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { KieBalanceRow } from "@/components/KieBalanceRow";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 const PHASES: { id: PhaseKey; label: string; sublabel: string; path: string; states: number[]; navigableFrom?: number }[] = [
@@ -263,7 +264,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
               <div
-                className="absolute right-0 top-10 z-50 w-52 rounded-2xl py-3 shadow-2xl"
+                className="absolute right-0 top-10 z-50 w-60 rounded-2xl py-3 shadow-2xl"
                 style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
               >
                 <div className="px-4 pb-3" style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
@@ -271,6 +272,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                     {userEmail || "Loading…"}
                   </p>
                 </div>
+                <KieBalanceRow />
                 <div className="px-2 pt-2">
                   <button
                     onClick={() => { setShowProfileMenu(false); navigate("/setup"); }}
@@ -335,7 +337,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
                   <div
-                    className="absolute right-0 top-10 z-50 w-52 rounded-2xl py-3 shadow-2xl"
+                    className="absolute right-0 top-10 z-50 w-60 rounded-2xl py-3 shadow-2xl"
                     style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
                   >
                     <div className="px-4 pb-3" style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
@@ -343,6 +345,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                         {userEmail || "Loading…"}
                       </p>
                     </div>
+                    <KieBalanceRow />
                     <div className="px-2 pt-2">
                       <button
                         onClick={() => { setShowProfileMenu(false); router.push("/setup"); }}

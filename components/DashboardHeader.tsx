@@ -8,6 +8,7 @@ import { Settings, LogOut, BarChart3 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isAdminEmail } from "@/lib/admin";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { KieBalanceRow } from "@/components/KieBalanceRow";
 
 interface DashboardHeaderProps {
   /** Extra slot at the right edge — for page-specific primary actions. */
@@ -135,6 +136,8 @@ export function DashboardHeader({ rightExtra }: DashboardHeaderProps) {
                   )}
                 </div>
               </div>
+
+              <KieBalanceRow />
 
               <div className="px-2 pt-2">
                 <Link
