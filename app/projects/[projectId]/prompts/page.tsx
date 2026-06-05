@@ -452,6 +452,21 @@ export default function PromptsPage({ params }: PageProps) {
     remoteRunInProgress && imageStep.status === "idle" && videoStep.status === "idle"
     && imageBeatsAllReady && !videoBeatsAllReady;
 
+  // Estimate the target beat count from the script's word count so the
+  // image-step progress bar can show actual progress on reconnect
+  // instead of restarting at 0. The prompt instructs Claude to produce
+  // roughly one beat per 12 words of narration; this is approximate
+  // (a long-form script will land anywhere in the 10–15 words/beat
+  // range) but it's enough to give the user a meaningful "halfway
+  // there" instead of "starting from scratch". Capped so the visible
+  // percentage never claims to be more than 99% before the actual
+  // done signal flips the card to its done state.
+  const scriptWords = (project?.word_count as number | undefined) ?? 0;
+  const estimatedTotalBeats = scriptWords > 0 ? Math.max(1, Math.ceil(scriptWords / 12)) : 0;
+  const imageProgress = estimatedTotalBeats > 0
+    ? { current: Math.min(beats.length, estimatedTotalBeats - 1), total: estimatedTotalBeats }
+    : undefined;
+
   // Derive effective step state: prefer live state, then server-side
   // remote run, then DB presence. The "running" branch here only fires
   // on refresh / nav-away → return; in that case we synthesize a fresh
@@ -461,9 +476,12 @@ export default function PromptsPage({ params }: PageProps) {
     imageStep.status !== "idle" ? imageStep :
     imageRemoteRunning ? {
       status: "running",
-      message: hasImageBeats
-        ? `Resuming — ${beats.length} beats so far, still generating`
-        : "Resuming — still generating in the background",
+      message: estimatedTotalBeats > 0
+        ? `Resuming — ${beats.length} of ~${estimatedTotalBeats} beats generated`
+        : hasImageBeats
+          ? `Resuming — ${beats.length} beats so far, still generating`
+          : "Resuming — still generating in the background",
+      progress: imageProgress,
     } :
     hasImageBeats ? { status: "done", message: "" } : IDLE;
 
