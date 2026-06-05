@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 import { streamGeminiText, GEMINI_MAX_OUTPUT_TOKENS, GEMINI_MODEL } from "@/lib/gemini/client";
 import { buildScriptPrompt } from "@/lib/claude/prompts";
@@ -9,6 +10,46 @@ import type { ChannelAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 
 export const maxDuration = 800;
+
+// Cancellation signal for in-flight script generation. claimScriptRun
+// writes a fresh UUID on the project at start; assertScriptRunActive
+// re-reads it between text deltas and throws if it's been replaced
+// (newer run) or nulled (e.g. force-cleared). The message is unique so
+// the catch handler can recognize a cancellation and skip overwriting
+// the newer run's output. Works for both real-streaming (direct
+// Anthropic) and batched (KIE proxy) — the run-id check happens at
+// our function boundary, not the upstream's.
+const CANCELLED_MSG = "Script generation was cancelled — replaced by a newer run.";
+
+async function claimScriptRun(projectId: string, userId: string): Promise<string | null> {
+  const runId = randomUUID();
+  const { error } = await supabase
+    .from("projects")
+    .update({ script_active_run_id: runId })
+    .eq("id", projectId)
+    .eq("user_id", userId);
+  if (error) {
+    console.warn("[script-cancel] could not claim run id; cancellation disabled for this run", error);
+    return null;
+  }
+  return runId;
+}
+
+async function assertScriptRunActive(projectId: string, runId: string | null): Promise<void> {
+  if (!runId) return;
+  const { data, error } = await supabase
+    .from("projects")
+    .select("script_active_run_id")
+    .eq("id", projectId)
+    .single();
+  if (error) {
+    console.warn("[script-cancel] could not read run id; skipping check", error);
+    return;
+  }
+  if (!data || data.script_active_run_id !== runId) {
+    throw new Error(CANCELLED_MSG);
+  }
+}
 
 // Model picker — Opus for short targets (it honors length), Gemini Flash
 // for long-form (>8000 words) where Opus's 8192-token per-call ceiling
@@ -73,14 +114,35 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   try {
-    const { projectId, analysis, topic } = await req.json() as {
+    const { projectId, analysis, topic, mode } = await req.json() as {
       projectId: string;
       analysis: ChannelAnalysisOutput;
       topic: string;
+      mode?: "fresh" | "continue";
     };
 
     if (!analysis || !topic) {
       return new Response("Missing analysis or topic", { status: 400 });
+    }
+
+    // Continue mode reads the partial script saved by a prior user-Stop
+    // and feeds it back as an assistant prefill so the model picks up
+    // exactly where it left off. Cheaper than rerunning from scratch
+    // because we only pay for the continuation tokens, not the entire
+    // script. Works on both direct Anthropic and KIE proxy because both
+    // accept role: "assistant" as the final turn.
+    let existingScript = "";
+    if (mode === "continue") {
+      const { data: row } = await supabase
+        .from("projects")
+        .select("script")
+        .eq("id", projectId)
+        .eq("user_id", user.id)
+        .single();
+      existingScript = ((row?.script as string | null) ?? "").trim();
+      if (!existingScript) {
+        return new Response("Nothing to continue — no saved draft on this project", { status: 400 });
+      }
     }
 
     const target = analysis.targetWordCount ?? 900;
@@ -96,13 +158,29 @@ export async function POST(req: Request) {
     const targetForBudget = useGemini ? Math.min(target, GEMINI_MAX_WORDS) : target;
     const maxTokens = Math.min(modelMax, Math.ceil(targetForBudget * 1.6) + 200);
 
+    // Claim the run BEFORE returning the stream so the project row
+     // already reflects "in flight" by the time the client receives the
+     // first byte. A second click between this and the next claim will
+     // overwrite the UUID and the older run's assertScriptRunActive
+     // will trip.
+    const runId = await claimScriptRun(projectId, user.id);
+
     const readable = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
-        let accumulated = "";
+        // Continue mode seeds accumulated with the existing partial so
+        // the spiral / repetition checks see the full context and the
+        // final save concatenates correctly. The client also pre-loads
+        // its display from the same project.script row.
+        let accumulated = existingScript;
+        let cancelled = false;
 
         function send(data: object) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+          } catch {
+            // Client disconnected; subsequent enqueues become no-ops.
+          }
         }
 
         // Check for spirals only every N characters of new content — the
@@ -111,6 +189,13 @@ export async function POST(req: Request) {
         let charsUntilNextCheck = 0;
         let spiralAborted = false;
         const SPIRAL_CHECK_INTERVAL = 400;
+        // Run-id check has its own throttle — re-reading the project row
+        // on every delta would hammer Supabase. ~every 1500 chars (~5s
+        // of natural speech) keeps the cost negligible and bounds the
+        // worst-case duplicate-Claude-spend on a stale run to a few
+        // seconds of tokens.
+        let charsUntilRunCheck = 0;
+        const RUN_CHECK_INTERVAL = 1500;
 
         const sendText = (text: string): void | "abort" => {
           accumulated += text;
@@ -123,6 +208,20 @@ export async function POST(req: Request) {
               return "abort";
             }
           }
+          charsUntilRunCheck -= text.length;
+          if (charsUntilRunCheck <= 0) {
+            charsUntilRunCheck = RUN_CHECK_INTERVAL;
+            // Fire-and-forget the run check — if it throws, set the
+            // cancelled flag so the next sendText returns "abort". We
+            // don't await here because sendText is called synchronously
+            // by the streaming SDK callback signature.
+            assertScriptRunActive(projectId, runId).catch((err) => {
+              if (err instanceof Error && err.message === CANCELLED_MSG) {
+                cancelled = true;
+              }
+            });
+          }
+          if (cancelled) return "abort";
         };
 
         try {
@@ -135,6 +234,14 @@ export async function POST(req: Request) {
             ? `LENGTH GOAL\nThis script should be approximately ${target.toLocaleString()} words to match the channel's natural video length. Aim for that target — don't summarize or wrap up early.\n\nSTRUCTURE: roughly ${Math.max(6, Math.ceil(target / 800))} narrative sections of about ${Math.round(target / Math.max(6, Math.ceil(target / 800)))} words each, different angles, seamless transitions, do NOT label them in output.\n\n${initialPrompt}`
             : initialPrompt;
 
+          // Continue-mode prefix nudges the model to splice cleanly
+          // rather than restating context or wrapping up early. The
+          // existing text goes in as the assistant turn — the model
+          // sees it as words it just wrote and continues naturally.
+          const continueDirective = mode === "continue"
+            ? "\n\nThe script below has already been started — pick up exactly where it ends, mid-sentence if needed, with the same voice and pacing. Do not recap, restate, or summarize what's been written. Continue smoothly until the natural end of the piece."
+            : "";
+
           if (useGemini) {
             // Retry only wraps the initial connection. The accumulated-
             // length guard ensures retries don't re-emit text — if the
@@ -142,29 +249,35 @@ export async function POST(req: Request) {
             // accept the partial; the outer save path persists what we
             // have.
             await retryClaudeCall("script (Gemini)", async () => {
-              if (accumulated.length > 0) return;
+              if (accumulated.length > existingScript.length) return;
+              const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+                { role: "system", content: SYSTEM_PROMPT },
+                { role: "user", content: userPrompt + continueDirective },
+              ];
+              if (mode === "continue") messages.push({ role: "assistant", content: existingScript });
               await streamGeminiText({
                 userId: user.id,
                 maxTokens,
-                messages: [
-                  { role: "system", content: SYSTEM_PROMPT },
-                  { role: "user", content: userPrompt },
-                ],
+                messages,
                 onDelta: sendText,
               });
             });
           } else {
             const anthropic = await getAnthropicClient(user.id);
             await retryClaudeCall("script (Opus)", async () => {
-              if (accumulated.length > 0) return; // already past first attempt with content emitted; skip retries
+              if (accumulated.length > existingScript.length) return; // already past first attempt with new content emitted; skip retries
+              const opusMessages: { role: "user" | "assistant"; content: string }[] = [
+                { role: "user", content: userPrompt + continueDirective },
+              ];
+              if (mode === "continue") opusMessages.push({ role: "assistant", content: existingScript });
               const stream = anthropic.messages.stream({
                 model: MODEL,
                 max_tokens: maxTokens,
                 system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-                messages: [{ role: "user", content: userPrompt }],
+                messages: opusMessages,
               });
               for await (const event of stream) {
-                if (spiralAborted) {
+                if (spiralAborted || cancelled) {
                   try { stream.abort(); } catch { /* ignore */ }
                   break;
                 }
@@ -195,26 +308,54 @@ export async function POST(req: Request) {
             send({ replace: finalScript });
           }
           const wordCount = countWords(finalScript);
-          await supabase
+          // Atomic conditional update: only write if our run still owns
+          // the active_run_id. A second click that overwrote our UUID
+          // means the new run will produce its own final save; ours
+          // would just clobber it otherwise.
+          const writeQuery = supabase
             .from("projects")
-            .update({ script: finalScript, word_count: wordCount, selected_topic: topic, current_state: 7 })
+            .update({ script: finalScript, word_count: wordCount, selected_topic: topic, current_state: 7, script_active_run_id: null })
             .eq("id", projectId)
             .eq("user_id", user.id);
+          if (runId) writeQuery.eq("script_active_run_id", runId);
+          await writeQuery;
 
           send({ done: true, wordCount });
         } catch (err) {
           const message = err instanceof Error ? err.message : "Generation failed mid-stream";
-          if (accumulated.trim().length > 0) {
-            await supabase
+
+          // Three reasons we can land here:
+          //   1) Real mid-stream failure (network blip, model error) —
+          //      save partial so the user has something to Resume from.
+          //   2) User clicked Stop — PATCHed script_active_run_id to
+          //      null, save partial as a draft they can Resume / Cancel.
+          //   3) New Generate click took over — script_active_run_id is
+          //      now a different UUID, save would clobber the new run's
+          //      output. Skip.
+          let shouldSavePartial = accumulated.trim().length > 0;
+          if (shouldSavePartial && runId) {
+            const { data: owner } = await supabase
+              .from("projects")
+              .select("script_active_run_id")
+              .eq("id", projectId)
+              .single();
+            const currentOwner = owner?.script_active_run_id as string | null | undefined;
+            // If a different UUID owns it now, a new run took over — skip.
+            if (currentOwner && currentOwner !== runId) shouldSavePartial = false;
+          }
+
+          if (shouldSavePartial) {
+            const partialQuery = supabase
               .from("projects")
               .update({
                 script: accumulated.trim(),
                 word_count: countWords(accumulated),
                 selected_topic: topic,
+                script_active_run_id: null,
               })
               .eq("id", projectId)
-              .eq("user_id", user.id)
-              .then(() => {}, () => {});
+              .eq("user_id", user.id);
+            partialQuery.then(() => {}, () => {});
           }
           send({ error: message });
         }

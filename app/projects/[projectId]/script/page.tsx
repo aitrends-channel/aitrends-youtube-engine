@@ -22,8 +22,8 @@ interface PageProps {
 export default function ScriptPage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
-  const { project } = useProject(projectId);
-  const { script, setScript, isStreaming, streamingRef, wordCount, error, startStreaming } =
+  const { project, mutate } = useProject(projectId);
+  const { script, setScript, isStreaming, streamingRef, wordCount, error, startStreaming, stopStreaming } =
     useStreamingScript();
 
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
@@ -33,6 +33,15 @@ export default function ScriptPage({ params }: PageProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const targetWordCount = project?.target_word_count ?? project?.channel_analysis?.targetWordCount ?? 900;
+  // Paused-draft state: a previous generation was Stopped, partial was
+  // saved, current_state never reached 7 (the success-save sentinel).
+  // No active run id either — distinguishes from "still generating in
+  // the background", which has its own UI.
+  const isPausedDraft =
+    !!script &&
+    !isStreaming &&
+    !project?.script_active_run_id &&
+    (project?.current_state ?? 0) < 7;
   const deviation = Math.abs(wordCount - targetWordCount) / targetWordCount;
   const wordCountOk = deviation <= 0.05;
 
@@ -79,6 +88,59 @@ export default function ScriptPage({ params }: PageProps) {
     if (selectedTopic) await generateScript(selectedTopic);
   }
 
+  // Two-sided stop: aborts the local SSE fetch (if any) and nulls
+  // script_active_run_id on the server. The route's catch branch now
+  // saves the partial so the user can Resume or Cancel from a draft
+  // state. mutate() flushes SWR so the UI transitions immediately.
+  const [stopping, setStopping] = useState(false);
+  async function handleStop() {
+    if (stopping) return;
+    setStopping(true);
+    try {
+      await stopStreaming(projectId);
+    } finally {
+      setStopping(false);
+      mutate();
+    }
+  }
+
+  // Resume: pick up exactly where the saved draft ends via assistant
+  // prefill on the server. Costs only continuation tokens, not a full
+  // re-run from scratch.
+  const [resuming, setResuming] = useState(false);
+  async function handleResume() {
+    if (resuming || !selectedTopic) return;
+    setResuming(true);
+    try {
+      await startStreaming(projectId, project?.channel_analysis, selectedTopic, {
+        mode: "continue",
+        startWith: script,
+      });
+    } finally {
+      setResuming(false);
+    }
+  }
+
+  // Cancel from the paused state: wipe the draft and current_state so
+  // the page returns to the "Generate Script" entry point. Confirmed
+  // by the modal-style confirm flow already set up for regenerate.
+  const [cancellingDraft, setCancellingDraft] = useState(false);
+  async function handleCancelDraft() {
+    if (cancellingDraft) return;
+    setCancellingDraft(true);
+    try {
+      await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ script: null, word_count: 0, script_active_run_id: null }),
+      });
+      setScript("");
+      mutate();
+    } finally {
+      setCancellingDraft(false);
+    }
+  }
+
   async function handleContinue() {
     if (!script.trim()) { toast.error("Generate a script first"); return; }
     setNavigating(true);
@@ -113,8 +175,45 @@ export default function ScriptPage({ params }: PageProps) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto pb-[70px] p-4 sm:p-8">
+          {/* Background-generation state — user refreshed mid-stream
+              or has another tab generating. project.script_active_run_id
+              is the server-side "in flight" flag; useProject's 5s SWR
+              poll picks up project.script the moment the run finishes
+              and the next render switches to the script-display branch. */}
+          {!script && !isStreaming && project?.script_active_run_id && (
+            <div className="max-w-xl mx-auto">
+              <div className="text-center space-y-5 p-10 rounded-2xl"
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                <div className="flex justify-center">
+                  <div className="w-10 h-10 border-2 rounded-full animate-spin"
+                    style={{ borderColor: "oklch(0.72 0.25 285 / 0.3)", borderTopColor: "oklch(0.72 0.25 285)" }} />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-base font-medium text-foreground">Generation in progress</p>
+                  <p className="text-xs leading-relaxed" style={{ color: "var(--c-45)" }}>
+                    Your script is still being generated in the background. This page will update automatically when it&apos;s ready — no need to click anything.
+                  </p>
+                </div>
+                {project?.selected_topic && (
+                  <div className="pt-2 border-t" style={{ borderColor: "var(--bd-6)" }}>
+                    <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--c-40)" }}>Topic</p>
+                    <p className="text-sm font-medium text-foreground">{project.selected_topic}</p>
+                  </div>
+                )}
+                <button
+                  onClick={handleStop}
+                  disabled={stopping}
+                  className="px-4 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-50"
+                  style={{ background: "transparent", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
+                >
+                  {stopping ? "Stopping…" : "Stop generation"}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* No-script state */}
-          {!script && !isStreaming && (
+          {!script && !isStreaming && !project?.script_active_run_id && (
             <div className="max-w-xl mx-auto">
               {project?.selected_topic ? (
                 <div className="text-center space-y-5 p-10 rounded-2xl"
@@ -154,13 +253,36 @@ export default function ScriptPage({ params }: PageProps) {
                 {/* Script header bar */}
                 <div className="flex items-center justify-between px-5 py-3"
                   style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-card-subtle)" }}>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <div className="w-2 h-2 rounded-full"
-                      style={{ background: isStreaming ? "oklch(0.72 0.25 285)" : "oklch(0.55 0.15 145)", boxShadow: isStreaming ? "0 0 6px oklch(0.72 0.25 285)" : "none" }}
+                      style={{
+                        background: isStreaming ? "oklch(0.72 0.25 285)" : isPausedDraft ? "oklch(0.72 0.18 65)" : "oklch(0.55 0.15 145)",
+                        boxShadow: isStreaming ? "0 0 6px oklch(0.72 0.25 285)" : isPausedDraft ? "0 0 6px oklch(0.72 0.18 65 / 0.6)" : "none",
+                      }}
                     />
                     <span className="text-xs font-medium" style={{ color: "var(--c-50)" }}>
-                      {isStreaming ? "Generating..." : "Script"}
+                      {isStreaming ? "Generating..." : isPausedDraft ? "Draft — paused" : "Script"}
                     </span>
+                    {isPausedDraft && (
+                      <>
+                        <button
+                          onClick={handleResume}
+                          disabled={resuming || cancellingDraft}
+                          className="ml-1 text-[11px] font-semibold px-2.5 py-1 rounded-md transition-all hover:opacity-90 disabled:opacity-50"
+                          style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                        >
+                          {resuming ? "Resuming…" : "Resume"}
+                        </button>
+                        <button
+                          onClick={handleCancelDraft}
+                          disabled={resuming || cancellingDraft}
+                          className="text-[11px] font-medium px-2.5 py-1 rounded-md transition-all hover:opacity-90 disabled:opacity-50"
+                          style={{ background: "transparent", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
+                        >
+                          {cancellingDraft ? "…" : "Cancel"}
+                        </button>
+                      </>
+                    )}
                     {isStreaming && (() => {
                       const pct = Math.min(100, Math.round((wordCount / targetWordCount) * 100));
                       return (
@@ -178,6 +300,14 @@ export default function ScriptPage({ params }: PageProps) {
                             style={{ color: "oklch(0.7 0.15 145)", minWidth: "2.5em" }}>
                             {pct}%
                           </span>
+                          <button
+                            onClick={handleStop}
+                            disabled={stopping}
+                            className="ml-2 text-[10px] font-medium px-2 py-0.5 rounded-md transition-all hover:opacity-90 disabled:opacity-50"
+                            style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.3)", color: "oklch(0.7 0.22 25)" }}
+                          >
+                            {stopping ? "…" : "Stop"}
+                          </button>
                         </>
                       );
                     })()}

@@ -18,6 +18,10 @@ export function useStreamingScript() {
   const [error, setError] = useState<string | null>(null);
   // Prevents DB-loaded project data from overwriting an in-progress stream
   const streamingRef = useRef(false);
+  // AbortController for the live fetch — lets stopStreaming() kill the
+  // SSE connection immediately instead of waiting for the next server
+  // -side run-id check (~1.5 s of generated text in the worst case).
+  const abortRef = useRef<AbortController | null>(null);
 
   // Recompute word count when script is set externally (e.g. loaded from DB)
   useEffect(() => {
@@ -26,16 +30,27 @@ export function useStreamingScript() {
   }, [script, isStreaming]);
 
   const startStreaming = useCallback(
-    async (projectId: string, analysis: unknown, topic: string) => {
+    async (
+      projectId: string,
+      analysis: unknown,
+      topic: string,
+      opts?: { mode?: "fresh" | "continue"; startWith?: string }
+    ) => {
+      const mode = opts?.mode ?? "fresh";
+      const startWith = opts?.startWith ?? "";
+
       streamingRef.current = true;
-      setScript("");
-      setWordCount(0);
+      // Continue mode pre-loads the partial so the user sees their
+      // saved draft instantly; new deltas append cleanly to it. Fresh
+      // mode clears as before.
+      setScript(startWith);
+      setWordCount(startWith ? startWith.trim().split(/\s+/).filter(Boolean).length : 0);
       setIsStreaming(true);
       setError(null);
 
       // Animator state — refs so the tick closure sees fresh values
-      const bufferedRef    = { current: "" };
-      const displayedLen   = { current: 0 };
+      const bufferedRef    = { current: startWith };
+      const displayedLen   = { current: startWith.length };
       const streamDoneRef  = { current: false };
       let animator: ReturnType<typeof setTimeout> | null = null;
 
@@ -65,10 +80,12 @@ export function useStreamingScript() {
       };
 
       try {
+        abortRef.current = new AbortController();
         const res = await fetch("/api/workflow/script", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, analysis, topic }),
+          body: JSON.stringify({ projectId, analysis, topic, mode }),
+          signal: abortRef.current.signal,
         });
 
         if (!res.ok) throw new Error(await res.text());
@@ -116,13 +133,41 @@ export function useStreamingScript() {
         streamDoneRef.current = true;
       } catch (err) {
         if (animator) clearTimeout(animator);
-        setError(err instanceof Error ? err.message : "Streaming failed");
+        // Swallow AbortError — the user clicked Stop, this is expected.
+        // Any other error is a real failure worth surfacing.
+        const isAbort = err instanceof Error && err.name === "AbortError";
+        if (!isAbort) setError(err instanceof Error ? err.message : "Streaming failed");
         setIsStreaming(false);
         streamingRef.current = false;
+      } finally {
+        abortRef.current = null;
       }
     },
     []
   );
 
-  return { script, setScript, isStreaming, streamingRef, wordCount, error, startStreaming };
+  // Two-sided cancellation: abort the local SSE fetch immediately, then
+  // null script_active_run_id on the server so the route's next
+  // assertScriptRunActive trips and exits without overwriting anything.
+  // Safe to call when nothing is streaming — it'll just clear any
+  // stale server-side run id (e.g., a previous tab's left-over).
+  const stopStreaming = useCallback(async (projectId: string): Promise<void> => {
+    if (abortRef.current) {
+      try { abortRef.current.abort(); } catch { /* ignore */ }
+      abortRef.current = null;
+    }
+    setIsStreaming(false);
+    streamingRef.current = false;
+    try {
+      await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ script_active_run_id: null }),
+      });
+    } catch {
+      // Best effort — the local abort is the most important signal.
+    }
+  }, []);
+
+  return { script, setScript, isStreaming, streamingRef, wordCount, error, startStreaming, stopStreaming };
 }
