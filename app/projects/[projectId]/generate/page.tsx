@@ -1428,18 +1428,23 @@ export default function GeneratePage({ params }: PageProps) {
       {/* Fixed bottom bar */}
       {(() => {
         const voiceoverReady = !!ttsUrl;
-        // Videos are "ready enough" to assemble when every beat is either
-        // done or terminally failed and nothing is in flight. Failed beats
-        // fall back to their image at assembly time on the worker.
-        const videosResolved = generatedVideos + failedVideos;
-        const videosReady = videoBeats === 0 || (videosResolved === videoBeats && !hasActiveVideos && !pausedVideos && !queuedVideos);
-        const proceedingWithFailures = videosReady && failedVideos > 0;
-        const canContinue = voiceoverReady && imagesReady && videosReady;
+        // Videos are no longer a hard prerequisite — the assemble step
+        // falls back to a beat's image when its videoUrl is missing, so
+        // the user can proceed at any point. The button copy reflects
+        // what they're choosing to skip.
+        const canContinue = voiceoverReady && imagesReady;
         const missing = [
           !voiceoverReady && "voiceover",
           !imagesReady && "images",
-          !videosReady && "video clips",
         ].filter(Boolean).join(", ");
+        const pendingVideoCount = videoBeats > 0 ? videoBeats - generatedVideos : 0;
+        const noVideosYet = canContinue && videoBeats > 0 && generatedVideos === 0;
+        const someVideosPending = canContinue && videoBeats > 0 && pendingVideoCount > 0 && !noVideosYet;
+        const continueLabel = noVideosYet
+          ? "Continue without video clips"
+          : someVideosPending
+            ? "Continue anyway"
+            : "Continue →";
 
         return (
           <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
@@ -1450,9 +1455,14 @@ export default function GeneratePage({ params }: PageProps) {
                   Still needed: {missing}
                 </p>
               )}
-              {proceedingWithFailures && !navigating && (
+              {!navigating && noVideosYet && (
                 <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
-                  {failedVideos} clip{failedVideos === 1 ? "" : "s"} failed — the matching image{failedVideos === 1 ? "" : "s"} will be used in those spots.
+                  No video clips yet — every beat will use its image at assembly.
+                </p>
+              )}
+              {!navigating && someVideosPending && (
+                <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
+                  {pendingVideoCount} clip{pendingVideoCount === 1 ? "" : "s"} without video — the matching image{pendingVideoCount === 1 ? "" : "s"} will be used in those spots.
                 </p>
               )}
               <button
@@ -1466,7 +1476,7 @@ export default function GeneratePage({ params }: PageProps) {
                     <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                     Loading…
                   </span>
-                ) : "Continue →"}
+                ) : continueLabel}
               </button>
             </div>
           </div>
