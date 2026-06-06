@@ -292,11 +292,13 @@ async function generateImages(
     // Already fully done — just bump state and report. Also refresh
     // prompts_script_hash so a noop re-run after a script edit doesn't
     // leave the project flagged as stale by the UI.
-    await supabase
+    const { error: updErr } = await supabase
       .from("projects")
       .update({ current_state: 14, prompts_script_hash: scriptHash })
       .eq("id", projectId)
       .eq("user_id", userId);
+    if (updErr) console.error(`[image-prompts] noop-path hash write failed project=${projectId}:`, updErr);
+    else console.log(`[image-prompts] noop-path hash written project=${projectId} hash=${scriptHash.slice(0, 12)}…`);
     send({ type: "done", beatCount: existingBeats.length });
     return;
   }
@@ -481,11 +483,13 @@ async function generateImages(
   );
   if (firstError) throw firstError;
 
-  await supabase
+  const { error: finalUpdErr } = await supabase
     .from("projects")
     .update({ current_state: 14, prompts_script_hash: scriptHash })
     .eq("id", projectId)
     .eq("user_id", userId);
+  if (finalUpdErr) console.error(`[image-prompts] full-run hash write failed project=${projectId}:`, finalUpdErr);
+  else console.log(`[image-prompts] full-run hash written project=${projectId} hash=${scriptHash.slice(0, 12)}… beats=${totalBeatCount}`);
   send({ type: "done", beatCount: totalBeatCount });
 }
 
