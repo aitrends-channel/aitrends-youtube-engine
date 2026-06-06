@@ -443,16 +443,19 @@ export default function PromptsPage({ params }: PageProps) {
   // button they could accidentally double-click.
   const remoteRunInProgress = !!project?.prompts_active_run_id;
   const imageBeatsAllReady = hasImageBeats && beats.every((b) => !!b.imagePrompt);
-  const videoBeatsAllReady = hasImageBeats && beats.every((b) => !!b.videoPrompt);
   // No local activity but a server run is going AND image prompts
   // aren't fully present yet → must be the image step running.
+  //
+  // Note: we deliberately do NOT derive a `videoRemoteRunning` flag.
+  // `prompts_active_run_id` is shared between the image and video
+  // routes, and `imageBeatsAllReady` only inspects beats that already
+  // exist — so a mid-flight image run (chunks already persisted, more
+  // pending) looks indistinguishable from "image done, video running"
+  // and would falsely flip the video card to a "Resuming" state even
+  // though the user never clicked Generate on it. The video step only
+  // enters a running state via an explicit local click.
   const imageRemoteRunning =
     remoteRunInProgress && imageStep.status === "idle" && videoStep.status === "idle" && !imageBeatsAllReady;
-  // Server run going AND image prompts already complete AND videos not
-  // yet complete → must be the video step running.
-  const videoRemoteRunning =
-    remoteRunInProgress && imageStep.status === "idle" && videoStep.status === "idle"
-    && imageBeatsAllReady && !videoBeatsAllReady;
 
   // Estimate the target beat count from the script's word count so the
   // image-step progress bar can show actual progress on reconnect
@@ -489,11 +492,6 @@ export default function PromptsPage({ params }: PageProps) {
 
   const effectiveVideo: StepState =
     videoStep.status !== "idle" ? videoStep :
-    videoRemoteRunning ? {
-      status: "running",
-      message: `Resuming — ${videoBeats.length}/${beats.length} motion prompts done`,
-      progress: { current: videoBeats.length, total: beats.length },
-    } :
     hasVideoBeats ? { status: "done", message: "" } : IDLE;
 
   async function runImageStep() {

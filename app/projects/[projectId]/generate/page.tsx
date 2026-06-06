@@ -1331,15 +1331,6 @@ export default function GeneratePage({ params }: PageProps) {
                         {`Regenerate All (${totalBeats}) — wipes existing`}
                       </button>
                     )}
-                    {/* Persistent balance line so the user can spot a
-                        low-but-not-zero balance before kicking off a big
-                        run. Refreshes every 30s via the SWR config. */}
-                    {typeof kieCredits === "number" && (
-                      <p className="text-[11px] text-center pt-1"
-                        style={{ color: kieCredits <= 0 ? "oklch(0.7 0.18 25)" : kieCredits < 100 ? "oklch(0.72 0.18 65)" : "var(--c-45)" }}>
-                        KIE balance: {kieCredits.toLocaleString()} credit{kieCredits === 1 ? "" : "s"}
-                      </p>
-                    )}
                   </>
                 );
               })()}
