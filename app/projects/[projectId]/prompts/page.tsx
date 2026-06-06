@@ -410,6 +410,8 @@ export default function PromptsPage({ params }: PageProps) {
   const videoAbortRef = useRef<AbortController | null>(null);
   const [clearTarget, setClearTarget] = useState<"image" | "video" | null>(null);
   const [clearing, setClearing] = useState(false);
+  const [regenTarget, setRegenTarget] = useState<"image" | "video" | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
 
   const beats: Beat[] = project?.beats ?? [];
   const videoBeats = beats.filter((b) => b.videoPrompt);
@@ -544,6 +546,59 @@ export default function PromptsPage({ params }: PageProps) {
       }
     } finally {
       imageAbortRef.current = null;
+    }
+  }
+
+  // Intercept onGenerate when the step is already complete: a click on
+  // "Regenerate" is destructive (it wipes finished beats) and must pass
+  // through a confirmation modal first. Idle/error states fire the
+  // normal run path — the route's chunk-resume logic keeps partial
+  // beats and only fills the gap.
+  function requestRunImageStep() {
+    if (effectiveImage.status === "done") { setRegenTarget("image"); return; }
+    runImageStep();
+  }
+  function requestRunVideoStep() {
+    if (effectiveVideo.status === "done") { setRegenTarget("video"); return; }
+    runVideoStep();
+  }
+
+  async function confirmRegen() {
+    if (!regenTarget) return;
+    setRegenerating(true);
+    try {
+      const body = regenTarget === "image"
+        ? { clear_image_prompts: true }
+        : { clear_video_prompts: true };
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to clear before regenerating");
+      }
+      const target = regenTarget;
+      // Image clear also wipes video prompts (they live on the same
+      // rows), mirroring confirmClear above.
+      if (target === "image") {
+        setImageStep(IDLE);
+        setVideoStep(IDLE);
+      } else {
+        setVideoStep(IDLE);
+      }
+      await mutate();
+      setRegenTarget(null);
+      setRegenerating(false);
+      if (target === "image") {
+        await runImageStep();
+      } else {
+        await runVideoStep();
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to regenerate");
+      setRegenerating(false);
     }
   }
 
@@ -731,7 +786,7 @@ export default function PromptsPage({ params }: PageProps) {
             actionLabel={imageActionLabel}
             onClear={hasImageBeats ? () => setClearTarget("image") : null}
             onStop={handleStopPrompts}
-            onGenerate={runImageStep}
+            onGenerate={requestRunImageStep}
           />
           <StepCard
             num={2}
@@ -744,7 +799,7 @@ export default function PromptsPage({ params }: PageProps) {
             onStop={handleStopPrompts}
             disabled={!hasImageBeats}
             optional
-            onGenerate={runVideoStep}
+            onGenerate={requestRunVideoStep}
           />
         </div>
 
@@ -851,6 +906,44 @@ export default function PromptsPage({ params }: PageProps) {
           </div>
         </div>
       )}
+
+      <Dialog open={!!regenTarget} onOpenChange={(open) => { if (!open && !regenerating) setRegenTarget(null); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>
+              {regenTarget === "image" ? "Regenerate image prompts?" : "Regenerate video prompts?"}
+            </DialogTitle>
+            <DialogDescription>
+              {regenTarget === "image"
+                ? `This discards all ${beats.length} existing image beat${beats.length === 1 ? "" : "s"} (and any video prompts attached to them) and rebuilds them from your current script. This can't be undone.`
+                : `This discards the existing video prompts on all ${videoBeats.length} beat${videoBeats.length === 1 ? "" : "s"} and rebuilds them. Image prompts and beat metadata stay intact. This can't be undone.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setRegenTarget(null)}
+              disabled={regenerating}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmRegen}
+              disabled={regenerating}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              {regenerating ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  Clearing…
+                </span>
+              ) : "Regenerate"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!clearTarget} onOpenChange={(open) => { if (!open && !clearing) setClearTarget(null); }}>
         <DialogContent showCloseButton={false}>
