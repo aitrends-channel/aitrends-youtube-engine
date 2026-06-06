@@ -291,10 +291,14 @@ async function generateImages(
   if (chunksToProcess.length === 0 && existingBeats && existingBeats.length > 0) {
     // Already fully done — just bump state and report. Also refresh
     // prompts_script_hash so a noop re-run after a script edit doesn't
-    // leave the project flagged as stale by the UI.
+    // leave the project flagged as stale by the UI, and null out
+    // prompts_active_run_id so the client doesn't keep interpreting
+    // this finished run as "still in progress" — without that release
+    // the video StepCard false-positives into a "Resuming — 0/N" state
+    // on next page load and looks like video auto-started.
     const { error: updErr } = await supabase
       .from("projects")
-      .update({ current_state: 14, prompts_script_hash: scriptHash })
+      .update({ current_state: 14, prompts_script_hash: scriptHash, prompts_active_run_id: null })
       .eq("id", projectId)
       .eq("user_id", userId);
     if (updErr) console.error(`[image-prompts] noop-path hash write failed project=${projectId}:`, updErr);
@@ -485,7 +489,7 @@ async function generateImages(
 
   const { error: finalUpdErr } = await supabase
     .from("projects")
-    .update({ current_state: 14, prompts_script_hash: scriptHash })
+    .update({ current_state: 14, prompts_script_hash: scriptHash, prompts_active_run_id: null })
     .eq("id", projectId)
     .eq("user_id", userId);
   if (finalUpdErr) console.error(`[image-prompts] full-run hash write failed project=${projectId}:`, finalUpdErr);
@@ -525,6 +529,11 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
 
   if (pendingBeats.length === 0) {
     send({ type: "status", message: "All video prompts already generated." });
+    await supabase
+      .from("projects")
+      .update({ prompts_active_run_id: null })
+      .eq("id", projectId)
+      .eq("user_id", userId);
     send({ type: "done", beatCount: allBeats.length });
     return;
   }
@@ -680,6 +689,11 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
   );
   if (firstError) throw firstError;
 
+  await supabase
+    .from("projects")
+    .update({ prompts_active_run_id: null })
+    .eq("id", projectId)
+    .eq("user_id", userId);
   send({ type: "done", beatCount: allBeats.length });
 }
 
