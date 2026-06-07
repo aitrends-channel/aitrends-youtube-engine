@@ -110,6 +110,34 @@ async function releasePromptsRunIfOwned(projectId: string, userId: string, runId
 //   2. Bracket-counts (string-aware) to find the matching `]`.
 //   3. Falls back to extracting complete beat objects via regex when
 //      the array is truncated mid-write.
+// Count complete top-level beat objects inside a partial tool_use JSON
+// payload. The shape is `{"beats": [{...}, {...}, ...]}`; we find the
+// array's first `[`, walk forward bracket-counting (string-aware), and
+// tally every time depth returns to 0 — i.e. a beat object just closed.
+// Used during Claude streaming to surface per-beat progress in the UI
+// before the chunk's bulk DB insert lands.
+function countCompleteBeatsInPartialJson(raw: string): number {
+  const arrStart = raw.indexOf("[");
+  if (arrStart === -1) return 0;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let complete = 0;
+  for (let i = arrStart; i < raw.length; i++) {
+    const ch = raw[i];
+    if (escape) { escape = false; continue; }
+    if (ch === "\\") { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) complete++;
+    }
+  }
+  return complete;
+}
+
 function extractBeatsFromText(raw: string): { beats: Array<{ beatNumber: number; videoPrompt: string }> } | null {
   const beatsKeyIdx = raw.indexOf('"beats"');
   if (beatsKeyIdx === -1) return null;
@@ -430,7 +458,28 @@ async function generateImages(
             ],
           }],
         });
-        for await (const _event of stream) { void _event; }
+        // Tally beats as they appear in the tool_use JSON stream so the
+        // UI can show "section 2 in progress (15 beats so far)" instead
+        // of waiting the full 30-60s for the chunk to land in one shot.
+        // Each input_json_delta carries another fragment of the
+        // tool_use input JSON; we accumulate then re-count complete
+        // beat objects, and only emit when the tally goes up.
+        let toolJsonAccum = "";
+        let lastReportedBeats = 0;
+        for await (const ev of stream) {
+          if (ev.type === "content_block_delta" && ev.delta.type === "input_json_delta") {
+            toolJsonAccum += ev.delta.partial_json;
+            const completeBeats = countCompleteBeatsInPartialJson(toolJsonAccum);
+            if (completeBeats > lastReportedBeats) {
+              lastReportedBeats = completeBeats;
+              send({
+                type: "chunk_beat_progress",
+                chunkIndex,
+                beatsInChunk: completeBeats,
+              });
+            }
+          }
+        }
         return stream.finalMessage();
       },
       5

@@ -127,6 +127,10 @@ interface StepState {
   status: StepStatus;
   message: string;
   progress?: { current: number; total: number };
+  /** Live tally of beats Claude has emitted within the current chunk,
+   *  via the route's `chunk_beat_progress` SSE event. Resets on each
+   *  new `progress` event (which fires when a chunk completes). */
+  liveBeatsInChunk?: number;
   error?: string;
 }
 
@@ -318,6 +322,11 @@ async function streamStep(
   const decoder = new TextDecoder();
   let buffer = "";
   let doneReceived = false;
+  // Snapshot of the current StepState we've published to the caller.
+  // chunk_beat_progress events arrive between status/progress updates
+  // and need to MERGE — losing message or progress.current here would
+  // make the section counter blink off mid-chunk.
+  let localState: StepState = { status: "running", message: "" };
 
   // Idle watchdog: if no bytes arrive for IDLE_MS, abort the reader and
   // exit. Some proxies leave the connection technically open but stop
@@ -345,13 +354,25 @@ async function streamStep(
         try {
           const event = JSON.parse(line.slice(6));
           if (event.type === "status") {
-            onUpdate({ status: "running", message: event.message });
+            // Status events drop progress + live count — they fire at
+            // the start of the run before any chunk reports in.
+            localState = { status: "running", message: event.message };
+            onUpdate(localState);
           } else if (event.type === "progress") {
-            onUpdate({
+            // A new chunk just completed — bump section counters and
+            // reset the live beat tally for the next chunk's stream.
+            localState = {
               status: "running",
               message: `Section ${event.current} of ${event.total}`,
               progress: { current: event.current, total: event.total },
-            });
+              liveBeatsInChunk: 0,
+            };
+            onUpdate(localState);
+          } else if (event.type === "chunk_beat_progress") {
+            // Per-beat tick during a chunk's Claude stream. Merge into
+            // localState so message / progress survive the update.
+            localState = { ...localState, liveBeatsInChunk: event.beatsInChunk };
+            onUpdate(localState);
           } else if (event.type === "error") {
             throw new Error(event.message);
           } else if (event.type === "done") {
@@ -554,17 +575,22 @@ export default function PromptsPage({ params }: PageProps) {
     imageStepCompleteOnServer ? { status: "done", message: "" } : IDLE;
 
   // Rewrite the running message to combine the live persisted beat
-  // count with the current chunk's section progress. streamStep emits
-  // a generic "Section N of M" string; the page knows beats.length and
-  // can produce the richer "X ready, section N in progress (N/M)"
-  // format. Only rewrite for the streamStep case — the Resuming-after-
-  // refresh branch already has its own beat-count-aware message and
-  // doesn't have real chunk indices to point at.
+  // count with the current chunk's section progress and, when
+  // available, the per-beat tally Claude is streaming for the chunk
+  // in flight. streamStep emits a generic "Section N of M" message;
+  // the page knows beats.length (persisted), section indices, and the
+  // live in-chunk beat count, and composes the richer line:
+  //   "X ready, section N/M (Y beats in this section)"
+  // Only rewrite for the streamStep case — the Generating-after-refresh
+  // branch already has its own beat-count-aware message and doesn't
+  // have real chunk indices or a live tally to point at.
   const effectiveImage: StepState =
     baseImage.status === "running" && baseImage.progress && baseImage.message.startsWith("Section ")
       ? {
           ...baseImage,
-          message: `${beats.length} ready, section ${baseImage.progress.current} in progress (${baseImage.progress.current}/${baseImage.progress.total})`,
+          message: typeof baseImage.liveBeatsInChunk === "number" && baseImage.liveBeatsInChunk > 0
+            ? `${beats.length} ready, section ${baseImage.progress.current}/${baseImage.progress.total} (${baseImage.liveBeatsInChunk} beats in this section)`
+            : `${beats.length} ready, section ${baseImage.progress.current} in progress (${baseImage.progress.current}/${baseImage.progress.total})`,
         }
       : baseImage;
 
