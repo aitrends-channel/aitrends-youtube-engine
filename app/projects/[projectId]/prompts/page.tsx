@@ -155,6 +155,48 @@ interface StepCardProps {
   onGenerate: () => void;
 }
 
+// Rotating engagement caption shown on the right of a StepCard while a
+// chunked generation is in flight. Pure UX — the messages are static
+// strings cycled every ~2.4s so the card never looks frozen during a
+// 30-60s chunk where neither the progress bar nor the live beat tally
+// is ticking. Section number is derived from progress (which counts
+// completed chunks, so current+1 is the chunk actually in flight).
+const RUNNING_CAPTIONS = [
+  "Studying the script",
+  "Choosing camera angles",
+  "Drafting visual cues",
+  "Composing the next scene",
+  "Shaping the mood",
+  "Polishing the prompts",
+  "Wiring the visuals",
+];
+
+function RunningCaption({ progress }: { progress?: { current: number; total: number } }) {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setIdx((i) => (i + 1) % RUNNING_CAPTIONS.length), 2400);
+    return () => clearInterval(t);
+  }, []);
+  const sectionNum = progress ? Math.min(progress.current + 1, progress.total) : null;
+  return (
+    <div className="shrink-0 hidden md:flex flex-col items-end justify-center gap-1 max-w-[180px] mr-1">
+      {sectionNum !== null && progress && (
+        <span className="text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap"
+          style={{ color: "oklch(0.65 0.15 75)" }}>
+          Section {sectionNum} of {progress.total}
+        </span>
+      )}
+      <span
+        key={idx}
+        className="text-[11px] italic text-right animate-pulse"
+        style={{ color: "var(--c-50)" }}
+      >
+        {RUNNING_CAPTIONS[idx]}…
+      </span>
+    </div>
+  );
+}
+
 function StepCard({ num, title, description, state, doneLabel, pendingLabel, disabled, optional, actionLabel, onClear, onStop, onGenerate }: StepCardProps) {
   const isRunning = state.status === "running";
   const isDone = state.status === "done";
@@ -258,6 +300,10 @@ function StepCard({ num, title, description, state, doneLabel, pendingLabel, dis
           <p className="text-xs leading-relaxed" style={{ color: "oklch(0.65 0.15 25)" }}>{state.error}</p>
         )}
       </div>
+
+      {/* Animated section caption — engagement filler during the long
+          per-chunk wait. Only present while running. */}
+      {isRunning && <RunningCaption progress={state.progress} />}
 
       {/* Action buttons */}
       <div className="shrink-0 flex items-start gap-2">
