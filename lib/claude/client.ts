@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getSettings } from "@/lib/settings";
-import { getAnthropicRouting, getActiveProductKey } from "./routing";
+import { getAnthropicRouting, getActiveProductKey, type WorkflowStep } from "./routing";
 
 const KIE_CLAUDE_BASE_URL = "https://api.kie.ai/claude";
 
@@ -102,8 +102,8 @@ const fetchViaKie: typeof fetch = async (input, init) => {
   });
 };
 
-export async function getAnthropicClient(userId: string): Promise<Anthropic> {
-  const routing = await getAnthropicRouting();
+export async function getAnthropicClient(userId: string, step?: WorkflowStep): Promise<Anthropic> {
+  const routing = await getAnthropicRouting(step);
 
   // Heclus's Anthropic key, native API, bypassing KIE entirely. Useful
   // when KIE is degraded or for high-volume workloads we want billed to

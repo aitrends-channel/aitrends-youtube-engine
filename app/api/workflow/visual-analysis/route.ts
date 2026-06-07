@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   try {
-    const anthropic = await getAnthropicClient(user.id);
+    const anthropic = await getAnthropicClient(user.id, "visual_analysis");
     const { projectId, videoImageUrls, thumbnailImageUrls } = await req.json() as {
       projectId: string;
       videoImageUrls?: string[];

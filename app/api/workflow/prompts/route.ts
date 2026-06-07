@@ -226,8 +226,24 @@ async function generateImages(
 ) {
   console.log(`[image-prompts] start project=${projectId} scriptWords=${script.trim().split(/\s+/).filter(Boolean).length}`);
   const runId = await claimPromptsRun(projectId, userId);
+  // Walk current_state back to "prompts step in progress" (13) so the
+  // client can distinguish a fresh image-regen from a fully completed
+  // image step. Without this, after a prior successful run left
+  // current_state at 14, the prompts page's imageStepCompleteOnServer
+  // check (current_state >= 14 && beats.every has imagePrompt) goes
+  // true the instant the first regen chunk lands — flipping the
+  // StepCard to "done — N beats ready" while chunks 2..N are still
+  // generating. The completion path below restores current_state to
+  // 14 after the final chunk persists. Video step doesn't touch
+  // current_state, so this only affects image runs.
+  await supabase
+    .from("projects")
+    .update({ current_state: 13 })
+    .eq("id", projectId)
+    .eq("user_id", userId)
+    .gte("current_state", 14);
   try {
-  const anthropic = await getAnthropicClient(userId);
+  const anthropic = await getAnthropicClient(userId, "image_prompts");
 
   // Hash the current script and compare to the hash that was current when
   // the existing beats were generated. If they differ, the script was
@@ -530,7 +546,7 @@ async function generateImages(
 async function generateVideos(projectId: string, userId: string, send: (data: object) => void, model: string) {
   const runId = await claimPromptsRun(projectId, userId);
   try {
-  const anthropic = await getAnthropicClient(userId);
+  const anthropic = await getAnthropicClient(userId, "video_prompts");
   send({ type: "status", message: "Loading beats..." });
 
   const [beatsRes, projectRes] = await Promise.all([
@@ -740,7 +756,7 @@ async function generateThumbnails(
   send: (data: object) => void,
   model: string
 ) {
-  const anthropic = await getAnthropicClient(userId);
+  const anthropic = await getAnthropicClient(userId, "thumbnails");
   send({ type: "status", message: "Generating 5 thumbnail concepts..." });
 
   const res = await retryClaudeCall("thumbnail concepts", () =>

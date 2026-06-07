@@ -264,7 +264,7 @@ export async function POST(req: Request) {
               });
             });
           } else {
-            const anthropic = await getAnthropicClient(user.id);
+            const anthropic = await getAnthropicClient(user.id, "script");
             await retryClaudeCall("script (Opus)", async () => {
               if (accumulated.length > existingScript.length) return; // already past first attempt with new content emitted; skip retries
               const opusMessages: { role: "user" | "assistant"; content: string }[] = [

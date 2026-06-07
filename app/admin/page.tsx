@@ -1034,9 +1034,281 @@ function ModelDefaultsPanel() {
   );
 }
 
+type Routing = "client_kie" | "heclus_kie" | "heclus_direct";
+type WorkflowStep =
+  | "analyze"
+  | "ideas"
+  | "script"
+  | "visual_analysis"
+  | "image_prompts"
+  | "video_prompts"
+  | "thumbnails";
+
+interface RoutingOption {
+  id: Routing;
+  title: string;
+  description: string;
+  requires?: string;
+}
+
+const ROUTING_OPTIONS: RoutingOption[] = [
+  {
+    id: "client_kie",
+    title: "Via Client's KIE account",
+    description: "Each user's own KIE API key (from their Settings) is used. Calls are billed to the end user.",
+  },
+  {
+    id: "heclus_kie",
+    title: "Via Heclus KIE account",
+    description: "All Anthropic calls go through Heclus's KIE key, regardless of who triggered them. Calls are billed to Heclus's KIE account.",
+    requires: "Add a key under API Keys → Heclus KIE API Key.",
+  },
+  {
+    id: "heclus_direct",
+    title: "Via Heclus Anthropic key (direct)",
+    description: "Bypasses KIE entirely — calls hit api.anthropic.com directly with Heclus's Anthropic API key. Avoids KIE's envelope quirks and rate limits.",
+    requires: "Add a key under API Keys → Anthropic API Key (direct).",
+  },
+];
+
+// Display labels for each workflow step. Slugs must match the WorkflowStep
+// union exported from lib/claude/routing.ts.
+const WORKFLOW_STEP_LABELS: Record<WorkflowStep, { title: string; subtitle: string }> = {
+  analyze:         { title: "Channel Analysis",  subtitle: "Reverse-engineers the channel's style from transcripts" },
+  ideas:           { title: "Video Ideas",       subtitle: "Generates trending topic suggestions" },
+  script:          { title: "Script Generation", subtitle: "Writes the long-form narration script" },
+  visual_analysis: { title: "Visual Analysis",   subtitle: "Extracts the channel's visual style from frames" },
+  image_prompts:   { title: "Image Prompts",     subtitle: "One AI image prompt per script beat" },
+  video_prompts:   { title: "Video Prompts",     subtitle: "Motion + camera instructions per beat" },
+  thumbnails:      { title: "Thumbnail Concepts", subtitle: "Generates 5 thumbnail design concepts" },
+};
+const WORKFLOW_STEP_LIST: WorkflowStep[] = [
+  "analyze", "ideas", "script", "visual_analysis",
+  "image_prompts", "video_prompts", "thumbnails",
+];
+
+interface RoutingResponse {
+  routing: Routing;
+  per_step: Partial<Record<WorkflowStep, Routing>>;
+  steps: WorkflowStep[];
+}
+
 function AnthropicRoutingPanel() {
-  type Routing = "client_kie" | "heclus_kie" | "heclus_direct";
-  const { data, mutate, isLoading } = useSWR<{ routing: Routing }>("/api/admin/anthropic-routing", fetcher, { revalidateOnFocus: false });
+  const swr = useSWR<RoutingResponse>("/api/admin/anthropic-routing", fetcher, { revalidateOnFocus: false });
+  const [subTab, setSubTab] = useState<"general" | "per_step">("general");
+
+  const subTabs: { id: "general" | "per_step"; label: string }[] = [
+    { id: "general",  label: "General"  },
+    { id: "per_step", label: "Per step" },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 border-b" style={{ borderColor: "oklch(0 0 0 / 0.07)" }}>
+        {subTabs.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setSubTab(t.id)}
+            className="px-3 py-2 text-xs font-semibold transition-all"
+            style={subTab === t.id ? {
+              color: "oklch(0.55 0.15 220)",
+              borderBottom: "2px solid oklch(0.55 0.15 220)",
+            } : {
+              color: "var(--c-50)",
+              borderBottom: "2px solid transparent",
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === "general" && <GeneralRoutingPanel swr={swr} />}
+      {subTab === "per_step" && <PerStepRoutingPanel swr={swr} />}
+    </div>
+  );
+}
+
+// Sentinel for "inherit from General" inside the per-step radio list.
+// Internal-only; the API uses `null` on the wire. Keeping it as a string
+// lets the same RoutingRadios component drive both panels with one type.
+type RoutingValue = Routing | "inherit";
+
+interface RoutingChoice {
+  id: RoutingValue;
+  title: string;
+  description: string;
+  requires?: string;
+}
+
+/**
+ * Shared radio-card list used by both General and Per step. Each option
+ * is rendered as a full-width card with title, description, and an
+ * optional "requires" hint, matching the original General UX. Clicking
+ * a non-active card calls onPick — the parent decides whether to confirm
+ * via the dialog or apply immediately.
+ */
+function RoutingRadios({
+  options,
+  selected,
+  serverActive,
+  disabled,
+  onPick,
+}: {
+  options: RoutingChoice[];
+  selected: RoutingValue;
+  serverActive?: RoutingValue;
+  disabled?: boolean;
+  onPick: (id: RoutingValue) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      {options.map((opt) => {
+        const active = selected === opt.id;
+        const isServerActive = serverActive === opt.id;
+        return (
+          <button
+            key={opt.id}
+            onClick={() => { if (!active) onPick(opt.id); }}
+            disabled={disabled}
+            className="w-full text-left p-3 rounded-xl transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+            style={{
+              background: active ? "oklch(0.62 0.15 220 / 0.08)" : "white",
+              border: `1px solid ${active ? "oklch(0.62 0.15 220 / 0.45)" : "oklch(0 0 0 / 0.07)"}`,
+              boxShadow: active ? "0 1px 4px oklch(0.62 0.15 220 / 0.12)" : "0 1px 2px oklch(0 0 0 / 0.04)",
+            }}
+          >
+            <div className="flex items-start gap-3">
+              <span className="w-4 h-4 mt-0.5 rounded-full shrink-0 flex items-center justify-center"
+                style={{
+                  background: active ? "oklch(0.62 0.15 220)" : "transparent",
+                  border: `1.5px solid ${active ? "oklch(0.62 0.15 220)" : "oklch(0 0 0 / 0.2)"}`,
+                }}>
+                {active && <span className="w-1.5 h-1.5 rounded-full" style={{ background: "white" }} />}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="text-sm font-semibold" style={{ color: active ? "oklch(0.62 0.15 220)" : "var(--c-90)" }}>
+                    {opt.title}
+                  </p>
+                  {isServerActive && (
+                    <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                      style={{
+                        background: "oklch(0.55 0.15 145 / 0.15)",
+                        color: "oklch(0.45 0.15 145)",
+                        border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                      }}>
+                      Active
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--c-50)" }}>
+                  {opt.description}
+                </p>
+                {opt.requires && (
+                  <p className="text-[11px] mt-1.5" style={{ color: "oklch(0.6 0.15 60)" }}>
+                    ⓘ {opt.requires}
+                  </p>
+                )}
+              </div>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Shared confirm dialog. Used by both panels — the parent supplies the
+ * preview choice (title + description) and a confirm handler. Returning
+ * null when nothing's pending keeps the dialog mounted but closed.
+ */
+function RoutingConfirmDialog({
+  open,
+  saving,
+  title,
+  description,
+  preview,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  saving: boolean;
+  title: string;
+  description: string;
+  preview: RoutingChoice | null;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => { if (!o && !saving) onCancel(); }}
+    >
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        {preview && (
+          <div className="rounded-xl p-3" style={{ background: "oklch(0.62 0.15 220 / 0.06)", border: "1px solid oklch(0.62 0.15 220 / 0.25)" }}>
+            <p className="text-sm font-semibold" style={{ color: "oklch(0.62 0.15 220)" }}>
+              {preview.title}
+            </p>
+            <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--c-55)" }}>
+              {preview.description}
+            </p>
+            {preview.requires && (
+              <p className="text-[11px] mt-1.5" style={{ color: "oklch(0.6 0.15 60)" }}>
+                ⓘ {preview.requires}
+              </p>
+            )}
+          </div>
+        )}
+        <DialogFooter>
+          <button
+            onClick={onConfirm}
+            disabled={saving}
+            className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+            style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
+          >
+            {saving ? (
+              <span className="inline-flex items-center justify-center gap-2">
+                <Spinner size={14} className="text-white" />
+                Switching…
+              </span>
+            ) : "Switch routing"}
+          </button>
+          <button
+            onClick={onCancel}
+            disabled={saving}
+            className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+            style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+          >
+            Cancel
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const ROUTING_CHOICES_GENERAL: RoutingChoice[] = ROUTING_OPTIONS;
+
+function buildPerStepChoices(generalLabel: string): RoutingChoice[] {
+  return [
+    {
+      id: "inherit",
+      title: "Inherit from General",
+      description: `Use whichever routing is currently set in the General tab (right now: ${generalLabel}). Picking another option below overrides it for this step only.`,
+    },
+    ...ROUTING_OPTIONS,
+  ];
+}
+
+function GeneralRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingResponse>> }) {
+  const { data, mutate, isLoading } = swr;
 
   const [sel, setSel] = useState<Routing>("client_kie");
   const [pending, setPending] = useState<Routing | null>(null);
@@ -1049,27 +1321,7 @@ function AnthropicRoutingPanel() {
     setSel(data.routing ?? "client_kie");
   }, [data]);
 
-  const options: { id: Routing; title: string; description: string; requires?: string }[] = [
-    {
-      id: "client_kie",
-      title: "Via Client's KIE account",
-      description: "Each user's own KIE API key (from their Settings) is used. Calls are billed to the end user.",
-    },
-    {
-      id: "heclus_kie",
-      title: "Via Heclus KIE account",
-      description: "All Anthropic calls go through Heclus's KIE key, regardless of who triggered them. Calls are billed to Heclus's KIE account.",
-      requires: "Add a key under API Keys → Heclus KIE API Key.",
-    },
-    {
-      id: "heclus_direct",
-      title: "Via Heclus Anthropic key (direct)",
-      description: "Bypasses KIE entirely — calls hit api.anthropic.com directly with Heclus's Anthropic API key. Avoids KIE's envelope quirks and rate limits.",
-      requires: "Add a key under API Keys → Anthropic API Key (direct).",
-    },
-  ];
-
-  const pendingOption = pending ? options.find((o) => o.id === pending) ?? null : null;
+  const pendingOption = pending ? ROUTING_OPTIONS.find((o) => o.id === pending) ?? null : null;
 
   async function applyRouting(target: Routing) {
     setSaving(true);
@@ -1097,117 +1349,151 @@ function AnthropicRoutingPanel() {
   return (
     <div className="space-y-4">
       <p className="text-xs" style={{ color: "var(--c-50)" }}>
-        Pick how Claude (Anthropic) calls are routed. Applies to all users globally.
+        Pick how Claude (Anthropic) calls are routed. Applies to all users globally. Individual steps can override this in the Per step tab.
       </p>
 
       {isLoading && <p className="text-xs" style={{ color: "var(--c-42)" }}>Loading…</p>}
 
-      <div className="space-y-2">
-        {options.map((opt) => {
-          const active = sel === opt.id;
-          const isServerActive = data?.routing === opt.id;
+      <RoutingRadios
+        options={ROUTING_CHOICES_GENERAL}
+        selected={sel}
+        serverActive={data?.routing}
+        disabled={saving}
+        onPick={(id) => { if (id !== "inherit") setPending(id); }}
+      />
+
+      <RoutingConfirmDialog
+        open={pending !== null}
+        saving={saving}
+        title="Switch Anthropic routing?"
+        description="This change applies to all users globally and takes effect immediately."
+        preview={pendingOption}
+        onConfirm={() => { if (pending) applyRouting(pending); }}
+        onCancel={() => setPending(null)}
+      />
+    </div>
+  );
+}
+
+function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingResponse>> }) {
+  const { data, mutate, isLoading } = swr;
+  const [pending, setPending] = useState<{ step: WorkflowStep; value: RoutingValue } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const generalLabel = data
+    ? (ROUTING_OPTIONS.find((o) => o.id === data.routing)?.title ?? data.routing)
+    : "—";
+  const perStepChoices = buildPerStepChoices(generalLabel);
+  const pendingChoice = pending ? perStepChoices.find((c) => c.id === pending.value) ?? null : null;
+  const pendingStepMeta = pending ? WORKFLOW_STEP_LABELS[pending.step] : null;
+
+  async function applyStepRouting(step: WorkflowStep, value: RoutingValue) {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/anthropic-routing", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ step, routing: value === "inherit" ? null : value }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? "Failed to save");
+      }
+      toast.success(value === "inherit"
+        ? `${WORKFLOW_STEP_LABELS[step].title}: inheriting from General`
+        : `${WORKFLOW_STEP_LABELS[step].title} routing saved`);
+      mutate();
+      setPending(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs" style={{ color: "var(--c-50)" }}>
+        Override how Claude is routed for specific workflow steps. Each step
+        shows the same routing options as the General tab — picking
+        <span className="font-semibold"> Inherit from General </span>
+        falls back to whatever's set globally (currently <span className="font-semibold">{generalLabel}</span>).
+      </p>
+
+      {isLoading && <p className="text-xs" style={{ color: "var(--c-42)" }}>Loading…</p>}
+
+      <div className="space-y-4">
+        {WORKFLOW_STEP_LIST.map((step) => {
+          const override = data?.per_step?.[step] ?? null;
+          const selectedValue: RoutingValue = override ?? "inherit";
+          const meta = WORKFLOW_STEP_LABELS[step];
+          // Disable interaction while ANY step is saving so a confirm
+          // mid-dialog can't be racing another save's optimistic state.
+          const disabled = saving;
           return (
-            <button
-              key={opt.id}
-              onClick={() => { if (!active) setPending(opt.id); }}
-              disabled={saving}
-              className="w-full text-left p-3 rounded-xl transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+            <div
+              key={step}
+              className="rounded-xl p-4 space-y-3"
               style={{
-                background: active ? "oklch(0.62 0.15 220 / 0.08)" : "white",
-                border: `1px solid ${active ? "oklch(0.62 0.15 220 / 0.45)" : "oklch(0 0 0 / 0.07)"}`,
-                boxShadow: active ? "0 1px 4px oklch(0.62 0.15 220 / 0.12)" : "0 1px 2px oklch(0 0 0 / 0.04)",
+                background: "white",
+                border: "1px solid oklch(0 0 0 / 0.07)",
+                boxShadow: "0 1px 2px oklch(0 0 0 / 0.04)",
               }}
             >
-              <div className="flex items-start gap-3">
-                <span className="w-4 h-4 mt-0.5 rounded-full shrink-0 flex items-center justify-center"
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold uppercase tracking-wide px-2.5 py-1 rounded-md"
                   style={{
-                    background: active ? "oklch(0.62 0.15 220)" : "transparent",
-                    border: `1.5px solid ${active ? "oklch(0.62 0.15 220)" : "oklch(0 0 0 / 0.2)"}`,
+                    background: "oklch(0.72 0.25 285)",
+                    color: "white",
+                    boxShadow: "0 1px 3px oklch(0.72 0.25 285 / 0.30)",
                   }}>
-                  {active && <span className="w-1.5 h-1.5 rounded-full" style={{ background: "white" }} />}
+                  {meta.title}
                 </span>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-semibold" style={{ color: active ? "oklch(0.62 0.15 220)" : "var(--c-90)" }}>
-                      {opt.title}
-                    </p>
-                    {isServerActive && (
-                      <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
-                        style={{
-                          background: "oklch(0.55 0.15 145 / 0.15)",
-                          color: "oklch(0.45 0.15 145)",
-                          border: "1px solid oklch(0.55 0.15 145 / 0.3)",
-                        }}>
-                        Active
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--c-50)" }}>
-                    {opt.description}
-                  </p>
-                  {opt.requires && (
-                    <p className="text-[11px] mt-1.5" style={{ color: "oklch(0.6 0.15 60)" }}>
-                      ⓘ {opt.requires}
-                    </p>
-                  )}
-                </div>
+                {override === null ? (
+                  <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                    style={{
+                      background: "oklch(0 0 0 / 0.05)",
+                      color: "var(--c-50)",
+                      border: "1px solid oklch(0 0 0 / 0.1)",
+                    }}>
+                    Inheriting
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                    style={{
+                      background: "oklch(0.62 0.15 220 / 0.10)",
+                      color: "oklch(0.55 0.15 220)",
+                      border: "1px solid oklch(0.62 0.15 220 / 0.35)",
+                    }}>
+                    Override
+                  </span>
+                )}
+                <span className="text-[11px]" style={{ color: "var(--c-50)" }}>
+                  · {meta.subtitle}
+                </span>
               </div>
-            </button>
+
+              <RoutingRadios
+                options={perStepChoices}
+                selected={selectedValue}
+                serverActive={selectedValue}
+                disabled={disabled}
+                onPick={(id) => setPending({ step, value: id })}
+              />
+            </div>
           );
         })}
       </div>
 
-      <Dialog
+      <RoutingConfirmDialog
         open={pending !== null}
-        onOpenChange={(open) => { if (!open && !saving) setPending(null); }}
-      >
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Switch Anthropic routing?</DialogTitle>
-            <DialogDescription>
-              This change applies to all users globally and takes effect immediately.
-            </DialogDescription>
-          </DialogHeader>
-          {pendingOption && (
-            <div className="rounded-xl p-3" style={{ background: "oklch(0.62 0.15 220 / 0.06)", border: "1px solid oklch(0.62 0.15 220 / 0.25)" }}>
-              <p className="text-sm font-semibold" style={{ color: "oklch(0.62 0.15 220)" }}>
-                {pendingOption.title}
-              </p>
-              <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--c-55)" }}>
-                {pendingOption.description}
-              </p>
-              {pendingOption.requires && (
-                <p className="text-[11px] mt-1.5" style={{ color: "oklch(0.6 0.15 60)" }}>
-                  ⓘ {pendingOption.requires}
-                </p>
-              )}
-            </div>
-          )}
-          <DialogFooter>
-            <button
-              onClick={() => { if (pending) applyRouting(pending); }}
-              disabled={saving}
-              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
-              style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
-            >
-              {saving ? (
-                <span className="inline-flex items-center justify-center gap-2">
-                  <Spinner size={14} className="text-white" />
-                  Switching…
-                </span>
-              ) : "Switch routing"}
-            </button>
-            <button
-              onClick={() => setPending(null)}
-              disabled={saving}
-              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
-              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
-            >
-              Cancel
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        saving={saving}
+        title={pendingStepMeta ? `Switch routing for ${pendingStepMeta.title}?` : "Switch routing?"}
+        description="Only this step is affected. Change takes effect immediately for all users."
+        preview={pendingChoice}
+        onConfirm={() => { if (pending) applyStepRouting(pending.step, pending.value); }}
+        onCancel={() => setPending(null)}
+      />
     </div>
   );
 }

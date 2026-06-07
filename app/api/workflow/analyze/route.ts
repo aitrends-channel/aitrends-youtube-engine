@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   try {
-    const anthropic = await getAnthropicClient(user.id);
+    const anthropic = await getAnthropicClient(user.id, "analyze");
     const { projectId, transcripts, topicMode, topicHint } = await req.json();
     const model = MODEL;
 

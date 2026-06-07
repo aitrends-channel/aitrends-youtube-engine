@@ -136,6 +136,10 @@ interface StepCardProps {
   description: string;
   state: StepState;
   doneLabel?: string;
+  /** Shown in the idle state when partial work was persisted (user
+   *  stopped mid-run, or a prior error left beats behind). Lets the
+   *  user see "138 generated, ~92 remaining" before clicking Resume. */
+  pendingLabel?: string;
   disabled?: boolean;
   optional?: boolean;
   /** Custom button label for non-running, non-done states (e.g. "Generate Remaining 9"). */
@@ -147,7 +151,7 @@ interface StepCardProps {
   onGenerate: () => void;
 }
 
-function StepCard({ num, title, description, state, doneLabel, disabled, optional, actionLabel, onClear, onStop, onGenerate }: StepCardProps) {
+function StepCard({ num, title, description, state, doneLabel, pendingLabel, disabled, optional, actionLabel, onClear, onStop, onGenerate }: StepCardProps) {
   const isRunning = state.status === "running";
   const isDone = state.status === "done";
   const isError = state.status === "error";
@@ -242,6 +246,9 @@ function StepCard({ num, title, description, state, doneLabel, disabled, optiona
         )}
         {isDone && doneLabel && (
           <p className="text-xs" style={{ color: "oklch(0.6 0.15 145)" }}>{doneLabel}</p>
+        )}
+        {!isRunning && !isDone && !isError && pendingLabel && (
+          <p className="text-xs" style={{ color: "oklch(0.65 0.15 75)" }}>{pendingLabel}</p>
         )}
         {isError && (
           <p className="text-xs leading-relaxed" style={{ color: "oklch(0.65 0.15 25)" }}>{state.error}</p>
@@ -498,25 +505,51 @@ export default function PromptsPage({ params }: PageProps) {
   const imageProgress = estimatedTotalBeats > 0
     ? { current: Math.min(beats.length, estimatedTotalBeats - 1), total: estimatedTotalBeats }
     : undefined;
+  // When the user stopped or errored mid-run and partial beats exist,
+  // surface "X generated, ~Y remaining" so they can see the work done
+  // before deciding whether to Resume or Clear. estimatedTotalBeats
+  // (~1 beat per 12 script words) is approximate, so the remaining
+  // count is prefixed with "~" — accurate enough to be useful, honest
+  // enough not to mislead.
+  const imagePendingLabel = imageStepResumable
+    ? estimatedTotalBeats > 0
+      ? `${beats.length} generated, ~${Math.max(0, estimatedTotalBeats - beats.length)} remaining`
+      : `${beats.length} generated`
+    : undefined;
 
   // Derive effective step state: prefer live state, then server-side
   // remote run, then DB presence. The "running" branch here only fires
   // on refresh / nav-away → return; in that case we synthesize a fresh
   // running state with real progress derived from the persisted beat
   // count so the user sees actual work instead of an idle bar.
-  const effectiveImage: StepState =
+  const baseImage: StepState =
     imageStep.status !== "idle" ? imageStep :
     imageStoppedByUser ? IDLE :
     imageRemoteRunning ? {
       status: "running",
       message: estimatedTotalBeats > 0
-        ? `Resuming — ${beats.length} of ~${estimatedTotalBeats} beats generated`
+        ? `Generating — ${beats.length} of ~${estimatedTotalBeats} beats generated`
         : hasImageBeats
-          ? `Resuming — ${beats.length} beats so far, still generating`
-          : "Resuming — still generating in the background",
+          ? `Generating — ${beats.length} beats so far, still generating`
+          : "Generating — still generating in the background",
       progress: imageProgress,
     } :
     imageStepCompleteOnServer ? { status: "done", message: "" } : IDLE;
+
+  // Rewrite the running message to combine the live persisted beat
+  // count with the current chunk's section progress. streamStep emits
+  // a generic "Section N of M" string; the page knows beats.length and
+  // can produce the richer "X ready, section N in progress (N/M)"
+  // format. Only rewrite for the streamStep case — the Resuming-after-
+  // refresh branch already has its own beat-count-aware message and
+  // doesn't have real chunk indices to point at.
+  const effectiveImage: StepState =
+    baseImage.status === "running" && baseImage.progress && baseImage.message.startsWith("Section ")
+      ? {
+          ...baseImage,
+          message: `${beats.length} ready, section ${baseImage.progress.current} in progress (${baseImage.progress.current}/${baseImage.progress.total})`,
+        }
+      : baseImage;
 
   const effectiveVideo: StepState =
     videoStep.status !== "idle" ? videoStep :
@@ -863,6 +896,7 @@ export default function PromptsPage({ params }: PageProps) {
             description="One AI image prompt per script beat, matched to your channel's visual style"
             state={effectiveImage}
             doneLabel={beats.length > 0 ? `${beats.length} beats ready` : undefined}
+            pendingLabel={imagePendingLabel}
             actionLabel={imageActionLabel}
             onClear={hasImageBeats ? () => setClearTarget("image") : null}
             onStop={handleStopPrompts}
