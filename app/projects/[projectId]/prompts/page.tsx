@@ -179,7 +179,7 @@ function RunningCaption({ progress }: { progress?: { current: number; total: num
   }, []);
   const sectionNum = progress ? Math.min(progress.current + 1, progress.total) : null;
   return (
-    <div className="shrink-0 hidden md:flex flex-col items-end justify-center gap-1 max-w-[180px] mr-1">
+    <div className="hidden md:flex flex-col items-end gap-1 max-w-[180px] mt-[15px]">
       {sectionNum !== null && progress && (
         <span className="text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap"
           style={{ color: "oklch(0.65 0.15 75)" }}>
@@ -301,42 +301,42 @@ function StepCard({ num, title, description, state, doneLabel, pendingLabel, dis
         )}
       </div>
 
-      {/* Animated section caption — engagement filler during the long
-          per-chunk wait. Only present while running. */}
-      {isRunning && <RunningCaption progress={state.progress} />}
-
-      {/* Action buttons */}
-      <div className="shrink-0 flex items-start gap-2">
-        {onClear && !isRunning && (
+      {/* Right column — buttons on top, animated caption directly
+          underneath the Stop button while running. */}
+      <div className="shrink-0 flex flex-col items-end gap-2">
+        <div className="flex items-start gap-2">
+          {onClear && !isRunning && (
+            <button
+              onClick={() => { Promise.resolve(onClear()).catch(() => { /* surfaced via toast in caller */ }); }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-opacity"
+              style={{ background: "transparent", color: "var(--c-50)", border: "1px solid var(--bd-8)" }}
+            >
+              Clear
+            </button>
+          )}
+          {onStop && isRunning && (
+            <button
+              onClick={() => { Promise.resolve(onStop()).catch(() => { /* swallow — UI updates via state */ }); }}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-90"
+              style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
+            >
+              Stop
+            </button>
+          )}
           <button
-            onClick={() => { Promise.resolve(onClear()).catch(() => { /* surfaced via toast in caller */ }); }}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-opacity"
-            style={{ background: "transparent", color: "var(--c-50)", border: "1px solid var(--bd-8)" }}
+            onClick={onGenerate}
+            disabled={disabled || isRunning}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-30 transition-opacity"
+            style={
+              isDone || isError
+                ? { background: "var(--bg-progress)", color: "var(--c-50)", border: "1px solid var(--bd-8)" }
+                : { background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }
+            }
           >
-            Clear
+            {isRunning ? "Running..." : (actionLabel ?? (isDone ? "Regenerate" : isError ? "Retry" : "Generate"))}
           </button>
-        )}
-        {onStop && isRunning && (
-          <button
-            onClick={() => { Promise.resolve(onStop()).catch(() => { /* swallow — UI updates via state */ }); }}
-            className="px-3 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-90"
-            style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
-          >
-            Stop
-          </button>
-        )}
-        <button
-          onClick={onGenerate}
-          disabled={disabled || isRunning}
-          className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-30 transition-opacity"
-          style={
-            isDone || isError
-              ? { background: "var(--bg-progress)", color: "var(--c-50)", border: "1px solid var(--bd-8)" }
-              : { background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }
-          }
-        >
-          {isRunning ? "Running..." : (actionLabel ?? (isDone ? "Regenerate" : isError ? "Retry" : "Generate"))}
-        </button>
+        </div>
+        {isRunning && <RunningCaption progress={state.progress} />}
       </div>
     </div>
   );
