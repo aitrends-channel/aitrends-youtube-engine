@@ -510,12 +510,15 @@ async function generateImages(
     }
   }
 
-  // Bounded concurrency worker pool. Claude calls overlap; persistence
-  // is gated in script order via persistGates so beat numbers stay
-  // monotonic. 5 is comfortably under Anthropic's standard-tier
-  // per-account concurrency cap and retryClaudeCall already handles
-  // any 429s if KIE/Anthropic pushes back.
-  const CONCURRENCY = 5;
+  // Strict sequential processing — one chunk in flight at a time. The
+  // resume/progress UX needs each chunk to fully persist (and the
+  // progress event to land) before the next starts so the user sees
+  // "1/8 → 2/8 → 3/8" cleanly and a mid-run Stop has a well-defined
+  // resume point. The prior parallel pool (5 in flight) overlapped
+  // Claude calls cleanly but emitted progress events out of script
+  // order and could leave partial-chunk gaps on Stop that the
+  // word-count-based resume heuristic couldn't reliably skip.
+  const CONCURRENCY = 1;
   let nextIdx = 0;
   let completed = 0;
   let firstError: Error | null = null;
