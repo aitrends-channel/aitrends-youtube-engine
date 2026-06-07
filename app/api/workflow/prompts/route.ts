@@ -76,6 +76,32 @@ async function assertPromptsRunActive(projectId: string, runId: string | null): 
   }
 }
 
+// Release the active run id ONLY if it's still ours. The success paths
+// null it inline; this is the catch-all for error/throw paths so the
+// project doesn't get stuck advertising an in-flight run forever — the
+// prompts page derives `imageRemoteRunning` from this column and would
+// otherwise show "Resuming…" indefinitely after a server-side failure.
+// The ownership check protects against clobbering a newer run that
+// raced in after ours errored.
+async function releasePromptsRunIfOwned(projectId: string, userId: string, runId: string | null): Promise<void> {
+  if (!runId) return;
+  try {
+    const { data } = await supabase
+      .from("projects")
+      .select("prompts_active_run_id")
+      .eq("id", projectId)
+      .single();
+    if (data?.prompts_active_run_id !== runId) return;
+    await supabase
+      .from("projects")
+      .update({ prompts_active_run_id: null })
+      .eq("id", projectId)
+      .eq("user_id", userId);
+  } catch (e) {
+    console.warn("[prompts-cancel] failed to release run id; UI may show stale Resuming until next claim", e);
+  }
+}
+
 // KIE+Opus occasionally ignores tool_choice forcing and emits a *fake*
 // tool-call structure as plain text (e.g. `<tool_calls>[{"input":
 // {"beats":[...]}}]</tool_calls>`). A naive greedy regex either grabs
@@ -201,6 +227,7 @@ async function generateImages(
 ) {
   console.log(`[image-prompts] start project=${projectId} scriptWords=${script.trim().split(/\s+/).filter(Boolean).length}`);
   const runId = await claimPromptsRun(projectId, userId);
+  try {
   const anthropic = await getAnthropicClient(userId);
 
   // Hash the current script and compare to the hash that was current when
@@ -495,11 +522,15 @@ async function generateImages(
   if (finalUpdErr) console.error(`[image-prompts] full-run hash write failed project=${projectId}:`, finalUpdErr);
   else console.log(`[image-prompts] full-run hash written project=${projectId} hash=${scriptHash.slice(0, 12)}… beats=${totalBeatCount}`);
   send({ type: "done", beatCount: totalBeatCount });
+  } finally {
+    await releasePromptsRunIfOwned(projectId, userId, runId);
+  }
 }
 
 // ── Step 2: Video prompts ──────────────────────────────────────────────────
 async function generateVideos(projectId: string, userId: string, send: (data: object) => void, model: string) {
   const runId = await claimPromptsRun(projectId, userId);
+  try {
   const anthropic = await getAnthropicClient(userId);
   send({ type: "status", message: "Loading beats..." });
 
@@ -695,6 +726,9 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
     .eq("id", projectId)
     .eq("user_id", userId);
   send({ type: "done", beatCount: allBeats.length });
+  } finally {
+    await releasePromptsRunIfOwned(projectId, userId, runId);
+  }
 }
 
 // ── Step 3: Thumbnails ─────────────────────────────────────────────────────

@@ -251,7 +251,7 @@ function StepCard({ num, title, description, state, doneLabel, disabled, optiona
 
       {/* Action buttons */}
       <div className="shrink-0 flex items-start gap-2">
-        {onClear && !isRunning && (isDone || isError) && (
+        {onClear && !isRunning && (
           <button
             onClick={() => { Promise.resolve(onClear()).catch(() => { /* surfaced via toast in caller */ }); }}
             className="px-3 py-1.5 rounded-lg text-xs font-medium transition-opacity"
@@ -398,6 +398,14 @@ export default function PromptsPage({ params }: PageProps) {
 
   const [imageStep, setImageStep] = useState<StepState>(IDLE);
   const [videoStep, setVideoStep] = useState<StepState>(IDLE);
+  // "User clicked Stop on this step" sticky flag. Pure UX state — overrides
+  // the derived `effectiveImage`/`effectiveVideo` "done" branch so the user
+  // sees Clear + Resume after a stop, not Clear + Regenerate, even when
+  // the route happened to write `current_state >= 14` before the abort
+  // landed. Cleared the moment the user picks an explicit next action
+  // (Resume kicks off a new run; Clear wipes state).
+  const [imageStoppedByUser, setImageStoppedByUser] = useState(false);
+  const [videoStoppedByUser, setVideoStoppedByUser] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("beats");
   const [navigating, setNavigating] = useState(false);
   const [adminModel, setAdminModel] = useState<string>("");
@@ -425,9 +433,6 @@ export default function PromptsPage({ params }: PageProps) {
   // where we left off. The action label always reflects that, even
   // when zero work has been saved yet (first-chunk failure).
   const videoRemaining = beats.length > 0 ? beats.length - videoBeats.length : 0;
-  const imageActionLabel = imageStep.status === "error"
-    ? "Generate Remaining"
-    : null;
   // Video resume requires image beats to actually exist on the server.
   // If they were cleared or never generated, fall back to the plain
   // "Retry" so users don't fire a request that can't possibly succeed.
@@ -442,20 +447,44 @@ export default function PromptsPage({ params }: PageProps) {
   // user sees a spinner instead of an idle StepCard with a Generate
   // button they could accidentally double-click.
   const remoteRunInProgress = !!project?.prompts_active_run_id;
-  const imageBeatsAllReady = hasImageBeats && beats.every((b) => !!b.imagePrompt);
-  // No local activity but a server run is going AND image prompts
-  // aren't fully present yet → must be the image step running.
+  // True image-step completion lives in `current_state >= 14` — the route
+  // only writes that after the final chunk finishes and every beat has
+  // an image_prompt. `beats.every(b => !!b.imagePrompt)` alone is NOT a
+  // safe completion signal: mid-run, the chunks that already persisted
+  // each carry their imagePrompt, so `every` is trivially true the moment
+  // chunk 1 lands and the UI would otherwise flip to "done" while the
+  // server is still working on chunks 2..N.
+  const imageStepCompleteOnServer =
+    (project?.current_state ?? 0) >= 14
+    && hasImageBeats
+    && beats.every((b) => !!b.imagePrompt);
+  // No local activity but a server run is going AND image isn't yet
+  // marked complete → must be the image step running. SWR's 5s refresh
+  // (see useProject) is what eventually flips this off.
   //
   // Note: we deliberately do NOT derive a `videoRemoteRunning` flag.
   // `prompts_active_run_id` is shared between the image and video
-  // routes, and `imageBeatsAllReady` only inspects beats that already
-  // exist — so a mid-flight image run (chunks already persisted, more
-  // pending) looks indistinguishable from "image done, video running"
-  // and would falsely flip the video card to a "Resuming" state even
-  // though the user never clicked Generate on it. The video step only
-  // enters a running state via an explicit local click.
+  // routes — there's no way to tell which step claimed it from the
+  // client. The video step only enters a running state via an explicit
+  // local click.
   const imageRemoteRunning =
-    remoteRunInProgress && imageStep.status === "idle" && videoStep.status === "idle" && !imageBeatsAllReady;
+    remoteRunInProgress && imageStep.status === "idle" && videoStep.status === "idle" && !imageStepCompleteOnServer;
+
+  // Partial work the user can resume — beats already persisted but the
+  // step never reached the server's "complete" mark (current_state >= 14),
+  // OR the user explicitly clicked Stop (we honour their intent even if
+  // a racing completion check inside the route had already flipped
+  // current_state to 14). The route's chunk walk natively resumes
+  // (skips chunks already covered by existing beats), so clicking
+  // Resume just continues from where the last run left off — no
+  // destructive regenerate needed.
+  const imageStepResumable =
+    hasImageBeats && (!imageStepCompleteOnServer || imageStoppedByUser);
+  const imageActionLabel = imageStep.status === "error"
+    ? "Resume"
+    : (imageStepResumable && imageStep.status === "idle")
+    ? "Resume"
+    : null;
 
   // Estimate the target beat count from the script's word count so the
   // image-step progress bar can show actual progress on reconnect
@@ -479,6 +508,7 @@ export default function PromptsPage({ params }: PageProps) {
   // count so the user sees actual work instead of an idle bar.
   const effectiveImage: StepState =
     imageStep.status !== "idle" ? imageStep :
+    imageStoppedByUser ? IDLE :
     imageRemoteRunning ? {
       status: "running",
       message: estimatedTotalBeats > 0
@@ -488,10 +518,11 @@ export default function PromptsPage({ params }: PageProps) {
           : "Resuming — still generating in the background",
       progress: imageProgress,
     } :
-    hasImageBeats ? { status: "done", message: "" } : IDLE;
+    imageStepCompleteOnServer ? { status: "done", message: "" } : IDLE;
 
   const effectiveVideo: StepState =
     videoStep.status !== "idle" ? videoStep :
+    videoStoppedByUser ? IDLE :
     hasVideoBeats ? { status: "done", message: "" } : IDLE;
 
   async function runImageStep() {
@@ -499,6 +530,10 @@ export default function PromptsPage({ params }: PageProps) {
       toast.error("Script and visual analysis required first");
       return;
     }
+    // User picked Resume (or Generate). Clear the "stopped" sticky so
+    // the derived state reflects the new run rather than the prior
+    // user-initiated stop.
+    setImageStoppedByUser(false);
     setImageStep({ status: "running", message: "Starting..." });
     imageAbortRef.current = new AbortController();
     try {
@@ -510,26 +545,68 @@ export default function PromptsPage({ params }: PageProps) {
         ...(adminModel ? { model: adminModel } : {}),
       }, setImageStep, imageAbortRef.current.signal);
 
-      // Always refetch — the server may have finished writing beats even
-      // if the SSE `done` event never reached us (proxy truncation).
-      const fresh = await mutate();
-      const completedOnServer = (fresh?.current_state ?? 0) >= 14;
-      const freshBeats = (fresh?.beats ?? []) as Beat[];
-      // Don't trust the SSE or current_state signal alone — only flip to
-      // done when every beat in the DB actually carries a non-empty
-      // imagePrompt. Catches silent insert failures or partial writes.
-      const beatsReady = freshBeats.length > 0 && freshBeats.every((b) => !!b.imagePrompt);
+      // The SSE channel is unreliable — Vercel edge / intermediate
+      // proxies routinely truncate long-lived streams, and a single
+      // chunk's progress event can arrive seconds before the route's
+      // remaining workers actually settle. Treating stream end == work
+      // end caused the card to flip to "done" mid-run after the first
+      // chunk persisted (status: "running" → status: "done") because
+      // the route's success-path `current_state: 14` write hadn't
+      // landed yet but the SSE stream had already closed.
+      //
+      // Instead: poll the project row until we have an authoritative
+      // signal. The route only writes `current_state >= 14` after the
+      // full worker pool settles successfully; on failure it clears
+      // `prompts_active_run_id` (via the try/finally in the route).
+      // Either signal terminates the loop. Until then, keep the card
+      // in "running" with live beat counts and a Stop button.
+      const POLL_MS = 3000;
+      let fresh = await mutate();
+      while (true) {
+        if (imageAbortRef.current?.signal.aborted) {
+          setImageStep(IDLE);
+          await mutate();
+          return;
+        }
+        const freshBeats = (fresh?.beats ?? []) as Beat[];
+        const completedOnServer = (fresh?.current_state ?? 0) >= 14;
+        const beatsReady = freshBeats.length > 0 && freshBeats.every((b) => !!b.imagePrompt);
+        const serverStillActive = !!fresh?.prompts_active_run_id;
 
-      if ((doneReceived || completedOnServer) && beatsReady) {
-        setImageStep({ status: "done", message: "" });
-        toast.success("Image prompts generated");
-        if (hasVideoBeats) setVideoStep(IDLE);
-      } else if (doneReceived || completedOnServer) {
-        // Server said done but beats aren't all populated — partial
-        // success. Surface it instead of misleadingly showing complete.
-        throw new Error("Generation reported done but some beats are missing prompts. Try again — the existing beats are preserved.");
-      } else {
-        throw new Error("Generation timed out — the server closed the connection before finishing. Any beats saved so far are preserved. Try again to complete the rest.");
+        if (completedOnServer && beatsReady) {
+          setImageStep({ status: "done", message: "" });
+          toast.success("Image prompts generated");
+          if (hasVideoBeats) setVideoStep(IDLE);
+          return;
+        }
+        if (completedOnServer) {
+          throw new Error("Generation reported done but some beats are missing prompts. Try again — the existing beats are preserved.");
+        }
+        if (!serverStillActive) {
+          // Route released its run id without writing current_state=14
+          // → it threw and the finally cleared the flag. Surface as
+          // error so the user can retry.
+          throw new Error(doneReceived
+            ? "Generation reported done but the server didn't mark the step complete. Try again — the existing beats are preserved."
+            : "Generation stopped before completing. Any beats saved so far are preserved. Try again to complete the rest.");
+        }
+
+        // Server is still working — keep the card live.
+        setImageStep({
+          status: "running",
+          message: estimatedTotalBeats > 0
+            ? `Generating — ${freshBeats.length} of ~${estimatedTotalBeats} beats so far`
+            : `Generating — ${freshBeats.length} beats so far`,
+          progress: estimatedTotalBeats > 0
+            ? { current: Math.min(freshBeats.length, estimatedTotalBeats - 1), total: estimatedTotalBeats }
+            : undefined,
+        });
+
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, POLL_MS);
+          imageAbortRef.current?.signal.addEventListener("abort", () => { clearTimeout(t); resolve(); }, { once: true });
+        });
+        fresh = await mutate();
       }
     } catch (err) {
       // User-initiated Stop comes through as an AbortError — don't
@@ -619,8 +696,11 @@ export default function PromptsPage({ params }: PageProps) {
       if (clearTarget === "image") {
         setImageStep(IDLE);
         setVideoStep(IDLE); // video prompts live on the same rows
+        setImageStoppedByUser(false);
+        setVideoStoppedByUser(false);
       } else {
         setVideoStep(IDLE);
+        setVideoStoppedByUser(false);
       }
       await mutate();
       toast.success(clearTarget === "image" ? "Cleared image prompts" : "Cleared video prompts");
@@ -643,6 +723,7 @@ export default function PromptsPage({ params }: PageProps) {
       setVideoStep(IDLE);
       return;
     }
+    setVideoStoppedByUser(false);
     setVideoStep({ status: "running", message: "Starting..." });
     videoAbortRef.current = new AbortController();
     try {
@@ -685,6 +766,11 @@ export default function PromptsPage({ params }: PageProps) {
   //      to close the stream.
   // Beats already persisted to the DB are kept.
   async function handleStopPrompts() {
+    // Capture which step the user was actually stopping. A non-null
+    // abort ref means runImageStep/runVideoStep is still in flight on
+    // this client — that's what they Stop button is acting on.
+    const wasImageActive = !!imageAbortRef.current;
+    const wasVideoActive = !!videoAbortRef.current;
     if (imageAbortRef.current) {
       try { imageAbortRef.current.abort(); } catch { /* ignore */ }
       imageAbortRef.current = null;
@@ -693,8 +779,17 @@ export default function PromptsPage({ params }: PageProps) {
       try { videoAbortRef.current.abort(); } catch { /* ignore */ }
       videoAbortRef.current = null;
     }
-    setImageStep((s) => (s.status === "running" ? IDLE : s));
-    setVideoStep((s) => (s.status === "running" ? IDLE : s));
+    // Force the step the user actively stopped to IDLE, regardless of
+    // whether a racing completion check inside the polling loop just
+    // flipped it to "done". User-initiated Stop wins.
+    if (wasImageActive) {
+      setImageStep(IDLE);
+      setImageStoppedByUser(true);
+    }
+    if (wasVideoActive) {
+      setVideoStep(IDLE);
+      setVideoStoppedByUser(true);
+    }
     try {
       await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
@@ -747,17 +842,7 @@ export default function PromptsPage({ params }: PageProps) {
 
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 sm:px-8 md:pr-44 py-3 sm:py-4"
-          style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)" }}>
-          <div>
-            <h1 className="font-bold text-base sm:text-lg">Prompt Studio</h1>
-            {hasImageBeats && (
-              <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                {beats.length} beats
-              </p>
-            )}
-          </div>
-        </div>
+        
 
         <div className="mx-5">
         {/* Step cards */}
