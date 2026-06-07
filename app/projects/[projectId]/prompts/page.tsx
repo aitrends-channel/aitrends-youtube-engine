@@ -483,8 +483,18 @@ export default function PromptsPage({ params }: PageProps) {
   // (skips chunks already covered by existing beats), so clicking
   // Resume just continues from where the last run left off — no
   // destructive regenerate needed.
+  // Resumable covers three cases:
+  //  (1) Partial beats persisted + step not server-complete (normal
+  //      mid-run Stop with some chunks done).
+  //  (2) User clicked Stop — regardless of whether beats landed yet.
+  //      Even with 0 beats, the in-flight chunk Claude was working on
+  //      will still persist (the route no longer asserts-active
+  //      between Claude completion and DB insert) and the user needs
+  //      a Resume button to pick the work back up.
+  //  (3) Step had previously completed but the user stopped a regen
+  //      mid-flight (imageStoppedByUser flips on then).
   const imageStepResumable =
-    hasImageBeats && (!imageStepCompleteOnServer || imageStoppedByUser);
+    (hasImageBeats && !imageStepCompleteOnServer) || imageStoppedByUser;
   const imageActionLabel = imageStep.status === "error"
     ? "Resume"
     : (imageStepResumable && imageStep.status === "idle")
@@ -505,16 +515,23 @@ export default function PromptsPage({ params }: PageProps) {
   const imageProgress = estimatedTotalBeats > 0
     ? { current: Math.min(beats.length, estimatedTotalBeats - 1), total: estimatedTotalBeats }
     : undefined;
-  // When the user stopped or errored mid-run and partial beats exist,
-  // surface "X generated, ~Y remaining" so they can see the work done
-  // before deciding whether to Resume or Clear. estimatedTotalBeats
-  // (~1 beat per 12 script words) is approximate, so the remaining
-  // count is prefixed with "~" — accurate enough to be useful, honest
-  // enough not to mislead.
+  // When the step is resumable surface a status line so the user can
+  // see the work-so-far before deciding Resume vs Clear. Three flavors:
+  //  • beats persisted → "N generated, ~M remaining"
+  //  • stopped before any beats landed, in-flight chunk likely still
+  //    finishing server-side → "0 generated, first segment still
+  //    processing". SWR's 5s poll picks up the chunk's beats when
+  //    they land and the label flips to the first variant.
+  //  • no script word_count yet → bare "N generated"
+  // estimatedTotalBeats is approximate (~1 beat per 12 script words),
+  // so the remaining count is prefixed with "~" — accurate enough to
+  // be useful, honest enough not to mislead.
   const imagePendingLabel = imageStepResumable
-    ? estimatedTotalBeats > 0
-      ? `${beats.length} generated, ~${Math.max(0, estimatedTotalBeats - beats.length)} remaining`
-      : `${beats.length} generated`
+    ? !hasImageBeats
+      ? "0 generated, first segment still processing"
+      : estimatedTotalBeats > 0
+        ? `${beats.length} generated, ~${Math.max(0, estimatedTotalBeats - beats.length)} remaining`
+        : `${beats.length} generated`
     : undefined;
 
   // Derive effective step state: prefer live state, then server-side

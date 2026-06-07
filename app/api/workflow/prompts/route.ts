@@ -475,7 +475,14 @@ async function generateImages(
     if (taskIdx > 0) await persistGates[taskIdx - 1].promise;
 
     try {
-      await assertPromptsRunActive(projectId, runId);
+      // Intentionally NO assertPromptsRunActive here — once Claude has
+      // returned beats, always persist them. A user who clicked Stop
+      // mid-Claude-call still gets credit for the work that was
+      // already paid for (Anthropic charged us regardless), and the
+      // prompts page can flip from "0 generated, first segment still
+      // processing" to "N generated, ~M remaining" the moment the
+      // in-flight chunk lands. The next-chunk assert at the top of
+      // processChunk still prevents follow-on chunks from starting.
 
       // The model numbered beats 1..k locally; shift them into the
       // global sequence starting at runningBeatNumber.
