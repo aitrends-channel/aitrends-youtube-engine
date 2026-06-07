@@ -6,7 +6,6 @@ import { Lock } from "lucide-react";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
-import { AdminModelPicker } from "@/components/AdminModelPicker";
 
 interface PageProps {
   params: { projectId: string };
@@ -26,7 +25,6 @@ export default function TopicPage({ params }: PageProps) {
   const [saving, setSaving] = useState(false);
   const [extraIdeas, setExtraIdeas] = useState<string[]>([]);
   const [generatingIdeas, setGeneratingIdeas] = useState(false);
-  const [adminModel, setAdminModel] = useState<string>("");
 
   const baseIdeas: string[] = project?.video_ideas ?? [];
   const allIdeas = [...baseIdeas, ...extraIdeas];
@@ -46,7 +44,7 @@ export default function TopicPage({ params }: PageProps) {
       const res = await fetch("/api/workflow/ideas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: ideasProjectId, ...(adminModel ? { model: adminModel } : {}) }),
+        body: JSON.stringify({ projectId: ideasProjectId }),
       });
       const data = await res.json() as { ideas?: string[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Failed to generate ideas");
@@ -216,9 +214,6 @@ export default function TopicPage({ params }: PageProps) {
               {/* Generate more button */}
               {project?.channel_analysis && (
                 <div className="space-y-2">
-                  <div className="flex justify-end">
-                    <AdminModelPicker storageKey="ideas" label="Ideas model" onChange={setAdminModel} />
-                  </div>
                   <button
                     onClick={generateMoreIdeas}
                     disabled={generatingIdeas}

@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
-import { AdminModelPicker } from "@/components/AdminModelPicker";
 
 interface PageProps {
   params: { projectId: string };
@@ -114,7 +113,6 @@ export default function VisualsPage({ params }: PageProps) {
 
   const [mode, setMode] = useState<Mode>("auto");
   const [navigating, setNavigating] = useState(false);
-  const [adminModel, setAdminModel] = useState<string>("");
   const [stoppingAnalyze, setStoppingAnalyze] = useState(false);
   // AbortController for the visual-analysis call so the user can halt
   // it mid-flight. Direct Anthropic stops billing immediately on abort;
@@ -227,7 +225,7 @@ export default function VisualsPage({ params }: PageProps) {
       const res = await fetch("/api/workflow/visual-analysis", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, videoImageUrls, ...(adminModel ? { model: adminModel } : {}) }),
+        body: JSON.stringify({ projectId, videoImageUrls }),
         signal,
       });
       const data = await res.json();
@@ -490,9 +488,6 @@ export default function VisualsPage({ params }: PageProps) {
           {/* Analyze button + Stop */}
           {!visualProfile && (
             <div className="space-y-2">
-              <div className="flex justify-end">
-                <AdminModelPicker storageKey="visual-analysis" label="Vision model" onChange={setAdminModel} />
-              </div>
               <button
                 onClick={analyzeVisuals}
                 disabled={!canAnalyze}

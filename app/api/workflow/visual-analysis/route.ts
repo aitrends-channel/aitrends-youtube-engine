@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { getAnthropicClient, VISION_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
-import { resolveAnthropicModel } from "@/lib/claude/modelOverride";
 
 export const maxDuration = 800;
 import { visualProfileInputSchema } from "@/lib/claude/anthropicSchemas";
@@ -17,13 +16,12 @@ export async function POST(req: Request) {
 
   try {
     const anthropic = await getAnthropicClient(user.id);
-    const { projectId, videoImageUrls, thumbnailImageUrls, model: requestedModel } = await req.json() as {
+    const { projectId, videoImageUrls, thumbnailImageUrls } = await req.json() as {
       projectId: string;
       videoImageUrls?: string[];
       thumbnailImageUrls?: string[];
-      model?: string;
     };
-    const model = resolveAnthropicModel(user, requestedModel, VISION_MODEL);
+    const model = VISION_MODEL;
 
     const hasVideo = !!videoImageUrls?.length;
     const hasThumbnails = !!thumbnailImageUrls?.length;

@@ -34,11 +34,10 @@ export function useStreamingScript() {
       projectId: string,
       analysis: unknown,
       topic: string,
-      opts?: { mode?: "fresh" | "continue"; startWith?: string; model?: string }
+      opts?: { mode?: "fresh" | "continue"; startWith?: string }
     ) => {
       const mode = opts?.mode ?? "fresh";
       const startWith = opts?.startWith ?? "";
-      const model = opts?.model ?? "";
 
       streamingRef.current = true;
       // Continue mode pre-loads the partial so the user sees their
@@ -85,7 +84,7 @@ export function useStreamingScript() {
         const res = await fetch("/api/workflow/script", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, analysis, topic, mode, ...(model ? { model } : {}) }),
+          body: JSON.stringify({ projectId, analysis, topic, mode }),
           signal: abortRef.current.signal,
         });
 

@@ -6,7 +6,6 @@ import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { AdminModelPicker } from "@/components/AdminModelPicker";
 import type { Beat } from "@/lib/types";
 
 // ── Sub-components ─────────────────────────────────────────────────────────
@@ -408,7 +407,6 @@ export default function PromptsPage({ params }: PageProps) {
   const [videoStoppedByUser, setVideoStoppedByUser] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("beats");
   const [navigating, setNavigating] = useState(false);
-  const [adminModel, setAdminModel] = useState<string>("");
   // Per-step AbortControllers so the user's Stop click can kill the
   // local SSE fetch alongside the server-side run-id PATCH. Without
   // the abort the fetch keeps the connection open until the server
@@ -542,7 +540,6 @@ export default function PromptsPage({ params }: PageProps) {
         projectId,
         script: project.script,
         visualProfile: project.visual_profile,
-        ...(adminModel ? { model: adminModel } : {}),
       }, setImageStep, imageAbortRef.current.signal);
 
       // The SSE channel is unreliable — Vercel edge / intermediate
@@ -730,7 +727,6 @@ export default function PromptsPage({ params }: PageProps) {
       const doneReceived = await streamStep("/api/workflow/prompts", {
         step: "videos",
         projectId,
-        ...(adminModel ? { model: adminModel } : {}),
       }, setVideoStep, videoAbortRef.current.signal);
 
       const updated = await mutate();
@@ -845,12 +841,13 @@ export default function PromptsPage({ params }: PageProps) {
         
 
         <div className="mx-5">
-        {/* Step cards */}
-        <div className="px-4 sm:px-8 py-4 sm:py-5 space-y-3"
+        {/* Step cards. md:pr-44 keeps the right-edge action buttons
+            (Clear/Resume/Regenerate) clear of the fixed top-right
+            Back + ThemeToggle + Profile cluster in WizardNav. md:pt-16
+            drops the first card below that cluster's vertical band so
+            they don't visually collide near the top edge. */}
+        <div className="px-4 sm:px-8 md:pr-44 py-4 sm:py-5 md:pt-16 space-y-3"
           style={{ borderBottom: hasImageBeats ? "1px solid var(--bd-6)" : "none" }}>
-          <div className="flex justify-end">
-            <AdminModelPicker storageKey="prompts" label="Prompts model" onChange={setAdminModel} />
-          </div>
           {beatsStale && (
             <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
               style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "oklch(0.85 0.12 70)" }}>

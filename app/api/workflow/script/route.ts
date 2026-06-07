@@ -1,6 +1,5 @@
 import { randomUUID } from "crypto";
 import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
-import { resolveAnthropicModel } from "@/lib/claude/modelOverride";
 import { streamGeminiText, GEMINI_MAX_OUTPUT_TOKENS, GEMINI_MODEL } from "@/lib/gemini/client";
 import { buildScriptPrompt } from "@/lib/claude/prompts";
 import { retryClaudeCall } from "@/lib/claude/retry";
@@ -115,14 +114,13 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   try {
-    const { projectId, analysis, topic, mode, model: requestedModel } = await req.json() as {
+    const { projectId, analysis, topic, mode } = await req.json() as {
       projectId: string;
       analysis: ChannelAnalysisOutput;
       topic: string;
       mode?: "fresh" | "continue";
-      model?: string;
     };
-    const model = resolveAnthropicModel(user, requestedModel, MODEL);
+    const model = MODEL;
 
     if (!analysis || !topic) {
       return new Response("Missing analysis or topic", { status: 400 });

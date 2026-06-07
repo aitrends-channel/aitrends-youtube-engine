@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { AlertCircle } from "lucide-react";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
-import { AdminModelPicker } from "@/components/AdminModelPicker";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { toast } from "sonner";
@@ -226,7 +225,6 @@ export default function ChannelPage({ params }: PageProps) {
   const [transcripts, setTranscripts] = useState<SupadataTranscript[]>([]);
   const [topicMode, setTopicMode] = useState<"generate" | "custom">("generate");
   const [topicHint, setTopicHint] = useState("");
-  const [adminModel, setAdminModel] = useState<string>("");
   const [customTopic, setCustomTopic] = useState("");
   const [isWorking, setIsWorking] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -417,7 +415,6 @@ export default function ChannelPage({ params }: PageProps) {
           transcripts: readyTranscripts,
           topicMode,
           topicHint: topicHint.trim() || undefined,
-          ...(adminModel ? { model: adminModel } : {}),
         }),
       });
       const data = await res.json();
@@ -490,12 +487,9 @@ export default function ChannelPage({ params }: PageProps) {
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
 
             <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
-                  YouTube Channel URL
-                </label>
-                <AdminModelPicker storageKey="analyze" label="Analyze model" onChange={setAdminModel} />
-              </div>
+              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
+                YouTube Channel URL
+              </label>
               {/* On a failed analysis we lock the channel URL so the user
                   can't swap channels mid-error (the project row is
                   already tied to this URL) but keep the action button

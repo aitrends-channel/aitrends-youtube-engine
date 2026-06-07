@@ -8,7 +8,6 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import type { ThumbnailConcept, KieModel } from "@/lib/types";
 import { getModelConfig } from "@/lib/kie/imageModels";
-import { AdminModelPicker } from "@/components/AdminModelPicker";
 
 interface PageProps {
   params: { projectId: string };
@@ -353,7 +352,6 @@ export default function ThumbnailsPage({ params }: PageProps) {
 
   const [conceptStep, setConceptStep] = useState<StepState>(IDLE);
   const [imageStep, setImageStep] = useState<StepState>(IDLE);
-  const [adminModel, setAdminModel] = useState<string>("");
 
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [selectedRatio, setSelectedRatio] = useState("16:9");
@@ -408,7 +406,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
           const analysisRes = await fetch("/api/workflow/visual-analysis", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ projectId, thumbnailImageUrls, ...(adminModel ? { model: adminModel } : {}) }),
+            body: JSON.stringify({ projectId, thumbnailImageUrls }),
           });
           const analysisData = await analysisRes.json();
           if (analysisRes.ok && analysisData.thumbnailAnalysis) {
@@ -424,7 +422,6 @@ export default function ThumbnailsPage({ params }: PageProps) {
         script: project.script,
         visualProfile: project.visual_profile,
         thumbnailAnalysis,
-        ...(adminModel ? { model: adminModel } : {}),
       }, setConceptStep);
       await mutate();
       setConceptStep({ status: "done", message: "" });
@@ -541,10 +538,6 @@ export default function ThumbnailsPage({ params }: PageProps) {
 
         <div className="flex-1 overflow-y-auto">
           <div className="px-4 sm:px-8 pt-4 sm:pt-6 pb-24 space-y-4 max-w-5xl mx-auto">
-
-            <div className="flex justify-end">
-              <AdminModelPicker storageKey="thumbnails" label="Thumbnails model" onChange={setAdminModel} />
-            </div>
 
             {/* Step 1 — Concepts */}
             <div className="rounded-xl p-4 flex gap-4"

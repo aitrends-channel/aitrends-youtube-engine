@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
-import { resolveAnthropicModel } from "@/lib/claude/modelOverride";
 import { logSystemEvent } from "@/lib/system-logger";
 
 export const maxDuration = 800;
@@ -20,8 +19,8 @@ export async function POST(req: Request) {
 
   try {
     const anthropic = await getAnthropicClient(user.id);
-    const { projectId, transcripts, topicMode, topicHint, model: requestedModel } = await req.json();
-    const model = resolveAnthropicModel(user, requestedModel, MODEL);
+    const { projectId, transcripts, topicMode, topicHint } = await req.json();
+    const model = MODEL;
 
     if (!transcripts?.length) {
       return NextResponse.json({ error: "Video transcripts are required" }, { status: 400 });

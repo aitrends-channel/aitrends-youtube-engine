@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createHash, randomUUID } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
-import { resolveAnthropicModel } from "@/lib/claude/modelOverride";
 import {
   buildImagePromptsCached,
   buildImagePromptsDynamic,
@@ -789,14 +788,13 @@ export async function POST(req: Request) {
     script?: string;
     visualProfile?: VisualProfileOutput;
     thumbnailAnalysis?: ThumbnailAnalysisOutput;
-    model?: string;
   };
 
   const { step, projectId } = body;
   if (!projectId || !step) {
     return NextResponse.json({ error: "projectId and step are required" }, { status: 400 });
   }
-  const model = resolveAnthropicModel(user, body.model, MODEL);
+  const model = MODEL;
 
   if (step === "images") {
     if (!body.script || !body.visualProfile) {

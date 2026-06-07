@@ -7,7 +7,6 @@ import { useProject } from "@/hooks/useProject";
 import { useStreamingScript } from "@/hooks/useStreamingScript";
 import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
-import { AdminModelPicker } from "@/components/AdminModelPicker";
 import {
   Dialog,
   DialogContent,
@@ -29,7 +28,6 @@ export default function ScriptPage({ params }: PageProps) {
 
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [adminModel, setAdminModel] = useState<string>("");
   const [navigating, setNavigating] = useState(false);
   const [confirmRegen, setConfirmRegen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -65,7 +63,7 @@ export default function ScriptPage({ params }: PageProps) {
 
   async function generateScript(topic: string) {
     setSelectedTopic(topic);
-    await startStreaming(projectId, project?.channel_analysis, topic, { model: adminModel });
+    await startStreaming(projectId, project?.channel_analysis, topic);
   }
 
   async function saveScript() {
@@ -132,7 +130,6 @@ export default function ScriptPage({ params }: PageProps) {
       await startStreaming(projectId, project?.channel_analysis, selectedTopic, {
         mode: "continue",
         startWith: script,
-        model: adminModel,
       });
     } finally {
       setResuming(false);
@@ -240,16 +237,13 @@ export default function ScriptPage({ params }: PageProps) {
                     <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Topic</p>
                     <p className="text-base font-medium text-foreground">{project.selected_topic}</p>
                   </div>
-                  <div className="flex flex-col items-center gap-3">
-                    <AdminModelPicker storageKey="script" label="Script model" onChange={setAdminModel} />
-                    <button
-                      onClick={() => generateScript(project.selected_topic!)}
-                      className="px-8 py-3 rounded-xl text-sm font-semibold"
-                      style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-                    >
-                      Generate Script
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => generateScript(project.selected_topic!)}
+                    className="px-8 py-3 rounded-xl text-sm font-semibold"
+                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                  >
+                    Generate Script
+                  </button>
                 </div>
               ) : (
                 <div className="text-center p-10 space-y-4">
@@ -442,8 +436,7 @@ export default function ScriptPage({ params }: PageProps) {
               This will discard your current script and generate a fresh one. Any manual edits will be lost.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex items-center justify-between gap-3 mt-2">
-            <AdminModelPicker storageKey="script" label="Script model" onChange={setAdminModel} />
+          <div className="flex items-center justify-end gap-3 mt-2">
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmRegen(false)}
