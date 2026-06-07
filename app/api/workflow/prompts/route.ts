@@ -312,17 +312,31 @@ async function generateImages(
   }
 
   // Walk through chunks; skip ones whose end-of-script position is
-  // already covered. We don't try to be exact — script_segments may
-  // not perfectly tile the script — but this is good enough to skip
-  // the bulk of redone work.
+  // already covered. We don't try to be exact — script_segments rarely
+  // tile a chunk's exact word boundary because Claude trims connector
+  // words and merges short clauses. We allow up to a CHUNK_SLACK_WORDS
+  // undershoot before counting a chunk as "needs redo". Without this
+  // a clean stop at 2/8 lands coveredWords at ~950–1000 (sum of chunk
+  // 0+1 beat segments), which is short of chunk 1's 1000-word end —
+  // the resume math then re-queued chunk 1, the seeded progress event
+  // emitted 0/8 (or 1/8), and the user saw "Generating from scratch"
+  // even though most of the work was on disk.
+  //
+  // Note: this is a heuristic. For projects where coverage falls more
+  // than CHUNK_SLACK_WORDS short, a chunk WILL still re-run — and the
+  // resulting beat inserts collide on (project_id, beat_number) only
+  // if nextBeatNumber math collides, which it shouldn't because we
+  // continue from existingBeats.last+1. Duplicates would appear as
+  // beats spanning the same script_segment, not row-conflict errors.
+  // If duplicates show up in practice, switch to an explicit
+  // chunk-completion table instead of this word-count heuristic.
+  const CHUNK_SLACK_WORDS = 100;
   const chunksToProcess: { content: string; chunkIndex: number; totalChunks: number }[] = [];
   let walkedWords = 0;
   for (let i = 0; i < allChunks.length; i++) {
     const chunkWords = allChunks[i].split(/\s+/).filter(Boolean).length;
     const chunkEnd = walkedWords + chunkWords;
-    // Skip if this chunk's end is already covered by existing beats
-    // (with a small slack so near-misses don't force a full redo).
-    if (chunkEnd <= coveredWords - 50) {
+    if (chunkEnd <= coveredWords + CHUNK_SLACK_WORDS) {
       walkedWords = chunkEnd;
       continue;
     }
