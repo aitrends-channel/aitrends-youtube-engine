@@ -1,0 +1,11 @@
+-- Cancellation signal for in-flight prompts generation. Previously the
+-- client nulled prompts_active_run_id on Stop to make the server's next
+-- assertPromptsRunActive throw — but that also wiped the "a run is in
+-- flight" signal the prompts page uses to show the "Generating —
+-- N motion prompts so far" indicator on refresh, leaving the user with
+-- no visual confirmation that the in-flight chunk was still finishing.
+-- Now the client sets this flag and keeps run_id intact; the server
+-- treats the flag as the cancel signal and clears it alongside run_id
+-- when the worker pool actually exits (success path or
+-- releasePromptsRunIfOwned).
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS prompts_stop_requested BOOLEAN DEFAULT FALSE;

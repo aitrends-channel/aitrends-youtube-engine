@@ -46,13 +46,15 @@ type PromptsStep = "images" | "videos";
 
 async function claimPromptsRun(projectId: string, userId: string, step: PromptsStep): Promise<string | null> {
   const runId = randomUUID();
-  // Write both run_id AND step so the client can tell on refresh
-  // which step owns this run. Without prompts_active_step, the
-  // prompts page falsely classified mid-flight video runs as image
-  // resumes whenever image beats were partial.
+  // Write run_id + step + reset stop_requested so the client can tell
+  // on refresh which step owns this run AND so a stale "stop requested"
+  // flag from a prior aborted-but-not-cleaned-up run doesn't
+  // instantly cancel this one. The reset matters because the server
+  // now only clears stop_requested in releasePromptsRunIfOwned — and
+  // that path no-ops if a newer claim races in before it runs.
   const { error } = await supabase
     .from("projects")
-    .update({ prompts_active_run_id: runId, prompts_active_step: step })
+    .update({ prompts_active_run_id: runId, prompts_active_step: step, prompts_stop_requested: false })
     .eq("id", projectId)
     .eq("user_id", userId);
   if (error) {
@@ -69,14 +71,21 @@ async function assertPromptsRunActive(projectId: string, runId: string | null): 
   if (!runId) return;
   const { data, error } = await supabase
     .from("projects")
-    .select("prompts_active_run_id")
+    .select("prompts_active_run_id, prompts_stop_requested")
     .eq("id", projectId)
     .single();
   if (error) {
     console.warn("[prompts-cancel] could not read run id; skipping check", error);
     return;
   }
-  if (!data || data.prompts_active_run_id !== runId) {
+  // Two cancel signals now:
+  //   • run_id mismatch (or null) — a newer claim raced in, or the
+  //     project was wiped — same semantics as before.
+  //   • stop_requested === true — the client asked to stop without
+  //     touching run_id, so the prompts page can keep showing the
+  //     "Generating…" indicator on refresh while the in-flight chunk
+  //     wraps up. Cleared by releasePromptsRunIfOwned at the end.
+  if (!data || data.prompts_active_run_id !== runId || data.prompts_stop_requested === true) {
     throw new Error(CANCELLED_MSG);
   }
 }
@@ -97,9 +106,15 @@ async function releasePromptsRunIfOwned(projectId: string, userId: string, runId
       .eq("id", projectId)
       .single();
     if (data?.prompts_active_run_id !== runId) return;
+    // Clear stop_requested too — the user-initiated cancel path sets
+    // it without touching run_id, expecting this release to wipe both
+    // once the in-flight chunk has actually exited. Without this,
+    // the next claim still trips assertPromptsRunActive's
+    // stop_requested check (claimPromptsRun's reset is a belt-and-
+    // braces complement but shouldn't be the only line of defence).
     await supabase
       .from("projects")
-      .update({ prompts_active_run_id: null, prompts_active_step: null })
+      .update({ prompts_active_run_id: null, prompts_active_step: null, prompts_stop_requested: false })
       .eq("id", projectId)
       .eq("user_id", userId);
   } catch (e) {
@@ -388,7 +403,7 @@ async function generateImages(
     // on next page load and looks like video auto-started.
     const { error: updErr } = await supabase
       .from("projects")
-      .update({ current_state: 14, prompts_script_hash: scriptHash, prompts_active_run_id: null, prompts_active_step: null })
+      .update({ current_state: 14, prompts_script_hash: scriptHash, prompts_active_run_id: null, prompts_active_step: null, prompts_stop_requested: false })
       .eq("id", projectId)
       .eq("user_id", userId);
     if (updErr) console.error(`[image-prompts] noop-path hash write failed project=${projectId}:`, updErr);
@@ -610,7 +625,7 @@ async function generateImages(
 
   const { error: finalUpdErr } = await supabase
     .from("projects")
-    .update({ current_state: 14, prompts_script_hash: scriptHash, prompts_active_run_id: null, prompts_active_step: null })
+    .update({ current_state: 14, prompts_script_hash: scriptHash, prompts_active_run_id: null, prompts_active_step: null, prompts_stop_requested: false })
     .eq("id", projectId)
     .eq("user_id", userId);
   if (finalUpdErr) console.error(`[image-prompts] full-run hash write failed project=${projectId}:`, finalUpdErr);
@@ -656,7 +671,7 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
     send({ type: "status", message: "All video prompts already generated." });
     await supabase
       .from("projects")
-      .update({ prompts_active_run_id: null, prompts_active_step: null })
+      .update({ prompts_active_run_id: null, prompts_active_step: null, prompts_stop_requested: false })
       .eq("id", projectId)
       .eq("user_id", userId);
     send({ type: "done", beatCount: allBeats.length });
@@ -827,7 +842,7 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
 
   await supabase
     .from("projects")
-    .update({ prompts_active_run_id: null, prompts_active_step: null })
+    .update({ prompts_active_run_id: null, prompts_active_step: null, prompts_stop_requested: false })
     .eq("id", projectId)
     .eq("user_id", userId);
   send({ type: "done", beatCount: allBeats.length });

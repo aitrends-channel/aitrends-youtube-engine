@@ -139,6 +139,13 @@ interface StepCardProps {
   title: string;
   description: string;
   state: StepState;
+  /** True when the server-side run is wrapping up after a Stop —
+   *  visually we keep the running shell (progress bar, "Finishing the
+   *  current section…" message) but hide the Stop button and treat the
+   *  action button as a real, clickable "Resume" instead of a disabled
+   *  "Running..." spinner. The card otherwise renders the same as
+   *  status="running". */
+  windingDown?: boolean;
   doneLabel?: string;
   /** Shown in the idle state when partial work was persisted (user
    *  stopped mid-run, or a prior error left beats behind). Lets the
@@ -199,7 +206,7 @@ function RunningCaption({ progress }: { progress?: { current: number; total: num
   );
 }
 
-function StepCard({ num, title, description, state, doneLabel, pendingLabel, disabled, optional, actionLabel, onClear, onStop, onGenerate }: StepCardProps) {
+function StepCard({ num, title, description, state, windingDown, doneLabel, pendingLabel, disabled, optional, actionLabel, onClear, onStop, onGenerate }: StepCardProps) {
   const isRunning = state.status === "running";
   const isDone = state.status === "done";
   const isError = state.status === "error";
@@ -316,7 +323,7 @@ function StepCard({ num, title, description, state, doneLabel, pendingLabel, dis
               Clear
             </button>
           )}
-          {onStop && isRunning && (
+          {onStop && isRunning && !windingDown && (
             <button
               onClick={() => { Promise.resolve(onStop()).catch(() => { /* swallow — UI updates via state */ }); }}
               className="px-3 py-1.5 rounded-lg text-xs font-medium transition-opacity hover:opacity-90"
@@ -327,7 +334,7 @@ function StepCard({ num, title, description, state, doneLabel, pendingLabel, dis
           )}
           <button
             onClick={onGenerate}
-            disabled={disabled || isRunning}
+            disabled={disabled || (isRunning && !windingDown)}
             className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-30 transition-opacity"
             style={
               isDone || isError
@@ -335,7 +342,7 @@ function StepCard({ num, title, description, state, doneLabel, pendingLabel, dis
                 : { background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }
             }
           >
-            {isRunning ? "Running..." : (actionLabel ?? (isDone ? "Regenerate" : isError ? "Retry" : "Generate"))}
+            {(isRunning && !windingDown) ? "Running..." : (actionLabel ?? (windingDown ? "Resume" : isDone ? "Regenerate" : isError ? "Retry" : "Generate"))}
           </button>
         </div>
         {isRunning && <RunningCaption progress={state.progress} />}
@@ -633,6 +640,12 @@ export default function PromptsPage({ params }: PageProps) {
   // user sees a spinner instead of an idle StepCard with a Generate
   // button they could accidentally double-click.
   const remoteRunInProgress = !!project?.prompts_active_run_id;
+  // True from the moment the user clicks Stop until the server's worker
+  // pool exits and releasePromptsRunIfOwned clears the flag (alongside
+  // run_id). While set, the active step is winding down — the running
+  // indicator's message switches to "Finishing the current section…"
+  // so the user doesn't see a misleading "Generating — N more" line.
+  const promptsStopRequested = !!project?.prompts_stop_requested;
   // The route writes prompts_active_step alongside the run id ("images"
   // or "videos") so the client can identify which step actually owns the
   // active run after a page refresh. Without this, a video run on
@@ -764,11 +777,13 @@ export default function PromptsPage({ params }: PageProps) {
     imageStoppedByUser ? IDLE :
     imageRemoteRunning ? {
       status: "running",
-      message: estimatedTotalBeats > 0
-        ? `Generating — ${beats.length} of ~${estimatedTotalBeats} beats generated`
-        : hasImageBeats
-          ? `Generating — ${beats.length} beats so far, still generating`
-          : "Generating — still generating in the background",
+      message: promptsStopRequested
+        ? `Finishing the current section… (${beats.length} ready so far)`
+        : estimatedTotalBeats > 0
+          ? `Generating — ${beats.length} of ~${estimatedTotalBeats} beats generated`
+          : hasImageBeats
+            ? `Generating — ${beats.length} beats so far, still generating`
+            : "Generating — still generating in the background",
       progress: imageProgress,
     } :
     imageStepCompleteOnServer ? { status: "done", message: "" } : IDLE;
@@ -805,9 +820,11 @@ export default function PromptsPage({ params }: PageProps) {
     videoStoppedByUser ? IDLE :
     videoRemoteRunning ? {
       status: "running",
-      message: hasVideoBeats
-        ? `Generating — ${videoBeats.length} motion prompts so far`
-        : "Generating motion prompts in the background…",
+      message: promptsStopRequested
+        ? `Finishing the current section… (${videoBeats.length} ready so far)`
+        : hasVideoBeats
+          ? `Generating — ${videoBeats.length} motion prompts so far`
+          : "Generating motion prompts in the background…",
       progress: beats.length > 0 ? { current: videoBeats.length, total: beats.length } : undefined,
     } :
     videoStepCompleteOnServer ? { status: "done", message: "" } : IDLE;
@@ -1050,8 +1067,17 @@ export default function PromptsPage({ params }: PageProps) {
 
   // Stop handler shared by both StepCards. Two-sided cancellation
   // matching the script step:
-  //   1) Null prompts_active_run_id so the server-side run's next
-  //      assertPromptsRunActive throws and exits cleanly.
+  //   1) Set prompts_stop_requested = true so the server's next
+  //      assertPromptsRunActive throws and exits cleanly. Leave
+  //      prompts_active_run_id alone — the server clears it (and
+  //      the stop flag) in releasePromptsRunIfOwned once the
+  //      in-flight chunk's worker has actually exited. Keeping
+  //      run_id non-null means the prompts page still detects
+  //      videoRemoteRunning / imageRemoteRunning on refresh and
+  //      keeps showing the "Generating — N motion prompts so far"
+  //      (or, when stop_requested is set, "Finishing the current
+  //      section…") indicator instead of falling back to a bare
+  //      partial state with no spinner.
   //   2) Abort the local SSE fetch (if any) so the UI snaps to "stopped"
   //      instantly instead of waiting up to a chunk-cycle for the server
   //      to close the stream.
@@ -1090,7 +1116,7 @@ export default function PromptsPage({ params }: PageProps) {
       await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompts_active_run_id: null, prompts_active_step: null }),
+        body: JSON.stringify({ prompts_stop_requested: true }),
       });
       await mutate();
     } catch {
@@ -1162,6 +1188,7 @@ export default function PromptsPage({ params }: PageProps) {
             title="Image Prompts"
             description="One AI image prompt per script beat, matched to your channel's visual style"
             state={effectiveImage}
+            windingDown={imageRemoteRunning && promptsStopRequested}
             doneLabel={beats.length > 0 ? `${beats.length} beats ready` : undefined}
             pendingLabel={imagePendingLabel}
             actionLabel={imageActionLabel}
@@ -1174,6 +1201,7 @@ export default function PromptsPage({ params }: PageProps) {
             title="Video Prompts"
             description="Camera movement and motion instructions layered on top of each image beat"
             state={effectiveVideo}
+            windingDown={videoRemoteRunning && promptsStopRequested}
             doneLabel={videoBeats.length > 0 ? `${videoBeats.length} beats ready` : undefined}
             pendingLabel={videoPendingLabel}
             actionLabel={videoActionLabel}
