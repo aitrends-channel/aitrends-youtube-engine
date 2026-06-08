@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect, useRef, use } from "react";
+import { useState, useEffect, useRef, use, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
@@ -142,8 +142,10 @@ interface StepCardProps {
   doneLabel?: string;
   /** Shown in the idle state when partial work was persisted (user
    *  stopped mid-run, or a prior error left beats behind). Lets the
-   *  user see "138 generated, ~92 remaining" before clicking Resume. */
-  pendingLabel?: string;
+   *  user see "138 ready, ~92 remaining" before clicking Resume.
+   *  ReactNode (not string) so the caller can colour the "ready" half
+   *  green and the "remaining" half orange in one composed label. */
+  pendingLabel?: ReactNode;
   disabled?: boolean;
   optional?: boolean;
   /** Custom button label for non-running, non-done states (e.g. "Generate Remaining 9"). */
@@ -294,7 +296,7 @@ function StepCard({ num, title, description, state, doneLabel, pendingLabel, dis
           <p className="text-xs" style={{ color: "oklch(0.6 0.15 145)" }}>{doneLabel}</p>
         )}
         {!isRunning && !isDone && !isError && pendingLabel && (
-          <p className="text-xs" style={{ color: "oklch(0.65 0.15 75)" }}>{pendingLabel}</p>
+          <p className="text-xs">{pendingLabel}</p>
         )}
         {isError && (
           <p className="text-xs leading-relaxed" style={{ color: "oklch(0.65 0.15 25)" }}>{state.error}</p>
@@ -447,6 +449,14 @@ interface PageProps {
 
 const IDLE: StepState = { status: "idle", message: "" };
 
+// Window for showing the "still finishing the in-flight section…"
+// spinner after the user clicks Stop. Chosen well above the typical
+// chunk wall time (8-15s for video, 30-60s for image) so a slow chunk
+// still has the spinner visible when it lands. After this elapses we
+// hide the spinner even if no new beats showed up — likely means the
+// chunk errored and won't persist; the user can click Resume.
+const STOP_GRACE_MS = 90_000;
+
 export default function PromptsPage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
@@ -479,6 +489,18 @@ export default function PromptsPage({ params }: PageProps) {
   // (Resume kicks off a new run; Clear wipes state).
   const [imageStoppedByUser, setImageStoppedByUser] = useState(false);
   const [videoStoppedByUser, setVideoStoppedByUser] = useState(false);
+  // Snapshot of the persisted beat count at the moment the user clicked
+  // Stop, plus the time the click happened. While the in-flight chunk
+  // is still wrapping up server-side (route lets it complete and
+  // persist — see route.ts processChunk for video), the UI shows a
+  // spinner + "Finishing the current section…" caption next to the
+  // partial label so the user knows the visible counts will tick up
+  // shortly. Cleared when either (a) the snapshot count is exceeded
+  // by SWR-refreshed beats (chunk landed) or (b) STOP_GRACE_MS
+  // elapses (safety net for a chunk that errored out and never
+  // persisted). Also cleared on Resume.
+  const [imageStopState, setImageStopState] = useState<{ stoppedAt: number; snapshot: number } | null>(null);
+  const [videoStopState, setVideoStopState] = useState<{ stoppedAt: number; snapshot: number } | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("beats");
   const [navigating, setNavigating] = useState(false);
   // Per-step AbortControllers so the user's Stop click can kill the
@@ -496,6 +518,48 @@ export default function PromptsPage({ params }: PageProps) {
   const beats: Beat[] = project?.beats ?? [];
   const videoBeats = beats.filter((b) => b.videoPrompt);
 
+  // Clear the stop-grace snapshot once the in-flight chunk lands
+  // (current beats outnumber the snapshot — SWR polls every 5s).
+  // Image step uses total beats; video step uses video-prompted beats.
+  // If the chunk landing also closes out the run (every beat now has
+  // its prompt), also clear the user-stopped sticky so the StepCard
+  // can transition from "Resume" → "Done" instead of looking frozen
+  // in the stopped state. mutate() is called for a fresh re-read so
+  // any derived server fields (e.g. current_state for image) catch
+  // up immediately without waiting another SWR tick.
+  useEffect(() => {
+    if (imageStopState && beats.length > imageStopState.snapshot) {
+      setImageStopState(null);
+      void mutate();
+      if (beats.length > 0 && beats.every((b) => !!b.imagePrompt)) {
+        setImageStoppedByUser(false);
+      }
+    }
+  }, [beats, beats.length, imageStopState, mutate]);
+  useEffect(() => {
+    if (videoStopState && videoBeats.length > videoStopState.snapshot) {
+      setVideoStopState(null);
+      void mutate();
+      if (beats.length > 0 && videoBeats.length === beats.length) {
+        setVideoStoppedByUser(false);
+      }
+    }
+  }, [videoBeats.length, videoStopState, beats.length, mutate]);
+
+  // Safety net: hide the spinner after STOP_GRACE_MS even if no new
+  // beats arrived (the in-flight chunk errored out and won't persist).
+  // The user can click Resume to retry from where we left off.
+  useEffect(() => {
+    if (!imageStopState) return;
+    const t = setTimeout(() => setImageStopState(null), STOP_GRACE_MS);
+    return () => clearTimeout(t);
+  }, [imageStopState]);
+  useEffect(() => {
+    if (!videoStopState) return;
+    const t = setTimeout(() => setVideoStopState(null), STOP_GRACE_MS);
+    return () => clearTimeout(t);
+  }, [videoStopState]);
+
   const hasImageBeats = beats.length > 0;
   const hasVideoBeats = videoBeats.length > 0;
 
@@ -505,12 +569,62 @@ export default function PromptsPage({ params }: PageProps) {
   // where we left off. The action label always reflects that, even
   // when zero work has been saved yet (first-chunk failure).
   const videoRemaining = beats.length > 0 ? beats.length - videoBeats.length : 0;
+  // Video step's resume / pending UX mirrors the image side. Resumable
+  // when (a) there are partial video prompts and image beats still
+  // exist to anchor against, or (b) the user explicitly clicked Stop
+  // — even with zero video prompts yet, the in-flight chunk will
+  // persist (mirror of the image-side guarantee) and Resume must be
+  // visible so they can pick the work back up.
+  const videoStepResumable =
+    (hasImageBeats && videoRemaining > 0 && hasVideoBeats) || videoStoppedByUser;
   // Video resume requires image beats to actually exist on the server.
   // If they were cleared or never generated, fall back to the plain
   // "Retry" so users don't fire a request that can't possibly succeed.
   const videoActionLabel = videoStep.status === "error" && videoRemaining > 0 && hasImageBeats
     ? `Generate Remaining ${videoRemaining}`
+    : (videoStepResumable && videoStep.status === "idle")
+    ? "Resume"
     : null;
+  // Status line for the stopped / partial state — exact counts here
+  // (unlike image which estimates from script word count) because the
+  // total is known: it's the number of image beats. Three flavors,
+  // matching imagePendingLabel:
+  //  • no video prompts yet (Stop fired before any chunk landed) →
+  //    "0 ready, first segment still processing"
+  //  • partial video prompts → "X ready, Y remaining"
+  //  • totals unknown (no image beats at all) → bare "X ready"
+  // The "ready" half renders green to mirror the doneLabel colour
+  // (same green as the StepCard's done state), the "remaining" half
+  // stays in the warm pendingLabel orange. When the user just clicked
+  // Stop, a spinner + "Finishing the current section…" caption is
+  // appended (gap 40px) so they know the in-flight chunk's beats are
+  // still inbound — see videoStopState above.
+  const videoInFlightStillRunning = videoStopState !== null;
+  const inFlightIndicator = (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "8px", color: "var(--c-50)" }}>
+      <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" aria-hidden />
+      <span>Finishing the current section…</span>
+    </span>
+  );
+  const videoPendingLabel: ReactNode = videoStepResumable
+    ? !hasVideoBeats
+      ? <span style={{ display: "inline-flex", alignItems: "center", gap: "40px", flexWrap: "wrap" }}>
+          <span style={{ color: "oklch(0.65 0.15 75)" }}>0 ready, first segment still processing</span>
+          {videoInFlightStillRunning && inFlightIndicator}
+        </span>
+      : beats.length > 0
+        ? <span style={{ display: "inline-flex", alignItems: "center", gap: "40px", flexWrap: "wrap" }}>
+            <span>
+              <span style={{ color: "oklch(0.6 0.15 145)" }}>{`${videoBeats.length} ready`}</span>
+              <span style={{ color: "oklch(0.65 0.15 75)" }}>{`, ${videoRemaining} remaining`}</span>
+            </span>
+            {videoInFlightStillRunning && inFlightIndicator}
+          </span>
+        : <span style={{ display: "inline-flex", alignItems: "center", gap: "40px", flexWrap: "wrap" }}>
+            <span style={{ color: "oklch(0.6 0.15 145)" }}>{`${videoBeats.length} ready`}</span>
+            {videoInFlightStillRunning && inFlightIndicator}
+          </span>
+    : undefined;
 
   // Server-side run flag — set when ANY prompts generation is in flight
   // (image OR video). On a fresh page load after refresh/nav-away, local
@@ -519,6 +633,13 @@ export default function PromptsPage({ params }: PageProps) {
   // user sees a spinner instead of an idle StepCard with a Generate
   // button they could accidentally double-click.
   const remoteRunInProgress = !!project?.prompts_active_run_id;
+  // The route writes prompts_active_step alongside the run id ("images"
+  // or "videos") so the client can identify which step actually owns the
+  // active run after a page refresh. Without this, a video run on
+  // partial image beats was misclassified as an image resume — image
+  // beats incomplete + run id set used to be sufficient to flag the
+  // image step as running.
+  const remoteStep = (project?.prompts_active_step as "images" | "videos" | null | undefined) ?? null;
   // True image-step completion lives in `current_state >= 14` — the route
   // only writes that after the final chunk finishes and every beat has
   // an image_prompt. `beats.every(b => !!b.imagePrompt)` alone is NOT a
@@ -530,17 +651,30 @@ export default function PromptsPage({ params }: PageProps) {
     (project?.current_state ?? 0) >= 14
     && hasImageBeats
     && beats.every((b) => !!b.imagePrompt);
-  // No local activity but a server run is going AND image isn't yet
-  // marked complete → must be the image step running. SWR's 5s refresh
-  // (see useProject) is what eventually flips this off.
-  //
-  // Note: we deliberately do NOT derive a `videoRemoteRunning` flag.
-  // `prompts_active_run_id` is shared between the image and video
-  // routes — there's no way to tell which step claimed it from the
-  // client. The video step only enters a running state via an explicit
-  // local click.
+  // Symmetric check for the video step. Without this the effectiveVideo
+  // fallback (below) treated *any* video beat as full completion and
+  // hid the "N generated, M remaining" pendingLabel on page refresh
+  // after a partial Stop — the StepCard would show "X beats ready"
+  // instead of the partial-progress label the image step shows. True
+  // completion = there's an image beat for every video beat AND every
+  // image beat has a video prompt. Video step doesn't touch
+  // current_state (only the image step does), so the gate is just
+  // counts + presence.
+  const videoStepCompleteOnServer =
+    hasImageBeats
+    && hasVideoBeats
+    && videoBeats.length === beats.length;
+  // No local activity but a server run is going AND the active step is
+  // image → the image route is the one running. SWR's 5s refresh
+  // eventually clears this when the run finishes and the route nulls
+  // prompts_active_run_id + prompts_active_step.
   const imageRemoteRunning =
-    remoteRunInProgress && imageStep.status === "idle" && videoStep.status === "idle" && !imageStepCompleteOnServer;
+    remoteRunInProgress && remoteStep === "images" && imageStep.status === "idle" && videoStep.status === "idle";
+  // Symmetric flag for the video step. Re-introduced safely now that
+  // prompts_active_step disambiguates which run is going — previously
+  // we couldn't derive this without false positives.
+  const videoRemoteRunning =
+    remoteRunInProgress && remoteStep === "videos" && imageStep.status === "idle" && videoStep.status === "idle";
 
   // Partial work the user can resume — beats already persisted but the
   // step never reached the server's "complete" mark (current_state >= 14),
@@ -584,21 +718,40 @@ export default function PromptsPage({ params }: PageProps) {
     : undefined;
   // When the step is resumable surface a status line so the user can
   // see the work-so-far before deciding Resume vs Clear. Three flavors:
-  //  • beats persisted → "N generated, ~M remaining"
+  //  • beats persisted → "N ready, ~M remaining"
   //  • stopped before any beats landed, in-flight chunk likely still
-  //    finishing server-side → "0 generated, first segment still
+  //    finishing server-side → "0 ready, first segment still
   //    processing". SWR's 5s poll picks up the chunk's beats when
   //    they land and the label flips to the first variant.
-  //  • no script word_count yet → bare "N generated"
+  //  • no script word_count yet → bare "N ready"
   // estimatedTotalBeats is approximate (~1 beat per 12 script words),
   // so the remaining count is prefixed with "~" — accurate enough to
-  // be useful, honest enough not to mislead.
-  const imagePendingLabel = imageStepResumable
+  // be useful, honest enough not to mislead. The "ready" half is green
+  // (matches the doneLabel colour); the "remaining" half stays orange.
+  // Same in-flight indicator logic as the video step (see comment
+  // above videoPendingLabel) — when the user just clicked Stop the
+  // last image chunk is still wrapping up server-side and persisting
+  // its beats; show the spinner + caption so the user knows the
+  // counts will tick up shortly.
+  const imageInFlightStillRunning = imageStopState !== null;
+  const imagePendingLabel: ReactNode = imageStepResumable
     ? !hasImageBeats
-      ? "0 generated, first segment still processing"
+      ? <span style={{ display: "inline-flex", alignItems: "center", gap: "40px", flexWrap: "wrap" }}>
+          <span style={{ color: "oklch(0.65 0.15 75)" }}>0 ready, first segment still processing</span>
+          {imageInFlightStillRunning && inFlightIndicator}
+        </span>
       : estimatedTotalBeats > 0
-        ? `${beats.length} generated, ~${Math.max(0, estimatedTotalBeats - beats.length)} remaining`
-        : `${beats.length} generated`
+        ? <span style={{ display: "inline-flex", alignItems: "center", gap: "40px", flexWrap: "wrap" }}>
+            <span>
+              <span style={{ color: "oklch(0.6 0.15 145)" }}>{`${beats.length} ready`}</span>
+              <span style={{ color: "oklch(0.65 0.15 75)" }}>{`, ~${Math.max(0, estimatedTotalBeats - beats.length)} remaining`}</span>
+            </span>
+            {imageInFlightStillRunning && inFlightIndicator}
+          </span>
+        : <span style={{ display: "inline-flex", alignItems: "center", gap: "40px", flexWrap: "wrap" }}>
+            <span style={{ color: "oklch(0.6 0.15 145)" }}>{`${beats.length} ready`}</span>
+            {imageInFlightStillRunning && inFlightIndicator}
+          </span>
     : undefined;
 
   // Derive effective step state: prefer live state, then server-side
@@ -640,10 +793,24 @@ export default function PromptsPage({ params }: PageProps) {
         }
       : baseImage;
 
+  // Mirror of effectiveImage's derivation. videoRemoteRunning fires
+  // when the server has a video run active (run_id + step="videos")
+  // and local state is idle — i.e. the user refreshed mid-run. We
+  // intentionally don't synthesize a beats-based progress here
+  // because video chunks are small (5 beats each) and the route's
+  // first progress event lands within a few seconds; the bar
+  // backfills naturally.
   const effectiveVideo: StepState =
     videoStep.status !== "idle" ? videoStep :
     videoStoppedByUser ? IDLE :
-    hasVideoBeats ? { status: "done", message: "" } : IDLE;
+    videoRemoteRunning ? {
+      status: "running",
+      message: hasVideoBeats
+        ? `Generating — ${videoBeats.length} motion prompts so far`
+        : "Generating motion prompts in the background…",
+      progress: beats.length > 0 ? { current: videoBeats.length, total: beats.length } : undefined,
+    } :
+    videoStepCompleteOnServer ? { status: "done", message: "" } : IDLE;
 
   async function runImageStep() {
     if (!project?.script || !project?.visual_profile) {
@@ -652,8 +819,11 @@ export default function PromptsPage({ params }: PageProps) {
     }
     // User picked Resume (or Generate). Clear the "stopped" sticky so
     // the derived state reflects the new run rather than the prior
-    // user-initiated stop.
+    // user-initiated stop. Also clear the stop-grace snapshot so the
+    // "Finishing the current section…" spinner doesn't reappear from
+    // an earlier Stop.
     setImageStoppedByUser(false);
+    setImageStopState(null);
     setImageStep({ status: "running", message: "Starting..." });
     imageAbortRef.current = new AbortController();
     try {
@@ -843,6 +1013,9 @@ export default function PromptsPage({ params }: PageProps) {
       return;
     }
     setVideoStoppedByUser(false);
+    // Mirrors runImageStep: clear the stop-grace snapshot so the
+    // "Finishing the current section…" spinner doesn't carry over.
+    setVideoStopState(null);
     setVideoStep({ status: "running", message: "Starting..." });
     videoAbortRef.current = new AbortController();
     try {
@@ -903,16 +1076,21 @@ export default function PromptsPage({ params }: PageProps) {
     if (wasImageActive) {
       setImageStep(IDLE);
       setImageStoppedByUser(true);
+      // Snapshot the beat count NOW so the "in-flight section still
+      // finishing" spinner can hide itself the moment the in-flight
+      // chunk's beats land (current beats.length will exceed snapshot).
+      setImageStopState({ stoppedAt: Date.now(), snapshot: beats.length });
     }
     if (wasVideoActive) {
       setVideoStep(IDLE);
       setVideoStoppedByUser(true);
+      setVideoStopState({ stoppedAt: Date.now(), snapshot: videoBeats.length });
     }
     try {
       await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompts_active_run_id: null }),
+        body: JSON.stringify({ prompts_active_run_id: null, prompts_active_step: null }),
       });
       await mutate();
     } catch {
@@ -997,6 +1175,7 @@ export default function PromptsPage({ params }: PageProps) {
             description="Camera movement and motion instructions layered on top of each image beat"
             state={effectiveVideo}
             doneLabel={videoBeats.length > 0 ? `${videoBeats.length} beats ready` : undefined}
+            pendingLabel={videoPendingLabel}
             actionLabel={videoActionLabel}
             onClear={hasVideoBeats ? () => setClearTarget("video") : null}
             onStop={handleStopPrompts}
@@ -1104,7 +1283,7 @@ export default function PromptsPage({ params }: PageProps) {
                 <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 Loading…
               </span>
-            ) : "Generate →"}
+            ) : "Continue →"}
           </button>
           </div>
         </div>

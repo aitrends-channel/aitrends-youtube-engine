@@ -88,7 +88,7 @@ export async function PATCH(
     if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
     await supabase
       .from("projects")
-      .update({ prompts_active_run_id: null })
+      .update({ prompts_active_run_id: null, prompts_active_step: null })
       .eq("id", projectId)
       .eq("user_id", user.id);
     return NextResponse.json({ success: true });
@@ -103,7 +103,7 @@ export async function PATCH(
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
     await supabase
       .from("projects")
-      .update({ prompts_active_run_id: null })
+      .update({ prompts_active_run_id: null, prompts_active_step: null })
       .eq("id", projectId)
       .eq("user_id", user.id);
     return NextResponse.json({ success: true });

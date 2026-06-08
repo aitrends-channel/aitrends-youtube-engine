@@ -42,11 +42,17 @@ function assertComplete(stopReason: string | null | undefined, label: string) {
 // rather than a real failure.
 const CANCELLED_MSG = "Prompts generation was cancelled — the step was cleared while in flight.";
 
-async function claimPromptsRun(projectId: string, userId: string): Promise<string | null> {
+type PromptsStep = "images" | "videos";
+
+async function claimPromptsRun(projectId: string, userId: string, step: PromptsStep): Promise<string | null> {
   const runId = randomUUID();
+  // Write both run_id AND step so the client can tell on refresh
+  // which step owns this run. Without prompts_active_step, the
+  // prompts page falsely classified mid-flight video runs as image
+  // resumes whenever image beats were partial.
   const { error } = await supabase
     .from("projects")
-    .update({ prompts_active_run_id: runId })
+    .update({ prompts_active_run_id: runId, prompts_active_step: step })
     .eq("id", projectId)
     .eq("user_id", userId);
   if (error) {
@@ -93,7 +99,7 @@ async function releasePromptsRunIfOwned(projectId: string, userId: string, runId
     if (data?.prompts_active_run_id !== runId) return;
     await supabase
       .from("projects")
-      .update({ prompts_active_run_id: null })
+      .update({ prompts_active_run_id: null, prompts_active_step: null })
       .eq("id", projectId)
       .eq("user_id", userId);
   } catch (e) {
@@ -253,7 +259,7 @@ async function generateImages(
   model: string
 ) {
   console.log(`[image-prompts] start project=${projectId} scriptWords=${script.trim().split(/\s+/).filter(Boolean).length}`);
-  const runId = await claimPromptsRun(projectId, userId);
+  const runId = await claimPromptsRun(projectId, userId, "images");
   // Walk current_state back to "prompts step in progress" (13) so the
   // client can distinguish a fresh image-regen from a fully completed
   // image step. Without this, after a prior successful run left
@@ -382,7 +388,7 @@ async function generateImages(
     // on next page load and looks like video auto-started.
     const { error: updErr } = await supabase
       .from("projects")
-      .update({ current_state: 14, prompts_script_hash: scriptHash, prompts_active_run_id: null })
+      .update({ current_state: 14, prompts_script_hash: scriptHash, prompts_active_run_id: null, prompts_active_step: null })
       .eq("id", projectId)
       .eq("user_id", userId);
     if (updErr) console.error(`[image-prompts] noop-path hash write failed project=${projectId}:`, updErr);
@@ -604,7 +610,7 @@ async function generateImages(
 
   const { error: finalUpdErr } = await supabase
     .from("projects")
-    .update({ current_state: 14, prompts_script_hash: scriptHash, prompts_active_run_id: null })
+    .update({ current_state: 14, prompts_script_hash: scriptHash, prompts_active_run_id: null, prompts_active_step: null })
     .eq("id", projectId)
     .eq("user_id", userId);
   if (finalUpdErr) console.error(`[image-prompts] full-run hash write failed project=${projectId}:`, finalUpdErr);
@@ -617,7 +623,7 @@ async function generateImages(
 
 // ── Step 2: Video prompts ──────────────────────────────────────────────────
 async function generateVideos(projectId: string, userId: string, send: (data: object) => void, model: string) {
-  const runId = await claimPromptsRun(projectId, userId);
+  const runId = await claimPromptsRun(projectId, userId, "videos");
   try {
   const anthropic = await getAnthropicClient(userId, "video_prompts");
   send({ type: "status", message: "Loading beats..." });
@@ -650,7 +656,7 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
     send({ type: "status", message: "All video prompts already generated." });
     await supabase
       .from("projects")
-      .update({ prompts_active_run_id: null })
+      .update({ prompts_active_run_id: null, prompts_active_step: null })
       .eq("id", projectId)
       .eq("user_id", userId);
     send({ type: "done", beatCount: allBeats.length });
@@ -759,10 +765,16 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
     }
     const chunkBeats = parsed.data.beats;
 
-    await assertPromptsRunActive(projectId, runId);
-
-    // Persist this chunk's video prompts immediately so a later failure
-    // doesn't undo this chunk's work.
+    // Intentionally NO assertPromptsRunActive here — once Claude has
+    // returned video prompts, always persist them. A user who clicked
+    // Stop mid-Claude-call still gets credit for the work that was
+    // already paid for (KIE/Anthropic charged us regardless). The
+    // next-chunk assert at the top of processChunk still prevents
+    // follow-on chunks from starting, and with CONCURRENCY=5 the
+    // worst case is 5 in-flight chunks landing after Stop — far
+    // better to save those beats than discard them and force the
+    // user to regenerate (and re-pay) on the next run. Mirrors the
+    // image step's policy at the persist boundary.
     await Promise.all(
       chunkBeats.map((b) =>
         supabase
@@ -774,12 +786,17 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
     );
   }
 
-  // Bounded concurrency: run up to CONCURRENCY chunks in parallel. The
-  // Claude call (30-60s) dominates each chunk's wall time, so 5 in
-  // flight collapses ~5× of the total. Persistence is a fast DB
-  // upsert and happens inside processChunk, so no global ordering lock
-  // is needed. retryClaudeCall absorbs any 429s if we trip a rate cap.
-  const CONCURRENCY = 5;
+  // Strict sequential processing — one chunk in flight at a time.
+  // Mirrors the image step's choice (see processChunk above): a user-
+  // clicked Stop should have a well-defined "current chunk" to finish
+  // and a predictable resume point. With parallel workers, Stop wastes
+  // up to CONCURRENCY × CHUNK_SIZE beats of KIE compute that we either
+  // discard or commit to without the user's intent. Serial means Stop
+  // wastes at most one chunk (≤5 beats). Wall-time cost is real
+  // (~3-5 min on a 20-chunk project vs ~60s parallel) but bounded —
+  // video chunks emit ~250 output tokens and finish in 8-15s.
+  // retryClaudeCall absorbs any 429s.
+  const CONCURRENCY = 1;
   let nextIdx = 0;
   let completed = 0;
   let firstError: Error | null = null;
@@ -810,7 +827,7 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
 
   await supabase
     .from("projects")
-    .update({ prompts_active_run_id: null })
+    .update({ prompts_active_run_id: null, prompts_active_step: null })
     .eq("id", projectId)
     .eq("user_id", userId);
   send({ type: "done", beatCount: allBeats.length });
