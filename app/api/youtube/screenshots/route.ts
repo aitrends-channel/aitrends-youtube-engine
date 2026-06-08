@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { supabase } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
 interface VideoInput {
@@ -53,11 +54,16 @@ export async function POST(req: Request) {
     const wantFrames = want.has("frames");
     const wantThumbs = want.has("thumbnails");
 
-    // Frame stills are heavy (3 per video → cap at 3 videos = 9 frames,
-    // well within the vision-analysis 10-image budget). Thumbnail-only
-    // calls are light (1 image per video) so we pull 5 from the top of
-    // the channel's view-count list.
-    const MAX_VIDEOS = wantFrames ? 3 : 5;
+    // Frame stills: 2 per video × 10 videos = 20 frames. Picks the
+    // first and third of YouTube's three auto-sampled thumbnails
+    // (1.jpg ≈ ~25%, 3.jpg ≈ ~75% of the video) for wider temporal
+    // spread than two adjacent frames would give. The vision-analysis
+    // route's MAX_VIDEO_IMAGES is bumped to 20 to actually consume all
+    // captured frames. Thumbnail-only calls are light (1 image per
+    // video) so we still pull 5 from the top of the channel's
+    // view-count list.
+    const MAX_VIDEOS = wantFrames ? 10 : 5;
+    const FRAME_INDICES = [1, 3] as const;
     const limitedVideos = videos.slice(0, MAX_VIDEOS);
     const userFolder = userFolderFor(user);
 
@@ -72,7 +78,7 @@ export async function POST(req: Request) {
           : "";
 
         const frameUrls = wantFrames
-          ? (await Promise.all([1, 2, 3].map((n) =>
+          ? (await Promise.all(FRAME_INDICES.map((n) =>
               tryUpload(`${base}-frame-${n}.jpg`, `https://img.youtube.com/vi/${videoId}/${n}.jpg`)
             ))).filter((u): u is string => u !== null)
           : [];
@@ -80,6 +86,21 @@ export async function POST(req: Request) {
         return { videoId, title, thumbnailUrl, frameUrls };
       })
     );
+
+    // Persist the frame-capture results to the project so the visuals
+    // page can re-hydrate the grid on refresh. Only write on frame
+    // fetches — thumbnail-only calls (Thumbnails step) don't belong on
+    // this column. Best-effort: a write failure here doesn't undo the
+    // R2 uploads or fail the request — the client still gets the
+    // URLs, and the user just loses the refresh-resume convenience.
+    if (wantFrames) {
+      const { error: updErr } = await supabase
+        .from("projects")
+        .update({ auto_frames: results })
+        .eq("id", projectId)
+        .eq("user_id", user.id);
+      if (updErr) console.warn("[screenshots] failed to persist auto_frames", updErr);
+    }
 
     return NextResponse.json({ screenshots: results });
   } catch (err) {

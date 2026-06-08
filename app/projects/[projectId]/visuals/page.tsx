@@ -138,6 +138,24 @@ export default function VisualsPage({ params }: PageProps) {
     if (project?.visual_profile) setVisualProfile(project.visual_profile);
   }, [project]);
 
+  // Re-hydrate the auto-captured frames grid from the project record
+  // on first load (and any refresh). The screenshots route now writes
+  // results to projects.auto_frames, so the grid + selection survive
+  // a browser reload instead of going blank until the user re-fetches.
+  // Only hydrate when local state is empty so an in-progress fetch
+  // (or the user deselecting frames) isn't clobbered by an SWR poll.
+  useEffect(() => {
+    if (autoShots.length > 0) return;
+    const persisted = project?.auto_frames as AutoShot[] | undefined;
+    if (!persisted?.length) return;
+    setAutoShots(persisted);
+    const allFrames = new Set<string>();
+    for (const shot of persisted) {
+      for (const f of shot.frameUrls) allFrames.add(f);
+    }
+    setSelectedImages(allFrames);
+  }, [project?.auto_frames, autoShots.length]);
+
   const topVideos: { videoId: string; title: string }[] =
     (project?.channel_info as { topVideos?: { videoId: string; title: string }[] } | undefined)?.topVideos ?? [];
 
@@ -309,7 +327,7 @@ export default function VisualsPage({ params }: PageProps) {
                   <div>
                     <p className="font-semibold text-sm">Auto-capture from Channel Videos</p>
                     <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                      Fetches 3 frame stills from each of the top {topVideos.length || "10"} videos
+                      Fetches 2 frame stills from each of the top {topVideos.length || "10"} videos
                     </p>
                   </div>
                   <button
@@ -333,7 +351,7 @@ export default function VisualsPage({ params }: PageProps) {
                 {!autoShots.length && !fetching && (
                   <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {[
-                      { icon: "◈", label: "Video frame stills", desc: "3 auto-frames from ~25%, 50%, 75% of each video" },
+                      { icon: "◈", label: "Video frame stills", desc: "2 auto-frames from ~25% and ~75% of each video" },
                       { icon: "✦", label: "Style extraction", desc: "Analyzes colors, lighting, mood, and composition" },
                     ].map((item) => (
                       <div key={item.label} className="p-3 rounded-xl"

@@ -29,7 +29,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "At least one image URL is required" }, { status: 400 });
     }
 
-    const MAX_VIDEO_IMAGES = 10;
+    // Bumped from 10 → 20 to consume all 2-frame × 10-video stills the
+    // screenshots route now captures. Claude vision tokens are ~1.6k
+    // each at high-res, so 20 images ≈ 32k input tokens — manageable
+    // for a one-shot analysis call.
+    const MAX_VIDEO_IMAGES = 20;
     const cappedVideoImages = hasVideo ? (videoImageUrls as string[]).slice(0, MAX_VIDEO_IMAGES) : [];
 
     const imageBlocks = [
