@@ -24,14 +24,22 @@ const KEY_FIELDS: KeyField[] = [
     description: "Powers everything: script generation & channel analysis, TTS voiceover, plus image and video generation — all through one provider",
     placeholder: "kie-…",
   },
+  {
+    key: "elevenlabs_api_key",
+    label: "ElevenLabs API Key",
+    description: "Used by the assembler for speech-to-text alignment (matches each beat to the spoken word timestamps) and caption generation. Optional — falls back to the platform default if left blank.",
+    placeholder: "sk_…",
+  },
 ];
 
 interface FormState {
   kie_api_key: string;
+  elevenlabs_api_key: string;
 }
 
 const EMPTY_FORM: FormState = {
   kie_api_key: "",
+  elevenlabs_api_key: "",
 };
 
 function AddUserSection() {

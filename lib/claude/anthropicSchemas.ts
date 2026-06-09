@@ -129,7 +129,10 @@ const thumbnailItem = {
 export const thumbnailsInputSchema = {
   type: "object" as const,
   properties: {
-    thumbnails: { type: "array", items: thumbnailItem },
+    // EXACTLY 5 thumbnails — enforced via minItems/maxItems so Claude
+    // can't drift to 3 or 4 (which silently breaks the downstream
+    // image-generation step that maps 1:1 from concepts to images).
+    thumbnails: { type: "array", items: thumbnailItem, minItems: 5, maxItems: 5 },
   },
   required: ["thumbnails"],
 };

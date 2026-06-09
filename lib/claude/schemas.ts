@@ -123,7 +123,9 @@ export const VideoPromptsSchema = z.object({
 });
 
 export const ThumbnailsOutputSchema = z.object({
-  thumbnails: z.array(ThumbnailConceptSchema),
+  // Belt-and-braces with the Anthropic input_schema's minItems/maxItems —
+  // a second guard so a bad model can't sneak fewer than 5 through.
+  thumbnails: z.array(ThumbnailConceptSchema).length(5),
 });
 
 export type ChannelAnalysisOutput = z.infer<typeof ChannelAnalysisSchema>;

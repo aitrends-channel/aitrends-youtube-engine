@@ -881,6 +881,12 @@ async function generateThumbnails(
   if (!tool || tool.type !== "tool_use") throw new Error("No thumbnails returned from Claude");
 
   const { thumbnails } = ThumbnailsOutputSchema.parse(tool.input);
+  // Defensive double-check on top of the Zod .length(5) and the
+  // input_schema's minItems/maxItems — if any of those fail open
+  // we still catch it here rather than silently saving a short set.
+  if (thumbnails.length !== 5) {
+    throw new Error(`Expected exactly 5 thumbnail concepts but got ${thumbnails.length}. Retry — Claude occasionally returns a short list.`);
+  }
 
   await supabase.from("project_thumbnails").delete().eq("project_id", projectId);
   await supabase.from("project_thumbnails").insert(

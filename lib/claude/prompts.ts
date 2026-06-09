@@ -374,8 +374,7 @@ Composition: ${visualProfile.composition}
 Mood: ${visualProfile.mood}
 Detail: ${visualProfile.detailLevel}`;
 
-  const maxThumbnails = parseInt(process.env.MAX_THUMBNAILS ?? "5", 10);
-  return `Generate ${maxThumbnails} YouTube thumbnail concepts for this video.
+  return `Generate EXACTLY 5 YouTube thumbnail concepts for this video. Not 3, not 4, not 6 — exactly 5. The downstream image-generation step assumes 5 concepts and will fail if any are missing.
 
 SCRIPT SUMMARY (first 300 words):
 ${script.split(" ").slice(0, 300).join(" ")}...
@@ -390,7 +389,7 @@ ${thumbnailAnalysis ? `THUMBNAIL ANALYSIS (match this channel's thumbnail style 
 - Emotion triggers: ${thumbnailAnalysis.emotionTriggers.join(", ")}` : "Match the channel's visual style."}
 
 RULES:
-- ${maxThumbnails} thumbnail concepts, positions 1-${maxThumbnails}
+- EXACTLY 5 thumbnail concepts, positions 1, 2, 3, 4, and 5 (no gaps, no duplicates)
 - Each must create immediate curiosity or strong emotion
 - Vary the approaches: close-up face, dramatic scene, text-heavy, before/after, reaction shot, etc.
 

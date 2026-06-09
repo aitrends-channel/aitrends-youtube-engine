@@ -19,6 +19,7 @@ export async function GET() {
     const s = await getSettings(user.id);
     return NextResponse.json({
       kie_api_key: mask(s.kie_api_key),
+      elevenlabs_api_key: mask(s.elevenlabs_api_key),
     });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to load settings" }, { status: 500 });
@@ -32,10 +33,12 @@ export async function POST(req: Request) {
   try {
     const body = await req.json() as Partial<{
       kie_api_key: string;
+      elevenlabs_api_key: string;
     }>;
 
     const update: Record<string, string> = {};
     if (body.kie_api_key?.trim()) update.kie_api_key = body.kie_api_key.trim();
+    if (body.elevenlabs_api_key?.trim()) update.elevenlabs_api_key = body.elevenlabs_api_key.trim();
 
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ error: "No keys provided" }, { status: 400 });
