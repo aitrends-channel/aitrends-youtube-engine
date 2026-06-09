@@ -78,6 +78,27 @@ export async function createPresignedUpload(
   return { uploadUrl, publicUrl: `${PUBLIC_URL}/${path}` };
 }
 
+// Best-effort delete of a single object by R2 key. Used by callers that
+// already know the exact key (e.g. parsed from a public URL stored on
+// the project row) and don't want to list/delete a whole prefix.
+// Quiet — a missing key is not an error.
+export async function deleteObject(key: string): Promise<void> {
+  if (!BUCKET) return;
+  await r2.send(new DeleteObjectsCommand({
+    Bucket: BUCKET,
+    Delete: { Objects: [{ Key: key }], Quiet: true },
+  }));
+}
+
+// Convert a R2 public URL back to its bucket key. Returns null when the
+// URL is unrelated to our R2 bucket (e.g. the worker's /api/preview/
+// proxy URL, or a Supabase legacy URL) so callers can skip the delete.
+export function r2KeyFromUrl(url: string): string | null {
+  if (!PUBLIC_URL) return null;
+  if (!url.startsWith(PUBLIC_URL + "/")) return null;
+  return url.slice(PUBLIC_URL.length + 1);
+}
+
 export async function deleteFolder(prefix: string): Promise<void> {
   let continuationToken: string | undefined;
 

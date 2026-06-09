@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import type { Beat } from "@/lib/types";
 import { trimToLength, encodeMp3 } from "@/lib/audio/silenceRemover";
 
@@ -77,8 +78,42 @@ export default function AssemblePage({ params }: PageProps) {
   const [captionsSize, setCaptionsSize] = useState("medium");
   const [captionsPosition, setCaptionsPosition] = useState("bottom");
   const [assembling, setAssembling] = useState(false);
+  // True from the moment the user clicks Stop until the worker
+  // acknowledges by transitioning assembly_status to "stopped".
+  // Lets the button label/disabled-state flip to "Stopping…"
+  // instantly while the worker finishes its current ffmpeg stage and
+  // persists the checkpoint.
+  const stopRequested = !!project?.assembly_stop_requested;
+  // Confirm dialog for Reassemble. Reassemble doesn't start the run
+  // directly anymore — it asks first, then on confirm flips the page
+  // into reassembleMode, which hides the current assembled video and
+  // reveals the pre-assembly config panel so the user can pick a
+  // different voiceover, change captions, etc. before kicking off.
+  const [reassembleConfirmOpen, setReassembleConfirmOpen] = useState(false);
+  // When true: the existing assembled video is suppressed and the
+  // config + Assemble button block is rendered. Cleared automatically
+  // when assembleVideo() actually fires (the new run will replace
+  // project.assembled_url on success) or if the user navigates away
+  // and comes back.
+  const [reassembleMode, setReassembleMode] = useState(false);
   const [assembleStatus, setAssembleStatus] = useState("");
   const [assembledUrl, setAssembledUrl] = useState<string | null>(null);
+
+  // Derived: the URL we should actually show in the preview. Single
+  // source of truth for "is the preview section visible". Hidden
+  // whenever:
+  //   - the user committed to reassembling (don't flash the deleted
+  //     video back even for a tick), or
+  //   - a new assembly is in flight (assembling status), or
+  //   - the DB row carries no assembled_url (the canonical source —
+  //     the moment clear_assembled lands, the preview disappears).
+  // Local `assembledUrl` state is no longer consulted for the gate;
+  // the polling effects keep it for unrelated UI bits (e.g. the
+  // download anchor target) but rendering decisions go through here
+  // so a stale local value can't flash an already-deleted player.
+  const dbAssembledUrl = (project?.assembled_url as string | undefined) ?? null;
+  const previewUrl: string | null = (reassembleMode || assembling) ? null : dbAssembledUrl;
+  const showPreview = !!previewUrl;
 
   const assembledVideoRef = useRef<HTMLVideoElement>(null);
   const [videoDuration, setVideoDuration] = useState<number | null>(null);
@@ -87,12 +122,18 @@ export default function AssemblePage({ params }: PageProps) {
 
 
   useEffect(() => {
+    // Don't auto-restore the preview URL while the user is actively
+    // reassembling — the SWR cache can still have stale project data
+    // for a tick or two between the PATCH that nulled assembled_url and
+    // the refetch that picks up the change, and this effect would
+    // otherwise flash the old video back in.
+    if (reassembleMode) return;
     const status = project?.assembly_status as string | undefined;
     const url = project?.assembled_url as string | undefined;
     if (!assembling && url && !assembledUrl && (status === "done" || status === "preview")) {
       setAssembledUrl(url);
     }
-  }, [project, assembling, assembledUrl]);
+  }, [project, assembling, assembledUrl, reassembleMode]);
 
   useEffect(() => {
     const status = project?.assembly_status as string | undefined;
@@ -103,7 +144,19 @@ export default function AssemblePage({ params }: PageProps) {
     } else if (status === "processing" || status === "uploading") {
       setAssembling(true);
       setAssembleStatus((project?.assembly_progress as string | undefined) ?? "Assembling…");
+    } else if (status === "stopped") {
+      // Worker honored the Stop signal and persisted the checkpoint.
+      // Keep the panel visible so the user sees the Resume button
+      // (rendered below) without having to refresh — the panel renders
+      // as long as `assembling` is true, and `assembleStatus` carries
+      // the last progress line so they remember where it stopped.
+      setAssembling(true);
+      setAssembleStatus((project?.assembly_progress as string | undefined) ?? "Stopped — click Resume to continue");
     } else if (status === "preview" || status === "done") {
+      // Same reassembleMode guard as the auto-restore effect above —
+      // stale "done" status from the SWR cache pre-refetch would
+      // otherwise re-populate assembledUrl with the deleted URL.
+      if (reassembleMode) return;
       const url = project?.assembled_url as string | undefined;
       setAssembling(false);
       setAssembleStatus("");
@@ -114,7 +167,7 @@ export default function AssemblePage({ params }: PageProps) {
       setAssembleStatus("");
       setAssembledUrl((prev) => (prev?.includes("/api/preview/") ? null : prev));
     }
-  }, [project?.assembly_status, project?.assembly_progress]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [project?.assembly_status, project?.assembly_progress, reassembleMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (project && !project.tts_cleaned_url) setVoiceoverType("original");
@@ -168,8 +221,83 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }
 
+  // Confirm-Reassemble action. Hits the clear_assembled endpoint which
+  // deletes the assembled mp4 from R2, wipes the assembly_* fields on
+  // the project (including the saved checkpoint), then flips the page
+  // into reassembleMode so the user can adjust voiceover / captions /
+  // aspect ratio before kicking off the new run. The old video is
+  // gone the moment this resolves — there is no fallback to the
+  // previous output.
+  const [clearingAssembled, setClearingAssembled] = useState(false);
+  async function confirmReassemble() {
+    setClearingAssembled(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear_assembled: true }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to clear assembled video");
+      }
+      setAssembledUrl(null);
+      setReassembleConfirmOpen(false);
+      setReassembleMode(true);
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not clear the existing video");
+    } finally {
+      setClearingAssembled(false);
+    }
+  }
+
+  async function stopAssembly() {
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assembly_stop_requested: true }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to request stop");
+      }
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Stop failed");
+    }
+  }
+
+  async function resumeAssembly() {
+    try {
+      // Re-queue via the same endpoint as a fresh assembly. The endpoint
+      // writes the current options into Redis (so the worker reads the
+      // user's CURRENT settings on Resume — captionsStyle changes etc.
+      // take effect) and clears assembly_stop_requested. The worker's
+      // checkpoint-hash check then invalidates only the suffix of stages
+      // affected by any changed options.
+      const res = await fetch("/api/generate/assemble", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, aspectRatio, voiceoverType, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to resume");
+      }
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Resume failed");
+    }
+  }
+
   async function assembleVideo() {
     if (assembling) return;
+    // Whether this is a first assembly or a confirmed reassemble, the
+    // config panel is the launch path — drop reassembleMode here so a
+    // successful run swaps cleanly back to the video-player view.
+    setReassembleMode(false);
     setAssembling(true);
     setAssembledUrl(null);
     setAssembleStatus("Queuing…");
@@ -317,7 +445,7 @@ export default function AssemblePage({ params }: PageProps) {
                 </div>
               </div>
 
-              {assembledUrl && ttsUrl && (
+              {showPreview && ttsUrl && (
                 <div className="pt-1 border-t" style={{ borderColor: "var(--bd-6)" }}>
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
@@ -456,11 +584,11 @@ export default function AssemblePage({ params }: PageProps) {
 
             {/* Assembly controls */}
             <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-              {assembledUrl && (
+              {showPreview && previewUrl && (
                 <video
-                  key={assembledUrl}
+                  key={previewUrl}
                   ref={assembledVideoRef}
-                  src={assembledUrl}
+                  src={previewUrl}
                   controls
                   className="w-full rounded-xl"
                   style={{ background: "var(--bg-page-2)" }}
@@ -566,25 +694,33 @@ export default function AssemblePage({ params }: PageProps) {
                       {assembleStatus || "Working…"}
                     </p>
 
-                    <button onClick={() => { setAssembling(false); setAssembleStatus(""); }}
-                      className="w-full py-2 rounded-xl text-xs font-medium transition-all"
-                      style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-45)" }}>
-                      Cancel / Restart
-                    </button>
+                    {project?.assembly_status === "stopped" ? (
+                      <button onClick={resumeAssembly}
+                        className="w-full py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90"
+                        style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                        Resume
+                      </button>
+                    ) : (
+                      <button onClick={stopAssembly} disabled={stopRequested}
+                        className="w-full py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
+                        style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
+                        {stopRequested ? "Stopping…" : "Stop"}
+                      </button>
+                    )}
                     <p className="text-[11px] text-center" style={{ color: "var(--c-35)" }}>Progress updates every ~5 seconds…</p>
                   </div>
                 );
               })()}
 
-              {!assembling && assembledUrl && (
+              {showPreview && previewUrl && (
                 <div>
                   <div className="flex gap-2">
-                    <button onClick={assembleVideo}
+                    <button onClick={() => setReassembleConfirmOpen(true)}
                       className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all"
                       style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
                       Reassemble
                     </button>
-                    <a href={assembledUrl} download="assembled.mp4"
+                    <a href={previewUrl} download="assembled.mp4"
                       className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all"
                       style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
                       ↓ Export
@@ -600,7 +736,7 @@ export default function AssemblePage({ params }: PageProps) {
                 </div>
               )}
 
-              {!assembledUrl && !assembling && uploadFailedPreview && (
+              {!showPreview && !assembling && uploadFailedPreview && (
                 <div className="space-y-2">
                   <div className="rounded-xl p-3" style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)" }}>
                     <p className="text-xs font-semibold" style={{ color: "oklch(0.7 0.2 25)" }}>
@@ -633,23 +769,37 @@ export default function AssemblePage({ params }: PageProps) {
                 </div>
               )}
 
-              {!assembledUrl && !assembling && !uploadFailedPreview && (
+              {!showPreview && !assembling && !uploadFailedPreview && (
                 <>
+                  {reassembleMode && (
+                    <p className="text-xs text-center py-1" style={{ color: "var(--c-50)" }}>
+                      Reassembling — review the settings above, then click <strong>Assemble</strong> to start.
+                    </p>
+                  )}
                   {!hasVoiceover && (
                     <p className="text-xs text-center py-1" style={{ color: "var(--c-40)" }}>
                       Generate a voiceover on the Generate page first.
                     </p>
                   )}
-                  <button onClick={assembleVideo} disabled={!hasVoiceover || assembling}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
-                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                    {assembling ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        Queuing…
-                      </span>
-                    ) : "Assemble Final Video"}
-                  </button>
+                  <div className="flex gap-2">
+                    {reassembleMode && (
+                      <button onClick={() => setReassembleMode(false)} disabled={assembling}
+                        className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
+                        style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}>
+                        Cancel
+                      </button>
+                    )}
+                    <button onClick={assembleVideo} disabled={!hasVoiceover || assembling}
+                      className={`${reassembleMode ? "flex-1" : "w-full"} py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all`}
+                      style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                      {assembling ? (
+                        <span className="flex items-center justify-center gap-2">
+                          <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          Queuing…
+                        </span>
+                      ) : reassembleMode ? "Assemble" : "Assemble Final Video"}
+                    </button>
+                  </div>
                 </>
               )}
             </div>
@@ -658,6 +808,40 @@ export default function AssemblePage({ params }: PageProps) {
 
         </div>
       </main>
+
+      <Dialog open={reassembleConfirmOpen} onOpenChange={(open) => { if (!clearingAssembled) setReassembleConfirmOpen(open); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Reassemble video?</DialogTitle>
+            <DialogDescription>
+              This will <strong>permanently delete</strong> the current assembled video from storage and clear the preview. You&apos;ll then be able to choose the voiceover and adjust the captions / aspect ratio before starting a fresh run. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setReassembleConfirmOpen(false)}
+              disabled={clearingAssembled}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
+              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmReassemble}
+              disabled={clearingAssembled}
+              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-60"
+              style={{ background: "oklch(0.6 0.22 25)", color: "var(--bg-page-2)" }}
+            >
+              {clearingAssembled ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Deleting…
+                </span>
+              ) : "Delete & reassemble"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

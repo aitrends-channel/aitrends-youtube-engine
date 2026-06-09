@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import Anthropic from "@anthropic-ai/sdk";
 import { getAnthropicClient, VISION_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 
 export const maxDuration = 800;
@@ -6,6 +7,7 @@ import { visualProfileInputSchema } from "@/lib/claude/anthropicSchemas";
 import { buildVisualAnalysisPrompt } from "@/lib/claude/prompts";
 import { VisualProfileSchema, ThumbnailAnalysisSchema } from "@/lib/claude/schemas";
 import { retryClaudeCall } from "@/lib/claude/retry";
+import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
@@ -75,31 +77,57 @@ export async function POST(req: Request) {
       required,
     };
 
-    const response = await retryClaudeCall("visual analysis", () =>
-      anthropic.messages.create({
-        model: model,
-        max_tokens: 2048,
-        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-        tools: [{
-          name: "save_visual_analysis",
-          description: "Save the extracted visual style profile",
-          input_schema: combinedSchema,
-        }],
-        tool_choice: { type: "tool", name: "save_visual_analysis" },
-        messages: [{
-          role: "user",
-          content: [
-            ...imageBlocks,
-            { type: "text", text: buildVisualAnalysisPrompt({ video: hasVideo, thumbnails: hasThumbnails }) },
-          ],
-        }],
-      })
-    );
+    // KIE+Opus occasionally ignores tool_choice and emits the JSON as
+    // a text block instead of a tool_use — same pattern the prompts
+    // route handles. Two attempts: a fresh call usually picks the tool
+    // on the second try. On the second miss, fall through to the
+    // text-mode parser (extractToolInputFromText) before giving up.
+    let response!: Anthropic.Messages.Message;
+    let toolUse: Anthropic.Messages.ContentBlock | undefined;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      response = await retryClaudeCall(`visual analysis (try ${attempt + 1})`, () =>
+        anthropic.messages.create({
+          model: model,
+          max_tokens: 2048,
+          system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+          tools: [{
+            name: "save_visual_analysis",
+            description: "Save the extracted visual style profile",
+            input_schema: combinedSchema,
+          }],
+          tool_choice: { type: "tool", name: "save_visual_analysis" },
+          messages: [{
+            role: "user",
+            content: [
+              ...imageBlocks,
+              { type: "text", text: buildVisualAnalysisPrompt({ video: hasVideo, thumbnails: hasThumbnails }) },
+            ],
+          }],
+        })
+      );
+      toolUse = response.content.find((b) => b.type === "tool_use");
+      const blockTypes = response.content.map((b) => b.type).join(",");
+      console.log(`[visual-analysis] attempt ${attempt + 1} stop=${response.stop_reason} blocks=${blockTypes} tool_use=${!!toolUse}`);
+      if (toolUse && toolUse.type === "tool_use") break;
+    }
 
-    const toolUse = response.content.find((b) => b.type === "tool_use");
-    if (!toolUse || toolUse.type !== "tool_use") throw new Error("No visual analysis returned");
-
-    const result = toolUse.input as { visualProfile?: unknown; thumbnailAnalysis?: unknown; [k: string]: unknown };
+    let result: { visualProfile?: unknown; thumbnailAnalysis?: unknown; [k: string]: unknown };
+    if (toolUse && toolUse.type === "tool_use") {
+      result = toolUse.input as { visualProfile?: unknown; thumbnailAnalysis?: unknown; [k: string]: unknown };
+    } else {
+      // Text-mode fallback. extractToolInputFromText unwraps the fake
+      // `<tool_calls>` wrapper KIE+Opus likes to emit, or just grabs
+      // the first top-level JSON object from the text block.
+      const textBlock = response.content.find((b) => b.type === "text");
+      const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
+      console.log(`[visual-analysis] tool_use missing after retry — fallback parsing text len=${raw.length} head=${raw.slice(0, 200)}`);
+      const parsed = extractToolInputFromText(raw);
+      if (!parsed) {
+        throw new Error("No visual analysis returned — model produced neither a tool call nor a parseable JSON text block. Try again.");
+      }
+      console.log(`[visual-analysis] text-mode fallback recovered keys=${Object.keys(parsed).join(",")}`);
+      result = parsed as { visualProfile?: unknown; thumbnailAnalysis?: unknown; [k: string]: unknown };
+    }
 
     // Pick the visualProfile from whichever shape the model returned.
     // Haiku (the vision model) sometimes:

@@ -29,9 +29,13 @@ export async function POST(req: Request) {
 
   await redis.set(`assembly:${projectId}`, JSON.stringify(options), { ex: 7200 });
 
+  // Also clear assembly_stop_requested — this endpoint is reached by
+  // both fresh assemblies AND Resume. Without this, a leftover true
+  // flag from a prior Stop would trip the worker's assertStopRequested
+  // check the moment the new run begins.
   const { error } = await client
     .from("projects")
-    .update({ assembly_status: "queued", assembly_progress: "Queued…", assembly_error: null })
+    .update({ assembly_status: "queued", assembly_progress: "Queued…", assembly_error: null, assembly_stop_requested: false })
     .eq("id", projectId);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

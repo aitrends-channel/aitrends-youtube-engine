@@ -1,0 +1,22 @@
+-- Real Stop/Resume for the assemble step. Until now the worker had no
+-- way to hear "stop" from the client and the only way to abandon a
+-- run was to let it complete or time out. Two new columns:
+--
+-- assembly_stop_requested  Boolean flag the client flips to true on
+--                          Stop. The worker polls it between ffmpeg
+--                          stages (and inside long stages via timer
+--                          checks) and aborts cleanly when set,
+--                          leaving assembly_checkpoint intact so
+--                          Resume can pick up where it stopped.
+--
+-- assembly_checkpoint      JSONB recording the R2 URLs of intermediate
+--                          stage outputs (joined.mp4, padded.mp4,
+--                          mixed.mp4, captioned.mp4) plus the
+--                          transcription words and an options hash.
+--                          runAssembly reads this at startup, skips
+--                          any stage whose output already exists, and
+--                          invalidates the relevant suffix if the
+--                          user changed config since the saved run.
+--                          Cleared on successful completion.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS assembly_stop_requested BOOLEAN DEFAULT FALSE;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS assembly_checkpoint JSONB;

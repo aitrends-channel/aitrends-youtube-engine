@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
-import { deleteFolder } from "@/lib/supabase/storage";
+import { deleteFolder, deleteObject, r2KeyFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import type { User } from "@supabase/supabase-js";
 
 export async function GET(
@@ -91,6 +91,65 @@ export async function PATCH(
       .update({ prompts_active_run_id: null, prompts_active_step: null })
       .eq("id", projectId)
       .eq("user_id", user.id);
+    return NextResponse.json({ success: true });
+  }
+
+  // Hard-delete the assembled mp4 from R2 + wipe the related project
+  // state so the assemble page resets to its pre-assembly view. Called
+  // from the Reassemble confirm path on the client.
+  //
+  // What gets cleaned:
+  //   - The single assembled_*.mp4 referenced by project.assembled_url
+  //     (only when the URL is one of ours — preview-proxy URLs are
+  //     skipped since they live on the worker's disk, not in R2).
+  //   - The entire _assembly/ checkpoint folder for this project (clip
+  //     fragments, joined/padded/mixed/captioned mp4s). These can be
+  //     several MB each so we don't want them stranded.
+  //
+  // What gets reset on the project row:
+  //   - assembled_url (the link we just deleted)
+  //   - assembly_status / assembly_progress / assembly_error
+  //   - assembly_checkpoint (so the next run doesn't try to skip stages)
+  //   - assembly_stop_requested (defensive — fresh starts shouldn't
+  //     inherit a stale stop signal)
+  //
+  // Errors during storage delete are logged but don't fail the
+  // request — the project-row reset is the user-visible outcome and
+  // worth keeping even if storage cleanup races.
+  if (body.clear_assembled) {
+    const { data: proj } = await supabase
+      .from("projects")
+      .select("assembled_url")
+      .eq("id", projectId)
+      .eq("user_id", user.id)
+      .single();
+    const assembledUrl = (proj?.assembled_url as string | null) ?? null;
+    if (assembledUrl) {
+      const key = r2KeyFromUrl(assembledUrl);
+      if (key) {
+        try { await deleteObject(key); }
+        catch (e) { console.warn(`[clear_assembled] failed to delete ${key}:`, e); }
+      }
+    }
+    try {
+      const folder = `${userFolderFor(user)}/${projectId}/_assembly/`;
+      await deleteFolder(folder);
+    } catch (e) {
+      console.warn(`[clear_assembled] failed to delete checkpoint folder:`, e);
+    }
+    const { error: updErr } = await supabase
+      .from("projects")
+      .update({
+        assembled_url: null,
+        assembly_status: null,
+        assembly_progress: null,
+        assembly_error: null,
+        assembly_checkpoint: null,
+        assembly_stop_requested: false,
+      })
+      .eq("id", projectId)
+      .eq("user_id", user.id);
+    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
     return NextResponse.json({ success: true });
   }
 
