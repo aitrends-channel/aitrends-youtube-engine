@@ -153,6 +153,40 @@ export async function PATCH(
     return NextResponse.json({ success: true });
   }
 
+  // Delete the project's voiceover(s) from R2 and wipe the related
+  // fields on the project row so the Generate page returns to its
+  // pre-TTS state. Both original (tts_url) and trimmed (tts_cleaned_url)
+  // are removed when present. Storage errors are logged but don't
+  // fail the request — the row reset is the visible outcome.
+  if (body.clear_voiceover) {
+    const { data: proj } = await supabase
+      .from("projects")
+      .select("tts_url, tts_cleaned_url")
+      .eq("id", projectId)
+      .eq("user_id", user.id)
+      .single();
+    const candidates = [proj?.tts_url as string | null, proj?.tts_cleaned_url as string | null]
+      .filter((u): u is string => !!u);
+    for (const url of candidates) {
+      const key = r2KeyFromUrl(url);
+      if (!key) continue;
+      try { await deleteObject(key); }
+      catch (e) { console.warn(`[clear_voiceover] failed to delete ${key}:`, e); }
+    }
+    const { error: updErr } = await supabase
+      .from("projects")
+      .update({
+        tts_url: null,
+        tts_cleaned_url: null,
+        tts_script_hash: null,
+        tts_voice_id: null,
+      })
+      .eq("id", projectId)
+      .eq("user_id", user.id);
+    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+    return NextResponse.json({ success: true });
+  }
+
   // Clear only video prompts; keep the beats and their image prompts.
   if (body.clear_video_prompts) {
     const { error: updErr } = await supabase

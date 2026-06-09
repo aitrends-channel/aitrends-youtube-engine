@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
@@ -198,6 +199,82 @@ function SectionHeader({ icon, title, subtitle }: { icon: string; title: string;
   );
 }
 
+// Per-track overflow menu shown next to each voiceover's audio player.
+// Browser-native audio controls have their own ⋮ dropdown (with their
+// own download / playback rate / picture-in-picture entries) that we
+// can't customize — this is a parallel menu under our control with
+// Download (a real download link) and Delete (opens the confirmation
+// dialog at the page level). Click-outside dismisses; Escape closes.
+function VoiceoverTrackMenu({
+  url,
+  downloadName,
+  onRequestDelete,
+}: {
+  url: string;
+  downloadName: string;
+  onRequestDelete: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    function onDocClick(e: MouseEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  return (
+    <div ref={wrapRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label="Track options"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="w-7 h-7 rounded-lg flex items-center justify-center text-base leading-none hover:opacity-90 transition-opacity"
+        style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+      >
+        ⋯
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-[calc(100%+4px)] z-20 min-w-[160px] rounded-xl p-1 shadow-lg"
+          style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}
+        >
+          <a
+            href={url}
+            download={downloadName}
+            onClick={() => setOpen(false)}
+            role="menuitem"
+            className="block w-full text-left px-3 py-2 rounded-lg text-xs hover:opacity-90 transition-opacity"
+            style={{ color: "var(--c-60)" }}
+          >
+            ↓ Download
+          </a>
+          <button
+            type="button"
+            onClick={() => { setOpen(false); onRequestDelete(); }}
+            role="menuitem"
+            className="block w-full text-left px-3 py-2 rounded-lg text-xs hover:opacity-90 transition-opacity"
+            style={{ color: "oklch(0.7 0.22 25)" }}
+          >
+            🗑 Delete voiceover
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProgressBar({ value, total }: { value: number; total: number }) {
   const pct = total > 0 ? Math.round((value / total) * 100) : 0;
   return (
@@ -265,6 +342,36 @@ export default function GeneratePage({ params }: PageProps) {
   const [pendingTtsUrl, setPendingTtsUrl] = useState<string | null>(null);
   const [pendingTtsCleanedUrl, setPendingTtsCleanedUrl] = useState<string | null>(null);
   const [cleanedUrlInvalidated, setCleanedUrlInvalidated] = useState(false);
+  // Delete-voiceover flow. Click the trash icon → confirm dialog →
+  // server PATCH clears the project's tts_url / tts_cleaned_url /
+  // tts_script_hash / tts_voice_id and removes the R2 objects. Local
+  // pending* state is reset alongside so the audio elements unmount
+  // without waiting for the SWR refetch.
+  const [deleteVoiceoverConfirmOpen, setDeleteVoiceoverConfirmOpen] = useState(false);
+  const [deletingVoiceover, setDeletingVoiceover] = useState(false);
+  async function deleteVoiceover() {
+    setDeletingVoiceover(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear_voiceover: true }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to delete voiceover");
+      }
+      setPendingTtsUrl(null);
+      setPendingTtsCleanedUrl(null);
+      setCleanedUrlInvalidated(true);
+      setDeleteVoiceoverConfirmOpen(false);
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not delete voiceover");
+    } finally {
+      setDeletingVoiceover(false);
+    }
+  }
   const [videosSubmitted, setVideosSubmitted] = useState(false);
   const [regenBeats, setRegenBeats] = useState<Set<number>>(new Set());
   const [clearingImages, setClearingImages] = useState(false);
@@ -1038,10 +1145,11 @@ export default function GeneratePage({ params }: PageProps) {
                     <div className="space-y-1">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Original</span>
-                        <a href={ttsUrl} download="voiceover-original.mp3"
-                          className="text-xs" style={{ color: "var(--c-45)" }}>
-                          ↓ Download
-                        </a>
+                        <VoiceoverTrackMenu
+                          url={ttsUrl}
+                          downloadName="voiceover-original.mp3"
+                          onRequestDelete={() => setDeleteVoiceoverConfirmOpen(true)}
+                        />
                       </div>
                       <audio controls src={ttsUrl} className="w-full h-8" />
                     </div>
@@ -1049,10 +1157,11 @@ export default function GeneratePage({ params }: PageProps) {
                       <div className="space-y-1">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Trimmed</span>
-                          <a href={ttsCleanedUrl} download="voiceover-trimmed.mp3"
-                            className="text-xs" style={{ color: "var(--c-45)" }}>
-                            ↓ Download
-                          </a>
+                          <VoiceoverTrackMenu
+                            url={ttsCleanedUrl}
+                            downloadName="voiceover-trimmed.mp3"
+                            onRequestDelete={() => setDeleteVoiceoverConfirmOpen(true)}
+                          />
                         </div>
                         <audio controls src={ttsCleanedUrl} className="w-full h-8" />
                       </div>
@@ -1095,6 +1204,15 @@ export default function GeneratePage({ params }: PageProps) {
                     className="px-4 py-2.5 rounded-xl text-sm font-medium disabled:opacity-40"
                     style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
                     Regen
+                  </button>
+                  <button
+                    onClick={() => setDeleteVoiceoverConfirmOpen(true)}
+                    disabled={generatingTts || removingPauses || deletingVoiceover}
+                    aria-label="Delete voiceover"
+                    title="Delete voiceover"
+                    className="px-4 py-2.5 rounded-xl text-sm font-medium disabled:opacity-40 transition-opacity hover:opacity-90"
+                    style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
+                    Delete
                   </button>
                 </div>
               ) : (
@@ -1697,6 +1815,40 @@ export default function GeneratePage({ params }: PageProps) {
           </div>
         </div>
       )}
+
+      <Dialog open={deleteVoiceoverConfirmOpen} onOpenChange={(open) => { if (!deletingVoiceover) setDeleteVoiceoverConfirmOpen(open); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Delete voiceover?</DialogTitle>
+            <DialogDescription>
+              This will <strong>permanently delete</strong> the original and trimmed voiceover files from storage. You&apos;ll need to regenerate them before you can assemble the video. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setDeleteVoiceoverConfirmOpen(false)}
+              disabled={deletingVoiceover}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
+              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={deleteVoiceover}
+              disabled={deletingVoiceover}
+              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-60"
+              style={{ background: "oklch(0.6 0.22 25)", color: "var(--bg-page-2)" }}
+            >
+              {deletingVoiceover ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Deleting…
+                </span>
+              ) : "Delete voiceover"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
