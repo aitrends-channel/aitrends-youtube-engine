@@ -153,6 +153,38 @@ export async function PATCH(
     return NextResponse.json({ success: true });
   }
 
+  // Abort an in-progress (or stopped) assembly: wipe the assembly
+  // checkpoint, the _assembly/ R2 folder, and every assembly_* field
+  // on the project — but leave assembled_url alone. The point is to
+  // throw away the failed/cancelled attempt without nuking a
+  // previously-successful assembled video that may already exist on
+  // the project.
+  //
+  // Called from the Cancel button shown alongside Resume when the
+  // assembly_status is "stopped" (and from anywhere we want a clean
+  // slate for the next assembly attempt).
+  if (body.cancel_assembly) {
+    try {
+      const folder = `${userFolderFor(user)}/${projectId}/_assembly/`;
+      await deleteFolder(folder);
+    } catch (e) {
+      console.warn(`[cancel_assembly] failed to delete checkpoint folder:`, e);
+    }
+    const { error: updErr } = await supabase
+      .from("projects")
+      .update({
+        assembly_status: null,
+        assembly_progress: null,
+        assembly_error: null,
+        assembly_checkpoint: null,
+        assembly_stop_requested: false,
+      })
+      .eq("id", projectId)
+      .eq("user_id", user.id);
+    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+    return NextResponse.json({ success: true });
+  }
+
   // Delete the project's voiceover(s) from R2 and wipe the related
   // fields on the project row so the Generate page returns to its
   // pre-TTS state. Both original (tts_url) and trimmed (tts_cleaned_url)

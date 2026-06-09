@@ -269,6 +269,37 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }
 
+  // Confirm-Cancel action paired with Resume when assembly_status is
+  // "stopped". Hits the cancel_assembly PATCH which wipes the
+  // checkpoint folder + every assembly_* field on the project (but
+  // leaves assembled_url alone so a previously-successful video stays
+  // available). After this the progress panel goes away and the user
+  // is back at the pre-assembly config view.
+  const [cancelAssemblyConfirmOpen, setCancelAssemblyConfirmOpen] = useState(false);
+  const [cancellingAssembly, setCancellingAssembly] = useState(false);
+  async function cancelAssembly() {
+    setCancellingAssembly(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cancel_assembly: true }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to cancel");
+      }
+      setAssembling(false);
+      setAssembleStatus("");
+      setCancelAssemblyConfirmOpen(false);
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Cancel failed");
+    } finally {
+      setCancellingAssembly(false);
+    }
+  }
+
   async function resumeAssembly() {
     try {
       // Re-queue via the same endpoint as a fresh assembly. The endpoint
@@ -695,11 +726,20 @@ export default function AssemblePage({ params }: PageProps) {
                     </p>
 
                     {project?.assembly_status === "stopped" ? (
-                      <button onClick={resumeAssembly}
-                        className="w-full py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90"
-                        style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                        Resume
-                      </button>
+                      <div className="flex gap-2">
+                        <button onClick={() => setCancelAssemblyConfirmOpen(true)}
+                          disabled={cancellingAssembly}
+                          className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
+                          style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
+                          Cancel
+                        </button>
+                        <button onClick={resumeAssembly}
+                          disabled={cancellingAssembly}
+                          className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+                          style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                          Resume
+                        </button>
+                      </div>
                     ) : (
                       <button onClick={stopAssembly} disabled={stopRequested}
                         className="w-full py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
@@ -838,6 +878,40 @@ export default function AssemblePage({ params }: PageProps) {
                   Deleting…
                 </span>
               ) : "Delete & reassemble"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={cancelAssemblyConfirmOpen} onOpenChange={(open) => { if (!cancellingAssembly) setCancelAssemblyConfirmOpen(open); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Cancel this assembly?</DialogTitle>
+            <DialogDescription>
+              This will <strong>discard the in-progress assembly</strong> — all intermediate work (transcription, encoded clips, joined / padded / mixed video) will be deleted from storage and you won&apos;t be able to Resume. Your previously assembled video (if any) is kept. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setCancelAssemblyConfirmOpen(false)}
+              disabled={cancellingAssembly}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
+              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+            >
+              Keep
+            </button>
+            <button
+              onClick={cancelAssembly}
+              disabled={cancellingAssembly}
+              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-60"
+              style={{ background: "oklch(0.6 0.22 25)", color: "var(--bg-page-2)" }}
+            >
+              {cancellingAssembly ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Cancelling…
+                </span>
+              ) : "Yes, cancel"}
             </button>
           </DialogFooter>
         </DialogContent>
