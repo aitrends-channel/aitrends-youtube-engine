@@ -20,15 +20,6 @@ export const maxDuration = 800;
 // "queued", everything beyond it stays "pending". Within a batch all
 // beats run concurrently. Lower the batch size on ElevenLabs Free /
 // Starter tiers or if KIE proxies start returning 429s.
-//
-// Dev word cap: TTS_BEAT_WORD_LIMIT env var (defaults to 50). Caps
-// auto-generation to roughly the first N script words so iterative
-// dev runs don't burn KIE credits on the whole video. Beats are walked
-// in order, cumulative word count accumulates, and beats past the cap
-// are excluded from the bulk run. Set to 0 (or any value <= 0) in
-// production to disable the cap. Explicit per-beat retries via the
-// beatNumbers body field bypass the cap so you can still re-run any
-// single beat you care about.
 
 interface BeatRow {
   beat_number: number;
@@ -90,7 +81,6 @@ export async function POST(req: Request) {
   // state by virtue of having voiceover_status = NULL in the DB and the
   // UI defaulting null → "pending" in effectiveStatus().
   const BATCH_SIZE = Math.max(1, parseInt(process.env.TTS_BEAT_BATCH_SIZE ?? "10", 10));
-  const WORD_LIMIT = parseInt(process.env.TTS_BEAT_WORD_LIMIT ?? "50", 10);
 
   const encoder = new TextEncoder();
   return new Response(
@@ -141,36 +131,9 @@ export async function POST(req: Request) {
           const candidates = allBeats.filter((b) =>
             explicitBeats ? explicitBeats.has(b.beat_number) : true,
           );
-          let toGenerate = explicitBeats
+          const toGenerate = explicitBeats
             ? candidates.filter((b) => b.script_segment?.trim())
             : selectStaleBeats(candidates, voiceId);
-
-          // Apply the dev word cap (TTS_BEAT_WORD_LIMIT, default 50).
-          // Walk every beat in script order, accumulating word counts;
-          // any beat whose start sits past the cap is dropped from
-          // toGenerate. Explicit retries bypass the cap — a user
-          // clicking Retry on beat 99 still wants beat 99.
-          let cappedAt: number | null = null;
-          if (!explicitBeats && WORD_LIMIT > 0) {
-            const inScope = new Set<number>();
-            let cumWords = 0;
-            for (const b of allBeats) {
-              if (cumWords >= WORD_LIMIT) {
-                cappedAt = b.beat_number;
-                break;
-              }
-              inScope.add(b.beat_number);
-              cumWords += (b.script_segment ?? "").trim().split(/\s+/).filter(Boolean).length;
-            }
-            const beforeCap = toGenerate.length;
-            toGenerate = toGenerate.filter((b) => inScope.has(b.beat_number));
-            if (toGenerate.length !== beforeCap) {
-              console.log(
-                `[tts-beats] WORD_LIMIT=${WORD_LIMIT} trimmed ${beforeCap - toGenerate.length} beat(s) past word cap` +
-                  (cappedAt !== null ? ` (first excluded: beat ${cappedAt})` : ""),
-              );
-            }
-          }
 
           // Diagnostic log so worker / Vercel logs make the
           // "preserved vs regenerated" decision auditable. Without it,
