@@ -228,8 +228,35 @@ export default function AssemblePage({ params }: PageProps) {
   // aspect ratio before kicking off the new run. The old video is
   // gone the moment this resolves — there is no fallback to the
   // previous output.
+  //
+  // Order matters: we flip every local-state gate that could keep the
+  // preview visible BEFORE the network round-trip. Otherwise the user
+  // sees the old player for the ~500ms the PATCH + SWR refetch takes,
+  // which looks like the button didn't work. The PATCH itself is then
+  // the canonical cleanup (DB + R2), and the mutate() that follows
+  // syncs project.assembled_url back to null so the gate stays closed
+  // even when reassembleMode eventually drops back to false.
   const [clearingAssembled, setClearingAssembled] = useState(false);
   async function confirmReassemble() {
+    // Hide preview + reset every local cache that could keep it
+    // visible. These run before the network call so the player
+    // disappears immediately on click.
+    setReassembleMode(true);
+    setAssembledUrl(null);
+    setVideoDuration(null);
+    setAssembleStatus("");
+    setReassembleConfirmOpen(false);
+    // Optimistic SWR update: blank assembled_url + assembly_* fields
+    // locally so the gate reads null immediately, even before the
+    // PATCH completes and the canonical refetch lands.
+    void mutate((cur: Record<string, unknown> | undefined) => cur ? {
+      ...cur,
+      assembled_url: null,
+      assembly_status: null,
+      assembly_progress: null,
+      assembly_error: null,
+      assembly_checkpoint: null,
+    } : cur, { revalidate: false });
     setClearingAssembled(true);
     try {
       const res = await fetch(`/api/projects/${projectId}`, {
@@ -241,12 +268,17 @@ export default function AssemblePage({ params }: PageProps) {
         const err = await res.json().catch(() => ({})) as { error?: string };
         throw new Error(err.error ?? "Failed to clear assembled video");
       }
-      setAssembledUrl(null);
-      setReassembleConfirmOpen(false);
-      setReassembleMode(true);
+      // Canonical refetch — replaces the optimistic state with the
+      // server's truth. If the PATCH failed mid-flight, this is what
+      // would surface the inconsistency.
       await mutate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not clear the existing video");
+      // Roll back the optimistic hide so the user can see the existing
+      // video again and retry, instead of being stuck on a config
+      // panel that doesn't reflect actual server state.
+      setReassembleMode(false);
+      await mutate();
     } finally {
       setClearingAssembled(false);
     }
