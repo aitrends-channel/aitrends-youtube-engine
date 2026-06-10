@@ -1,13 +1,12 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import type { Beat } from "@/lib/types";
-import { trimToLength, encodeMp3 } from "@/lib/audio/silenceRemover";
 import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPreview";
 
 interface PageProps {
@@ -72,6 +71,15 @@ export default function AssemblePage({ params }: PageProps) {
   }, [project?.current_state, projectId, mutate]);
 
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
+  // Per-preview loading state — true while either A/B card is still
+  // building on the server or buffering audio in the browser. Drives
+  // the "Loading previews…" indicator under the Voiceover Source label.
+  // Default true so the indicator paints from first render whenever
+  // there are voiceovers to preview, instead of flickering on after
+  // the child cards mount and report back.
+  const [trimmedLoading, setTrimmedLoading] = useState(true);
+  const [originalLoading, setOriginalLoading] = useState(true);
+
   // Per-beat silence trim — drives the worker's trimSilenceEnabled flag.
   // Outgoing requests hard-code voiceoverType to "original" so the
   // worker's legacy-mode source-mp3 picker (tts_url ?? tts_cleaned_url)
@@ -123,12 +131,6 @@ export default function AssemblePage({ params }: PageProps) {
   const previewUrl: string | null = (reassembleMode || assembling) ? null : dbAssembledUrl;
   const showPreview = !!previewUrl;
 
-  const assembledVideoRef = useRef<HTMLVideoElement>(null);
-  const [videoDuration, setVideoDuration] = useState<number | null>(null);
-  const [trimmingAudio, setTrimmingAudio] = useState(false);
-  const [trimAudioStatus, setTrimAudioStatus] = useState("");
-
-
   useEffect(() => {
     // Don't auto-restore the preview URL while the user is actively
     // reassembling — the SWR cache can still have stale project data
@@ -177,53 +179,6 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }, [project?.assembly_status, project?.assembly_progress, reassembleMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function trimVoiceoverToVideo() {
-    const videoEl = assembledVideoRef.current;
-    const duration = videoDuration ?? (videoEl?.duration && isFinite(videoEl.duration) ? videoEl.duration : null);
-    if (!duration || !ttsUrl) return;
-    setTrimmingAudio(true);
-    setTrimAudioStatus("Fetching voiceover…");
-    try {
-      const res = await fetch(ttsUrl);
-      if (!res.ok) throw new Error("Failed to fetch voiceover audio");
-      const audioBytes = await res.arrayBuffer();
-
-      setTrimAudioStatus("Decoding audio…");
-      const ctx = new AudioContext();
-      const audioBuffer = await ctx.decodeAudioData(audioBytes);
-      ctx.close();
-
-      if (audioBuffer.duration <= duration) {
-        toast.success("Voiceover is already shorter than the video — no trim needed");
-        return;
-      }
-
-      setTrimAudioStatus("Trimming…");
-      const { channels, sampleRate, newDuration } = trimToLength(audioBuffer, duration);
-
-      setTrimAudioStatus("Encoding MP3…");
-      const mp3Bytes = await encodeMp3(channels, sampleRate);
-
-      setTrimAudioStatus("Uploading…");
-      const uploadRes = await fetch(`/api/generate/tts/clean?projectId=${projectId}`, {
-        method: "POST",
-        body: mp3Bytes,
-        headers: { "Content-Type": "audio/mpeg" },
-      });
-      if (!uploadRes.ok) {
-        const err = await uploadRes.json().catch(() => ({})) as { error?: string };
-        throw new Error(err.error ?? "Upload failed");
-      }
-      await mutate();
-      toast.success(`Voiceover trimmed to ${Math.round(newDuration)}s`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Trim failed");
-    } finally {
-      setTrimmingAudio(false);
-      setTrimAudioStatus("");
-    }
-  }
-
   // Confirm-Reassemble action. Hits the clear_assembled endpoint which
   // deletes the assembled mp4 from R2, wipes the assembly_* fields on
   // the project (including the saved checkpoint), then flips the page
@@ -246,7 +201,6 @@ export default function AssemblePage({ params }: PageProps) {
     // disappears immediately on click.
     setReassembleMode(true);
     setAssembledUrl(null);
-    setVideoDuration(null);
     setAssembleStatus("");
     setReassembleConfirmOpen(false);
     // Optimistic SWR update: blank assembled_url + assembly_* fields
@@ -480,7 +434,27 @@ export default function AssemblePage({ params }: PageProps) {
                 inside each card stops propagation so audio toggling
                 doesn't trip the selection. */}
             <div className="space-y-3">
-              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover Source</p>
+              {(() => {
+                // Project data is undefined while SWR is still fetching —
+                // we don't know yet if voiceovers exist, so pessimistically
+                // show the loader. Once project loads, swap to the
+                // voiceover-aware condition so the loader hides cleanly
+                // when there's nothing to preview.
+                const projectLoaded = !!project;
+                const hasAnyVoiceover = beats.some((b) => !!b.voiceoverUrl);
+                const showLoading = !projectLoaded || (hasAnyVoiceover && (trimmedLoading || originalLoading));
+                return (
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover Source</p>
+                    {showLoading && (
+                      <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "oklch(0.72 0.25 285)" }}>
+                        <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Loading previews…
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
 
               {beats.some((b) => !!b.voiceoverUrl) && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -491,6 +465,7 @@ export default function AssemblePage({ params }: PageProps) {
                     title="Trimmed voiceover"
                     selected={trimSilence}
                     onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(true)}
+                    onLoadingChange={setTrimmedLoading}
                   />
                   <FullVoiceoverPreview
                     projectId={projectId}
@@ -499,38 +474,8 @@ export default function AssemblePage({ params }: PageProps) {
                     title="Original voiceover"
                     selected={!trimSilence}
                     onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(false)}
+                    onLoadingChange={setOriginalLoading}
                   />
-                </div>
-              )}
-
-              {showPreview && ttsUrl && (
-                <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium" style={{ color: "var(--c-65)" }}>Trim to video length</p>
-                      <p className="text-xs mt-0.5" style={{ color: "var(--c-40)" }}>
-                        {videoDuration
-                          ? `Hard-cut voiceover at ${Math.round(videoDuration)}s to match the assembled video`
-                          : "Load the video above to detect its duration"}
-                      </p>
-                      {trimmingAudio && trimAudioStatus && (
-                        <p className="text-xs mt-1" style={{ color: "oklch(0.72 0.25 285)" }}>{trimAudioStatus}</p>
-                      )}
-                    </div>
-                    <button
-                      onClick={trimVoiceoverToVideo}
-                      disabled={trimmingAudio || assembling || !videoDuration}
-                      className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-all"
-                      style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-                    >
-                      {trimmingAudio ? (
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                          Trimming…
-                        </span>
-                      ) : "Trim"}
-                    </button>
-                  </div>
                 </div>
               )}
             </div>
@@ -645,15 +590,10 @@ export default function AssemblePage({ params }: PageProps) {
               {showPreview && previewUrl && (
                 <video
                   key={previewUrl}
-                  ref={assembledVideoRef}
                   src={previewUrl}
                   controls
                   className="w-full rounded-xl"
                   style={{ background: "var(--bg-page-2)" }}
-                  onLoadedMetadata={() => {
-                    const d = assembledVideoRef.current?.duration;
-                    if (d && isFinite(d)) setVideoDuration(d);
-                  }}
                   onError={() => toast.error("Preview unavailable — the worker may have restarted. Try exporting or click Reassemble.")}
                 />
               )}

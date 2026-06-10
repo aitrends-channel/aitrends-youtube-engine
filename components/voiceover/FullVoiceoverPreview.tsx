@@ -42,6 +42,10 @@ interface Props {
    *  as a selection. `selected` controls the active background/border. */
   selected?: boolean;
   onSelect?: () => void;
+  /** Fires every time the loading state flips. Lets the parent show a
+   *  combined loading indicator while either preview is still building
+   *  on the server or downloading audio in the browser. */
+  onLoadingChange?: (loading: boolean) => void;
 }
 
 export function FullVoiceoverPreview({
@@ -53,6 +57,7 @@ export function FullVoiceoverPreview({
   subtitle,
   selected = false,
   onSelect,
+  onLoadingChange,
 }: Props) {
   const urlSignature = useMemo(() => {
     const list: string[] = [];
@@ -66,7 +71,12 @@ export function FullVoiceoverPreview({
   const orderedCount = urlSignature ? urlSignature.split("\n").length : 0;
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [building, setBuilding] = useState(false);
+  // Start true so isLoading is true on the very first render — the
+  // fetch useEffect always runs on mount and either kicks off the
+  // request (keeping this true) or clears it immediately (no urls).
+  // Without this, the loading UI flickers off for one frame before
+  // the effect re-sets it, which the parent indicator also misses.
+  const [building, setBuilding] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
   const [tickFlag, setTickFlag] = useState(0);
@@ -80,7 +90,7 @@ export function FullVoiceoverPreview({
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
-    if (!urlSignature) { setPreviewUrl(null); return; }
+    if (!urlSignature) { setPreviewUrl(null); setBuilding(false); return; }
     let cancelled = false;
     setBuilding(true);
     setError(null);
@@ -150,8 +160,22 @@ export function FullVoiceoverPreview({
   }
 
   if (orderedCount === 0) return null;
-  const canPlay = !!previewUrl && !building;
+  // "Loading" covers both stages the user perceives as a wait:
+  //   1. server build/cache lookup of the concat URL (`building`)
+  //   2. browser still downloading + parsing audio metadata so we
+  //      don't know the duration yet (URL set but duration still 0)
+  // Without #2 the loading flash disappears after ~100ms on warm
+  // cache, then the slider renders with totalSec=0 for the rest of
+  // the audio-element load — looks like the loader never appeared.
+  const isLoading = building || (!!previewUrl && duration <= 0 && !error);
+  const canPlay = !!previewUrl && !isLoading;
   const selectable = !!onSelect;
+
+  // Surface loading state to the parent so it can render its own
+  // combined indicator (e.g. under the Voiceover Source heading).
+  useEffect(() => {
+    onLoadingChange?.(isLoading);
+  }, [isLoading, onLoadingChange]);
 
   return (
     <div
@@ -180,18 +204,21 @@ export function FullVoiceoverPreview({
           )}
         </div>
         <span className="text-[11px] font-mono tabular-nums shrink-0" style={{ color: "oklch(0.45 0 0)" }}>
-          {building ? "Building preview…" : error ? "Failed" : `${orderedCount} beats joined`}
+          {isLoading ? (building ? "Building preview…" : "Loading audio…") : error ? "Failed" : `${orderedCount} beats joined`}
         </span>
       </div>
       <div className="flex items-center gap-3">
         <button
           onClick={(e) => { e.stopPropagation(); toggle(); }}
           disabled={!canPlay}
-          aria-label={playing ? "Pause" : "Play"}
-          className="w-9 h-9 rounded-full flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+          aria-label={isLoading ? "Loading preview" : playing ? "Pause" : "Play"}
+          aria-busy={isLoading}
+          className="w-9 h-9 rounded-full flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
           style={{ background: "oklch(0.72 0.25 285)", color: "#ffffff" }}
         >
-          {playing ? (
+          {isLoading ? (
+            <span className="block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+          ) : playing ? (
             <span className="flex gap-[3px]">
               <span className="block w-[3px] h-3 rounded-sm" style={{ background: "currentColor" }} />
               <span className="block w-[3px] h-3 rounded-sm" style={{ background: "currentColor" }} />
@@ -208,11 +235,21 @@ export function FullVoiceoverPreview({
           )}
         </button>
         <div className="flex-1 min-w-0">
-          {/* Seek slider — native range input styled to look like the
+          {/* While loading, show a shimmer skeleton in place of the
+              slider — the same height + rounding so the layout doesn't
+              jump when the real slider takes over. */}
+          {isLoading ? (
+            <div
+              className="h-1.5 rounded-full shimmer"
+              style={{ background: "oklch(0.92 0 0)" }}
+              aria-hidden="true"
+            />
+          ) : (
+          /* Seek slider — native range input styled to look like the
               progress bar. Gradient on the track gives the filled-in
               segment up to `pct`; the thumb is the draggable handle.
               Input handlers stop propagation so dragging the slider on
-              a selectable card doesn't toggle the selection. */}
+              a selectable card doesn't toggle the selection. */
           <input
             type="range"
             min={0}
@@ -231,9 +268,10 @@ export function FullVoiceoverPreview({
               background: `linear-gradient(to right, oklch(0.55 0.15 145) 0%, oklch(0.55 0.15 145) ${pct}%, oklch(0.92 0 0) ${pct}%, oklch(0.92 0 0) 100%)`,
             }}
           />
+          )}
           <div className="flex justify-between mt-1 text-[11px] font-mono tabular-nums" style={{ color: "oklch(0.45 0 0)" }}>
             <span>{fmt(elapsedSec)}</span>
-            <span>{fmt(totalSec)}</span>
+            <span>{isLoading ? "—:——" : fmt(totalSec)}</span>
           </div>
         </div>
       </div>
