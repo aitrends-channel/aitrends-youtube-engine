@@ -36,6 +36,12 @@ interface Props {
   title?: string;
   /** Optional caption shown below the title. */
   subtitle?: string;
+  /** When provided, the card itself becomes a selection target —
+   *  clicking anywhere except the play control calls onSelect. The
+   *  play button gets stopPropagation so audio toggling never doubles
+   *  as a selection. `selected` controls the active background/border. */
+  selected?: boolean;
+  onSelect?: () => void;
 }
 
 export function FullVoiceoverPreview({
@@ -45,6 +51,8 @@ export function FullVoiceoverPreview({
   trimSilence = false,
   title = "Full voiceover preview",
   subtitle,
+  selected = false,
+  onSelect,
 }: Props) {
   const urlSignature = useMemo(() => {
     const list: string[] = [];
@@ -118,11 +126,22 @@ export function FullVoiceoverPreview({
 
   if (orderedCount === 0) return null;
   const canPlay = !!previewUrl && !building;
+  const selectable = !!onSelect;
 
   return (
     <div
-      className="rounded-2xl p-4 sm:p-5 space-y-3"
-      style={{ background: "#ffffff", border: "1px solid oklch(0.85 0 0)" }}
+      role={selectable ? "button" : undefined}
+      tabIndex={selectable ? 0 : undefined}
+      aria-pressed={selectable ? selected : undefined}
+      onClick={selectable ? onSelect : undefined}
+      onKeyDown={selectable ? (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(); }
+      } : undefined}
+      className={`rounded-2xl p-4 sm:p-5 space-y-3 transition-all ${selectable ? "cursor-pointer" : ""}`}
+      style={{
+        background: selected ? "oklch(0.72 0.25 285 / 0.12)" : "#ffffff",
+        border: `1px solid ${selected ? "oklch(0.72 0.25 285 / 0.5)" : "oklch(0.85 0 0)"}`,
+      }}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
@@ -141,7 +160,7 @@ export function FullVoiceoverPreview({
       </div>
       <div className="flex items-center gap-3">
         <button
-          onClick={toggle}
+          onClick={(e) => { e.stopPropagation(); toggle(); }}
           disabled={!canPlay}
           aria-label={playing ? "Pause" : "Play"}
           className="w-9 h-9 rounded-full flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"

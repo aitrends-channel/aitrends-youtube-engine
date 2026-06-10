@@ -72,7 +72,11 @@ export default function AssemblePage({ params }: PageProps) {
   }, [project?.current_state, projectId, mutate]);
 
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
-  const [voiceoverType, setVoiceoverType] = useState<"cleaned" | "original">("cleaned");
+  // Per-beat silence trim — drives the worker's trimSilenceEnabled flag.
+  // The legacy voiceoverType field is hard-coded to "cleaned" in the
+  // requests below so the worker still uses its tts_cleaned_url ??
+  // tts_url fallback; the user no longer picks between those two mp3s.
+  const [trimSilence, setTrimSilence] = useState<boolean>(true);
   const [captionsEnabled, setCaptionsEnabled] = useState(false);
   const [captionsLanguage, setCaptionsLanguage] = useState("source");
   const [captionsStyle, setCaptionsStyle] = useState("classic");
@@ -170,10 +174,6 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }, [project?.assembly_status, project?.assembly_progress, reassembleMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (project && !project.tts_cleaned_url) setVoiceoverType("original");
-  }, [project?.tts_cleaned_url]);
-
   async function trimVoiceoverToVideo() {
     const videoEl = assembledVideoRef.current;
     const duration = videoDuration ?? (videoEl?.duration && isFinite(videoEl.duration) ? videoEl.duration : null);
@@ -212,7 +212,6 @@ export default function AssemblePage({ params }: PageProps) {
         throw new Error(err.error ?? "Upload failed");
       }
       await mutate();
-      setVoiceoverType("cleaned");
       toast.success(`Voiceover trimmed to ${Math.round(newDuration)}s`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Trim failed");
@@ -344,7 +343,7 @@ export default function AssemblePage({ params }: PageProps) {
       const res = await fetch("/api/generate/assemble", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, aspectRatio, voiceoverType, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition }),
+        body: JSON.stringify({ projectId, aspectRatio, voiceoverType: "cleaned", captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, trimSilenceEnabled: trimSilence }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: string };
@@ -356,11 +355,7 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }
 
-  // Per-run silence trim toggle. assembleVideo() takes a parameter
-  // instead of state so the "Trim silences" button can pass true
-  // directly without waiting for a setState round-trip. Normal
-  // Assemble / Reassemble calls leave the flag at false.
-  async function assembleVideo(trimSilence: boolean = false) {
+  async function assembleVideo() {
     if (assembling) return;
     // Whether this is a first assembly or a confirmed reassemble, the
     // config panel is the launch path — drop reassembleMode here so a
@@ -373,7 +368,7 @@ export default function AssemblePage({ params }: PageProps) {
       const res = await fetch("/api/generate/assemble", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, aspectRatio, voiceoverType, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, trimSilenceEnabled: trimSilence }),
+        body: JSON.stringify({ projectId, aspectRatio, voiceoverType: "cleaned", captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, trimSilenceEnabled: trimSilence }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: string };
@@ -383,35 +378,6 @@ export default function AssemblePage({ params }: PageProps) {
       toast.error(err instanceof Error ? err.message : "Assembly failed");
       setAssembling(false);
       setAssembleStatus("");
-    }
-  }
-
-  // Trim-silences flow: confirm modal → clear the current assembled
-  // mp4 + checkpoint → assembleVideo(true). Single click for the user;
-  // no need to drop into the reassembleMode config panel because the
-  // only thing changing is the trim flag, not any user-facing option.
-  const [trimConfirmOpen, setTrimConfirmOpen] = useState(false);
-  const [trimRunning, setTrimRunning] = useState(false);
-  async function runTrimAssembly() {
-    setTrimRunning(true);
-    try {
-      const clearRes = await fetch(`/api/projects/${projectId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clear_assembled: true }),
-      });
-      if (!clearRes.ok) {
-        const err = await clearRes.json().catch(() => ({})) as { error?: string };
-        throw new Error(err.error ?? "Failed to clear assembled video");
-      }
-      setAssembledUrl(null);
-      await mutate();
-      setTrimConfirmOpen(false);
-      await assembleVideo(true);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Trim re-assembly failed");
-    } finally {
-      setTrimRunning(false);
     }
   }
 
@@ -436,7 +402,7 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }
 
-  const hasVoiceover = voiceoverType === "original" ? !!ttsUrl : !!(ttsCleanedUrl || ttsUrl);
+  const hasVoiceover = !!(ttsCleanedUrl || ttsUrl);
   const uploadFailedPreview = project?.assembly_status === "preview" && !project?.assembled_url;
 
   return (
@@ -456,44 +422,14 @@ export default function AssemblePage({ params }: PageProps) {
         <div className="p-4 sm:p-8 pb-24">
           <div className="w-full max-w-5xl mx-auto space-y-6">
 
-            {/* Original vs trimmed voiceover preview — anchored at the
-                top so it's visible regardless of whether an assembled
-                video already exists. Both cards fetch
-                /api/projects/:id/voiceover/concat with different
-                trimSilence flags (cache keys differ so both live on
-                R2 independently). The user A/B compares them before
-                clicking Assemble (uses original) or Trim silences
-                (uses trimmed). */}
-            {beats.some((b) => !!b.voiceoverUrl) && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                <FullVoiceoverPreview
-                  projectId={projectId}
-                  beats={beats}
-                  trimSilence={false}
-                  title="Original voiceover"
-                  subtitle="Beats concatenated as-is. This is what the regular Assemble button produces."
-                />
-                <FullVoiceoverPreview
-                  projectId={projectId}
-                  beats={beats}
-                  trimSilence={true}
-                  title="Trimmed voiceover"
-                  subtitle="Leading + trailing silence stripped from every beat. This is what the Trim silences button produces."
-                />
-              </div>
-            )}
-
             {/* Status cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
               <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover</p>
                 <p className="mt-2 text-sm font-medium"
-                  style={{ color: !ttsUrl && !ttsCleanedUrl ? "var(--c-45)" : voiceoverType === "cleaned" && ttsCleanedUrl ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)" }}>
-                  {!ttsUrl && !ttsCleanedUrl ? "Missing" : voiceoverType === "cleaned" && ttsCleanedUrl ? "Trimmed ✓" : "Original"}
+                  style={{ color: !hasVoiceover ? "var(--c-45)" : trimSilence ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)" }}>
+                  {!hasVoiceover ? "Missing" : trimSilence ? "Trimmed ✓" : "Original"}
                 </p>
-                {!ttsCleanedUrl && ttsUrl && (
-                  <p className="text-xs mt-1" style={{ color: "var(--c-40)" }}>Trim on Generate page</p>
-                )}
               </div>
               <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Video Clips</p>
@@ -535,42 +471,39 @@ export default function AssemblePage({ params }: PageProps) {
               </div>
             </div>
 
-            {/* Voiceover source */}
-            <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--c-40)" }}>Voiceover Source</p>
-                <div className="flex gap-2">
-                  <button onClick={() => setVoiceoverType("cleaned")} disabled={assembling || !ttsCleanedUrl}
-                    className="flex-1 py-2 rounded-xl text-xs font-medium transition-all disabled:opacity-35"
-                    style={voiceoverType === "cleaned" && ttsCleanedUrl ? {
-                      background: "oklch(0.72 0.25 285 / 0.15)",
-                      border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                      color: "oklch(0.88 0.12 285)",
-                    } : {
-                      background: "var(--bg-input)",
-                      border: "1px solid var(--bd-7)",
-                      color: ttsCleanedUrl ? "var(--c-50)" : "var(--c-30)",
-                    }}>
-                    Trimmed{ttsCleanedUrl ? " ✓" : " — unavailable"}
-                  </button>
-                  <button onClick={() => setVoiceoverType("original")} disabled={assembling || !ttsUrl}
-                    className="flex-1 py-2 rounded-xl text-xs font-medium transition-all disabled:opacity-35"
-                    style={voiceoverType === "original" ? {
-                      background: "oklch(0.72 0.25 285 / 0.15)",
-                      border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                      color: "oklch(0.88 0.12 285)",
-                    } : {
-                      background: "var(--bg-input)",
-                      border: "1px solid var(--bd-7)",
-                      color: ttsUrl ? "var(--c-50)" : "var(--c-30)",
-                    }}>
-                    Original{ttsUrl ? "" : " — unavailable"}
-                  </button>
+            {/* Voiceover source — the two preview cards double as the
+                selector. Clicking a card sets trimSilence; the active
+                card gets a theme-color background tint. The play button
+                inside each card stops propagation so audio toggling
+                doesn't trip the selection. */}
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover Source</p>
+
+              {beats.some((b) => !!b.voiceoverUrl) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  <FullVoiceoverPreview
+                    projectId={projectId}
+                    beats={beats}
+                    trimSilence={true}
+                    title="Trimmed voiceover"
+                    subtitle="Leading + trailing silence stripped from every beat. Click to assemble with this version."
+                    selected={trimSilence}
+                    onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(true)}
+                  />
+                  <FullVoiceoverPreview
+                    projectId={projectId}
+                    beats={beats}
+                    trimSilence={false}
+                    title="Original voiceover"
+                    subtitle="Beats concatenated as-is. Click to assemble with this version."
+                    selected={!trimSilence}
+                    onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(false)}
+                  />
                 </div>
-              </div>
+              )}
 
               {showPreview && ttsUrl && (
-                <div className="pt-1 border-t" style={{ borderColor: "var(--bd-6)" }}>
+                <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <p className="text-xs font-medium" style={{ color: "var(--c-65)" }}>Trim to video length</p>
@@ -853,13 +786,6 @@ export default function AssemblePage({ params }: PageProps) {
                       style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
                       Reassemble
                     </button>
-                    <button onClick={() => setTrimConfirmOpen(true)}
-                      disabled={trimRunning || assembling}
-                      title="Re-assemble with leading/trailing silence trimmed from every beat. Use if you hear short pauses between beats."
-                      className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
-                      style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
-                      {trimRunning ? "Trimming…" : "Trim silences"}
-                    </button>
                     <a href={previewUrl} download="assembled.mp4"
                       className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all"
                       style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
@@ -948,40 +874,6 @@ export default function AssemblePage({ params }: PageProps) {
 
         </div>
       </main>
-
-      <Dialog open={trimConfirmOpen} onOpenChange={(open) => { if (!trimRunning) setTrimConfirmOpen(open); }}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Trim silences & reassemble?</DialogTitle>
-            <DialogDescription>
-              This deletes the current assembled video and re-runs the assembly with leading/trailing silence trimmed from every beat&apos;s audio. Use this if you hear short pauses between beats. Internal pauses inside each beat are preserved.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <button
-              onClick={() => setTrimConfirmOpen(false)}
-              disabled={trimRunning}
-              className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
-              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={runTrimAssembly}
-              disabled={trimRunning}
-              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-60"
-              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-            >
-              {trimRunning ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  Re-queuing…
-                </span>
-              ) : "Trim silences & reassemble"}
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={reassembleConfirmOpen} onOpenChange={(open) => { if (!clearingAssembled) setReassembleConfirmOpen(open); }}>
         <DialogContent showCloseButton={false}>
