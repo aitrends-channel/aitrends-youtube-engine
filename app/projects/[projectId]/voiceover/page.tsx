@@ -430,9 +430,15 @@ export default function VoiceoverPage({ params }: PageProps) {
             const generated = ev.current ?? 0;
             void generated;
             const total = ev.total ?? 0;
+            const remaining = (ev as { remaining?: number }).remaining ?? 0;
+            const failedCount = (ev as { failed?: number }).failed ?? 0;
             if (total === 0) toast.success("Voiceovers already up to date");
-            else if ((ev as { failed?: number }).failed) toast.error(`${(ev as { failed?: number }).failed} of ${total} failed`);
-            else toast.success(`Generated ${total} beat voiceover${total === 1 ? "" : "s"}`);
+            else if (failedCount > 0) toast.error(`${failedCount} of ${total} failed`);
+            else if (remaining > 0) {
+              toast.success(`Generated ${total} beat${total === 1 ? "" : "s"} — ${remaining} more pending. Click Generate to continue.`);
+            } else {
+              toast.success(`Generated ${total} beat voiceover${total === 1 ? "" : "s"}`);
+            }
           } else if (ev.type === "error") {
             receivedTerminal = true;
             throw new Error(ev.message ?? "Generation failed");

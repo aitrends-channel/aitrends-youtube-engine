@@ -4,6 +4,7 @@ import { useState, use, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
+import { RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import useSWR from "swr";
@@ -349,6 +350,57 @@ export default function GeneratePage({ params }: PageProps) {
   // without waiting for the SWR refetch.
   const [deleteVoiceoverConfirmOpen, setDeleteVoiceoverConfirmOpen] = useState(false);
   const [deletingVoiceover, setDeletingVoiceover] = useState(false);
+
+  // Per-beat video regenerate flow. The icon overlay on each generated
+  // video clip opens this modal with the beat number stashed; confirming
+  // hits /api/generate/videos for just that one beat. The route already
+  // nulls video_url/video_status/video_job_id/video_error when it accepts
+  // a new submission, so we don't need a separate clear pass first — the
+  // old R2 file becomes an orphan (next regen overwrites its key with a
+  // fresh upload, so disk usage stays bounded).
+  const [regenVideoBeat, setRegenVideoBeat] = useState<number | null>(null);
+  const [regeneratingVideo, setRegeneratingVideo] = useState(false);
+  async function confirmRegenVideo() {
+    if (regenVideoBeat === null) return;
+    const beat = beats.find((b) => b.beatNumber === regenVideoBeat);
+    if (!beat || !beat.videoPrompt || !beat.imageUrl) {
+      toast.error("Cannot regenerate — beat is missing its prompt or source image.");
+      setRegenVideoBeat(null);
+      return;
+    }
+    if (!selectedVideoModel) {
+      toast.error("Pick a video model first.");
+      setRegenVideoBeat(null);
+      return;
+    }
+    setRegeneratingVideo(true);
+    try {
+      const res = await fetch("/api/generate/videos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          beats: [{ beatNumber: beat.beatNumber, videoPrompt: beat.videoPrompt, imageUrl: beat.imageUrl }],
+          modelId: selectedVideoModel,
+          aspectRatio: selectedVideoAspectRatio,
+          ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
+        }),
+      });
+      const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
+      if (!res.ok) throw new Error(data.error ?? `Request failed (HTTP ${res.status})`);
+      if (data.failures?.length) {
+        toast.error(`Regenerate failed — ${friendlyError(data.failures[0].error)}`);
+      } else {
+        toast.success(`Beat ${beat.beatNumber} re-queued for video regeneration`);
+        setVideosSubmitted(true);
+      }
+      setRegenVideoBeat(null);
+    } catch (err) {
+      toast.error(friendlyError(err instanceof Error ? err.message : null));
+    } finally {
+      setRegeneratingVideo(false);
+    }
+  }
   async function deleteVoiceover() {
     setDeletingVoiceover(true);
     try {
@@ -1405,7 +1457,7 @@ export default function GeneratePage({ params }: PageProps) {
                     {beats.filter((b) => b.videoPrompt).map((b) => (
                       <div
                         key={b.beatNumber}
-                        className="aspect-video rounded-lg overflow-hidden flex items-center justify-center"
+                        className="aspect-video rounded-lg overflow-hidden flex items-center justify-center relative group"
                         style={{ background: "var(--bg-progress)" }}
                         onMouseEnter={() => {
                           if (!b.videoUrl) return;
@@ -1417,7 +1469,28 @@ export default function GeneratePage({ params }: PageProps) {
                         }}
                       >
                         {b.videoUrl ? (
-                          <video src={b.videoUrl} title={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
+                          <>
+                            <video src={b.videoUrl} title={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
+                            {/* Regen overlay — fades in on hover, opens
+                                the per-beat regenerate confirm modal. */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRegenVideoBeat(b.beatNumber);
+                              }}
+                              disabled={regeneratingVideo || queuingVideos || hasActiveVideos}
+                              title={`Regenerate beat ${b.beatNumber}`}
+                              aria-label={`Regenerate beat ${b.beatNumber}`}
+                              className="absolute top-1 right-1 w-6 h-6 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+                              style={{
+                                background: "oklch(0 0 0 / 0.6)",
+                                color: "white",
+                                backdropFilter: "blur(4px)",
+                              }}
+                            >
+                              <RotateCcw size={12} />
+                            </button>
+                          </>
                         ) : (
                           <span className="text-[9px] px-1.5 py-0.5 rounded"
                             title={b.videoStatus === "failed" && b.videoError ? b.videoError : undefined}
@@ -1662,6 +1735,40 @@ export default function GeneratePage({ params }: PageProps) {
           </div>
         </div>
       )}
+
+      <Dialog open={regenVideoBeat !== null} onOpenChange={(open) => { if (!regeneratingVideo && !open) setRegenVideoBeat(null); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Regenerate beat {regenVideoBeat} clip?</DialogTitle>
+            <DialogDescription>
+              This will discard the existing video clip for beat {regenVideoBeat} and submit a fresh render against the current model, prompt, and source image. KIE credits will be charged for the new render.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setRegenVideoBeat(null)}
+              disabled={regeneratingVideo}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
+              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmRegenVideo}
+              disabled={regeneratingVideo}
+              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-60"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              {regeneratingVideo ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Re-queuing…
+                </span>
+              ) : "Regenerate clip"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={deleteVoiceoverConfirmOpen} onOpenChange={(open) => { if (!deletingVoiceover) setDeleteVoiceoverConfirmOpen(open); }}>
         <DialogContent showCloseButton={false}>

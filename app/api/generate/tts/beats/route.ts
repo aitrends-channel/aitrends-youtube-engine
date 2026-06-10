@@ -15,11 +15,13 @@ export const maxDuration = 800;
 // detection), script hash (for stale detection on script edits), and
 // the new status.
 //
-// Batching: TTS_BEAT_BATCH_SIZE env var (defaults to 10). Beats are
-// processed in fixed-size batches; only the current batch is marked
-// "queued", everything beyond it stays "pending". Within a batch all
-// beats run concurrently. Lower the batch size on ElevenLabs Free /
-// Starter tiers or if KIE proxies start returning 429s.
+// Batching: TTS_BEAT_BATCH_SIZE env var (defaults to 5). Each Generate
+// request processes EXACTLY ONE batch and then ends — the user clicks
+// the Generate button again to start the next batch. This gates KIE
+// spend behind explicit confirmation per batch rather than letting one
+// click run the entire script. Within a batch, all members run
+// concurrently. Lower the batch size on ElevenLabs Free / Starter
+// tiers or if KIE proxies start returning 429s.
 
 interface BeatRow {
   beat_number: number;
@@ -80,7 +82,7 @@ export async function POST(req: Request) {
   // up. Beats outside the current batch stay in the grey "Pending"
   // state by virtue of having voiceover_status = NULL in the DB and the
   // UI defaulting null → "pending" in effectiveStatus().
-  const BATCH_SIZE = Math.max(1, parseInt(process.env.TTS_BEAT_BATCH_SIZE ?? "10", 10));
+  const BATCH_SIZE = Math.max(1, parseInt(process.env.TTS_BEAT_BATCH_SIZE ?? "5", 10));
 
   const encoder = new TextEncoder();
   return new Response(
@@ -170,11 +172,17 @@ export async function POST(req: Request) {
             .is("voiceover_url", null)
             .in("voiceover_status", ["queued", "generating"]);
 
+          // Size of THIS batch — capped at BATCH_SIZE because we only
+          // process one batch per request. Used for progress / done
+          // events so the UI shows accurate numbers for the work
+          // happening in this call rather than the entire stale set.
+          const batchSize = Math.min(BATCH_SIZE, toGenerate.length);
+          const remainingAfterBatch = Math.max(0, toGenerate.length - batchSize);
           send({
             type: "status",
-            message: `Generating voiceover for ${toGenerate.length} beat${toGenerate.length === 1 ? "" : "s"}…`,
+            message: `Generating voiceover for ${batchSize} beat${batchSize === 1 ? "" : "s"}…`,
           });
-          send({ type: "progress", current: 0, total: toGenerate.length });
+          send({ type: "progress", current: 0, total: batchSize });
 
           let completed = 0;
           let succeeded = 0;
@@ -190,7 +198,7 @@ export async function POST(req: Request) {
             const rawSegment = (beat.script_segment ?? "").trim();
             if (!rawSegment) {
               completed++;
-              send({ type: "progress", current: completed, total: toGenerate.length });
+              send({ type: "progress", current: completed, total: batchSize });
               return;
             }
             // Defensive: trim any leading overlap with the previous beat
@@ -249,41 +257,36 @@ export async function POST(req: Request) {
               send({ type: "beat", beatNumber: beat.beat_number, status: "failed", error: message });
             } finally {
               completed++;
-              send({ type: "progress", current: completed, total: toGenerate.length });
+              send({ type: "progress", current: completed, total: batchSize });
             }
           }
 
-          // Walk through toGenerate in fixed-size batches. Each batch
-          // gets flipped to "queued" right before it runs (so the UI
-          // shows orange Queued pills only for the next-up batch) and
-          // then all members of the batch run concurrently. The next
-          // batch isn't touched until the current one's last beat
-          // either succeeds or fails.
-          for (let i = 0; i < toGenerate.length; i += BATCH_SIZE) {
-            if (closed) break;
-            const batch = toGenerate.slice(i, i + BATCH_SIZE);
-
-            await Promise.all(
-              batch.map((b) =>
-                supabase
-                  .from("project_beats")
-                  .update({ voiceover_status: "queued", voiceover_error: null })
-                  .eq("project_id", projectId)
-                  .eq("beat_number", b.beat_number),
-              ),
-            );
-            for (const b of batch) {
-              send({ type: "beat", beatNumber: b.beat_number, status: "queued" });
-            }
-
-            await Promise.all(batch.map((b) => processBeat(b)));
+          // Process EXACTLY ONE batch per request. The next batch is
+          // gated behind another user click — that's what makes per-
+          // batch KIE spend explicit. Beats after the current batch
+          // stay at voiceover_status = NULL ("pending" in the UI) and
+          // are picked up on the next Generate run via selectStaleBeats.
+          const batch = toGenerate.slice(0, BATCH_SIZE);
+          await Promise.all(
+            batch.map((b) =>
+              supabase
+                .from("project_beats")
+                .update({ voiceover_status: "queued", voiceover_error: null })
+                .eq("project_id", projectId)
+                .eq("beat_number", b.beat_number),
+            ),
+          );
+          for (const b of batch) {
+            send({ type: "beat", beatNumber: b.beat_number, status: "queued" });
           }
+          await Promise.all(batch.map((b) => processBeat(b)));
 
           send({
             type: "done",
             generated: succeeded,
             failed,
-            total: toGenerate.length,
+            total: batchSize,
+            remaining: remainingAfterBatch,
           });
         } catch (err) {
           send({ type: "error", message: err instanceof Error ? err.message : "Generation failed" });

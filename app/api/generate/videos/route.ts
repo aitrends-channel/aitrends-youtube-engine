@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { deleteObject, r2KeyFromUrl } from "@/lib/supabase/storage";
 import type { User } from "@supabase/supabase-js";
 
 export const maxDuration = 30;
@@ -30,6 +31,30 @@ export async function POST(req: Request) {
       video_duration: duration ?? null,
       video_aspect_ratio: aspectRatio,
     }).eq("id", projectId).eq("user_id", user.id);
+
+    // Pre-fetch each beat's existing video_url so we can delete the
+    // R2 object before nulling the column. Worker uploads new renders
+    // to a unique timestamped key, so the prior file is otherwise
+    // orphaned. Failures during delete don't block queueing — the
+    // orphan costs almost nothing and re-queues are idempotent.
+    const beatNumbers = beats.map((b) => b.beatNumber);
+    const { data: existing } = await supabase
+      .from("project_beats")
+      .select("beat_number, video_url")
+      .eq("project_id", projectId)
+      .in("beat_number", beatNumbers);
+    const urlsToDelete = (existing ?? [])
+      .map((r) => r.video_url as string | null)
+      .filter((u): u is string => !!u);
+    if (urlsToDelete.length > 0) {
+      await Promise.all(urlsToDelete.map(async (url) => {
+        const key = r2KeyFromUrl(url);
+        if (!key) return;
+        try { await deleteObject(key); }
+        catch (e) { console.warn(`[video-submit] R2 delete failed for ${key}:`, e instanceof Error ? e.message : e); }
+      }));
+      console.log(`[video-submit] project=${projectId} cleaned ${urlsToDelete.length} prior video file(s) from R2 before requeue`);
+    }
 
     // Mark each beat as queued
     let submitted = 0;

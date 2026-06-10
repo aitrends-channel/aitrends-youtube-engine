@@ -98,19 +98,18 @@ export default function ScriptPage({ params }: PageProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ script: null, word_count: 0, script_active_run_id: null }),
       });
-      // Downstream cleanup: a regenerated script invalidates every
-      // image / video prompt and every per-beat voiceover that was
-      // generated against the old text. Wipe project_beats now and
-      // null prompts_script_hash so the "Script was edited" stale
-      // warning on the prompts / generate pages doesn't show
-      // immediately on landing there — there's nothing left to be
-      // stale against. The prompts route would do this lazily on its
-      // next run, but doing it eagerly here matches user expectation:
-      // re-script means re-everything-downstream.
+      // Full downstream wipe: re-scripting invalidates everything
+      // generated against the old text — image prompts, video prompts,
+      // image files, video clips, per-beat voiceovers, the assembled
+      // mp4, thumbnails, every cached preview. clear_for_script_regen
+      // deletes the project's entire R2 prefix, every beat row, every
+      // thumbnail row, and resets all derived columns on the project
+      // row in one atomic call. Matches user expectation: re-script
+      // means re-everything-downstream.
       await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ clear_image_prompts: true }),
+        body: JSON.stringify({ clear_for_script_regen: true }),
       });
       await mutate();
     } catch { /* best-effort — the new stream will overwrite on success */ }

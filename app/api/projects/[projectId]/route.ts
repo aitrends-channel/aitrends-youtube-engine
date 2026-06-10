@@ -108,6 +108,73 @@ export async function PATCH(
     return NextResponse.json({ success: true });
   }
 
+  // Full downstream wipe for a script regeneration. Everything tied to
+  // the previous script must be cleared so the new run starts from a
+  // clean slate — image / video / voiceover files in R2, every
+  // per-beat row, thumbnails, the assembled mp4, the assembly
+  // checkpoint, and all status / progress / hash columns on the
+  // project row. The script_* columns themselves (script, script_active_run_id)
+  // are NOT touched here — handleRegenerate on the client zeroes those
+  // separately before kicking off the new script stream.
+  //
+  // Folder wipe strategy: a single deleteFolder pass on
+  // {userFolder}/{projectId}/ removes every R2 object the project ever
+  // wrote (images, videos, voiceovers/, voiceover-preview-*.mp3,
+  // _assembly/, the assembled mp4, legacy voiceover_*.mp3, anything
+  // future code might park here). Cheaper and less brittle than chasing
+  // each prefix individually.
+  if (body.clear_for_script_regen) {
+    const folder = `${userFolderFor(user)}/${projectId}/`;
+    try {
+      await deleteFolder(folder);
+    } catch (e) {
+      // R2 cleanup failure shouldn't block the DB reset. Orphaned
+      // files cost almost nothing and will be overwritten by future
+      // runs at the same keys.
+      console.warn(`[clear_for_script_regen] R2 cleanup failed for ${folder}:`, e instanceof Error ? e.message : e);
+    }
+
+    const [beatsRes, thumbsRes] = await Promise.all([
+      supabase.from("project_beats").delete().eq("project_id", projectId),
+      supabase.from("project_thumbnails").delete().eq("project_id", projectId),
+    ]);
+    if (beatsRes.error) return NextResponse.json({ error: `Failed to delete beats: ${beatsRes.error.message}` }, { status: 500 });
+    if (thumbsRes.error) return NextResponse.json({ error: `Failed to delete thumbnails: ${thumbsRes.error.message}` }, { status: 500 });
+
+    const { error: updErr } = await supabase
+      .from("projects")
+      .update({
+        // Prompts (image + video) state — match clear_image_prompts.
+        prompts_active_run_id: null,
+        prompts_active_step: null,
+        prompts_script_hash: null,
+        prompts_stop_requested: false,
+        // Image / video progress counters.
+        images_progress: 0,
+        videos_progress: 0,
+        // Legacy single-track voiceover columns.
+        tts_url: null,
+        tts_cleaned_url: null,
+        tts_script_hash: null,
+        // Per-beat voiceover hash that anchors beat_timings to a
+        // specific voiceover set — invalid once audio is gone.
+        beat_timings_voiceover_hash: null,
+        // Assembly output + checkpoint.
+        assembled_url: null,
+        assembly_status: null,
+        assembly_progress: null,
+        assembly_error: null,
+        assembly_checkpoint: null,
+        assembly_stop_requested: false,
+      })
+      .eq("id", projectId)
+      .eq("user_id", user.id);
+    if (updErr) return NextResponse.json({ error: `Failed to reset project: ${updErr.message}` }, { status: 500 });
+
+    console.log(`[clear_for_script_regen] project=${projectId} wiped R2 prefix ${folder}, all beats, all thumbnails, and 13 project columns reset.`);
+    return NextResponse.json({ success: true });
+  }
+
   // Hard-delete the assembled mp4 from R2 + wipe the related project
   // state so the assemble page resets to its pre-assembly view. Called
   // from the Reassemble confirm path on the client.
