@@ -22,6 +22,10 @@ export async function POST(req: Request) {
     captionsStyle?: string;
     captionsSize?: string;
     captionsPosition?: string;
+    // Opt-in flag set by the "Trim silences" button on the assemble
+    // page. The worker only runs the per-beat silence trim when this
+    // is true; a normal Assemble / Reassemble leaves audio untouched.
+    trimSilenceEnabled?: boolean;
   };
 
   const { projectId, ...options } = body;

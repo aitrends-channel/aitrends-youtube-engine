@@ -323,7 +323,11 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }
 
-  async function assembleVideo() {
+  // Per-run silence trim toggle. assembleVideo() takes a parameter
+  // instead of state so the "Trim silences" button can pass true
+  // directly without waiting for a setState round-trip. Normal
+  // Assemble / Reassemble calls leave the flag at false.
+  async function assembleVideo(trimSilence: boolean = false) {
     if (assembling) return;
     // Whether this is a first assembly or a confirmed reassemble, the
     // config panel is the launch path — drop reassembleMode here so a
@@ -331,12 +335,12 @@ export default function AssemblePage({ params }: PageProps) {
     setReassembleMode(false);
     setAssembling(true);
     setAssembledUrl(null);
-    setAssembleStatus("Queuing…");
+    setAssembleStatus(trimSilence ? "Queuing (trim silences)…" : "Queuing…");
     try {
       const res = await fetch("/api/generate/assemble", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, aspectRatio, voiceoverType, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition }),
+        body: JSON.stringify({ projectId, aspectRatio, voiceoverType, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, trimSilenceEnabled: trimSilence }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: string };
@@ -346,6 +350,35 @@ export default function AssemblePage({ params }: PageProps) {
       toast.error(err instanceof Error ? err.message : "Assembly failed");
       setAssembling(false);
       setAssembleStatus("");
+    }
+  }
+
+  // Trim-silences flow: confirm modal → clear the current assembled
+  // mp4 + checkpoint → assembleVideo(true). Single click for the user;
+  // no need to drop into the reassembleMode config panel because the
+  // only thing changing is the trim flag, not any user-facing option.
+  const [trimConfirmOpen, setTrimConfirmOpen] = useState(false);
+  const [trimRunning, setTrimRunning] = useState(false);
+  async function runTrimAssembly() {
+    setTrimRunning(true);
+    try {
+      const clearRes = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear_assembled: true }),
+      });
+      if (!clearRes.ok) {
+        const err = await clearRes.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to clear assembled video");
+      }
+      setAssembledUrl(null);
+      await mutate();
+      setTrimConfirmOpen(false);
+      await assembleVideo(true);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Trim re-assembly failed");
+    } finally {
+      setTrimRunning(false);
     }
   }
 
@@ -760,6 +793,13 @@ export default function AssemblePage({ params }: PageProps) {
                       style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
                       Reassemble
                     </button>
+                    <button onClick={() => setTrimConfirmOpen(true)}
+                      disabled={trimRunning || assembling}
+                      title="Re-assemble with leading/trailing silence trimmed from every beat. Use if you hear short pauses between beats."
+                      className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
+                      style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
+                      {trimRunning ? "Trimming…" : "Trim silences"}
+                    </button>
                     <a href={previewUrl} download="assembled.mp4"
                       className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all"
                       style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
@@ -801,7 +841,7 @@ export default function AssemblePage({ params }: PageProps) {
                       </span>
                     ) : "Retry Upload"}
                   </button>
-                  <button onClick={assembleVideo} disabled={assembling}
+                  <button onClick={() => assembleVideo()} disabled={assembling}
                     className="w-full py-2 rounded-xl text-xs font-medium disabled:opacity-60 transition-all"
                     style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}>
                     {assembling ? "Queuing…" : "Or reassemble from scratch"}
@@ -829,7 +869,7 @@ export default function AssemblePage({ params }: PageProps) {
                         Cancel
                       </button>
                     )}
-                    <button onClick={assembleVideo} disabled={!hasVoiceover || assembling}
+                    <button onClick={() => assembleVideo()} disabled={!hasVoiceover || assembling}
                       className={`${reassembleMode ? "flex-1" : "w-full"} py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all`}
                       style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
                       {assembling ? (
@@ -848,6 +888,40 @@ export default function AssemblePage({ params }: PageProps) {
 
         </div>
       </main>
+
+      <Dialog open={trimConfirmOpen} onOpenChange={(open) => { if (!trimRunning) setTrimConfirmOpen(open); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Trim silences & reassemble?</DialogTitle>
+            <DialogDescription>
+              This deletes the current assembled video and re-runs the assembly with leading/trailing silence trimmed from every beat&apos;s audio. Use this if you hear short pauses between beats. Internal pauses inside each beat are preserved.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setTrimConfirmOpen(false)}
+              disabled={trimRunning}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
+              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={runTrimAssembly}
+              disabled={trimRunning}
+              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-60"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              {trimRunning ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Re-queuing…
+                </span>
+              ) : "Trim silences & reassemble"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={reassembleConfirmOpen} onOpenChange={(open) => { if (!clearingAssembled) setReassembleConfirmOpen(open); }}>
         <DialogContent showCloseButton={false}>
