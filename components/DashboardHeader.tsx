@@ -9,6 +9,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isAdminEmail } from "@/lib/admin";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { KieBalanceRow } from "@/components/KieBalanceRow";
+import { ElevenLabsBalanceRow } from "@/components/ElevenLabsBalanceRow";
 
 interface DashboardHeaderProps {
   /** Extra slot at the right edge — for page-specific primary actions. */
@@ -138,6 +139,7 @@ export function DashboardHeader({ rightExtra }: DashboardHeaderProps) {
               </div>
 
               <KieBalanceRow />
+              <ElevenLabsBalanceRow />
 
               <div className="px-2 pt-2">
                 <Link

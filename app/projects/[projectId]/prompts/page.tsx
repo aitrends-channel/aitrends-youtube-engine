@@ -1301,7 +1301,7 @@ export default function PromptsPage({ params }: PageProps) {
         >
           <div className="mx-5 px-4 sm:px-8">
           <button
-            onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/generate`); }}
+            onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/voiceover`); }}
             disabled={anyRunning || navigating}
             className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
             style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}

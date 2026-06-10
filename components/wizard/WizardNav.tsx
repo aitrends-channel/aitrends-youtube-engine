@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import {
-  Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film,
+  Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Mic, Clapperboard, Film,
   Check, CheckCircle2, LayoutTemplate, ArrowLeft, X, Settings, LogOut,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -14,6 +14,7 @@ import { useIconThemeStore } from "@/store/iconThemeStore";
 import { type PhaseKey } from "@/lib/iconThemes";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { KieBalanceRow } from "@/components/KieBalanceRow";
+import { ElevenLabsBalanceRow } from "@/components/ElevenLabsBalanceRow";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 const PHASES: { id: PhaseKey; label: string; sublabel: string; path: string; states: number[]; navigableFrom?: number }[] = [
@@ -22,6 +23,7 @@ const PHASES: { id: PhaseKey; label: string; sublabel: string; path: string; sta
   { id: "script",     label: "Script",     sublabel: "Generate & Edit",     path: "script",     states: [6], navigableFrom: 7 },
   { id: "visuals",    label: "Visuals",    sublabel: "Style Extraction",    path: "visuals",    states: [7, 8, 11, 12], navigableFrom: 7 },
   { id: "prompts",    label: "Prompts",    sublabel: "Image & Video Beats", path: "prompts",    states: [9, 10] },
+  { id: "voiceover",  label: "Voiceover",  sublabel: "Per-beat Narration",  path: "voiceover",  states: [9], navigableFrom: 9 },
   { id: "generate",   label: "Generate",   sublabel: "Assets & Export",     path: "generate",   states: [14] },
   { id: "assemble",   label: "Assemble",   sublabel: "Final Video",         path: "assemble",   states: [15], navigableFrom: 14 },
   { id: "thumbnails", label: "Thumbnails", sublabel: "Concepts & Images",   path: "thumbnails", states: [13], navigableFrom: 9 },
@@ -33,13 +35,14 @@ const PHASE_ICONS: Record<PhaseKey, LucideIcon> = {
   script:     ScrollText,
   visuals:    ImageIcon,
   prompts:    Wand2,
+  voiceover:  Mic,
   thumbnails: LayoutTemplate,
   generate:   Clapperboard,
   assemble:   Film,
 };
 
 const PATH_RANK: Record<string, number> = {
-  channel: 0, topic: 1, script: 2, visuals: 3, prompts: 4, generate: 5, assemble: 6, thumbnails: 7,
+  channel: 0, topic: 1, script: 2, visuals: 3, prompts: 4, voiceover: 5, generate: 6, assemble: 7, thumbnails: 8,
 };
 
 interface WizardNavProps {
@@ -273,6 +276,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                   </p>
                 </div>
                 <KieBalanceRow />
+                <ElevenLabsBalanceRow />
                 <div className="px-2 pt-2">
                   <button
                     onClick={() => { setShowProfileMenu(false); navigate("/setup"); }}
@@ -346,6 +350,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                       </p>
                     </div>
                     <KieBalanceRow />
+                    <ElevenLabsBalanceRow />
                     <div className="px-2 pt-2">
                       <button
                         onClick={() => { setShowProfileMenu(false); router.push("/setup"); }}

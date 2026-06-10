@@ -207,7 +207,7 @@ Mood: ${visualProfile.mood}
 Detail: ${visualProfile.detailLevel}
 
 PER-BEAT FIELDS
-- scriptSegment: the exact words from the script for this beat (typically 8–20 words). Must be a verbatim substring of the chunk.
+- scriptSegment: the exact words from the script for this beat (typically 8–20 words). Must be a verbatim substring of the chunk AND must NOT overlap with adjacent beats — each beat picks up exactly where the previous beat's last word ended. Concatenating every scriptSegment in order, separated by single spaces, must reproduce the chunk verbatim. Do not repeat phrases at beat boundaries.
 - imagePrompt: 1–2 cinematic sentences. Visualize the narration LITERALLY whenever possible. For abstract concepts, use concrete visual metaphors. Apply the visual style above as direct AI-image-generator instructions. Be specific (subject, action, environment, framing).
 - camera: single short phrase (e.g. "tight close-up", "low-angle wide", "overhead aerial")
 - lighting: single short phrase (e.g. "warm golden rim light", "cold blue moonlight")
@@ -273,7 +273,7 @@ Mood: ${visualProfile.mood}
 Detail: ${visualProfile.detailLevel}
 
 PER-BEAT FIELDS
-- scriptSegment: the exact words from the script for this beat (typically 8–20 words). Must be a verbatim substring of the chunk above.
+- scriptSegment: the exact words from the script for this beat (typically 8–20 words). Must be a verbatim substring of the chunk above AND must NOT overlap with adjacent beats — each beat picks up exactly where the previous beat's last word ended. Concatenating every scriptSegment in order, separated by single spaces, must reproduce the chunk verbatim. Do not repeat phrases at beat boundaries.
 - imagePrompt: 1–2 cinematic sentences. Visualize the narration LITERALLY whenever possible. For abstract concepts, use concrete visual metaphors. Apply the visual style above as direct AI-image-generator instructions. Be specific (subject, action, environment, framing).
 - camera: single short phrase (e.g. "tight close-up", "low-angle wide", "overhead aerial")
 - lighting: single short phrase (e.g. "warm golden rim light", "cold blue moonlight")

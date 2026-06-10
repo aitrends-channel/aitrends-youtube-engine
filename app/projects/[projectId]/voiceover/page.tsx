@@ -1,0 +1,946 @@
+"use client";
+
+import { useState, useEffect, useRef, useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { WizardNav } from "@/components/wizard/WizardNav";
+import { useProject } from "@/hooks/useProject";
+import { toast } from "sonner";
+import useSWR from "swr";
+import type { KieModel, Beat } from "@/lib/types";
+
+// Per-beat voiceover step. Each beat shows its own row with status,
+// playback, and per-beat retry. A bulk Generate button kicks off all
+// stale beats in parallel (server-side concurrency cap respected).
+//
+// Status sources:
+//   • The project's `beats` array carries voiceoverUrl / voiceoverStatus
+//     and friends — that's the canonical source after the SSE stream
+//     ends or on a fresh page load.
+//   • While the SSE is in flight, per-beat status arriving from the
+//     server takes precedence via an overlay map so the UI doesn't
+//     wait for SWR's 5s poll to reflect each beat's progress.
+
+interface PageProps { params: { projectId: string } }
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+type BeatStatus = "pending" | "queued" | "generating" | "done" | "failed";
+
+interface LiveBeatState {
+  status: BeatStatus;
+  url?: string;
+  error?: string;
+}
+
+// ── Voice picker (mirrors the generate page's VoiceOption) ──────────
+function VoiceOption({
+  model, selected, onSelect, isPlaying, onPlayToggle,
+}: {
+  model: KieModel; selected: boolean; onSelect: () => void;
+  isPlaying: boolean; onPlayToggle: (id: string | null) => void;
+}) {
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    if (!isPlaying && audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+  }, [isPlaying]);
+  useEffect(() => () => { audioRef.current?.pause(); }, []);
+  function togglePreview(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!model.previewUrl) return;
+    if (isPlaying) {
+      onPlayToggle(null);
+    } else {
+      onSelect();
+      const audio = new Audio(model.previewUrl);
+      audioRef.current = audio;
+      audio.onended = () => onPlayToggle(null);
+      audio.onerror = () => onPlayToggle(null);
+      audio.play().catch(() => onPlayToggle(null));
+      onPlayToggle(model.id);
+    }
+  }
+  return (
+    <div
+      role="button"
+      onClick={onSelect}
+      className="cursor-pointer p-3 rounded-xl transition-all select-none"
+      style={selected ? {
+        background: "oklch(0.72 0.25 285 / 0.1)",
+        border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+        color: "var(--c-90)",
+      } : {
+        background: "var(--bg-input)",
+        border: "1px solid var(--bd-7)",
+        color: "var(--c-60)",
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <p className="font-medium text-xs flex-1 truncate">{model.name}</p>
+        {model.previewUrl && (
+          <button
+            onClick={togglePreview}
+            title={isPlaying ? "Stop preview" : "Preview voice"}
+            className="w-6 h-6 rounded flex items-center justify-center shrink-0 transition-colors"
+            style={{
+              background: isPlaying ? "oklch(0.72 0.25 285 / 0.15)" : "oklch(0.2 0 0)",
+              color: isPlaying ? "oklch(0.72 0.25 285)" : "var(--c-45)",
+              border: "1px solid var(--bd-10)",
+            }}
+          >
+            {isPlaying ? (
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
+                <rect x="0.5" y="0" width="2.5" height="8" rx="0.5" />
+                <rect x="5" y="0" width="2.5" height="8" rx="0.5" />
+              </svg>
+            ) : (
+              <svg width="7" height="9" viewBox="0 0 7 9" fill="currentColor">
+                <path d="M0 0.5L7 4.5L0 8.5V0.5Z" />
+              </svg>
+            )}
+          </button>
+        )}
+      </div>
+      {model.tags && model.tags.length > 0 && (
+        <div className="flex gap-1 mt-1.5 flex-wrap">
+          {model.tags.map((tag) => (
+            <span key={tag} className="px-1.5 py-0.5 rounded text-xs"
+              style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Full voiceover preview ──────────────────────────────────────────
+// Server-side ffmpeg concat into ONE MP3 — the only way to get a truly
+// seamless preview that matches the assembled video's audio track.
+// The route at /api/projects/:id/voiceover/concat:
+//   1. Hashes the ordered beat URLs.
+//   2. If a preview file with that hash already exists in R2, returns
+//      its URL (cache hit).
+//   3. Otherwise downloads each beat, runs ffmpeg `-c copy` concat,
+//      uploads the result, returns the URL.
+// The client then plays that single URL through a plain <audio>.
+//
+// Trade-off: a ~3-10s delay on first preview after new beats land
+// (download + concat). The hash-keyed cache means subsequent loads
+// of the same beat set are instant.
+function FullVoiceoverPreview({
+  projectId,
+  beats,
+  liveBeats,
+}: {
+  projectId: string;
+  beats: Beat[];
+  liveBeats: Map<number, LiveBeatState>;
+}) {
+  // urlSignature changes whenever the set/ordering of beat URLs
+  // changes. We rebuild the preview whenever this changes.
+  const urlSignature = useMemo(() => {
+    const list: string[] = [];
+    for (const b of beats) {
+      const liveUrl = liveBeats.get(b.beatNumber)?.url;
+      const url = liveUrl ?? b.voiceoverUrl;
+      if (url) list.push(`${b.beatNumber}:${url}`);
+    }
+    return list.sort().join("\n");
+  }, [beats, liveBeats]);
+  const orderedCount = urlSignature ? urlSignature.split("\n").length : 0;
+
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [building, setBuilding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [tickFlag, setTickFlag] = useState(0);
+  void tickFlag;
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Build (or fetch from cache) the concatenated preview whenever the
+  // set of beat URLs changes.
+  useEffect(() => {
+    if (!urlSignature) { setPreviewUrl(null); return; }
+    let cancelled = false;
+    setBuilding(true);
+    setError(null);
+    fetch(`/api/projects/${projectId}/voiceover/concat`, { method: "POST" })
+      .then(async (r) => {
+        const data = await r.json().catch(() => ({}));
+        if (cancelled) return;
+        if (!r.ok) { setError(data.error ?? "Preview build failed"); setPreviewUrl(null); return; }
+        setPreviewUrl(data.url);
+      })
+      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : "Preview build failed"); })
+      .finally(() => { if (!cancelled) setBuilding(false); });
+    return () => { cancelled = true; };
+  }, [urlSignature, projectId]);
+
+  useEffect(() => {
+    const a = audioRef.current;
+    if (!a) return;
+    function onEnded() { setPlaying(false); }
+    function onTime() { setTickFlag((t) => t + 1); }
+    a.addEventListener("ended", onEnded);
+    a.addEventListener("timeupdate", onTime);
+    return () => {
+      a.removeEventListener("ended", onEnded);
+      a.removeEventListener("timeupdate", onTime);
+    };
+  }, [previewUrl]);
+
+  function toggle() {
+    const a = audioRef.current;
+    if (!a || !previewUrl) return;
+    if (playing) { a.pause(); setPlaying(false); }
+    else { a.play().then(() => setPlaying(true)).catch(() => setPlaying(false)); }
+  }
+
+  const elapsedSec = audioRef.current?.currentTime ?? 0;
+  const totalSec = audioRef.current && isFinite(audioRef.current.duration) ? audioRef.current.duration : 0;
+  const pct = totalSec > 0 ? Math.min(100, (elapsedSec / totalSec) * 100) : 0;
+
+  function fmt(s: number): string {
+    const m = Math.floor(s / 60);
+    const r = Math.floor(s % 60);
+    return `${m}:${r.toString().padStart(2, "0")}`;
+  }
+
+  if (orderedCount === 0) return null;
+  const canPlay = !!previewUrl && !building;
+
+  return (
+    <div
+      className="rounded-2xl p-4 sm:p-5 space-y-3"
+      style={{ background: "#ffffff", border: "1px solid oklch(0.85 0 0)" }}
+    >
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "oklch(0.35 0 0)" }}>
+          Full voiceover preview
+        </p>
+        <span className="text-[11px] font-mono tabular-nums" style={{ color: "oklch(0.45 0 0)" }}>
+          {building ? "Building preview…" : error ? "Failed" : `${orderedCount} beats joined`}
+        </span>
+      </div>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={toggle}
+          disabled={!canPlay}
+          aria-label={playing ? "Pause" : "Play"}
+          className="w-9 h-9 rounded-full flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ background: "oklch(0.72 0.25 285)", color: "#ffffff" }}
+        >
+          {playing ? (
+            <span className="flex gap-[3px]">
+              <span className="block w-[3px] h-3 rounded-sm" style={{ background: "currentColor" }} />
+              <span className="block w-[3px] h-3 rounded-sm" style={{ background: "currentColor" }} />
+            </span>
+          ) : (
+            <span
+              className="block w-0 h-0 ml-[2px]"
+              style={{
+                borderLeft: "8px solid currentColor",
+                borderTop: "5px solid transparent",
+                borderBottom: "5px solid transparent",
+              }}
+            />
+          )}
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "oklch(0.92 0 0)" }}>
+            <div
+              className="h-full rounded-full transition-all duration-150"
+              style={{ width: `${pct}%`, background: "oklch(0.55 0.15 145)" }}
+            />
+          </div>
+          <div className="flex justify-between mt-1 text-[11px] font-mono tabular-nums" style={{ color: "oklch(0.45 0 0)" }}>
+            <span>{fmt(elapsedSec)}</span>
+            <span>{fmt(totalSec)}</span>
+          </div>
+        </div>
+      </div>
+      {/* Single audio element pointed at the server-concatenated MP3
+          — no swaps, no gaps. */}
+      <audio ref={audioRef} src={previewUrl ?? undefined} preload="auto" />
+      {error && (
+        <p className="text-[11px]" style={{ color: "oklch(0.7 0.2 25)" }}>{error}</p>
+      )}
+    </div>
+  );
+}
+
+// ── Status pill ─────────────────────────────────────────────────────
+function StatusPill({ status }: { status: BeatStatus }) {
+  const style = {
+    pending:    { bg: "oklch(0.7 0.18 25 / 0.10)",    col: "oklch(0.75 0.18 25)", label: "Pending" },
+    queued:     { bg: "oklch(0.72 0.16 70 / 0.12)",   col: "oklch(0.85 0.12 70)", label: "Queued" },
+    generating: { bg: "oklch(0.72 0.25 285 / 0.12)",  col: "oklch(0.72 0.25 285)", label: "Generating" },
+    done:       { bg: "oklch(0.55 0.15 145 / 0.15)",  col: "oklch(0.7 0.15 145)", label: "Done" },
+    failed:     { bg: "oklch(0.6 0.22 25 / 0.12)",    col: "oklch(0.7 0.2 25)",   label: "Failed" },
+  }[status];
+  return (
+    <span className="text-[11px] font-medium px-2 py-0.5 rounded inline-flex items-center gap-1.5"
+      style={{ background: style.bg, color: style.col }}>
+      {status === "queued" && (
+        <span className="inline-block w-2 h-2 rounded-full border-2 border-current border-t-transparent animate-spin" />
+      )}
+      {style.label}
+    </span>
+  );
+}
+
+export default function VoiceoverPage({ params }: PageProps) {
+  const { projectId } = params;
+  const router = useRouter();
+  const { project, mutate } = useProject(projectId);
+  const { data: ttsModels } = useSWR<KieModel[]>("/api/kie/models?type=tts", fetcher);
+
+  const beats: Beat[] = useMemo(() => (project?.beats ?? []) as Beat[], [project]);
+  const projectVoiceId = (project?.tts_voice_id as string | null | undefined) ?? null;
+
+  // Voice picker state — defaults to the project's saved voice, else
+  // first model of the active gender tab.
+  const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
+  const [voiceTab, setVoiceTab] = useState<"female" | "male">("female");
+  const [previewingId, setPreviewingId] = useState<string | null>(null);
+  useEffect(() => {
+    if (projectVoiceId && !selectedVoice) setSelectedVoice(projectVoiceId);
+  }, [projectVoiceId, selectedVoice]);
+  useEffect(() => {
+    if (!ttsModels?.length) return;
+    if (!selectedVoice) {
+      const firstInTab = ttsModels.find((m) => m.tags?.[0]?.toLowerCase() === voiceTab);
+      if (firstInTab) setSelectedVoice(firstInTab.id);
+    }
+  }, [ttsModels, voiceTab, selectedVoice]);
+
+  // Live overlay — per-beat state from the SSE stream during a run,
+  // takes precedence over the project's persisted state until the
+  // stream ends and SWR catches up.
+  const [liveBeats, setLiveBeats] = useState<Map<number, LiveBeatState>>(new Map());
+  const [generating, setGenerating] = useState(false);
+  const [stopped, setStopped] = useState(false);
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
+  const [statusMessage, setStatusMessage] = useState("");
+  // AbortController for the in-flight SSE fetch. Stop aborts it; the
+  // server detects the closed stream and stops queueing further batches.
+  // Any beats already in flight in the current batch will run to
+  // completion (their KIE call is already going).
+  const abortRef = useRef<AbortController | null>(null);
+
+  function effectiveStatus(b: Beat): BeatStatus {
+    const live = liveBeats.get(b.beatNumber);
+    if (live) return live.status;
+    // If the beat has audio on disk, it's done — regardless of any
+    // stale "queued"/"generating" label that may have been left on
+    // the row by an older run. This is a safety net for orphaned
+    // status writes; the DB cleanup pass in the route handles new
+    // runs, but we want existing data to render correctly too.
+    if (b.voiceoverUrl) return "done";
+    const s = b.voiceoverStatus;
+    if (s === "queued" || s === "done" || s === "failed") return s;
+    return "pending";
+  }
+
+  function effectiveUrl(b: Beat): string | undefined {
+    return liveBeats.get(b.beatNumber)?.url ?? b.voiceoverUrl;
+  }
+
+  function effectiveError(b: Beat): string | undefined {
+    return liveBeats.get(b.beatNumber)?.error ?? b.voiceoverError;
+  }
+
+  // A beat is "stale" if it needs regen — same logic the server uses.
+  function isStale(b: Beat, voiceId: string | null): boolean {
+    if (!b.scriptSegment?.trim()) return false;
+    if (!b.voiceoverUrl) return true;
+    if (b.voiceoverStatus === "failed" || b.voiceoverStatus === "queued") return true;
+    if (voiceId && b.voiceoverVoiceId !== voiceId) return true;
+    // Skip script-hash check on the client — the server has the
+    // canonical hash; if the script changed we'd see the mismatch
+    // via the voiceover_url being from an older render.
+    return false;
+  }
+
+  const totalBeats = beats.length;
+  const doneCount = beats.filter((b) => effectiveStatus(b) === "done").length;
+  const failedCount = beats.filter((b) => effectiveStatus(b) === "failed").length;
+  // "Queued" here means a row left in voiceover_status="queued" from a
+  // previous run that was cancelled/orphaned — selectStaleBeats picks
+  // those up too so they get retried, the user doesn't have to.
+  const queuedCount = beats.filter((b) => effectiveStatus(b) === "queued").length;
+  const pendingCount = beats.filter((b) => effectiveStatus(b) === "pending").length;
+  const staleCount = beats.filter((b) => isStale(b, selectedVoice)).length;
+  const allDone = totalBeats > 0 && doneCount === totalBeats;
+
+  async function runGeneration(opts: { beatNumbers?: number[] } = {}) {
+    if (!selectedVoice) { toast.error("Pick a voice first"); return; }
+    if (!totalBeats) { toast.error("No beats — run Prompts step first"); return; }
+    if (generating) return;
+    setGenerating(true);
+    setStopped(false);
+    setProgress(null);
+    setStatusMessage("Starting…");
+    setLiveBeats(new Map());
+
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
+    try {
+      const res = await fetch("/api/generate/tts/beats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          voiceId: selectedVoice,
+          ...(opts.beatNumbers ? { beatNumbers: opts.beatNumbers } : {}),
+        }),
+        signal: ctrl.signal,
+      });
+      if (!res.ok || !res.body) throw new Error("Failed to start voiceover generation");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let receivedTerminal = false;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          let ev: { type?: string; message?: string; current?: number; total?: number; beatNumber?: number; status?: BeatStatus; url?: string; error?: string };
+          try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+          if (ev.type === "status") setStatusMessage(ev.message ?? "");
+          else if (ev.type === "progress") setProgress({ current: ev.current ?? 0, total: ev.total ?? 0 });
+          else if (ev.type === "beat" && typeof ev.beatNumber === "number" && ev.status) {
+            setLiveBeats((prev) => {
+              const next = new Map(prev);
+              next.set(ev.beatNumber!, { status: ev.status!, url: ev.url, error: ev.error });
+              return next;
+            });
+          } else if (ev.type === "done") {
+            receivedTerminal = true;
+            const generated = ev.current ?? 0;
+            void generated;
+            const total = ev.total ?? 0;
+            if (total === 0) toast.success("Voiceovers already up to date");
+            else if ((ev as { failed?: number }).failed) toast.error(`${(ev as { failed?: number }).failed} of ${total} failed`);
+            else toast.success(`Generated ${total} beat voiceover${total === 1 ? "" : "s"}`);
+          } else if (ev.type === "error") {
+            receivedTerminal = true;
+            throw new Error(ev.message ?? "Generation failed");
+          }
+        }
+      }
+      if (!receivedTerminal) throw new Error("Stream ended unexpectedly — try again.");
+      await mutate();
+    } catch (err) {
+      // AbortError fires when the user clicks Stop — that's an
+      // intentional cancel, not a failure, so suppress the toast.
+      const isAbort = err instanceof Error && err.name === "AbortError";
+      if (!isAbort) {
+        toast.error(err instanceof Error ? err.message : "Generation failed");
+      }
+    } finally {
+      setGenerating(false);
+      setProgress(null);
+      setStatusMessage("");
+      abortRef.current = null;
+      // Clear live overlay so DB-backed state takes over once SWR
+      // refreshes — avoids a stale local "done" carrying over after
+      // a project change.
+      setLiveBeats(new Map());
+      await mutate();
+    }
+  }
+
+  function stopGeneration() {
+    abortRef.current?.abort();
+    setStopped(true);
+  }
+
+  function retryOne(beatNumber: number) {
+    if (generating) { toast.error("Wait for current run to finish"); return; }
+    runGeneration({ beatNumbers: [beatNumber] });
+  }
+
+  const [dedupingOverlap, setDedupingOverlap] = useState(false);
+  async function fixOverlappingText() {
+    if (generating || dedupingOverlap) return;
+    setDedupingOverlap(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/beats/dedupe-overlap`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Fix failed");
+      if (data.fixed === 0) {
+        toast.success("No overlapping text found — beats are already clean.");
+      } else {
+        toast.success(`Cleaned ${data.fixed} beat${data.fixed === 1 ? "" : "s"} of overlapping text. Regenerate to update audio.`);
+        await mutate();
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Fix failed");
+    } finally {
+      setDedupingOverlap(false);
+    }
+  }
+
+  const [clearing, setClearing] = useState(false);
+
+  // Single confirm-dialog state: holds either null (closed) or a config
+  // object describing the title, body, button copy, and the callback
+  // to fire on confirm. Both the Clear and Regenerate-all flows feed
+  // into the same modal component below, just with different props.
+  type ConfirmConfig = {
+    title: string;
+    body: React.ReactNode;
+    footnote?: string;
+    icon: string;
+    iconColor: string;
+    iconBg: string;
+    iconBorder: string;
+    confirmLabel: string;
+    confirmBg: string;
+    onConfirm: () => void | Promise<void>;
+  };
+  const [confirm, setConfirm] = useState<ConfirmConfig | null>(null);
+
+  async function clearAll() {
+    setConfirm(null);
+    setClearing(true);
+    try {
+      const res = await fetch("/api/generate/tts/beats/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Clear failed");
+      toast.success(`Cleared ${data.cleared ?? 0} beat${data.cleared === 1 ? "" : "s"}`);
+      setStopped(false);
+      setLiveBeats(new Map());
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Clear failed");
+    } finally {
+      setClearing(false);
+    }
+  }
+
+  function openClearConfirm() {
+    if (generating || clearing) return;
+    if (doneCount === 0) { toast.error("Nothing to clear"); return; }
+    setConfirm({
+      title: "Clear all voiceovers?",
+      body: (
+        <>
+          Deletes <span className="font-semibold" style={{ color: "var(--c-80)" }}>
+            {doneCount} generated voiceover{doneCount === 1 ? "" : "s"}
+          </span> from storage and resets every beat to{" "}
+          <span className="font-semibold" style={{ color: "var(--c-80)" }}>Pending</span>.
+        </>
+      ),
+      footnote: "This cannot be undone — you'll need to regenerate from scratch.",
+      icon: "!",
+      iconColor: "oklch(0.7 0.2 25)",
+      iconBg: "oklch(0.6 0.22 25 / 0.12)",
+      iconBorder: "oklch(0.6 0.22 25 / 0.3)",
+      confirmLabel: `Clear ${doneCount} beat${doneCount === 1 ? "" : "s"}`,
+      confirmBg: "oklch(0.6 0.22 25)",
+      onConfirm: clearAll,
+    });
+  }
+
+  function openRegenConfirm() {
+    if (generating || clearing) return;
+    if (!selectedVoice) { toast.error("Pick a voice first"); return; }
+    if (doneCount === 0) {
+      // Nothing on file — Regenerate is just a normal first-time run.
+      runGeneration();
+      return;
+    }
+    setConfirm({
+      title: "Regenerate all voiceovers?",
+      body: (
+        <>
+          This will overwrite <span className="font-semibold" style={{ color: "var(--c-80)" }}>
+            {doneCount} existing voiceover{doneCount === 1 ? "" : "s"}
+          </span> and re-render every beat with the selected voice. Your current audio for these beats will be replaced.
+        </>
+      ),
+      footnote: "KIE credits will be charged for each regenerated beat.",
+      icon: "↻",
+      iconColor: "oklch(0.72 0.25 285)",
+      iconBg: "oklch(0.72 0.25 285 / 0.12)",
+      iconBorder: "oklch(0.72 0.25 285 / 0.3)",
+      confirmLabel: `Regenerate ${totalBeats} beat${totalBeats === 1 ? "" : "s"}`,
+      confirmBg: "oklch(0.72 0.25 285)",
+      onConfirm: async () => {
+        setConfirm(null);
+        // Pass every beat number explicitly so selectStaleBeats is
+        // bypassed and every beat is re-rendered, regardless of its
+        // current done state.
+        await runGeneration({ beatNumbers: beats.map((b) => b.beatNumber) });
+      },
+    });
+  }
+
+  // Esc closes the active confirm dialog.
+  useEffect(() => {
+    if (!confirm) return;
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") setConfirm(null); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [confirm]);
+
+  const filteredVoices = useMemo(
+    () => (ttsModels ?? []).filter((m) => m.tags?.[0]?.toLowerCase() === voiceTab),
+    [ttsModels, voiceTab],
+  );
+
+  return (
+    <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
+      <WizardNav projectId={projectId} currentState={9} highestState={project?.current_state} channelName={project?.channel_name} />
+
+      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
+        {/* Header */}
+        <div className="shrink-0 px-4 sm:px-8 py-4 sm:py-5"
+          style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
+          <h1 className="font-bold text-base sm:text-lg">Voiceover</h1>
+          <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+            One narration clip per beat. Each beat&apos;s clip is the timing source for its visual — no matcher, no drift.
+          </p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto pb-[70px]">
+        <div className="p-4 sm:p-8 pb-24 max-w-4xl mx-auto space-y-6">
+
+          {/* Voice picker */}
+          <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+            <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
+              Voice
+            </p>
+            <div className="flex gap-1 mb-3">
+              {(["female", "male"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setVoiceTab(tab)}
+                  disabled={generating}
+                  className="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium capitalize transition-all disabled:opacity-40"
+                  style={voiceTab === tab ? {
+                    background: "oklch(0.72 0.25 285 / 0.15)",
+                    border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                    color: "oklch(0.88 0.12 285)",
+                  } : {
+                    background: "var(--bg-input)",
+                    border: "1px solid var(--bd-7)",
+                    color: "var(--c-50)",
+                  }}
+                >{tab}</button>
+              ))}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1">
+              {!ttsModels && <p className="text-xs px-1" style={{ color: "var(--c-40)" }}>Loading voices…</p>}
+              {ttsModels && filteredVoices.length === 0 && (
+                <p className="text-xs px-1" style={{ color: "var(--c-40)" }}>No {voiceTab} voices available</p>
+              )}
+              {filteredVoices.map((m) => (
+                <VoiceOption
+                  key={m.id}
+                  model={m}
+                  selected={selectedVoice === m.id}
+                  onSelect={() => setSelectedVoice(m.id)}
+                  isPlaying={previewingId === m.id}
+                  onPlayToggle={setPreviewingId}
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* Bulk action panel */}
+          <div className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="font-semibold text-sm">
+                  {totalBeats === 0 ? "No beats yet" : allDone ? "All beats ready" : `${doneCount} of ${totalBeats} beats done`}
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                  {totalBeats === 0 ? (
+                    "Run the Prompts step first."
+                  ) : (
+                    <>
+                      {/* Explicit breakdown: surface every category so the
+                          user can see what's already on file vs what the
+                          next click will touch. Categories with zero
+                          beats are dropped to keep the line short. */}
+                      {[
+                        doneCount > 0 && `${doneCount} done`,
+                        failedCount > 0 && `${failedCount} failed`,
+                        queuedCount > 0 && `${queuedCount} queued`,
+                        pendingCount > 0 && `${pendingCount} pending`,
+                      ].filter(Boolean).join(" · ")}
+                      {staleCount > 0 && doneCount > 0 && (
+                        <> · <span style={{ color: "oklch(0.6 0.15 145)" }}>{doneCount} already done will be kept</span></>
+                      )}
+                    </>
+                  )}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Fix overlap: walks every beat and trims any leading
+                    text that duplicates the previous beat's tail. Safe
+                    to run multiple times — does nothing when there's
+                    no overlap left. Doesn't touch audio files. */}
+                <button
+                  onClick={fixOverlappingText}
+                  disabled={generating || dedupingOverlap || totalBeats === 0}
+                  title="Scan every beat and trim text that duplicates the previous beat's ending. Does not touch existing audio — regenerate to apply the cleaned text."
+                  className="px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-40 transition-all"
+                  style={{
+                    background: "transparent",
+                    color: "var(--c-60)",
+                    border: "1px solid var(--bd-7)",
+                  }}
+                >
+                  {dedupingOverlap ? "Fixing…" : "Fix overlap"}
+                </button>
+                {/* Clear: wipes every beat's voiceover from R2 + DB.
+                    Disabled while a run is in flight (would race with
+                    in-flight writes) or when there's nothing to delete. */}
+                <button
+                  onClick={openClearConfirm}
+                  disabled={generating || clearing || doneCount === 0}
+                  title={doneCount === 0
+                    ? "No generated voiceovers to clear"
+                    : `Deletes all ${doneCount} generated voiceover${doneCount === 1 ? "" : "s"} from storage and resets every beat to Pending`}
+                  className="px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-40 transition-all"
+                  style={{
+                    background: "transparent",
+                    color: "oklch(0.7 0.2 25)",
+                    border: "1px solid oklch(0.6 0.22 25 / 0.4)",
+                  }}
+                >
+                  {clearing ? "Clearing…" : "Clear"}
+                </button>
+                {generating ? (
+                  <button
+                    onClick={stopGeneration}
+                    title="Stop after the current batch finishes"
+                    className="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+                    style={{ background: "oklch(0.6 0.22 25)", color: "var(--bg-page-2)" }}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="w-3.5 h-3.5 rounded-sm" style={{ background: "currentColor" }} />
+                      Stop
+                    </span>
+                  </button>
+                ) : stopped && staleCount > 0 ? (
+                  <button
+                    onClick={() => runGeneration()}
+                    disabled={!totalBeats || !selectedVoice}
+                    title={`Resumes voiceover generation for the remaining ${staleCount} beat${staleCount === 1 ? "" : "s"}`}
+                    className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 transition-all"
+                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                  >
+                    {`Resume ${staleCount} beat${staleCount === 1 ? "" : "s"}`}
+                  </button>
+                ) : (
+                  <button
+                    onClick={staleCount > 0 ? () => runGeneration() : openRegenConfirm}
+                    disabled={!totalBeats || !selectedVoice}
+                    title={staleCount > 0 && doneCount > 0
+                      ? `Generates ${staleCount} stale beat${staleCount === 1 ? "" : "s"}; ${doneCount} already-done beat${doneCount === 1 ? "" : "s"} kept`
+                      : staleCount > 0
+                        ? `Generates ${staleCount} beat${staleCount === 1 ? "" : "s"}`
+                        : `Re-runs TTS for all ${totalBeats} beats — overwrites every existing voiceover`}
+                    className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 transition-all"
+                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                  >
+                    {staleCount > 0 ? `Generate ${staleCount} beat${staleCount === 1 ? "" : "s"}` : "Regenerate all"}
+                  </button>
+                )}
+              </div>
+            </div>
+            {generating && progress && progress.total > 0 && (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-[11px]" style={{ color: "var(--c-45)" }}>
+                  <span className="font-mono tabular-nums">{progress.current}/{progress.total}</span>
+                  <span>completed</span>
+                </div>
+                <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-progress)" }}>
+                  <div className="h-full rounded-full transition-all duration-200"
+                    style={{ width: `${Math.round((progress.current / progress.total) * 100)}%`, background: "oklch(0.55 0.15 145)" }} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Per-beat cards — 2-column grid on sm+ screens */}
+          {beats.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {beats.map((b) => {
+                const status = effectiveStatus(b);
+                const url = effectiveUrl(b);
+                const err = effectiveError(b);
+                // Card style varies by state so the user can see at a
+                // glance which beats are already on file (subtle green
+                // accent) vs which need work (default panel for pending
+                // / queued, red accent for failed).
+                const cardStyle =
+                  status === "done"
+                    ? { background: "oklch(0.55 0.15 145 / 0.06)", border: "1px solid oklch(0.55 0.15 145 / 0.25)" }
+                    : status === "failed"
+                      ? { background: "oklch(0.6 0.22 25 / 0.06)", border: "1px solid oklch(0.6 0.22 25 / 0.3)" }
+                      : { background: "var(--bg-panel)", border: "1px solid var(--bd-7)" };
+                return (
+                  <div
+                    key={b.beatNumber}
+                    className="rounded-xl p-4 flex items-start gap-3"
+                    style={cardStyle}
+                  >
+                    <span
+                      className="font-mono text-xs font-semibold tabular-nums shrink-0 w-7"
+                      style={{ color: "var(--c-45)" }}
+                    >
+                      {b.beatNumber}
+                    </span>
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <p
+                        className="text-xs leading-relaxed line-clamp-3"
+                        style={{ color: "var(--c-60)" }}
+                      >
+                        {b.scriptSegment}
+                      </p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <StatusPill status={status} />
+                      </div>
+                      {status === "done" && url && (
+                        <audio controls src={url} className="h-7 w-full" preload="none" />
+                      )}
+                      {status === "failed" && err && (
+                        <span
+                          className="text-[10px] block"
+                          style={{ color: "oklch(0.7 0.2 25)" }}
+                          title={err}
+                        >
+                          {err.length > 80 ? err.slice(0, 80) + "…" : err}
+                        </span>
+                      )}
+                    </div>
+                    {(status === "failed" || status === "done") && !generating && (
+                      <button
+                        onClick={() => retryOne(b.beatNumber)}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-opacity hover:opacity-90 shrink-0"
+                        style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}
+                      >
+                        {status === "failed" ? "Retry" : "Regen"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Full voiceover preview — sits below the beat grid so the
+              user reviews each beat individually first, then hears the
+              whole narration end-to-end. Renders as soon as ANY beat
+              has audio (live overlay or persisted) so the user can
+              start listening before the full run finishes. */}
+          {(beats.some((b) => !!b.voiceoverUrl)
+            || Array.from(liveBeats.values()).some((s) => s.status === "done" && !!s.url)) && (
+            <FullVoiceoverPreview projectId={projectId} beats={beats} liveBeats={liveBeats} />
+          )}
+        </div>
+        </div>
+      </main>
+
+      {/* Continue bar — shows as soon as at least one beat has audio
+          so the user can advance without waiting for the whole batch.
+          Wording softens to "Continue with N of M" until allDone, then
+          becomes the plain "Continue →" once everything's ready. */}
+      {doneCount > 0 && (
+        <div
+          className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
+          style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}
+        >
+          <div className="max-w-4xl mx-auto px-4 sm:px-8">
+            <button
+              onClick={() => router.push(`/projects/${projectId}/generate`)}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              {allDone ? "Continue →" : `Continue with ${doneCount} of ${totalBeats} beats →`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm dialog — driven by the `confirm` state. Both the Clear
+          and Regenerate-all flows reuse this same shell, just with
+          different copy, icon, and confirm-button color. */}
+      {confirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "oklch(0 0 0 / 0.6)", backdropFilter: "blur(4px)" }}
+          onClick={() => setConfirm(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl p-6 space-y-4"
+            style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="confirm-modal-title"
+          >
+            <div className="flex items-start gap-3">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                style={{ background: confirm.iconBg, border: `1px solid ${confirm.iconBorder}` }}
+              >
+                <span style={{ color: confirm.iconColor, fontSize: "20px", lineHeight: 1 }}>{confirm.icon}</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 id="confirm-modal-title" className="text-base font-bold" style={{ color: "var(--c-90)" }}>
+                  {confirm.title}
+                </h2>
+                <p className="text-sm mt-1" style={{ color: "var(--c-50)" }}>
+                  {confirm.body}
+                </p>
+                {confirm.footnote && (
+                  <p className="text-xs mt-2" style={{ color: "var(--c-45)" }}>
+                    {confirm.footnote}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setConfirm(null)}
+                className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80"
+                style={{ background: "transparent", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { void confirm.onConfirm(); }}
+                autoFocus
+                className="px-4 py-2 rounded-lg text-sm font-semibold transition-opacity hover:opacity-90"
+                style={{ background: confirm.confirmBg, color: "var(--bg-page-2)" }}
+              >
+                {confirm.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

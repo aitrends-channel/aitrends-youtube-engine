@@ -44,13 +44,32 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No keys provided" }, { status: 400 });
     }
 
-    const { error } = await supabase
+    // Explicit onConflict so the upsert always merges into the
+    // existing row instead of leaning on supabase-js's default
+    // primary-key inference. ignoreDuplicates: false ensures the
+    // EXCLUDED.<col> values overwrite the existing ones on UPDATE.
+    const { data: written, error } = await supabase
       .from("account_settings")
-      .upsert({ user_id: user.id, ...update });
+      .upsert(
+        { user_id: user.id, ...update },
+        { onConflict: "user_id", ignoreDuplicates: false },
+      )
+      .select("user_id, kie_api_key, elevenlabs_api_key")
+      .single();
 
     if (error) throw new Error(error.message);
 
     invalidateSettingsCache(user.id);
+
+    // Log what was just persisted (key lengths only — never the key
+    // itself) so a "I saved it but it didn't stick" report is
+    // diagnosable from Vercel logs without exposing secrets.
+    console.log(
+      `[settings] user=${user.id} update=${Object.keys(update).join(",")} ` +
+        `persisted: kie_api_key.len=${written?.kie_api_key?.length ?? 0} ` +
+        `elevenlabs_api_key.len=${written?.elevenlabs_api_key?.length ?? 0}`,
+    );
+
     return NextResponse.json({ ok: true });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to save settings" }, { status: 500 });

@@ -1,0 +1,342 @@
+import { createHash } from "crypto";
+import { generateTTS } from "@/lib/kie/tts";
+import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
+import { supabase } from "@/lib/supabase/client";
+import { getRequiredUser } from "@/lib/supabase/auth";
+import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
+import type { User } from "@supabase/supabase-js";
+
+export const maxDuration = 800;
+
+// Per-beat TTS generation. Streams SSE updates so the UI can track each
+// beat's status (queued → done | failed) without polling. Each beat's
+// audio uploads to R2 at userFolder/projectId/voiceovers/beat-N_TS.mp3
+// and the beat row is updated with the URL, voice id (for voice-change
+// detection), script hash (for stale detection on script edits), and
+// the new status.
+//
+// Batching: TTS_BEAT_BATCH_SIZE env var (defaults to 10). Beats are
+// processed in fixed-size batches; only the current batch is marked
+// "queued", everything beyond it stays "pending". Within a batch all
+// beats run concurrently. Lower the batch size on ElevenLabs Free /
+// Starter tiers or if KIE proxies start returning 429s.
+//
+// Dev word cap: TTS_BEAT_WORD_LIMIT env var (defaults to 50). Caps
+// auto-generation to roughly the first N script words so iterative
+// dev runs don't burn KIE credits on the whole video. Beats are walked
+// in order, cumulative word count accumulates, and beats past the cap
+// are excluded from the bulk run. Set to 0 (or any value <= 0) in
+// production to disable the cap. Explicit per-beat retries via the
+// beatNumbers body field bypass the cap so you can still re-run any
+// single beat you care about.
+
+interface BeatRow {
+  beat_number: number;
+  script_segment: string | null;
+  voiceover_url: string | null;
+  voiceover_status: string | null;
+  voiceover_voice_id: string | null;
+  voiceover_script_hash: string | null;
+}
+
+function hashSegment(text: string): string {
+  return createHash("sha256").update(text.trim()).digest("hex");
+}
+
+
+/** Returns the subset of beats that need regeneration. A beat is stale
+ *  when any of:
+ *    - it has no voiceover_url
+ *    - its current status is "failed" or "queued" (orphaned from a
+ *      prior cancelled run)
+ *    - its voiceover_voice_id differs from the requested voice
+ *    - its voiceover_script_hash differs from the current script hash
+ */
+function selectStaleBeats(beats: BeatRow[], voiceId: string): BeatRow[] {
+  return beats.filter((b) => {
+    if (!b.script_segment?.trim()) return false; // skip blank
+    if (!b.voiceover_url) return true;
+    if (b.voiceover_status === "failed" || b.voiceover_status === "queued") return true;
+    if (b.voiceover_voice_id !== voiceId) return true;
+    if (b.voiceover_script_hash !== hashSegment(b.script_segment)) return true;
+    return false;
+  });
+}
+
+export async function POST(req: Request) {
+  let user: User;
+  try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+
+  const body = await req.json().catch(() => ({})) as {
+    projectId?: string;
+    voiceId?: string;
+    beatNumbers?: number[];
+  };
+  if (!body.projectId || !body.voiceId) {
+    return new Response(JSON.stringify({ error: "projectId and voiceId are required" }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+  const projectId = body.projectId;
+  const voiceId = body.voiceId;
+  const explicitBeats = body.beatNumbers && body.beatNumbers.length > 0 ? new Set(body.beatNumbers) : null;
+
+  // Beats are processed in fixed-size batches (default 10). Within each
+  // batch every beat runs in parallel; the next batch isn't even marked
+  // "queued" until the current one finishes. This keeps the UI honest:
+  // a beat only shows the orange "Queued" pill when it's actually next
+  // up. Beats outside the current batch stay in the grey "Pending"
+  // state by virtue of having voiceover_status = NULL in the DB and the
+  // UI defaulting null → "pending" in effectiveStatus().
+  const BATCH_SIZE = Math.max(1, parseInt(process.env.TTS_BEAT_BATCH_SIZE ?? "10", 10));
+  const WORD_LIMIT = parseInt(process.env.TTS_BEAT_WORD_LIMIT ?? "50", 10);
+
+  const encoder = new TextEncoder();
+  return new Response(
+    new ReadableStream({
+      async start(controller) {
+        let closed = false;
+        const send = (data: object) => {
+          if (closed) return;
+          try { controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`)); }
+          catch { closed = true; }
+        };
+        // Heartbeat — TTS calls can sit silent for 20-60s per beat and
+        // intermediate proxies (Vercel edge, CDNs) drop quiet streams
+        // around 30s. A keepalive comment every 15s keeps the channel
+        // warm without confusing the SSE parser (lines that don't start
+        // with `data: ` are ignored by the client).
+        const heartbeat = setInterval(() => {
+          if (closed) return;
+          try { controller.enqueue(encoder.encode(": keepalive\n\n")); }
+          catch { closed = true; }
+        }, 15_000);
+
+        try {
+          // Update the project's default voice so reassemblies and
+          // future regen runs default to the same voice.
+          await supabase
+            .from("projects")
+            .update({ tts_voice_id: voiceId })
+            .eq("id", projectId)
+            .eq("user_id", user.id);
+
+          // Load beats with the columns we need to decide staleness.
+          const { data: rawBeats, error: beatsErr } = await supabase
+            .from("project_beats")
+            .select("beat_number, script_segment, voiceover_url, voiceover_status, voiceover_voice_id, voiceover_script_hash")
+            .eq("project_id", projectId)
+            .order("beat_number");
+          if (beatsErr) throw new Error(`Failed to load beats: ${beatsErr.message}`);
+          const allBeats = (rawBeats ?? []) as BeatRow[];
+          if (!allBeats.length) throw new Error("No beats found — generate prompts first.");
+
+          // Two selection paths:
+          //  • Explicit beatNumbers in the body — regen exactly those
+          //    (e.g. a "retry failed" button).
+          //  • Otherwise auto-select all stale beats. Done beats with
+          //    matching voice + script hash are intentionally excluded
+          //    so a bulk regen never overwrites a working voiceover.
+          const candidates = allBeats.filter((b) =>
+            explicitBeats ? explicitBeats.has(b.beat_number) : true,
+          );
+          let toGenerate = explicitBeats
+            ? candidates.filter((b) => b.script_segment?.trim())
+            : selectStaleBeats(candidates, voiceId);
+
+          // Apply the dev word cap (TTS_BEAT_WORD_LIMIT, default 50).
+          // Walk every beat in script order, accumulating word counts;
+          // any beat whose start sits past the cap is dropped from
+          // toGenerate. Explicit retries bypass the cap — a user
+          // clicking Retry on beat 99 still wants beat 99.
+          let cappedAt: number | null = null;
+          if (!explicitBeats && WORD_LIMIT > 0) {
+            const inScope = new Set<number>();
+            let cumWords = 0;
+            for (const b of allBeats) {
+              if (cumWords >= WORD_LIMIT) {
+                cappedAt = b.beat_number;
+                break;
+              }
+              inScope.add(b.beat_number);
+              cumWords += (b.script_segment ?? "").trim().split(/\s+/).filter(Boolean).length;
+            }
+            const beforeCap = toGenerate.length;
+            toGenerate = toGenerate.filter((b) => inScope.has(b.beat_number));
+            if (toGenerate.length !== beforeCap) {
+              console.log(
+                `[tts-beats] WORD_LIMIT=${WORD_LIMIT} trimmed ${beforeCap - toGenerate.length} beat(s) past word cap` +
+                  (cappedAt !== null ? ` (first excluded: beat ${cappedAt})` : ""),
+              );
+            }
+          }
+
+          // Diagnostic log so worker / Vercel logs make the
+          // "preserved vs regenerated" decision auditable. Without it,
+          // a user wondering "did my done beats get touched?" has
+          // nothing to inspect.
+          const preserved = allBeats.length - toGenerate.length;
+          console.log(
+            `[tts-beats] project=${projectId} explicit=${explicitBeats ? Array.from(explicitBeats).join(",") : "no"} ` +
+              `regen=${toGenerate.length} preserve=${preserved} ` +
+              `(beats=${toGenerate.map((b) => b.beat_number).join(",") || "none"})`,
+          );
+
+          if (toGenerate.length === 0) {
+            send({ type: "status", message: "All beats already up to date." });
+            send({ type: "done", generated: 0, total: allBeats.length });
+            closed = true;
+            clearInterval(heartbeat);
+            try { controller.close(); } catch { /* already done */ }
+            return;
+          }
+
+          // Reset any orphaned "queued" or "generating" rows back to
+          // NULL ("pending" in the UI) BEFORE we start batching. Rows
+          // can be left in those states by (a) an older run that used
+          // the now-removed upfront pre-mark pass, or (b) any run that
+          // was cancelled / errored mid-stream. Without this reset,
+          // beats outside the current batch would still render with
+          // their stale "Queued" pill even though no work is happening
+          // on them.
+          await supabase
+            .from("project_beats")
+            .update({ voiceover_status: null, voiceover_error: null })
+            .eq("project_id", projectId)
+            .is("voiceover_url", null)
+            .in("voiceover_status", ["queued", "generating"]);
+
+          send({
+            type: "status",
+            message: `Generating voiceover for ${toGenerate.length} beat${toGenerate.length === 1 ? "" : "s"}…`,
+          });
+          send({ type: "progress", current: 0, total: toGenerate.length });
+
+          let completed = 0;
+          let succeeded = 0;
+          let failed = 0;
+
+          // Index every beat by number so processBeat can look up the
+          // previous beat's script_segment (which may itself have been
+          // generated in a much earlier run) for the overlap-dedupe step.
+          const beatsByNumber = new Map<number, BeatRow>();
+          for (const b of allBeats) beatsByNumber.set(b.beat_number, b);
+
+          async function processBeat(beat: BeatRow) {
+            const rawSegment = (beat.script_segment ?? "").trim();
+            if (!rawSegment) {
+              completed++;
+              send({ type: "progress", current: completed, total: toGenerate.length });
+              return;
+            }
+            // Defensive: trim any leading overlap with the previous beat
+            // so we don't repeat the boundary phrase in the audio. The
+            // stored script_segment stays unchanged.
+            const prevBeat = beatsByNumber.get(beat.beat_number - 1);
+            const segment = dedupeOverlap(rawSegment, prevBeat?.script_segment ?? null);
+            if (segment !== rawSegment) {
+              console.log(
+                `[tts-beats] beat ${beat.beat_number} trimmed overlap with beat ${beat.beat_number - 1}: ` +
+                  `"${rawSegment.slice(0, 40)}…" → "${segment.slice(0, 40)}…"`,
+              );
+            }
+            // Safety net: if the trim produced nothing (entire beat was
+            // duplicate), keep the raw text — better to ship a repeat
+            // than silence.
+            const ttsText = segment || rawSegment;
+            try {
+              send({ type: "beat", beatNumber: beat.beat_number, status: "generating" });
+              await supabase
+                .from("project_beats")
+                .update({ voiceover_status: "generating" })
+                .eq("project_id", projectId)
+                .eq("beat_number", beat.beat_number);
+              const audioBuf = await generateTTS(ttsText, voiceId, undefined, undefined, user.id);
+              // Hash the RAW segment (matches what selectStaleBeats
+              // checks). Hashing the dedup'd text would cause every
+              // regen to recompute the hash differently if the previous
+              // beat changed, so we'd never call it "up to date".
+              const scriptHash = hashSegment(rawSegment);
+              const storagePath = `${userFolderFor(user)}/${projectId}/voiceovers/beat-${beat.beat_number}_${Date.now()}.mp3`;
+              const publicUrl = await uploadBuffer(storagePath, audioBuf, "audio/mpeg");
+              const { error: updErr } = await supabase
+                .from("project_beats")
+                .update({
+                  voiceover_url: publicUrl,
+                  voiceover_status: "done",
+                  voiceover_voice_id: voiceId,
+                  voiceover_script_hash: scriptHash,
+                  voiceover_error: null,
+                })
+                .eq("project_id", projectId)
+                .eq("beat_number", beat.beat_number);
+              if (updErr) throw new Error(`DB update failed: ${updErr.message}`);
+              succeeded++;
+              send({ type: "beat", beatNumber: beat.beat_number, status: "done", url: publicUrl });
+            } catch (e) {
+              const message = e instanceof Error ? e.message : "TTS failed";
+              console.error(`[tts-beats] beat ${beat.beat_number} failed:`, message);
+              failed++;
+              await supabase
+                .from("project_beats")
+                .update({ voiceover_status: "failed", voiceover_error: message })
+                .eq("project_id", projectId)
+                .eq("beat_number", beat.beat_number);
+              send({ type: "beat", beatNumber: beat.beat_number, status: "failed", error: message });
+            } finally {
+              completed++;
+              send({ type: "progress", current: completed, total: toGenerate.length });
+            }
+          }
+
+          // Walk through toGenerate in fixed-size batches. Each batch
+          // gets flipped to "queued" right before it runs (so the UI
+          // shows orange Queued pills only for the next-up batch) and
+          // then all members of the batch run concurrently. The next
+          // batch isn't touched until the current one's last beat
+          // either succeeds or fails.
+          for (let i = 0; i < toGenerate.length; i += BATCH_SIZE) {
+            if (closed) break;
+            const batch = toGenerate.slice(i, i + BATCH_SIZE);
+
+            await Promise.all(
+              batch.map((b) =>
+                supabase
+                  .from("project_beats")
+                  .update({ voiceover_status: "queued", voiceover_error: null })
+                  .eq("project_id", projectId)
+                  .eq("beat_number", b.beat_number),
+              ),
+            );
+            for (const b of batch) {
+              send({ type: "beat", beatNumber: b.beat_number, status: "queued" });
+            }
+
+            await Promise.all(batch.map((b) => processBeat(b)));
+          }
+
+          send({
+            type: "done",
+            generated: succeeded,
+            failed,
+            total: toGenerate.length,
+          });
+        } catch (err) {
+          send({ type: "error", message: err instanceof Error ? err.message : "Generation failed" });
+        } finally {
+          closed = true;
+          clearInterval(heartbeat);
+          try { controller.close(); } catch { /* already done */ }
+        }
+      },
+    }),
+    {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    },
+  );
+}

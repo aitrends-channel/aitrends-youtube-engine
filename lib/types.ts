@@ -103,6 +103,16 @@ export interface Beat {
   videoJobId?: string;
   videoError?: string;
   audioUrl?: string;
+  /** Per-beat voiceover fields (migration 045). Each beat gets its
+   *  own TTS mp3 generated from its scriptSegment; the assembler
+   *  concatenates them in order, skipping the matcher entirely. */
+  voiceoverUrl?: string;
+  voiceoverStatus?: "pending" | "queued" | "done" | "failed";
+  voiceoverDurationMs?: number;
+  voiceoverVoiceId?: string;
+  voiceoverScriptHash?: string;
+  voiceoverError?: string;
+  voiceoverJobId?: string;
 }
 
 export interface ThumbnailConcept {

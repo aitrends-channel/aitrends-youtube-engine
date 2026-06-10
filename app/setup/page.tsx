@@ -162,12 +162,20 @@ export default function SettingsPage() {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    console.log("[setup] handleSave fired. form =", {
+      kie_api_key_len: form.kie_api_key.length,
+      elevenlabs_api_key_len: form.elevenlabs_api_key.length,
+      kie_api_key_trimmed_len: form.kie_api_key.trim().length,
+      elevenlabs_api_key_trimmed_len: form.elevenlabs_api_key.trim().length,
+    });
     const payload: Partial<FormState> = {};
     for (const field of KEY_FIELDS) {
       const val = form[field.key].trim();
       if (val) (payload as Record<string, string>)[field.key] = val;
     }
+    console.log("[setup] payload keys =", Object.keys(payload));
     if (Object.keys(payload).length === 0) {
+      console.log("[setup] bailing — empty payload, no fetch will fire");
       toast.error("Enter at least one API key to save.");
       return;
     }
@@ -337,7 +345,10 @@ export default function SettingsPage() {
                           autoComplete="new-password"
                           spellCheck={false}
                           value={form[field.key]}
-                          onChange={(e) => setForm((f) => ({ ...f, [field.key]: e.target.value }))}
+                          onChange={(e) => {
+                            console.log(`[setup] input onChange field=${field.key} valueLen=${e.target.value.length}`);
+                            setForm((f) => ({ ...f, [field.key]: e.target.value }));
+                          }}
                           placeholder={isSet ? "Enter new value to replace…" : field.placeholder}
                           className="w-full pr-10 px-3 py-2.5 rounded-xl text-sm font-mono outline-none transition-all"
                           style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-88)" }}
@@ -357,6 +368,7 @@ export default function SettingsPage() {
                 <button
                   type="submit"
                   disabled={saving || Object.values(form).every((v) => !v.trim())}
+                  onClick={() => console.log("[setup] Save button onClick fired. disabled flag =", saving || Object.values(form).every((v) => !v.trim()), "form =", { kie_len: form.kie_api_key.length, el_len: form.elevenlabs_api_key.length })}
                   className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
                   style={{
                     background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",

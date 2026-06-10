@@ -44,6 +44,13 @@ export async function GET(
       videoJobId: b.video_job_id,
       videoError: b.video_error ?? undefined,
       audioUrl: b.audio_url ?? undefined,
+      voiceoverUrl: b.voiceover_url ?? undefined,
+      voiceoverStatus: b.voiceover_status ?? undefined,
+      voiceoverDurationMs: b.voiceover_duration_ms ?? undefined,
+      voiceoverVoiceId: b.voiceover_voice_id ?? undefined,
+      voiceoverScriptHash: b.voiceover_script_hash ?? undefined,
+      voiceoverError: b.voiceover_error ?? undefined,
+      voiceoverJobId: b.voiceover_job_id ?? undefined,
     })),
     thumbnails: (thumbsRes.data ?? []).map((t) => ({
       position: t.position,

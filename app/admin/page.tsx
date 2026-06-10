@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2,
+  Crown, MoreVertical, Trash2, Copy,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -2594,7 +2594,7 @@ export default function AdminPage() {
               <table className="w-full border-collapse min-w-[640px]">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
-                    {["User", "Channel", "Topic", "Phase", "Progress", "Created", ""].map((h) => (
+                    {["User", "Project ID", "Channel", "Topic", "Phase", "Progress", "Created", ""].map((h) => (
                       <th key={h} className="text-left py-3 px-4 text-xs font-medium uppercase tracking-wider"
                         style={{ color: "var(--c-40)" }}>
                         {h}
@@ -2611,9 +2611,39 @@ export default function AdminPage() {
                         onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bd-2)"; }}
                         onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                       >
-                        <td className="py-3 px-4 text-xs font-mono max-w-[160px] truncate"
+                        <td className="py-3 px-4 text-xs font-mono max-w-[160px]"
                           style={{ color: "var(--c-55)" }}>
-                          {p.userEmail}
+                          {p.userEmail ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void navigator.clipboard.writeText(p.userEmail!);
+                                toast.success("Email copied");
+                              }}
+                              title={`Copy ${p.userEmail} to clipboard`}
+                              className="group inline-flex items-center gap-1.5 max-w-full hover:opacity-80 transition-opacity cursor-copy text-left"
+                            >
+                              <span className="truncate">{p.userEmail}</span>
+                              <Copy size={11} className="shrink-0 opacity-50 group-hover:opacity-100 transition-opacity" />
+                            </button>
+                          ) : (
+                            <span style={{ color: "var(--c-35)" }}>—</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-xs font-mono max-w-[160px]"
+                          style={{ color: "var(--c-55)" }}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void navigator.clipboard.writeText(p.id);
+                              toast.success("Project ID copied");
+                            }}
+                            title={`Copy ${p.id} to clipboard`}
+                            className="group inline-flex items-center gap-1.5 max-w-full hover:opacity-80 transition-opacity cursor-copy text-left"
+                          >
+                            <span className="truncate">{p.id.slice(0, 8)}…{p.id.slice(-4)}</span>
+                            <Copy size={11} className="shrink-0 opacity-50 group-hover:opacity-100 transition-opacity" />
+                          </button>
                         </td>
                         <td className="py-3 px-4 text-sm max-w-[140px] truncate"
                           style={{ color: "var(--c-72)" }}>
