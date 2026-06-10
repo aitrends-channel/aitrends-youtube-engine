@@ -86,7 +86,10 @@ export async function PATCH(
   // prompts since they live on the same rows. Nulling
   // prompts_active_run_id signals any in-flight prompts route for this
   // project to abort at its next checkpoint instead of writing more
-  // beats on top of the wiped state.
+  // beats on top of the wiped state. prompts_script_hash is reset too
+  // so the "Script was edited after these beats were generated" stale
+  // warning on the prompts / generate pages doesn't keep firing
+  // against beats that no longer exist.
   if (body.clear_image_prompts) {
     const { error: delErr } = await supabase
       .from("project_beats")
@@ -95,7 +98,11 @@ export async function PATCH(
     if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 });
     await supabase
       .from("projects")
-      .update({ prompts_active_run_id: null, prompts_active_step: null })
+      .update({
+        prompts_active_run_id: null,
+        prompts_active_step: null,
+        prompts_script_hash: null,
+      })
       .eq("id", projectId)
       .eq("user_id", user.id);
     return NextResponse.json({ success: true });
