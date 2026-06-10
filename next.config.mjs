@@ -19,6 +19,19 @@ const nextConfig = {
       "ffprobe-static",
       "fluent-ffmpeg",
     ],
+    // Vercel's serverless bundler walks the JS dependency graph but
+    // doesn't trace native binaries inside node_modules. Without an
+    // explicit include the ffmpeg binary isn't shipped to the Lambda,
+    // and the runtime spawn fails with
+    // `spawn /var/task/node_modules/ffmpeg-static/ffmpeg ENOENT`.
+    // Listing the binary under the concat route's key forces it into
+    // that function's deployment bundle.
+    outputFileTracingIncludes: {
+      "/api/projects/[projectId]/voiceover/concat": [
+        "./node_modules/ffmpeg-static/ffmpeg",
+        "./node_modules/ffmpeg-static/index.js",
+      ],
+    },
     serverActions: {
       bodySizeLimit: "10mb",
     },
