@@ -71,6 +71,12 @@ export function FullVoiceoverPreview({
   const [playing, setPlaying] = useState(false);
   const [tickFlag, setTickFlag] = useState(0);
   void tickFlag;
+  // Duration in state (not derived from audioRef.current.duration on
+  // each render) — the audio element loads metadata async, and without
+  // a loadedmetadata listener the component never re-renders to pick
+  // up the real value. That made the two cards display "0:00" until
+  // played, which read as "equal length".
+  const [duration, setDuration] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -99,11 +105,20 @@ export function FullVoiceoverPreview({
     if (!a) return;
     function onEnded() { setPlaying(false); }
     function onTime() { setTickFlag((t) => t + 1); }
+    function onMeta() {
+      if (a && isFinite(a.duration)) setDuration(a.duration);
+    }
+    setDuration(0);
+    if (isFinite(a.duration) && a.duration > 0) setDuration(a.duration);
     a.addEventListener("ended", onEnded);
     a.addEventListener("timeupdate", onTime);
+    a.addEventListener("loadedmetadata", onMeta);
+    a.addEventListener("durationchange", onMeta);
     return () => {
       a.removeEventListener("ended", onEnded);
       a.removeEventListener("timeupdate", onTime);
+      a.removeEventListener("loadedmetadata", onMeta);
+      a.removeEventListener("durationchange", onMeta);
     };
   }, [previewUrl]);
 
@@ -115,13 +130,16 @@ export function FullVoiceoverPreview({
   }
 
   const elapsedSec = audioRef.current?.currentTime ?? 0;
-  const totalSec = audioRef.current && isFinite(audioRef.current.duration) ? audioRef.current.duration : 0;
+  const totalSec = duration;
   const pct = totalSec > 0 ? Math.min(100, (elapsedSec / totalSec) * 100) : 0;
 
   function fmt(s: number): string {
+    if (!isFinite(s) || s <= 0) return "0:00";
     const m = Math.floor(s / 60);
-    const r = Math.floor(s % 60);
-    return `${m}:${r.toString().padStart(2, "0")}`;
+    const r = s % 60;
+    // One decimal so small trim deltas (e.g. 1:23.4 vs 1:21.7) are
+    // visible — otherwise floor-to-second display can hide a ~1s diff.
+    return `${m}:${r.toFixed(1).padStart(4, "0")}`;
   }
 
   if (orderedCount === 0) return null;
