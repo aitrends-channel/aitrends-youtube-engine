@@ -130,6 +130,7 @@ export default function VisualsPage({ params }: PageProps) {
 
   // Manual upload state
   const [videoImages, setVideoImages] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Analysis state
   const [steps, setSteps] = useState<{ upload: StepStatus; analyze: StepStatus }>({ upload: "idle", analyze: "idle" });
@@ -280,6 +281,21 @@ export default function VisualsPage({ params }: PageProps) {
       analyzeAbortRef.current = null;
       setStoppingAnalyze(false);
     }
+  }
+
+  // Single entry point for accepting new manual-upload files. Used by
+  // both the file picker and the drag-and-drop dropzone: filters to
+  // images, caps at 5, stores them, and auto-kicks the upload+analysis
+  // when there are enough.
+  function handleNewFiles(incoming: FileList | File[] | null | undefined) {
+    if (!incoming) return;
+    const files = Array.from(incoming).filter((f) => f.type.startsWith("image/")).slice(0, 5);
+    if (files.length === 0) {
+      toast.error("Only image files are accepted");
+      return;
+    }
+    setVideoImages(files);
+    if (files.length >= 3) void uploadAndAnalyze(files);
   }
 
   // Upload + analyze for the manual mode. Takes the files directly so
@@ -500,27 +516,49 @@ export default function VisualsPage({ params }: PageProps) {
                 <div className="p-5 space-y-4">
                   <div
                     onClick={() => videoInputRef.current?.click()}
+                    onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); }}
+                    onDragOver={(e) => {
+                      // Both preventDefault calls are required: dragenter
+                      // lets us flip the visual state, dragover is what
+                      // actually tells the browser "yes this element
+                      // accepts a drop here" — without it, drop never
+                      // fires and the browser navigates to the file.
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!isDragging) setIsDragging(true);
+                    }}
+                    onDragLeave={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      // dragleave fires on every child element transition
+                      // too; gate on currentTarget so we only clear when
+                      // the pointer truly exits the dropzone.
+                      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                      setIsDragging(false);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setIsDragging(false);
+                      handleNewFiles(e.dataTransfer?.files);
+                    }}
                     className="rounded-xl p-6 text-center cursor-pointer transition-all"
-                    style={{ border: "1.5px dashed var(--bd-10)", background: "oklch(0.09 0 0)" }}
-                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.3)"; }}
-                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-10)"; }}
+                    style={{
+                      border: `1.5px dashed ${isDragging ? "oklch(0.72 0.25 285)" : "var(--bd-10)"}`,
+                      background: isDragging ? "oklch(0.72 0.25 285 / 0.06)" : "oklch(0.09 0 0)",
+                    }}
+                    onMouseEnter={(e) => { if (!isDragging) (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.3)"; }}
+                    onMouseLeave={(e) => { if (!isDragging) (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-10)"; }}
                   >
                     <p className="text-sm" style={{ color: "var(--c-50)" }}>
-                      Drop images here or <span style={{ color: "oklch(0.72 0.25 285)" }}>click to upload</span>
+                      {isDragging
+                        ? <span style={{ color: "oklch(0.72 0.25 285)" }}>Release to upload</span>
+                        : <>Drop images here or <span style={{ color: "oklch(0.72 0.25 285)" }}>click to upload</span></>}
                     </p>
                     <p className="text-xs mt-1" style={{ color: "var(--c-35)" }}>PNG, JPG, WEBP · up to 5</p>
                   </div>
                   <input ref={videoInputRef} type="file" accept="image/*" multiple className="hidden"
-                    onChange={(e) => {
-                      const files = Array.from(e.target.files ?? []).slice(0, 5);
-                      setVideoImages(files);
-                      // Auto-kick off upload + analysis as soon as the
-                      // user has enough images. Matches the auto-refetch
-                      // path on the auto-screenshot side. Below the
-                      // threshold we just hold the selection and let
-                      // them add more.
-                      if (files.length >= 3) void uploadAndAnalyze(files);
-                    }} />
+                    onChange={(e) => handleNewFiles(e.target.files)} />
                   {videoImages.length > 0 && (
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {videoImages.map((f, i) => (
