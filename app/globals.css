@@ -376,3 +376,49 @@ body {
   animation: wizard-progress-fill var(--wizard-fill-duration, 12s) ease-out forwards;
   border-radius: 9999px;
 }
+/* Seek slider for FullVoiceoverPreview — gradient track is set
+   inline on the element so the filled portion updates with React
+   state; the thumb is styled here. */
+.seek-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  outline: none;
+  cursor: pointer;
+}
+.seek-slider:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.seek-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: oklch(0.72 0.25 285);
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px oklch(0.85 0 0);
+  cursor: pointer;
+  transition: transform 120ms;
+}
+.seek-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+.seek-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: oklch(0.72 0.25 285);
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px oklch(0.85 0 0);
+  cursor: pointer;
+  transition: transform 120ms;
+}
+.seek-slider::-moz-range-thumb:hover {
+  transform: scale(1.15);
+}
+.seek-slider::-moz-range-track {
+  background: transparent;
+}

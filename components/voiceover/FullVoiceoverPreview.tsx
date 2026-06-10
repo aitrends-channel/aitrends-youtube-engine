@@ -129,6 +129,13 @@ export function FullVoiceoverPreview({
     else { a.play().then(() => setPlaying(true)).catch(() => setPlaying(false)); }
   }
 
+  function seek(nextSec: number) {
+    const a = audioRef.current;
+    if (!a || !isFinite(nextSec)) return;
+    a.currentTime = Math.max(0, Math.min(duration || 0, nextSec));
+    setTickFlag((t) => t + 1);
+  }
+
   const elapsedSec = audioRef.current?.currentTime ?? 0;
   const totalSec = duration;
   const pct = totalSec > 0 ? Math.min(100, (elapsedSec / totalSec) * 100) : 0;
@@ -201,12 +208,29 @@ export function FullVoiceoverPreview({
           )}
         </button>
         <div className="flex-1 min-w-0">
-          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "oklch(0.92 0 0)" }}>
-            <div
-              className="h-full rounded-full transition-all duration-150"
-              style={{ width: `${pct}%`, background: "oklch(0.55 0.15 145)" }}
-            />
-          </div>
+          {/* Seek slider — native range input styled to look like the
+              progress bar. Gradient on the track gives the filled-in
+              segment up to `pct`; the thumb is the draggable handle.
+              Input handlers stop propagation so dragging the slider on
+              a selectable card doesn't toggle the selection. */}
+          <input
+            type="range"
+            min={0}
+            max={totalSec || 0}
+            step={0.01}
+            value={Math.min(elapsedSec, totalSec || 0)}
+            disabled={!canPlay || totalSec <= 0}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+            onChange={(e) => seek(parseFloat(e.target.value))}
+            aria-label="Seek"
+            className="seek-slider w-full"
+            style={{
+              background: `linear-gradient(to right, oklch(0.55 0.15 145) 0%, oklch(0.55 0.15 145) ${pct}%, oklch(0.92 0 0) ${pct}%, oklch(0.92 0 0) 100%)`,
+            }}
+          />
           <div className="flex justify-between mt-1 text-[11px] font-mono tabular-nums" style={{ color: "oklch(0.45 0 0)" }}>
             <span>{fmt(elapsedSec)}</span>
             <span>{fmt(totalSec)}</span>

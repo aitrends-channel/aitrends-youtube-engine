@@ -411,7 +411,7 @@ export default function AssemblePage({ params }: PageProps) {
 
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
         {/* Header */}
-        <div className="px-[30px] py-4 sm:py-5"
+        <div className="px-[60px] py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <h1 className="font-bold text-base sm:text-lg">Assemble Final Video</h1>
           <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
@@ -419,7 +419,7 @@ export default function AssemblePage({ params }: PageProps) {
           </p>
         </div>
 
-        <div className="px-[30px] py-4 sm:py-8 pb-24">
+        <div className="px-[60px] py-4 sm:py-8 pb-24">
           <div className="w-full max-w-5xl mx-auto space-y-6">
 
             {/* Status cards */}
@@ -486,7 +486,6 @@ export default function AssemblePage({ params }: PageProps) {
                     beats={beats}
                     trimSilence={true}
                     title="Trimmed voiceover"
-                    subtitle="Leading + trailing silence stripped from every beat. Click to assemble with this version."
                     selected={trimSilence}
                     onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(true)}
                   />
@@ -495,7 +494,6 @@ export default function AssemblePage({ params }: PageProps) {
                     beats={beats}
                     trimSilence={false}
                     title="Original voiceover"
-                    subtitle="Beats concatenated as-is. Click to assemble with this version."
                     selected={!trimSilence}
                     onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(false)}
                   />
