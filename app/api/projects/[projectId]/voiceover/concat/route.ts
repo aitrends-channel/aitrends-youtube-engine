@@ -69,10 +69,38 @@ function concatWithFfmpeg(listFile: string, outFile: string): Promise<void> {
   });
 }
 
-export async function POST(_req: Request, { params }: { params: { projectId: string } }) {
+// Trim leading + trailing silence from a single mp3, mirrors the
+// worker's trimSilence helper. Re-encodes to libmp3lame 128k 44.1kHz
+// so every trimmed file shares codec — downstream concat -c copy works.
+function trimSilenceOne(inFile: string, outFile: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(inFile)
+      .audioFilters([
+        "silenceremove=start_periods=1:start_silence=0:start_threshold=-50dB:detection=peak",
+        "aformat=dblp",
+        "areverse",
+        "silenceremove=start_periods=1:start_silence=0:start_threshold=-50dB:detection=peak",
+        "aformat=dblp",
+        "areverse",
+      ])
+      .outputOptions(["-c:a", "libmp3lame", "-b:a", "128k", "-ar", "44100"])
+      .output(outFile)
+      .on("end", () => resolve())
+      .on("error", (err) => reject(err))
+      .run();
+  });
+}
+
+export async function POST(req: Request, { params }: { params: { projectId: string } }) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
   const projectId = params.projectId;
+
+  // Body is optional — older callers POST with no body. trimSilence
+  // defaults to false so the original concat behavior is preserved.
+  const body = await req.json().catch(() => ({})) as { trimSilence?: boolean };
+  const trimSilence = !!body.trimSilence;
 
   // Ownership check.
   const { data: project, error: projErr } = await supabase
@@ -101,13 +129,18 @@ export async function POST(_req: Request, { params }: { params: { projectId: str
 
   const urls = withAudio.map((b) => b.voiceover_url!);
   const hash = hashUrls(urls);
-  const storagePath = `${userFolderFor(user)}/${projectId}/voiceover-preview-${hash}.mp3`;
+  // The cache key includes the trim flag so original + trimmed
+  // previews don't overwrite each other — both versions can live on
+  // R2 side-by-side and the assemble page A/B preview can pull them
+  // independently.
+  const variant = trimSilence ? "trim" : "orig";
+  const storagePath = `${userFolderFor(user)}/${projectId}/voiceover-preview-${hash}-${variant}.mp3`;
   const cachedUrl = `${process.env.R2_PUBLIC_URL?.replace(/\/$/, "")}/${storagePath}`;
 
-  // Cache hit: same beat URLs → same hash → file already in R2.
+  // Cache hit: same beat URLs + variant → same hash → file already in R2.
   if (await r2HeadExists(cachedUrl)) {
-    console.log(`[voiceover-concat] project=${projectId} cache hit hash=${hash} (${urls.length} beats)`);
-    return NextResponse.json({ url: cachedUrl, cached: true, beats: urls.length });
+    console.log(`[voiceover-concat] project=${projectId} cache hit hash=${hash} variant=${variant} (${urls.length} beats)`);
+    return NextResponse.json({ url: cachedUrl, cached: true, beats: urls.length, trimSilence });
   }
 
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), `vo-concat-${projectId}-`));
@@ -121,10 +154,21 @@ export async function POST(_req: Request, { params }: { params: { projectId: str
       audioPaths[i] = dest;
     }));
 
+    // Optional silence-trim pass per beat. Runs in parallel for speed;
+    // every output uses the same codec/sample rate (mp3 128k 44.1kHz)
+    // so the downstream concat -c copy is still valid.
+    const concatPaths = trimSilence
+      ? await Promise.all(audioPaths.map(async (src, i) => {
+          const dest = path.join(tmpDir, `t${String(i).padStart(4, "0")}.mp3`);
+          await trimSilenceOne(src, dest);
+          return dest;
+        }))
+      : audioPaths;
+
     const listPath = path.join(tmpDir, "concat.txt");
     await fs.writeFile(
       listPath,
-      audioPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n"),
+      concatPaths.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join("\n"),
     );
     const outPath = path.join(tmpDir, "preview.mp3");
     await concatWithFfmpeg(listPath, outPath);

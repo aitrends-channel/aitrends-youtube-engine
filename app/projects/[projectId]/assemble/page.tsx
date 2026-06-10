@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import type { Beat } from "@/lib/types";
 import { trimToLength, encodeMp3 } from "@/lib/audio/silenceRemover";
+import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPreview";
 
 interface PageProps {
   params: { projectId: string };
@@ -453,7 +454,34 @@ export default function AssemblePage({ params }: PageProps) {
         </div>
 
         <div className="p-4 sm:p-8 pb-24">
-          <div className="w-full max-w-2xl mx-auto space-y-6">
+          <div className="w-full max-w-5xl mx-auto space-y-6">
+
+            {/* Original vs trimmed voiceover preview — anchored at the
+                top so it's visible regardless of whether an assembled
+                video already exists. Both cards fetch
+                /api/projects/:id/voiceover/concat with different
+                trimSilence flags (cache keys differ so both live on
+                R2 independently). The user A/B compares them before
+                clicking Assemble (uses original) or Trim silences
+                (uses trimmed). */}
+            {beats.some((b) => !!b.voiceoverUrl) && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <FullVoiceoverPreview
+                  projectId={projectId}
+                  beats={beats}
+                  trimSilence={false}
+                  title="Original voiceover"
+                  subtitle="Beats concatenated as-is. This is what the regular Assemble button produces."
+                />
+                <FullVoiceoverPreview
+                  projectId={projectId}
+                  beats={beats}
+                  trimSilence={true}
+                  title="Trimmed voiceover"
+                  subtitle="Leading + trailing silence stripped from every beat. This is what the Trim silences button produces."
+                />
+              </div>
+            )}
 
             {/* Status cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
