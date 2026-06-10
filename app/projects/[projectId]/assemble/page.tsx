@@ -73,9 +73,12 @@ export default function AssemblePage({ params }: PageProps) {
 
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
   // Per-beat silence trim — drives the worker's trimSilenceEnabled flag.
-  // The legacy voiceoverType field is hard-coded to "cleaned" in the
-  // requests below so the worker still uses its tts_cleaned_url ??
-  // tts_url fallback; the user no longer picks between those two mp3s.
+  // Outgoing requests hard-code voiceoverType to "original" so the
+  // worker's legacy-mode source-mp3 picker (tts_url ?? tts_cleaned_url)
+  // prefers the freshest voiceover. Defaulting to "cleaned" silently
+  // resurrected stale tts_cleaned_url files from the old "Trim to
+  // video length" flow — users heard a voiceover they didn't recognize.
+  // In per-beat mode (current default) voiceoverType is ignored anyway.
   const [trimSilence, setTrimSilence] = useState<boolean>(true);
   const [captionsEnabled, setCaptionsEnabled] = useState(false);
   const [captionsLanguage, setCaptionsLanguage] = useState("source");
@@ -343,7 +346,7 @@ export default function AssemblePage({ params }: PageProps) {
       const res = await fetch("/api/generate/assemble", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, aspectRatio, voiceoverType: "cleaned", captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, trimSilenceEnabled: trimSilence }),
+        body: JSON.stringify({ projectId, aspectRatio, voiceoverType: "original", captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, trimSilenceEnabled: trimSilence }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: string };
@@ -368,7 +371,7 @@ export default function AssemblePage({ params }: PageProps) {
       const res = await fetch("/api/generate/assemble", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, aspectRatio, voiceoverType: "cleaned", captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, trimSilenceEnabled: trimSilence }),
+        body: JSON.stringify({ projectId, aspectRatio, voiceoverType: "original", captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, trimSilenceEnabled: trimSilence }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: string };
