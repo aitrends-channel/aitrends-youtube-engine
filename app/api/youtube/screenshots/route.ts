@@ -36,10 +36,11 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   try {
-    const { videos, projectId, kinds }: {
+    const { videos, projectId, kinds, attempt: rawAttempt }: {
       videos: VideoInput[];
       projectId: string;
       kinds?: Kind[];
+      attempt?: number;
     } = await req.json();
 
     if (!videos?.length || !projectId) {
@@ -54,17 +55,35 @@ export async function POST(req: Request) {
     const wantFrames = want.has("frames");
     const wantThumbs = want.has("thumbnails");
 
-    // Frame stills: 2 per video × 10 videos = 20 frames. Picks the
-    // first and third of YouTube's three auto-sampled thumbnails
-    // (1.jpg ≈ ~25%, 3.jpg ≈ ~75% of the video) for wider temporal
-    // spread than two adjacent frames would give. The vision-analysis
-    // route's MAX_VIDEO_IMAGES is bumped to 20 to actually consume all
-    // captured frames. Thumbnail-only calls are light (1 image per
-    // video) so we still pull 5 from the top of the channel's
-    // view-count list.
+    // Frame stills: 2 per video × 10 videos = 20 frames. The vision-
+    // analysis route's MAX_VIDEO_IMAGES is bumped to 20 to actually
+    // consume all captured frames. Thumbnail-only calls are light
+    // (1 image per video) so we still pull 5 from the top of the
+    // channel's view-count list.
+    //
+    // Refetch variety (`attempt` from the client, defaults to 0):
+    // YouTube only exposes three auto-sampled frame thumbs per video
+    // (1.jpg ≈ ~25%, 2.jpg ≈ ~50%, 3.jpg ≈ ~75%), so each refetch
+    // first shifts the video window to surface entirely different
+    // videos when more than MAX_VIDEOS are available, then cycles
+    // through different frame-index pairs once windows are exhausted.
+    // Cap the cycle so the file paths in R2 stay deterministic per
+    // (videoId, frame-index) — uploads short-circuit if the object
+    // already exists.
     const MAX_VIDEOS = wantFrames ? 10 : 5;
-    const FRAME_INDICES = [1, 3] as const;
-    const limitedVideos = videos.slice(0, MAX_VIDEOS);
+    const FRAME_PAIRS: readonly (readonly [number, number])[] = [[1, 3], [1, 2], [2, 3]];
+    const attempt = Number.isFinite(rawAttempt) && (rawAttempt ?? 0) >= 0 ? Math.floor(rawAttempt!) : 0;
+    const windowsAvailable = Math.max(1, Math.ceil(videos.length / MAX_VIDEOS));
+    const videoOffset = (attempt % windowsAvailable) * MAX_VIDEOS;
+    const framePairIdx = wantFrames
+      ? Math.floor(attempt / windowsAvailable) % FRAME_PAIRS.length
+      : 0;
+    const FRAME_INDICES = FRAME_PAIRS[framePairIdx];
+    // wrap the slice — if the window runs past the end of the array, we
+    // still want MAX_VIDEOS results when possible.
+    const limitedVideos = videos.length > MAX_VIDEOS
+      ? Array.from({ length: MAX_VIDEOS }, (_, i) => videos[(videoOffset + i) % videos.length])
+      : videos;
     const userFolder = userFolderFor(user);
 
     const results: VideoScreenshots[] = await Promise.all(

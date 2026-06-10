@@ -120,10 +120,13 @@ export default function VisualsPage({ params }: PageProps) {
   // fetch stops consuming the SSE stream either way.
   const analyzeAbortRef = useRef<AbortController | null>(null);
 
-  // Auto screenshot state
+  // Auto screenshot state. `fetchAttempt` is sent to the screenshots
+  // route so each refetch returns a different set — the route rotates
+  // both the video window and the frame indices off this counter.
   const [fetching, setFetching] = useState(false);
   const [autoShots, setAutoShots] = useState<AutoShot[]>([]);
   const [selectedImages, setSelectedImages] = useState<Set<string>>(new Set());
+  const [fetchAttempt, setFetchAttempt] = useState(0);
 
   // Manual upload state
   const [videoImages, setVideoImages] = useState<File[]>([]);
@@ -133,6 +136,19 @@ export default function VisualsPage({ params }: PageProps) {
   const [visualProfile, setVisualProfile] = useState<Record<string, unknown> | null>(null);
 
   const videoInputRef = useRef<HTMLInputElement>(null);
+  // Ref on the Analysis Progress panel so we can scroll the user to it
+  // when analysis kicks off (especially handy on the auto-refetch path
+  // where the panel mounts below the fold).
+  const analysisPanelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (steps.analyze === "running") {
+      // Wait a tick so the panel has mounted before scrolling to it.
+      requestAnimationFrame(() => {
+        analysisPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  }, [steps.analyze]);
 
   useEffect(() => {
     if (project?.visual_profile) setVisualProfile(project.visual_profile);
@@ -159,8 +175,13 @@ export default function VisualsPage({ params }: PageProps) {
   const topVideos: { videoId: string; title: string }[] =
     (project?.channel_info as { topVideos?: { videoId: string; title: string }[] } | undefined)?.topVideos ?? [];
 
-  async function fetchScreenshots() {
+  async function fetchScreenshots(isRefetch = false) {
     if (!topVideos.length) { toast.error("No videos found — complete Channel Setup first"); return; }
+    // Bump the attempt counter on every refetch so the route returns a
+    // different set. Compute the value to send up-front because the
+    // setState below doesn't flush in time for the fetch body.
+    const nextAttempt = isRefetch ? fetchAttempt + 1 : fetchAttempt;
+    if (isRefetch) setFetchAttempt(nextAttempt);
     setFetching(true);
     setAutoShots([]);
     setSelectedImages(new Set());
@@ -168,7 +189,7 @@ export default function VisualsPage({ params }: PageProps) {
       const res = await fetch("/api/youtube/screenshots", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ videos: topVideos, projectId, kinds: ["frames"] }),
+        body: JSON.stringify({ videos: topVideos, projectId, kinds: ["frames"], attempt: nextAttempt }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
@@ -183,8 +204,17 @@ export default function VisualsPage({ params }: PageProps) {
       setSelectedImages(all);
       if (all.size === 0) {
         toast.error("No frame stills could be fetched — they may be unavailable for this channel");
-      } else {
-        toast.success(`Fetched ${all.size} frame stills from ${data.screenshots.length} videos`);
+        return;
+      }
+      toast.success(`${isRefetch ? "Refetched" : "Fetched"} ${all.size} frame stills from ${data.screenshots.length} videos`);
+
+      // Auto re-extract the visual profile when the user explicitly
+      // refetched (new shots are meant to replace the prior analysis).
+      // Don't auto-run on the initial fetch — the user is still
+      // choosing which images to include.
+      if (isRefetch && all.size >= 3) {
+        setStep("upload", "done");
+        await runAnalysis([...all]);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to fetch screenshots");
@@ -216,26 +246,10 @@ export default function VisualsPage({ params }: PageProps) {
     return data.url as string;
   }
 
-  async function analyzeVisuals() {
-    let videoImageUrls: string[];
-
-    if (mode === "auto") {
-      if (selectedImages.size < 3) { toast.error("Select at least 3 images"); return; }
-      videoImageUrls = [...selectedImages];
-      setStep("upload", "done"); // already uploaded during fetch
-    } else {
-      if (videoImages.length < 3) { toast.error("Upload at least 3 video screenshots"); return; }
-      setStep("upload", "running");
-      try {
-        videoImageUrls = await Promise.all(videoImages.map((f) => uploadFileToSupabase(f, "visual-refs")));
-        setStep("upload", "done");
-      } catch (err) {
-        setStep("upload", "error");
-        toast.error(err instanceof Error ? err.message : "Upload failed");
-        return;
-      }
-    }
-
+  // Core analysis call — takes the URL list directly so callers don't
+  // have to wait for setState to flush. Both the manual Analyze button
+  // and the auto-refetch path funnel through here.
+  async function runAnalysis(videoImageUrls: string[]) {
     setStep("analyze", "running");
     analyzeAbortRef.current = new AbortController();
     const signal = analyzeAbortRef.current.signal;
@@ -265,6 +279,35 @@ export default function VisualsPage({ params }: PageProps) {
     } finally {
       analyzeAbortRef.current = null;
       setStoppingAnalyze(false);
+    }
+  }
+
+  // Upload + analyze for the manual mode. Takes the files directly so
+  // it can be triggered straight from the file input's onChange (where
+  // the videoImages setState hasn't flushed yet) as well as from the
+  // analyzeVisuals button path.
+  async function uploadAndAnalyze(files: File[]) {
+    if (files.length < 3) { toast.error("Upload at least 3 video screenshots"); return; }
+    setStep("upload", "running");
+    let urls: string[];
+    try {
+      urls = await Promise.all(files.map((f) => uploadFileToSupabase(f, "visual-refs")));
+      setStep("upload", "done");
+    } catch (err) {
+      setStep("upload", "error");
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+      return;
+    }
+    await runAnalysis(urls);
+  }
+
+  async function analyzeVisuals() {
+    if (mode === "auto") {
+      if (selectedImages.size < 3) { toast.error("Select at least 3 images"); return; }
+      setStep("upload", "done"); // already uploaded during fetch
+      await runAnalysis([...selectedImages]);
+    } else {
+      await uploadAndAnalyze(videoImages);
     }
   }
 
@@ -331,7 +374,7 @@ export default function VisualsPage({ params }: PageProps) {
                     </p>
                   </div>
                   <button
-                    onClick={fetchScreenshots}
+                    onClick={() => fetchScreenshots(autoShots.length > 0)}
                     disabled={fetching || !topVideos.length}
                     className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 transition-all"
                     style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
@@ -339,8 +382,10 @@ export default function VisualsPage({ params }: PageProps) {
                     {fetching ? (
                       <>
                         <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
-                        Fetching...
+                        {autoShots.length > 0 ? "Refetching..." : "Fetching..."}
                       </>
+                    ) : autoShots.length > 0 ? (
+                      <>↻ Refetch Screenshots</>
                     ) : (
                       <>⚡ Fetch Screenshots</>
                     )}
@@ -466,7 +511,16 @@ export default function VisualsPage({ params }: PageProps) {
                     <p className="text-xs mt-1" style={{ color: "var(--c-35)" }}>PNG, JPG, WEBP · up to 5</p>
                   </div>
                   <input ref={videoInputRef} type="file" accept="image/*" multiple className="hidden"
-                    onChange={(e) => setVideoImages(Array.from(e.target.files ?? []).slice(0, 5))} />
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files ?? []).slice(0, 5);
+                      setVideoImages(files);
+                      // Auto-kick off upload + analysis as soon as the
+                      // user has enough images. Matches the auto-refetch
+                      // path on the auto-screenshot side. Below the
+                      // threshold we just hold the selection and let
+                      // them add more.
+                      if (files.length >= 3) void uploadAndAnalyze(files);
+                    }} />
                   {videoImages.length > 0 && (
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {videoImages.map((f, i) => (
@@ -489,7 +543,7 @@ export default function VisualsPage({ params }: PageProps) {
 
           {/* Analysis progress */}
           {(analyzing || steps.analyze === "done" || steps.analyze === "error") && (
-            <div className="rounded-2xl p-5 space-y-4"
+            <div ref={analysisPanelRef} className="rounded-2xl p-5 space-y-4 scroll-mt-24"
               style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
               <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
                 Analysis Progress
