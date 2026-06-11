@@ -6,6 +6,15 @@ import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import useSWR from "swr";
+import { RotateCw } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import type { ThumbnailConcept, KieModel } from "@/lib/types";
 import { getModelConfig } from "@/lib/kie/imageModels";
 
@@ -208,8 +217,24 @@ function PreviewModal({
   );
 }
 
-function ThumbnailCard({ thumb, onPreview }: { thumb: ThumbnailConcept; onPreview?: () => void }) {
+function ThumbnailCard({
+  thumb,
+  onPreview,
+  onRegen,
+  isRegenerating,
+  canRegen,
+}: {
+  thumb: ThumbnailConcept;
+  onPreview?: () => void;
+  onRegen?: () => void;
+  isRegenerating?: boolean;
+  canRegen?: boolean;
+}) {
   const [imgError, setImgError] = useState(false);
+  // A card is "in progress" whenever either the DB status says
+  // generating OR our per-thumbnail regen state is set (covers the
+  // optimistic window before image_status flips in the DB).
+  const isBusy = isRegenerating || thumb.imageStatus === "generating";
 
   return (
     <div className="rounded-xl overflow-hidden"
@@ -218,22 +243,25 @@ function ThumbnailCard({ thumb, onPreview }: { thumb: ThumbnailConcept; onPrevie
       {/* Image area */}
       <div
         className="aspect-video w-full relative group"
-        style={{ background: "var(--bg-card-subtle)", cursor: thumb.imageUrl && !imgError ? "zoom-in" : "default" }}
-        onClick={() => thumb.imageUrl && !imgError && onPreview?.()}
+        style={{ background: "var(--bg-card-subtle)", cursor: thumb.imageUrl && !imgError && !isBusy ? "zoom-in" : "default" }}
+        onClick={() => !isBusy && thumb.imageUrl && !imgError && onPreview?.()}
       >
-        {thumb.imageUrl && !imgError ? (
+        {isBusy ? (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2"
+            style={{ background: "oklch(0.06 0 0 / 0.6)" }}>
+            <span className="w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin"
+              style={{ color: "oklch(0.72 0.25 285)" }} />
+            <p className="text-xs font-medium" style={{ color: "oklch(0.88 0.12 285)" }}>
+              {isRegenerating ? "Regenerating…" : "Generating…"}
+            </p>
+          </div>
+        ) : thumb.imageUrl && !imgError ? (
           <img
             src={thumb.imageUrl}
             alt={thumb.title}
             className="w-full h-full object-cover transition-transform duration-200 group-hover:scale-[1.02]"
             onError={() => setImgError(true)}
           />
-        ) : thumb.imageStatus === "generating" ? (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-            <span className="w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin"
-              style={{ color: "oklch(0.72 0.25 285)" }} />
-            <p className="text-xs" style={{ color: "var(--c-45)" }}>Generating…</p>
-          </div>
         ) : thumb.imageStatus === "failed" ? (
           <div className="absolute inset-0 flex items-center justify-center">
             <p className="text-xs" style={{ color: "oklch(0.55 0.15 25)" }}>Failed</p>
@@ -250,15 +278,30 @@ function ThumbnailCard({ thumb, onPreview }: { thumb: ThumbnailConcept; onPrevie
           {thumb.position}
         </div>
 
-        {/* Download button */}
-        {thumb.imageUrl && !imgError && (
-          <div className="absolute top-2 right-2">
+        {/* Top-right action row: regen + download */}
+        <div className="absolute top-2 right-2 flex items-center gap-1.5">
+          {/* Regen button — shows whenever there's an existing image or
+              a failed attempt to retry, and the page is in a state where
+              a regen can start. Hidden during in-flight states. */}
+          {!isBusy && canRegen && (thumb.imageUrl || thumb.imageStatus === "failed") && onRegen && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRegen(); }}
+              aria-label={thumb.imageStatus === "failed" ? "Retry thumbnail" : "Regenerate thumbnail"}
+              title={thumb.imageStatus === "failed" ? "Retry" : "Regenerate"}
+              className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-90"
+              style={{ background: "var(--bg-overlay)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {/* Download button */}
+          {!isBusy && thumb.imageUrl && !imgError && (
             <DownloadButton
               url={thumb.imageUrl}
               filename={`thumbnail-${thumb.position}.png`}
             />
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Text content */}
@@ -352,6 +395,18 @@ export default function ThumbnailsPage({ params }: PageProps) {
 
   const [conceptStep, setConceptStep] = useState<StepState>(IDLE);
   const [imageStep, setImageStep] = useState<StepState>(IDLE);
+  // The 5 niche-video thumbnails (cover art) that fed the thumbnail-
+  // style analysis. Surfaced in the UI so the user can see which
+  // references the model was inspired by. Populated on the first
+  // generateConcepts() run and kept in local state for this session.
+  const [nicheThumbs, setNicheThumbs] = useState<Array<{ videoId: string; title: string; thumbnailUrl: string }>>([]);
+  // Per-thumbnail regen state. Decoupled from the bulk image-step state
+  // (imageStep / imageProgress) so regenerating a single card doesn't
+  // flip the whole step into "Running…". A Set supports parallel
+  // regens; the regen confirm dialog gates each one.
+  const [regeneratingPositions, setRegeneratingPositions] = useState<Set<number>>(new Set());
+  const [regenConfirmPos, setRegenConfirmPos] = useState<number | null>(null);
+  const [regenSubmitting, setRegenSubmitting] = useState(false);
 
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [selectedRatio, setSelectedRatio] = useState("16:9");
@@ -382,27 +437,34 @@ export default function ThumbnailsPage({ params }: PageProps) {
     }
     setConceptStep({ status: "running", message: "Starting..." });
     try {
-      // Lazy thumbnail-style analysis: the visuals step now only extracts
-      // video-style DNA. Fetch the channel's actual thumbnails the first
-      // time we need them here, run analysis, persist to the project,
-      // then proceed to concept generation. No-op on subsequent runs.
+      // Lazy thumbnail-style analysis. Pull the cover art of the top
+      // 5 niche videos and run thumbnail-only visual analysis — that
+      // signal feeds buildThumbnailsPrompt on the server (alongside
+      // the visuals-step visualProfile). No-op on subsequent runs
+      // when thumbnail_analysis is already cached. We capture the
+      // pulled screenshots into local state so the user can SEE
+      // which 5 references the model was inspired by.
       let thumbnailAnalysis = project.thumbnail_analysis as Record<string, unknown> | null;
       const channelInfo = project.channel_info as { topVideos?: { videoId: string; title: string }[] } | undefined;
-      const topVideos = channelInfo?.topVideos ?? [];
-      if (!thumbnailAnalysis && topVideos.length > 0) {
-        setConceptStep({ status: "running", message: "Analyzing channel thumbnails…" });
+      const niche5 = (channelInfo?.topVideos ?? []).slice(0, 5);
+      if (niche5.length > 0 && (!thumbnailAnalysis || nicheThumbs.length === 0)) {
+        setConceptStep({ status: "running", message: "Pulling top 5 niche thumbnails…" });
         const shotsRes = await fetch("/api/youtube/screenshots", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ videos: topVideos, projectId, kinds: ["thumbnails"] }),
+          body: JSON.stringify({ videos: niche5, projectId, kinds: ["thumbnails"] }),
         });
         const shotsData = await shotsRes.json();
-        if (!shotsRes.ok) throw new Error(shotsData.error ?? "Failed to fetch channel thumbnails");
-        const thumbnailImageUrls: string[] = (shotsData.screenshots ?? [])
-          .map((s: { thumbnailUrl?: string }) => s.thumbnailUrl)
-          .filter((u: string | undefined): u is string => !!u);
+        if (!shotsRes.ok) throw new Error(shotsData.error ?? "Failed to fetch niche thumbnails");
+        const screenshots = (shotsData.screenshots ?? []) as Array<{ videoId: string; title: string; thumbnailUrl?: string }>;
+        const refs = screenshots
+          .filter((s) => !!s.thumbnailUrl)
+          .map((s) => ({ videoId: s.videoId, title: s.title, thumbnailUrl: s.thumbnailUrl as string }));
+        setNicheThumbs(refs);
+        const thumbnailImageUrls = refs.map((r) => r.thumbnailUrl);
 
-        if (thumbnailImageUrls.length > 0) {
+        if (!thumbnailAnalysis && thumbnailImageUrls.length > 0) {
+          setConceptStep({ status: "running", message: "Analyzing niche thumbnails…" });
           const analysisRes = await fetch("/api/workflow/visual-analysis", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -415,12 +477,18 @@ export default function ThumbnailsPage({ params }: PageProps) {
         }
       }
 
+      const visualProfile = project.visual_profile as Record<string, unknown> | null;
+      if (!visualProfile) throw new Error("Visual profile missing — run the Visuals step first");
+
       setConceptStep({ status: "running", message: "Generating concepts…" });
       await streamStep("/api/workflow/prompts", {
         step: "thumbnails",
         projectId,
         script: project.script,
-        visualProfile: project.visual_profile,
+        // Prefer the freshly-resolved visualProfile (which includes
+        // the 5-niche-video frames analysis above) over the original
+        // visuals-step value. Falls back when no fresh analysis ran.
+        visualProfile,
         thumbnailAnalysis,
       }, setConceptStep);
       await mutate();
@@ -492,6 +560,85 @@ export default function ThumbnailsPage({ params }: PageProps) {
     }
   }
 
+  // Regenerate a single thumbnail. Hits the same /api/generate/thumbnail-images
+  // route as the bulk path but with a single-element thumbnails array
+  // and clearFirst=false so it only touches this position. The route
+  // flips image_status to "generating" then "done"/"failed", which the
+  // existing ThumbnailCard already renders via the project's SWR poll.
+  async function regenOne(position: number) {
+    if (!activeModel) { toast.error("Select an image model"); return; }
+    const concept = thumbnails.find((t) => t.position === position);
+    if (!concept || !concept.stylePrompt) { toast.error("No prompt found for this thumbnail"); return; }
+
+    setRegeneratingPositions((prev) => new Set(prev).add(position));
+    // Optimistic update so the spinner shows immediately instead of
+    // waiting for the route to flip image_status in the DB + the next
+    // SWR poll to surface it.
+    if (project) {
+      mutate(
+        {
+          ...project,
+          thumbnails: thumbnails.map((t) => t.position === position
+            ? { ...t, imageUrl: undefined, imageStatus: "generating" }
+            : t),
+        },
+        { revalidate: false }
+      );
+    }
+
+    try {
+      const res = await fetch("/api/generate/thumbnail-images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          thumbnails: [{ position, stylePrompt: concept.stylePrompt }],
+          modelId: activeModel,
+          aspectRatio: selectedRatio,
+          resolution: selectedResolution ?? undefined,
+          clearFirst: false,
+        }),
+      });
+      const data = await res.json() as { failures?: { position: number; error: string }[] };
+      if (!res.ok) throw new Error((data as { error?: string }).error ?? "Regeneration failed");
+      const firstError = data.failures?.[0]?.error;
+      if (firstError) {
+        toast.error(`Thumbnail ${position} failed: ${firstError}`);
+      } else {
+        toast.success(`Thumbnail ${position} regenerated`);
+      }
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Regeneration failed");
+      await mutate();
+    } finally {
+      setRegeneratingPositions((prev) => {
+        const next = new Set(prev);
+        next.delete(position);
+        return next;
+      });
+    }
+  }
+
+  function requestRegenOne(position: number) {
+    if (anyRunning) { toast.error("Wait for the current run to finish"); return; }
+    if (regeneratingPositions.has(position)) return;
+    if (!activeModel) { toast.error("Select an image model"); return; }
+    setRegenConfirmPos(position);
+  }
+
+  async function confirmRegenOne() {
+    if (regenConfirmPos === null) return;
+    setRegenSubmitting(true);
+    const pos = regenConfirmPos;
+    setRegenConfirmPos(null);
+    try {
+      await regenOne(pos);
+    } finally {
+      setRegenSubmitting(false);
+    }
+  }
+
   function StepBadge({ status, num }: { status: StepStatus; num: number }) {
     return (
       <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm font-bold mt-0.5"
@@ -538,6 +685,44 @@ export default function ThumbnailsPage({ params }: PageProps) {
 
         <div className="flex-1 overflow-y-auto">
           <div className="px-4 sm:px-8 pt-4 sm:pt-6 pb-24 space-y-4 max-w-5xl mx-auto">
+
+            {/* Niche references — the top-5 niche videos whose
+                thumbnails fed buildThumbnailsPrompt. Only renders
+                after generateConcepts() has pulled them at least
+                once this session. */}
+            {nicheThumbs.length > 0 && (
+              <div className="rounded-xl p-4"
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
+                    Niche references
+                  </p>
+                  <span className="text-[11px]" style={{ color: "var(--c-40)" }}>
+                    Top {nicheThumbs.length} niche thumbnails analyzed
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {nicheThumbs.map((t) => (
+                    <a
+                      key={t.videoId}
+                      href={`https://www.youtube.com/watch?v=${t.videoId}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={t.title}
+                      className="relative aspect-video rounded-lg overflow-hidden transition-transform hover:scale-[1.02]"
+                      style={{ border: "1px solid var(--bd-7)" }}
+                    >
+                      <img src={t.thumbnailUrl} alt={t.title}
+                        className="w-full h-full object-cover" />
+                      <div className="absolute inset-x-0 bottom-0 px-2 py-1 text-[10px] truncate"
+                        style={{ background: "oklch(0.05 0 0 / 0.7)", color: "var(--c-70)" }}>
+                        {t.title}
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Step 1 — Concepts */}
             <div className="rounded-xl p-4 flex gap-4"
@@ -701,6 +886,9 @@ export default function ThumbnailsPage({ params }: PageProps) {
                       key={t.position}
                       thumb={t}
                       onPreview={previewIdx >= 0 ? () => setPreviewIndex(previewIdx) : undefined}
+                      onRegen={() => requestRegenOne(t.position)}
+                      isRegenerating={regeneratingPositions.has(t.position)}
+                      canRegen={!anyRunning && !!activeModel}
                     />
                   );
                 })}
@@ -743,6 +931,43 @@ export default function ThumbnailsPage({ params }: PageProps) {
           </div>
         </div>
       )}
+
+      <Dialog open={regenConfirmPos !== null} onOpenChange={(open) => { if (!regenSubmitting && !open) setRegenConfirmPos(null); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Regenerate thumbnail {regenConfirmPos}?</DialogTitle>
+            <DialogDescription>
+              This will overwrite the existing image for thumbnail{" "}
+              <span className="font-semibold" style={{ color: "var(--c-80)" }}>#{regenConfirmPos}</span>
+              {" "}with a fresh render from the same prompt and model.
+              KIE credits will be charged for the new image.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setRegenConfirmPos(null)}
+              disabled={regenSubmitting}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
+              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmRegenOne}
+              disabled={regenSubmitting}
+              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-60"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              {regenSubmitting ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Starting…
+                </span>
+              ) : `Regenerate thumbnail ${regenConfirmPos}`}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
