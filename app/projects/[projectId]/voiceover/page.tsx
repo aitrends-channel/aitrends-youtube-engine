@@ -414,9 +414,123 @@ export default function VoiceoverPage({ params }: PageProps) {
   // server-side and SWR will surface the new state.
   const effectivelyGenerating = generating || serverGenerationActive;
 
-  function retryOne(beatNumber: number) {
-    if (generating) { toast.error("Wait for current run to finish"); return; }
-    runGeneration({ beatNumbers: [beatNumber] });
+  // Per-beat regen is intentionally decoupled from the bulk-run state.
+  // It hits the same TTS beats endpoint with skipRunClaim:true so the
+  // route doesn't touch voiceover_active_run_id and the page's
+  // serverGenerationActive stays false during a single-beat regen.
+  // The state below tracks WHICH beat is being regenerated and whether
+  // the user has stopped it; the per-beat card uses this to render
+  // beat-scoped Stop / Resume controls.
+  const [perBeatRegen, setPerBeatRegen] = useState<{ beatNumber: number; status: "running" | "stopped" } | null>(null);
+  const perBeatAbortRef = useRef<AbortController | null>(null);
+
+  async function startPerBeatRegen(beatNumber: number) {
+    if (!selectedVoice) { toast.error("Pick a voice first"); return; }
+    setPerBeatRegen({ beatNumber, status: "running" });
+    const ctrl = new AbortController();
+    perBeatAbortRef.current = ctrl;
+    try {
+      const res = await fetch("/api/generate/tts/beats", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          voiceId: selectedVoice,
+          beatNumbers: [beatNumber],
+          // Run independently of the bulk-run state.
+          skipRunClaim: true,
+        }),
+        signal: ctrl.signal,
+      });
+      if (!res.ok || !res.body) throw new Error("Failed to start per-beat regen");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          let ev: { type?: string; beatNumber?: number; status?: BeatStatus; url?: string; error?: string };
+          try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+          if (ev.type === "beat" && typeof ev.beatNumber === "number" && ev.status) {
+            setLiveBeats((prev) => {
+              const next = new Map(prev);
+              next.set(ev.beatNumber!, { status: ev.status!, url: ev.url, error: ev.error });
+              return next;
+            });
+          } else if (ev.type === "error") {
+            throw new Error((ev as { message?: string }).message ?? "Regen failed");
+          }
+        }
+      }
+      await mutate();
+      // Only clear the regen state if we weren't stopped — a stop
+      // transition flips status to "stopped" and shows the Resume
+      // button; the run-completion path here is the success case.
+      setPerBeatRegen((cur) => (cur && cur.status === "running" ? null : cur));
+    } catch (err) {
+      const isAbort = err instanceof Error && err.name === "AbortError";
+      if (!isAbort) {
+        toast.error(err instanceof Error ? err.message : "Regen failed");
+        setPerBeatRegen(null);
+      }
+    } finally {
+      perBeatAbortRef.current = null;
+      // Clear the live overlay for this beat so DB-backed state takes
+      // over once SWR refreshes.
+      setLiveBeats((prev) => {
+        const next = new Map(prev);
+        next.delete(beatNumber);
+        return next;
+      });
+    }
+  }
+
+  function stopPerBeatRegen() {
+    perBeatAbortRef.current?.abort();
+    setPerBeatRegen((cur) => (cur ? { ...cur, status: "stopped" } : null));
+  }
+
+  function resumePerBeatRegen() {
+    if (!perBeatRegen) return;
+    void startPerBeatRegen(perBeatRegen.beatNumber);
+  }
+
+  // Failed-beat retry is a one-shot fix (no audio to lose), so it runs
+  // directly with no confirm. Regenerating a done beat overwrites an
+  // existing voiceover and costs KIE credits, so we ask first.
+  function retryOne(beatNumber: number, currentStatus: BeatStatus) {
+    if (effectivelyGenerating) { toast.error("Wait for the current run to finish"); return; }
+    if (perBeatRegen) { toast.error("Another beat is being regenerated"); return; }
+    if (currentStatus === "failed") {
+      void startPerBeatRegen(beatNumber);
+      return;
+    }
+    setConfirm({
+      title: `Regenerate beat ${beatNumber}?`,
+      body: (
+        <>
+          This will overwrite the existing voiceover for beat{" "}
+          <span className="font-semibold" style={{ color: "var(--c-80)" }}>#{beatNumber}</span>
+          {" "}and re-render it with the selected voice. The current audio for this beat will be replaced.
+        </>
+      ),
+      footnote: "KIE credits will be charged for this regeneration.",
+      icon: "↻",
+      iconColor: "oklch(0.72 0.25 285)",
+      iconBg: "oklch(0.72 0.25 285 / 0.12)",
+      iconBorder: "oklch(0.72 0.25 285 / 0.3)",
+      confirmLabel: `Regenerate beat ${beatNumber}`,
+      confirmBg: "oklch(0.72 0.25 285)",
+      onConfirm: async () => {
+        setConfirm(null);
+        await startPerBeatRegen(beatNumber);
+      },
+    });
   }
 
   const [dedupingOverlap, setDedupingOverlap] = useState(false);
@@ -902,17 +1016,88 @@ export default function VoiceoverPage({ params }: PageProps) {
                         </span>
                       )}
                     </div>
-                    {(status === "failed" || status === "done") && !generating && (
-                      <button
-                        onClick={() => retryOne(b.beatNumber)}
-                        aria-label={status === "failed" ? "Retry beat" : "Regenerate beat"}
-                        title={status === "failed" ? "Retry" : "Regenerate"}
-                        className={`${status === "failed" ? "px-2.5" : "px-1.5"} py-1 rounded-lg text-[11px] font-medium flex items-center justify-center transition-opacity hover:opacity-90 shrink-0`}
-                        style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}
-                      >
-                        {status === "failed" ? "Retry" : <RotateCw className="w-3.5 h-3.5" />}
-                      </button>
-                    )}
+                    {(() => {
+                      const isPerBeatRegen = perBeatRegen?.beatNumber === b.beatNumber;
+                      // Per-beat regen state takes priority on this
+                      // row — show Stop while running, Resume after
+                      // the user stopped it.
+                      if (isPerBeatRegen && perBeatRegen?.status === "running") {
+                        return (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span
+                              className="w-7 h-7 rounded-lg flex items-center justify-center"
+                              aria-label="Beat regenerating"
+                              title="Regenerating"
+                              style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "oklch(0.72 0.25 285)" }}
+                            >
+                              <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                            </span>
+                            <button
+                              onClick={stopPerBeatRegen}
+                              aria-label="Stop regenerating this beat"
+                              title="Stop"
+                              className="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-medium transition-opacity hover:opacity-90"
+                              style={{ background: "oklch(0.6 0.22 25)", color: "var(--bg-page-2)" }}
+                            >
+                              <span className="w-3 h-3 rounded-sm" style={{ background: "currentColor" }} />
+                            </button>
+                          </div>
+                        );
+                      }
+                      if (isPerBeatRegen && perBeatRegen?.status === "stopped") {
+                        return (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={resumePerBeatRegen}
+                              aria-label="Resume regenerating this beat"
+                              title="Resume"
+                              className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-opacity hover:opacity-90"
+                              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                            >
+                              Resume
+                            </button>
+                            <button
+                              onClick={() => setPerBeatRegen(null)}
+                              aria-label="Dismiss"
+                              title="Dismiss"
+                              className="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-medium transition-opacity hover:opacity-90"
+                              style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      }
+                      // No per-beat regen for this row. Render either
+                      // a spinner (bulk run touching this beat) or the
+                      // normal Retry / Regen icon.
+                      if (status === "queued" || status === "generating") {
+                        return (
+                          <div
+                            className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                            aria-label={status === "queued" ? "Beat queued" : "Beat regenerating"}
+                            title={status === "queued" ? "Queued" : "Regenerating"}
+                            style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "oklch(0.72 0.25 285)" }}
+                          >
+                            <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                          </div>
+                        );
+                      }
+                      if ((status === "failed" || status === "done") && !generating) {
+                        return (
+                          <button
+                            onClick={() => retryOne(b.beatNumber, status)}
+                            aria-label={status === "failed" ? "Retry beat" : "Regenerate beat"}
+                            title={status === "failed" ? "Retry" : "Regenerate"}
+                            className={`${status === "failed" ? "px-2.5" : "px-1.5"} py-1 rounded-lg text-[11px] font-medium flex items-center justify-center transition-opacity hover:opacity-90 shrink-0`}
+                            style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}
+                          >
+                            {status === "failed" ? "Retry" : <RotateCw className="w-3.5 h-3.5" />}
+                          </button>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                 );
               })}

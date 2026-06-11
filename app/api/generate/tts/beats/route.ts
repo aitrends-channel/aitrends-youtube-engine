@@ -82,6 +82,12 @@ export async function POST(req: Request) {
     projectId?: string;
     voiceId?: string;
     beatNumbers?: number[];
+    /** Per-beat regen path: skip the voiceover_active_run_id claim and
+     *  the stop-flag polling so this request runs independently of any
+     *  bulk run in flight, and the page's serverGenerationActive stays
+     *  unaffected. Single-beat regens still mark the beat row as
+     *  "generating" so the UI can show a spinner on that specific row. */
+    skipRunClaim?: boolean;
   };
   if (!body.projectId || !body.voiceId) {
     return new Response(JSON.stringify({ error: "projectId and voiceId are required" }), {
@@ -92,6 +98,7 @@ export async function POST(req: Request) {
   const projectId = body.projectId;
   const voiceId = body.voiceId;
   const explicitBeats = body.beatNumbers && body.beatNumbers.length > 0 ? new Set(body.beatNumbers) : null;
+  const skipRunClaim = body.skipRunClaim === true;
 
   // Beats are processed in fixed-size batches (default 10). Within each
   // batch every beat runs in parallel; the next batch isn't even marked
@@ -127,19 +134,33 @@ export async function POST(req: Request) {
         // the run by id even if the try threw before setting it.
         const runId = randomUUID();
         try {
-          // Claim the run. Sets the new id, clears any stale stop flag
-          // from a prior cancelled run, and updates the project's
-          // default voice so reassemblies and future regen runs default
-          // to the same voice.
-          await supabase
-            .from("projects")
-            .update({
-              tts_voice_id: voiceId,
-              voiceover_active_run_id: runId,
-              voiceover_stop_requested: false,
-            })
-            .eq("id", projectId)
-            .eq("user_id", user.id);
+          // skipRunClaim=true is the per-beat regen path: don't touch
+          // voiceover_active_run_id / voiceover_stop_requested at all
+          // so this request runs in parallel with any bulk run and
+          // the page's serverGenerationActive flag stays unaffected.
+          // We still update tts_voice_id so a regen with a different
+          // voice updates the project's saved default.
+          if (skipRunClaim) {
+            await supabase
+              .from("projects")
+              .update({ tts_voice_id: voiceId })
+              .eq("id", projectId)
+              .eq("user_id", user.id);
+          } else {
+            // Claim the run. Sets the new id, clears any stale stop flag
+            // from a prior cancelled run, and updates the project's
+            // default voice so reassemblies and future regen runs default
+            // to the same voice.
+            await supabase
+              .from("projects")
+              .update({
+                tts_voice_id: voiceId,
+                voiceover_active_run_id: runId,
+                voiceover_stop_requested: false,
+              })
+              .eq("id", projectId)
+              .eq("user_id", user.id);
+          }
 
           // Load beats with the columns we need to decide staleness.
           const { data: rawBeats, error: beatsErr } = await supabase
@@ -292,16 +313,20 @@ export async function POST(req: Request) {
 
           // Walk through every stale beat BATCH_SIZE at a time. The
           // stop check between batches lets the user halt without
-          // killing the in-flight batch.
+          // killing the in-flight batch. Per-beat regen (skipRunClaim)
+          // doesn't participate in the stop-flag system, so we skip
+          // the check on that path.
           for (let i = 0; i < toGenerate.length; i += BATCH_SIZE) {
-            try {
-              await assertVoiceoverRunActive(projectId, runId);
-            } catch (e) {
-              if (e instanceof Error && e.message === STOP_SENTINEL) {
-                stoppedEarly = true;
-                break;
+            if (!skipRunClaim) {
+              try {
+                await assertVoiceoverRunActive(projectId, runId);
+              } catch (e) {
+                if (e instanceof Error && e.message === STOP_SENTINEL) {
+                  stoppedEarly = true;
+                  break;
+                }
+                throw e;
               }
-              throw e;
             }
             const batch = toGenerate.slice(i, i + BATCH_SIZE);
             // Mark batch as queued — the UI shows the orange Queued
@@ -339,9 +364,12 @@ export async function POST(req: Request) {
             send({ type: "error", message: err instanceof Error ? err.message : "Generation failed" });
           }
         } finally {
-          // Release the run id (and clear the stop flag) only if we
-          // still own it. If another run took over (shouldn't happen
-          // but be safe), don't clobber its claim.
+          // Per-beat path never claimed the run id, so there's nothing
+          // to release. Bulk path: release the run id (and clear the
+          // stop flag) only if we still own it. If another run took
+          // over (shouldn't happen but be safe), don't clobber its
+          // claim.
+          if (!skipRunClaim) {
           const { data: ownerCheck } = await supabase
             .from("projects")
             .select("voiceover_active_run_id")
@@ -354,6 +382,7 @@ export async function POST(req: Request) {
               .eq("id", projectId)
               .eq("user_id", user.id);
           }
+          } // end !skipRunClaim
           closed = true;
           clearInterval(heartbeat);
           try { controller.close(); } catch { /* already done */ }
