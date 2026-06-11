@@ -194,11 +194,6 @@ export default function VoiceoverPage({ params }: PageProps) {
   // return whatever value was captured when runGeneration() started.
   const stoppedRef = useRef(false);
   useEffect(() => { stoppedRef.current = stopped; }, [stopped]);
-  // Bumped each time the server reports remaining > 0 on a bulk run —
-  // an effect below catches the bump and kicks the next batch unless
-  // the user has clicked Stop. Counter (vs boolean) so consecutive
-  // batches each fire a fresh effect even if the value didn't toggle.
-  const [autoContinueTick, setAutoContinueTick] = useState(0);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
   // AbortController for the in-flight SSE fetch. Stop aborts it; the
@@ -265,12 +260,12 @@ export default function VoiceoverPage({ params }: PageProps) {
   const remainingCount = beats.filter((b) => !b.voiceoverUrl).length;
   const allDone = totalBeats > 0 && doneCount === totalBeats;
 
-  // A single-beat retry shouldn't keep auto-continuing — that path is
-  // for fixing one row, not for running a full sweep. Bulk runs (no
-  // beatNumbers OR a multi-beat list like Regenerate All) DO auto-
-  // continue so the user can hit Generate once and walk away.
+  // The route now loops through all stale beats in one request (the
+  // server claims a voiceover_active_run_id and walks the full set
+  // server-side), so the client doesn't need to fire follow-up
+  // calls between batches anymore. Browser refresh during a run no
+  // longer halts the queue.
   async function runGeneration(opts: { beatNumbers?: number[] } = {}) {
-    const isSingleBeatRetry = opts.beatNumbers?.length === 1;
     if (!selectedVoice) { toast.error("Pick a voice first"); return; }
     if (!totalBeats) { toast.error("No beats — run Prompts step first"); return; }
     if (generating) return;
@@ -324,19 +319,15 @@ export default function VoiceoverPage({ params }: PageProps) {
             const total = ev.total ?? 0;
             const remaining = (ev as { remaining?: number }).remaining ?? 0;
             const failedCount = (ev as { failed?: number }).failed ?? 0;
+            const wasStopped = (ev as { stopped?: boolean }).stopped === true;
             if (total === 0) toast.success("Voiceovers already up to date");
+            else if (wasStopped) {
+              // Server-side stop honored. Remaining beats stay as
+              // "pending"; user can click Generate again to resume.
+              toast.info(`Stopped — ${generated || total - remaining} done, ${remaining} pending.`);
+            }
             else if (failedCount > 0) toast.error(`${failedCount} of ${total} failed`);
-            else if (remaining > 0) {
-              // Auto-continue on bulk runs unless Stop was clicked.
-              // For single-beat retries we never auto-continue — the
-              // user asked for that one beat specifically.
-              if (!isSingleBeatRetry && !stoppedRef.current) {
-                toast.success(`Batch done (${total} beat${total === 1 ? "" : "s"}) — continuing with ${remaining} more…`);
-                setAutoContinueTick((n) => n + 1);
-              } else {
-                toast.success(`Generated ${total} beat${total === 1 ? "" : "s"} — ${remaining} more pending. Click Generate to continue.`);
-              }
-            } else {
+            else {
               toast.success(`Generated ${total} beat voiceover${total === 1 ? "" : "s"}`);
             }
           } else if (ev.type === "error") {
@@ -367,65 +358,61 @@ export default function VoiceoverPage({ params }: PageProps) {
     }
   }
 
-  function stopGeneration() {
-    abortRef.current?.abort();
+  async function stopGeneration() {
+    // PATCH the persistent stop flag first so the server's between-
+    // batch check picks it up — that's what actually halts a queue
+    // running past this client (e.g. across a refresh). Then abort
+    // the local SSE stream if one is open so the UI doesn't keep
+    // receiving updates for the in-flight batch that's still
+    // finishing.
     setStopped(true);
+    // Optimistic SWR update — without this, the pill change waits for
+    // the PATCH round-trip + the next SWR poll, which felt like the
+    // page was stuck until a manual refresh. Mutating the cache with
+    // revalidate:false applies the flag locally so React re-renders
+    // this frame; the PATCH below is the canonical write, and the
+    // mutate() after it does the revalidation.
+    await mutate(
+      (cur: Record<string, unknown> | undefined) => cur ? { ...cur, voiceover_stop_requested: true } : cur,
+      { revalidate: false }
+    );
+    try {
+      await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voiceover_stop_requested: true }),
+      });
+      await mutate();
+    } catch (err) {
+      console.warn("[voiceover] stop PATCH failed:", err);
+    }
+    abortRef.current?.abort();
   }
 
-  // Auto-continue driver. Fires whenever the SSE done handler bumps
-  // autoContinueTick (i.e. server reported remaining > 0 on a bulk
-  // run). Waits for `generating` to flip back to false in the prior
-  // run's finally block, then kicks the next bulk batch. Bails if the
-  // user clicked Stop between batches.
-  useEffect(() => {
-    if (autoContinueTick === 0) return;
-    if (generating || stopped) return;
-    void runGeneration();
-    // runGeneration identity changes every render; including it would
-    // refire the effect needlessly. The tick + generating + stopped
-    // deps are the real triggers.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoContinueTick, generating, stopped]);
-
-  // Auto-resume after a refresh. The server processes one batch per
-  // request — refreshing kills the SSE stream, which means the next
-  // batch never gets queued even though prior batches succeeded. On
-  // page mount, if the project shows a partially-complete run (some
-  // beats already on disk + others still missing audio) and the
-  // server isn't currently processing anything, fire one bulk run to
-  // pick the queue back up. The existing autoContinueTick chain
-  // takes over from there.
+  // Server-side generation is "active" when the project's
+  // voiceover_active_run_id is set. The TTS beats route claims the
+  // run id on entry and clears it on exit (success / stop / error),
+  // so this is the canonical "is a run in flight" signal — survives
+  // browser refresh and doesn't drift when the server is between
+  // batches (when no beat is currently "generating" but the next
+  // batch is about to start).
   //
-  // Guards (each prevents a double-fire or an unsafe restart):
-  //   • autoResumedRef — runs at most once per mount; the user's own
-  //     button clicks own the state after that.
-  //   • project / selectedVoice not yet resolved — wait for SWR + the
-  //     voice resolution effect.
-  //   • generating already true — local run in flight; don't stack.
-  //   • any beat in "queued"/"generating" status — server's still
-  //     processing the prior batch; auto-firing now would collide.
-  //   • no stale beats — nothing to do.
-  //   • no done beats — this is a fresh project, not a resume.
-  const autoResumedRef = useRef(false);
-  useEffect(() => {
-    if (autoResumedRef.current) return;
-    if (project === undefined || !selectedVoice) return;
-    if (generating) return;
-    const inFlightOnServer = beats.some(
-      (b) => b.voiceoverStatus === "queued" || b.voiceoverStatus === "generating"
-    );
-    if (inFlightOnServer) return;
-    const hasStale = beats.some((b) => isStale(b, selectedVoice));
-    if (!hasStale) return;
-    const anyDone = beats.some((b) => !!b.voiceoverUrl);
-    if (!anyDone) return;
-    autoResumedRef.current = true;
-    toast.info("Resuming voiceover generation…");
-    void runGeneration();
-    // runGeneration / isStale identities are stable enough; the real
-    // triggers are the data + selectedVoice deps.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, selectedVoice, beats, generating]);
+  // Also surface a beat-level count for the in-progress pill so we
+  // can say "Generating already queued N beats" — beats with
+  // voiceover_status in ("queued","generating") are the ones the
+  // server is actively touching right now.
+  const projectRunActive = !!(project as { voiceover_active_run_id?: string | null } | undefined)?.voiceover_active_run_id;
+  const projectStopRequested = !!(project as { voiceover_stop_requested?: boolean } | undefined)?.voiceover_stop_requested;
+  const inProgressBeatsCount = beats.filter(
+    (b) => b.voiceoverStatus === "generating" || b.voiceoverStatus === "queued"
+  ).length;
+  const serverGenerationActive = projectRunActive;
+  // Treat the page as "generating" whenever EITHER signal is true.
+  // Hides the Generate-remaining button during a server-only run so
+  // refreshing mid-generation doesn't make it look like the user has
+  // to click again to resume — the route will keep queuing batches
+  // server-side and SWR will surface the new state.
+  const effectivelyGenerating = generating || serverGenerationActive;
 
   function retryOne(beatNumber: number) {
     if (generating) { toast.error("Wait for current run to finish"); return; }
@@ -581,23 +568,6 @@ export default function VoiceoverPage({ params }: PageProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto pb-[70px]">
-        {project === undefined ? (
-          // Initial load — project hasn't arrived from SWR yet. Without
-          // this gate the page rendered the bulk-action panel showing
-          // "No beats yet" + an empty voice picker, which read as a
-          // legitimate empty state instead of a loading state.
-          <div className="p-4 sm:p-8 pb-24 max-w-4xl mx-auto">
-            <div className="rounded-2xl p-10 flex flex-col items-center gap-4"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-              <span className="block w-8 h-8 border-2 rounded-full animate-spin"
-                style={{ borderColor: "oklch(0.72 0.25 285 / 0.3)", borderTopColor: "oklch(0.72 0.25 285)" }} />
-              <p className="text-sm font-medium" style={{ color: "var(--c-60)" }}>Loading voiceover step…</p>
-              <p className="text-xs" style={{ color: "var(--c-40)" }}>
-                Fetching beats and checking what&apos;s already on file.
-              </p>
-            </div>
-          </div>
-        ) : (
         <div className="p-4 sm:p-8 pb-24 max-w-4xl mx-auto space-y-6">
 
           {/* Voice picker */}
@@ -610,7 +580,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                 <button
                   key={tab}
                   onClick={() => setVoiceTab(tab)}
-                  disabled={generating}
+                  disabled={effectivelyGenerating}
                   className="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium capitalize transition-all disabled:opacity-40"
                   style={voiceTab === tab ? {
                     background: "oklch(0.72 0.25 285 / 0.15)",
@@ -642,6 +612,22 @@ export default function VoiceoverPage({ params }: PageProps) {
             </div>
           </div>
 
+          {project === undefined ? (
+            // Project still loading — only the beats list / bulk panel
+            // depends on it. Voice picker above renders independently
+            // from its own SWR call, so we scope the loading state to
+            // this section instead of taking over the whole page.
+            <div className="rounded-2xl p-10 flex flex-col items-center gap-3"
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <span className="block w-7 h-7 border-2 rounded-full animate-spin"
+                style={{ borderColor: "oklch(0.72 0.25 285 / 0.3)", borderTopColor: "oklch(0.72 0.25 285)" }} />
+              <p className="text-sm font-medium" style={{ color: "var(--c-60)" }}>Loading voiceover beats…</p>
+              <p className="text-xs" style={{ color: "var(--c-40)" }}>
+                Fetching beats and checking what&apos;s already on file.
+              </p>
+            </div>
+          ) : (
+          <>
           {/* Bulk action panel */}
           <div className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
             {/* Selected-voice banner — sits above the count/action row
@@ -708,10 +694,14 @@ export default function VoiceoverPage({ params }: PageProps) {
                 {/* Fix overlap: walks every beat and trims any leading
                     text that duplicates the previous beat's tail. Safe
                     to run multiple times — does nothing when there's
-                    no overlap left. Doesn't touch audio files. */}
+                    no overlap left. Doesn't touch audio files.
+                    Hidden entirely while a server-side run is still
+                    finishing (post-refresh state) so the in-progress
+                    pill stands alone with no competing controls. */}
+                {!serverGenerationActive && (
                 <button
                   onClick={fixOverlappingText}
-                  disabled={generating || dedupingOverlap || totalBeats === 0}
+                  disabled={effectivelyGenerating || dedupingOverlap || totalBeats === 0}
                   title="Scan every beat and trim text that duplicates the previous beat's ending. Does not touch existing audio — regenerate to apply the cleaned text."
                   className="px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-40 transition-all"
                   style={{
@@ -722,12 +712,13 @@ export default function VoiceoverPage({ params }: PageProps) {
                 >
                   {dedupingOverlap ? "Fixing…" : "Fix overlap"}
                 </button>
+                )}
                 {/* Clear: wipes every beat's voiceover from R2 + DB.
                     Disabled while a run is in flight (would race with
                     in-flight writes) or when there's nothing to delete. */}
                 <button
                   onClick={openClearConfirm}
-                  disabled={generating || clearing || doneCount === 0}
+                  disabled={effectivelyGenerating || clearing || doneCount === 0}
                   title={doneCount === 0
                     ? "No generated voiceovers to clear"
                     : `Deletes all ${doneCount} generated voiceover${doneCount === 1 ? "" : "s"} from storage and resets every beat to Pending`}
@@ -762,6 +753,51 @@ export default function VoiceoverPage({ params }: PageProps) {
                   >
                     {`Resume ${staleCount} beat${staleCount === 1 ? "" : "s"}`}
                   </button>
+                ) : serverGenerationActive ? (
+                  // Server is queuing remaining beats but our local SSE
+                  // stream is gone (post-refresh state). Don't surface
+                  // "Generate remaining N" here — the queue is already
+                  // running. Show an in-progress pill + a Stop button
+                  // that PATCHes voiceover_stop_requested so the
+                  // server's between-batch check halts the loop.
+                  //
+                  // Pill copy depends on stop state:
+                  //   • Stop NOT requested → "Generating…" (the queue
+                  //     is still rolling through every stale beat).
+                  //   • Stop requested → "Generating already queued N
+                  //     beats" — the loop has halted but KIE calls
+                  //     already in-flight for the current batch will
+                  //     still finish, so we surface that residual work
+                  //     to the user.
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
+                      title={projectStopRequested
+                        ? "Stop received — the server has halted further batches but the current batch's KIE calls will still finish."
+                        : "Voiceover generation is running on the server. The page will update as each beat completes."}
+                      style={{ background: "oklch(0.72 0.25 285 / 0.1)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "oklch(0.88 0.12 285)" }}
+                    >
+                      <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                      <span className="font-medium">
+                        {projectStopRequested
+                          ? `Processing already queued ${inProgressBeatsCount} beat${inProgressBeatsCount === 1 ? "" : "s"}`
+                          : "Generating…"}
+                      </span>
+                    </div>
+                    {!projectStopRequested && (
+                      <button
+                        onClick={stopGeneration}
+                        title="Stop after the current batch finishes"
+                        className="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+                        style={{ background: "oklch(0.6 0.22 25)", color: "var(--bg-page-2)" }}
+                      >
+                        <span className="flex items-center gap-2">
+                          <span className="w-3.5 h-3.5 rounded-sm" style={{ background: "currentColor" }} />
+                          Stop
+                        </span>
+                      </button>
+                    )}
+                  </div>
                 ) : (() => {
                   // Three button modes:
                   //   1. Some beats missing audio + some already done → "Generate remaining N beats"
@@ -895,8 +931,9 @@ export default function VoiceoverPage({ params }: PageProps) {
             || Array.from(liveBeats.values()).some((s) => s.status === "done" && !!s.url)) && (
             <FullVoiceoverPreview projectId={projectId} beats={beats} liveBeats={liveBeats} />
           )}
+          </>
+          )}
         </div>
-        )}
         </div>
       </main>
 

@@ -1,0 +1,22 @@
+-- Persistent run-id + stop signal for per-beat voiceover generation,
+-- mirroring the prompts (041) and assembly (043) patterns.
+--
+-- Why: the TTS beats route used to process exactly one batch per
+-- request and rely on the client's SSE done handler to bump the next
+-- batch via autoContinueTick. Refreshing the browser killed the SSE
+-- stream, so the queue silently stopped even though the server was
+-- still happy to run more batches. With these flags the server can
+-- loop through every stale beat in a single request and the client
+-- can signal Stop without holding the connection open.
+--
+-- voiceover_active_run_id — UUID set at the start of a run, cleared
+--   when the run ends (success / stop / error). Non-null means a run
+--   is in flight server-side; the page reads it to render the in-
+--   progress state across refreshes.
+--
+-- voiceover_stop_requested — set TRUE by the Stop button (PATCH on
+--   the project). The route polls this between beats and bails out
+--   cleanly when it flips. Cleared by the route on exit so a stale
+--   true value from a prior cancelled run can't pre-empt the next.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS voiceover_active_run_id UUID;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS voiceover_stop_requested BOOLEAN DEFAULT FALSE;

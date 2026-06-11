@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { generateTTS } from "@/lib/kie/tts";
 import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
@@ -7,6 +7,24 @@ import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
 import type { User } from "@supabase/supabase-js";
 
 export const maxDuration = 800;
+
+// Sentinel thrown when the per-batch stop check sees voiceover_stop_requested.
+// Caught by the outer loop to bail cleanly without surfacing as an error.
+const STOP_SENTINEL = "__voiceover_stop_requested__";
+
+// Polls voiceover_stop_requested for this project. Throws the sentinel
+// when the flag flips so the caller can break out of the batch loop.
+async function assertVoiceoverRunActive(projectId: string, runId: string): Promise<void> {
+  const { data } = await supabase
+    .from("projects")
+    .select("voiceover_active_run_id, voiceover_stop_requested")
+    .eq("id", projectId)
+    .single();
+  if (!data) throw new Error("Project disappeared mid-run");
+  // A different run took over — fail fast so we don't write under it.
+  if (data.voiceover_active_run_id !== runId) throw new Error(STOP_SENTINEL);
+  if (data.voiceover_stop_requested === true) throw new Error(STOP_SENTINEL);
+}
 
 // Per-beat TTS generation. Streams SSE updates so the UI can track each
 // beat's status (queued → done | failed) without polling. Each beat's
@@ -105,12 +123,21 @@ export async function POST(req: Request) {
           catch { closed = true; }
         }, 15_000);
 
+        // Generated outside the try so the finally block can release
+        // the run by id even if the try threw before setting it.
+        const runId = randomUUID();
         try {
-          // Update the project's default voice so reassemblies and
-          // future regen runs default to the same voice.
+          // Claim the run. Sets the new id, clears any stale stop flag
+          // from a prior cancelled run, and updates the project's
+          // default voice so reassemblies and future regen runs default
+          // to the same voice.
           await supabase
             .from("projects")
-            .update({ tts_voice_id: voiceId })
+            .update({
+              tts_voice_id: voiceId,
+              voiceover_active_run_id: runId,
+              voiceover_stop_requested: false,
+            })
             .eq("id", projectId)
             .eq("user_id", user.id);
 
@@ -172,21 +199,23 @@ export async function POST(req: Request) {
             .is("voiceover_url", null)
             .in("voiceover_status", ["queued", "generating"]);
 
-          // Size of THIS batch — capped at BATCH_SIZE because we only
-          // process one batch per request. Used for progress / done
-          // events so the UI shows accurate numbers for the work
-          // happening in this call rather than the entire stale set.
-          const batchSize = Math.min(BATCH_SIZE, toGenerate.length);
-          const remainingAfterBatch = Math.max(0, toGenerate.length - batchSize);
+          // Process ALL stale beats in this single request, BATCH_SIZE
+          // at a time. The route loops server-side so a browser refresh
+          // doesn't kill the queue — the original SSE stream is gone
+          // but the function keeps running (maxDuration=800). Between
+          // batches we poll voiceover_stop_requested; when the client's
+          // Stop button PATCHes it true, the next batch never starts.
+          const totalToGenerate = toGenerate.length;
           send({
             type: "status",
-            message: `Generating voiceover for ${batchSize} beat${batchSize === 1 ? "" : "s"}…`,
+            message: `Generating ${totalToGenerate} beat${totalToGenerate === 1 ? "" : "s"} (${BATCH_SIZE} at a time)…`,
           });
-          send({ type: "progress", current: 0, total: batchSize });
+          send({ type: "progress", current: 0, total: totalToGenerate });
 
           let completed = 0;
           let succeeded = 0;
           let failed = 0;
+          let stoppedEarly = false;
 
           // Index every beat by number so processBeat can look up the
           // previous beat's script_segment (which may itself have been
@@ -198,7 +227,7 @@ export async function POST(req: Request) {
             const rawSegment = (beat.script_segment ?? "").trim();
             if (!rawSegment) {
               completed++;
-              send({ type: "progress", current: completed, total: batchSize });
+              send({ type: "progress", current: completed, total: totalToGenerate });
               return;
             }
             // Defensive: trim any leading overlap with the previous beat
@@ -257,40 +286,74 @@ export async function POST(req: Request) {
               send({ type: "beat", beatNumber: beat.beat_number, status: "failed", error: message });
             } finally {
               completed++;
-              send({ type: "progress", current: completed, total: batchSize });
+              send({ type: "progress", current: completed, total: totalToGenerate });
             }
           }
 
-          // Process EXACTLY ONE batch per request. The next batch is
-          // gated behind another user click — that's what makes per-
-          // batch KIE spend explicit. Beats after the current batch
-          // stay at voiceover_status = NULL ("pending" in the UI) and
-          // are picked up on the next Generate run via selectStaleBeats.
-          const batch = toGenerate.slice(0, BATCH_SIZE);
-          await Promise.all(
-            batch.map((b) =>
-              supabase
-                .from("project_beats")
-                .update({ voiceover_status: "queued", voiceover_error: null })
-                .eq("project_id", projectId)
-                .eq("beat_number", b.beat_number),
-            ),
-          );
-          for (const b of batch) {
-            send({ type: "beat", beatNumber: b.beat_number, status: "queued" });
+          // Walk through every stale beat BATCH_SIZE at a time. The
+          // stop check between batches lets the user halt without
+          // killing the in-flight batch.
+          for (let i = 0; i < toGenerate.length; i += BATCH_SIZE) {
+            try {
+              await assertVoiceoverRunActive(projectId, runId);
+            } catch (e) {
+              if (e instanceof Error && e.message === STOP_SENTINEL) {
+                stoppedEarly = true;
+                break;
+              }
+              throw e;
+            }
+            const batch = toGenerate.slice(i, i + BATCH_SIZE);
+            // Mark batch as queued — the UI shows the orange Queued
+            // pill on these specific beats only, so users can see
+            // exactly what's "up next".
+            await Promise.all(
+              batch.map((b) =>
+                supabase
+                  .from("project_beats")
+                  .update({ voiceover_status: "queued", voiceover_error: null })
+                  .eq("project_id", projectId)
+                  .eq("beat_number", b.beat_number),
+              ),
+            );
+            for (const b of batch) {
+              send({ type: "beat", beatNumber: b.beat_number, status: "queued" });
+            }
+            await Promise.all(batch.map((b) => processBeat(b)));
           }
-          await Promise.all(batch.map((b) => processBeat(b)));
 
           send({
             type: "done",
             generated: succeeded,
             failed,
-            total: batchSize,
-            remaining: remainingAfterBatch,
+            total: totalToGenerate,
+            remaining: stoppedEarly ? totalToGenerate - completed : 0,
+            stopped: stoppedEarly,
           });
         } catch (err) {
-          send({ type: "error", message: err instanceof Error ? err.message : "Generation failed" });
+          // STOP_SENTINEL bubbling up from inside the loop is treated
+          // as a clean stop, not an error.
+          if (err instanceof Error && err.message === STOP_SENTINEL) {
+            send({ type: "done", generated: 0, failed: 0, total: 0, remaining: 0, stopped: true });
+          } else {
+            send({ type: "error", message: err instanceof Error ? err.message : "Generation failed" });
+          }
         } finally {
+          // Release the run id (and clear the stop flag) only if we
+          // still own it. If another run took over (shouldn't happen
+          // but be safe), don't clobber its claim.
+          const { data: ownerCheck } = await supabase
+            .from("projects")
+            .select("voiceover_active_run_id")
+            .eq("id", projectId)
+            .single();
+          if (ownerCheck?.voiceover_active_run_id === runId) {
+            await supabase
+              .from("projects")
+              .update({ voiceover_active_run_id: null, voiceover_stop_requested: false })
+              .eq("id", projectId)
+              .eq("user_id", user.id);
+          }
           closed = true;
           clearInterval(heartbeat);
           try { controller.close(); } catch { /* already done */ }
