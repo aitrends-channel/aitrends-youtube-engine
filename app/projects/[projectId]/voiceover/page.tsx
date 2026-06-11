@@ -731,7 +731,14 @@ export default function VoiceoverPage({ params }: PageProps) {
                 >
                   {clearing ? "Clearing…" : "Clear"}
                 </button>
-                {generating ? (
+                {/* Stop button only shows while the local SSE stream
+                    is alive AND Stop hasn't been requested yet. The
+                    moment Stop is clicked, projectStopRequested goes
+                    true (optimistic SWR update) and this branch falls
+                    through to the serverGenerationActive pill below —
+                    which now reads "Processing already queued N
+                    beats". No wait for the fetch's finally block. */}
+                {generating && !projectStopRequested ? (
                   <button
                     onClick={stopGeneration}
                     title="Stop after the current batch finishes"
@@ -743,32 +750,12 @@ export default function VoiceoverPage({ params }: PageProps) {
                       Stop
                     </span>
                   </button>
-                ) : stopped && staleCount > 0 ? (
-                  <button
-                    onClick={() => runGeneration()}
-                    disabled={!totalBeats || !selectedVoice}
-                    title={`Resumes voiceover generation for the remaining ${staleCount} beat${staleCount === 1 ? "" : "s"}`}
-                    className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 transition-all"
-                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-                  >
-                    {`Resume ${staleCount} beat${staleCount === 1 ? "" : "s"}`}
-                  </button>
                 ) : serverGenerationActive ? (
-                  // Server is queuing remaining beats but our local SSE
-                  // stream is gone (post-refresh state). Don't surface
-                  // "Generate remaining N" here — the queue is already
-                  // running. Show an in-progress pill + a Stop button
-                  // that PATCHes voiceover_stop_requested so the
-                  // server's between-batch check halts the loop.
-                  //
-                  // Pill copy depends on stop state:
-                  //   • Stop NOT requested → "Generating…" (the queue
-                  //     is still rolling through every stale beat).
-                  //   • Stop requested → "Generating already queued N
-                  //     beats" — the loop has halted but KIE calls
-                  //     already in-flight for the current batch will
-                  //     still finish, so we surface that residual work
-                  //     to the user.
+                  // Hoisted above the stopped/Resume branch so a
+                  // server-side run that's still winding down (post-
+                  // Stop or post-refresh) always wins over the local
+                  // "Resume N" fallback. Once the run id clears, this
+                  // falls through to the Resume / Generate branches.
                   <div className="flex items-center gap-2">
                     <div
                       className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
@@ -798,6 +785,16 @@ export default function VoiceoverPage({ params }: PageProps) {
                       </button>
                     )}
                   </div>
+                ) : stopped && staleCount > 0 ? (
+                  <button
+                    onClick={() => runGeneration()}
+                    disabled={!totalBeats || !selectedVoice}
+                    title={`Resumes voiceover generation for the remaining ${staleCount} beat${staleCount === 1 ? "" : "s"}`}
+                    className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 transition-all"
+                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                  >
+                    {`Resume ${staleCount} beat${staleCount === 1 ? "" : "s"}`}
+                  </button>
                 ) : (() => {
                   // Three button modes:
                   //   1. Some beats missing audio + some already done → "Generate remaining N beats"
