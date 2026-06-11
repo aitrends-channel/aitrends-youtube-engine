@@ -233,6 +233,14 @@ export default function VoiceoverPage({ params }: PageProps) {
   const queuedCount = beats.filter((b) => effectiveStatus(b) === "queued").length;
   const pendingCount = beats.filter((b) => effectiveStatus(b) === "pending").length;
   const staleCount = beats.filter((b) => isStale(b, selectedVoice)).length;
+  // "Remaining" = beats that don't yet have a saved voiceover at all.
+  // Used for the button label so a partially-complete project doesn't
+  // show "Generate {total}" after a refresh — the done beats really do
+  // exist on disk, they shouldn't be counted as work the user is about
+  // to do. (staleCount can match totalBeats when the picked voice
+  // differs from what the done beats were generated with — that's a
+  // separate "Regenerate" intent and is signalled in the button text.)
+  const remainingCount = beats.filter((b) => !b.voiceoverUrl).length;
   const allDone = totalBeats > 0 && doneCount === totalBeats;
 
   // A single-beat retry shouldn't keep auto-continuing — that path is
@@ -675,21 +683,45 @@ export default function VoiceoverPage({ params }: PageProps) {
                   >
                     {`Resume ${staleCount} beat${staleCount === 1 ? "" : "s"}`}
                   </button>
-                ) : (
-                  <button
-                    onClick={staleCount > 0 ? () => runGeneration() : openRegenConfirm}
-                    disabled={!totalBeats || !selectedVoice}
-                    title={staleCount > 0 && doneCount > 0
-                      ? `Generates ${staleCount} stale beat${staleCount === 1 ? "" : "s"}; ${doneCount} already-done beat${doneCount === 1 ? "" : "s"} kept`
-                      : staleCount > 0
-                        ? `Generates ${staleCount} beat${staleCount === 1 ? "" : "s"}`
-                        : `Re-runs TTS for all ${totalBeats} beats — overwrites every existing voiceover`}
-                    className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 transition-all"
-                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-                  >
-                    {staleCount > 0 ? `Generate ${staleCount} beat${staleCount === 1 ? "" : "s"}` : "Regenerate all"}
-                  </button>
-                )}
+                ) : (() => {
+                  // Three button modes:
+                  //   1. Some beats missing audio + some already done → "Generate remaining N beats"
+                  //      (server's selectStaleBeats will still pick up
+                  //       voice-mismatched done beats too, but the user-
+                  //       facing count reflects only the truly missing
+                  //       work so a 50/100 refresh doesn't read as a
+                  //       full restart.)
+                  //   2. All beats missing audio (fresh run) → "Generate N beats"
+                  //   3. All beats have audio but staleCount > 0 (voice / script
+                  //      changed since generation) → "Regenerate N beats"
+                  //   4. Nothing stale at all → "Regenerate all" (opens the confirm)
+                  const mode =
+                    staleCount === 0 ? "regen-all" :
+                    remainingCount > 0 && doneCount > 0 ? "remaining" :
+                    remainingCount > 0 ? "fresh" :
+                    "stale-regen";
+                  const label =
+                    mode === "regen-all" ? "Regenerate all" :
+                    mode === "remaining" ? `Generate remaining ${remainingCount} beat${remainingCount === 1 ? "" : "s"}` :
+                    mode === "fresh" ? `Generate ${remainingCount} beat${remainingCount === 1 ? "" : "s"}` :
+                    /* stale-regen */ `Regenerate ${staleCount} beat${staleCount === 1 ? "" : "s"}`;
+                  const titleText =
+                    mode === "regen-all" ? `Re-runs TTS for all ${totalBeats} beats — overwrites every existing voiceover` :
+                    mode === "remaining" ? `Generates ${remainingCount} beat${remainingCount === 1 ? "" : "s"} that don't have audio yet; ${doneCount} already-done beat${doneCount === 1 ? "" : "s"} kept` :
+                    mode === "fresh" ? `Generates ${remainingCount} beat${remainingCount === 1 ? "" : "s"}` :
+                    `Re-runs TTS for ${staleCount} beat${staleCount === 1 ? "" : "s"} where the voice or script changed since generation`;
+                  return (
+                    <button
+                      onClick={mode === "regen-all" ? openRegenConfirm : () => runGeneration()}
+                      disabled={!totalBeats || !selectedVoice}
+                      title={titleText}
+                      className="px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 transition-all"
+                      style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })()}
               </div>
             </div>
             {generating && progress && progress.total > 0 && (
