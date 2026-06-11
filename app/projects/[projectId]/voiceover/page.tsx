@@ -171,6 +171,17 @@ export default function VoiceoverPage({ params }: PageProps) {
   const [liveBeats, setLiveBeats] = useState<Map<number, LiveBeatState>>(new Map());
   const [generating, setGenerating] = useState(false);
   const [stopped, setStopped] = useState(false);
+  // Mirror `stopped` into a ref so the SSE handler (a long-lived async
+  // closure) reads the latest value when deciding whether to auto-
+  // continue after a batch completes. Reading `stopped` directly would
+  // return whatever value was captured when runGeneration() started.
+  const stoppedRef = useRef(false);
+  useEffect(() => { stoppedRef.current = stopped; }, [stopped]);
+  // Bumped each time the server reports remaining > 0 on a bulk run —
+  // an effect below catches the bump and kicks the next batch unless
+  // the user has clicked Stop. Counter (vs boolean) so consecutive
+  // batches each fire a fresh effect even if the value didn't toggle.
+  const [autoContinueTick, setAutoContinueTick] = useState(0);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
   // AbortController for the in-flight SSE fetch. Stop aborts it; the
@@ -224,7 +235,12 @@ export default function VoiceoverPage({ params }: PageProps) {
   const staleCount = beats.filter((b) => isStale(b, selectedVoice)).length;
   const allDone = totalBeats > 0 && doneCount === totalBeats;
 
+  // A single-beat retry shouldn't keep auto-continuing — that path is
+  // for fixing one row, not for running a full sweep. Bulk runs (no
+  // beatNumbers OR a multi-beat list like Regenerate All) DO auto-
+  // continue so the user can hit Generate once and walk away.
   async function runGeneration(opts: { beatNumbers?: number[] } = {}) {
+    const isSingleBeatRetry = opts.beatNumbers?.length === 1;
     if (!selectedVoice) { toast.error("Pick a voice first"); return; }
     if (!totalBeats) { toast.error("No beats — run Prompts step first"); return; }
     if (generating) return;
@@ -281,7 +297,15 @@ export default function VoiceoverPage({ params }: PageProps) {
             if (total === 0) toast.success("Voiceovers already up to date");
             else if (failedCount > 0) toast.error(`${failedCount} of ${total} failed`);
             else if (remaining > 0) {
-              toast.success(`Generated ${total} beat${total === 1 ? "" : "s"} — ${remaining} more pending. Click Generate to continue.`);
+              // Auto-continue on bulk runs unless Stop was clicked.
+              // For single-beat retries we never auto-continue — the
+              // user asked for that one beat specifically.
+              if (!isSingleBeatRetry && !stoppedRef.current) {
+                toast.success(`Batch done (${total} beat${total === 1 ? "" : "s"}) — continuing with ${remaining} more…`);
+                setAutoContinueTick((n) => n + 1);
+              } else {
+                toast.success(`Generated ${total} beat${total === 1 ? "" : "s"} — ${remaining} more pending. Click Generate to continue.`);
+              }
             } else {
               toast.success(`Generated ${total} beat voiceover${total === 1 ? "" : "s"}`);
             }
@@ -317,6 +341,21 @@ export default function VoiceoverPage({ params }: PageProps) {
     abortRef.current?.abort();
     setStopped(true);
   }
+
+  // Auto-continue driver. Fires whenever the SSE done handler bumps
+  // autoContinueTick (i.e. server reported remaining > 0 on a bulk
+  // run). Waits for `generating` to flip back to false in the prior
+  // run's finally block, then kicks the next bulk batch. Bails if the
+  // user clicked Stop between batches.
+  useEffect(() => {
+    if (autoContinueTick === 0) return;
+    if (generating || stopped) return;
+    void runGeneration();
+    // runGeneration identity changes every render; including it would
+    // refire the effect needlessly. The tick + generating + stopped
+    // deps are the real triggers.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoContinueTick, generating, stopped]);
 
   function retryOne(beatNumber: number) {
     if (generating) { toast.error("Wait for current run to finish"); return; }
@@ -465,38 +504,10 @@ export default function VoiceoverPage({ params }: PageProps) {
         {/* Header */}
         <div className="shrink-0 px-4 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <div className="flex items-start justify-between gap-3 flex-wrap">
-            <div className="min-w-0">
-              <h1 className="font-bold text-base sm:text-lg">Voiceover</h1>
-              <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                One narration clip per beat. Each beat&apos;s clip is the timing source for its visual — no matcher, no drift.
-              </p>
-            </div>
-            {/* Selected-voice chip. Resolves the saved voice id against
-                the live models list so the user sees the human name
-                (e.g. "Bella · female") instead of the opaque id.
-                Falls back gracefully while models are still loading
-                or when the saved id no longer exists in the catalog. */}
-            {(() => {
-              const model = selectedVoice ? ttsModels?.find((m) => m.id === selectedVoice) : null;
-              if (!selectedVoice) return null;
-              const tag = model?.tags?.[0];
-              return (
-                <div
-                  className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs"
-                  style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.35)", color: "oklch(0.88 0.12 285)" }}
-                  title={`Voice id: ${selectedVoice}`}
-                >
-                  <span className="font-semibold">
-                    {model?.name ?? (ttsModels ? "Unknown voice" : "Loading…")}
-                  </span>
-                  {tag && (
-                    <span className="opacity-70 capitalize">· {tag}</span>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
+          <h1 className="font-bold text-base sm:text-lg">Voiceover</h1>
+          <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+            One narration clip per beat. Each beat&apos;s clip is the timing source for its visual — no matcher, no drift.
+          </p>
         </div>
 
         <div className="flex-1 overflow-y-auto pb-[70px]">
@@ -546,6 +557,39 @@ export default function VoiceoverPage({ params }: PageProps) {
 
           {/* Bulk action panel */}
           <div className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+            {/* Selected-voice banner — sits above the count/action row
+                so the user always sees which voice the next batch will
+                use, right next to the beats list (the most relevant
+                context). Resolves the saved id against the live models
+                catalog so the name (e.g. "Bella · female") shows
+                instead of the opaque id. */}
+            {(() => {
+              const model = selectedVoice ? ttsModels?.find((m) => m.id === selectedVoice) : null;
+              const tag = model?.tags?.[0];
+              return (
+                <div
+                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl"
+                  style={{ background: "oklch(0.72 0.25 285 / 0.08)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+                  title={selectedVoice ? `Voice id: ${selectedVoice}` : undefined}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[10px] uppercase tracking-wider font-semibold shrink-0" style={{ color: "oklch(0.78 0.12 285)" }}>
+                      Voice
+                    </span>
+                    <span className="text-sm font-semibold truncate" style={{ color: "oklch(0.92 0.08 285)" }}>
+                      {model?.name ?? (selectedVoice
+                        ? (ttsModels ? "Unknown voice" : "Loading…")
+                        : "None selected")}
+                    </span>
+                    {tag && (
+                      <span className="text-xs capitalize shrink-0" style={{ color: "oklch(0.78 0.12 285 / 0.8)" }}>
+                        · {tag}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <p className="font-semibold text-sm">
