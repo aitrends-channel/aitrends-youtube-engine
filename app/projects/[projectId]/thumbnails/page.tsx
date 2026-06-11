@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, use, useEffect, useCallback } from "react";
+import { useState, use, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
@@ -400,6 +400,29 @@ export default function ThumbnailsPage({ params }: PageProps) {
   // references the model was inspired by. Populated on the first
   // generateConcepts() run and kept in local state for this session.
   const [nicheThumbs, setNicheThumbs] = useState<Array<{ videoId: string; title: string; thumbnailUrl: string }>>([]);
+  // Reference-source mode for the thumbnail-style analysis.
+  //   "auto"   → pull thumbnail covers of the top 5 niche videos
+  //   "manual" → user-uploaded reference thumbnails (3–5 images)
+  // Same toggle pattern as the visuals step's Auto / Manual.
+  type ThumbRefMode = "auto" | "manual";
+  const [refMode, setRefMode] = useState<ThumbRefMode>("auto");
+  const [manualRefFiles, setManualRefFiles] = useState<File[]>([]);
+  const [isDraggingRef, setIsDraggingRef] = useState(false);
+  const manualRefInputRef = useRef<HTMLInputElement>(null);
+
+  function handleManualRefFiles(incoming: FileList | File[] | null | undefined) {
+    if (!incoming) return;
+    const files = Array.from(incoming).filter((f) => f.type.startsWith("image/")).slice(0, 5);
+    if (files.length === 0) {
+      toast.error("Only image files are accepted");
+      return;
+    }
+    setManualRefFiles(files);
+    if (files.length < 3) {
+      const need = 3 - files.length;
+      toast.info(`Add ${need} more ${need === 1 ? "image" : "images"} — analysis needs at least 3 references`);
+    }
+  }
   // Per-thumbnail regen state. Decoupled from the bulk image-step state
   // (imageStep / imageProgress) so regenerating a single card doesn't
   // flip the whole step into "Running…". A Set supports parallel
@@ -437,43 +460,81 @@ export default function ThumbnailsPage({ params }: PageProps) {
     }
     setConceptStep({ status: "running", message: "Starting..." });
     try {
-      // Lazy thumbnail-style analysis. Pull the cover art of the top
-      // 5 niche videos and run thumbnail-only visual analysis — that
-      // signal feeds buildThumbnailsPrompt on the server (alongside
-      // the visuals-step visualProfile). No-op on subsequent runs
-      // when thumbnail_analysis is already cached. We capture the
-      // pulled screenshots into local state so the user can SEE
-      // which 5 references the model was inspired by.
+      // Thumbnail-style analysis. Two modes:
+      //   "auto"   — pull the cover art of the top 5 niche videos.
+      //   "manual" — upload the user's own reference thumbnails first,
+      //              then analyze those.
+      // Either way, the resulting thumbnailAnalysis flows into
+      // buildThumbnailsPrompt on the server alongside the visuals-
+      // step visualProfile. Cached via project.thumbnail_analysis so
+      // a re-run skips re-analysis unless the user explicitly clears.
       let thumbnailAnalysis = project.thumbnail_analysis as Record<string, unknown> | null;
-      const channelInfo = project.channel_info as { topVideos?: { videoId: string; title: string }[] } | undefined;
-      const niche5 = (channelInfo?.topVideos ?? []).slice(0, 5);
-      if (niche5.length > 0 && (!thumbnailAnalysis || nicheThumbs.length === 0)) {
-        setConceptStep({ status: "running", message: "Pulling top 5 niche thumbnails…" });
-        const shotsRes = await fetch("/api/youtube/screenshots", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ videos: niche5, projectId, kinds: ["thumbnails"] }),
-        });
-        const shotsData = await shotsRes.json();
-        if (!shotsRes.ok) throw new Error(shotsData.error ?? "Failed to fetch niche thumbnails");
-        const screenshots = (shotsData.screenshots ?? []) as Array<{ videoId: string; title: string; thumbnailUrl?: string }>;
-        const refs = screenshots
-          .filter((s) => !!s.thumbnailUrl)
-          .map((s) => ({ videoId: s.videoId, title: s.title, thumbnailUrl: s.thumbnailUrl as string }));
-        setNicheThumbs(refs);
-        const thumbnailImageUrls = refs.map((r) => r.thumbnailUrl);
+      let thumbnailImageUrls: string[] = [];
 
-        if (!thumbnailAnalysis && thumbnailImageUrls.length > 0) {
-          setConceptStep({ status: "running", message: "Analyzing niche thumbnails…" });
-          const analysisRes = await fetch("/api/workflow/visual-analysis", {
+      if (refMode === "manual") {
+        if (manualRefFiles.length < 3) {
+          throw new Error("Upload at least 3 reference thumbnails to analyze");
+        }
+        setConceptStep({ status: "running", message: `Uploading ${manualRefFiles.length} reference thumbnails…` });
+        thumbnailImageUrls = await Promise.all(
+          manualRefFiles.map(async (f) => {
+            const fd = new FormData();
+            fd.append("file", f);
+            fd.append("projectId", projectId);
+            fd.append("folder", "thumbnail-refs");
+            const r = await fetch("/api/upload", { method: "POST", body: fd });
+            const d = await r.json();
+            if (!r.ok) throw new Error(d.error ?? "Upload failed");
+            return d.url as string;
+          })
+        );
+        // Stash uploaded URLs in the niche-refs UI panel so the
+        // user keeps seeing which references fed the analysis. We
+        // synthesize a videoId-shaped entry so the existing grid
+        // renders without changes; clicking the title is a no-op
+        // (the href becomes a yt watch URL with an empty id which
+        // YouTube redirects sanely).
+        setNicheThumbs(
+          thumbnailImageUrls.map((url, i) => ({
+            videoId: `manual-${i + 1}`,
+            title: manualRefFiles[i].name,
+            thumbnailUrl: url,
+          })),
+        );
+        // Manual uploads always invalidate the cache — the user
+        // explicitly chose new references.
+        thumbnailAnalysis = null;
+      } else {
+        const channelInfo = project.channel_info as { topVideos?: { videoId: string; title: string }[] } | undefined;
+        const niche5 = (channelInfo?.topVideos ?? []).slice(0, 5);
+        if (niche5.length > 0 && (!thumbnailAnalysis || nicheThumbs.length === 0)) {
+          setConceptStep({ status: "running", message: "Pulling top 5 niche thumbnails…" });
+          const shotsRes = await fetch("/api/youtube/screenshots", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ projectId, thumbnailImageUrls }),
+            body: JSON.stringify({ videos: niche5, projectId, kinds: ["thumbnails"] }),
           });
-          const analysisData = await analysisRes.json();
-          if (analysisRes.ok && analysisData.thumbnailAnalysis) {
-            thumbnailAnalysis = analysisData.thumbnailAnalysis;
-          }
+          const shotsData = await shotsRes.json();
+          if (!shotsRes.ok) throw new Error(shotsData.error ?? "Failed to fetch niche thumbnails");
+          const screenshots = (shotsData.screenshots ?? []) as Array<{ videoId: string; title: string; thumbnailUrl?: string }>;
+          const refs = screenshots
+            .filter((s) => !!s.thumbnailUrl)
+            .map((s) => ({ videoId: s.videoId, title: s.title, thumbnailUrl: s.thumbnailUrl as string }));
+          setNicheThumbs(refs);
+          thumbnailImageUrls = refs.map((r) => r.thumbnailUrl);
+        }
+      }
+
+      if (!thumbnailAnalysis && thumbnailImageUrls.length > 0) {
+        setConceptStep({ status: "running", message: `Analyzing ${thumbnailImageUrls.length} reference thumbnails…` });
+        const analysisRes = await fetch("/api/workflow/visual-analysis", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId, thumbnailImageUrls }),
+        });
+        const analysisData = await analysisRes.json();
+        if (analysisRes.ok && analysisData.thumbnailAnalysis) {
+          thumbnailAnalysis = analysisData.thumbnailAnalysis;
         }
       }
 
@@ -686,10 +747,107 @@ export default function ThumbnailsPage({ params }: PageProps) {
         <div className="flex-1 overflow-y-auto">
           <div className="px-4 sm:px-8 pt-4 sm:pt-6 pb-24 space-y-4 max-w-5xl mx-auto">
 
-            {/* Niche references — the top-5 niche videos whose
-                thumbnails fed buildThumbnailsPrompt. Only renders
-                after generateConcepts() has pulled them at least
-                once this session. */}
+            {/* Reference source — pick between auto (niche videos)
+                and manual (upload your own thumbnails). Same toggle
+                pattern as the visuals step. */}
+            <div className="rounded-xl p-4"
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
+                    Reference thumbnails
+                  </p>
+                  <p className="text-[11px] mt-0.5" style={{ color: "var(--c-40)" }}>
+                    {refMode === "auto"
+                      ? "Pulls cover art from the top 5 niche videos"
+                      : "Upload your own thumbnails to inspire concept creation"}
+                  </p>
+                </div>
+                <div className="flex gap-1 p-1 rounded-lg"
+                  style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-7)" }}>
+                  {(["auto", "manual"] as ThumbRefMode[]).map((m) => (
+                    <button
+                      key={m}
+                      onClick={() => setRefMode(m)}
+                      disabled={anyRunning}
+                      className="px-3 py-1.5 rounded-md text-xs font-medium transition-all disabled:opacity-40"
+                      style={refMode === m
+                        ? { background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }
+                        : { color: "var(--c-50)" }}
+                    >
+                      {m === "auto" ? "⚡ Auto" : "↑ Manual"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {refMode === "manual" && (
+                <div className="space-y-3">
+                  <div
+                    onClick={() => manualRefInputRef.current?.click()}
+                    onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingRef(true); }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!isDraggingRef) setIsDraggingRef(true);
+                    }}
+                    onDragLeave={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+                      setIsDraggingRef(false);
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setIsDraggingRef(false);
+                      handleManualRefFiles(e.dataTransfer?.files);
+                    }}
+                    className="rounded-xl p-6 text-center cursor-pointer transition-all"
+                    style={{
+                      border: `1.5px dashed ${isDraggingRef ? "oklch(0.72 0.25 285)" : "var(--bd-10)"}`,
+                      background: isDraggingRef ? "oklch(0.72 0.25 285 / 0.06)" : "oklch(0.09 0 0)",
+                    }}
+                  >
+                    <p className="text-sm" style={{ color: "var(--c-50)" }}>
+                      {isDraggingRef
+                        ? <span style={{ color: "oklch(0.72 0.25 285)" }}>Release to upload</span>
+                        : <>Drop thumbnails here or <span style={{ color: "oklch(0.72 0.25 285)" }}>click to upload</span></>}
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: "var(--c-35)" }}>PNG, JPG, WEBP · 3 to 5 images</p>
+                  </div>
+                  <input ref={manualRefInputRef} type="file" accept="image/*" multiple className="hidden"
+                    onChange={(e) => handleManualRefFiles(e.target.files)} />
+                  {manualRefFiles.length > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                      {manualRefFiles.map((f, i) => (
+                        <div key={i} className="relative aspect-video rounded-lg overflow-hidden"
+                          style={{ border: "1px solid var(--bd-10)" }}>
+                          <img src={URL.createObjectURL(f)} alt="" className="w-full h-full object-cover" />
+                          <button
+                            onClick={() => setManualRefFiles((p) => p.filter((_, j) => j !== i))}
+                            className="absolute top-1 right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs"
+                            style={{ background: "oklch(0.05 0 0 / 0.7)", color: "white" }}>×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {manualRefFiles.length > 0 && manualRefFiles.length < 3 && (
+                    <div
+                      className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs"
+                      style={{ background: "oklch(0.72 0.55 75 / 0.08)", border: "1px solid oklch(0.72 0.55 75 / 0.25)", color: "oklch(0.78 0.18 75)" }}
+                    >
+                      <span aria-hidden="true">!</span>
+                      <span>Add {3 - manualRefFiles.length} more {3 - manualRefFiles.length === 1 ? "image" : "images"} — analysis needs at least 3.</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Niche references — populated after generateConcepts()
+                pulls or uploads references for analysis. Renders the
+                actual images that fed buildThumbnailsPrompt. */}
             {nicheThumbs.length > 0 && (
               <div className="rounded-xl p-4"
                 style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
