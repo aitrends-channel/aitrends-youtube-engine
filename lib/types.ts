@@ -107,7 +107,7 @@ export interface Beat {
    *  own TTS mp3 generated from its scriptSegment; the assembler
    *  concatenates them in order, skipping the matcher entirely. */
   voiceoverUrl?: string;
-  voiceoverStatus?: "pending" | "queued" | "done" | "failed";
+  voiceoverStatus?: "pending" | "queued" | "generating" | "done" | "failed";
   voiceoverDurationMs?: number;
   voiceoverVoiceId?: string;
   voiceoverScriptHash?: string;

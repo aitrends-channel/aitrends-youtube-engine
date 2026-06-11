@@ -149,21 +149,38 @@ export default function VoiceoverPage({ params }: PageProps) {
   const beats: Beat[] = useMemo(() => (project?.beats ?? []) as Beat[], [project]);
   const projectVoiceId = (project?.tts_voice_id as string | null | undefined) ?? null;
 
-  // Voice picker state — defaults to the project's saved voice, else
-  // first model of the active gender tab.
+  // Voice picker state — defaults to the project's saved voice (i.e.
+  // the voice that was actually used to generate any existing beats),
+  // else first model of the active gender tab.
   const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
   const [voiceTab, setVoiceTab] = useState<"female" | "male">("female");
   const [previewingId, setPreviewingId] = useState<string | null>(null);
+  // Sticky bit so a subsequent project SWR update doesn't overwrite an
+  // explicit user pick. Only the very first resolution honors
+  // projectVoiceId / auto-pick; after that the picker owns the state.
+  const voiceResolvedRef = useRef(false);
   useEffect(() => {
-    if (projectVoiceId && !selectedVoice) setSelectedVoice(projectVoiceId);
-  }, [projectVoiceId, selectedVoice]);
-  useEffect(() => {
-    if (!ttsModels?.length) return;
-    if (!selectedVoice) {
-      const firstInTab = ttsModels.find((m) => m.tags?.[0]?.toLowerCase() === voiceTab);
-      if (firstInTab) setSelectedVoice(firstInTab.id);
+    if (voiceResolvedRef.current) return;
+    // Wait for the project to load so we know whether tts_voice_id
+    // exists. Without this, ttsModels can arrive first and auto-pick
+    // a different voice before projectVoiceId ever shows up — the
+    // banner then displays the wrong voice and the staleness math
+    // thinks every done beat needs regenerating.
+    if (project === undefined) return;
+    if (projectVoiceId) {
+      setSelectedVoice(projectVoiceId);
+      voiceResolvedRef.current = true;
+      return;
     }
-  }, [ttsModels, voiceTab, selectedVoice]);
+    // No saved voice → fall back to the first voice in the active
+    // tab once the catalog is available.
+    if (!ttsModels?.length) return;
+    const firstInTab = ttsModels.find((m) => m.tags?.[0]?.toLowerCase() === voiceTab);
+    if (firstInTab) {
+      setSelectedVoice(firstInTab.id);
+      voiceResolvedRef.current = true;
+    }
+  }, [project, projectVoiceId, ttsModels, voiceTab]);
 
   // Live overlay — per-beat state from the SSE stream during a run,
   // takes precedence over the project's persisted state until the
@@ -200,7 +217,12 @@ export default function VoiceoverPage({ params }: PageProps) {
     // runs, but we want existing data to render correctly too.
     if (b.voiceoverUrl) return "done";
     const s = b.voiceoverStatus;
-    if (s === "queued" || s === "done" || s === "failed") return s;
+    // "generating" is included so that a browser refresh during a
+    // run keeps showing the live status on beats the server is
+    // still processing — the function continues server-side past
+    // a client disconnect (maxDuration=800), but without this pass-
+    // through the page rendered them as "pending" and looked stuck.
+    if (s === "queued" || s === "generating" || s === "done" || s === "failed") return s;
     return "pending";
   }
 
