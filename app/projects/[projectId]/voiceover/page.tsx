@@ -387,6 +387,46 @@ export default function VoiceoverPage({ params }: PageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoContinueTick, generating, stopped]);
 
+  // Auto-resume after a refresh. The server processes one batch per
+  // request — refreshing kills the SSE stream, which means the next
+  // batch never gets queued even though prior batches succeeded. On
+  // page mount, if the project shows a partially-complete run (some
+  // beats already on disk + others still missing audio) and the
+  // server isn't currently processing anything, fire one bulk run to
+  // pick the queue back up. The existing autoContinueTick chain
+  // takes over from there.
+  //
+  // Guards (each prevents a double-fire or an unsafe restart):
+  //   • autoResumedRef — runs at most once per mount; the user's own
+  //     button clicks own the state after that.
+  //   • project / selectedVoice not yet resolved — wait for SWR + the
+  //     voice resolution effect.
+  //   • generating already true — local run in flight; don't stack.
+  //   • any beat in "queued"/"generating" status — server's still
+  //     processing the prior batch; auto-firing now would collide.
+  //   • no stale beats — nothing to do.
+  //   • no done beats — this is a fresh project, not a resume.
+  const autoResumedRef = useRef(false);
+  useEffect(() => {
+    if (autoResumedRef.current) return;
+    if (project === undefined || !selectedVoice) return;
+    if (generating) return;
+    const inFlightOnServer = beats.some(
+      (b) => b.voiceoverStatus === "queued" || b.voiceoverStatus === "generating"
+    );
+    if (inFlightOnServer) return;
+    const hasStale = beats.some((b) => isStale(b, selectedVoice));
+    if (!hasStale) return;
+    const anyDone = beats.some((b) => !!b.voiceoverUrl);
+    if (!anyDone) return;
+    autoResumedRef.current = true;
+    toast.info("Resuming voiceover generation…");
+    void runGeneration();
+    // runGeneration / isStale identities are stable enough; the real
+    // triggers are the data + selectedVoice deps.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, selectedVoice, beats, generating]);
+
   function retryOne(beatNumber: number) {
     if (generating) { toast.error("Wait for current run to finish"); return; }
     runGeneration({ beatNumbers: [beatNumber] });
@@ -541,6 +581,23 @@ export default function VoiceoverPage({ params }: PageProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto pb-[70px]">
+        {project === undefined ? (
+          // Initial load — project hasn't arrived from SWR yet. Without
+          // this gate the page rendered the bulk-action panel showing
+          // "No beats yet" + an empty voice picker, which read as a
+          // legitimate empty state instead of a loading state.
+          <div className="p-4 sm:p-8 pb-24 max-w-4xl mx-auto">
+            <div className="rounded-2xl p-10 flex flex-col items-center gap-4"
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <span className="block w-8 h-8 border-2 rounded-full animate-spin"
+                style={{ borderColor: "oklch(0.72 0.25 285 / 0.3)", borderTopColor: "oklch(0.72 0.25 285)" }} />
+              <p className="text-sm font-medium" style={{ color: "var(--c-60)" }}>Loading voiceover step…</p>
+              <p className="text-xs" style={{ color: "var(--c-40)" }}>
+                Fetching beats and checking what&apos;s already on file.
+              </p>
+            </div>
+          </div>
+        ) : (
         <div className="p-4 sm:p-8 pb-24 max-w-4xl mx-auto space-y-6">
 
           {/* Voice picker */}
@@ -839,6 +896,7 @@ export default function VoiceoverPage({ params }: PageProps) {
             <FullVoiceoverPreview projectId={projectId} beats={beats} liveBeats={liveBeats} />
           )}
         </div>
+        )}
         </div>
       </main>
 
