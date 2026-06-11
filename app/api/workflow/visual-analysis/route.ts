@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { getAnthropicClient, VISION_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { getAnthropicClient, getHeclusDirectClient, VISION_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 
 export const maxDuration = 800;
 import { visualProfileInputSchema } from "@/lib/claude/anthropicSchemas";
@@ -77,6 +77,51 @@ export async function POST(req: Request) {
       required,
     };
 
+    // Single messages.create call factored out so we can run it through
+    // either the KIE-mediated client or the Heclus-direct fallback
+    // without duplicating the request body.
+    const callModel = (client: Anthropic) =>
+      client.messages.create({
+        model: model,
+        max_tokens: 2048,
+        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        tools: [{
+          name: "save_visual_analysis",
+          description: "Save the extracted visual style profile",
+          input_schema: combinedSchema,
+        }],
+        tool_choice: { type: "tool", name: "save_visual_analysis" },
+        messages: [{
+          role: "user",
+          content: [
+            ...imageBlocks,
+            { type: "text", text: buildVisualAnalysisPrompt({ video: hasVideo, thumbnails: hasThumbnails }) },
+          ],
+        }],
+      });
+
+    // Run the call with 5 retries on KIE; if all 5 fail, swap to a
+    // Heclus-direct Anthropic client (bypassing KIE entirely) and try
+    // again with another 5 retries. KIE 500s tend to come in waves
+    // that outlast our 1+2+4+8+16s backoff; direct Anthropic is the
+    // safety net for those.
+    const callWithFallback = async (label: string): Promise<Anthropic.Messages.Message> => {
+      try {
+        return await retryClaudeCall(label, () => callModel(anthropic), 5);
+      } catch (kieErr) {
+        console.warn(`[visual-analysis] KIE exhausted retries for ${label} — falling back to Heclus-direct Anthropic`,
+          kieErr instanceof Error ? kieErr.message : kieErr);
+        try {
+          const directClient = await getHeclusDirectClient();
+          return await retryClaudeCall(`${label} [heclus-direct]`, () => callModel(directClient), 5);
+        } catch (directErr) {
+          // Surface the direct error since that's what the user will see;
+          // the KIE one is logged above for ops debugging.
+          throw directErr;
+        }
+      }
+    };
+
     // KIE+Opus occasionally ignores tool_choice and emits the JSON as
     // a text block instead of a tool_use — same pattern the prompts
     // route handles. Two attempts: a fresh call usually picks the tool
@@ -85,26 +130,7 @@ export async function POST(req: Request) {
     let response!: Anthropic.Messages.Message;
     let toolUse: Anthropic.Messages.ContentBlock | undefined;
     for (let attempt = 0; attempt < 2; attempt++) {
-      response = await retryClaudeCall(`visual analysis (try ${attempt + 1})`, () =>
-        anthropic.messages.create({
-          model: model,
-          max_tokens: 2048,
-          system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-          tools: [{
-            name: "save_visual_analysis",
-            description: "Save the extracted visual style profile",
-            input_schema: combinedSchema,
-          }],
-          tool_choice: { type: "tool", name: "save_visual_analysis" },
-          messages: [{
-            role: "user",
-            content: [
-              ...imageBlocks,
-              { type: "text", text: buildVisualAnalysisPrompt({ video: hasVideo, thumbnails: hasThumbnails }) },
-            ],
-          }],
-        })
-      );
+      response = await callWithFallback(`visual analysis (try ${attempt + 1})`);
       toolUse = response.content.find((b) => b.type === "tool_use");
       const blockTypes = response.content.map((b) => b.type).join(",");
       console.log(`[visual-analysis] attempt ${attempt + 1} stop=${response.stop_reason} blocks=${blockTypes} tool_use=${!!toolUse}`);

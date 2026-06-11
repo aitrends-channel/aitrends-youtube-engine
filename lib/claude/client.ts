@@ -102,6 +102,23 @@ const fetchViaKie: typeof fetch = async (input, init) => {
   });
 };
 
+// Build a direct-to-Anthropic client signed with Heclus's company key,
+// bypassing KIE entirely. Used (a) as the chosen routing for steps that
+// opt in via product_config, and (b) as a manual fallback when a KIE
+// call has exhausted its retries — see /api/workflow/visual-analysis.
+// Throws if the Heclus Anthropic key isn't configured.
+export async function getHeclusDirectClient(): Promise<Anthropic> {
+  const anthropicKey = await getActiveProductKey("anthropic_api_key");
+  if (!anthropicKey) {
+    throw new Error("Heclus Anthropic key not configured — set one in Config → API Keys (service: Anthropic API Key (direct)).");
+  }
+  return new Anthropic({
+    apiKey: anthropicKey,
+    maxRetries: 0,
+    timeout: 180_000,
+  });
+}
+
 export async function getAnthropicClient(userId: string, step?: WorkflowStep): Promise<Anthropic> {
   const routing = await getAnthropicRouting(step);
 
@@ -110,15 +127,7 @@ export async function getAnthropicClient(userId: string, step?: WorkflowStep): P
   // Heclus directly. No envelope unwrapping needed — Anthropic returns
   // its native shape, so we don't install fetchViaKie.
   if (routing === "heclus_direct") {
-    const anthropicKey = await getActiveProductKey("anthropic_api_key");
-    if (!anthropicKey) {
-      throw new Error("Heclus Anthropic key not configured — set one in Config → API Keys (service: Anthropic API Key (direct)).");
-    }
-    return new Anthropic({
-      apiKey: anthropicKey,
-      maxRetries: 0,
-      timeout: 180_000,
-    });
+    return getHeclusDirectClient();
   }
 
   // KIE-mediated paths. The only difference between client_kie and
