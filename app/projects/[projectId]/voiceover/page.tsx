@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
 import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPreview";
+import { RotateCw } from "lucide-react";
 
 // Per-beat voiceover step. Each beat shows its own row with status,
 // playback, and per-beat retry. A bulk Generate button kicks off all
@@ -688,10 +689,12 @@ export default function VoiceoverPage({ params }: PageProps) {
                     {(status === "failed" || status === "done") && !generating && (
                       <button
                         onClick={() => retryOne(b.beatNumber)}
-                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-opacity hover:opacity-90 shrink-0"
+                        aria-label={status === "failed" ? "Retry beat" : "Regenerate beat"}
+                        title={status === "failed" ? "Retry" : "Regenerate"}
+                        className={`${status === "failed" ? "px-2.5" : "px-1.5"} py-1 rounded-lg text-[11px] font-medium flex items-center justify-center transition-opacity hover:opacity-90 shrink-0`}
                         style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}
                       >
-                        {status === "failed" ? "Retry" : "Regen"}
+                        {status === "failed" ? "Retry" : <RotateCw className="w-3.5 h-3.5" />}
                       </button>
                     )}
                   </div>

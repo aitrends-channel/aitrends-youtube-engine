@@ -295,7 +295,12 @@ export default function VisualsPage({ params }: PageProps) {
       return;
     }
     setVideoImages(files);
-    if (files.length >= 3) void uploadAndAnalyze(files);
+    if (files.length >= 3) {
+      void uploadAndAnalyze(files);
+    } else {
+      const need = 3 - files.length;
+      toast.info(`Add ${need} more ${need === 1 ? "image" : "images"} — analysis needs at least 3 to start`);
+    }
   }
 
   // Upload + analyze for the manual mode. Takes the files directly so
@@ -571,6 +576,18 @@ export default function VisualsPage({ params }: PageProps) {
                             style={{ background: "var(--bg-overlay)", color: "white" }}>×</button>
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {videoImages.length > 0 && videoImages.length < 3 && (
+                    <div
+                      className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs"
+                      style={{ background: "oklch(0.72 0.55 75 / 0.08)", border: "1px solid oklch(0.72 0.55 75 / 0.25)", color: "oklch(0.78 0.18 75)" }}
+                    >
+                      <span aria-hidden="true">!</span>
+                      <span>
+                        Add {3 - videoImages.length} more {3 - videoImages.length === 1 ? "image" : "images"} —
+                        analysis needs at least 3 to start.
+                      </span>
                     </div>
                   )}
                 </div>
