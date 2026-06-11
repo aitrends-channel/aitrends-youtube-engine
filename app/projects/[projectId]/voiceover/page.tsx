@@ -465,10 +465,38 @@ export default function VoiceoverPage({ params }: PageProps) {
         {/* Header */}
         <div className="shrink-0 px-4 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <h1 className="font-bold text-base sm:text-lg">Voiceover</h1>
-          <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-            One narration clip per beat. Each beat&apos;s clip is the timing source for its visual — no matcher, no drift.
-          </p>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <h1 className="font-bold text-base sm:text-lg">Voiceover</h1>
+              <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                One narration clip per beat. Each beat&apos;s clip is the timing source for its visual — no matcher, no drift.
+              </p>
+            </div>
+            {/* Selected-voice chip. Resolves the saved voice id against
+                the live models list so the user sees the human name
+                (e.g. "Bella · female") instead of the opaque id.
+                Falls back gracefully while models are still loading
+                or when the saved id no longer exists in the catalog. */}
+            {(() => {
+              const model = selectedVoice ? ttsModels?.find((m) => m.id === selectedVoice) : null;
+              if (!selectedVoice) return null;
+              const tag = model?.tags?.[0];
+              return (
+                <div
+                  className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs"
+                  style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.35)", color: "oklch(0.88 0.12 285)" }}
+                  title={`Voice id: ${selectedVoice}`}
+                >
+                  <span className="font-semibold">
+                    {model?.name ?? (ttsModels ? "Unknown voice" : "Loading…")}
+                  </span>
+                  {tag && (
+                    <span className="opacity-70 capitalize">· {tag}</span>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto pb-[70px]">
