@@ -19,6 +19,54 @@ interface PageProps {
   params: { projectId: string };
 }
 
+// Rotating engagement caption shown during script generation. Pure UX —
+// the messages are static script-themed strings cycled every ~2.4s so
+// the UI never looks frozen during the 5-30s gap between hitting
+// Generate and tokens actually starting to stream (Anthropic via KIE
+// has noticeable think-time before the first chunk). Same pattern as
+// the prompts page's RunningCaption.
+const SCRIPT_RUNNING_CAPTIONS = [
+  "Reviewing the topic",
+  "Outlining the structure",
+  "Drafting the opening hook",
+  "Shaping the narrative arc",
+  "Pacing the beats",
+  "Matching the channel's voice",
+  "Refining the wording",
+  "Tightening the transitions",
+];
+
+function ScriptRunningCaption({ size = "md", emphasis = false }: { size?: "sm" | "md"; emphasis?: boolean }) {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setIdx((i) => (i + 1) % SCRIPT_RUNNING_CAPTIONS.length), 2400);
+    return () => clearInterval(t);
+  }, []);
+  if (emphasis) {
+    // Hero placement — fills the previous "Your script is still being
+    // generated…" blurb slot, so it needs to be the visual anchor of
+    // the panel: brand color, semibold, larger text.
+    return (
+      <p
+        key={idx}
+        className="text-base font-semibold animate-pulse"
+        style={{ color: "oklch(0.72 0.25 285)" }}
+      >
+        {SCRIPT_RUNNING_CAPTIONS[idx]}…
+      </p>
+    );
+  }
+  return (
+    <span
+      key={idx}
+      className={`${size === "sm" ? "text-[11px]" : "text-xs"} italic animate-pulse`}
+      style={{ color: "var(--c-50)" }}
+    >
+      {SCRIPT_RUNNING_CAPTIONS[idx]}…
+    </span>
+  );
+}
+
 export default function ScriptPage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
@@ -216,11 +264,9 @@ export default function ScriptPage({ params }: PageProps) {
                   <div className="w-10 h-10 border-2 rounded-full animate-spin"
                     style={{ borderColor: "oklch(0.72 0.25 285 / 0.3)", borderTopColor: "oklch(0.72 0.25 285)" }} />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <p className="text-base font-medium text-foreground">Generation in progress</p>
-                  <p className="text-xs leading-relaxed" style={{ color: "var(--c-45)" }}>
-                    Your script is still being generated in the background. This page will update automatically when it&apos;s ready — no need to click anything.
-                  </p>
+                  <ScriptRunningCaption emphasis />
                 </div>
                 {project?.selected_topic && (
                   <div className="pt-2 border-t" style={{ borderColor: "var(--bd-6)" }}>
@@ -388,9 +434,18 @@ export default function ScriptPage({ params }: PageProps) {
                     onBlur={saveScript}
                     readOnly={isStreaming}
                     className="w-full min-h-[560px] bg-transparent text-foreground/90 text-sm leading-8 resize-none outline-none font-sans"
-                    placeholder="Script will appear here..."
+                    // Hide the static placeholder while streaming — the
+                    // rotating caption overlay below stands in for it
+                    // and is a stronger "we're working" signal than
+                    // "Script will appear here…" which never changes.
+                    placeholder={isStreaming ? "" : "Script will appear here..."}
                     style={{ caretColor: "oklch(0.72 0.25 285)" }}
                   />
+                  {isStreaming && !script && (
+                    <div className="pointer-events-none absolute inset-0 p-6 flex items-start">
+                      <ScriptRunningCaption emphasis />
+                    </div>
+                  )}
                   {isStreaming && (
                     <span className="inline-block w-0.5 h-[18px] align-middle rounded-full animate-pulse ml-0.5"
                       style={{ background: "oklch(0.72 0.25 285)" }} />
