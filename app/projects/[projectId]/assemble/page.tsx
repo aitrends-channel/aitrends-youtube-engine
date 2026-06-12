@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import type { Beat } from "@/lib/types";
 import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPreview";
+import { presignedUpload } from "@/lib/upload-client";
 
 interface PageProps {
   params: { projectId: string };
@@ -200,6 +201,7 @@ export default function AssemblePage({ params }: PageProps) {
   // reveals the pre-assembly config panel so the user can pick a
   // different voiceover, change captions, etc. before kicking off.
   const [reassembleConfirmOpen, setReassembleConfirmOpen] = useState(false);
+  const [bgmDisclaimerOpen, setBgmDisclaimerOpen] = useState(false);
   // When true: the existing assembled video is suppressed and the
   // config + Assemble button block is rendered. Cleared automatically
   // when assembleVideo() actually fires (the new run will replace
@@ -429,14 +431,7 @@ export default function AssemblePage({ params }: PageProps) {
     if (bgmUploadedUrl) return bgmUploadedUrl;
     setBgmUploading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", bgmFile);
-      fd.append("projectId", projectId);
-      fd.append("folder", "background-music");
-      const res = await fetch("/api/upload", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Music upload failed");
-      const url = data.url as string;
+      const url = await presignedUpload(bgmFile, projectId, "background-music");
       setBgmUploadedUrl(url);
       return url;
     } catch (err) {
@@ -452,14 +447,7 @@ export default function AssemblePage({ params }: PageProps) {
     if (logoUploadedUrl) return logoUploadedUrl;
     setLogoUploading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", logoFile);
-      fd.append("projectId", projectId);
-      fd.append("folder", "channel-logo");
-      const res = await fetch("/api/upload", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Logo upload failed");
-      const url = data.url as string;
+      const url = await presignedUpload(logoFile, projectId, "channel-logo");
       setLogoUploadedUrl(url);
       return url;
     } catch (err) {
@@ -514,22 +502,26 @@ export default function AssemblePage({ params }: PageProps) {
     try {
       // Upload background music first (if a file was picked but hasn't
       // been uploaded yet). The worker downloads from this URL during
-      // the mix step. If upload fails, ensureBgmUploaded toasts and
-      // returns null; we still proceed with no music rather than
-      // blocking the entire assembly.
+      // the mix step.
       //
       // Initialize from the persisted/hydrated URL so a hydrated row
       // (page refresh + no new pick) still ships the previous selection
       // to the worker. A fresh File pick overrides via ensure*Uploaded.
+      //
+      // If a file is picked but upload fails, abort here. Quietly
+      // sending `null` to the worker produced a video without music or
+      // logo and hid the progress rows — the user thought it worked.
       let bgmUrl: string | null = bgmUploadedUrl;
       if (bgmFile) {
         setAssembleStatus("Uploading background music…");
         bgmUrl = await ensureBgmUploaded();
+        if (!bgmUrl) throw new Error("Background music upload failed — please try again");
       }
       let logoUploadUrl: string | null = logoUploadedUrl;
       if (logoFile) {
         setAssembleStatus("Uploading channel logo…");
         logoUploadUrl = await ensureLogoUploaded();
+        if (!logoUploadUrl) throw new Error("Channel logo upload failed — please try again");
       }
       setAssembleStatus(trimSilence ? "Queuing (trim silences)…" : "Queuing…");
       console.log("[assemble] submitting", { bgmUrl, bgmVolume, logoUploadUrl, logoX, logoY, logoSize, bgmFile: !!bgmFile, logoFile: !!logoFile, bgmUploadedUrl, logoUploadedUrl });
@@ -716,9 +708,14 @@ export default function AssemblePage({ params }: PageProps) {
                         ? `${(bgmFile.size / (1024 * 1024)).toFixed(1)} MB${bgmUploadedUrl ? " · Uploaded" : bgmUploading ? " · Uploading…" : " · Not uploaded yet"}`
                         : "Saved from a previous run"}
                     </p>
-                    <p style={{color:'red', fontSize: '10px'}}>
-                      Disclaimer: We do not take responsibility for copyright claims on background music. Please ensure you have the rights to use any track you upload.
-                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setBgmDisclaimerOpen(true)}
+                      className="text-[10px] underline underline-offset-2 hover:opacity-80"
+                      style={{ color: "oklch(0.7 0.22 25)" }}
+                    >
+                      Disclaimer
+                    </button>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>Vol</span>
@@ -1421,6 +1418,26 @@ export default function AssemblePage({ params }: PageProps) {
                   Deleting…
                 </span>
               ) : "Delete & reassemble"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bgmDisclaimerOpen} onOpenChange={setBgmDisclaimerOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Background music disclaimer</DialogTitle>
+            <DialogDescription>
+              We do not take responsibility for copyright claims on background music. Please ensure you have the rights to use any track you upload.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setBgmDisclaimerOpen(false)}
+              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              Got it
             </button>
           </DialogFooter>
         </DialogContent>

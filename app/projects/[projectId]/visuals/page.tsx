@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
+import { presignedUpload } from "@/lib/upload-client";
 
 interface PageProps {
   params: { projectId: string };
@@ -237,14 +238,7 @@ export default function VisualsPage({ params }: PageProps) {
   }
 
   async function uploadFileToSupabase(file: File, folder: string): Promise<string> {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("projectId", projectId);
-    formData.append("folder", folder);
-    const res = await fetch("/api/upload", { method: "POST", body: formData });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
-    return data.url as string;
+    return presignedUpload(file, projectId, folder);
   }
 
   // Core analysis call — takes the URL list directly so callers don't

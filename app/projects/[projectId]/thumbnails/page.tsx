@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import type { ThumbnailConcept, KieModel } from "@/lib/types";
 import { getModelConfig } from "@/lib/kie/imageModels";
+import { presignedUpload } from "@/lib/upload-client";
 
 interface PageProps {
   params: { projectId: string };
@@ -477,16 +478,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
         }
         setConceptStep({ status: "running", message: `Uploading ${manualRefFiles.length} reference thumbnails…` });
         thumbnailImageUrls = await Promise.all(
-          manualRefFiles.map(async (f) => {
-            const fd = new FormData();
-            fd.append("file", f);
-            fd.append("projectId", projectId);
-            fd.append("folder", "thumbnail-refs");
-            const r = await fetch("/api/upload", { method: "POST", body: fd });
-            const d = await r.json();
-            if (!r.ok) throw new Error(d.error ?? "Upload failed");
-            return d.url as string;
-          })
+          manualRefFiles.map((f) => presignedUpload(f, projectId, "thumbnail-refs")),
         );
         // Stash uploaded URLs in the niche-refs UI panel so the
         // user keeps seeing which references fed the analysis. We
