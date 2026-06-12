@@ -864,21 +864,33 @@ async function generateThumbnails(
   const anthropic = await getAnthropicClient(userId, "thumbnails");
   send({ type: "status", message: "Generating 5 thumbnail concepts..." });
 
-  const res = await retryClaudeCall("thumbnail concepts", () =>
-    anthropic.messages.create({
-      model: model,
-      max_tokens: 8192,
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-      tools: [{ name: "save_thumbnails", description: "Save 5 thumbnail concepts", input_schema: thumbnailsInputSchema }],
-      tool_choice: { type: "tool", name: "save_thumbnails" },
-      messages: [{ role: "user", content: buildThumbnailsPrompt(script, visualProfile, thumbnailAnalysis) }],
-    })
-  );
+  // One retry on tool-use miss — KIE intermittently returns a 200 with
+  // a text-only content block even when tool_choice forces save_thumbnails.
+  // The same pattern is used by the video-prompts step above (see line ~720).
+  // A second fresh call almost always picks the tool, so we don't bubble a
+  // user-facing error until both tries fail.
+  let res!: Anthropic.Messages.Message;
+  let tool: Anthropic.Messages.ContentBlock | undefined;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    res = await retryClaudeCall(`thumbnail concepts (try ${attempt + 1})`, () =>
+      anthropic.messages.create({
+        model: model,
+        max_tokens: 8192,
+        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        tools: [{ name: "save_thumbnails", description: "Save 5 thumbnail concepts", input_schema: thumbnailsInputSchema }],
+        tool_choice: { type: "tool", name: "save_thumbnails" },
+        messages: [{ role: "user", content: buildThumbnailsPrompt(script, visualProfile, thumbnailAnalysis) }],
+      })
+    );
+    tool = res.content.find((b) => b.type === "tool_use");
+    const blockTypes = res.content.map((b) => b.type).join(",");
+    console.log(`[thumbnails] attempt ${attempt + 1} stop=${res.stop_reason} blocks=${blockTypes} tool_use=${!!tool}`);
+    if (tool && tool.type === "tool_use") break;
+  }
 
   assertComplete(res.stop_reason, "thumbnails");
 
-  const tool = res.content.find((b) => b.type === "tool_use");
-  if (!tool || tool.type !== "tool_use") throw new Error("No thumbnails returned from Claude");
+  if (!tool || tool.type !== "tool_use") throw new Error("No thumbnails returned from Claude after 2 attempts");
 
   const { thumbnails } = ThumbnailsOutputSchema.parse(tool.input);
   // Defensive double-check on top of the Zod .length(5) and the
