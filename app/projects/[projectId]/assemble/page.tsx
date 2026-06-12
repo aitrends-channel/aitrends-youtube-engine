@@ -1023,8 +1023,8 @@ export default function AssemblePage({ params }: PageProps) {
                     selected={trimSilence}
                     onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(true)}
                     onLoadingChange={setTrimmedLoading}
-                    bgmUrl={bgmObjectUrl}
-                    bgmName={bgmFile?.name}
+                    bgmUrl={bgmObjectUrl ?? bgmUploadedUrl}
+                    bgmName={bgmFile?.name ?? bgmUploadedUrl?.split("/").pop() ?? undefined}
                     bgmVolume={bgmVolume}
                   />
                   <FullVoiceoverPreview
@@ -1035,8 +1035,8 @@ export default function AssemblePage({ params }: PageProps) {
                     selected={!trimSilence}
                     onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(false)}
                     onLoadingChange={setOriginalLoading}
-                    bgmUrl={bgmObjectUrl}
-                    bgmName={bgmFile?.name}
+                    bgmUrl={bgmObjectUrl ?? bgmUploadedUrl}
+                    bgmName={bgmFile?.name ?? bgmUploadedUrl?.split("/").pop() ?? undefined}
                     bgmVolume={bgmVolume}
                   />
                 </div>

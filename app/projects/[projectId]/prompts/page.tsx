@@ -285,17 +285,17 @@ function StepCard({ num, title, description, state, windingDown, doneLabel, pend
           <div className="space-y-1.5">
             <p className="text-xs" style={{ color: "oklch(0.65 0.15 75)" }}>{state.message}</p>
             <div className="flex items-center gap-2">
-              <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-progress)" }}>
+              <span className="text-xs shrink-0 tabular-nums font-mono"
+                style={{ color: "oklch(0.7 0.15 145)" }}>
+                {state.progress ? `${state.progress.current}/${state.progress.total}` : `${shownPct}%`}
+              </span>
+              <div className="flex-1 max-w-[260px] h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-progress)" }}>
                 <div className="h-full rounded-full transition-all duration-200"
                   style={{
                     width: `${shownPct}%`,
                     background: "oklch(0.55 0.15 145)",
                   }} />
               </div>
-              <span className="text-xs shrink-0 tabular-nums font-mono"
-                style={{ color: "oklch(0.7 0.15 145)" }}>
-                {state.progress ? `${state.progress.current}/${state.progress.total}` : `${shownPct}%`}
-              </span>
             </div>
           </div>
         )}
