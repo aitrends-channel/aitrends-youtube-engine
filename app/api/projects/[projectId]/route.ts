@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
-import { deleteFolder, deleteObject, r2KeyFromUrl, userFolderFor } from "@/lib/supabase/storage";
+import { deleteFolder, deleteFolderWhere, deleteObject, r2KeyFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import type { User } from "@supabase/supabase-js";
 
 export async function GET(
@@ -105,6 +105,36 @@ export async function PATCH(
       })
       .eq("id", projectId)
       .eq("user_id", user.id);
+    return NextResponse.json({ success: true });
+  }
+
+  // Wipe every prior thumbnail reference before a fresh batch is
+  // uploaded/fetched. The Thumbnails step calls this at the start of
+  // generateConcepts so the analysis runs on the new references only:
+  //   - DB: thumbnail_analysis is the cached analysis output;
+  //         nulling it forces /api/workflow/visual-analysis to re-run.
+  //   - R2: thumbnail-refs/ is dedicated to manual uploads, safe to
+  //         drop the whole prefix. auto-frames/ is shared with the
+  //         Visuals step's frame stills, so only *-thumb.jpg keys
+  //         (the auto-pulled niche thumbnails) are removed —
+  //         *-frame-*.jpg files stay intact.
+  if (body.clear_thumbnail_refs) {
+    const userFolder = userFolderFor(user);
+    try {
+      await deleteFolder(`${userFolder}/${projectId}/thumbnail-refs/`);
+      await deleteFolderWhere(
+        `${userFolder}/${projectId}/auto-frames/`,
+        (key) => key.endsWith("-thumb.jpg"),
+      );
+    } catch (e) {
+      console.warn(`[clear_thumbnail_refs] R2 cleanup failed:`, e instanceof Error ? e.message : e);
+    }
+    const { error: updErr } = await supabase
+      .from("projects")
+      .update({ thumbnail_analysis: null })
+      .eq("id", projectId)
+      .eq("user_id", user.id);
+    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
     return NextResponse.json({ success: true });
   }
 

@@ -459,17 +459,40 @@ export default function ThumbnailsPage({ params }: PageProps) {
       toast.error("Script and visual analysis required first");
       return;
     }
-    setConceptStep({ status: "running", message: "Starting..." });
+    setConceptStep({ status: "running", message: "Clearing previous references…" });
     try {
+      // Every run starts from a clean slate so the analysis is
+      // anchored to the references the user is uploading/fetching
+      // right now. The server endpoint wipes:
+      //   - thumbnail_analysis on the project row (DB cache)
+      //   - the R2 thumbnail-refs/ prefix (prior manual uploads)
+      //   - *-thumb.jpg keys under auto-frames/ (prior auto pulls)
+      // We mirror the wipe in local state so the UI doesn't show
+      // stale refs while the new ones are still uploading.
+      const clearRes = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear_thumbnail_refs: true }),
+      });
+      if (!clearRes.ok) {
+        const e = await clearRes.json().catch(() => ({}));
+        throw new Error(e.error ?? "Failed to clear previous references");
+      }
+      setNicheThumbs([]);
+      mutate(
+        { ...project, thumbnail_analysis: null },
+        { revalidate: false },
+      );
+
       // Thumbnail-style analysis. Two modes:
       //   "auto"   — pull the cover art of the top 5 niche videos.
       //   "manual" — upload the user's own reference thumbnails first,
       //              then analyze those.
       // Either way, the resulting thumbnailAnalysis flows into
       // buildThumbnailsPrompt on the server alongside the visuals-
-      // step visualProfile. Cached via project.thumbnail_analysis so
-      // a re-run skips re-analysis unless the user explicitly clears.
-      let thumbnailAnalysis = project.thumbnail_analysis as Record<string, unknown> | null;
+      // step visualProfile. The cache was just nulled above, so this
+      // always starts at null and runs a fresh analysis.
+      let thumbnailAnalysis: Record<string, unknown> | null = null;
       let thumbnailImageUrls: string[] = [];
 
       if (refMode === "manual") {
@@ -493,13 +516,10 @@ export default function ThumbnailsPage({ params }: PageProps) {
             thumbnailUrl: url,
           })),
         );
-        // Manual uploads always invalidate the cache — the user
-        // explicitly chose new references.
-        thumbnailAnalysis = null;
       } else {
         const channelInfo = project.channel_info as { topVideos?: { videoId: string; title: string }[] } | undefined;
         const niche5 = (channelInfo?.topVideos ?? []).slice(0, 5);
-        if (niche5.length > 0 && (!thumbnailAnalysis || nicheThumbs.length === 0)) {
+        if (niche5.length > 0) {
           setConceptStep({ status: "running", message: "Pulling top 5 niche thumbnails…" });
           const shotsRes = await fetch("/api/youtube/screenshots", {
             method: "POST",
