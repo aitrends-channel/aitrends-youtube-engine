@@ -208,7 +208,16 @@ export async function generateImage(
     ? `/api/v1/flux/kontext/record-info?taskId=${taskId}`
     : `/api/v1/jobs/recordInfo?taskId=${taskId}`;
 
-  for (let i = 0; i < 15; i++) {
+  // 80 × 3s = 4 min per task. Kie image gen typically lands in
+  // 30–90s; outliers run 2–3 min under load. The previous 15 × 3s = 45s
+  // budget was tripping false failures for routine slow generations and
+  // orphaning the upstream task (Kie kept working, but the result had
+  // nowhere to land since thumbnails don't have a webhook/cron sweeper
+  // like beats do). 4 min covers the long tail without pushing the
+  // route past its 800s maxDuration: callers batch thumbnails in
+  // groups of 2, so worst-case wall time for N thumbnails is
+  // ceil(N/2) × 4 min — fine up to ~6 thumbnails per request.
+  for (let i = 0; i < 80; i++) {
     await sleep(3000);
 
     const statusRes = await kieRequest<KieRecordResponse>(pollEndpoint, {}, userId);
@@ -219,5 +228,5 @@ export async function generateImage(
     if (verdict.kind === "failed") throw new Error(verdict.error);
   }
 
-  throw new Error("Image generation timed out after 5 minutes");
+  throw new Error("Image generation timed out after 4 minutes");
 }
