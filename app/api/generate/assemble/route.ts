@@ -26,6 +26,23 @@ export async function POST(req: Request) {
     // page. The worker only runs the per-beat silence trim when this
     // is true; a normal Assemble / Reassemble leaves audio untouched.
     trimSilenceEnabled?: boolean;
+    // Optional background music: URL to a user-uploaded audio file
+    // and a 0–1 volume (default 0.15). The worker downloads the file
+    // and mixes it under the voiceover.
+    backgroundMusicUrl?: string | null;
+    backgroundMusicVolume?: number;
+    // Render resolution preset (720p / 1080p / 1440p / 2160p). The
+    // worker picks per-aspect-ratio dimensions from this; default
+    // 1080p.
+    resolution?: "720p" | "1080p" | "1440p" | "2160p";
+    // Optional channel logo overlay. URL points at the user-uploaded
+    // logo; logoX / logoY are top-left position as fractions of video
+    // dimensions (0–1); logoSize is logo width as fraction of video
+    // width (0–1).
+    logoUrl?: string | null;
+    logoX?: number;
+    logoY?: number;
+    logoSize?: number;
   };
 
   const { projectId, ...options } = body;

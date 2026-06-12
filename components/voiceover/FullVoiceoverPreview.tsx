@@ -46,6 +46,16 @@ interface Props {
    *  combined loading indicator while either preview is still building
    *  on the server or downloading audio in the browser. */
   onLoadingChange?: (loading: boolean) => void;
+  /** Optional background music — when provided, the card surfaces a
+   *  music chip + on/off toggle. When the toggle is on, the music
+   *  plays in sync with the voiceover (start, seek, pause, end all
+   *  mirrored to a second audio element). bgmUrl can be a blob: URL
+   *  from a local File so previews work before any server upload.
+   *  bgmVolume is the 0–1 multiplier applied to the bgm audio (same
+   *  value sent to the worker at assembly time). */
+  bgmUrl?: string | null;
+  bgmName?: string;
+  bgmVolume?: number;
 }
 
 export function FullVoiceoverPreview({
@@ -58,6 +68,9 @@ export function FullVoiceoverPreview({
   selected = false,
   onSelect,
   onLoadingChange,
+  bgmUrl,
+  bgmName,
+  bgmVolume = 0.15,
 }: Props) {
   const urlSignature = useMemo(() => {
     const list: string[] = [];
@@ -88,6 +101,26 @@ export function FullVoiceoverPreview({
   // played, which read as "equal length".
   const [duration, setDuration] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  // Background-music audio element + per-card "play with preview"
+  // toggle. Defaults on whenever a bgm is attached. Volume + currentTime
+  // get kept in sync with the main audio in toggle()/seek() and the
+  // onEnded handler so the two streams stay locked together. The pair
+  // can drift by a frame or two during play() — acceptable for music
+  // bedding; sub-100ms is inaudible against narration.
+  const bgmAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [bgmPlayWithPreview, setBgmPlayWithPreview] = useState<boolean>(true);
+  // When the toggle flips OFF mid-playback, pause the bgm immediately
+  // even if the voiceover keeps going. Also keep volume in sync if the
+  // parent changes it via the slider.
+  useEffect(() => {
+    const bgm = bgmAudioRef.current;
+    if (!bgm) return;
+    bgm.volume = Math.max(0, Math.min(1, bgmVolume));
+    if (!bgmPlayWithPreview || !bgmUrl) {
+      try { bgm.pause(); } catch { /* ignore */ }
+      bgm.currentTime = 0;
+    }
+  }, [bgmPlayWithPreview, bgmUrl, bgmVolume]);
 
   useEffect(() => {
     if (!urlSignature) { setPreviewUrl(null); setBuilding(false); return; }
@@ -113,7 +146,13 @@ export function FullVoiceoverPreview({
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
-    function onEnded() { setPlaying(false); }
+    function onEnded() {
+      setPlaying(false);
+      // Stop bgm at the same moment so it doesn't run past the end
+      // of the narration.
+      const bgm = bgmAudioRef.current;
+      if (bgm) { try { bgm.pause(); } catch { /* ignore */ } bgm.currentTime = 0; }
+    }
     function onTime() { setTickFlag((t) => t + 1); }
     function onMeta() {
       if (a && isFinite(a.duration)) setDuration(a.duration);
@@ -135,14 +174,37 @@ export function FullVoiceoverPreview({
   function toggle() {
     const a = audioRef.current;
     if (!a || !previewUrl) return;
-    if (playing) { a.pause(); setPlaying(false); }
-    else { a.play().then(() => setPlaying(true)).catch(() => setPlaying(false)); }
+    if (playing) {
+      a.pause();
+      // Mirror to bgm so background music stops together.
+      const bgm = bgmAudioRef.current;
+      if (bgm) { try { bgm.pause(); } catch { /* ignore */ } }
+      setPlaying(false);
+    } else {
+      a.play().then(() => {
+        setPlaying(true);
+        // Start bgm at the same offset so the music doesn't restart
+        // from zero if the user paused/resumed.
+        const bgm = bgmAudioRef.current;
+        if (bgm && bgmPlayWithPreview && bgmUrl) {
+          try {
+            bgm.currentTime = a.currentTime;
+            bgm.volume = Math.max(0, Math.min(1, bgmVolume));
+            void bgm.play().catch(() => { /* autoplay restrictions OK to swallow */ });
+          } catch { /* ignore */ }
+        }
+      }).catch(() => setPlaying(false));
+    }
   }
 
   function seek(nextSec: number) {
     const a = audioRef.current;
     if (!a || !isFinite(nextSec)) return;
-    a.currentTime = Math.max(0, Math.min(duration || 0, nextSec));
+    const clamped = Math.max(0, Math.min(duration || 0, nextSec));
+    a.currentTime = clamped;
+    // Keep bgm aligned on scrub.
+    const bgm = bgmAudioRef.current;
+    if (bgm) bgm.currentTime = clamped;
     setTickFlag((t) => t + 1);
   }
 
@@ -276,6 +338,52 @@ export function FullVoiceoverPreview({
         </div>
       </div>
       <audio ref={audioRef} src={previewUrl ?? undefined} preload="auto" />
+      {/* Background-music chip + toggle. Shows only when a bgm is
+          attached at the page level. The toggle is per-card so users
+          can A/B compare "voice only" vs "voice + music" between the
+          Trimmed and Original previews. Clicks stopPropagation so
+          interacting on a selectable card doesn't double as a
+          selection toggle. */}
+      {bgmUrl && (
+        <>
+          {/* loop=true so a short music file fills the entire
+              voiceover duration instead of ending mid-narration.
+              The voiceover's `ended` event still gates the bgm pause
+              so it never plays past the end. */}
+          <audio ref={bgmAudioRef} src={bgmUrl} preload="auto" loop={true} />
+          <div
+            className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5"
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "oklch(0.96 0 0)", border: "1px solid oklch(0.85 0 0)" }}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span aria-hidden="true" style={{ color: "oklch(0.55 0.15 145)" }}>♫</span>
+              <span className="text-[11px] truncate" style={{ color: "oklch(0.4 0 0)" }}
+                title={bgmName ?? "Background music"}>
+                {bgmName ?? "Background music"}
+              </span>
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); setBgmPlayWithPreview((v) => !v); }}
+              aria-label={bgmPlayWithPreview ? "Disable music in preview" : "Enable music in preview"}
+              title={bgmPlayWithPreview ? "Music plays with preview" : "Music muted in preview"}
+              className="relative w-9 h-5 rounded-full transition-all shrink-0"
+              style={{
+                background: bgmPlayWithPreview ? "oklch(0.72 0.25 285)" : "oklch(0.82 0 0)",
+                border: "1px solid oklch(0.75 0 0)",
+              }}
+            >
+              <span
+                className="absolute top-0.5 w-4 h-4 rounded-full transition-all"
+                style={{
+                  background: "#ffffff",
+                  left: bgmPlayWithPreview ? "calc(100% - 1.125rem)" : "0.125rem",
+                }}
+              />
+            </button>
+          </div>
+        </>
+      )}
       {error && (
         <p className="text-[11px]" style={{ color: "oklch(0.7 0.2 25)" }}>{error}</p>
       )}

@@ -1612,24 +1612,24 @@ export default function GeneratePage({ params }: PageProps) {
 
       {/* Fixed bottom bar */}
       {(() => {
-        const voiceoverReady = !!ttsUrl;
-        // Videos are no longer a hard prerequisite — the assemble step
-        // falls back to a beat's image when its videoUrl is missing, so
-        // the user can proceed at any point. The button copy reflects
-        // what they're choosing to skip.
-        const canContinue = voiceoverReady && imagesReady;
-        const missing = [
-          !voiceoverReady && "voiceover",
-          !imagesReady && "images",
-        ].filter(Boolean).join(", ");
+        // Only hard gate now: at least one beat has an image. Voiceover
+        // (legacy tts_url) and videos are soft — the user may have
+        // per-beat voiceovers (a separate step) or be intentionally
+        // skipping clips. The assemble step gracefully handles missing
+        // pieces, so the button stays usable as soon as there's
+        // something to assemble.
+        const hasAnyImage = generatedImages > 0;
+        const canContinue = hasAnyImage;
+        const pendingImageCount = totalBeats > 0 ? totalBeats - generatedImages : 0;
+        const someImagesPending = canContinue && pendingImageCount > 0;
         const pendingVideoCount = videoBeats > 0 ? videoBeats - generatedVideos : 0;
         const noVideosYet = canContinue && videoBeats > 0 && generatedVideos === 0;
         const someVideosPending = canContinue && videoBeats > 0 && pendingVideoCount > 0 && !noVideosYet;
-        const continueLabel = noVideosYet
-          ? "Continue without video clips"
-          : someVideosPending
-            ? "Continue anyway"
-            : "Continue →";
+        // "Continue anyway" wins as soon as anything is still pending
+        // (images OR videos), since we're advancing on a partial set.
+        const continueLabel = (someImagesPending || someVideosPending || noVideosYet)
+          ? "Continue anyway"
+          : "Continue →";
 
         return (
           <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
@@ -1637,7 +1637,12 @@ export default function GeneratePage({ params }: PageProps) {
             <div className="px-4 sm:px-8 space-y-2">
               {!canContinue && !navigating && (
                 <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
-                  Still needed: {missing}
+                  Generate at least one image to continue.
+                </p>
+              )}
+              {!navigating && someImagesPending && (
+                <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
+                  {pendingImageCount} beat{pendingImageCount === 1 ? "" : "s"} still without image — {pendingImageCount === 1 ? "it will" : "they will"} be skipped at assembly.
                 </p>
               )}
               {!navigating && noVideosYet && (

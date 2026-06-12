@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
@@ -16,11 +16,25 @@ interface PageProps {
 const ASPECT_RATIOS = ["16:9", "9:16", "1:1"] as const;
 type AspectRatio = typeof ASPECT_RATIOS[number];
 
-const RESOLUTION: Record<AspectRatio, string> = {
-  "16:9": "1920 × 1080",
-  "9:16": "1080 × 1920",
-  "1:1":  "1080 × 1080",
+const RESOLUTION_PRESETS = ["720p", "1080p", "1440p", "2160p"] as const;
+type ResolutionPreset = typeof RESOLUTION_PRESETS[number];
+
+// Per-preset short/long edge sizes. Vertical (9:16) uses short as
+// width, square uses short on both axes, horizontal uses long×short.
+// Matches the dimsFor() implementation server-side.
+const RESOLUTION_EDGES: Record<ResolutionPreset, { long: number; short: number }> = {
+  "720p":  { long: 1280, short: 720 },
+  "1080p": { long: 1920, short: 1080 },
+  "1440p": { long: 2560, short: 1440 },
+  "2160p": { long: 3840, short: 2160 },
 };
+
+function dimsFor(aspect: AspectRatio, preset: ResolutionPreset): { w: number; h: number; label: string } {
+  const { long, short } = RESOLUTION_EDGES[preset];
+  if (aspect === "9:16") return { w: short, h: long, label: `${short} × ${long}` };
+  if (aspect === "1:1")  return { w: short, h: short, label: `${short} × ${short}` };
+  return { w: long, h: short, label: `${long} × ${short}` };
+}
 
 const CAPTION_LANGUAGES = [
   { code: "source", label: "Source language" },
@@ -71,6 +85,9 @@ export default function AssemblePage({ params }: PageProps) {
   }, [project?.current_state, projectId, mutate]);
 
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
+  // Render resolution. Default 1080p (matches YouTube's HD standard
+  // and the dimensions previously displayed in the Output card).
+  const [selectedResolution, setSelectedResolution] = useState<ResolutionPreset>("1080p");
   // Per-preview loading state — true while either A/B card is still
   // building on the server or buffering audio in the browser. Drives
   // the "Loading previews…" indicator under the Voiceover Source label.
@@ -88,6 +105,57 @@ export default function AssemblePage({ params }: PageProps) {
   // video length" flow — users heard a voiceover they didn't recognize.
   // In per-beat mode (current default) voiceoverType is ignored anyway.
   const [trimSilence, setTrimSilence] = useState<boolean>(true);
+  // Optional background music. The file gets uploaded to storage on
+  // first assemble (via /api/upload) and the resulting public URL is
+  // sent to the worker. backgroundMusicVolume is a 0–1 multiplier the
+  // worker applies in ffmpeg's amix filter — 0.15 is the classic
+  // "podcast bed" level that keeps voiceover crisp.
+  const [bgmFile, setBgmFile] = useState<File | null>(null);
+  const [bgmUploadedUrl, setBgmUploadedUrl] = useState<string | null>(null);
+  const [bgmVolume, setBgmVolume] = useState<number>(0.15);
+  const [bgmUploading, setBgmUploading] = useState(false);
+  const bgmInputRef = useRef<HTMLInputElement>(null);
+  // Channel logo overlay. logoX/logoY are top-left position as a
+  // fraction of video dimensions (0–1); logoSize is logo width as a
+  // fraction of video width. Same upload model as bgm — local file →
+  // blob URL for the drag preview, then uploaded to storage on
+  // assemble. Defaults put the logo in the top-right corner at 10%
+  // width (classic YouTube watermark placement).
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoUploadedUrl, setLogoUploadedUrl] = useState<string | null>(null);
+  const [logoObjectUrl, setLogoObjectUrl] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoX, setLogoX] = useState<number>(0.85);
+  const [logoY, setLogoY] = useState<number>(0.05);
+  const [logoSize, setLogoSize] = useState<number>(0.1);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!logoFile) {
+      if (logoObjectUrl) URL.revokeObjectURL(logoObjectUrl);
+      setLogoObjectUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(logoFile);
+    setLogoObjectUrl(url);
+    return () => { URL.revokeObjectURL(url); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logoFile]);
+
+  // Local blob URL for in-browser preview playback. Created when a
+  // file is picked and revoked when it's replaced or cleared so we
+  // don't leak object URLs over the page's lifetime.
+  const [bgmObjectUrl, setBgmObjectUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!bgmFile) {
+      if (bgmObjectUrl) URL.revokeObjectURL(bgmObjectUrl);
+      setBgmObjectUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(bgmFile);
+    setBgmObjectUrl(url);
+    return () => { URL.revokeObjectURL(url); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bgmFile]);
   const [captionsEnabled, setCaptionsEnabled] = useState(false);
   const [captionsLanguage, setCaptionsLanguage] = useState("source");
   const [captionsStyle, setCaptionsStyle] = useState("classic");
@@ -300,7 +368,22 @@ export default function AssemblePage({ params }: PageProps) {
       const res = await fetch("/api/generate/assemble", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, aspectRatio, voiceoverType: "original", captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, trimSilenceEnabled: trimSilence }),
+        body: JSON.stringify({
+          projectId,
+          aspectRatio,
+          voiceoverType: "original",
+          captionsEnabled,
+          captionsLanguage,
+          captionsStyle,
+          captionsSize,
+          captionsPosition,
+          trimSilenceEnabled: trimSilence,
+          backgroundMusicUrl: bgmUploadedUrl,
+          backgroundMusicVolume: bgmVolume,
+          resolution: selectedResolution,
+          logoUrl: logoUploadedUrl,
+          logoX, logoY, logoSize,
+        }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: string };
@@ -310,6 +393,67 @@ export default function AssemblePage({ params }: PageProps) {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Resume failed");
     }
+  }
+
+  // Upload the picked BGM file once and cache its URL on this page
+  // for the lifetime of the file selection. Re-uploads only when the
+  // user picks a different file. Returns null on no-file or failure.
+  async function ensureBgmUploaded(): Promise<string | null> {
+    if (!bgmFile) return null;
+    if (bgmUploadedUrl) return bgmUploadedUrl;
+    setBgmUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", bgmFile);
+      fd.append("projectId", projectId);
+      fd.append("folder", "background-music");
+      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Music upload failed");
+      const url = data.url as string;
+      setBgmUploadedUrl(url);
+      return url;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Music upload failed");
+      return null;
+    } finally {
+      setBgmUploading(false);
+    }
+  }
+
+  async function ensureLogoUploaded(): Promise<string | null> {
+    if (!logoFile) return null;
+    if (logoUploadedUrl) return logoUploadedUrl;
+    setLogoUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", logoFile);
+      fd.append("projectId", projectId);
+      fd.append("folder", "channel-logo");
+      const res = await fetch("/api/upload", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Logo upload failed");
+      const url = data.url as string;
+      setLogoUploadedUrl(url);
+      return url;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Logo upload failed");
+      return null;
+    } finally {
+      setLogoUploading(false);
+    }
+  }
+
+  function clearLogo() {
+    setLogoFile(null);
+    setLogoUploadedUrl(null);
+    if (logoInputRef.current) logoInputRef.current.value = "";
+  }
+
+  function clearBgm() {
+    setBgmFile(null);
+    setBgmUploadedUrl(null);
+    if (bgmInputRef.current) bgmInputRef.current.value = "";
   }
 
   async function assembleVideo() {
@@ -322,10 +466,41 @@ export default function AssemblePage({ params }: PageProps) {
     setAssembledUrl(null);
     setAssembleStatus(trimSilence ? "Queuing (trim silences)…" : "Queuing…");
     try {
+      // Upload background music first (if a file was picked but hasn't
+      // been uploaded yet). The worker downloads from this URL during
+      // the mix step. If upload fails, ensureBgmUploaded toasts and
+      // returns null; we still proceed with no music rather than
+      // blocking the entire assembly.
+      let bgmUrl: string | null = null;
+      if (bgmFile) {
+        setAssembleStatus("Uploading background music…");
+        bgmUrl = await ensureBgmUploaded();
+      }
+      let logoUploadUrl: string | null = null;
+      if (logoFile) {
+        setAssembleStatus("Uploading channel logo…");
+        logoUploadUrl = await ensureLogoUploaded();
+      }
+      setAssembleStatus(trimSilence ? "Queuing (trim silences)…" : "Queuing…");
       const res = await fetch("/api/generate/assemble", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, aspectRatio, voiceoverType: "original", captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, trimSilenceEnabled: trimSilence }),
+        body: JSON.stringify({
+          projectId,
+          aspectRatio,
+          voiceoverType: "original",
+          captionsEnabled,
+          captionsLanguage,
+          captionsStyle,
+          captionsSize,
+          captionsPosition,
+          trimSilenceEnabled: trimSilence,
+          backgroundMusicUrl: bgmUrl,
+          backgroundMusicVolume: bgmVolume,
+          resolution: selectedResolution,
+          logoUrl: logoUploadUrl,
+          logoX, logoY, logoSize,
+        }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: string };
@@ -359,7 +534,12 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }
 
-  const hasVoiceover = !!(ttsCleanedUrl || ttsUrl);
+  // Per-beat voiceovers (current default) live on beat rows, not on
+  // the project's legacy tts_url / tts_cleaned_url. The Assemble
+  // button below gates on this flag, so without the beat-level check
+  // the button stays disabled on every per-beat project even when
+  // the previews above are happily playing the per-beat audio.
+  const hasVoiceover = !!(ttsCleanedUrl || ttsUrl) || beats.some((b) => !!b.voiceoverUrl);
   const uploadFailedPreview = project?.assembly_status === "preview" && !project?.assembled_url;
 
   return (
@@ -400,9 +580,31 @@ export default function AssemblePage({ params }: PageProps) {
                   </p>
                 )}
               </div>
-              <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <div className="p-4 rounded-2xl space-y-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Output</p>
-                <p className="mt-2 text-sm font-medium" style={{ color: "var(--c-65)" }}>{RESOLUTION[aspectRatio]}</p>
+                <p className="text-sm font-medium" style={{ color: "var(--c-65)" }}>{dimsFor(aspectRatio, selectedResolution).label}</p>
+                <div className="flex gap-1 flex-wrap">
+                  {RESOLUTION_PRESETS.map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => setSelectedResolution(p)}
+                      disabled={assembling}
+                      title={`Render at ${dimsFor(aspectRatio, p).label}`}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all disabled:opacity-40"
+                      style={selectedResolution === p ? {
+                        background: "oklch(0.72 0.25 285 / 0.18)",
+                        border: "1px solid oklch(0.72 0.25 285 / 0.45)",
+                        color: "oklch(0.88 0.12 285)",
+                      } : {
+                        background: "var(--bg-input)",
+                        border: "1px solid var(--bd-7)",
+                        color: "var(--c-50)",
+                      }}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -426,6 +628,305 @@ export default function AssemblePage({ params }: PageProps) {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Background music — compact single-bar picker. Pre-pick
+                shows label + Choose file. Post-pick collapses every
+                control (filename, size, upload status, volume slider,
+                remove ×) into one horizontal row to keep the assemble
+                page dense. The chip + play-with-preview toggle still
+                renders inside each preview card. */}
+            <div className="flex items-center gap-3 rounded-2xl px-4 py-2.5"
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <span aria-hidden="true" className="text-base shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>♫</span>
+              {!bgmFile ? (
+                <>
+                  <p className="text-sm font-semibold flex-1">Background music</p>
+                  <button
+                    onClick={() => bgmInputRef.current?.click()}
+                    disabled={assembling}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-all shrink-0"
+                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+                  >
+                    Choose file
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
+                      Background music
+                    </p>
+                    <p className="text-xs font-medium truncate" style={{ color: "var(--c-80)" }} title={bgmFile.name}>
+                      {bgmFile.name}
+                    </p>
+                    <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
+                      {(bgmFile.size / (1024 * 1024)).toFixed(1)} MB
+                      {bgmUploadedUrl ? " · Uploaded" : bgmUploading ? " · Uploading…" : " · Not uploaded yet"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>Vol</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      value={bgmVolume}
+                      onChange={(e) => setBgmVolume(parseFloat(e.target.value))}
+                      disabled={assembling}
+                      aria-label="Background music volume"
+                      className="w-24 sm:w-32"
+                    />
+                    <span className="text-[11px] font-mono tabular-nums w-9 text-right" style={{ color: "var(--c-60)" }}>
+                      {Math.round(bgmVolume * 100)}%
+                    </span>
+                  </div>
+                  <button
+                    onClick={clearBgm}
+                    disabled={assembling || bgmUploading}
+                    title="Remove background music"
+                    className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-40 shrink-0"
+                    style={{ background: "transparent", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
+                  >
+                    ×
+                  </button>
+                </>
+              )}
+              <input
+                ref={bgmInputRef}
+                type="file"
+                accept="audio/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0] ?? null;
+                  if (!f) return;
+                  setBgmFile(f);
+                  // New file → invalidate any previously-uploaded URL
+                  setBgmUploadedUrl(null);
+                }}
+              />
+            </div>
+
+            {/* Channel logo — single-bar picker matching the bgm
+                section. Pre-pick shows label + Choose file. Once a
+                file is selected, the bar expands with an aspect-
+                ratio drag surface where the user positions the logo,
+                a width slider, and the × clear. Position and size
+                are stored as 0–1 fractions of video dimensions so
+                they're resolution-agnostic. */}
+            <div className="rounded-2xl px-4 py-2.5 space-y-3"
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <div className="flex items-center gap-3">
+                <span aria-hidden="true" className="text-base shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>◈</span>
+                {!logoFile ? (
+                  <>
+                    <p className="text-sm font-semibold flex-1">Channel logo</p>
+                    <button
+                      onClick={() => logoInputRef.current?.click()}
+                      disabled={assembling}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-all shrink-0"
+                      style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+                    >
+                      Choose file
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
+                        Channel logo
+                      </p>
+                      <p className="text-xs font-medium truncate" style={{ color: "var(--c-80)" }} title={logoFile.name}>
+                        {logoFile.name}
+                      </p>
+                      <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
+                        {(logoFile.size / 1024).toFixed(0)} KB
+                        {logoUploadedUrl ? " · Uploaded" : logoUploading ? " · Uploading…" : " · Not uploaded yet"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>Size</span>
+                      <input
+                        type="range"
+                        min={0.03}
+                        max={0.4}
+                        step={0.01}
+                        value={logoSize}
+                        onChange={(e) => setLogoSize(parseFloat(e.target.value))}
+                        disabled={assembling}
+                        aria-label="Logo size"
+                        className="w-24 sm:w-32"
+                      />
+                      <span className="text-[11px] font-mono tabular-nums w-9 text-right" style={{ color: "var(--c-60)" }}>
+                        {Math.round(logoSize * 100)}%
+                      </span>
+                    </div>
+                    <button
+                      onClick={clearLogo}
+                      disabled={assembling || logoUploading}
+                      title="Remove channel logo"
+                      className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-40 shrink-0"
+                      style={{ background: "transparent", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
+                    >
+                      ×
+                    </button>
+                  </>
+                )}
+                <input
+                  ref={logoInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0] ?? null;
+                    if (!f) return;
+                    setLogoFile(f);
+                    setLogoUploadedUrl(null);
+                  }}
+                />
+              </div>
+              {logoFile && logoObjectUrl && (() => {
+                // Draggable preview surface. The surface holds the
+                // current aspect ratio (16:9 / 9:16 / 1:1). Logo is
+                // an absolutely positioned img the user drags around.
+                // Position is stored as 0–1 fractions of the surface
+                // dimensions, mirroring how the worker interprets
+                // logoX / logoY against the actual video.
+                const aspect = aspectRatio === "9:16" ? "9 / 16" : aspectRatio === "1:1" ? "1 / 1" : "16 / 9";
+                function onDragLogo(e: React.PointerEvent<HTMLImageElement>) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const surface = (e.currentTarget.parentElement as HTMLElement | null);
+                  if (!surface) return;
+                  const img = e.currentTarget;
+                  img.setPointerCapture(e.pointerId);
+                  const startBox = surface.getBoundingClientRect();
+                  const offsetX = e.clientX - img.getBoundingClientRect().left;
+                  const offsetY = e.clientY - img.getBoundingClientRect().top;
+                  function move(ev: PointerEvent) {
+                    const localX = ev.clientX - startBox.left - offsetX;
+                    const localY = ev.clientY - startBox.top - offsetY;
+                    // Clamp so the logo can't be dragged outside the
+                    // visible video area. We don't know the rendered
+                    // logo width yet (it depends on size %), but the
+                    // worker also clamps via overlay's auto, so a
+                    // simple [0, 1 - logoSize] keeps it sensible.
+                    const maxX = 1 - logoSize;
+                    const surfaceAspect = startBox.height / startBox.width;
+                    // Approx maxY using the logo's render height ≈
+                    // logoSize * surface width / image natural ratio.
+                    const approxLogoHpct = (img.offsetHeight / startBox.height);
+                    const maxY = Math.max(0, 1 - approxLogoHpct);
+                    const nextX = Math.max(0, Math.min(maxX, localX / startBox.width));
+                    const nextY = Math.max(0, Math.min(maxY, localY / startBox.height));
+                    setLogoX(nextX);
+                    setLogoY(nextY);
+                    void surfaceAspect;
+                  }
+                  function up(ev: PointerEvent) {
+                    img.releasePointerCapture(ev.pointerId);
+                    window.removeEventListener("pointermove", move);
+                    window.removeEventListener("pointerup", up);
+                  }
+                  window.addEventListener("pointermove", move);
+                  window.addEventListener("pointerup", up);
+                }
+                // Resize via dragging the bottom-right handle. Stops
+                // pointer propagation so the move handler on the img
+                // doesn't also fire. New width = pointer x − logo
+                // left edge, expressed as fraction of surface width.
+                // Clamped to the same 0.03–0.40 range as the slider.
+                function onResizeLogo(e: React.PointerEvent<HTMLSpanElement>) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const handle = e.currentTarget;
+                  const surface = handle.parentElement?.parentElement as HTMLElement | null;
+                  if (!surface) return;
+                  handle.setPointerCapture(e.pointerId);
+                  const startBox = surface.getBoundingClientRect();
+                  // Capture current logo left edge in px so we measure
+                  // from there regardless of where the pointer lands.
+                  const logoLeftPx = startBox.left + logoX * startBox.width;
+                  function move(ev: PointerEvent) {
+                    const newWidthPx = Math.max(0, ev.clientX - logoLeftPx);
+                    const newSize = Math.max(0.03, Math.min(0.4, newWidthPx / startBox.width));
+                    // Don't push past the right edge: if the new size
+                    // would overflow given the current x, clamp size.
+                    const maxSize = Math.max(0.03, 1 - logoX);
+                    setLogoSize(Math.min(newSize, maxSize));
+                  }
+                  function up(ev: PointerEvent) {
+                    handle.releasePointerCapture(ev.pointerId);
+                    window.removeEventListener("pointermove", move);
+                    window.removeEventListener("pointerup", up);
+                  }
+                  window.addEventListener("pointermove", move);
+                  window.addEventListener("pointerup", up);
+                }
+                return (
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
+                      Drag to position · drag corner to resize
+                    </p>
+                    <div
+                      className="relative w-full rounded-lg overflow-hidden select-none"
+                      style={{
+                        aspectRatio: aspect,
+                        background: "linear-gradient(135deg, oklch(0.16 0 0), oklch(0.22 0 0))",
+                        border: "1px solid var(--bd-7)",
+                      }}
+                    >
+                      <div
+                        className="absolute group"
+                        style={{
+                          left: `${logoX * 100}%`,
+                          top: `${logoY * 100}%`,
+                          width: `${logoSize * 100}%`,
+                        }}
+                      >
+                        <img
+                          src={logoObjectUrl}
+                          alt={logoFile.name}
+                          draggable={false}
+                          onPointerDown={assembling ? undefined : onDragLogo}
+                          className="touch-none block w-full h-auto"
+                          style={{
+                            cursor: assembling ? "default" : "grab",
+                            opacity: 0.95,
+                            filter: "drop-shadow(0 2px 8px oklch(0 0 0 / 0.5))",
+                          }}
+                        />
+                        {/* Bottom-right resize handle. Visible at all
+                            times so it's discoverable; sized small so
+                            it doesn't obscure tiny logos. */}
+                        {!assembling && (
+                          <span
+                            onPointerDown={onResizeLogo}
+                            aria-label="Resize logo"
+                            title="Drag to resize"
+                            className="absolute touch-none flex items-center justify-center"
+                            style={{
+                              right: "-6px",
+                              bottom: "-6px",
+                              width: "14px",
+                              height: "14px",
+                              borderRadius: "9999px",
+                              background: "oklch(0.72 0.25 285)",
+                              border: "2px solid #ffffff",
+                              cursor: "nwse-resize",
+                              boxShadow: "0 0 0 1px oklch(0.4 0.15 285)",
+                            }}
+                          />
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-[10px] font-mono tabular-nums" style={{ color: "var(--c-40)" }}>
+                      x: {Math.round(logoX * 100)}% · y: {Math.round(logoY * 100)}% · size: {Math.round(logoSize * 100)}%
+                    </p>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Voiceover source — the two preview cards double as the
@@ -466,6 +967,9 @@ export default function AssemblePage({ params }: PageProps) {
                     selected={trimSilence}
                     onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(true)}
                     onLoadingChange={setTrimmedLoading}
+                    bgmUrl={bgmObjectUrl}
+                    bgmName={bgmFile?.name}
+                    bgmVolume={bgmVolume}
                   />
                   <FullVoiceoverPreview
                     projectId={projectId}
@@ -475,6 +979,9 @@ export default function AssemblePage({ params }: PageProps) {
                     selected={!trimSilence}
                     onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(false)}
                     onLoadingChange={setOriginalLoading}
+                    bgmUrl={bgmObjectUrl}
+                    bgmName={bgmFile?.name}
+                    bgmVolume={bgmVolume}
                   />
                 </div>
               )}
