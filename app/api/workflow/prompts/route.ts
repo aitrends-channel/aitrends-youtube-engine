@@ -10,7 +10,7 @@ import {
   buildThumbnailsPrompt,
 } from "@/lib/claude/prompts";
 import {
-  ImagePromptsSchema,
+  ImageBeatSchema,
   VideoPromptsSchema,
   ThumbnailsOutputSchema,
 } from "@/lib/claude/schemas";
@@ -157,6 +157,39 @@ function countCompleteBeatsInPartialJson(raw: string): number {
     }
   }
   return complete;
+}
+
+// Same walker as countCompleteBeatsInPartialJson but returns the parsed
+// objects, not just a count. Used to salvage beats from a tool_use JSON
+// stream that got cut off mid-write (stop_reason="max_tokens") — every
+// beat object that closed before the cut is still recoverable byte-for-
+// byte. The trailing partial object (if any) is silently dropped.
+function extractCompleteBeatsFromPartialJson(raw: string): unknown[] {
+  const arrStart = raw.indexOf("[");
+  if (arrStart === -1) return [];
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let objStart = -1;
+  const out: unknown[] = [];
+  for (let i = arrStart; i < raw.length; i++) {
+    const ch = raw[i];
+    if (escape) { escape = false; continue; }
+    if (ch === "\\") { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === "{") {
+      if (depth === 0) objStart = i;
+      depth++;
+    } else if (ch === "}") {
+      depth--;
+      if (depth === 0 && objStart >= 0) {
+        try { out.push(JSON.parse(raw.slice(objStart, i + 1))); } catch { /* malformed slice — skip */ }
+        objStart = -1;
+      }
+    }
+  }
+  return out;
 }
 
 function extractBeatsFromText(raw: string): { beats: Array<{ beatNumber: number; videoPrompt: string }> } | null {
@@ -462,6 +495,14 @@ async function generateImages(
     // Streaming + tool_use on Opus. Streaming keeps KIE's connection
     // warm with continuous delta events. The cached prefix block hits
     // Anthropic's ephemeral cache after the first chunk lands.
+    //
+    // toolJsonAccum is lifted out of the retryClaudeCall closure so the
+    // post-call salvage path can recover complete beats from it when
+    // Claude hits max_tokens (the SDK's tool.input may be truncated, but
+    // every beat object that closed before the cut is still byte-for-
+    // byte present in the raw delta stream). Reset at the top of each
+    // attempt so a retry doesn't inherit the previous attempt's bytes.
+    let toolJsonAccum = "";
     const res = await retryClaudeCall(
       `image prompts chunk ${chunkIndex + 1}/${totalChunks}`,
       async () => {
@@ -485,7 +526,7 @@ async function generateImages(
         // Each input_json_delta carries another fragment of the
         // tool_use input JSON; we accumulate then re-count complete
         // beat objects, and only emit when the tally goes up.
-        let toolJsonAccum = "";
+        toolJsonAccum = "";
         let lastReportedBeats = 0;
         for await (const ev of stream) {
           if (ev.type === "content_block_delta" && ev.delta.type === "input_json_delta") {
@@ -507,39 +548,94 @@ async function generateImages(
     );
 
     console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} claude done in ${Date.now() - t0}ms stop=${res.stop_reason}`);
-    assertComplete(res.stop_reason, `image prompts chunk ${chunkIndex + 1}/${totalChunks}`);
+    const truncated = res.stop_reason === "max_tokens";
+    if (truncated) {
+      console.warn(`[image-prompts] chunk ${chunkIndex + 1} hit max_tokens — will salvage complete beats from the streamed JSON instead of discarding the chunk`);
+    }
 
+    // Three-tier recovery for the chunk's tool input:
+    //   1. The SDK-assembled tool_use.input — the normal path.
+    //   2. Raw bracket-walk of toolJsonAccum — salvages complete beat
+    //      objects when max_tokens cut the JSON mid-write, in which
+    //      case the SDK may surface a truncated/empty tool.input.
+    //   3. Text fallback — handles the rare KIE+Opus path where Opus
+    //      ignores tool_choice and emits the JSON as plain text.
     let input: Record<string, unknown> | null = null;
+    let inputSource: "tool_use" | "salvage" | "text_fallback" | null = null;
+
     const tool = res.content.find((b) => b.type === "tool_use");
     if (tool && tool.type === "tool_use") {
-      input = tool.input as Record<string, unknown>;
-    } else {
+      const candidate = tool.input as Record<string, unknown>;
+      if (Array.isArray(candidate?.beats) && (candidate.beats as unknown[]).length > 0) {
+        input = candidate;
+        inputSource = "tool_use";
+      }
+    }
+
+    if (!input && toolJsonAccum) {
+      const salvaged = extractCompleteBeatsFromPartialJson(toolJsonAccum);
+      if (salvaged.length > 0) {
+        input = { beats: salvaged };
+        inputSource = "salvage";
+        console.log(`[image-prompts] chunk ${chunkIndex + 1} salvaged ${salvaged.length} complete beats from streamed JSON`);
+      }
+    }
+
+    if (!input) {
       const textBlock = res.content.find((b) => b.type === "text");
       const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
       console.log(`[image-prompts] chunk ${chunkIndex + 1} fallback parsing text len=${raw.length} head=${raw.slice(0, 200)}`);
       input = extractToolInputFromText(raw);
-      if (input) console.log(`[image-prompts] chunk ${chunkIndex + 1} fallback recovered ${(input.beats as unknown[])?.length ?? 0} beats`);
+      if (input) {
+        inputSource = "text_fallback";
+        console.log(`[image-prompts] chunk ${chunkIndex + 1} text fallback recovered ${(input.beats as unknown[])?.length ?? 0} beats`);
+      }
     }
 
     if (!input) throw new Error(`No image prompts returned for chunk ${chunkIndex + 1}. Try again — any beats saved so far are preserved.`);
     if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Chunk ${chunkIndex + 1} returned no beats. Try again — any beats saved so far are preserved.`);
 
-    const parsed = ImagePromptsSchema.safeParse(input);
-    if (!parsed.success) {
-      const rawBeats = (input.beats as Array<Record<string, unknown>>) ?? [];
-      const blankFields = rawBeats.map((b, i) => {
-        const missing = ["imagePrompt", "camera", "lighting", "mood", "action", "scriptSegment"]
-          .filter((k) => !b[k] || (typeof b[k] === "string" && (b[k] as string).trim() === ""));
-        return missing.length ? `beat#${b.beatNumber ?? i}: missing=${missing.join(",")}` : null;
-      }).filter(Boolean);
-      console.error(`[image-prompts] chunk ${chunkIndex + 1} schema validation failed`, {
-        beatCount: rawBeats.length,
-        blankFields,
-        zodIssues: parsed.error.issues,
-      });
-      throw new Error(`Chunk ${chunkIndex + 1} returned beats with missing fields (${blankFields.slice(0, 3).join("; ") || "schema mismatch"}). Try again — any beats saved so far are preserved.`);
+    // Per-beat validation. The old top-level safeParse was all-or-
+    // nothing: one beat with a blank field discarded all 30-40 beats in
+    // the chunk (we still paid Anthropic/KIE for them). Now we keep the
+    // beats that individually pass and drop only the malformed ones.
+    // The softened schema (camera/lighting/mood/action default to
+    // "unspecified") means the vast majority of "missing field"
+    // failures now never reach this loop at all.
+    const rawBeats = input.beats as unknown[];
+    const localBeats: Array<{
+      beatNumber: number;
+      scriptSegment: string;
+      imagePrompt: string;
+      camera: string;
+      lighting: string;
+      mood: string;
+      action: string;
+    }> = [];
+    const dropped: Array<{ idx: number; beatNumber: unknown; reason: string }> = [];
+    for (let i = 0; i < rawBeats.length; i++) {
+      const r = ImageBeatSchema.safeParse(rawBeats[i]);
+      if (r.success) {
+        localBeats.push(r.data);
+      } else {
+        dropped.push({
+          idx: i,
+          beatNumber: (rawBeats[i] as Record<string, unknown> | null)?.beatNumber,
+          reason: r.error.issues.map((iss) => `${iss.path.join(".") || "(root)"}: ${iss.message}`).join("; "),
+        });
+      }
     }
-    const localBeats = parsed.data.beats;
+
+    if (dropped.length > 0) {
+      console.warn(
+        `[image-prompts] chunk ${chunkIndex + 1} dropped ${dropped.length}/${rawBeats.length} malformed beats (source=${inputSource}${truncated ? ", truncated" : ""})`,
+        dropped.slice(0, 5),
+      );
+    }
+
+    if (localBeats.length === 0) {
+      throw new Error(`Chunk ${chunkIndex + 1} produced no valid beats (all ${rawBeats.length} were malformed). Click Generate Remaining to retry this section.`);
+    }
 
     // Wait my turn before assigning beat numbers and persisting.
     if (taskIdx > 0) await persistGates[taskIdx - 1].promise;
