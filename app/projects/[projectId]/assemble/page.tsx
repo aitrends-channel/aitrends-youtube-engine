@@ -84,6 +84,32 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }, [project?.current_state, projectId, mutate]);
 
+  // Hydrate BGM + logo selection from the project row on first load.
+  // Migration 047 added background_music_url / logo_url / volume / x /
+  // y / size columns; /api/generate/assemble writes them when the user
+  // clicks Assemble. The ref guard runs this exactly once per mount so
+  // later SWR polls don't clobber in-progress local edits (e.g. a slider
+  // tweak mid-session).
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (!project || hydratedRef.current) return;
+    hydratedRef.current = true;
+    const bgmUrl = project.background_music_url as string | null | undefined;
+    if (bgmUrl) {
+      setBgmUploadedUrl(bgmUrl);
+      const v = project.background_music_volume;
+      if (typeof v === "number") setBgmVolume(v);
+    }
+    const lUrl = project.logo_url as string | null | undefined;
+    if (lUrl) {
+      setLogoUploadedUrl(lUrl);
+      const x = project.logo_x, y = project.logo_y, s = project.logo_size;
+      if (typeof x === "number") setLogoX(x);
+      if (typeof y === "number") setLogoY(y);
+      if (typeof s === "number") setLogoSize(s);
+    }
+  }, [project]);
+
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
   // Render resolution. Default 1080p (matches YouTube's HD standard
   // and the dimensions previously displayed in the Output card).
@@ -444,16 +470,36 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }
 
+  // Clear local state AND the persisted URL on the project row so
+  // refresh doesn't re-hydrate a logo the user just removed. The PATCH
+  // is best-effort — local state changes regardless so the UI updates
+  // immediately even if the network blip the row update.
   function clearLogo() {
+    const hadPersisted = !!logoUploadedUrl;
     setLogoFile(null);
     setLogoUploadedUrl(null);
     if (logoInputRef.current) logoInputRef.current.value = "";
+    if (hadPersisted) {
+      fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logo_url: null }),
+      }).catch(() => { /* non-blocking */ });
+    }
   }
 
   function clearBgm() {
+    const hadPersisted = !!bgmUploadedUrl;
     setBgmFile(null);
     setBgmUploadedUrl(null);
     if (bgmInputRef.current) bgmInputRef.current.value = "";
+    if (hadPersisted) {
+      fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ background_music_url: null }),
+      }).catch(() => { /* non-blocking */ });
+    }
   }
 
   async function assembleVideo() {
@@ -471,17 +517,22 @@ export default function AssemblePage({ params }: PageProps) {
       // the mix step. If upload fails, ensureBgmUploaded toasts and
       // returns null; we still proceed with no music rather than
       // blocking the entire assembly.
-      let bgmUrl: string | null = null;
+      //
+      // Initialize from the persisted/hydrated URL so a hydrated row
+      // (page refresh + no new pick) still ships the previous selection
+      // to the worker. A fresh File pick overrides via ensure*Uploaded.
+      let bgmUrl: string | null = bgmUploadedUrl;
       if (bgmFile) {
         setAssembleStatus("Uploading background music…");
         bgmUrl = await ensureBgmUploaded();
       }
-      let logoUploadUrl: string | null = null;
+      let logoUploadUrl: string | null = logoUploadedUrl;
       if (logoFile) {
         setAssembleStatus("Uploading channel logo…");
         logoUploadUrl = await ensureLogoUploaded();
       }
       setAssembleStatus(trimSilence ? "Queuing (trim silences)…" : "Queuing…");
+      console.log("[assemble] submitting", { bgmUrl, bgmVolume, logoUploadUrl, logoX, logoY, logoSize, bgmFile: !!bgmFile, logoFile: !!logoFile, bgmUploadedUrl, logoUploadedUrl });
       const res = await fetch("/api/generate/assemble", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -639,7 +690,7 @@ export default function AssemblePage({ params }: PageProps) {
             <div className="flex items-center gap-3 rounded-2xl px-4 py-2.5"
               style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
               <span aria-hidden="true" className="text-base shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>♫</span>
-              {!bgmFile ? (
+              {!bgmFile && !bgmUploadedUrl ? (
                 <>
                   <p className="text-sm font-semibold flex-1">Background music</p>
                   <button
@@ -657,12 +708,16 @@ export default function AssemblePage({ params }: PageProps) {
                     <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
                       Background music
                     </p>
-                    <p className="text-xs font-medium truncate" style={{ color: "var(--c-80)" }} title={bgmFile.name}>
-                      {bgmFile.name}
+                    <p className="text-xs font-medium truncate" style={{ color: "var(--c-80)" }} title={bgmFile?.name ?? bgmUploadedUrl ?? ""}>
+                      {bgmFile ? bgmFile.name : (bgmUploadedUrl?.split("/").pop() ?? "Saved track")}
                     </p>
                     <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
-                      {(bgmFile.size / (1024 * 1024)).toFixed(1)} MB
-                      {bgmUploadedUrl ? " · Uploaded" : bgmUploading ? " · Uploading…" : " · Not uploaded yet"}
+                      {bgmFile
+                        ? `${(bgmFile.size / (1024 * 1024)).toFixed(1)} MB${bgmUploadedUrl ? " · Uploaded" : bgmUploading ? " · Uploading…" : " · Not uploaded yet"}`
+                        : "Saved from a previous run"}
+                    </p>
+                    <p style={{color:'red', fontSize: '10px'}}>
+                      Disclaimer: We do not take responsibility for copyright claims on background music. Please ensure you have the rights to use any track you upload.
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
@@ -719,7 +774,7 @@ export default function AssemblePage({ params }: PageProps) {
               style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
               <div className="flex items-center gap-3">
                 <span aria-hidden="true" className="text-base shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>◈</span>
-                {!logoFile ? (
+                {!logoFile && !logoUploadedUrl ? (
                   <>
                     <p className="text-sm font-semibold flex-1">Channel logo</p>
                     <button
@@ -737,12 +792,13 @@ export default function AssemblePage({ params }: PageProps) {
                       <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
                         Channel logo
                       </p>
-                      <p className="text-xs font-medium truncate" style={{ color: "var(--c-80)" }} title={logoFile.name}>
-                        {logoFile.name}
+                      <p className="text-xs font-medium truncate" style={{ color: "var(--c-80)" }} title={logoFile?.name ?? logoUploadedUrl ?? ""}>
+                        {logoFile ? logoFile.name : (logoUploadedUrl?.split("/").pop() ?? "Saved logo")}
                       </p>
                       <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
-                        {(logoFile.size / 1024).toFixed(0)} KB
-                        {logoUploadedUrl ? " · Uploaded" : logoUploading ? " · Uploading…" : " · Not uploaded yet"}
+                        {logoFile
+                          ? `${(logoFile.size / 1024).toFixed(0)} KB${logoUploadedUrl ? " · Uploaded" : logoUploading ? " · Uploading…" : " · Not uploaded yet"}`
+                          : "Saved from a previous run"}
                       </p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
@@ -786,18 +842,21 @@ export default function AssemblePage({ params }: PageProps) {
                   }}
                 />
               </div>
-              {logoFile && logoObjectUrl && (() => {
+              {(logoObjectUrl || logoUploadedUrl) && (() => {
                 // Draggable preview surface. The surface holds the
                 // current aspect ratio (16:9 / 9:16 / 1:1). Logo is
                 // an absolutely positioned img the user drags around.
                 // Position is stored as 0–1 fractions of the surface
                 // dimensions, mirroring how the worker interprets
                 // logoX / logoY against the actual video.
+                // Source: blob URL for a freshly-picked File, otherwise
+                // the persisted R2 URL hydrated from the project row.
+                const logoSrc = logoObjectUrl ?? logoUploadedUrl!;
                 const aspect = aspectRatio === "9:16" ? "9 / 16" : aspectRatio === "1:1" ? "1 / 1" : "16 / 9";
                 function onDragLogo(e: React.PointerEvent<HTMLImageElement>) {
                   e.preventDefault();
                   e.stopPropagation();
-                  const surface = (e.currentTarget.parentElement as HTMLElement | null);
+                  const surface = (e.currentTarget.parentElement?.parentElement as HTMLElement | null);
                   if (!surface) return;
                   const img = e.currentTarget;
                   img.setPointerCapture(e.pointerId);
@@ -886,8 +945,8 @@ export default function AssemblePage({ params }: PageProps) {
                         }}
                       >
                         <img
-                          src={logoObjectUrl}
-                          alt={logoFile.name}
+                          src={logoSrc}
+                          alt={logoFile?.name ?? "Channel logo"}
                           draggable={false}
                           onPointerDown={assembling ? undefined : onDragLogo}
                           className="touch-none block w-full h-auto"
@@ -1110,13 +1169,23 @@ export default function AssemblePage({ params }: PageProps) {
                    for each phase via setProgress(); we match the current one
                    to a known stage and render every stage with a done/doing/
                    pending indicator + an overall % bar. */
+                // Matchers are tightened so each one only catches its own
+                // worker progress string. The old "Downloading" prefix
+                // greedily swallowed bgm and logo downloads too, which
+                // collapsed them into the voiceover stage and hid that they
+                // were happening. The worker emits the exact strings shown
+                // below (assemble.ts), so anchor to them precisely.
+                const hasBgm = !!bgmUploadedUrl;
+                const hasLogo = !!logoUploadedUrl;
                 const stages = [
                   { key: "load",       label: "Load project",        match: (s: string) => s.startsWith("Loading") || s === "Queued…" || s === "Starting…" },
-                  { key: "voiceover",  label: "Download voiceover",  match: (s: string) => s.startsWith("Downloading") },
+                  { key: "voiceover",  label: "Download voiceover",  match: (s: string) => s.startsWith("Downloading voiceover") || s.startsWith("Downloading ") && (s.includes("beat voiceover") || s.includes("voiceover")) && !s.includes("music") && !s.includes("logo") },
                   ...(captionsEnabled ? [{ key: "transcribe", label: "Transcribe voiceover", match: (s: string) => s.startsWith("Transcribing") }] : []),
                   { key: "clips",      label: "Process video clips", match: (s: string) => s.startsWith("Processing") },
                   { key: "join",       label: "Join clips",          match: (s: string) => s.startsWith("Joining") },
-                  { key: "mix",        label: "Mix voiceover",       match: (s: string) => s.startsWith("Mixing") },
+                  ...(hasBgm ? [{ key: "bgm", label: "Download background music", match: (s: string) => s.startsWith("Downloading background music") }] : []),
+                  { key: "mix",        label: hasBgm ? "Mix voiceover + music" : "Mix voiceover", match: (s: string) => s.startsWith("Mixing") },
+                  ...(hasLogo ? [{ key: "logo", label: "Overlay logo", match: (s: string) => s.startsWith("Downloading channel logo") || s.startsWith("Overlaying logo") }] : []),
                   ...(captionsEnabled ? [
                     { key: "gencap",   label: "Generate captions",   match: (s: string) => s.startsWith("Generating") || s.startsWith("Translating") },
                     { key: "burncap",  label: "Burn captions",       match: (s: string) => s.startsWith("Burning") },

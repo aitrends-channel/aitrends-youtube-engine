@@ -48,15 +48,31 @@ export async function POST(req: Request) {
   const { projectId, ...options } = body;
   if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
 
+  console.log(`[api/generate/assemble] ${projectId}: bgm=${JSON.stringify(options.backgroundMusicUrl)} vol=${JSON.stringify(options.backgroundMusicVolume)} logo=${JSON.stringify(options.logoUrl)} logoXY=${JSON.stringify(options.logoX)},${JSON.stringify(options.logoY)} logoSize=${JSON.stringify(options.logoSize)} keys=[${Object.keys(options).join(",")}]`);
   await redis.set(`assembly:${projectId}`, JSON.stringify(options), { ex: 7200 });
 
   // Also clear assembly_stop_requested — this endpoint is reached by
   // both fresh assemblies AND Resume. Without this, a leftover true
   // flag from a prior Stop would trip the worker's assertStopRequested
   // check the moment the new run begins.
+  //
+  // Persist BGM + logo selection on the project row so a refresh / Resume
+  // after a refresh hydrates them. Redis still carries the same values
+  // for the worker handoff; the row is the durable copy.
   const { error } = await client
     .from("projects")
-    .update({ assembly_status: "queued", assembly_progress: "Queued…", assembly_error: null, assembly_stop_requested: false })
+    .update({
+      assembly_status: "queued",
+      assembly_progress: "Queued…",
+      assembly_error: null,
+      assembly_stop_requested: false,
+      background_music_url: options.backgroundMusicUrl ?? null,
+      background_music_volume: typeof options.backgroundMusicVolume === "number" ? options.backgroundMusicVolume : 0.15,
+      logo_url: options.logoUrl ?? null,
+      logo_x: typeof options.logoX === "number" ? options.logoX : 0.85,
+      logo_y: typeof options.logoY === "number" ? options.logoY : 0.05,
+      logo_size: typeof options.logoSize === "number" ? options.logoSize : 0.1,
+    })
     .eq("id", projectId);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
