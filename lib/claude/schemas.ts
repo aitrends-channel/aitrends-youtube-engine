@@ -98,32 +98,21 @@ export const PromptsOutputSchema = z.object({
   thumbnails: z.array(ThumbnailConceptSchema),
 });
 
-// Split schemas for phased generation. Critical fields keep .min(1):
-//   - imagePrompt drives image generation; a blank one is unusable.
-//   - scriptSegment is spoken by TTS and feeds the resume word-count
-//     math; a blank or placeholder one would be voiced aloud or break
-//     coverage tracking.
-// The 4 metadata fields (camera/lighting/mood/action) are UI tags only
-// (chips on the beat card + DOCX export). A blank one used to sink the
-// entire chunk's beats via a top-level safeParse failure. They now
-// preprocess blanks/missing to "unspecified" so one stray empty field
-// no longer discards 30-40 paid-for beats. The route additionally
-// validates beats one-by-one and salvages the good ones.
-const blankToUnspecified = (v: unknown) =>
-  typeof v === "string" && v.trim() ? v : "unspecified";
-
-export const ImageBeatSchema = z.object({
-  beatNumber: z.number(),
-  scriptSegment: z.string().min(1),
-  imagePrompt: z.string().min(1),
-  camera: z.preprocess(blankToUnspecified, z.string()),
-  lighting: z.preprocess(blankToUnspecified, z.string()),
-  mood: z.preprocess(blankToUnspecified, z.string()),
-  action: z.preprocess(blankToUnspecified, z.string()),
-});
-
+// Split schemas for phased generation. Required string fields use
+// .min(1) — Claude occasionally emits empty strings when the tool input
+// is truncated or partially parsed. Empty prompts would otherwise pass
+// validation, hit the DB, and trip the client's "missing prompts"
+// completeness check at the very end.
 export const ImagePromptsSchema = z.object({
-  beats: z.array(ImageBeatSchema),
+  beats: z.array(z.object({
+    beatNumber: z.number(),
+    scriptSegment: z.string().min(1),
+    imagePrompt: z.string().min(1),
+    camera: z.string().min(1),
+    lighting: z.string().min(1),
+    mood: z.string().min(1),
+    action: z.string().min(1),
+  })),
 });
 
 export const VideoPromptsSchema = z.object({
