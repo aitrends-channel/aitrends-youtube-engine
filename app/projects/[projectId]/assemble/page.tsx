@@ -1172,21 +1172,31 @@ export default function AssemblePage({ params }: PageProps) {
                 // collapsed them into the voiceover stage and hid that they
                 // were happening. The worker emits the exact strings shown
                 // below (assemble.ts), so anchor to them precisely.
+                // Stage list only includes stages that map to a real
+                // worker pass after the assemble pipeline refactor:
+                //   - Logo overlay was baked into normalizeClip — the
+                //     "Downloading channel logo…" status is folded into
+                //     the clips stage match because it's a brief prelude
+                //     to clip processing, not its own pass.
+                //   - Burning captions was baked into normalizeClip too,
+                //     so the standalone "Burn captions" stage is gone.
+                //   - "Generate captions" never had a worker progress
+                //     line of its own; the only meaningful caption-prep
+                //     wait is the optional translate call, kept as its
+                //     own stage when captions translation is needed.
+                //   - join only matches the final visuals concat now;
+                //     "Joining per-beat audio…" lands in voiceover.
                 const hasBgm = !!bgmUploadedUrl;
-                const hasLogo = !!logoUploadedUrl;
+                const needsTranslate = captionsEnabled && captionsLanguage !== "source";
                 const stages = [
                   { key: "load",       label: "Load project",        match: (s: string) => s.startsWith("Loading") || s === "Queued…" || s === "Starting…" },
-                  { key: "voiceover",  label: "Download voiceover",  match: (s: string) => s.startsWith("Downloading voiceover") || s.startsWith("Downloading ") && (s.includes("beat voiceover") || s.includes("voiceover")) && !s.includes("music") && !s.includes("logo") },
+                  { key: "voiceover",  label: "Prepare voiceover",   match: (s: string) => s.startsWith("Preparing") || s.startsWith("Prepared") || s.startsWith("Downloading voiceover") || s === "Joining per-beat audio…" },
                   ...(captionsEnabled ? [{ key: "transcribe", label: "Transcribe voiceover", match: (s: string) => s.startsWith("Transcribing") }] : []),
-                  { key: "clips",      label: "Process video clips", match: (s: string) => s.startsWith("Processing") },
-                  { key: "join",       label: "Join clips",          match: (s: string) => s.startsWith("Joining") },
+                  ...(needsTranslate ? [{ key: "translate",  label: "Translate captions",   match: (s: string) => s.startsWith("Translating") }] : []),
+                  { key: "clips",      label: "Process video clips", match: (s: string) => s.startsWith("Processing") || s.startsWith("Downloading channel logo") || s.startsWith("Finalizing") },
+                  { key: "join",       label: "Join clips",          match: (s: string) => s === "Joining clips…" },
                   ...(hasBgm ? [{ key: "bgm", label: "Download background music", match: (s: string) => s.startsWith("Downloading background music") }] : []),
                   { key: "mix",        label: hasBgm ? "Mix voiceover + music" : "Mix voiceover", match: (s: string) => s.startsWith("Mixing") },
-                  ...(hasLogo ? [{ key: "logo", label: "Overlay logo", match: (s: string) => s.startsWith("Downloading channel logo") || s.startsWith("Overlaying logo") }] : []),
-                  ...(captionsEnabled ? [
-                    { key: "gencap",   label: "Generate captions",   match: (s: string) => s.startsWith("Generating") || s.startsWith("Translating") },
-                    { key: "burncap",  label: "Burn captions",       match: (s: string) => s.startsWith("Burning") },
-                  ] : []),
                   { key: "upload",     label: "Upload to cloud",     match: (s: string) => s.startsWith("Uploading") },
                 ];
                 const currentIdx = (() => {
@@ -1238,7 +1248,18 @@ export default function AssemblePage({ params }: PageProps) {
                                 ) : i + 1}
                               </span>
                               <span className="flex-1" style={{ color: done ? "var(--c-55)" : doing ? "var(--c-65)" : "var(--c-40)", fontWeight: doing ? 600 : 400 }}>
-                                {s.label}
+                                {/* The load stage bundles three meaningfully
+                                   different states (Queued… / Starting… /
+                                   Loading project data…) under one static
+                                   label, so a user sitting in a queue can't
+                                   tell whether the worker is busy with
+                                   someone else's project or just slow to
+                                   pick up theirs. When this is the active
+                                   stage, surface the raw worker status
+                                   instead of the catch-all label. Other
+                                   stages keep their polished labels — their
+                                   raw status strings are less readable. */}
+                                {doing && s.key === "load" ? (assembleStatus || s.label) : s.label}
                               </span>
                               {doing && clipMatch && (
                                 <span className="text-[10px]" style={{ color: "var(--c-55)" }}>{stagePct}%</span>
