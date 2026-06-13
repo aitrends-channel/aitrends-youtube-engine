@@ -78,8 +78,24 @@ styleDNA must contain:
 
 export function buildVideoIdeasPrompt(
   analysis: ChannelAnalysisOutput,
-  topicHint?: string
+  topicHint?: string,
+  // Top-performing existing titles from the channel. We feed these as
+  // STYLE REFERENCE (not topic copies) so Claude can match the exact
+  // capitalization rhythm, punctuation tics, hook syntax — patterns
+  // the analysis prose loses. Cap at 10 to stay within budget and
+  // because the long tail of top videos drifts from current style.
+  topVideoTitles?: string[],
+  // Existing ideas already in this project's list. Passed so Claude
+  // doesn't regenerate near-duplicates on a "Generate More Ideas"
+  // click. Client dedupes too as a safety net.
+  excludeTitles?: string[],
 ): string {
+  const refBlock = topVideoTitles && topVideoTitles.length
+    ? `\nREFERENCE TITLES — the channel's top videos. Match their syntax / capitalization / hook style; do NOT reuse their topics:\n${topVideoTitles.slice(0, 10).map((t) => `- ${t}`).join("\n")}\n`
+    : "";
+  const excludeBlock = excludeTitles && excludeTitles.length
+    ? `\nALREADY-GENERATED TITLES — do NOT produce these or close paraphrases:\n${excludeTitles.slice(0, 100).map((t) => `- ${t}`).join("\n")}\n`
+    : "";
   return `Based on this channel's style analysis, generate 25 video title ideas.
 
 CHANNEL ANALYSIS:
@@ -88,7 +104,7 @@ CHANNEL ANALYSIS:
 - Hook Style: ${analysis.hookStyle}
 - Tone: ${analysis.styleDNA.tone}
 - Emotional Triggers: ${analysis.styleDNA.emotionalTriggers.join(", ")}
-
+${refBlock}${excludeBlock}
 ${topicHint ? `TOPIC DIRECTION: ${topicHint}` : ""}
 
 Rules:

@@ -19,15 +19,19 @@ export default function TopicPage({ params }: PageProps) {
   const isFork = projectId === "new-fork";
   const sourceId = isFork ? (searchParams.get("from") ?? null) : null;
 
-  const { project } = useProject(isFork ? sourceId : projectId);
+  const { project, mutate } = useProject(isFork ? sourceId : projectId);
 
   const [selectedTopic, setSelectedTopic] = useState("");
   const [saving, setSaving] = useState(false);
-  const [extraIdeas, setExtraIdeas] = useState<string[]>([]);
   const [generatingIdeas, setGeneratingIdeas] = useState(false);
 
-  const baseIdeas: string[] = project?.video_ideas ?? [];
-  const allIdeas = [...baseIdeas, ...extraIdeas];
+  // Single source of truth for the ideas list — the persisted
+  // video_ideas array on the project row. The ideas API appends
+  // generated ideas back into this column, so after a successful
+  // "Generate More Ideas" + SWR mutate, the list naturally extends.
+  // Previously the appended ideas only lived in a local React state
+  // and vanished on refresh; now they survive across reloads.
+  const allIdeas: string[] = project?.video_ideas ?? [];
   const isTopicLocked = !isFork && !!(project?.selected_topic && project?.script);
 
   useEffect(() => {
@@ -46,9 +50,13 @@ export default function TopicPage({ params }: PageProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId: ideasProjectId }),
       });
-      const data = await res.json() as { ideas?: string[]; error?: string };
+      const data = await res.json() as { ideas?: string[]; allIdeas?: string[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Failed to generate ideas");
-      setExtraIdeas((prev) => [...prev, ...(data.ideas ?? [])]);
+      // Re-read the project so video_ideas reflects the server-side
+      // append. mutate() refetches via SWR; the UI re-renders with
+      // the combined list. No optimistic update needed — the network
+      // call is fast enough and we already showed the spinner.
+      await mutate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to generate ideas");
     } finally {

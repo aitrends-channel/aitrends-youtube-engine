@@ -119,7 +119,21 @@ export async function POST(req: Request) {
           input_schema: videoIdeasInputSchema,
         }],
         tool_choice: { type: "tool", name: "save_video_ideas" },
-        messages: [{ role: "user", content: buildVideoIdeasPrompt(analysis, topicHint) }],
+        messages: [{ role: "user", content: buildVideoIdeasPrompt(
+          analysis,
+          topicHint,
+          // Top-performing titles from the channel — the same transcripts
+          // we just analyzed. They land in the prompt as STYLE reference
+          // (capitalization rhythm, punctuation tics, hook syntax) so
+          // generated titles feel native to this specific channel. Use
+          // transcripts here instead of channel_info.topVideos to avoid
+          // an extra DB read; the set is the same minus any transcript
+          // fetches that failed (acceptable — a few fewer references
+          // is fine, the analysis prose still anchors the style).
+          (transcripts as Array<{ title?: string }>)
+            .map((t) => (t.title ?? "").trim())
+            .filter(Boolean),
+        ) }],
       })
       );
 
