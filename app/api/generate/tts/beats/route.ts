@@ -322,41 +322,66 @@ export async function POST(req: Request) {
             }
           }
 
-          // Walk through every stale beat BATCH_SIZE at a time. The
-          // stop check between batches lets the user halt without
-          // killing the in-flight batch. Per-beat regen (skipRunClaim)
-          // doesn't participate in the stop-flag system, so we skip
-          // the check on that path.
-          for (let i = 0; i < toGenerate.length; i += BATCH_SIZE) {
-            if (!skipRunClaim) {
-              try {
-                await assertVoiceoverRunActive(projectId, runId);
-              } catch (e) {
-                if (e instanceof Error && e.message === STOP_SENTINEL) {
-                  stoppedEarly = true;
-                  break;
-                }
-                throw e;
-              }
-            }
-            const batch = toGenerate.slice(i, i + BATCH_SIZE);
-            // Mark batch as queued — the UI shows the orange Queued
-            // pill on these specific beats only, so users can see
-            // exactly what's "up next".
-            await Promise.all(
-              batch.map((b) =>
-                supabase
-                  .from("project_beats")
-                  .update({ voiceover_status: "queued", voiceover_error: null })
-                  .eq("project_id", projectId)
-                  .eq("beat_number", b.beat_number),
-              ),
-            );
-            for (const b of batch) {
-              send({ type: "beat", beatNumber: b.beat_number, status: "queued" });
-            }
-            await Promise.all(batch.map((b) => processBeat(b)));
+          // Worker pool — BATCH_SIZE workers in flight, each pulling
+          // the next stale beat the moment its current one lands.
+          // Replaces the previous "synchronous batches" loop that
+          // waited on Promise.all per batch — a single slow KIE
+          // response blocked every other worker until the slowest
+          // beat in the batch finished. Production logs showed
+          // batches stalling 3–5 minutes on one straggler while
+          // four other workers sat idle. Same total concurrency,
+          // no batch-boundary stall.
+          //
+          // Pre-mark every stale beat as "queued" upfront — with
+          // the old batching, only the current 5 wore the orange
+          // pill, hiding what was coming next. Whole-list queueing
+          // is honest about scope and lets the user see total work
+          // remaining at a glance.
+          await Promise.all(
+            toGenerate.map((b) =>
+              supabase
+                .from("project_beats")
+                .update({ voiceover_status: "queued", voiceover_error: null })
+                .eq("project_id", projectId)
+                .eq("beat_number", b.beat_number),
+            ),
+          );
+          for (const b of toGenerate) {
+            send({ type: "beat", beatNumber: b.beat_number, status: "queued" });
           }
+
+          let nextIdx = 0;
+          const worker = async (): Promise<void> => {
+            while (true) {
+              if (stoppedEarly) return;
+              // Stop signal is checked per-beat, not per-batch — a
+              // Stop click is honored within the time the next beat
+              // takes to finish, not the time the whole batch takes
+              // to drain. Per-beat regen (skipRunClaim) skips this
+              // check; that code path doesn't participate in the
+              // stop-flag system.
+              if (!skipRunClaim) {
+                try {
+                  await assertVoiceoverRunActive(projectId, runId);
+                } catch (e) {
+                  if (e instanceof Error && e.message === STOP_SENTINEL) {
+                    stoppedEarly = true;
+                    return;
+                  }
+                  throw e;
+                }
+              }
+              const myIdx = nextIdx++;
+              if (myIdx >= toGenerate.length) return;
+              await processBeat(toGenerate[myIdx]);
+            }
+          };
+          await Promise.all(
+            Array.from(
+              { length: Math.max(1, Math.min(BATCH_SIZE, toGenerate.length)) },
+              () => worker(),
+            ),
+          );
 
           send({
             type: "done",
