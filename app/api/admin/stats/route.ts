@@ -32,7 +32,11 @@ export async function GET() {
   const [emailsRes, authUsersRes, projectsRes, settingsRes] = await Promise.all([
     supabase.from("allowed_emails").select("email"),
     supabase.auth.admin.listUsers({ perPage: 1000 }),
-    supabase.from("projects").select("id, user_id, channel_name, current_state, selected_topic, created_at, assembled_url, assembly_started_at, assembly_finished_at").order("created_at", { ascending: true }),
+    // Order DESC so the admin videos table shows most-recent first
+    // without any client-side resorting. The daily/monthly
+    // aggregation below adds into per-date Map buckets, which is
+    // commutative — order doesn't change the chart numbers.
+    supabase.from("projects").select("id, user_id, channel_name, current_state, selected_topic, created_at, assembled_url, assembly_started_at, assembly_finished_at").order("created_at", { ascending: false }),
     supabase.from("account_settings").select("user_id, niches_used, niche_limit_override"),
   ]);
 
