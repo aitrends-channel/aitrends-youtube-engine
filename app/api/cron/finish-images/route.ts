@@ -24,7 +24,7 @@ export const maxDuration = 60;
 // Stay well clear of KIE's per-key rate limit while still draining
 // quickly — 5 concurrent polls + uploads is plenty for ~30 done beats
 // per minute, which beats new submissions on most projects.
-// Admin-tunable: product_config.badged_processes.finish_images_poll.
+// Admin-tunable: product_config.batched_processes.finish_images_poll.
 // The DB value is read once at the top of each cron tick below.
 
 // Per-invocation cap so a giant backlog can't OOM us. The query is

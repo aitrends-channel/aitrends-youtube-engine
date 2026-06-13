@@ -38,7 +38,7 @@ export async function POST(req: Request) {
 
     const results: { beatNumber: number; url: string }[] = [];
     const failures: { beatNumber: number; error: string }[] = [];
-    // Admin-tunable: product_config.badged_processes.image_generation_batch.
+    // Admin-tunable: product_config.batched_processes.image_generation_batch.
     const batchSize = (await getConcurrencyConfig()).image_generation_batch;
 
     for (let i = 0; i < beats.length; i += batchSize) {

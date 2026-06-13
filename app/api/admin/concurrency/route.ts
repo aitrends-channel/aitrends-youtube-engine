@@ -20,7 +20,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("product_config")
-    .select("badged_processes")
+    .select("batched_processes")
     .eq("service", "_global")
     .single();
 
@@ -28,7 +28,7 @@ export async function GET() {
 
   // Merge defaults in so the UI never has to deal with missing keys
   // (e.g. when a new knob is added and the DB row hasn't been migrated).
-  const stored = (data?.badged_processes ?? {}) as Partial<ConcurrencyConfig>;
+  const stored = (data?.batched_processes ?? {}) as Partial<ConcurrencyConfig>;
   const merged: ConcurrencyConfig = { ...CONCURRENCY_DEFAULTS, ...stored };
   return NextResponse.json(merged);
 }
@@ -44,7 +44,7 @@ export async function PUT(req: Request) {
 
   const { error } = await supabase
     .from("product_config")
-    .update({ badged_processes: parsed.value })
+    .update({ batched_processes: parsed.value })
     .eq("service", "_global");
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

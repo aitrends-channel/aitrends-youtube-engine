@@ -109,7 +109,7 @@ export async function POST(req: Request) {
   // virtue of having voiceover_status = NULL in the DB and the UI
   // defaulting null → "pending" in effectiveStatus().
   //
-  // Admin-tunable via product_config.badged_processes.tts_beat_batch.
+  // Admin-tunable via product_config.batched_processes.tts_beat_batch.
   // Falls back to the TTS_BEAT_BATCH_SIZE env var, then to 5, if the DB
   // value is unavailable.
   const envFallback = Math.max(1, parseInt(process.env.TTS_BEAT_BATCH_SIZE ?? "5", 10));

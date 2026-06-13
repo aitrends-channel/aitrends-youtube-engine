@@ -37,7 +37,7 @@ export async function POST(req: Request) {
 
     const results: { position: number; url: string }[] = [];
     const failures: { position: number; error: string }[] = [];
-    // Admin-tunable: product_config.badged_processes.thumbnail_batch.
+    // Admin-tunable: product_config.batched_processes.thumbnail_batch.
     const batchSize = (await getConcurrencyConfig()).thumbnail_batch;
 
     for (let i = 0; i < thumbnails.length; i += batchSize) {

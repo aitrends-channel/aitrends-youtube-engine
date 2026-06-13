@@ -629,7 +629,7 @@ function SetupSection({
           { id: "keys", label: "API Keys" },
           { id: "models", label: "Models" },
           { id: "anthropic", label: "Anthropic" },
-          { id: "concurrency", label: "Badged processes" },
+          { id: "concurrency", label: "Batched process" },
         ] as const).map((t) => (
           <button
             key={t.id}

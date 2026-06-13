@@ -608,7 +608,7 @@ async function generateImages(
   // Claude calls cleanly but emitted progress events out of script
   // order and could leave partial-chunk gaps on Stop that the
   // word-count-based resume heuristic couldn't reliably skip.
-  // Admin-tunable: product_config.badged_processes.image_prompts_chunks.
+  // Admin-tunable: product_config.batched_processes.image_prompts_chunks.
   const CONCURRENCY = (await getConcurrencyConfig()).image_prompts_chunks;
   let nextIdx = 0;
   let completed = 0;
@@ -825,7 +825,7 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
   // (~3-5 min on a 20-chunk project vs ~60s parallel) but bounded —
   // video chunks emit ~250 output tokens and finish in 8-15s.
   // retryClaudeCall absorbs any 429s.
-  // Admin-tunable: product_config.badged_processes.video_prompts_chunks.
+  // Admin-tunable: product_config.batched_processes.video_prompts_chunks.
   const CONCURRENCY = (await getConcurrencyConfig()).video_prompts_chunks;
   let nextIdx = 0;
   let completed = 0;

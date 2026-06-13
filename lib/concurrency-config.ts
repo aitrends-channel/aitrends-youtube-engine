@@ -133,10 +133,10 @@ export async function getConcurrencyConfig(): Promise<ConcurrencyConfig> {
   try {
     const { data } = await supabase
       .from("product_config")
-      .select("badged_processes")
+      .select("batched_processes")
       .eq("service", "_global")
       .single();
-    const value = coerce((data as { badged_processes?: unknown } | null)?.badged_processes);
+    const value = coerce((data as { batched_processes?: unknown } | null)?.batched_processes);
     cached = { at: now, value };
     return value;
   } catch {
