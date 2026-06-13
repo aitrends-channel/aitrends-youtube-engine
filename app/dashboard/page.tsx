@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { Settings, LogOut, BarChart3, Trash2, Download } from "lucide-react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { ADMIN_EMAILS } from "@/lib/admin";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
@@ -15,7 +16,6 @@ import { DEMO_DATA } from "@/lib/demo-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 
-const ADMIN_EMAIL = "prioritylearn@gmail.com";
 
 // ── Demo dashboard helpers ────────────────────────────────────────────────────
 
@@ -497,7 +497,14 @@ export default function HomePage() {
 
     function applyUser(user: { id: string; email?: string | null; created_at?: string; app_metadata?: Record<string, unknown> }) {
       if (cancelled) return;
-      if (user.email === ADMIN_EMAIL) setIsAdmin(true);
+      // Admins (legacy founder + dashboard-promoted via
+      // app_metadata.is_admin) get the Admin button. Inlined
+      // instead of using isAdminUser because applyUser's param
+      // shape is the projected payload from auth.getUser, not the
+      // full User type. Logic mirrors lib/admin.ts:isAdminUser.
+      const adminFlag = user.app_metadata?.is_admin === true
+        || ADMIN_EMAILS.has((user.email ?? "").toLowerCase());
+      if (adminFlag) setIsAdmin(true);
       setUserEmail(user.email ?? "");
       if (user.created_at) {
         setMemberSince(new Date(user.created_at).toLocaleDateString("en", { month: "short", year: "numeric" }));
@@ -960,11 +967,22 @@ export default function HomePage() {
                 // (admin / pro) but an override has narrowed it, fall back
                 // to the override as the visible denominator so the ratio
                 // isn't misleadingly "Unlimited".
-                const ratioDenominator = planDefaultLimit ?? nicheLimitOverride;
+                //
+                // Admins are an exception: they always render as Unlimited
+                // regardless of any lingering niche_limit_override in
+                // account_settings (e.g. an earlier founder grant before
+                // promotion). The /api/usage endpoint already ignores the
+                // override for admin gating; this matches that semantic
+                // in the display so the ring + denominator don't show a
+                // bogus cap.
+                const isAdminUsage = !!usage?.is_admin;
+                const ratioDenominator = isAdminUsage
+                  ? null
+                  : (planDefaultLimit ?? nicheLimitOverride);
                 const unlimited = ratioDenominator === null;
                 const nichePct = unlimited ? 1 : Math.min(nichesUsed / ratioDenominator!, 1);
                 const nicheColor = nichePct >= 1 ? "#e8745a" : "#9b7ff5";
-                const showOverrideBadge = hasOverride && planDefaultLimit !== null;
+                const showOverrideBadge = !isAdminUsage && hasOverride && planDefaultLimit !== null;
                 // niches_used is a lifetime counter — deletions never
                 // decrement it. The current channel-group count is the
                 // live count, so the difference is how many niches have

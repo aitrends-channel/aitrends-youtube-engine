@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { supabase as serviceClient } from "@/lib/supabase/client";
-import { isAdminEmail } from "@/lib/admin";
+import { isAdminUser } from "@/lib/admin";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -43,7 +43,11 @@ export async function GET(request: Request) {
     const isSetPasswordFlow = next.startsWith("/set-password");
 
     if (user && !isSetPasswordFlow) {
-      const isPaid = user.app_metadata?.paid === true || isAdminEmail(user.email);
+      // isAdminUser covers both the legacy hardcoded founder admin
+      // and any user promoted via the dashboard (app_metadata.is_admin).
+      // Treating admins as "paid" here lets them bypass the allowlist
+      // gate downstream, matching the original founder behavior.
+      const isPaid = user.app_metadata?.paid === true || isAdminUser(user);
 
       // Skip the allowlist gate for OAuth users. The allowlist exists to
       // restrict email/password signups to manually invited addresses;

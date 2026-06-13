@@ -18,6 +18,17 @@ const PLANS: Record<string, {
   color: string;
   features: string[];
 }> = {
+  admin: {
+    // Admin "plan" — not actually a paid SKU, just a display tile
+    // for users promoted via the dashboard's Make admin action. No
+    // expiry, no price, unlimited everything. Color matches the
+    // gold Crown badge used in the admin users table.
+    name: "Admin",
+    price: "—",
+    period: "",
+    color: "oklch(0.72 0.18 75)",
+    features: ["Unlimited niches", "Full admin dashboard access", "Full AI pipeline", "All features included", "No expiry"],
+  },
   founder: {
     name: "Founder",
     price: "$0.50",

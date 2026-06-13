@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { isAdminUser } from "@/lib/admin";
 import type { User } from "@supabase/supabase-js";
 
 export async function GET() {
@@ -19,7 +20,6 @@ export async function GET() {
 }
 
 const PLAN_LIMITS: Record<string, number | null> = { founder: 20, starter: 5, pro: null };
-const ADMIN_EMAIL = "prioritylearn@gmail.com";
 
 export async function POST(req: Request) {
   let user: User;
@@ -62,7 +62,10 @@ export async function POST(req: Request) {
   // Uses a lifetime counter on account_settings so deletions don't free
   // up slots — preventing users from exploiting deletion to exceed
   // their plan.
-  const isAdmin = user.email === ADMIN_EMAIL;
+  // isAdminUser covers both the legacy hardcoded founder and any
+  // user promoted via the dashboard's Make admin action. Promoted
+  // admins now skip the per-plan niche limit alongside the founder.
+  const isAdmin = isAdminUser(user);
   const plan = (user.app_metadata?.plan as string) ?? "demo";
   const isPaid = user.app_metadata?.paid === true;
   // Lowercase + trim so " Starter " / "STARTER" still resolves against
@@ -80,14 +83,20 @@ export async function POST(req: Request) {
         ? PLAN_LIMITS.starter
         : 1;
 
-  // Admin-set per-user override takes precedence over the plan default.
+  // Admin-set per-user override takes precedence over the plan default
+  // for normal users. Admins (legacy founder + promoted) ignore the
+  // override entirely and stay unlimited — a stale founder-tier
+  // override left over from before promotion shouldn't be able to cap
+  // an admin's project creation.
   const { data: settings } = await supabase
     .from("account_settings")
     .select("niche_limit_override")
     .eq("user_id", user.id)
     .maybeSingle();
   const override = settings?.niche_limit_override ?? null;
-  const limit: number | null = override !== null ? override : planLimit;
+  const limit: number | null = isAdmin
+    ? null
+    : (override !== null ? override : planLimit);
 
   const { data: rpcData, error: rpcError } = await supabase
     .rpc("try_use_niche", { uid: user.id, plan_limit: limit })

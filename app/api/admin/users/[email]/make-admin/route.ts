@@ -44,10 +44,26 @@ export async function POST(
     return NextResponse.json({ ok: true, alreadyAdmin: true });
   }
 
-  // Merge into existing app_metadata so other flags (paid, plan,
-  // etc.) aren't clobbered. The updateUserById API replaces the
-  // metadata object wholesale otherwise.
-  const nextMeta = { ...(targetUser.app_metadata ?? {}), is_admin: true };
+  // Merge into existing app_metadata so other flags aren't clobbered.
+  // Three things land in one write:
+  //   • is_admin: true   — primary signal isAdminUser reads.
+  //   • plan: "admin"    — surfaces in the dashboard's plan column
+  //     and bucket filters so the row visibly reflects the new
+  //     role. bucketOf still gates on isAdmin first, but the plan
+  //     string changes the human-readable "Plan: starter" label.
+  //   • paid: true       — admins bypass the paywall. The check-
+  //     access route already lets admins through on isAdminUser
+  //     alone, but flipping paid keeps downstream gates (e.g.
+  //     subscription-required UI hints) consistent with the
+  //     legacy founder admin's existing shape.
+  // Existing paid_at / plan_expires_at / provider etc. are
+  // preserved untouched.
+  const nextMeta = {
+    ...(targetUser.app_metadata ?? {}),
+    is_admin: true,
+    plan: "admin",
+    paid: true,
+  };
   const { error: updErr } = await supabase.auth.admin.updateUserById(targetUser.id, {
     app_metadata: nextMeta,
   });
