@@ -15,8 +15,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import useSWR from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-
-const ADMIN_EMAIL = "prioritylearn@gmail.com";
+import { isAdminUser } from "@/lib/admin";
 
 const PHASE_PATHS: Record<number, string> = {
   1: "channel", 2: "channel", 3: "channel", 4: "channel", 5: "channel",
@@ -136,6 +135,11 @@ interface AdminUser {
   planDefaultLimit: number | null;
   nicheLimitOverride: number | null;
   effectiveNicheLimit: number | null;
+  // True when the user is an admin via the legacy hardcoded list OR
+  // via app_metadata.is_admin set through the dashboard's "Make
+  // admin" action. Surfaced by /api/admin/stats so the client doesn't
+  // have to re-derive it from a hardcoded email comparison.
+  isAdmin: boolean;
 }
 
 interface AdminProject {
@@ -2093,7 +2097,7 @@ export default function AdminPage() {
     const supabase = createSupabaseBrowserClient();
     supabase.auth.getUser().then(({ data }) => {
       if (cancelled) return;
-      if (!data.user || data.user.email !== ADMIN_EMAIL) {
+      if (!data.user || !isAdminUser(data.user)) {
         router.push("/");
       } else {
         setUserEmail(data.user.email ?? "");
@@ -2173,6 +2177,13 @@ export default function AdminPage() {
 
   const [removing, setRemoving] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<AdminUser | null>(null);
+  // Open kebab menu (per user email). Click-outside closes it; only
+  // one menu open at a time so the table can't end up cluttered.
+  const [openUserMenu, setOpenUserMenu] = useState<string | null>(null);
+  const [promotingUser, setPromotingUser] = useState<string | null>(null);
+  // Modal confirm for "Make admin" — promotion is irreversible from
+  // this UI (no "Demote" action yet) so we force a deliberate click.
+  const [promoteTarget, setPromoteTarget] = useState<AdminUser | null>(null);
   const [usersPage, setUsersPage] = useState(1);
   const [userSearch, setUserSearch] = useState("");
   type PlanBucket = "all" | "admin" | "founder" | "pro" | "starter" | "free" | "pending";
@@ -2204,6 +2215,22 @@ export default function AdminPage() {
       toast.error(err instanceof Error ? err.message : "Failed to remove user");
     } finally {
       setRemoving(null);
+    }
+  }
+
+  async function handleMakeAdmin(email: string) {
+    setPromotingUser(email);
+    try {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(email)}/make-admin`, { method: "POST" });
+      const json = await res.json().catch(() => ({})) as { ok?: boolean; alreadyAdmin?: boolean; error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to promote");
+      toast.success(json.alreadyAdmin ? `${email} is already an admin` : `${email} is now an admin`);
+      setPromoteTarget(null);
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to make admin");
+    } finally {
+      setPromotingUser(null);
     }
   }
 
@@ -2241,8 +2268,8 @@ export default function AdminPage() {
   // fall back to "starter" — the cheapest paid tier — instead of
   // Free/Demo, since they did pay something.
   function bucketOf(u: AdminUser): Exclude<PlanBucket, "all"> {
+    if (u.isAdmin) return "admin";
     if (u.status === "Pending") return "pending";
-    if (u.email === ADMIN_EMAIL) return "admin";
     const planNorm = (u.plan ?? "").toLowerCase().trim();
     if (planNorm === "founder") return "founder";
     if (planNorm === "pro") return "pro";
@@ -2809,7 +2836,7 @@ export default function AdminPage() {
                       <td className="py-3 px-4 text-sm font-mono" style={{ color: "var(--c-78)" }}>
                         <span className="inline-flex items-center gap-1.5">
                           {u.email}
-                          {u.email === ADMIN_EMAIL && (
+                          {u.isAdmin && (
                             <Crown size={12} aria-label="Admin account" style={{ color: "oklch(0.72 0.18 75)" }} />
                           )}
                         </span>
@@ -2822,7 +2849,7 @@ export default function AdminPage() {
                           // palette; Free/Demo is muted gray and Pending
                           // (user hasn't signed up) is purple.
                           const paidGreen = { bg: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "oklch(0.55 0.15 145 / 0.3)" };
-                          const isAdmin = u.email === ADMIN_EMAIL;
+                          const isAdmin = u.isAdmin;
                           // Lower+trim so casing/whitespace in
                           // app_metadata.plan doesn't fall through.
                           const planNorm = (u.plan ?? "").toLowerCase().trim();
@@ -2882,19 +2909,73 @@ export default function AdminPage() {
                         {u.lastSignIn ? timeAgo(u.lastSignIn) : "Never"}
                       </td>
                       <td className="py-3 px-4">
-                        {u.email !== ADMIN_EMAIL && (
-                          <button
-                            onClick={() => setRemoveTarget(u)}
-                            disabled={removing === u.email}
-                            className="text-xs px-2.5 py-1 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1"
-                            style={{
-                              background: "oklch(0.6 0.22 25 / 0.1)",
-                              color: "oklch(0.7 0.22 25)",
-                              border: "1px solid oklch(0.6 0.22 25 / 0.2)",
-                            }}
-                          >
-                            {removing === u.email ? <><Spinner size={11} />Removing…</> : "Remove"}
-                          </button>
+                        {/* Kebab menu — replaces the standalone Remove
+                            button. Admins (founder + promoted) have no
+                            menu since neither "Remove" nor "Make admin"
+                            applies to them. Pending users also have
+                            nothing actionable in this menu (they
+                            haven't signed up yet to be promoted, and
+                            the existing Cancel-invite path is
+                            elsewhere). */}
+                        {!u.isAdmin && u.status !== "Pending" && (
+                          <div className="relative inline-block">
+                            <button
+                              type="button"
+                              onClick={() => setOpenUserMenu(openUserMenu === u.email ? null : u.email)}
+                              disabled={removing === u.email || promotingUser === u.email}
+                              className="w-7 h-7 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 inline-flex items-center justify-center"
+                              style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)", color: "var(--c-55)" }}
+                              aria-label="User actions"
+                              aria-haspopup="menu"
+                              aria-expanded={openUserMenu === u.email}
+                            >
+                              {(removing === u.email || promotingUser === u.email)
+                                ? <Spinner size={12} />
+                                : <MoreVertical size={14} />}
+                            </button>
+                            {openUserMenu === u.email && (
+                              <>
+                                {/* Click-outside catcher. Sits behind
+                                    the menu so a click anywhere else on
+                                    the page closes the popover. */}
+                                <div
+                                  className="fixed inset-0 z-10"
+                                  onClick={() => setOpenUserMenu(null)}
+                                />
+                                <div
+                                  role="menu"
+                                  className="absolute right-0 top-full mt-1 z-20 rounded-lg overflow-hidden min-w-[160px]"
+                                  style={{
+                                    background: "white",
+                                    border: "1px solid oklch(0 0 0 / 0.08)",
+                                    boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)",
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => { setOpenUserMenu(null); setPromoteTarget(u); }}
+                                    className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0_0_0_/_0.04)] flex items-center gap-2 cursor-pointer"
+                                    style={{ color: "oklch(0.45 0.15 220)" }}
+                                  >
+                                    <Crown size={12} />
+                                    Make admin
+                                  </button>
+                                  <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => { setOpenUserMenu(null); setRemoveTarget(u); }}
+                                    className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0.6_0.22_25_/_0.08)] flex items-center gap-2 cursor-pointer"
+                                    style={{ color: "oklch(0.6 0.22 25)" }}
+                                  >
+                                    <Trash2 size={12} />
+                                    Remove
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -3404,6 +3485,57 @@ export default function AdminPage() {
           onSaved={() => mutate()}
         />
       )}
+
+      <Dialog
+        open={promoteTarget !== null}
+        onOpenChange={(open) => { if (!open && promotingUser === null) setPromoteTarget(null); }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Make admin?</DialogTitle>
+            <DialogDescription>
+              The user will gain full access to the admin dashboard — including all
+              user management actions, API key controls, and concurrency settings.
+              There&apos;s no &quot;Demote&quot; action in this UI yet, so undoing this
+              requires editing the user&apos;s app_metadata in Supabase.
+            </DialogDescription>
+          </DialogHeader>
+          {promoteTarget && (
+            <div className="rounded-xl p-3 space-y-1.5"
+              style={{ background: "oklch(0.55 0.15 220 / 0.06)", border: "1px solid oklch(0.55 0.15 220 / 0.2)" }}>
+              <p className="text-xs font-mono truncate" style={{ color: "var(--c-78)" }}>{promoteTarget.email}</p>
+              <div className="flex items-center gap-3 text-[11px] flex-wrap" style={{ color: "var(--c-55)" }}>
+                <span>Plan: <span className="font-semibold" style={{ color: "var(--c-90)" }}>{promoteTarget.plan ?? "—"}</span></span>
+                <span>Projects: <span className="font-semibold tabular-nums" style={{ color: "var(--c-90)" }}>{promoteTarget.projectCount}</span></span>
+                <span>Last sign-in: <span className="font-semibold" style={{ color: "var(--c-90)" }}>{promoteTarget.lastSignIn ? timeAgo(promoteTarget.lastSignIn) : "Never"}</span></span>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <button
+              onClick={() => { if (promoteTarget) handleMakeAdmin(promoteTarget.email); }}
+              disabled={promotingUser !== null}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.55 0.15 220)", color: "white" }}
+            >
+              {promotingUser !== null ? (
+                <span className="inline-flex items-center justify-center gap-2">
+                  <Spinner size={14} className="text-white" />
+                  Promoting…
+                </span>
+              ) : "Make admin"}
+            </button>
+            <button
+              onClick={() => setPromoteTarget(null)}
+              disabled={promotingUser !== null}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Cancel
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={removeTarget !== null}

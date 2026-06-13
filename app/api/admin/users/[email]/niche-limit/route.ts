@@ -1,21 +1,16 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
-import { getRequiredUser } from "@/lib/supabase/auth";
-import type { User } from "@supabase/supabase-js";
+import { isAdminEmail, isAdminUser } from "@/lib/admin";
+import { requireAdmin } from "@/lib/admin-server";
 
 export const dynamic = "force-dynamic";
-
-const ADMIN_EMAIL = "prioritylearn@gmail.com";
 
 export async function PUT(
   req: Request,
   { params }: { params: { email: string } }
 ) {
-  let user: User;
-  try { user = await getRequiredUser(); } catch (e) { return e as Response; }
-  if (user.email !== ADMIN_EMAIL) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
 
   const decoded = decodeURIComponent(params.email).toLowerCase().trim();
 
@@ -23,8 +18,10 @@ export async function PUT(
   // in /api/projects and /api/usage. Setting an override on them would
   // also be inert for the admin themselves (since that branch runs
   // before the override read) but would still litter the DB and surface
-  // misleadingly in the admin UI — reject the request outright.
-  if (decoded === ADMIN_EMAIL) {
+  // misleadingly in the admin UI — reject the request outright. The
+  // hardcoded-email check fast-paths the legacy founder admin; the
+  // app_metadata check below catches data-driven admins.
+  if (isAdminEmail(decoded)) {
     return NextResponse.json({ error: "Cannot override niche limit for admin accounts" }, { status: 400 });
   }
 
@@ -45,6 +42,11 @@ export async function PUT(
   if (listErr) return NextResponse.json({ error: listErr.message }, { status: 500 });
   const authUser = listData.users.find((u) => u.email?.toLowerCase() === decoded);
   if (!authUser) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  // Catch data-driven admins (app_metadata.is_admin) that the email
+  // fast-path above doesn't know about.
+  if (isAdminUser(authUser)) {
+    return NextResponse.json({ error: "Cannot override niche limit for admin accounts" }, { status: 400 });
+  }
 
   // Upsert — the user may not have an account_settings row yet (no
   // projects created), in which case we have to create one.

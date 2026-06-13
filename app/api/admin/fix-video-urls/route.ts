@@ -1,17 +1,12 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
-import { getRequiredUser } from "@/lib/supabase/auth";
-import { isAdminEmail } from "@/lib/admin";
-import type { User } from "@supabase/supabase-js";
+import { requireAdmin } from "@/lib/admin-server";
 
 export const dynamic = "force-dynamic";
 
 export async function POST() {
-  let user: User;
-  try { user = await getRequiredUser(); } catch (e) { return e as Response; }
-  if (!isAdminEmail(user.email)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
 
   // Find all beats with the wrong bucket in the URL
   const { data: broken, error: fetchError } = await supabase

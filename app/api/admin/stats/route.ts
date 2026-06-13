@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
-import { getRequiredUser } from "@/lib/supabase/auth";
-import type { User } from "@supabase/supabase-js";
+import { isAdminUser } from "@/lib/admin";
+import { requireAdmin } from "@/lib/admin-server";
 
 export const dynamic = "force-dynamic";
-
-const ADMIN_EMAIL = "prioritylearn@gmail.com";
 
 const PLAN_LIMITS: Record<string, number | null> = { founder: 20, starter: 5, pro: null };
 
@@ -22,12 +20,8 @@ const PHASE_PATHS: Record<number, string> = {
 };
 
 export async function GET() {
-  let user: User;
-  try { user = await getRequiredUser(); } catch (e) { return e as Response; }
-
-  if (user.email !== ADMIN_EMAIL) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
 
   const [emailsRes, authUsersRes, projectsRes, settingsRes] = await Promise.all([
     supabase.from("allowed_emails").select("email"),
@@ -87,7 +81,7 @@ export async function GET() {
     ...authUsers.map((authUser) => {
       const email = authUser.email ?? "Unknown";
       const isPaid = authUser.app_metadata?.paid === true;
-      const isAdmin = authUser.email === ADMIN_EMAIL;
+      const isAdmin = isAdminUser(authUser);
       const plan = (authUser.app_metadata?.plan as string | undefined) ?? null;
       // Lowercase + trim so " Starter " / "STARTER" still resolves
       // against PLAN_LIMITS instead of slipping through to the demo
@@ -117,6 +111,11 @@ export async function GET() {
         planDefaultLimit,
         nicheLimitOverride: override,
         effectiveNicheLimit: override !== null ? override : planDefaultLimit,
+        // Surface the data-driven admin flag so the dashboard can
+        // render the admin role pill and gate the kebab menu's
+        // "Make admin" / "Remove" actions without re-deriving it
+        // client-side from a hardcoded email list.
+        isAdmin,
       };
     }),
     // Emails in allowed_emails that haven't signed up yet
@@ -134,6 +133,7 @@ export async function GET() {
         planDefaultLimit: null,
         nicheLimitOverride: null,
         effectiveNicheLimit: null,
+        isAdmin: false,
       })),
   ];
 

@@ -1,19 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
-import { getRequiredUser } from "@/lib/supabase/auth";
+import { requireAdmin } from "@/lib/admin-server";
 import type { User } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
-const ADMIN_EMAIL = "prioritylearn@gmail.com";
 
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  let user: User;
-  try { user = await getRequiredUser(); } catch (e) { return e as Response; }
-  if (user.email !== ADMIN_EMAIL) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
+  const user = guard.user;
 
   const body = await req.json();
 
@@ -90,9 +89,9 @@ export async function DELETE(
   _req: Request,
   { params }: { params: { id: string } }
 ) {
-  let user: User;
-  try { user = await getRequiredUser(); } catch (e) { return e as Response; }
-  if (user.email !== ADMIN_EMAIL) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const guard = await requireAdmin();
+  if (!guard.ok) return guard.response;
+  const user = guard.user;
 
   const { error } = await supabase
     .from("product_config")
