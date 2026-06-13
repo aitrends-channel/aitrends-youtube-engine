@@ -403,10 +403,25 @@ export default function VoiceoverPage({ params }: PageProps) {
   // server is actively touching right now.
   const projectRunActive = !!(project as { voiceover_active_run_id?: string | null } | undefined)?.voiceover_active_run_id;
   const projectStopRequested = !!(project as { voiceover_stop_requested?: boolean } | undefined)?.voiceover_stop_requested;
+  const projectRunStartedAt = (project as { voiceover_run_started_at?: string | null } | undefined)?.voiceover_run_started_at ?? null;
   const inProgressBeatsCount = beats.filter(
     (b) => b.voiceoverStatus === "generating" || b.voiceoverStatus === "queued"
   ).length;
-  const serverGenerationActive = projectRunActive;
+  // Vercel kills the TTS route at 800s. When that happens its
+  // `finally` block doesn't get to run, so voiceover_active_run_id
+  // stays set in the DB and the UI thinks generation is still
+  // happening. Detect this by comparing the claim timestamp against
+  // a window comfortably past the function timeout — anything older
+  // than 15 minutes is a stuck phantom run, not a live one. NULL
+  // started_at on a set run_id is treated as stale too (it's the
+  // exact pre-migration state of any project that got stuck by this
+  // bug), so users can recover without manual DB cleanup.
+  const RUN_STALE_AFTER_MS = 15 * 60 * 1000;
+  const serverRunIsStale = projectRunActive && (
+    !projectRunStartedAt
+    || (Date.now() - new Date(projectRunStartedAt).getTime()) > RUN_STALE_AFTER_MS
+  );
+  const serverGenerationActive = projectRunActive && !serverRunIsStale;
   // Treat the page as "generating" whenever EITHER signal is true.
   // Hides the Generate-remaining button during a server-only run so
   // refreshing mid-generation doesn't make it look like the user has

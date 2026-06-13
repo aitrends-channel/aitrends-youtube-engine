@@ -159,7 +159,12 @@ export async function POST(req: Request) {
               .eq("user_id", user.id);
           } else {
             // Claim the run. Sets the new id, clears any stale stop flag
-            // from a prior cancelled run, and updates the project's
+            // from a prior cancelled run, stamps the started_at so the
+            // UI can detect a Vercel-timeout-killed run (finally won't
+            // run if Vercel terminates the function at 800s, leaving
+            // voiceover_active_run_id stuck — the started_at lets the
+            // page treat a run older than the timeout as stale and
+            // unhide the Generate button), and updates the project's
             // default voice so reassemblies and future regen runs default
             // to the same voice.
             await supabase
@@ -167,6 +172,7 @@ export async function POST(req: Request) {
               .update({
                 tts_voice_id: voiceId,
                 voiceover_active_run_id: runId,
+                voiceover_run_started_at: new Date().toISOString(),
                 voiceover_stop_requested: false,
               })
               .eq("id", projectId)
@@ -414,7 +420,11 @@ export async function POST(req: Request) {
           if (ownerCheck?.voiceover_active_run_id === runId) {
             await supabase
               .from("projects")
-              .update({ voiceover_active_run_id: null, voiceover_stop_requested: false })
+              .update({
+                voiceover_active_run_id: null,
+                voiceover_run_started_at: null,
+                voiceover_stop_requested: false,
+              })
               .eq("id", projectId)
               .eq("user_id", user.id);
           }
