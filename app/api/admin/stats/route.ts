@@ -32,7 +32,7 @@ export async function GET() {
   const [emailsRes, authUsersRes, projectsRes, settingsRes] = await Promise.all([
     supabase.from("allowed_emails").select("email"),
     supabase.auth.admin.listUsers({ perPage: 1000 }),
-    supabase.from("projects").select("id, user_id, channel_name, current_state, selected_topic, created_at, assembled_url").order("created_at", { ascending: true }),
+    supabase.from("projects").select("id, user_id, channel_name, current_state, selected_topic, created_at, assembled_url, assembly_started_at, assembly_finished_at").order("created_at", { ascending: true }),
     supabase.from("account_settings").select("user_id, niches_used, niche_limit_override"),
   ]);
 
@@ -136,6 +136,19 @@ export async function GET() {
   const projectList = projects.map((p) => {
     const state = p.current_state ?? 1;
     const userEmail = p.user_id ? (userIdToEmail.get(p.user_id) ?? "Unknown") : "Unknown";
+    // Wall-clock assembly duration in seconds, or null when the
+    // project hasn't completed an assembly yet (or pre-dates the
+    // migration that added the timing columns). Computed here so the
+    // admin client doesn't need to do date math on every render.
+    const started = p.assembly_started_at as string | null | undefined;
+    const finished = p.assembly_finished_at as string | null | undefined;
+    let assembleSeconds: number | null = null;
+    if (started && finished) {
+      const diffMs = new Date(finished).getTime() - new Date(started).getTime();
+      if (diffMs > 0 && Number.isFinite(diffMs)) {
+        assembleSeconds = Math.round(diffMs / 1000);
+      }
+    }
     return {
       id: p.id,
       userEmail,
@@ -146,6 +159,7 @@ export async function GET() {
       phasePath: PHASE_PATHS[state] ?? "channel",
       progress: Math.min(100, Math.round((state / 15) * 100)),
       createdAt: p.created_at,
+      assembleSeconds,
     };
   });
 

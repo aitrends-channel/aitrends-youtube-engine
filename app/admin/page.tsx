@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -44,6 +44,78 @@ function timeAgo(date: string) {
   return "just now";
 }
 
+// Truncated table cell with hover/click affordance to reveal the full
+// text. CSS handles the visual truncation (the parent <td> sets the
+// max-width + truncate classes); we add an Eye icon next to the text
+// as a visual cue that there's more to see. Hovering the cell shows
+// a styled tooltip with the full value; clicking the icon pins the
+// tooltip open (toggle) so the user can read long values without
+// holding the mouse still. maxLen is a soft signal — when the value
+// is shorter than that we hide the icon and skip the tooltip wiring
+// entirely so short rows stay clean.
+function TruncatedCell({ value, maxLen = 24, fallback = "—" }: {
+  value: string | null | undefined;
+  maxLen?: number;
+  fallback?: string;
+}) {
+  const [pinned, setPinned] = useState(false);
+  if (!value) {
+    return <span style={{ color: "var(--c-35)" }}>{fallback}</span>;
+  }
+  const needsTrunc = value.length > maxLen;
+  if (!needsTrunc) {
+    return <span className="truncate">{value}</span>;
+  }
+  return (
+    <div className="relative inline-flex items-center gap-1.5 max-w-full group">
+      <span className="truncate" title={value}>
+        {value}
+      </span>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setPinned((p) => !p); }}
+        className="shrink-0 transition-opacity opacity-50 group-hover:opacity-100"
+        style={{ color: pinned ? "oklch(0.72 0.25 285)" : "var(--c-55)" }}
+        aria-label={pinned ? "Hide full text" : "Show full text"}
+        title={pinned ? "Hide full text" : "Show full text"}
+      >
+        <Eye size={12} />
+      </button>
+      <div
+        className={`absolute z-20 top-full left-0 mt-1 px-3 py-2 rounded-lg text-xs transition-opacity ${pinned ? "opacity-100" : "opacity-0 pointer-events-none group-hover:opacity-100"}`}
+        style={{
+          background: "white",
+          border: "1px solid oklch(0 0 0 / 0.1)",
+          color: "var(--c-85)",
+          maxWidth: "360px",
+          whiteSpace: "normal",
+          wordBreak: "break-word",
+          boxShadow: "0 4px 16px oklch(0 0 0 / 0.1)",
+        }}
+      >
+        {value}
+      </div>
+    </div>
+  );
+}
+
+// Render an assembly's wall-clock duration in a compact human form.
+// null → em-dash (project hasn't completed an assembly yet, or
+// pre-dates migration 049). Sub-minute durations stay in seconds so
+// short runs stay readable; minute+ durations show `Hh Mm` or `Mm Ss`
+// without padding zeros so the column doesn't shout numbers at the
+// reader.
+function formatAssembleTime(seconds: number | null): string {
+  if (seconds === null || seconds === undefined) return "—";
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  if (m < 60) return s === 0 ? `${m}m` : `${m}m ${s}s`;
+  const h = Math.floor(m / 60);
+  const mRem = m % 60;
+  return mRem === 0 ? `${h}h` : `${h}h ${mRem}m`;
+}
+
 interface AdminStats {
   accessGranted: number;
   activeAccounts: number;
@@ -76,6 +148,10 @@ interface AdminProject {
   phasePath: string;
   progress: number;
   createdAt: string;
+  // Wall-clock seconds between worker pickup and terminal status
+  // (done/stopped/failed). Null when the project hasn't completed
+  // an assembly yet, or pre-dates migration 049_assembly_timing.
+  assembleSeconds: number | null;
 }
 
 interface QuotaEntry { units_used: number; date: string; }
@@ -2831,7 +2907,7 @@ export default function AdminPage() {
           </div>
 
           {isLoading ? (
-            <SkeletonRows cols={7} />
+            <SkeletonRows cols={8} />
           ) : projects.length === 0 ? (
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No projects yet.</div>
           ) : (
@@ -2840,7 +2916,7 @@ export default function AdminPage() {
               <table className="w-full border-collapse min-w-[640px]">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
-                    {["User", "Project ID", "Channel", "Topic", "Phase", "Progress", "Created", ""].map((h) => (
+                    {["User", "Project ID", "Channel", "Topic", "Phase", "Progress", "Assemble Time", "Created", ""].map((h) => (
                       <th key={h} className="text-left py-3 px-4 text-xs font-medium uppercase tracking-wider"
                         style={{ color: "var(--c-40)" }}>
                         {h}
@@ -2891,13 +2967,13 @@ export default function AdminPage() {
                             <Copy size={11} className="shrink-0 opacity-50 group-hover:opacity-100 transition-opacity" />
                           </button>
                         </td>
-                        <td className="py-3 px-4 text-sm max-w-[140px] truncate"
+                        <td className="py-3 px-4 text-sm max-w-[140px]"
                           style={{ color: "var(--c-72)" }}>
-                          {p.channelName ?? <span style={{ color: "var(--c-35)" }}>—</span>}
+                          <TruncatedCell value={p.channelName} maxLen={18} />
                         </td>
-                        <td className="py-3 px-4 text-sm max-w-[200px] truncate"
+                        <td className="py-3 px-4 text-sm max-w-[200px]"
                           style={{ color: p.selectedTopic ? "var(--c-82)" : "var(--c-35)" }}>
-                          {p.selectedTopic ?? "No topic"}
+                          <TruncatedCell value={p.selectedTopic} maxLen={28} fallback="No topic" />
                         </td>
                         <td className="py-3 px-4">
                           <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
@@ -2928,6 +3004,13 @@ export default function AdminPage() {
                             </div>
                             <span className="text-xs" style={{ color: "var(--c-40)" }}>{p.progress}%</span>
                           </div>
+                        </td>
+                        <td
+                          className="py-3 px-4 text-sm tabular-nums font-mono"
+                          style={{ color: p.assembleSeconds !== null ? "var(--c-72)" : "var(--c-35)" }}
+                          title={p.assembleSeconds !== null ? `${p.assembleSeconds} seconds` : "Not assembled yet"}
+                        >
+                          {formatAssembleTime(p.assembleSeconds)}
                         </td>
                         <td className="py-3 px-4 text-sm" style={{ color: "var(--c-42)" }}>
                           {timeAgo(p.createdAt)}
