@@ -56,9 +56,12 @@ export async function POST(req: Request) {
   // flag from a prior Stop would trip the worker's assertStopRequested
   // check the moment the new run begins.
   //
-  // Persist BGM + logo selection on the project row so a refresh / Resume
-  // after a refresh hydrates them. Redis still carries the same values
-  // for the worker handoff; the row is the durable copy.
+  // Persist BGM, logo, trim-silence, and the five caption knobs on the
+  // project row so a refresh / Resume / return-visit hydrates them.
+  // Redis still carries the same values for the worker handoff; the
+  // row is the durable copy. Migration 051 added the trim/captions
+  // columns; older projects with NULL values fall back to the
+  // assemble page's React-side defaults on hydrate.
   const { error } = await client
     .from("projects")
     .update({
@@ -72,6 +75,12 @@ export async function POST(req: Request) {
       logo_x: typeof options.logoX === "number" ? options.logoX : 0.85,
       logo_y: typeof options.logoY === "number" ? options.logoY : 0.05,
       logo_size: typeof options.logoSize === "number" ? options.logoSize : 0.1,
+      trim_silence_enabled: typeof options.trimSilenceEnabled === "boolean" ? options.trimSilenceEnabled : true,
+      captions_enabled:     typeof options.captionsEnabled     === "boolean" ? options.captionsEnabled     : false,
+      captions_language:    typeof options.captionsLanguage    === "string"  ? options.captionsLanguage    : "source",
+      captions_style:       typeof options.captionsStyle       === "string"  ? options.captionsStyle       : "classic",
+      captions_size:        typeof options.captionsSize        === "string"  ? options.captionsSize        : "medium",
+      captions_position:    typeof options.captionsPosition    === "string"  ? options.captionsPosition    : "bottom",
     })
     .eq("id", projectId);
 

@@ -85,12 +85,14 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }, [project?.current_state, projectId, mutate]);
 
-  // Hydrate BGM + logo selection from the project row on first load.
-  // Migration 047 added background_music_url / logo_url / volume / x /
-  // y / size columns; /api/generate/assemble writes them when the user
-  // clicks Assemble. The ref guard runs this exactly once per mount so
-  // later SWR polls don't clobber in-progress local edits (e.g. a slider
-  // tweak mid-session).
+  // Hydrate BGM, logo, trim-silence, and the five caption knobs from
+  // the project row on first load. Migrations 047 (BGM + logo) and 051
+  // (trim + captions) backed these columns; /api/generate/assemble
+  // writes them when the user clicks Assemble. The ref guard runs this
+  // exactly once per mount so later SWR polls don't clobber in-
+  // progress local edits (e.g. a slider tweak mid-session). NULL on
+  // any column means the project pre-dates that migration or never
+  // assembled — fall through to the React-side default in that case.
   const hydratedRef = useRef(false);
   useEffect(() => {
     if (!project || hydratedRef.current) return;
@@ -109,6 +111,20 @@ export default function AssemblePage({ params }: PageProps) {
       if (typeof y === "number") setLogoY(y);
       if (typeof s === "number") setLogoSize(s);
     }
+    const trim = (project as { trim_silence_enabled?: boolean | null }).trim_silence_enabled;
+    if (typeof trim === "boolean") setTrimSilence(trim);
+    const cap = project as {
+      captions_enabled?:  boolean | null;
+      captions_language?: string  | null;
+      captions_style?:    string  | null;
+      captions_size?:     string  | null;
+      captions_position?: string  | null;
+    };
+    if (typeof cap.captions_enabled  === "boolean") setCaptionsEnabled(cap.captions_enabled);
+    if (typeof cap.captions_language === "string" && cap.captions_language) setCaptionsLanguage(cap.captions_language);
+    if (typeof cap.captions_style    === "string" && cap.captions_style)    setCaptionsStyle(cap.captions_style);
+    if (typeof cap.captions_size     === "string" && cap.captions_size)     setCaptionsSize(cap.captions_size);
+    if (typeof cap.captions_position === "string" && cap.captions_position) setCaptionsPosition(cap.captions_position);
   }, [project]);
 
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
