@@ -406,6 +406,39 @@ export async function POST(req: Request) {
             send({ type: "error", message: err instanceof Error ? err.message : "Generation failed" });
           }
         } finally {
+          // Reset any beats stuck in a non-terminal status. processBeat
+          // normally walks each beat from "queued" → "generating" →
+          // "done"/"failed" via inner try/catch, but a stream error,
+          // dropped connection, or worker crash between status updates
+          // can strand a beat in "queued" or "generating". Without
+          // this reset the UI keeps showing those beats as actively
+          // generating even though no one's working on them — the bug
+          // surfaces as "Stream ended unexpectedly" on the client
+          // paired with 5 rows still showing the spinner.
+          //
+          // Scoping:
+          //  • Bulk path (the project's run_id was claimed): reset all
+          //    stuck beats for the project. Only one bulk run can be in
+          //    flight at a time (claim() guarantees), so any non-
+          //    terminal status belongs to this run.
+          //  • Per-beat regen path: scope to the explicit beatNumbers
+          //    from the request body so a concurrent bulk run isn't
+          //    touched.
+          try {
+            let resetQuery = supabase
+              .from("project_beats")
+              .update({ voiceover_status: null, voiceover_error: null })
+              .eq("project_id", projectId)
+              .is("voiceover_url", null)
+              .in("voiceover_status", ["queued", "generating"]);
+            if (skipRunClaim && body.beatNumbers && body.beatNumbers.length > 0) {
+              resetQuery = resetQuery.in("beat_number", body.beatNumbers);
+            }
+            await resetQuery;
+          } catch (resetErr) {
+            console.warn("[tts-beats] failed to reset stuck beats on finally:", resetErr);
+          }
+
           // Per-beat path never claimed the run id, so there's nothing
           // to release. Bulk path: release the run id (and clear the
           // stop flag) only if we still own it. If another run took
