@@ -2257,8 +2257,22 @@ export default function AdminPage() {
     if (userSearchLower && !u.email.toLowerCase().includes(userSearchLower)) return false;
     return true;
   });
-  const pagedUsers = filteredUsers.slice((usersPage - 1) * PER_PAGE, usersPage * PER_PAGE);
-  const pagedProjects = projects.slice((projectsPage - 1) * PER_PAGE, projectsPage * PER_PAGE);
+  // Tables show most-recent items first. Nulls-last (using Infinity)
+  // keeps users who've never signed in (no lastSignIn) at the bottom
+  // instead of bubbling to the top, where they'd be misread as "most
+  // recent." Same idea for paidAt on the revenue table below.
+  const sortedFilteredUsers = [...filteredUsers].sort((a, b) => {
+    const ta = a.lastSignIn ? new Date(a.lastSignIn).getTime() : -Infinity;
+    const tb = b.lastSignIn ? new Date(b.lastSignIn).getTime() : -Infinity;
+    return tb - ta;
+  });
+  const sortedProjects = [...projects].sort((a, b) => {
+    const ta = a.createdAt ? new Date(a.createdAt).getTime() : -Infinity;
+    const tb = b.createdAt ? new Date(b.createdAt).getTime() : -Infinity;
+    return tb - ta;
+  });
+  const pagedUsers = sortedFilteredUsers.slice((usersPage - 1) * PER_PAGE, usersPage * PER_PAGE);
+  const pagedProjects = sortedProjects.slice((projectsPage - 1) * PER_PAGE, projectsPage * PER_PAGE);
 
   // Top-of-Users-tab breakdown so the admin can see plan distribution
   // and pending invites at a glance without scanning the table. Same
@@ -3043,7 +3057,16 @@ export default function AdminPage() {
           const PLAN_MRR: Record<string, number> = { founder: 40 / 12, starter: 19, pro: 49 };
           const PLAN_AMOUNT: Record<string, number> = { founder: 40, starter: 19, pro: 49 };
           const PLAN_LABEL: Record<string, string> = { founder: "Founder", starter: "Starter", pro: "Pro" };
-          const paidUsers = users.filter((u) => u.status === "Paid");
+          // Most-recent payments first; nulls-last for any paid user
+          // whose paidAt isn't set (e.g. a manual grant without a
+          // timestamp).
+          const paidUsers = users
+            .filter((u) => u.status === "Paid")
+            .sort((a, b) => {
+              const ta = a.paidAt ? new Date(a.paidAt).getTime() : -Infinity;
+              const tb = b.paidAt ? new Date(b.paidAt).getTime() : -Infinity;
+              return tb - ta;
+            });
           const mrr = paidUsers.reduce((sum, u) => sum + (u.plan ? (PLAN_MRR[u.plan] ?? 0) : 0), 0);
           const arr = mrr * 12;
 
