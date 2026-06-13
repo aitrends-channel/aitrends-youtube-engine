@@ -2918,6 +2918,29 @@ export default function AdminPage() {
               style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
               {projects.length}
             </span>
+            {/* Average wall-clock assembly time across all projects
+                that have actually completed a run. Computed inline
+                from the same assembleSeconds the column renders, so
+                the chip always agrees with the rows on screen.
+                Hidden when no project has a duration yet — better to
+                show nothing than "0s" or "—" which read like errors. */}
+            {(() => {
+              const durations = projects
+                .map((p) => p.assembleSeconds)
+                .filter((s): s is number => typeof s === "number" && s > 0);
+              if (durations.length === 0) return null;
+              const avg = Math.round(durations.reduce((sum, n) => sum + n, 0) / durations.length);
+              return (
+                <span
+                  className="ml-auto text-xs font-medium px-3 py-1 rounded-full inline-flex items-center gap-1.5 tabular-nums"
+                  style={{ background: "oklch(0.55 0.15 220 / 0.08)", border: "1px solid oklch(0.55 0.15 220 / 0.22)", color: "oklch(0.45 0.15 220)" }}
+                  title={`Average across ${durations.length} completed assembl${durations.length === 1 ? "y" : "ies"}`}
+                >
+                  <Clock size={12} />
+                  Avg processing time: {formatAssembleTime(avg)}
+                </span>
+              );
+            })()}
           </div>
 
           {isLoading ? (

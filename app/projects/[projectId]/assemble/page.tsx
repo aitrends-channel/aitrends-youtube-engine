@@ -204,6 +204,34 @@ export default function AssemblePage({ params }: PageProps) {
   const [captionsStyle, setCaptionsStyle] = useState("classic");
   const [captionsSize, setCaptionsSize] = useState("medium");
   const [captionsPosition, setCaptionsPosition] = useState("bottom");
+
+  // Live-persist trim + captions to the project row whenever they
+  // change. The /api/generate/assemble call already writes them on
+  // Assemble, but a user who toggles "Original voiceover" or flips
+  // captions to "bold/large/top" and then refreshes without clicking
+  // Assemble would lose their selection. Debounced so a rapid
+  // sequence of dropdown changes coalesces into one PATCH instead
+  // of spamming the API. Skipped on first render — hydratedRef
+  // gates this so we don't PATCH the hydrated values straight back
+  // to the server.
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    const t = setTimeout(() => {
+      void fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          trim_silence_enabled: trimSilence,
+          captions_enabled: captionsEnabled,
+          captions_language: captionsLanguage,
+          captions_style: captionsStyle,
+          captions_size: captionsSize,
+          captions_position: captionsPosition,
+        }),
+      }).catch(() => { /* non-blocking — Assemble click is the safety net */ });
+    }, 500);
+    return () => clearTimeout(t);
+  }, [trimSilence, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, projectId]);
   const [assembling, setAssembling] = useState(false);
   // True from the moment the user clicks Stop until the worker
   // acknowledges by transitioning assembly_status to "stopped".
