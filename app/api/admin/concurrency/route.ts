@@ -4,6 +4,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 import {
   CONCURRENCY_DEFAULTS,
+  coerceConcurrencyConfig,
   invalidateConcurrencyConfigCache,
   validateConcurrencyInput,
   type ConcurrencyConfig,
@@ -39,7 +40,25 @@ export async function PUT(req: Request) {
   if (user.email !== ADMIN_EMAIL) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
-  const parsed = validateConcurrencyInput(body);
+
+  // PUT accepts a partial body — admins update one knob at a time
+  // from the dashboard. Previously the validator's defaults-as-base
+  // behavior meant any unsupplied field was reset to its default and
+  // written back, so updating Voiceovers silently clobbered the
+  // admin's earlier customization of Video worker and vice-versa.
+  // Read the current row first and merge the partial on top, so the
+  // final write only touches fields the admin actually changed.
+  const { data: currentRow } = await supabase
+    .from("product_config")
+    .select("batched_processes")
+    .eq("service", "_global")
+    .single();
+  const current = coerceConcurrencyConfig(
+    (currentRow as { batched_processes?: unknown } | null)?.batched_processes,
+  );
+  const merged: Record<string, unknown> = { ...current, ...(body as object) };
+
+  const parsed = validateConcurrencyInput(merged);
   if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 });
 
   const { error } = await supabase

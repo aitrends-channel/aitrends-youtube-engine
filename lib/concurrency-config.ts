@@ -106,7 +106,14 @@ export const CONCURRENCY_FIELDS: {
 const CACHE_TTL_MS = 15_000;
 let cached: { at: number; value: ConcurrencyConfig } | null = null;
 
-function coerce(raw: unknown): ConcurrencyConfig {
+/**
+ * Coerce an arbitrary value (e.g. the DB's `batched_processes` JSON
+ * blob) into a complete, in-range ConcurrencyConfig. Out-of-range or
+ * non-integer values silently fall back to {@link CONCURRENCY_DEFAULTS}
+ * for that field, so a malformed DB row never bricks the whole
+ * config.
+ */
+export function coerceConcurrencyConfig(raw: unknown): ConcurrencyConfig {
   const out = { ...CONCURRENCY_DEFAULTS };
   if (raw && typeof raw === "object") {
     for (const f of CONCURRENCY_FIELDS) {
@@ -136,7 +143,7 @@ export async function getConcurrencyConfig(): Promise<ConcurrencyConfig> {
       .select("batched_processes")
       .eq("service", "_global")
       .single();
-    const value = coerce((data as { batched_processes?: unknown } | null)?.batched_processes);
+    const value = coerceConcurrencyConfig((data as { batched_processes?: unknown } | null)?.batched_processes);
     cached = { at: now, value };
     return value;
   } catch {
