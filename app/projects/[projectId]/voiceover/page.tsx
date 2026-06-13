@@ -132,7 +132,17 @@ function StatusPill({ status }: { status: BeatStatus }) {
   return (
     <span className="text-[11px] font-medium px-2 py-0.5 rounded inline-flex items-center gap-1.5"
       style={{ background: style.bg, color: style.col }}>
+      {/* Loading spinner is reserved for beats that the worker pool
+          is actively processing. "Queued" rows are pre-marked
+          upfront (BATCH_SIZE-at-a-time used to limit this; the
+          worker-pool change made the queue span the whole stale
+          set), so a spinning queued pill on 100+ rows misleads the
+          user into thinking every beat is in flight. Static dot for
+          queued, spinner only for generating. */}
       {status === "queued" && (
+        <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: "currentColor", opacity: 0.65 }} />
+      )}
+      {status === "generating" && (
         <span className="inline-block w-2 h-2 rounded-full border-2 border-current border-t-transparent animate-spin" />
       )}
       {style.label}
@@ -398,14 +408,17 @@ export default function VoiceoverPage({ params }: PageProps) {
   // batch is about to start).
   //
   // Also surface a beat-level count for the in-progress pill so we
-  // can say "Generating already queued N beats" — beats with
-  // voiceover_status in ("queued","generating") are the ones the
-  // server is actively touching right now.
+  // can say "Processing already in-flight N beats". The worker pool
+  // pre-marks the whole stale set as "queued" upfront, so counting
+  // queued + generating would inflate this to the entire remaining
+  // queue (e.g. "Processing 145 beats" when only 5 are actually in
+  // flight). Restrict to "generating" — that's the set the worker
+  // pool is actually encoding right now, capped at BATCH_SIZE.
   const projectRunActive = !!(project as { voiceover_active_run_id?: string | null } | undefined)?.voiceover_active_run_id;
   const projectStopRequested = !!(project as { voiceover_stop_requested?: boolean } | undefined)?.voiceover_stop_requested;
   const projectRunStartedAt = (project as { voiceover_run_started_at?: string | null } | undefined)?.voiceover_run_started_at ?? null;
   const inProgressBeatsCount = beats.filter(
-    (b) => b.voiceoverStatus === "generating" || b.voiceoverStatus === "queued"
+    (b) => b.voiceoverStatus === "generating"
   ).length;
   // Vercel kills the TTS route at 800s. When that happens its
   // `finally` block doesn't get to run, so voiceover_active_run_id
@@ -889,14 +902,14 @@ export default function VoiceoverPage({ params }: PageProps) {
                     <div
                       className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
                       title={projectStopRequested
-                        ? "Stop received — the server has halted further batches but the current batch's KIE calls will still finish."
+                        ? "Stop received — no new beats will start, but the worker pool's in-flight KIE calls will still finish."
                         : "Voiceover generation is running on the server. The page will update as each beat completes."}
                       style={{ background: "oklch(0.72 0.25 285 / 0.1)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "oklch(0.88 0.12 285)" }}
                     >
                       <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
                       <span className="font-medium">
                         {projectStopRequested
-                          ? `Processing already queued ${inProgressBeatsCount} beat${inProgressBeatsCount === 1 ? "" : "s"}`
+                          ? `Finishing ${inProgressBeatsCount} in-flight beat${inProgressBeatsCount === 1 ? "" : "s"}`
                           : "Generating…"}
                       </span>
                     </div>
@@ -1084,17 +1097,35 @@ export default function VoiceoverPage({ params }: PageProps) {
                         );
                       }
                       // No per-beat regen for this row. Render either
-                      // a spinner (bulk run touching this beat) or the
-                      // normal Retry / Regen icon.
-                      if (status === "queued" || status === "generating") {
+                      // a spinner (bulk run actively encoding this beat)
+                      // or a static dot (beat is waiting in the queue,
+                      // worker pool hasn't picked it up yet). Pre-worker-
+                      // pool, "queued" was a transient state for ~5
+                      // rows at a time, so a spinner read fine; now the
+                      // queue can span hundreds of rows and a spinner
+                      // on every one would falsely suggest 100+ beats
+                      // are in flight simultaneously.
+                      if (status === "generating") {
                         return (
                           <div
                             className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
-                            aria-label={status === "queued" ? "Beat queued" : "Beat regenerating"}
-                            title={status === "queued" ? "Queued" : "Regenerating"}
+                            aria-label="Beat regenerating"
+                            title="Regenerating"
                             style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "oklch(0.72 0.25 285)" }}
                           >
                             <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
+                          </div>
+                        );
+                      }
+                      if (status === "queued") {
+                        return (
+                          <div
+                            className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+                            aria-label="Beat queued"
+                            title="Queued"
+                            style={{ background: "oklch(0.72 0.16 70 / 0.10)", border: "1px solid oklch(0.72 0.16 70 / 0.28)", color: "oklch(0.85 0.12 70)" }}
+                          >
+                            <span className="w-2 h-2 rounded-full" style={{ background: "currentColor", opacity: 0.75 }} />
                           </div>
                         );
                       }
