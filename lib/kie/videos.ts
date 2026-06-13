@@ -113,6 +113,10 @@ export async function pollVideoJob(taskId: string, modelId?: string, userId?: st
       userId
     );
     const flag = data.data?.successFlag;
+    if (flag === 1 || flag === 2 || flag === 3) {
+      // Cost recon — see comment in pollVideoJob's generic branch.
+      console.log(`[kie-cost-recon] video-veo model=${modelId} flag=${flag} response=`, JSON.stringify(data));
+    }
     if (flag === 1) {
       const url = data.data?.videoUrl ?? data.data?.resultJson;
       return { status: "done", videoUrl: typeof url === "string" ? url : undefined };
@@ -130,6 +134,9 @@ export async function pollVideoJob(taskId: string, modelId?: string, userId?: st
     );
     const d = data.data;
     const raw = (d?.state ?? "").toLowerCase();
+    if (raw === "success" || raw === "fail") {
+      console.log(`[kie-cost-recon] video-runway model=${modelId} state=${raw} response=`, JSON.stringify(data));
+    }
     if (raw === "success") {
       return { status: "done", videoUrl: d?.videoInfo?.videoUrl };
     }
@@ -155,6 +162,16 @@ export async function pollVideoJob(taskId: string, modelId?: string, userId?: st
   if (DONE.includes(raw)) status = "done";
   else if (FAIL.includes(raw)) status = "failed";
   else if (PROCESSING.includes(raw)) status = "processing";
+
+  if (status === "done" || status === "failed") {
+    // Reconnaissance log for cost tracking — dumps the full KIE
+    // recordInfo payload at terminal state so we can identify which
+    // field carries credits consumed (the static-catalog approach
+    // was rejected in favor of reading credits directly from the
+    // response). Fires once per task, never on pending. Remove
+    // once lib/pricing.ts knows the credit field.
+    console.log(`[kie-cost-recon] video-generic model=${modelId} verdict=${status} response=`, JSON.stringify(data));
+  }
 
   let videoUrl: string | undefined;
   if (status === "done") {

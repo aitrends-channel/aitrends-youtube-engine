@@ -205,6 +205,15 @@ async function generateChunk(
     const d = status.data;
     const state = (d?.state ?? d?.status ?? "").toLowerCase();
 
+    if (DONE.includes(state) || FAIL.includes(state)) {
+      // Reconnaissance log for cost tracking — dumps the full KIE
+      // recordInfo payload at terminal state so we can identify
+      // which field carries credits consumed. Fires once per task
+      // (on done or failed), never on pending. Remove once
+      // lib/pricing.ts knows the credit field.
+      console.log(`[kie-cost-recon] tts state=${state} response=`, JSON.stringify(status));
+    }
+
     if (DONE.includes(state)) {
       const url = extractAudioUrl(d);
       if (!url) throw new Error("TTS finished but no audio URL was returned");

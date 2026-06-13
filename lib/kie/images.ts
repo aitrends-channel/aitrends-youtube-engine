@@ -153,6 +153,12 @@ export async function checkImageTask(
   }
 
   const verdict = classifyImageRecord(statusRes.data);
+  if (verdict.kind === "done" || verdict.kind === "failed") {
+    // Reconnaissance log for cost tracking — see comment in
+    // generateImage(). Dumps the full payload at terminal state so
+    // we can identify which field carries credits consumed.
+    console.log(`[kie-cost-recon] image-poll model=${modelId} verdict=${verdict.kind} response=`, JSON.stringify(statusRes));
+  }
   if (verdict.kind === "done") return { status: "done", url: verdict.url };
   if (verdict.kind === "failed") {
     console.error(`[images] task failed: ${verdict.error}`);
@@ -224,6 +230,14 @@ export async function generateImage(
     if (!statusRes.data) continue;
 
     const verdict = classifyImageRecord(statusRes.data);
+    if (verdict.kind === "done" || verdict.kind === "failed") {
+      // Reconnaissance log for cost tracking — dumps the full KIE
+      // recordInfo payload at terminal state so we can identify
+      // which field carries credits consumed. Only fires once per
+      // task (on done/failed), never on pending. Remove once
+      // lib/pricing.ts knows the credit field.
+      console.log(`[kie-cost-recon] image model=${modelId} verdict=${verdict.kind} response=`, JSON.stringify(statusRes));
+    }
     if (verdict.kind === "done") return verdict.url;
     if (verdict.kind === "failed") throw new Error(verdict.error);
   }
