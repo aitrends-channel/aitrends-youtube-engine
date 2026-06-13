@@ -3,6 +3,7 @@ import { generateImage } from "@/lib/kie/images";
 import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import type { User } from "@supabase/supabase-js";
 
 export const maxDuration = 800;
@@ -36,7 +37,8 @@ export async function POST(req: Request) {
 
     const results: { position: number; url: string }[] = [];
     const failures: { position: number; error: string }[] = [];
-    const batchSize = 2;
+    // Admin-tunable: product_config.badged_processes.thumbnail_batch.
+    const batchSize = (await getConcurrencyConfig()).thumbnail_batch;
 
     for (let i = 0; i < thumbnails.length; i += batchSize) {
       const batch = thumbnails.slice(i, i + batchSize);

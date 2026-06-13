@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { finishImageTask } from "@/lib/kie/finishImageTask";
 import { KieUpstreamError } from "@/lib/kie/client";
 import { supabase } from "@/lib/supabase/client";
+import { getConcurrencyConfig } from "@/lib/concurrency-config";
 
 // Image-finisher cron. Scans project_beats for rows with an in-flight
 // KIE task (image_task_id set, no image_url yet) and advances each one
@@ -23,7 +24,8 @@ export const maxDuration = 60;
 // Stay well clear of KIE's per-key rate limit while still draining
 // quickly — 5 concurrent polls + uploads is plenty for ~30 done beats
 // per minute, which beats new submissions on most projects.
-const CONCURRENCY = 5;
+// Admin-tunable: product_config.badged_processes.finish_images_poll.
+// The DB value is read once at the top of each cron tick below.
 
 // Per-invocation cap so a giant backlog can't OOM us. The query is
 // indexed via project_beats_inflight_image_idx; this just bounds work.
@@ -130,6 +132,7 @@ export async function GET(req: Request) {
     }
   }
 
+  const CONCURRENCY = (await getConcurrencyConfig()).finish_images_poll;
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, rows.length) }, () => worker()));
 
   const durationMs = Date.now() - startedAt;

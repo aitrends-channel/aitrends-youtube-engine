@@ -23,6 +23,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { extractToolInputFromText } from "@/lib/claude/textFallback";
+import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 
@@ -599,7 +600,7 @@ async function generateImages(
     }
   }
 
-  // Strict sequential processing — one chunk in flight at a time. The
+  // Strict sequential processing by default — one chunk in flight at a time. The
   // resume/progress UX needs each chunk to fully persist (and the
   // progress event to land) before the next starts so the user sees
   // "1/8 → 2/8 → 3/8" cleanly and a mid-run Stop has a well-defined
@@ -607,7 +608,8 @@ async function generateImages(
   // Claude calls cleanly but emitted progress events out of script
   // order and could leave partial-chunk gaps on Stop that the
   // word-count-based resume heuristic couldn't reliably skip.
-  const CONCURRENCY = 1;
+  // Admin-tunable: product_config.badged_processes.image_prompts_chunks.
+  const CONCURRENCY = (await getConcurrencyConfig()).image_prompts_chunks;
   let nextIdx = 0;
   let completed = 0;
   let firstError: Error | null = null;
@@ -823,7 +825,8 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
   // (~3-5 min on a 20-chunk project vs ~60s parallel) but bounded —
   // video chunks emit ~250 output tokens and finish in 8-15s.
   // retryClaudeCall absorbs any 429s.
-  const CONCURRENCY = 1;
+  // Admin-tunable: product_config.badged_processes.video_prompts_chunks.
+  const CONCURRENCY = (await getConcurrencyConfig()).video_prompts_chunks;
   let nextIdx = 0;
   let completed = 0;
   let firstError: Error | null = null;

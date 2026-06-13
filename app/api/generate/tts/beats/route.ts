@@ -4,6 +4,7 @@ import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
+import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import type { User } from "@supabase/supabase-js";
 
 export const maxDuration = 800;
@@ -100,14 +101,24 @@ export async function POST(req: Request) {
   const explicitBeats = body.beatNumbers && body.beatNumbers.length > 0 ? new Set(body.beatNumbers) : null;
   const skipRunClaim = body.skipRunClaim === true;
 
-  // Beats are processed in fixed-size batches (default 10). Within each
-  // batch every beat runs in parallel; the next batch isn't even marked
-  // "queued" until the current one finishes. This keeps the UI honest:
-  // a beat only shows the orange "Queued" pill when it's actually next
-  // up. Beats outside the current batch stay in the grey "Pending"
-  // state by virtue of having voiceover_status = NULL in the DB and the
-  // UI defaulting null → "pending" in effectiveStatus().
-  const BATCH_SIZE = Math.max(1, parseInt(process.env.TTS_BEAT_BATCH_SIZE ?? "5", 10));
+  // Beats are processed in fixed-size batches. Within each batch every
+  // beat runs in parallel; the next batch isn't even marked "queued"
+  // until the current one finishes. This keeps the UI honest: a beat
+  // only shows the orange "Queued" pill when it's actually next up.
+  // Beats outside the current batch stay in the grey "Pending" state by
+  // virtue of having voiceover_status = NULL in the DB and the UI
+  // defaulting null → "pending" in effectiveStatus().
+  //
+  // Admin-tunable via product_config.badged_processes.tts_beat_batch.
+  // Falls back to the TTS_BEAT_BATCH_SIZE env var, then to 5, if the DB
+  // value is unavailable.
+  const envFallback = Math.max(1, parseInt(process.env.TTS_BEAT_BATCH_SIZE ?? "5", 10));
+  let BATCH_SIZE = envFallback;
+  try {
+    BATCH_SIZE = (await getConcurrencyConfig()).tts_beat_batch;
+  } catch {
+    BATCH_SIZE = envFallback;
+  }
 
   const encoder = new TextEncoder();
   return new Response(

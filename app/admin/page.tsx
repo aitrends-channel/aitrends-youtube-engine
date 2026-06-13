@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy,
+  Crown, MoreVertical, Trash2, Copy, Gauge,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -450,7 +450,7 @@ function SetupSection({
   keysLoading: boolean;
   mutateKeys: () => void;
 }) {
-  const [setupTab, setSetupTab] = useState<"keys" | "models" | "anthropic">("keys");
+  const [setupTab, setSetupTab] = useState<"keys" | "models" | "anthropic" | "concurrency">("keys");
   const [serviceInput, setServiceInput] = useState<Service>("youtube_data_api_key");
   const [keyInput, setKeyInput] = useState("");
   const [adding, setAdding] = useState(false);
@@ -629,6 +629,7 @@ function SetupSection({
           { id: "keys", label: "API Keys" },
           { id: "models", label: "Models" },
           { id: "anthropic", label: "Anthropic" },
+          { id: "concurrency", label: "Badged processes" },
         ] as const).map((t) => (
           <button
             key={t.id}
@@ -650,6 +651,7 @@ function SetupSection({
 
       {setupTab === "models" && <ModelDefaultsPanel />}
       {setupTab === "anthropic" && <AnthropicRoutingPanel />}
+      {setupTab === "concurrency" && <ConcurrencyPanel />}
 
       {setupTab === "keys" && <>
 
@@ -1030,6 +1032,250 @@ function ModelDefaultsPanel() {
       >
         {saving ? "Saving…" : "Save defaults"}
       </button>
+    </div>
+  );
+}
+
+type ConcurrencyConfig = {
+  video_worker: number;
+  image_prompts_chunks: number;
+  video_prompts_chunks: number;
+  finish_images_poll: number;
+  image_generation_batch: number;
+  thumbnail_batch: number;
+  tts_beat_batch: number;
+  assembly_projects: number;
+  assembly_beats: number;
+};
+
+// Mirrors lib/concurrency-config.ts CONCURRENCY_FIELDS + CONCURRENCY_DEFAULTS —
+// kept in sync by hand. Defaults live here too so the UI can seed the
+// inputs and the "Reset to defaults" button without an extra round-trip.
+const CONCURRENCY_FIELDS: {
+  key: keyof ConcurrencyConfig;
+  label: string;
+  description: string;
+  default: number;
+  min: number;
+  max: number;
+  disabled?: boolean;
+  group?: string;
+}[] = [
+  { key: "image_prompts_chunks",   label: "Image prompts generation", description: "How many chunks generated at a time.", default: 1, min: 1, max: 20, group: "Prompts" },
+  { key: "video_prompts_chunks",   label: "Video prompts generation", description: "How many chunks generated at a time.", default: 1, min: 1, max: 20, group: "Prompts" },
+  { key: "tts_beat_batch",         label: "Voiceovers",          description: "Voiceover beats generated per batch.", default: 5, min: 1, max: 20, group: "Media" },
+  { key: "video_worker",           label: "AI videos generation", description: "How many videos generated at once.",   default: 3, min: 1, max: 50, group: "Media" },
+  { key: "image_generation_batch", label: "AI image generation",  description: "How many images generated at once.",   default: 3, min: 1, max: 20, group: "Media" },
+  { key: "assembly_projects",      label: "Projects",            description: "How many videos assembled at once.",   default: 1, min: 1, max: 5,  group: "Assemble" },
+  { key: "assembly_beats",         label: "Beats",               description: "Beats processed at once per video.",   default: 1, min: 1, max: 10, group: "Assemble" },
+  { key: "finish_images_poll",     label: "Image finishers",     description: "Workers finalizing completed images.", default: 5, min: 1, max: 50, disabled: true, group: "Others" },
+  { key: "thumbnail_batch",        label: "Thumbnail batch",     description: "Thumbnails generated per batch.",      default: 2, min: 1, max: 20, group: "Others" },
+];
+
+function ConcurrencyPanel() {
+  const { data, mutate, isLoading } = useSWR<ConcurrencyConfig>(
+    "/api/admin/concurrency",
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+
+  const [draft, setDraft] = useState<Record<keyof ConcurrencyConfig, string>>(() => {
+    const seed = {} as Record<keyof ConcurrencyConfig, string>;
+    for (const f of CONCURRENCY_FIELDS) seed[f.key] = String(f.default);
+    return seed;
+  });
+  const [savingKey, setSavingKey] = useState<keyof ConcurrencyConfig | null>(null);
+  const hydratedRef = useRef(false);
+
+  useEffect(() => {
+    if (!data || hydratedRef.current) return;
+    // The fetcher doesn't throw on non-OK responses, so `data` can be
+    // an error envelope (e.g. { error: "column missing" }) when the
+    // migration hasn't been applied yet. Only hydrate when every knob
+    // is present as a number — otherwise leave the default-seeded
+    // draft alone so the inputs keep showing 3/1/1/5/3/2/5 instead of
+    // the literal text "undefined".
+    const allPresent = CONCURRENCY_FIELDS.every((f) => typeof (data as Record<string, unknown>)[f.key] === "number");
+    if (!allPresent) return;
+    hydratedRef.current = true;
+    const next = { ...draft };
+    for (const f of CONCURRENCY_FIELDS) next[f.key] = String(data[f.key]);
+    setDraft(next);
+    // intentionally only run on first hydration
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  function parsedField(key: keyof ConcurrencyConfig) {
+    const raw = draft[key].trim();
+    if (raw === "") return { value: null as number | null, valid: false };
+    const n = Number(raw);
+    const field = CONCURRENCY_FIELDS.find(f => f.key === key)!;
+    const valid = Number.isInteger(n) && n >= field.min && n <= field.max;
+    return { value: n, valid };
+  }
+
+  function isDirty(key: keyof ConcurrencyConfig): boolean {
+    if (!data) return false;
+    const { value } = parsedField(key);
+    return value !== data[key];
+  }
+
+  async function saveField(key: keyof ConcurrencyConfig) {
+    const { value, valid } = parsedField(key);
+    if (!valid || value == null) {
+      toast.error("Fix the value before saving");
+      return;
+    }
+    setSavingKey(key);
+    try {
+      // PUT accepts a partial — we send just this one knob so other
+      // in-progress edits stay un-clobbered on the server.
+      const res = await fetch("/api/admin/concurrency", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: value }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? "Failed to save");
+      toast.success("Saved");
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  function resetToDefaults() {
+    const next = { ...draft };
+    for (const f of CONCURRENCY_FIELDS) next[f.key] = String(f.default);
+    setDraft(next);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-2.5">
+        <Gauge size={18} className="shrink-0 mt-0.5" style={{ color: "oklch(0.62 0.15 220)" }} />
+        <div>
+          <h3 className="text-base font-bold leading-tight" style={{ color: "var(--c-90)" }}>
+            Parallel processing per step
+          </h3>
+          <p className="text-xs mt-1" style={{ color: "var(--c-50)" }}>
+            How many tasks run at once at each step. Higher = faster, more API load.
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {(() => {
+          // Walk the field list and collapse consecutive entries with
+          // the same `group` value into a single group bucket. Items
+          // without a group render as their own bucket (no header).
+          type Bucket = { group: string | null; fields: typeof CONCURRENCY_FIELDS };
+          const buckets: Bucket[] = [];
+          for (const f of CONCURRENCY_FIELDS) {
+            const g = f.group ?? null;
+            const last = buckets[buckets.length - 1];
+            if (last && last.group === g && g !== null) last.fields.push(f);
+            else buckets.push({ group: g, fields: [f] });
+          }
+
+          const renderRow = (f: typeof CONCURRENCY_FIELDS[number], inGroup: boolean) => {
+            const { valid } = parsedField(f.key);
+            const serverVal = data?.[f.key];
+            const dirty = isDirty(f.key);
+            const saving = savingKey === f.key;
+            const fieldDisabled = f.disabled === true;
+            const canSave = !fieldDisabled && dirty && valid && !saving && savingKey === null;
+            const inputStyle = {
+              background: "var(--bg-input)",
+              border: `1px solid ${valid ? "var(--bd-10)" : "oklch(0.62 0.18 25 / 0.5)"}`,
+              color: "var(--c-90)",
+            } as const;
+            return (
+              <div key={f.key} className="p-3 rounded-xl"
+                style={{
+                  background: inGroup ? "white" : "oklch(0 0 0 / 0.02)",
+                  border: "1px solid oklch(0 0 0 / 0.06)",
+                  opacity: fieldDisabled ? 0.5 : 1,
+                }}>
+                <div className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0">
+                    <label className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>
+                      {f.label}
+                    </label>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--c-50)" }}>
+                      {f.description}
+                    </p>
+                    <p className="text-xs mt-1" style={{ color: "var(--c-42)" }}>
+                      {f.min}–{f.max} · saved{" "}
+                      <span className="font-semibold tabular-nums" style={{ color: "var(--c-90)" }}>
+                        {serverVal ?? "—"}
+                      </span>
+                    </p>
+                  </div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={f.min}
+                    max={f.max}
+                    step={1}
+                    value={draft[f.key]}
+                    onChange={(e) => setDraft({ ...draft, [f.key]: e.target.value })}
+                    disabled={isLoading || saving || fieldDisabled}
+                    className="w-24 px-3 py-2 rounded-lg text-sm outline-none transition-all tabular-nums text-center"
+                    style={inputStyle}
+                  />
+                  <button
+                    onClick={() => saveField(f.key)}
+                    disabled={!canSave}
+                    className="px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0"
+                    style={{
+                      background: canSave ? "oklch(0.62 0.15 220)" : "oklch(0 0 0 / 0.06)",
+                      color: canSave ? "white" : "var(--c-50)",
+                      minWidth: 72,
+                    }}
+                  >
+                    {saving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </div>
+            );
+          };
+
+          return buckets.map((b, bi) => {
+            if (b.group === null) {
+              return <div key={`ungrouped-${bi}`} className="space-y-3">{b.fields.map((f) => renderRow(f, false))}</div>;
+            }
+            return (
+              <div key={`group-${b.group}`} className="p-3 rounded-xl space-y-2"
+                style={{
+                  background: "oklch(0.62 0.15 220 / 0.08)",
+                  border: "1px solid oklch(0.62 0.15 220 / 0.22)",
+                  marginTop: 20,
+                  marginBottom: 50,
+                }}>
+                <h3 className="text-xs font-bold uppercase tracking-wide px-1" style={{ color: "oklch(0.55 0.15 220)" }}>
+                  {b.group}
+                </h3>
+                {b.fields.map((f) => renderRow(f, true))}
+              </div>
+            );
+          });
+        })()}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={resetToDefaults}
+          disabled={savingKey !== null}
+          className="px-3 py-2.5 rounded-lg text-sm font-medium transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+          style={{ background: "transparent", color: "var(--c-50)", border: "1px solid var(--bd-10)" }}
+        >
+          <RotateCcw size={14} />
+          Reset to defaults
+        </button>
+      </div>
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { generateImage } from "@/lib/kie/images";
 import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import type { User } from "@supabase/supabase-js";
 
 export const maxDuration = 60;
@@ -37,7 +38,8 @@ export async function POST(req: Request) {
 
     const results: { beatNumber: number; url: string }[] = [];
     const failures: { beatNumber: number; error: string }[] = [];
-    const batchSize = 3;
+    // Admin-tunable: product_config.badged_processes.image_generation_batch.
+    const batchSize = (await getConcurrencyConfig()).image_generation_batch;
 
     for (let i = 0; i < beats.length; i += batchSize) {
       const batch = beats.slice(i, i + batchSize);
