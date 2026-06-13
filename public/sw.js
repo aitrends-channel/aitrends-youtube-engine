@@ -31,9 +31,28 @@ self.addEventListener("activate", (e) => {
 });
 
 self.addEventListener("fetch", (e) => {
-  // Only cache GET requests for same-origin navigation
+  // Only intercept GET requests — POSTs and other methods pass
+  // through to the network normally so the SW can never replay a
+  // mutating request from cache.
   if (e.request.method !== "GET") return;
-  e.respondWith(
-    fetch(e.request).catch(() => caches.match(e.request))
-  );
+  e.respondWith((async () => {
+    try {
+      // Network-first: serve the freshest copy whenever the user is
+      // online. The catch below handles network failures.
+      return await fetch(e.request);
+    } catch (networkErr) {
+      // Fall back to the cache. caches.match resolves to undefined
+      // when there's no entry — handing undefined to respondWith
+      // throws "Failed to convert value to 'Response'" and the
+      // accompanying "FetchEvent resulted in a network error
+      // response" pair which obscure the real (network) cause.
+      // Only return the cached Response when we actually have one;
+      // otherwise re-throw so the browser surfaces a normal
+      // network error in the console and the page's own retry /
+      // offline handling can react to it.
+      const cached = await caches.match(e.request);
+      if (cached) return cached;
+      throw networkErr;
+    }
+  })());
 });
