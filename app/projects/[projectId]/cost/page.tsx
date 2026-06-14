@@ -191,14 +191,17 @@ export default function ProjectCostPage({ params }: PageProps) {
             </button>
           </div>
 
-          {/* Title strip — mirrors the admin details view */}
+          {/* Title strip — mirrors the admin details view. break-words
+              on the topic + break-all on the UUID keeps long values
+              inside the card on narrow phones instead of overflowing
+              and forcing horizontal scroll on the whole page. */}
           <div className="rounded-2xl p-4 space-y-1"
             style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
             <p className="text-xs uppercase tracking-wider" style={{ color: "black" }}>Title</p>
-            <p className="text-base font-semibold truncate" style={{ color: "black" }}>
+            <p className="text-base font-semibold break-words" style={{ color: "black" }}>
               {project?.selected_topic ?? project?.channel_name ?? "—"}
             </p>
-            <p className="text-[11px] mt-0.5 font-mono" style={{ color: "black" }}>{projectId}</p>
+            <p className="text-[11px] mt-0.5 font-mono break-all" style={{ color: "black" }}>{projectId}</p>
           </div>
 
           {error ? (

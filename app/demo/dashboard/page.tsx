@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { Settings, LogOut, BarChart3, Film, ArrowLeft } from "lucide-react";
+import { Settings, LogOut, BarChart3, Film, ArrowLeft, KeyRound } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
@@ -235,6 +235,15 @@ export default function DemoDashboardPage() {
                       <Settings size={15} />
                       <span>Setup</span>
                     </button>
+                    <Link
+                      href="/account"
+                      onClick={() => setShowProfileMenu(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all hover:opacity-80"
+                      style={{ color: "var(--c-60)" }}
+                    >
+                      <KeyRound size={15} />
+                      <span>Account</span>
+                    </Link>
                     <button
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
                       style={{ color: "#f87171" }}

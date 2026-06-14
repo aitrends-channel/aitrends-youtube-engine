@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, Mail,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, Mail, KeyRound,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -2582,6 +2582,15 @@ export default function AdminPage() {
                     </p>
                   </div>
                   <div className="px-2 pt-2">
+                    <Link
+                      href="/account"
+                      onClick={() => setShowProfileMenu(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80"
+                      style={{ color: "var(--c-60)" }}
+                    >
+                      <KeyRound size={13} />
+                      <span>Account</span>
+                    </Link>
                     <button
                       onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
@@ -3387,18 +3396,26 @@ export default function AdminPage() {
                   {/* Field table — two columns: label and value.
                       Label column gets the same silver highlight as
                       Title on the main table so the eye anchors to
-                      the field names on the left. */}
+                      the field names on the left. Label width drops
+                      to 110px on mobile (was 180px which ate half a
+                      360px viewport) and the value column gets
+                      break-words so long topics + UUIDs wrap inside
+                      the card instead of forcing horizontal scroll. */}
                   <div className="overflow-x-auto rounded-xl"
                     style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
-                    <table className="w-full border-collapse">
+                    <table className="w-full border-collapse table-fixed">
+                      <colgroup>
+                        <col className="w-[110px] sm:w-[180px]" />
+                        <col />
+                      </colgroup>
                       <tbody>
                         {stats.map((f, i) => (
                           <tr key={f.label} style={{ borderBottom: i === stats.length - 1 ? undefined : "1px solid var(--bd-4)" }}>
                             <td className="py-2.5 px-3 text-[11px] uppercase tracking-wider font-bold align-top"
-                              style={{ color: "black", background: "oklch(0.88 0 0)", width: "180px" }}>
+                              style={{ color: "black", background: "oklch(0.88 0 0)" }}>
                               {f.label}
                             </td>
-                            <td className="py-2.5 px-3 text-sm" style={{ color: "black" }}>
+                            <td className="py-2.5 px-3 text-sm break-words" style={{ color: "black" }}>
                               {f.value}
                             </td>
                           </tr>

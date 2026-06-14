@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, LayoutTemplate, CheckCircle2, RotateCcw, X, Settings, LogOut, ArrowLeft } from "lucide-react";
+import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, LayoutTemplate, CheckCircle2, RotateCcw, X, Settings, LogOut, ArrowLeft, KeyRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useDemoState } from "@/lib/demo-context";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -255,6 +255,15 @@ export function DemoNav({ currentStep }: DemoNavProps) {
                       <Settings size={13} />
                       <span>Setup</span>
                     </button>
+                    <Link
+                      href="/account"
+                      onClick={() => setShowProfileMenu(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80"
+                      style={{ color: "var(--c-60)" }}
+                    >
+                      <KeyRound size={13} />
+                      <span>Account</span>
+                    </Link>
                     <button
                       onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Check, LogOut, Zap, CalendarDays, RefreshCw, Settings } from "lucide-react";
+import { ArrowLeft, Check, LogOut, Zap, CalendarDays, RefreshCw, Settings, KeyRound } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { PageLoader } from "@/components/PageLoader";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
@@ -148,6 +148,15 @@ export default function PlanPage() {
                     </p>
                   </div>
                   <div className="px-2 pt-2">
+                    <Link
+                      href="/account"
+                      onClick={() => setShowProfileMenu(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80"
+                      style={{ color: "var(--c-60)" }}
+                    >
+                      <KeyRound size={13} />
+                      <span>Account</span>
+                    </Link>
                     <button
                       onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
