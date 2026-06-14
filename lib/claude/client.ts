@@ -51,6 +51,24 @@ const fetchViaKie: typeof fetch = async (input, init) => {
   headers.set("User-Agent", "heclus-engine/1.0");
 
   const upstream = await fetch(input, { ...init, headers });
+
+  // Streaming (SSE) shortcut — never buffer text/event-stream
+  // responses. Reading them with `upstream.text()` waits for the
+  // upstream to finish before we hand anything to the SDK, which
+  // silently kills real-time streaming (the script route's
+  // sendText callbacks fire in a single burst at the end, by which
+  // time the browser has long since disconnected). KIE forwards
+  // Anthropic's raw SSE bytes on streaming endpoints with the
+  // text/event-stream content-type, so there's no envelope to
+  // unwrap on this path — pass the response straight through.
+  // We only check ok+content-type; KIE errors come back as
+  // non-2xx with a JSON content-type, which falls into the
+  // buffered path below where envelope detection works as before.
+  const contentType = (upstream.headers.get("content-type") ?? "").toLowerCase();
+  if (upstream.ok && contentType.includes("text/event-stream")) {
+    return upstream;
+  }
+
   // Consume the body exactly once.
   const text = await upstream.text();
 

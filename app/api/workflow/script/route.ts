@@ -57,6 +57,19 @@ async function assertScriptRunActive(projectId: string, runId: string | null): P
 // on the line all the way through.
 const OPUS_MAX_OUTPUT_TOKENS = 32000;
 
+// Checkpoint cadence — every ~3000 chars of streamed output we
+// fire-and-forget an UPDATE of projects.script with the running
+// accumulated text. At ~80 chars/sec of natural speech that's a
+// checkpoint roughly every 30s, bounding worst-case data loss to a
+// single checkpoint window if Vercel hard-kills us mid-stream.
+const CHECKPOINT_INTERVAL = 3000;
+
+// Soft deadline that's ~80s under the route's maxDuration=800s. When
+// elapsed time crosses this, we abort the upstream stream ourselves
+// and run the partial-save path so the user has something to Continue
+// from. The 80s buffer covers the trim/strip/final-save tail.
+const SOFT_DEADLINE_MS = 720_000;
+
 function countWords(s: string): number {
   return s.trim().split(/\s+/).filter(Boolean).length;
 }
@@ -171,6 +184,12 @@ export async function POST(req: Request) {
         // its display from the same project.script row.
         let accumulated = existingScript;
         let cancelled = false;
+        // Soft deadline tracking — when we cross SOFT_DEADLINE_MS we
+        // flip this flag, abort the upstream stream, and let the
+        // final-save path persist what we have. Vercel would otherwise
+        // hard-kill us at maxDuration with no chance to save.
+        const startedAt = Date.now();
+        let deadlineHit = false;
 
         function send(data: object) {
           try {
@@ -179,6 +198,35 @@ export async function POST(req: Request) {
             // Client disconnected; subsequent enqueues become no-ops.
           }
         }
+
+        // Checkpoint save — fire-and-forget UPDATE of projects.script
+        // with the running text so a hard-kill at any point leaves a
+        // recent draft the user can Continue from. Ownership-checked
+        // (script_active_run_id = runId) so a stale checkpoint from
+        // an older run can't clobber a newer run's data. In-flight
+        // guard avoids overlapping requests landing out of order —
+        // we'd rather drop a checkpoint than risk an older payload
+        // overwriting a newer one.
+        let checkpointInFlight = false;
+        const fireCheckpoint = (text: string) => {
+          if (checkpointInFlight || !runId) return;
+          checkpointInFlight = true;
+          const snapshot = text;
+          supabase
+            .from("projects")
+            .update({
+              script: snapshot,
+              word_count: countWords(snapshot),
+              selected_topic: topic,
+            })
+            .eq("id", projectId)
+            .eq("user_id", user.id)
+            .eq("script_active_run_id", runId)
+            .then(
+              () => { checkpointInFlight = false; },
+              () => { checkpointInFlight = false; },
+            );
+        };
 
         // Check for spirals only every N characters of new content — the
         // detection is O(window) and we don't want to run it on every
@@ -193,6 +241,7 @@ export async function POST(req: Request) {
         // seconds of tokens.
         let charsUntilRunCheck = 0;
         const RUN_CHECK_INTERVAL = 1500;
+        let charsUntilCheckpoint = 0;
 
         const sendText = (text: string): void | "abort" => {
           accumulated += text;
@@ -217,6 +266,19 @@ export async function POST(req: Request) {
                 cancelled = true;
               }
             });
+          }
+          charsUntilCheckpoint -= text.length;
+          if (charsUntilCheckpoint <= 0) {
+            charsUntilCheckpoint = CHECKPOINT_INTERVAL;
+            fireCheckpoint(accumulated);
+          }
+          // Soft deadline — cheap clock check, no IO. If we're past
+          // the budget, surface a status frame to the client (so the
+          // UI can show "stopped at time limit") then abort.
+          if (!deadlineHit && (Date.now() - startedAt) > SOFT_DEADLINE_MS) {
+            deadlineHit = true;
+            send({ deadlineHit: true });
+            return "abort";
           }
           if (cancelled) return "abort";
         };
@@ -254,7 +316,7 @@ export async function POST(req: Request) {
               messages: opusMessages,
             });
             for await (const event of stream) {
-              if (spiralAborted || cancelled) {
+              if (spiralAborted || cancelled || deadlineHit) {
                 try { stream.abort(); } catch { /* ignore */ }
                 break;
               }
@@ -301,15 +363,33 @@ export async function POST(req: Request) {
           // the active_run_id. A second click that overwrote our UUID
           // means the new run will produce its own final save; ours
           // would just clobber it otherwise.
+          //
+          // Soft-deadline branch: when we bailed under the time limit
+          // the script is by definition incomplete, so we skip the
+          // current_state bump (which would let the user advance past
+          // an unfinished script) and we keep script_active_run_id
+          // cleared so a Continue click can pick up cleanly. The
+          // client gets `done: true, partial: true` so the UI can show
+          // a "stopped at time limit — Continue to resume" affordance
+          // instead of the normal completion state.
+          const update: Record<string, unknown> = {
+            script: finalScript,
+            word_count: wordCount,
+            selected_topic: topic,
+            script_active_run_id: null,
+          };
+          if (!deadlineHit) {
+            update.current_state = 7;
+          }
           const writeQuery = supabase
             .from("projects")
-            .update({ script: finalScript, word_count: wordCount, selected_topic: topic, current_state: 7, script_active_run_id: null })
+            .update(update)
             .eq("id", projectId)
             .eq("user_id", user.id);
           if (runId) writeQuery.eq("script_active_run_id", runId);
           await writeQuery;
 
-          send({ done: true, wordCount });
+          send({ done: true, wordCount, ...(deadlineHit ? { partial: true } : {}) });
         } catch (err) {
           const message = err instanceof Error ? err.message : "Generation failed mid-stream";
 
