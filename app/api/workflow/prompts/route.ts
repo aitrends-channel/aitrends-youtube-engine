@@ -24,6 +24,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import { getConcurrencyConfig } from "@/lib/concurrency-config";
+import { logClaudeUsage } from "@/lib/costs";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 
@@ -520,6 +521,13 @@ async function generateImages(
     );
 
     console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} claude done in ${Date.now() - t0}ms stop=${res.stop_reason}`);
+    void logClaudeUsage({
+      projectId,
+      userId,
+      step: "prompts_image",
+      model,
+      usage: res.usage,
+    });
     assertComplete(res.stop_reason, `image prompts chunk ${chunkIndex + 1}/${totalChunks}`);
 
     let input: Record<string, unknown> | null = null;
@@ -755,6 +763,13 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
       tool = res.content.find((b) => b.type === "tool_use");
       const blockTypes = res.content.map((b) => b.type).join(",");
       console.log(`[video-prompts] batch ${i + 1}/${chunks.length} attempt ${attempt + 1} stop=${res.stop_reason} blocks=${blockTypes} tool_use=${!!tool}`);
+      void logClaudeUsage({
+        projectId,
+        userId,
+        step: "prompts_video",
+        model,
+        usage: res.usage,
+      });
       if (tool && tool.type === "tool_use") break;
     }
 
@@ -900,6 +915,13 @@ async function generateThumbnails(
     tool = res.content.find((b) => b.type === "tool_use");
     const blockTypes = res.content.map((b) => b.type).join(",");
     console.log(`[thumbnails] attempt ${attempt + 1} stop=${res.stop_reason} blocks=${blockTypes} tool_use=${!!tool}`);
+    void logClaudeUsage({
+      projectId,
+      userId,
+      step: "thumbnail_concept",
+      model,
+      usage: res.usage,
+    });
     if (tool && tool.type === "tool_use") break;
   }
 

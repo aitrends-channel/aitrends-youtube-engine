@@ -4,6 +4,7 @@ import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { getConcurrencyConfig } from "@/lib/concurrency-config";
+import { logProjectCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 
 export const maxDuration = 60;
@@ -48,7 +49,18 @@ export async function POST(req: Request) {
         batch.map(async (beat) => {
           await supabase.from("project_beats").update({ image_status: "generating" }).eq("project_id", projectId).eq("beat_number", beat.beatNumber);
 
-          const imageUrl = await generateImage(beat.imagePrompt, modelId, aspectRatio, resolution, user.id);
+          const { url: imageUrl, creditsConsumed } = await generateImage(beat.imagePrompt, modelId, aspectRatio, resolution, user.id);
+          if (creditsConsumed) {
+            void logProjectCost({
+              projectId,
+              userId: user.id,
+              step: "image_gen",
+              provider: "kie",
+              model: modelId,
+              units: creditsConsumed,
+              unitKind: "kie_credits",
+            });
+          }
           const storagePath = `${userFolderFor(user)}/${projectId}/images/beat-${beat.beatNumber}_${Date.now()}.png`;
           const publicUrl = await uploadFromUrl(storagePath, imageUrl, "image/png");
 

@@ -115,6 +115,111 @@ function formatAssembleTime(seconds: number | null): string {
   return mRem === 0 ? `${h}h` : `${h}h ${mRem}m`;
 }
 
+// Compact number formatting for cost cells. Keeps the table dense:
+//   42       → "42"
+//   1500     → "1.5k"
+//   42000    → "42k"
+//   1500000  → "1.5M"
+// Fractional KIE credits (e.g. 9.6) render with one decimal up to
+// 999.x; over a thousand they go to k-units like everything else.
+function compactNumber(n: number): string {
+  if (n === 0) return "0";
+  if (n < 10 && !Number.isInteger(n)) return n.toFixed(1).replace(/\.0$/, "");
+  if (n < 1000) return Math.round(n).toString();
+  if (n < 1_000_000) {
+    const k = n / 1000;
+    return k >= 100 ? `${Math.round(k)}k` : `${k.toFixed(1).replace(/\.0$/, "")}k`;
+  }
+  const m = n / 1_000_000;
+  return m >= 100 ? `${Math.round(m)}M` : `${m.toFixed(1).replace(/\.0$/, "")}M`;
+}
+
+// Short suffix for each unit kind logged by the cost ledger. Picked
+// to be unambiguous at a glance inside a tight cell — "60 cr" reads
+// as KIE credits, "12k tok" as Claude tokens. Falls back to the raw
+// kind for unknown units so future additions show up as labeled
+// strings rather than silently disappearing.
+function unitSuffix(unitKind: string): string {
+  switch (unitKind) {
+    case "claude_tokens_in":
+    case "claude_tokens_out":
+    case "claude_tokens_cache_read":
+    case "claude_tokens_cache_creation":
+      return "tok";
+    case "kie_credits":
+      return "cr";
+    case "elevenlabs_chars":
+      return "chr";
+    case "supadata_transcripts":
+      return "tx";
+    default:
+      return unitKind;
+  }
+}
+
+// Friendly name for a unit kind in the hover tooltip.
+function unitLabel(unitKind: string): string {
+  switch (unitKind) {
+    case "claude_tokens_in":              return "input tokens";
+    case "claude_tokens_out":             return "output tokens";
+    case "claude_tokens_cache_read":      return "cache-read tokens";
+    case "claude_tokens_cache_creation":  return "cache-create tokens";
+    case "kie_credits":                   return "KIE credits";
+    case "elevenlabs_chars":              return "ElevenLabs chars";
+    case "supadata_transcripts":          return "Supadata transcripts";
+    default:                              return unitKind;
+  }
+}
+
+// Two-letter provider tag prefixed onto each cost cell so the reader
+// can tell at a glance which API the units belong to without hovering
+// for the tooltip. Derived from unitKind because each unit kind maps
+// cleanly to exactly one provider — saves us threading provider
+// strings through the aggregation logic.
+function providerInitial(unitKind: string): string {
+  if (unitKind.startsWith("claude_tokens_")) return "An";
+  switch (unitKind) {
+    case "kie_credits":          return "Ki";
+    case "elevenlabs_chars":     return "El";
+    case "supadata_transcripts": return "Su";
+    default:                     return "?";
+  }
+}
+
+// One cell in the admin Cost table. Aggregates the provided
+// summary's totals (already merged by the API per unit_kind) into a
+// compact display string and surfaces the full provider/model
+// breakdown in a hover tooltip. "—" when there's no data so the
+// reader can tell at a glance which steps have logged cost rows.
+function CostCell({ summary, showProviders = true }: { summary?: { totals: Record<string, number>; breakdown: Array<{ provider: string; model: string | null; unitKind: string; units: number }> }; showProviders?: boolean }) {
+  if (!summary || !summary.breakdown.length) {
+    return <span style={{ color: "var(--c-35)" }}>—</span>;
+  }
+  // Sum tokens-in + tokens-out + cache-* into a single "tok" tally
+  // so Claude steps don't show four separate sub-cells. Other unit
+  // kinds stay separate (kie_credits vs supadata_transcripts on
+  // Channel Analysis, etc.).
+  const tokensTotal =
+    (summary.totals["claude_tokens_in"]              ?? 0) +
+    (summary.totals["claude_tokens_out"]             ?? 0) +
+    (summary.totals["claude_tokens_cache_read"]      ?? 0) +
+    (summary.totals["claude_tokens_cache_creation"]  ?? 0);
+  const otherUnits = Object.entries(summary.totals).filter(
+    ([k]) => !k.startsWith("claude_tokens_"),
+  );
+  const parts: string[] = [];
+  if (tokensTotal > 0) parts.push(`${showProviders ? "An " : ""}${compactNumber(tokensTotal)} tok`);
+  for (const [kind, units] of otherUnits) {
+    if (units > 0) parts.push(`${showProviders ? `${providerInitial(kind)} ` : ""}${compactNumber(units)} ${unitSuffix(kind)}`);
+  }
+  const tooltip = summary.breakdown
+    .map((b) => `${b.provider}${b.model ? ` (${b.model})` : ""}: ${compactNumber(b.units)} ${unitLabel(b.unitKind)}`)
+    .join("\n");
+  return (
+    <span title={tooltip}>{parts.length > 0 ? parts.join(" · ") : <span style={{ color: "var(--c-35)" }}>—</span>}</span>
+  );
+}
+
 interface AdminStats {
   accessGranted: number;
   activeAccounts: number;
@@ -156,6 +261,40 @@ interface AdminProject {
   // (done/stopped/failed). Null when the project hasn't completed
   // an assembly yet, or pre-dates migration 049_assembly_timing.
   assembleSeconds: number | null;
+}
+
+// Per-project usage rollup returned by /api/admin/project-costs.
+// One entry per project that has at least one logged cost row.
+// Projects with no logged costs (e.g. pre-migration runs) simply
+// don't appear and the UI renders "—" for every column.
+type CostColumn =
+  | "channel_analysis"
+  | "topic"
+  | "script"
+  | "visuals"
+  | "prompts"
+  | "voiceover"
+  | "generate"
+  | "assemble"
+  | "thumbnail";
+
+interface CostBreakdownEntry {
+  provider: string;
+  model: string | null;
+  unitKind: string;
+  units: number;
+}
+
+interface CostColumnSummary {
+  totals: Record<string, number>;
+  breakdown: CostBreakdownEntry[];
+}
+
+interface ProjectCostsResponse {
+  projects: Array<{
+    projectId: string;
+    columns: Record<CostColumn, CostColumnSummary>;
+  }>;
 }
 
 interface QuotaEntry { units_used: number; date: string; }
@@ -1430,18 +1569,19 @@ function AnthropicRoutingPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 border-b" style={{ borderColor: "oklch(0 0 0 / 0.07)" }}>
+      <div className="flex items-center gap-1 p-1 rounded-xl w-full"
+        style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
         {subTabs.map((t) => (
           <button
             key={t.id}
             onClick={() => setSubTab(t.id)}
-            className="px-3 py-2 text-xs font-semibold transition-all"
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
             style={subTab === t.id ? {
-              color: "oklch(0.55 0.15 220)",
-              borderBottom: "2px solid oklch(0.55 0.15 220)",
+              background: "oklch(0.72 0.25 285)",
+              color: "white",
+              boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.35)",
             } : {
               color: "var(--c-50)",
-              borderBottom: "2px solid transparent",
             }}
           >
             {t.label}
@@ -2002,7 +2142,7 @@ function Pagination({ page, total, onChange }: { page: number; total: number; on
 
 function AdminSkeleton() {
   return (
-    <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-8 py-8 sm:py-12 space-y-6 sm:space-y-10">
+    <main className="flex-1 w-full px-[30px] py-8 sm:py-12 space-y-6 sm:space-y-10">
         {/* Page heading */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl animate-pulse" style={SK} />
@@ -2190,10 +2330,30 @@ export default function AdminPage() {
   const [planFilter, setPlanFilter] = useState<PlanBucket>("all");
   const [nicheLimitUser, setNicheLimitUser] = useState<AdminUser | null>(null);
   const [projectsPage, setProjectsPage] = useState(1);
+  // Single search input shared by both Videos sub-tabs (General +
+  // Cost) — both render rows out of the same sortedProjects array
+  // so one filter feeds both tables. Matches against title (topic),
+  // channel name, user email, and project ID for flexibility.
+  const [projectSearch, setProjectSearch] = useState("");
+  // Sub-tabs inside the Videos section. General = existing table.
+  // Cost = the per-step usage breakdown introduced by the
+  // project_costs ledger.
+  const [videosSubTab, setVideosSubTab] = useState<"general" | "cost">("general");
   const [activityView, setActivityView] = useState<"daily" | "weekly" | "monthly">("daily");
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [hoveredRevIdx, setHoveredRevIdx] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState("stats");
+
+  // Per-project cost rollups for the Videos → Cost sub-tab. Only
+  // fetched when that sub-tab is selected so the DB isn't hit on
+  // every admin page load. Returns aggregated units per
+  // (project_id, display_column) — the table just renders.
+  const { data: costsData } = useSWR<ProjectCostsResponse>(
+    authChecked && activeTab === "projects" && videosSubTab === "cost"
+      ? "/api/admin/project-costs"
+      : null,
+    fetcher
+  );
 
   async function handleSignOut() {
     const supabase = createSupabaseBrowserClient();
@@ -2293,7 +2453,19 @@ export default function AdminPage() {
     const tb = b.lastSignIn ? new Date(b.lastSignIn).getTime() : -Infinity;
     return tb - ta;
   });
-  const sortedProjects = [...projects].sort((a, b) => {
+  const projectSearchLower = projectSearch.trim().toLowerCase();
+  const filteredProjects = projectSearchLower
+    ? projects.filter((p) => {
+        const haystack = [
+          p.selectedTopic,
+          p.channelName,
+          p.userEmail,
+          p.id,
+        ].filter(Boolean).join(" ").toLowerCase();
+        return haystack.includes(projectSearchLower);
+      })
+    : projects;
+  const sortedProjects = [...filteredProjects].sort((a, b) => {
     const ta = a.createdAt ? new Date(a.createdAt).getTime() : -Infinity;
     const tb = b.createdAt ? new Date(b.createdAt).getTime() : -Infinity;
     return tb - ta;
@@ -2369,7 +2541,7 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-6xl mx-auto px-4 sm:px-8 py-8 sm:py-12 space-y-6 sm:space-y-10">
+      <main className="flex-1 w-full px-[30px] py-8 sm:py-12 space-y-6 sm:space-y-10">
         {/* Page heading */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
@@ -3013,21 +3185,77 @@ export default function AdminPage() {
               const avg = Math.round(durations.reduce((sum, n) => sum + n, 0) / durations.length);
               return (
                 <span
-                  className="ml-auto text-xs font-medium px-3 py-1 rounded-full inline-flex items-center gap-1.5 tabular-nums"
+                  className="ml-auto text-base font-bold px-3 py-1 rounded-full inline-flex items-center gap-1.5 tabular-nums"
                   style={{ background: "oklch(0.55 0.15 220 / 0.08)", border: "1px solid oklch(0.55 0.15 220 / 0.22)", color: "oklch(0.45 0.15 220)" }}
                   title={`Average across ${durations.length} completed assembl${durations.length === 1 ? "y" : "ies"}`}
                 >
-                  <Clock size={12} />
+                  <Clock size={14} />
                   Avg processing time: {formatAssembleTime(avg)}
                 </span>
               );
             })()}
           </div>
 
-          {isLoading ? (
+          {/* Sub-tabs — General (current videos table) vs Cost
+              (per-step usage rollup from project_costs). Each tab
+              renders its own table below; the section header above
+              stays constant so the count + Avg processing chip are
+              visible regardless of which sub-tab is selected. */}
+          <div className="flex items-center gap-1 p-1 rounded-xl w-full"
+            style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+            {(["general", "cost"] as const).map((id) => (
+              <button key={id} onClick={() => setVideosSubTab(id)}
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer capitalize"
+                style={videosSubTab === id
+                  ? { background: "oklch(0.55 0.15 145)", color: "white", boxShadow: "0 2px 8px oklch(0.55 0.15 145 / 0.35)" }
+                  : { color: "oklch(0.50 0 0)" }}
+              >
+                {id}
+              </button>
+            ))}
+          </div>
+
+          {/* Shared search input — drives both General and Cost.
+              Filters projects by topic, channel, user email, or
+              project ID (substring match, case-insensitive). Resets
+              pagination so an active filter never lands on an empty
+              page when results shrink. Placed below the sub-tabs so
+              the tab choice feels primary and the filter feels like
+              a refinement on whatever view is active. */}
+          <div className="relative">
+            <input
+              type="search"
+              value={projectSearch}
+              onChange={(e) => { setProjectSearch(e.target.value); setProjectsPage(1); }}
+              placeholder="Search videos by topic, channel, user, or project ID…"
+              className="w-full pl-9 pr-3 py-2.5 rounded-lg text-sm outline-none transition-all"
+              style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
+            />
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--c-40)" }}>
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            {projectSearch && (
+              <button
+                onClick={() => { setProjectSearch(""); setProjectsPage(1); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-xs cursor-pointer transition-opacity hover:opacity-80"
+                style={{ color: "var(--c-50)", background: "oklch(0 0 0 / 0.05)" }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
+          {videosSubTab === "general" && (isLoading ? (
             <SkeletonRows cols={8} />
           ) : projects.length === 0 ? (
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No projects yet.</div>
+          ) : sortedProjects.length === 0 ? (
+            <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>
+              No videos match &ldquo;{projectSearch}&rdquo;.
+            </div>
           ) : (
             <div className="rounded-2xl overflow-x-auto w-full max-w-full"
               style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
@@ -3151,9 +3379,112 @@ export default function AdminPage() {
                   })}
                 </tbody>
               </table>
-              <Pagination page={projectsPage} total={projects.length} onChange={setProjectsPage} />
+              <Pagination page={projectsPage} total={sortedProjects.length} onChange={setProjectsPage} />
             </div>
-          )}
+          ))}
+
+          {videosSubTab === "cost" && (() => {
+            // Build a project-id → cost rollup map so the table can
+            // render a row per project (using the same pagination
+            // as General) and look up its cost cells in O(1). Empty
+            // map covers the no-data case — every cell renders "—".
+            const costsByProject = new Map<string, Record<CostColumn, CostColumnSummary>>();
+            for (const p of costsData?.projects ?? []) {
+              costsByProject.set(p.projectId, p.columns);
+            }
+            const COLS: { key: CostColumn; label: string }[] = [
+              { key: "channel_analysis", label: "Channel" },
+              { key: "topic",            label: "Topic" },
+              { key: "script",           label: "Script" },
+              { key: "visuals",          label: "Visuals" },
+              { key: "prompts",          label: "Prompts" },
+              { key: "voiceover",        label: "Voiceover" },
+              { key: "generate",         label: "Generate" },
+              { key: "assemble",         label: "Assemble" },
+              { key: "thumbnail",        label: "Thumbnail" },
+            ];
+
+            // Sum totals + merge breakdown across every column for one
+            // project into a single CostColumnSummary the Total cell
+            // renders. Breakdown merge collapses duplicate
+            // (provider, model, unitKind) triples that may appear in
+            // multiple steps (e.g. Claude Opus shows up in Channel
+            // Analysis AND Prompts AND Thumbnail) so the tooltip
+            // doesn't repeat rows.
+            const projectTotal = (cells: Record<CostColumn, CostColumnSummary> | undefined): CostColumnSummary | undefined => {
+              if (!cells) return undefined;
+              const totals: Record<string, number> = {};
+              const bdMap = new Map<string, CostBreakdownEntry>();
+              for (const c of COLS) {
+                const cell = cells[c.key];
+                if (!cell) continue;
+                for (const [k, v] of Object.entries(cell.totals)) {
+                  totals[k] = (totals[k] ?? 0) + v;
+                }
+                for (const b of cell.breakdown) {
+                  const key = `${b.provider}|${b.model ?? ""}|${b.unitKind}`;
+                  const existing = bdMap.get(key);
+                  if (existing) existing.units += b.units;
+                  else bdMap.set(key, { ...b });
+                }
+              }
+              const breakdown = Array.from(bdMap.values());
+              if (breakdown.length === 0) return undefined;
+              return { totals, breakdown };
+            };
+
+            return (
+              <div className="rounded-2xl overflow-x-auto w-full max-w-full"
+                style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                <table className="w-full border-collapse min-w-[900px]">
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
+                      {["Title", "Total", ...COLS.map((c) => c.label)].map((h) => {
+                        const isTitle = h === "Title";
+                        const isTotal = h === "Total";
+                        return (
+                          <th key={h} className="text-left py-3 px-3 text-[11px] uppercase tracking-wider"
+                            style={{
+                              color: isTitle || isTotal ? "black" : "var(--c-40)",
+                              background: isTotal ? "#ecf0f1" : isTitle ? "oklch(0.88 0 0)" : undefined,
+                              fontWeight: isTotal ? 700 : 500,
+                            }}>
+                            {h}
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody key={`cost-p${projectsPage}`}>
+                    {pagedProjects.map((p) => {
+                      const cells = costsByProject.get(p.id);
+                      const total = projectTotal(cells);
+                      return (
+                        <tr key={p.id} style={{ borderBottom: "1px solid var(--bd-4)" }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bd-2)"; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
+                          <td className="py-3 px-3 text-sm max-w-[200px]"
+                            style={{ color: "black", background: "oklch(0.88 0 0)" }}>
+                            <TruncatedCell value={p.selectedTopic ?? p.channelName} maxLen={24} fallback="—" />
+                          </td>
+                          <td className="py-3 px-3 text-xs font-mono font-bold tabular-nums"
+                            style={{ color: "black", background: "#ecf0f1" }}>
+                            <CostCell summary={total} showProviders={false} />
+                          </td>
+                          {COLS.map((c) => (
+                            <td key={c.key} className="py-3 px-3 text-xs font-mono tabular-nums" style={{ color: "var(--c-75)" }}>
+                              <CostCell summary={cells?.[c.key]} />
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <Pagination page={projectsPage} total={sortedProjects.length} onChange={setProjectsPage} />
+              </div>
+            );
+          })()}
         </section>
 
         {/* Revenue section */}

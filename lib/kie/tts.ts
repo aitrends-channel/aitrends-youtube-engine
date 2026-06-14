@@ -1,7 +1,7 @@
 import { kieRequest } from "./client";
 import type { KieModel } from "@/lib/types";
 
-const TTS_MODEL = "elevenlabs/text-to-speech-turbo-2-5";
+export const TTS_MODEL = "elevenlabs/text-to-speech-turbo-2-5";
 const MAX_CHARS = 5000;
 const POLL_INTERVAL_MS = 1000;
 const POLL_DEADLINE_MS = 5 * 60 * 1000; // 5 minutes per chunk
@@ -138,6 +138,9 @@ interface KieRecordResponse {
     failCode?: string;
     failReason?: string;
     error?: string;
+    // KIE bills per task; recordInfo returns the credit count
+    // for the completed task. Used by the project_costs ledger.
+    creditsConsumed?: number;
   };
 }
 
@@ -166,7 +169,7 @@ async function generateChunk(
   voiceId: string,
   userId: string | undefined,
   onStatus?: (msg: string) => void,
-): Promise<ArrayBuffer> {
+): Promise<{ audio: ArrayBuffer; creditsConsumed?: number }> {
   onStatus?.("Submitting…");
   console.log(`[TTS] KIE submit | model: ${TTS_MODEL} | voice: ${voiceId} | chars: ${text.length}`);
 
@@ -204,15 +207,7 @@ async function generateChunk(
     );
     const d = status.data;
     const state = (d?.state ?? d?.status ?? "").toLowerCase();
-
-    if (DONE.includes(state) || FAIL.includes(state)) {
-      // Reconnaissance log for cost tracking — dumps the full KIE
-      // recordInfo payload at terminal state so we can identify
-      // which field carries credits consumed. Fires once per task
-      // (on done or failed), never on pending. Remove once
-      // lib/pricing.ts knows the credit field.
-      console.log(`[kie-cost-recon] tts state=${state} response=`, JSON.stringify(status));
-    }
+    const creditsConsumed = typeof d?.creditsConsumed === "number" ? d.creditsConsumed : undefined;
 
     if (DONE.includes(state)) {
       const url = extractAudioUrl(d);
@@ -220,7 +215,8 @@ async function generateChunk(
       onStatus?.("Downloading…");
       const audioRes = await fetch(url);
       if (!audioRes.ok) throw new Error(`Failed to download audio: ${audioRes.status}`);
-      return audioRes.arrayBuffer();
+      const audio = await audioRes.arrayBuffer();
+      return { audio, creditsConsumed };
     }
     if (FAIL.includes(state)) {
       console.error(`[TTS] chunk failed | taskId=${taskId} | full data:`, JSON.stringify(d));
@@ -247,7 +243,7 @@ async function generateChunkWithRetry(
   voiceId: string,
   userId: string | undefined,
   onStatus?: (msg: string) => void,
-): Promise<ArrayBuffer> {
+): Promise<{ audio: ArrayBuffer; creditsConsumed?: number }> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < CHUNK_RETRY_ATTEMPTS; attempt++) {
     try {
@@ -282,7 +278,7 @@ export async function generateTTS(
   onProgress?: (current: number, total: number) => void,
   onStatus?: (msg: string) => void,
   userId?: string
-): Promise<ArrayBuffer> {
+): Promise<{ audio: ArrayBuffer; creditsConsumed?: number }> {
   const normalized = normalizeText(text);
   const chunks = splitIntoChunks(normalized);
   console.log(`[TTS] ${chunks.length} chunk(s) | chars: ${normalized.length} | voice: ${voiceId}`);
@@ -295,11 +291,13 @@ export async function generateTTS(
   }
 
   const buffers: ArrayBuffer[] = [];
+  let totalCredits = 0;
   for (let i = 0; i < chunks.length; i++) {
     onProgress?.(i, chunks.length);
     onStatus?.(`Chunk ${i + 1} of ${chunks.length}…`);
-    const buf = await generateChunkWithRetry(chunks[i], voiceId, userId, onStatus);
-    buffers.push(buf);
+    const result = await generateChunkWithRetry(chunks[i], voiceId, userId, onStatus);
+    buffers.push(result.audio);
+    totalCredits += result.creditsConsumed ?? 0;
   }
   onProgress?.(chunks.length, chunks.length);
 
@@ -310,5 +308,5 @@ export async function generateTTS(
     merged.set(new Uint8Array(b), offset);
     offset += b.byteLength;
   }
-  return merged.buffer;
+  return { audio: merged.buffer, creditsConsumed: totalCredits > 0 ? totalCredits : undefined };
 }

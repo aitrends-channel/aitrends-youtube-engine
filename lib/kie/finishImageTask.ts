@@ -1,6 +1,7 @@
 import { checkImageTask } from "@/lib/kie/images";
 import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
+import { logProjectCost } from "@/lib/costs";
 
 // Shared "poll one in-flight image task and persist the result" path.
 // Used by both the user-driven poll route (foreground) and the cron
@@ -30,6 +31,21 @@ export type FinishImageResult =
 
 export async function finishImageTask(input: FinishImageInput): Promise<FinishImageResult> {
   const result = await checkImageTask(input.taskId, input.userId, input.modelId);
+
+  // Log the credit consumption as soon as KIE has billed us, even
+  // if downstream upload fails — KIE charged regardless and the cost
+  // ledger should reflect actual spend.
+  if ((result.status === "done" || result.status === "failed") && result.creditsConsumed) {
+    void logProjectCost({
+      projectId: input.projectId,
+      userId: input.userId,
+      step: "image_gen",
+      provider: "kie",
+      model: input.modelId ?? null,
+      units: result.creditsConsumed,
+      unitKind: "kie_credits",
+    });
+  }
 
   if (result.status === "done" && result.url) {
     const folder = userFolderFor({ id: input.userId, email: input.userEmail ?? null });

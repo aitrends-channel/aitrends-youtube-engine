@@ -6,6 +6,7 @@ import { retryClaudeCall } from "@/lib/claude/retry";
 import { stripCaptionCues } from "@/lib/youtube/supadata";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { logClaudeUsage } from "@/lib/costs";
 import type { ChannelAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 
@@ -286,6 +287,19 @@ export async function POST(req: Request) {
                   sendText(event.delta.text);
                 }
               }
+              // Pull final usage after the stream drains. Async so it
+              // can't block the script-emit path; logClaudeUsage is
+              // fail-soft on its own.
+              try {
+                const finalMsg = await stream.finalMessage();
+                void logClaudeUsage({
+                  projectId,
+                  userId: user.id,
+                  step: "script",
+                  model,
+                  usage: finalMsg.usage,
+                });
+              } catch { /* finalMessage may throw if the stream was aborted */ }
             });
           }
 

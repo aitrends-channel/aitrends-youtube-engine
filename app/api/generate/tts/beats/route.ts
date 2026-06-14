@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from "crypto";
-import { generateTTS } from "@/lib/kie/tts";
+import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
 import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
 import { getConcurrencyConfig } from "@/lib/concurrency-config";
+import { logProjectCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 
 export const maxDuration = 800;
@@ -290,7 +291,18 @@ export async function POST(req: Request) {
                 .update({ voiceover_status: "generating" })
                 .eq("project_id", projectId)
                 .eq("beat_number", beat.beat_number);
-              const audioBuf = await generateTTS(ttsText, voiceId, undefined, undefined, user.id);
+              const { audio: audioBuf, creditsConsumed } = await generateTTS(ttsText, voiceId, undefined, undefined, user.id);
+              if (creditsConsumed) {
+                void logProjectCost({
+                  projectId,
+                  userId: user.id,
+                  step: "tts",
+                  provider: "kie",
+                  model: TTS_MODEL,
+                  units: creditsConsumed,
+                  unitKind: "kie_credits",
+                });
+              }
               // Hash the RAW segment (matches what selectStaleBeats
               // checks). Hashing the dedup'd text would cause every
               // regen to recompute the hash differently if the previous

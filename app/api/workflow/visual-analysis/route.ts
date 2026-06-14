@@ -10,6 +10,7 @@ import { retryClaudeCall } from "@/lib/claude/retry";
 import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { logClaudeUsage } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 
 export async function POST(req: Request) {
@@ -131,6 +132,15 @@ export async function POST(req: Request) {
     let toolUse: Anthropic.Messages.ContentBlock | undefined;
     for (let attempt = 0; attempt < 2; attempt++) {
       response = await callWithFallback(`visual analysis (try ${attempt + 1})`);
+      // Log token usage per attempt — each attempt was billed, even
+      // if it produced no usable tool block.
+      void logClaudeUsage({
+        projectId,
+        userId: user.id,
+        step: "visuals",
+        model,
+        usage: response.usage,
+      });
       toolUse = response.content.find((b) => b.type === "tool_use");
       const blockTypes = response.content.map((b) => b.type).join(",");
       console.log(`[visual-analysis] attempt ${attempt + 1} stop=${response.stop_reason} blocks=${blockTypes} tool_use=${!!toolUse}`);

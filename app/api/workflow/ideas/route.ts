@@ -5,6 +5,7 @@ import { buildVideoIdeasPrompt } from "@/lib/claude/prompts";
 import { VideoIdeasSchema } from "@/lib/claude/schemas";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { logClaudeUsage } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 
 export const maxDuration = 800;
@@ -53,6 +54,14 @@ export async function POST(req: Request) {
       }],
       tool_choice: { type: "tool", name: "save_video_ideas" },
       messages: [{ role: "user", content: buildVideoIdeasPrompt(project.channel_analysis, undefined, topTitles, existingIdeas) }],
+    });
+
+    void logClaudeUsage({
+      projectId,
+      userId: user.id,
+      step: "topic",
+      model,
+      usage: response.usage,
     });
 
     const toolUse = response.content.find((b) => b.type === "tool_use");

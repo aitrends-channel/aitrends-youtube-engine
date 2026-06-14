@@ -1,8 +1,9 @@
 import { createHash } from "crypto";
-import { generateTTS } from "@/lib/kie/tts";
+import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
 import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { logProjectCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 
 export const maxDuration = 800;
@@ -30,13 +31,24 @@ export async function POST(req: Request) {
         }
 
         try {
-          const audioBuffer = await generateTTS(
+          const { audio: audioBuffer, creditsConsumed } = await generateTTS(
             script,
             voiceId,
             (current, total) => { send({ type: "progress", current, total }); },
             (msg) => { send({ type: "status", message: msg }); },
             user.id
           );
+          if (creditsConsumed) {
+            void logProjectCost({
+              projectId,
+              userId: user.id,
+              step: "tts",
+              provider: "kie",
+              model: TTS_MODEL,
+              units: creditsConsumed,
+              unitKind: "kie_credits",
+            });
+          }
 
           send({ type: "status", message: "Uploading audio..." });
           const path = `${userFolderFor(user)}/${projectId}/voiceover_${Date.now()}.mp3`;

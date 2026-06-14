@@ -10,6 +10,7 @@ import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { logClaudeUsage, logProjectCost } from "@/lib/costs";
 import type { ChannelAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 
@@ -55,6 +56,33 @@ export async function POST(req: Request) {
           messages: [{ role: "user", content: buildAnalysisPrompt(transcripts) }],
         })
       );
+
+      // Log token consumption for the cost ledger. Fail-soft inside
+      // logClaudeUsage — never throws. Fires per attempt so retries
+      // count too (each retry was billed).
+      void logClaudeUsage({
+        projectId,
+        userId: user.id,
+        step: "channel_analysis",
+        model,
+        usage: analysisResponse.usage,
+      });
+      // Supadata transcripts that fed this call — each one was a
+      // billable fetch upstream of analysis. transcripts[].success is
+      // true for the ones Supadata actually returned text for.
+      const successfulTranscripts = (transcripts as Array<{ success?: boolean }>)
+        .filter((t) => t?.success !== false).length;
+      if (attempt === 1 && successfulTranscripts > 0) {
+        void logProjectCost({
+          projectId,
+          userId: user.id,
+          step: "channel_analysis",
+          provider: "supadata",
+          model: "supadata",
+          units: successfulTranscripts,
+          unitKind: "supadata_transcripts",
+        });
+      }
 
       const analysisToolUse = analysisResponse.content?.find((b) => b.type === "tool_use");
       let analysisInput: unknown = null;
@@ -136,6 +164,14 @@ export async function POST(req: Request) {
         ) }],
       })
       );
+
+      void logClaudeUsage({
+        projectId,
+        userId: user.id,
+        step: "topic",
+        model,
+        usage: ideasResponse.usage,
+      });
 
       const ideasToolUse = ideasResponse.content.find((b) => b.type === "tool_use");
       let ideasInput: unknown = null;
