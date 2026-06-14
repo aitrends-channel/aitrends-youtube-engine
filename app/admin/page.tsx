@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import useSWR from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isAdminUser } from "@/lib/admin";
+import EmailsPanel from "./EmailsPanel";
 
 const PHASE_PATHS: Record<number, string> = {
   1: "channel", 2: "channel", 3: "channel", 4: "channel", 5: "channel",
@@ -4068,12 +4069,9 @@ export default function AdminPage() {
           <LogsSection />
         )}
 
-        {/* Emails section — placeholder */}
-        {activeTab === "emails" && (
-          <section className="rounded-2xl p-5" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
-            <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "oklch(0.50 0 0)" }}>Emails</p>
-          </section>
-        )}
+        {/* Emails section — Inbox/Sent + compose. Backed by Hostinger
+            IMAP/SMTP via /api/admin/emails. */}
+        {activeTab === "emails" && <EmailsPanel />}
 
         {/* Setup section — product-wide API key management */}
         {activeTab === "setup" && (
