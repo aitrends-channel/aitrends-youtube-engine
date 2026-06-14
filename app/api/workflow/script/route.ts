@@ -1,6 +1,5 @@
 import { randomUUID } from "crypto";
 import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
-import { streamGeminiText, GEMINI_MAX_OUTPUT_TOKENS, GEMINI_MODEL } from "@/lib/gemini/client";
 import { buildScriptPrompt } from "@/lib/claude/prompts";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { stripCaptionCues } from "@/lib/youtube/supadata";
@@ -52,12 +51,11 @@ async function assertScriptRunActive(projectId: string, runId: string | null): P
   }
 }
 
-// Model picker — Opus for short targets (it honors length), Gemini Flash
-// for long-form (>8000 words) where Opus's 8192-token per-call ceiling
-// would otherwise force chunking.
-const LONG_FORM_THRESHOLD = 8000;
-const OPUS_MAX_OUTPUT_TOKENS = 8192;
-const GEMINI_MAX_WORDS = Math.floor((GEMINI_MAX_OUTPUT_TOKENS - 120) / 1.6); // ≈ 40,885
+// claude-opus-4-7 supports up to 32K output tokens per call. At ~1.6
+// tokens/word that's ~20K words in a single shot — wide enough that we
+// no longer need a Gemini fallback for long-form scripts. Opus stays
+// on the line all the way through.
+const OPUS_MAX_OUTPUT_TOKENS = 32000;
 
 function countWords(s: string): number {
   return s.trim().split(/\s+/).filter(Boolean).length;
@@ -148,17 +146,14 @@ export async function POST(req: Request) {
     }
 
     const target = analysis.targetWordCount ?? 900;
-    const useGemini = target > LONG_FORM_THRESHOLD;
     const initialPrompt = buildScriptPrompt(analysis, topic);
-    const activeModel = useGemini ? GEMINI_MODEL : MODEL;
+    const activeModel = MODEL;
 
-    // Per-model token budget. Gemini gets enough headroom to land near
-    // the channel target. Opus is capped at its 8192-per-call ceiling
-    // (covers up to ~5,000 words — anything beyond will fall short
-    // naturally, no enforced trim).
-    const modelMax = useGemini ? GEMINI_MAX_OUTPUT_TOKENS : OPUS_MAX_OUTPUT_TOKENS;
-    const targetForBudget = useGemini ? Math.min(target, GEMINI_MAX_WORDS) : target;
-    const maxTokens = Math.min(modelMax, Math.ceil(targetForBudget * 1.6) + 200);
+    // Request the full Opus ceiling — the model stops when the piece
+    // is done; the cap just sets the safety roof. Removing the
+    // target*1.6+200 squeeze means a script that wants to run a bit
+    // long isn't artificially truncated.
+    const maxTokens = OPUS_MAX_OUTPUT_TOKENS;
 
     // Claim the run BEFORE returning the stream so the project row
      // already reflects "in flight" by the time the client receives the
@@ -227,14 +222,15 @@ export async function POST(req: Request) {
         };
 
         try {
-          send({ model: activeModel, target, useGemini });
+          send({ model: activeModel, target });
 
-          // Gemini ignores soft length guidance — push back with a
-          // structural directive so it at least aims for the target.
-          // No hard enforcement after generation (no trim, no extend).
-          const userPrompt = useGemini
-            ? `LENGTH GOAL\nThis script should be approximately ${target.toLocaleString()} words to match the channel's natural video length. Aim for that target — don't summarize or wrap up early.\n\nSTRUCTURE: roughly ${Math.max(6, Math.ceil(target / 800))} narrative sections of about ${Math.round(target / Math.max(6, Math.ceil(target / 800)))} words each, different angles, seamless transitions, do NOT label them in output.\n\n${initialPrompt}`
-            : initialPrompt;
+          // Length-goal directive: even with the full Opus budget,
+          // models tend to wrap up early on creative writing. The
+          // structural prompt + explicit target nudges Opus to actually
+          // aim for the channel's natural video length instead of
+          // landing 30% short. No hard enforcement after generation
+          // (no trim, no extend).
+          const userPrompt = `LENGTH GOAL\nThis script should be approximately ${target.toLocaleString()} words to match the channel's natural video length. Aim for that target — don't summarize or wrap up early.\n\nSTRUCTURE: roughly ${Math.max(6, Math.ceil(target / 800))} narrative sections of about ${Math.round(target / Math.max(6, Math.ceil(target / 800)))} words each, different angles, seamless transitions, do NOT label them in output.\n\n${initialPrompt}`;
 
           // Continue-mode prefix nudges the model to splice cleanly
           // rather than restating context or wrapping up early. The
@@ -244,64 +240,42 @@ export async function POST(req: Request) {
             ? "\n\nThe script below has already been started — pick up exactly where it ends, mid-sentence if needed, with the same voice and pacing. Do not recap, restate, or summarize what's been written. Continue smoothly until the natural end of the piece."
             : "";
 
-          if (useGemini) {
-            // Retry only wraps the initial connection. The accumulated-
-            // length guard ensures retries don't re-emit text — if the
-            // first attempt died mid-stream after emitting deltas, we
-            // accept the partial; the outer save path persists what we
-            // have.
-            await retryClaudeCall("script (Gemini)", async () => {
-              if (accumulated.length > existingScript.length) return;
-              const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
-                { role: "system", content: SYSTEM_PROMPT },
-                { role: "user", content: userPrompt + continueDirective },
-              ];
-              if (mode === "continue") messages.push({ role: "assistant", content: existingScript });
-              await streamGeminiText({
-                userId: user.id,
-                maxTokens,
-                messages,
-                onDelta: sendText,
-              });
+          const anthropic = await getAnthropicClient(user.id, "script");
+          await retryClaudeCall("script (Opus)", async () => {
+            if (accumulated.length > existingScript.length) return; // already past first attempt with new content emitted; skip retries
+            const opusMessages: { role: "user" | "assistant"; content: string }[] = [
+              { role: "user", content: userPrompt + continueDirective },
+            ];
+            if (mode === "continue") opusMessages.push({ role: "assistant", content: existingScript });
+            const stream = anthropic.messages.stream({
+              model: model,
+              max_tokens: maxTokens,
+              system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+              messages: opusMessages,
             });
-          } else {
-            const anthropic = await getAnthropicClient(user.id, "script");
-            await retryClaudeCall("script (Opus)", async () => {
-              if (accumulated.length > existingScript.length) return; // already past first attempt with new content emitted; skip retries
-              const opusMessages: { role: "user" | "assistant"; content: string }[] = [
-                { role: "user", content: userPrompt + continueDirective },
-              ];
-              if (mode === "continue") opusMessages.push({ role: "assistant", content: existingScript });
-              const stream = anthropic.messages.stream({
-                model: model,
-                max_tokens: maxTokens,
-                system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-                messages: opusMessages,
-              });
-              for await (const event of stream) {
-                if (spiralAborted || cancelled) {
-                  try { stream.abort(); } catch { /* ignore */ }
-                  break;
-                }
-                if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-                  sendText(event.delta.text);
-                }
+            for await (const event of stream) {
+              if (spiralAborted || cancelled) {
+                try { stream.abort(); } catch { /* ignore */ }
+                break;
               }
-              // Pull final usage after the stream drains. Async so it
-              // can't block the script-emit path; logClaudeUsage is
-              // fail-soft on its own.
-              try {
-                const finalMsg = await stream.finalMessage();
-                void logClaudeUsage({
-                  projectId,
-                  userId: user.id,
-                  step: "script",
-                  model,
-                  usage: finalMsg.usage,
-                });
-              } catch { /* finalMessage may throw if the stream was aborted */ }
-            });
-          }
+              if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+                sendText(event.delta.text);
+              }
+            }
+            // Pull final usage after the stream drains. Async so it
+            // can't block the script-emit path; logClaudeUsage is
+            // fail-soft on its own.
+            try {
+              const finalMsg = await stream.finalMessage();
+              void logClaudeUsage({
+                projectId,
+                userId: user.id,
+                step: "script",
+                model,
+                usage: finalMsg.usage,
+              });
+            } catch { /* finalMessage may throw if the stream was aborted */ }
+          });
 
           // If we detected a spiral mid-stream, trim it back to clean
           // prose. Even without detection, run the trim — penalties

@@ -27,6 +27,38 @@ const STATS_KEY = "/api/admin/stats";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+/**
+ * Tab state that survives page refreshes.
+ *
+ * Reads/writes localStorage under `admin-tab:<key>`. Lazy initializer
+ * runs once per mount; SSR falls through to `fallback`. The valid-set
+ * guard prevents a stale or hand-edited storage value (e.g. a tab that
+ * was renamed) from breaking the UI — we discard anything not in the
+ * current option list and use the fallback instead.
+ */
+function usePersistentTab<T extends string>(
+  key: string,
+  fallback: T,
+  valid: readonly T[],
+): [T, (v: T) => void] {
+  const storageKey = `admin-tab:${key}`;
+  const [value, setValue] = useState<T>(() => {
+    if (typeof window === "undefined") return fallback;
+    try {
+      const stored = window.localStorage.getItem(storageKey);
+      if (stored && (valid as readonly string[]).includes(stored)) {
+        return stored as T;
+      }
+    } catch { /* localStorage disabled — fall through */ }
+    return fallback;
+  });
+  const set = (v: T) => {
+    setValue(v);
+    try { window.localStorage.setItem(storageKey, v); } catch { /* ignore */ }
+  };
+  return [value, set];
+}
+
 function maskKey(key: string) {
   if (key.length <= 10) return "•".repeat(key.length);
   return key.slice(0, 8) + "••••••••" + key.slice(-4);
@@ -504,7 +536,9 @@ const ACTIVITY_BG: Record<ActivityEvent["type"], string> = {
 };
 
 function LogsSection() {
-  const [logTab, setLogTab] = useState<LogSubTab>("activity");
+  const [logTab, setLogTab] = usePersistentTab<LogSubTab>(
+    "logs", "activity", ["activity", "errors", "worker"],
+  );
   const { data, isLoading } = useSWR<{ events: (ActivityEvent | ErrorEvent | WorkerEvent)[]; notice?: string }>(
     `/api/admin/logs?type=${logTab}`,
     fetcher,
@@ -669,7 +703,9 @@ function SetupSection({
   keysLoading: boolean;
   mutateKeys: () => void;
 }) {
-  const [setupTab, setSetupTab] = useState<"keys" | "models" | "anthropic" | "concurrency">("keys");
+  const [setupTab, setSetupTab] = usePersistentTab<"keys" | "models" | "anthropic" | "concurrency">(
+    "config", "keys", ["keys", "models", "anthropic", "concurrency"],
+  );
   const [serviceInput, setServiceInput] = useState<Service>("youtube_data_api_key");
   const [keyInput, setKeyInput] = useState("");
   const [adding, setAdding] = useState(false);
@@ -1560,7 +1596,9 @@ interface RoutingResponse {
 
 function AnthropicRoutingPanel() {
   const swr = useSWR<RoutingResponse>("/api/admin/anthropic-routing", fetcher, { revalidateOnFocus: false });
-  const [subTab, setSubTab] = useState<"general" | "per_step">("general");
+  const [subTab, setSubTab] = usePersistentTab<"general" | "per_step">(
+    "config.anthropic", "general", ["general", "per_step"],
+  );
 
   const subTabs: { id: "general" | "per_step"; label: string }[] = [
     { id: "general",  label: "General"  },
@@ -2338,7 +2376,9 @@ export default function AdminPage() {
   // Sub-tabs inside the Videos section. General = existing table.
   // Cost = the per-step usage breakdown introduced by the
   // project_costs ledger.
-  const [videosSubTab, setVideosSubTab] = useState<"general" | "cost">("general");
+  const [videosSubTab, setVideosSubTab] = usePersistentTab<"general" | "cost">(
+    "videos", "general", ["general", "cost"],
+  );
   // When a Cost-table row is clicked we replace the table with a
   // details view of that project. null = table view. Cleared by the
   // back button in the details view, by switching sub-tabs, or by
@@ -2348,10 +2388,18 @@ export default function AdminPage() {
   // selectedCostProject so each sub-tab's selection survives the
   // other sub-tab's interactions until an explicit clear.
   const [selectedGeneralProject, setSelectedGeneralProject] = useState<AdminProject | null>(null);
-  const [activityView, setActivityView] = useState<"daily" | "weekly" | "monthly">("daily");
+  const [activityView, setActivityView] = usePersistentTab<"daily" | "weekly" | "monthly">(
+    "stats.activity", "daily", ["daily", "weekly", "monthly"],
+  );
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [hoveredRevIdx, setHoveredRevIdx] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState("stats");
+  const [activeTab, setActiveTab] = usePersistentTab<
+    "stats" | "activity" | "users" | "projects" | "revenue" | "logs" | "emails" | "setup"
+  >(
+    "main",
+    "stats",
+    ["stats", "activity", "users", "projects", "revenue", "logs", "emails", "setup"],
+  );
 
   // Per-project cost rollups for the Videos → Cost sub-tab. Only
   // fetched when that sub-tab is selected so the DB isn't hit on
@@ -3394,36 +3442,44 @@ export default function AdminPage() {
                         <td className="py-3 px-4 text-xs font-mono max-w-[160px]"
                           style={{ color: "var(--c-55)" }}>
                           {p.userEmail ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void navigator.clipboard.writeText(p.userEmail!);
-                                toast.success("Email copied");
-                              }}
-                              title={`Copy ${p.userEmail} to clipboard`}
-                              className="group inline-flex items-center gap-1.5 max-w-full hover:opacity-80 transition-opacity cursor-copy text-left"
-                            >
+                            <span className="inline-flex items-center gap-1.5 max-w-full">
                               <span className="truncate">{p.userEmail}</span>
-                              <Copy size={11} className="shrink-0 opacity-50 group-hover:opacity-100 transition-opacity" />
-                            </button>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void navigator.clipboard.writeText(p.userEmail!);
+                                  toast.success("Email copied");
+                                }}
+                                title={`Copy ${p.userEmail} to clipboard`}
+                                aria-label="Copy email"
+                                className="shrink-0 p-1 -m-1 opacity-50 hover:opacity-100 transition-opacity cursor-copy"
+                              >
+                                <Copy size={11} />
+                              </button>
+                            </span>
                           ) : (
                             <span style={{ color: "var(--c-35)" }}>—</span>
                           )}
                         </td>
                         <td className="py-3 px-4 text-xs font-mono max-w-[160px]"
                           style={{ color: "var(--c-55)" }}>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void navigator.clipboard.writeText(p.id);
-                              toast.success("Project ID copied");
-                            }}
-                            title={`Copy ${p.id} to clipboard`}
-                            className="group inline-flex items-center gap-1.5 max-w-full hover:opacity-80 transition-opacity cursor-copy text-left"
-                          >
+                          <span className="inline-flex items-center gap-1.5 max-w-full">
                             <span className="truncate">{p.id.slice(0, 8)}…{p.id.slice(-4)}</span>
-                            <Copy size={11} className="shrink-0 opacity-50 group-hover:opacity-100 transition-opacity" />
-                          </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void navigator.clipboard.writeText(p.id);
+                                toast.success("Project ID copied");
+                              }}
+                              title={`Copy ${p.id} to clipboard`}
+                              aria-label="Copy project ID"
+                              className="shrink-0 p-1 -m-1 opacity-50 hover:opacity-100 transition-opacity cursor-copy"
+                            >
+                              <Copy size={11} />
+                            </button>
+                          </span>
                         </td>
                         <td className="py-3 px-4 text-sm max-w-[140px]"
                           style={{ color: "var(--c-72)" }}>
