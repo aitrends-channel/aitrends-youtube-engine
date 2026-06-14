@@ -23,7 +23,12 @@ async function getClient(): Promise<Supadata> {
 }
 
 async function pollBatch(client: Supadata, jobId: string): Promise<YoutubeBatchResults> {
-  const deadline = Date.now() + 60_000;
+  // 280s sits ~20s under the transcripts route's maxDuration=300s so
+  // this throws a clean "timed out" error before Vercel hard-kills the
+  // function. Previously both were 60s, so Vercel always won the race
+  // and the client saw FUNCTION_INVOCATION_TIMEOUT (plain text, not
+  // JSON, which broke the error-mapper).
+  const deadline = Date.now() + 280_000;
   while (Date.now() < deadline) {
     const res = await client.youtube.batch.getBatchResults(jobId);
     if (res.status === "completed") return res;

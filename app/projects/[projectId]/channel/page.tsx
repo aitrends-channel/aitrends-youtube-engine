@@ -282,10 +282,19 @@ export default function ChannelPage({ params }: PageProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ channelUrl }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      fetchedInfo = data;
-      setChannelInfo(data);
+      // Read once as text and only parse if it looks like JSON.
+      // Guards against Vercel's plain-text runtime errors (e.g.
+      // function timeout, OOM) that the route can't intercept —
+      // res.json() on "An error occurred…" throws an opaque
+      // "Unexpected token 'A'…" that the error-mapper can't handle.
+      const bodyText = await res.text();
+      let parsed: { error?: string; [k: string]: unknown } | null = null;
+      try { parsed = bodyText ? JSON.parse(bodyText) : null; } catch { /* non-JSON body */ }
+      if (!res.ok) {
+        throw new Error(parsed?.error ?? bodyText ?? `Channel fetch failed (${res.status})`);
+      }
+      fetchedInfo = parsed as unknown as ChannelInfo;
+      setChannelInfo(fetchedInfo);
       setStep("channel", "done");
     } catch (err) {
       setStep("channel", "error");
@@ -338,10 +347,14 @@ export default function ChannelPage({ params }: PageProps) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ videos: fetchedInfo!.topVideos }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.error ?? `Transcript fetch failed (${res.status})`);
-        fetchedTranscripts = data.transcripts;
-        setTranscripts(data.transcripts);
+        const bodyText = await res.text();
+        let parsed: { error?: string; transcripts?: unknown; [k: string]: unknown } | null = null;
+        try { parsed = bodyText ? JSON.parse(bodyText) : null; } catch { /* non-JSON body */ }
+        if (!res.ok) {
+          throw new Error(parsed?.error ?? bodyText ?? `Transcript fetch failed (${res.status})`);
+        }
+        fetchedTranscripts = (parsed?.transcripts ?? []) as typeof fetchedTranscripts;
+        setTranscripts(fetchedTranscripts);
         setStep("transcripts", "done");
       } catch (err) {
         setStep("transcripts", "error");
@@ -417,8 +430,12 @@ export default function ChannelPage({ params }: PageProps) {
           topicHint: topicHint.trim() || undefined,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const bodyText = await res.text();
+      let data: { error?: string; [k: string]: unknown } | null = null;
+      try { data = bodyText ? JSON.parse(bodyText) : null; } catch { /* non-JSON body */ }
+      if (!res.ok) {
+        throw new Error(data?.error ?? bodyText ?? `Analysis failed (${res.status})`);
+      }
       return data;
     })();
 

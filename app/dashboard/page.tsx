@@ -873,7 +873,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <main className="flex-1 w-full px-4 sm:px-8 lg:px-24 py-6 sm:py-12 space-y-8 sm:space-y-12">
+      <main className="flex-1 w-full px-4 sm:px-8 py-6 sm:py-12 space-y-8 sm:space-y-12">
 
         {/* ── Demo banner for free users ──────────────────────────────── */}
         {showDemo && (() => {
