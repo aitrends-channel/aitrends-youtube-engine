@@ -2339,6 +2339,11 @@ export default function AdminPage() {
   // Cost = the per-step usage breakdown introduced by the
   // project_costs ledger.
   const [videosSubTab, setVideosSubTab] = useState<"general" | "cost">("general");
+  // When a Cost-table row is clicked we replace the table with a
+  // details view of that project. null = table view. Cleared by the
+  // back button in the details view, by switching sub-tabs, or by
+  // typing into the search (so the user can refine and pick again).
+  const [selectedCostProject, setSelectedCostProject] = useState<AdminProject | null>(null);
   const [activityView, setActivityView] = useState<"daily" | "weekly" | "monthly">("daily");
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [hoveredRevIdx, setHoveredRevIdx] = useState<number | null>(null);
@@ -3204,7 +3209,7 @@ export default function AdminPage() {
           <div className="flex items-center gap-1 p-1 rounded-xl w-full"
             style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
             {(["general", "cost"] as const).map((id) => (
-              <button key={id} onClick={() => setVideosSubTab(id)}
+              <button key={id} onClick={() => { setVideosSubTab(id); setSelectedCostProject(null); }}
                 className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer capitalize"
                 style={videosSubTab === id
                   ? { background: "oklch(0.55 0.15 145)", color: "white", boxShadow: "0 2px 8px oklch(0.55 0.15 145 / 0.35)" }
@@ -3215,38 +3220,39 @@ export default function AdminPage() {
             ))}
           </div>
 
-          {/* Shared search input — drives both General and Cost.
-              Filters projects by topic, channel, user email, or
-              project ID (substring match, case-insensitive). Resets
-              pagination so an active filter never lands on an empty
-              page when results shrink. Placed below the sub-tabs so
-              the tab choice feels primary and the filter feels like
-              a refinement on whatever view is active. */}
-          <div className="relative">
-            <input
-              type="search"
-              value={projectSearch}
-              onChange={(e) => { setProjectSearch(e.target.value); setProjectsPage(1); }}
-              placeholder="Search videos by topic, channel, user, or project ID…"
-              className="w-full pl-9 pr-3 py-2.5 rounded-lg text-sm outline-none transition-all"
-              style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
-              onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
-              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
-            />
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--c-40)" }}>
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-            {projectSearch && (
-              <button
-                onClick={() => { setProjectSearch(""); setProjectsPage(1); }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-xs cursor-pointer transition-opacity hover:opacity-80"
-                style={{ color: "var(--c-50)", background: "oklch(0 0 0 / 0.05)" }}
-              >
-                Clear
-              </button>
-            )}
-          </div>
+          {/* Shared search input — drives both General and Cost
+              tables. Hidden in the details view since there are no
+              rows to filter; the back button is the only way out
+              and that's enough. Placed below the sub-tabs so the
+              tab choice feels primary and the filter feels like a
+              refinement on whatever view is active. */}
+          {!selectedCostProject && (
+            <div className="relative">
+              <input
+                type="search"
+                value={projectSearch}
+                onChange={(e) => { setProjectSearch(e.target.value); setProjectsPage(1); setSelectedCostProject(null); }}
+                placeholder="Search videos by topic, channel, user, or project ID…"
+                className="w-full pl-9 pr-3 py-2.5 rounded-lg text-sm outline-none transition-all"
+                style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
+                onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
+                onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
+              />
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--c-40)" }}>
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              {projectSearch && (
+                <button
+                  onClick={() => { setProjectSearch(""); setProjectsPage(1); setSelectedCostProject(null); }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-xs cursor-pointer transition-opacity hover:opacity-80"
+                  style={{ color: "var(--c-50)", background: "oklch(0 0 0 / 0.05)" }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          )}
 
           {videosSubTab === "general" && (isLoading ? (
             <SkeletonRows cols={8} />
@@ -3433,6 +3439,181 @@ export default function AdminPage() {
               return { totals, breakdown };
             };
 
+            // Details view — clicking a Cost-table row drops the user
+            // into a per-step breakdown of that single project. The
+            // section header, sub-tabs, and search bar above stay
+            // visible so navigation/back is always one click away.
+            if (selectedCostProject) {
+              const p = selectedCostProject;
+              const cells = costsByProject.get(p.id);
+              return (
+                <div className="rounded-2xl w-full max-w-full p-4 space-y-4"
+                  style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <button
+                      onClick={() => setSelectedCostProject(null)}
+                      className="text-xs px-3 py-1.5 rounded-lg font-semibold cursor-pointer transition-opacity hover:opacity-90 inline-flex items-center gap-1.5"
+                      style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.35)" }}
+                    >
+                      <ArrowLeft size={12} />
+                      Back to table
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Title</p>
+                      <p className="text-base font-semibold truncate" style={{ color: "var(--c-90)" }}>
+                        {p.selectedTopic ?? p.channelName ?? "—"}
+                      </p>
+                      <p className="text-[11px] mt-0.5 font-mono" style={{ color: "var(--c-50)" }}>{p.id}</p>
+                    </div>
+                  </div>
+
+                  {/* Provider × step matrix. Rows = the same 9
+                      display columns the table uses. Columns = the
+                      providers that actually appear in this
+                      project's data (so empty providers don't take
+                      up screen real-estate). Each cell aggregates
+                      the units that provider contributed at that
+                      step. Bottom Total row sums each provider
+                      column across all steps. No right-most
+                      total column — the per-row total would mix
+                      tokens with credits with chars and not be
+                      summable. The Total bar above already gives
+                      the project-level grand total. */}
+                  {(() => {
+                    // Build the list of providers present + per
+                    // (step, provider) units bucketed by unit_kind.
+                    type StepProviderBucket = Record<string /* unit_kind */, number>;
+                    const providersSet = new Set<string>();
+                    const matrix: Record<CostColumn, Record<string /* provider */, StepProviderBucket>> = {} as Record<CostColumn, Record<string, StepProviderBucket>>;
+                    for (const c of COLS) {
+                      matrix[c.key] = {};
+                      const cell = cells?.[c.key];
+                      if (!cell) continue;
+                      for (const b of cell.breakdown) {
+                        providersSet.add(b.provider);
+                        const stepProv = matrix[c.key][b.provider] ?? {};
+                        // Collapse Claude's four token sub-kinds into
+                        // a single "claude_tokens" bucket so the cell
+                        // shows one "Xk tok" tally per step rather
+                        // than four separate sub-numbers.
+                        const kind = b.unitKind.startsWith("claude_tokens_") ? "claude_tokens" : b.unitKind;
+                        stepProv[kind] = (stepProv[kind] ?? 0) + b.units;
+                        matrix[c.key][b.provider] = stepProv;
+                      }
+                    }
+                    // Fixed provider list — always show the four
+                    // canonical providers as columns even when this
+                    // project has no rows for one of them. Empty
+                    // cells render the em-dash so the table shape
+                    // stays consistent across projects and the
+                    // reader can tell at a glance "this step uses
+                    // KIE, that step uses Anthropic". Any future
+                    // provider that turns up in the breakdown but
+                    // isn't in this list falls to the end
+                    // alphabetically.
+                    const ORDER = ["anthropic", "kie", "elevenlabs", "supadata"];
+                    const extras = Array.from(providersSet)
+                      .filter((p) => !ORDER.includes(p))
+                      .sort((a, b) => a.localeCompare(b));
+                    const providers = [...ORDER, ...extras];
+
+                    // Friendly per-provider label for the header.
+                    const PROVIDER_LABEL: Record<string, string> = {
+                      anthropic:  "Anthropic",
+                      kie:        "KIE",
+                      elevenlabs: "ElevenLabs",
+                      supadata:   "Supadata",
+                    };
+                    // Default unit_kind for each provider — used so
+                    // an empty bucket still displays its natural
+                    // unit suffix (e.g. "0 cr" reads better than
+                    // a bare em-dash for visual scanning, though
+                    // we still use the dash for true-empty cells).
+                    const renderBucket = (bucket: StepProviderBucket | undefined) => {
+                      if (!bucket) return <span style={{ color: "var(--c-35)" }}>—</span>;
+                      const parts: string[] = [];
+                      for (const [kind, units] of Object.entries(bucket)) {
+                        if (units > 0) parts.push(`${compactNumber(units)} ${unitSuffix(kind)}`);
+                      }
+                      return parts.length ? parts.join(" · ") : <span style={{ color: "var(--c-35)" }}>—</span>;
+                    };
+
+                    // Per-provider grand total across all steps —
+                    // sum the (step, provider) buckets down each
+                    // column. Same unit_kinds so summing is honest.
+                    const providerTotals: Record<string, StepProviderBucket> = {};
+                    for (const provider of providers) {
+                      const acc: StepProviderBucket = {};
+                      for (const c of COLS) {
+                        const stepBucket = matrix[c.key][provider];
+                        if (!stepBucket) continue;
+                        for (const [k, v] of Object.entries(stepBucket)) {
+                          acc[k] = (acc[k] ?? 0) + v;
+                        }
+                      }
+                      providerTotals[provider] = acc;
+                    }
+
+                    // Always render the table even when there are
+                    // no logged cost rows — the four canonical
+                    // providers stay as columns and every cell
+                    // shows the em-dash. Keeps the UX consistent
+                    // for projects that pre-date the cost ledger
+                    // migration (052) and for projects that ran
+                    // without producing any billable upstream
+                    // calls — clicking through to a row always
+                    // lands on the same layout.
+                    return (
+                      <div className="overflow-x-auto rounded-xl"
+                        style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+                        <table className="w-full border-collapse min-w-[640px]">
+                          <thead>
+                            <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
+                              <th className="text-left py-2.5 px-3" style={{ background: "var(--bg-elevated)" }} />
+                              {providers.map((prov) => (
+                                <th key={prov} className="text-left py-2.5 px-3 text-[11px] font-semibold uppercase tracking-wider"
+                                  style={{ color: "black" }}>
+                                  {PROVIDER_LABEL[prov] ?? prov}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {COLS.map((c) => (
+                              <tr key={c.key} style={{ borderBottom: "1px solid var(--bd-4)" }}>
+                                <td className="py-2.5 px-3 text-xs font-bold" style={{ color: "black" }}>
+                                  {c.label}
+                                </td>
+                                {providers.map((prov) => (
+                                  <td key={prov} className="py-2.5 px-3 text-xs font-mono tabular-nums" style={{ color: "black" }}>
+                                    {renderBucket(matrix[c.key][prov])}
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr style={{ borderTop: "2px solid var(--bd-7)" }}>
+                              <td className="py-2.5 px-3 text-[11px] font-bold uppercase tracking-wider"
+                                style={{ color: "black", background: "#ecf0f1" }}>
+                                Total
+                              </td>
+                              {providers.map((prov) => (
+                                <td key={prov} className="py-2.5 px-3 text-xs font-mono font-bold tabular-nums"
+                                  style={{ color: "black", background: "#ecf0f1" }}>
+                                  {renderBucket(providerTotals[prov])}
+                                </td>
+                              ))}
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    );
+                  })()}
+                </div>
+              );
+            }
+
             return (
               <div className="rounded-2xl overflow-x-auto w-full max-w-full"
                 style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
@@ -3460,7 +3641,9 @@ export default function AdminPage() {
                       const cells = costsByProject.get(p.id);
                       const total = projectTotal(cells);
                       return (
-                        <tr key={p.id} style={{ borderBottom: "1px solid var(--bd-4)" }}
+                        <tr key={p.id}
+                          onClick={() => setSelectedCostProject(p)}
+                          style={{ borderBottom: "1px solid var(--bd-4)", cursor: "pointer" }}
                           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bd-2)"; }}
                           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
                           <td className="py-3 px-3 text-sm max-w-[200px]"
