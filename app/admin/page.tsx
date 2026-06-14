@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, Mail,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -2344,6 +2344,10 @@ export default function AdminPage() {
   // back button in the details view, by switching sub-tabs, or by
   // typing into the search (so the user can refine and pick again).
   const [selectedCostProject, setSelectedCostProject] = useState<AdminProject | null>(null);
+  // Same idea for the General videos table. Separate state from
+  // selectedCostProject so each sub-tab's selection survives the
+  // other sub-tab's interactions until an explicit clear.
+  const [selectedGeneralProject, setSelectedGeneralProject] = useState<AdminProject | null>(null);
   const [activityView, setActivityView] = useState<"daily" | "weekly" | "monthly">("daily");
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [hoveredRevIdx, setHoveredRevIdx] = useState<number | null>(null);
@@ -2570,6 +2574,7 @@ export default function AdminPage() {
             { id: "projects", label: "Videos",   icon: Clapperboard },
             { id: "revenue",  label: "Revenue",  icon: DollarSign },
             { id: "logs",     label: "Logs",     icon: FileText },
+            { id: "emails",   label: "Emails",   icon: Mail },
             { id: "setup",    label: "Config",   icon: Settings },
           ] as const;
 
@@ -3209,7 +3214,7 @@ export default function AdminPage() {
           <div className="flex items-center gap-1 p-1 rounded-xl w-full"
             style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
             {(["general", "cost"] as const).map((id) => (
-              <button key={id} onClick={() => { setVideosSubTab(id); setSelectedCostProject(null); }}
+              <button key={id} onClick={() => { setVideosSubTab(id); setSelectedCostProject(null); setSelectedGeneralProject(null); }}
                 className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer capitalize"
                 style={videosSubTab === id
                   ? { background: "oklch(0.55 0.15 145)", color: "white", boxShadow: "0 2px 8px oklch(0.55 0.15 145 / 0.35)" }
@@ -3226,12 +3231,12 @@ export default function AdminPage() {
               and that's enough. Placed below the sub-tabs so the
               tab choice feels primary and the filter feels like a
               refinement on whatever view is active. */}
-          {!selectedCostProject && (
+          {!selectedCostProject && !selectedGeneralProject && (
             <div className="relative">
               <input
                 type="search"
                 value={projectSearch}
-                onChange={(e) => { setProjectSearch(e.target.value); setProjectsPage(1); setSelectedCostProject(null); }}
+                onChange={(e) => { setProjectSearch(e.target.value); setProjectsPage(1); setSelectedCostProject(null); setSelectedGeneralProject(null); }}
                 placeholder="Search videos by topic, channel, user, or project ID…"
                 className="w-full pl-9 pr-3 py-2.5 rounded-lg text-sm outline-none transition-all"
                 style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
@@ -3244,7 +3249,7 @@ export default function AdminPage() {
               </svg>
               {projectSearch && (
                 <button
-                  onClick={() => { setProjectSearch(""); setProjectsPage(1); setSelectedCostProject(null); }}
+                  onClick={() => { setProjectSearch(""); setProjectsPage(1); setSelectedCostProject(null); setSelectedGeneralProject(null); }}
                   className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-xs cursor-pointer transition-opacity hover:opacity-80"
                   style={{ color: "var(--c-50)", background: "oklch(0 0 0 / 0.05)" }}
                 >
@@ -3256,6 +3261,106 @@ export default function AdminPage() {
 
           {videosSubTab === "general" && (isLoading ? (
             <SkeletonRows cols={8} />
+          ) : selectedGeneralProject ? (
+            (() => {
+              const p = selectedGeneralProject;
+              const isComplete = p.currentState >= 15;
+              type StatField = { label: string; value: React.ReactNode };
+              const stats: StatField[] = [
+                { label: "User",            value: p.userEmail ?? "—" },
+                { label: "Project ID",      value: <span className="font-mono">{p.id}</span> },
+                { label: "Channel",         value: p.channelName ?? "—" },
+                { label: "Topic",           value: p.selectedTopic ?? "—" },
+                { label: "Phase",           value: p.phaseLabel },
+                { label: "Progress",        value: `${p.progress}%` },
+                { label: "Assemble time",   value: formatAssembleTime(p.assembleSeconds) },
+                { label: "Created",         value: timeAgo(p.createdAt) },
+              ];
+              return (
+                <div className="rounded-2xl w-full max-w-full p-4 space-y-4"
+                  style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <button
+                      onClick={() => setSelectedGeneralProject(null)}
+                      className="text-xs px-3 py-1.5 rounded-lg font-semibold cursor-pointer transition-opacity hover:opacity-90 inline-flex items-center gap-1.5"
+                      style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.35)" }}
+                    >
+                      <ArrowLeft size={12} />
+                      Back to table
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Title</p>
+                      <p className="text-base font-semibold truncate" style={{ color: "var(--c-90)" }}>
+                        {p.selectedTopic ?? p.channelName ?? "—"}
+                      </p>
+                    </div>
+                    <Link
+                      href={`/projects/${p.id}/${PHASE_PATHS[p.currentState] ?? "channel"}`}
+                      className="text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-80 inline-flex items-center gap-1.5"
+                      style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}
+                    >
+                      Open project →
+                    </Link>
+                  </div>
+
+                  {/* Phase + progress strip — the bit a glance-and-go
+                      operator actually wants to see. Phase pill
+                      matches the table's color treatment and the
+                      bar mirrors the General-row progress style. */}
+                  <div className="rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap"
+                    style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+                    <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
+                      style={isComplete ? {
+                        background: "oklch(0.55 0.15 145 / 0.15)",
+                        color: "oklch(0.65 0.15 145)",
+                        border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                      } : {
+                        background: "oklch(0.72 0.25 285 / 0.1)",
+                        color: "oklch(0.72 0.25 285)",
+                        border: "1px solid oklch(0.72 0.25 285 / 0.2)",
+                      }}>
+                      {p.phaseLabel}
+                    </span>
+                    <div className="flex-1 h-1.5 rounded-full overflow-hidden min-w-[140px]"
+                      style={{ background: "var(--bg-track)" }}>
+                      <div className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${p.progress}%`,
+                          background: isComplete
+                            ? "oklch(0.55 0.15 145)"
+                            : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+                        }} />
+                    </div>
+                    <span className="text-xs tabular-nums font-medium" style={{ color: "var(--c-60)" }}>
+                      {p.progress}%
+                    </span>
+                  </div>
+
+                  {/* Field table — two columns: label and value.
+                      Label column gets the same silver highlight as
+                      Title on the main table so the eye anchors to
+                      the field names on the left. */}
+                  <div className="overflow-x-auto rounded-xl"
+                    style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+                    <table className="w-full border-collapse">
+                      <tbody>
+                        {stats.map((f, i) => (
+                          <tr key={f.label} style={{ borderBottom: i === stats.length - 1 ? undefined : "1px solid var(--bd-4)" }}>
+                            <td className="py-2.5 px-3 text-[11px] uppercase tracking-wider font-bold align-top"
+                              style={{ color: "black", background: "oklch(0.88 0 0)", width: "180px" }}>
+                              {f.label}
+                            </td>
+                            <td className="py-2.5 px-3 text-sm" style={{ color: "black" }}>
+                              {f.value}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()
           ) : projects.length === 0 ? (
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No projects yet.</div>
           ) : sortedProjects.length === 0 ? (
@@ -3281,7 +3386,8 @@ export default function AdminPage() {
                     const isComplete = p.currentState >= 15;
                     return (
                       <tr key={p.id}
-                        style={{ borderBottom: "1px solid var(--bd-4)" }}
+                        onClick={() => setSelectedGeneralProject(p)}
+                        style={{ borderBottom: "1px solid var(--bd-4)", cursor: "pointer" }}
                         onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bd-2)"; }}
                         onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                       >
@@ -3370,6 +3476,7 @@ export default function AdminPage() {
                         <td className="py-3 px-4">
                           <Link
                             href={`/projects/${p.id}/${PHASE_PATHS[p.currentState] ?? "channel"}`}
+                            onClick={(e) => e.stopPropagation()}
                             className="text-xs px-2.5 py-1 rounded-lg transition-all hover:opacity-80"
                             style={{
                               background: "oklch(0.72 0.25 285 / 0.1)",
@@ -3643,6 +3750,7 @@ export default function AdminPage() {
                       return (
                         <tr key={p.id}
                           onClick={() => setSelectedCostProject(p)}
+                          title="Click to view details"
                           style={{ borderBottom: "1px solid var(--bd-4)", cursor: "pointer" }}
                           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bd-2)"; }}
                           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
@@ -3885,6 +3993,13 @@ export default function AdminPage() {
         {/* Logs section — recent activity, system errors, worker output */}
         {activeTab === "logs" && (
           <LogsSection />
+        )}
+
+        {/* Emails section — placeholder */}
+        {activeTab === "emails" && (
+          <section className="rounded-2xl p-5" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+            <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "oklch(0.50 0 0)" }}>Emails</p>
+          </section>
         )}
 
         {/* Setup section — product-wide API key management */}

@@ -138,7 +138,17 @@ export async function GET() {
   ];
 
   const projectList = projects.map((p) => {
-    const state = p.current_state ?? 1;
+    // assembled_url is the authoritative "complete" signal — once
+    // the worker uploads the final MP4 the project is done, even if
+    // current_state drifted (re-assemble flows, manual DB edits, or
+    // any bug that writes current_state without keeping it in sync
+    // with the actual workflow position). Coercing state to 15 here
+    // means progress + phaseLabel + the "Complete" badge always
+    // agree with each other and with the assembled_url field —
+    // fixes the "100% progress · Setup phase" mismatch admins were
+    // seeing in the videos table.
+    const rawState = p.current_state ?? 1;
+    const state = p.assembled_url ? 15 : rawState;
     const userEmail = p.user_id ? (userIdToEmail.get(p.user_id) ?? "Unknown") : "Unknown";
     // Wall-clock assembly duration in seconds, or null when the
     // project hasn't completed an assembly yet (or pre-dates the
