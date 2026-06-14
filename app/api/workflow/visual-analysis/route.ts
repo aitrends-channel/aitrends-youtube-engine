@@ -10,7 +10,7 @@ import { retryClaudeCall } from "@/lib/claude/retry";
 import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
-import { logClaudeUsage } from "@/lib/costs";
+import { logAnthropicCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 
 export async function POST(req: Request) {
@@ -18,7 +18,11 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   try {
-    const anthropic = await getAnthropicClient(user.id, "visual_analysis");
+    const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "visual_analysis");
+    // Mutable copy of routing — when the KIE-exhausted fallback path
+    // kicks in we flip this to "heclus_direct" so cost rows attribute
+    // to the path that actually billed.
+    let effectiveRouting = routing;
     const { projectId, videoImageUrls, thumbnailImageUrls } = await req.json() as {
       projectId: string;
       videoImageUrls?: string[];
@@ -114,6 +118,11 @@ export async function POST(req: Request) {
           kieErr instanceof Error ? kieErr.message : kieErr);
         try {
           const directClient = await getHeclusDirectClient();
+          // Drain any stale KIE credit captured by the failed attempts
+          // so a half-paid KIE row doesn't get logged against the
+          // successful direct call below.
+          takeLastCreditsConsumed();
+          effectiveRouting = "heclus_direct";
           return await retryClaudeCall(`${label} [heclus-direct]`, () => callModel(directClient), 5);
         } catch (directErr) {
           // Surface the direct error since that's what the user will see;
@@ -134,12 +143,14 @@ export async function POST(req: Request) {
       response = await callWithFallback(`visual analysis (try ${attempt + 1})`);
       // Log token usage per attempt — each attempt was billed, even
       // if it produced no usable tool block.
-      void logClaudeUsage({
+      void logAnthropicCost({
         projectId,
         userId: user.id,
         step: "visuals",
         model,
+        routing: effectiveRouting,
         usage: response.usage,
+        kieCreditsConsumed: takeLastCreditsConsumed(),
       });
       toolUse = response.content.find((b) => b.type === "tool_use");
       const blockTypes = response.content.map((b) => b.type).join(",");

@@ -28,6 +28,11 @@ function compactNumber(n: number): string {
 
 function unitSuffix(unitKind: string): string {
   switch (unitKind) {
+    // "claude_tokens" is the collapsed bucket we build in renderBucket
+    // by merging all four claude_tokens_* sub-kinds together; the four
+    // sub-kinds themselves still appear here as a belt-and-suspenders
+    // fallback in case the bucket key changes upstream.
+    case "claude_tokens":
     case "claude_tokens_in":
     case "claude_tokens_out":
     case "claude_tokens_cache_read":
@@ -191,8 +196,7 @@ export default function ProjectCostPage({ params }: PageProps) {
             </button>
           </div>
 
-          {/* Title strip — mirrors the admin details view. break-words
-              on the topic + break-all on the UUID keeps long values
+          {/* Title strip — break-words on the topic keeps long values
               inside the card on narrow phones instead of overflowing
               and forcing horizontal scroll on the whole page. */}
           <div className="rounded-2xl p-4 space-y-1"
@@ -201,7 +205,6 @@ export default function ProjectCostPage({ params }: PageProps) {
             <p className="text-base font-semibold break-words" style={{ color: "black" }}>
               {project?.selected_topic ?? project?.channel_name ?? "—"}
             </p>
-            <p className="text-[11px] mt-0.5 font-mono break-all" style={{ color: "black" }}>{projectId}</p>
           </div>
 
           {error ? (

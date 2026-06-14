@@ -5,7 +5,7 @@ import { buildVideoIdeasPrompt } from "@/lib/claude/prompts";
 import { VideoIdeasSchema } from "@/lib/claude/schemas";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
-import { logClaudeUsage } from "@/lib/costs";
+import { logAnthropicCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 
 export const maxDuration = 800;
@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   try {
-    const anthropic = await getAnthropicClient(user.id, "ideas");
+    const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "ideas");
     const { projectId } = await req.json() as { projectId: string };
     const model = MODEL;
 
@@ -56,12 +56,14 @@ export async function POST(req: Request) {
       messages: [{ role: "user", content: buildVideoIdeasPrompt(project.channel_analysis, undefined, topTitles, existingIdeas) }],
     });
 
-    void logClaudeUsage({
+    void logAnthropicCost({
       projectId,
       userId: user.id,
       step: "topic",
       model,
+      routing,
       usage: response.usage,
+      kieCreditsConsumed: takeLastCreditsConsumed(),
     });
 
     const toolUse = response.content.find((b) => b.type === "tool_use");

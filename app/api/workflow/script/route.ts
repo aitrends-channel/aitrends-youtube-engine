@@ -5,7 +5,7 @@ import { retryClaudeCall } from "@/lib/claude/retry";
 import { stripCaptionCues } from "@/lib/youtube/supadata";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
-import { logClaudeUsage } from "@/lib/costs";
+import { logAnthropicCost } from "@/lib/costs";
 import type { ChannelAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 
@@ -302,7 +302,7 @@ export async function POST(req: Request) {
             ? "\n\nThe script below has already been started — pick up exactly where it ends, mid-sentence if needed, with the same voice and pacing. Do not recap, restate, or summarize what's been written. Continue smoothly until the natural end of the piece."
             : "";
 
-          const anthropic = await getAnthropicClient(user.id, "script");
+          const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "script");
           await retryClaudeCall("script (Opus)", async () => {
             if (accumulated.length > existingScript.length) return; // already past first attempt with new content emitted; skip retries
             const opusMessages: { role: "user" | "assistant"; content: string }[] = [
@@ -325,16 +325,19 @@ export async function POST(req: Request) {
               }
             }
             // Pull final usage after the stream drains. Async so it
-            // can't block the script-emit path; logClaudeUsage is
-            // fail-soft on its own.
+            // can't block the script-emit path; logAnthropicCost is
+            // fail-soft on its own and routes to kie_credits when
+            // we're going through KIE, claude_tokens otherwise.
             try {
               const finalMsg = await stream.finalMessage();
-              void logClaudeUsage({
+              void logAnthropicCost({
                 projectId,
                 userId: user.id,
                 step: "script",
                 model,
+                routing,
                 usage: finalMsg.usage,
+                kieCreditsConsumed: takeLastCreditsConsumed(),
               });
             } catch { /* finalMessage may throw if the stream was aborted */ }
           });

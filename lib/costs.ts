@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import type { AnthropicRouting } from "@/lib/claude/routing";
 
 /**
  * Workflow step that the cost belongs to. Mapped to display columns
@@ -124,4 +125,63 @@ export async function logClaudeUsage(args: {
     logProjectCost({ ...base, units: u.cache_read_input_tokens     ?? 0, unitKind: "claude_tokens_cache_read" }),
     logProjectCost({ ...base, units: u.cache_creation_input_tokens ?? 0, unitKind: "claude_tokens_cache_creation" }),
   ]);
+}
+
+/**
+ * Route-aware Anthropic cost logger. Dispatches to the correct
+ * ledger based on routing:
+ *
+ *  - heclus_direct → bills in tokens, log claude_tokens_* rows
+ *    via logClaudeUsage. Same behavior the old direct path had.
+ *
+ *  - client_kie / heclus_kie → bills in KIE credits. Token counters
+ *    on the Anthropic response are still accurate, but they aren't
+ *    what we're paying for — KIE charges credits per call and the
+ *    cost view should reflect that. Log a single kie_credits row
+ *    if the credits ref was populated; otherwise no row (better
+ *    than logging an estimate that diverges from KIE's billing).
+ *
+ * Always pass routing + creditsConsumed from the AnthropicClientHandle
+ * — the helper handles the branch internally so call sites don't have
+ * to. Fail-soft on writes via logProjectCost.
+ */
+export async function logAnthropicCost(args: {
+  projectId: string;
+  userId: string;
+  step: CostStep;
+  model: string;
+  routing: AnthropicRouting;
+  usage: {
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+    cache_read_input_tokens?: number | null;
+    cache_creation_input_tokens?: number | null;
+  } | null | undefined;
+  kieCreditsConsumed: number | null;
+}): Promise<void> {
+  if (args.routing === "heclus_direct") {
+    await logClaudeUsage({
+      projectId: args.projectId,
+      userId: args.userId,
+      step: args.step,
+      model: args.model,
+      usage: args.usage,
+    });
+    return;
+  }
+  // KIE-mediated. Only log if we actually saw a credit value on the
+  // response — silently skip otherwise. A missing kie_credits row
+  // is better than a fake one; the row will reappear naturally once
+  // we know where KIE puts credits for this endpoint.
+  if (args.kieCreditsConsumed && args.kieCreditsConsumed > 0) {
+    await logProjectCost({
+      projectId: args.projectId,
+      userId: args.userId,
+      step: args.step,
+      provider: "kie",
+      model: args.model,
+      units: args.kieCreditsConsumed,
+      unitKind: "kie_credits",
+    });
+  }
 }

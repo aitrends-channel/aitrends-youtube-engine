@@ -24,7 +24,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import { getConcurrencyConfig } from "@/lib/concurrency-config";
-import { logClaudeUsage } from "@/lib/costs";
+import { logAnthropicCost } from "@/lib/costs";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 
@@ -294,7 +294,7 @@ async function generateImages(
     .eq("user_id", userId)
     .gte("current_state", 14);
   try {
-  const anthropic = await getAnthropicClient(userId, "image_prompts");
+  const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(userId, "image_prompts");
 
   // Hash the current script and compare to the hash that was current when
   // the existing beats were generated. If they differ, the script was
@@ -521,12 +521,14 @@ async function generateImages(
     );
 
     console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} claude done in ${Date.now() - t0}ms stop=${res.stop_reason}`);
-    void logClaudeUsage({
+    void logAnthropicCost({
       projectId,
       userId,
       step: "prompts_image",
       model,
+      routing,
       usage: res.usage,
+      kieCreditsConsumed: takeLastCreditsConsumed(),
     });
     assertComplete(res.stop_reason, `image prompts chunk ${chunkIndex + 1}/${totalChunks}`);
 
@@ -662,7 +664,7 @@ async function generateImages(
 async function generateVideos(projectId: string, userId: string, send: (data: object) => void, model: string) {
   const runId = await claimPromptsRun(projectId, userId, "videos");
   try {
-  const anthropic = await getAnthropicClient(userId, "video_prompts");
+  const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(userId, "video_prompts");
   send({ type: "status", message: "Loading beats..." });
 
   const [beatsRes, projectRes] = await Promise.all([
@@ -763,12 +765,14 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
       tool = res.content.find((b) => b.type === "tool_use");
       const blockTypes = res.content.map((b) => b.type).join(",");
       console.log(`[video-prompts] batch ${i + 1}/${chunks.length} attempt ${attempt + 1} stop=${res.stop_reason} blocks=${blockTypes} tool_use=${!!tool}`);
-      void logClaudeUsage({
+      void logAnthropicCost({
         projectId,
         userId,
         step: "prompts_video",
         model,
+        routing,
         usage: res.usage,
+        kieCreditsConsumed: takeLastCreditsConsumed(),
       });
       if (tool && tool.type === "tool_use") break;
     }
@@ -891,7 +895,7 @@ async function generateThumbnails(
   send: (data: object) => void,
   model: string
 ) {
-  const anthropic = await getAnthropicClient(userId, "thumbnails");
+  const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(userId, "thumbnails");
   send({ type: "status", message: "Generating 5 thumbnail concepts..." });
 
   // One retry on tool-use miss — KIE intermittently returns a 200 with
@@ -915,12 +919,14 @@ async function generateThumbnails(
     tool = res.content.find((b) => b.type === "tool_use");
     const blockTypes = res.content.map((b) => b.type).join(",");
     console.log(`[thumbnails] attempt ${attempt + 1} stop=${res.stop_reason} blocks=${blockTypes} tool_use=${!!tool}`);
-    void logClaudeUsage({
+    void logAnthropicCost({
       projectId,
       userId,
       step: "thumbnail_concept",
       model,
+      routing,
       usage: res.usage,
+      kieCreditsConsumed: takeLastCreditsConsumed(),
     });
     if (tool && tool.type === "tool_use") break;
   }

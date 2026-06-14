@@ -10,7 +10,7 @@ import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
-import { logClaudeUsage, logProjectCost } from "@/lib/costs";
+import { logAnthropicCost, logProjectCost } from "@/lib/costs";
 import type { ChannelAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 
@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   try {
-    const anthropic = await getAnthropicClient(user.id, "analyze");
+    const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "analyze");
     const { projectId, transcripts, topicMode, topicHint } = await req.json();
     const model = MODEL;
 
@@ -57,15 +57,18 @@ export async function POST(req: Request) {
         })
       );
 
-      // Log token consumption for the cost ledger. Fail-soft inside
-      // logClaudeUsage — never throws. Fires per attempt so retries
-      // count too (each retry was billed).
-      void logClaudeUsage({
+      // Log cost for the ledger. Fail-soft inside logAnthropicCost —
+      // never throws. Fires per attempt so retries count too (each
+      // retry was billed). Routes to kie_credits when going through
+      // KIE; claude_tokens_* otherwise.
+      void logAnthropicCost({
         projectId,
         userId: user.id,
         step: "channel_analysis",
         model,
+        routing,
         usage: analysisResponse.usage,
+        kieCreditsConsumed: takeLastCreditsConsumed(),
       });
       // Supadata transcripts that fed this call — each one was a
       // billable fetch upstream of analysis. transcripts[].success is
@@ -165,12 +168,14 @@ export async function POST(req: Request) {
       })
       );
 
-      void logClaudeUsage({
+      void logAnthropicCost({
         projectId,
         userId: user.id,
         step: "topic",
         model,
+        routing,
         usage: ideasResponse.usage,
+        kieCreditsConsumed: takeLastCreditsConsumed(),
       });
 
       const ideasToolUse = ideasResponse.content.find((b) => b.type === "tool_use");
