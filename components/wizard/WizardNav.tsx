@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Mic, Clapperboard, Film,
-  Check, CheckCircle2, LayoutTemplate, ArrowLeft, X, Settings, LogOut,
+  Check, CheckCircle2, LayoutTemplate, ArrowLeft, X, Settings, LogOut, DollarSign,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -251,6 +251,20 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
           Back
         </button>
 
+        {/* Cost view — per-project provider × step breakdown. Hidden
+            when this nav is rendered for the "new-fork" placeholder
+            since there's no real project id to query against yet. */}
+        {projectId !== "new-fork" && (
+          <button
+            onClick={() => router.push(`/projects/${projectId}/cost`)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+            style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+          >
+            <DollarSign size={13} />
+            Cost
+          </button>
+        )}
+
         <ThemeToggle />
 
         {/* Profile avatar + dropdown */}
@@ -325,6 +339,19 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
               <ArrowLeft size={13} />
               Back
             </button>
+            {/* Cost view (mobile) — icon-only to save horizontal space
+                next to Back, Theme, and the profile avatar. Skipped on
+                the "new-fork" placeholder since there's no project yet. */}
+            {projectId !== "new-fork" && (
+              <button
+                onClick={() => router.push(`/projects/${projectId}/cost`)}
+                aria-label="Cost breakdown"
+                className="flex items-center justify-center w-8 h-8 rounded-lg transition-all hover:opacity-80"
+                style={{ color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+              >
+                <DollarSign size={14} />
+              </button>
+            )}
             <ThemeToggle />
 
             {/* Profile avatar + dropdown */}
