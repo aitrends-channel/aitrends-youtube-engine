@@ -4,7 +4,7 @@ import { useState, use, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, RefreshCw, ChevronsRight, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
@@ -30,6 +30,21 @@ function isCreditError(raw: string | undefined | null): boolean {
     || msg.includes("quota exceeded")
     || msg.includes("credits remaining")
     || msg.includes("credit balance");
+}
+
+// True when the error string indicates "this model can't accept your
+// request" rather than a transient blip. When this fires, retrying
+// the same model is hopeless — the only fix is switching models —
+// so we sweep any other queued/rendering beats to failed instead of
+// letting them burn through one by one.
+function isModelTerminalError(raw: string | undefined | null): boolean {
+  const msg = (raw ?? "").toLowerCase();
+  return msg.includes("this field is required")
+    || msg.includes("invalid model")
+    || msg.includes("rejected the request")
+    || msg.includes("temporarily paused")
+    || msg.includes("video quality cannot be empty")
+    || msg.includes("video model rejected");
 }
 
 function friendlyError(raw: string | undefined | null): string {
@@ -330,6 +345,38 @@ export default function GeneratePage({ params }: PageProps) {
   const [removePausesStatus, setRemovePausesStatus] = useState("");
   const [generatingImages, setGeneratingImages] = useState(false);
   const [stoppingImages, setStoppingImages] = useState(false);
+  // The latest error message from the current image-gen run. We
+  // overwrite this on every new failure so the banner only ever
+  // shows ONE error — whichever was most recent. Cleared at the
+  // start of every new run.
+  const [imageRunError, setImageRunError] = useState<string | null>(null);
+  // Refs to scroll the error banners into view once they appear so
+  // the user actually sees the failure summary instead of having to
+  // scan the page for it.
+  const imageErrorBannerRef = useRef<HTMLDivElement | null>(null);
+  const videoErrorBannerRef = useRef<HTMLDivElement | null>(null);
+  // Latch the "was visible" state so we only scroll-into-view once per
+  // banner appearance (not on every re-render while it's open).
+  const imageBannerShown = useRef(false);
+  const videoBannerShown = useRef(false);
+
+  // Wipe accumulated error UI state before any new user-initiated
+  // generation action. Without this, stale errors from a previous
+  // attempt linger on the banner even after the user has picked a
+  // different model and clicked Generate / Queue / Regenerate —
+  // making it look like the new action already failed.
+  function resetImageErrorBanner() {
+    setImageRunError(null);
+    imageBannerShown.current = false;
+  }
+  function resetVideoErrorBanner() {
+    videoBannerShown.current = false;
+  }
+  // Latched flag: true after the user clicks Stop, false while a new
+  // run is starting. Lets us suppress the "X images didn't generate"
+  // partial-completion warning when the gap is intentional rather
+  // than a model failure.
+  const [userStoppedImages, setUserStoppedImages] = useState(false);
   // AbortController for the image generation loop. Halts submission
   // between batches (preventing further KIE charges on unsubmitted
   // beats) and stops the local poll loop. Already-submitted beats keep
@@ -359,19 +406,21 @@ export default function GeneratePage({ params }: PageProps) {
   // a new submission, so we don't need a separate clear pass first — the
   // old R2 file becomes an orphan (next regen overwrites its key with a
   // fresh upload, so disk usage stays bounded).
-  const [regenVideoBeat, setRegenVideoBeat] = useState<number | null>(null);
   const [regeneratingVideo, setRegeneratingVideo] = useState(false);
-  async function confirmRegenVideo() {
-    if (regenVideoBeat === null) return;
-    const beat = beats.find((b) => b.beatNumber === regenVideoBeat);
+  // Single-beat video regen — fires immediately from the per-tile
+  // overlay button. The previous version routed through a confirm
+  // modal; we dropped the modal so the overlay click is the action.
+  async function regenerateVideoBeat(beatNumber: number) {
+    // Any user-initiated regen clears stale error UI before kicking
+    // off — see resetVideoErrorBanner comment for why.
+    resetVideoErrorBanner();
+    const beat = beats.find((b) => b.beatNumber === beatNumber);
     if (!beat || !beat.videoPrompt || !beat.imageUrl) {
       toast.error("Cannot regenerate — beat is missing its prompt or source image.");
-      setRegenVideoBeat(null);
       return;
     }
     if (!selectedVideoModel) {
       toast.error("Pick a video model first.");
-      setRegenVideoBeat(null);
       return;
     }
     setRegeneratingVideo(true);
@@ -392,10 +441,9 @@ export default function GeneratePage({ params }: PageProps) {
       if (data.failures?.length) {
         toast.error(`Regenerate failed — ${friendlyError(data.failures[0].error)}`);
       } else {
-        toast.success(`Beat ${beat.beatNumber} re-queued for video regeneration`);
+        toast.success(`Beat ${beat.beatNumber} re-queued`);
         setVideosSubmitted(true);
       }
-      setRegenVideoBeat(null);
     } catch (err) {
       toast.error(friendlyError(err instanceof Error ? err.message : null));
     } finally {
@@ -456,14 +504,23 @@ export default function GeneratePage({ params }: PageProps) {
   // to gate failure on "no URL produced" here.
   const failedVideos = beats.filter((b) => b.videoPrompt && b.videoStatus === "failed" && !b.videoUrl).length;
   const pendingVideos = beats.filter((b) => b.videoPrompt && !b.videoUrl).length;
+  // Beats that are actually queue-able right now: have a video prompt,
+  // have a source image (image-to-video models need it), and no clip
+  // yet. We let users queue partials as images trickle in, so this is
+  // usually smaller than pendingVideos in the middle of an image run.
+  const pendingVideosWithImages = beats.filter((b) => b.videoPrompt && b.imageUrl && !b.videoUrl).length;
   const queuedVideos = beats.filter((b) => b.videoStatus === "queued").length;
   const pausedVideos = beats.filter((b) => b.videoStatus === "paused").length;
-  // Video clips need an image to motion-render off of. Block all video
-  // actions until every beat has its image done.
-  const imagesReady = totalBeats > 0 && generatedImages === totalBeats;
+  // Video clips need an image to motion-render off of. Previously this
+  // gated on every beat having an image, so users had to wait for the
+  // whole image batch to finish before they could start any video
+  // work. Now we unlock as soon as at least one image is done — the
+  // queue handler only submits beats that have an image, so partials
+  // are safe.
+  const imagesReady = generatedImages > 0;
   const videosBlockedByImages = !imagesReady;
   const videoBlockReason = videosBlockedByImages
-    ? `Waiting on images — ${generatedImages}/${totalBeats} done`
+    ? `Waiting on first image — ${generatedImages}/${totalBeats} done`
     : undefined;
 
   // Derive display URLs from DB data; use pending state only during active operations
@@ -498,7 +555,7 @@ export default function GeneratePage({ params }: PageProps) {
   // need to be regenerated upstream (Prompt Studio → Regenerate) before
   // images/videos can match the current script again.
   const videosInFlight = queuingVideos
-    || beats.some((b) => b.videoStatus === "queued" || b.videoStatus === "rendering");
+    || beats.some((b) => b.videoStatus === "queued" || b.videoStatus === "submitting" || b.videoStatus === "rendering");
   const beatsStale = beats.length > 0
     && !generatingImages
     && !videosInFlight
@@ -584,7 +641,32 @@ export default function GeneratePage({ params }: PageProps) {
     const firstInTab = ttsModels.find((m) => m.tags?.[0]?.toLowerCase() === voiceTab);
     if (firstInTab) setSelectedTtsModel(firstInTab.id);
   }, [voiceTab, ttsModels]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (imageModels?.length && !selectedImageModel) setSelectedImageModel(imageModels[0].id); }, [imageModels]);
+  // Initial image-model pick: prefer the user's last selection from
+  // localStorage (across projects, across refreshes) when it's still
+  // in the currently-available model list, otherwise fall through to
+  // the first model. Never writes to the project row — the model only
+  // makes it to the DB at queue/submission time, so each user's local
+  // preference stays scoped to their browser.
+  useEffect(() => {
+    if (!imageModels?.length || selectedImageModel) return;
+    let preferred: string | null = null;
+    if (typeof window !== "undefined") {
+      try {
+        const saved = window.localStorage.getItem("heclus-preferred-image-model");
+        if (saved && imageModels.some((m) => m.id === saved)) preferred = saved;
+      } catch { /* localStorage disabled — fall through to first model */ }
+    }
+    setSelectedImageModel(preferred ?? imageModels[0].id);
+  }, [imageModels]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist subsequent image-model changes to localStorage so the
+  // next mount of this page (any project, same browser) picks back
+  // up where the user left off. No DB write involved — this is
+  // pure browser-local UX state.
+  useEffect(() => {
+    if (!selectedImageModel || typeof window === "undefined") return;
+    try { window.localStorage.setItem("heclus-preferred-image-model", selectedImageModel); } catch { /* ignore */ }
+  }, [selectedImageModel]);
 
   useEffect(() => {
     if (!selectedImageModel) return;
@@ -598,7 +680,50 @@ export default function GeneratePage({ params }: PageProps) {
       setSelectedResolution(config.resolutions[0]);
     }
   }, [selectedImageModel]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (videoModels?.length && !selectedVideoModel) setSelectedVideoModel(videoModels[0].id); }, [videoModels]);
+  // Same persistence pattern as image model — prefer last pick from
+  // localStorage when still valid, else first available. Selection
+  // never updates the project DB on its own; it only writes when the
+  // user actually queues a video gen.
+  useEffect(() => {
+    if (!videoModels?.length || selectedVideoModel) return;
+    let preferred: string | null = null;
+    if (typeof window !== "undefined") {
+      try {
+        const saved = window.localStorage.getItem("heclus-preferred-video-model");
+        if (saved && videoModels.some((m) => m.id === saved)) preferred = saved;
+      } catch { /* ignore */ }
+    }
+    setSelectedVideoModel(preferred ?? videoModels[0].id);
+  }, [videoModels]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!selectedVideoModel || typeof window === "undefined") return;
+    try { window.localStorage.setItem("heclus-preferred-video-model", selectedVideoModel); } catch { /* ignore */ }
+  }, [selectedVideoModel]);
+
+  // Scroll the image error banner into view the first render it
+  // becomes visible. Latched via imageBannerShown.current so the
+  // scroll only happens once per appearance — not on every state
+  // change while the banner is up.
+  useEffect(() => {
+    const banner = imageErrorBannerRef.current;
+    if (banner && !imageBannerShown.current) {
+      imageBannerShown.current = true;
+      banner.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else if (!banner) {
+      imageBannerShown.current = false;
+    }
+  });
+
+  useEffect(() => {
+    const banner = videoErrorBannerRef.current;
+    if (banner && !videoBannerShown.current) {
+      videoBannerShown.current = true;
+      banner.scrollIntoView({ behavior: "smooth", block: "center" });
+    } else if (!banner) {
+      videoBannerShown.current = false;
+    }
+  });
 
   useEffect(() => {
     if (!selectedVideoModel) return;
@@ -613,7 +738,8 @@ export default function GeneratePage({ params }: PageProps) {
     }
   }, [selectedVideoModel]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const hasActiveVideos = beats.some((b) => b.videoStatus === "queued" || b.videoStatus === "rendering");
+  const hasActiveVideos = beats.some((b) =>
+    b.videoStatus === "queued" || b.videoStatus === "submitting" || b.videoStatus === "rendering");
 
   useEffect(() => {
     if (hasActiveVideos && !videosSubmitted) setVideosSubmitted(true);
@@ -622,12 +748,30 @@ export default function GeneratePage({ params }: PageProps) {
   useEffect(() => {
     if (!videosSubmitted) return;
     let lastError: string | null = null;
+    let cancelDispatched = false;
     const poll = async () => {
       const res = await fetch(`/api/generate/videos/poll?projectId=${projectId}`);
       const data = await res.json().catch(() => ({})) as { pending?: number; firstError?: string | null };
       if (data.firstError && data.firstError !== lastError) {
         lastError = data.firstError;
-        toast.error(friendlyError(data.firstError));
+        // No toast — the section banner above the Queue button now
+        // lists every distinct error inline, which is where the user
+        // already looks for failure context.
+        // Terminal "the model rejected this" errors will keep failing
+        // for every remaining queued/rendering beat with the same
+        // model. Sweep them all to failed in one shot so the worker
+        // stops burning attempts and the UI's "Rendering" badge
+        // doesn't linger on beats that are guaranteed to fail next.
+        if (!cancelDispatched && isModelTerminalError(data.firstError)) {
+          cancelDispatched = true;
+          try {
+            await fetch("/api/generate/videos/cancel-pending", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ projectId, errorMessage: data.firstError }),
+            });
+          } catch { /* best-effort — next poll will reflect whatever state we land in */ }
+        }
       }
       await mutate();
     };
@@ -789,6 +933,14 @@ export default function GeneratePage({ params }: PageProps) {
 
     setGeneratingImages(true);
     setImagesProgress(0);
+    // Fresh run — clear the latched "user stopped" flag so the
+    // partial-completion warning can fire if this run genuinely
+    // ends with failures.
+    setUserStoppedImages(false);
+    // Fresh run — wipe accumulated errors so the banner only ever
+    // reflects this attempt's failures, not stale ones from a
+    // previous attempt with a different model.
+    resetImageErrorBanner();
     if (shouldClear) setClearingImages(true);
     imagesAbortRef.current = new AbortController();
     const abortSignal = imagesAbortRef.current.signal;
@@ -864,7 +1016,14 @@ export default function GeneratePage({ params }: PageProps) {
         const batchResults = await Promise.allSettled(batch.map(submitOne));
         for (const r of batchResults) {
           if (r.status === "fulfilled") pending.push(r.value);
-          else if (!firstSubmitError) firstSubmitError = r.reason instanceof Error ? r.reason.message : "Unknown error";
+          else {
+            const reason = r.reason instanceof Error ? r.reason.message : "Unknown error";
+            if (!firstSubmitError) firstSubmitError = reason;
+            // Overwrite the banner with the latest error so the user
+            // always sees the most recent failure rather than a
+            // growing list.
+            setImageRunError(friendlyError(reason));
+          }
         }
         if (i + SUBMIT_BATCH < targetBeats.length) await new Promise((r) => setTimeout(r, 1500));
       }
@@ -878,9 +1037,9 @@ export default function GeneratePage({ params }: PageProps) {
       if (pending.length === 0) {
         throw new Error(firstSubmitError ?? "unknown error");
       }
-      if (firstSubmitError) {
-        toast.warning(`${pending.length}/${targetBeats.length} tasks submitted — ${friendlyError(firstSubmitError)}`);
-      }
+      // Partial-submit failures used to fire a yellow toast that
+      // duplicated the section banner; the banner now lists every
+      // distinct error inline, so the toast is just visual clutter.
 
       // Poll all pending tasks in parallel every 3s until all complete
       const remaining = [...pending];
@@ -912,7 +1071,11 @@ export default function GeneratePage({ params }: PageProps) {
             const { status, error } = (pollResults[i] as PromiseFulfilledResult<{ beatNumber: number; taskId: string; status: string; error?: string }>).value;
             if (status === "done") { successCount++; setImagesProgress(successCount); toRemove.push(i); }
             else if (status === "failed" || status === "error") {
-              if (!firstPollError) firstPollError = error ?? "Unknown error";
+              const reason = error ?? "Unknown error";
+              if (!firstPollError) firstPollError = reason;
+              // Overwrite the banner — only the most recent error
+              // ever shows.
+              setImageRunError(friendlyError(reason));
               toRemove.push(i);
             }
           }
@@ -929,18 +1092,21 @@ export default function GeneratePage({ params }: PageProps) {
           toast.info(`Stopped — ${successCount}/${pending.length} done`);
         }
       } else if (successCount === 0) {
+        // No per-task error was captured (rare) — fall back to a
+        // single derived error so the banner has something to say.
         const reason = firstPollError ?? firstSubmitError ?? "timed out";
-        toast.error(`0/${targetBeats.length} images generated — ${friendlyError(reason)}`);
+        setImageRunError((prev) => prev ?? friendlyError(reason));
       } else if (successCount < targetBeats.length) {
-        toast.warning(`${successCount}/${targetBeats.length} images generated — some failed`);
+        // Partial success — banner already shows the latest error.
       } else {
         toast.success(`${successCount}/${targetBeats.length} images generated`);
       }
     } catch (err) {
       // Abort errors are intentional Stop clicks — silenced by the
       // aborted-branch above, so we only land here on real failures.
+      // Surface the error in the section banner instead of toasting.
       if (!abortSignal.aborted) {
-        toast.error(friendlyError(err instanceof Error ? err.message : null));
+        setImageRunError(friendlyError(err instanceof Error ? err.message : null));
       }
     } finally {
       setGeneratingImages(false);
@@ -956,6 +1122,10 @@ export default function GeneratePage({ params }: PageProps) {
   async function handleStopImages() {
     if (!generatingImages || stoppingImages) return;
     setStoppingImages(true);
+    // Mark this as a user-initiated halt so the partial-completion
+    // banner ("X images didn't generate on …") stays hidden — the
+    // gap is intentional, not a model failure to scold the user about.
+    setUserStoppedImages(true);
     if (imagesAbortRef.current) {
       try { imagesAbortRef.current.abort(); } catch { /* ignore */ }
     }
@@ -963,6 +1133,9 @@ export default function GeneratePage({ params }: PageProps) {
 
   async function regenerateImage(beat: Beat) {
     if (!selectedImageModel) return;
+    // New regen → clear the section banner so the user sees a clean
+    // slate for this attempt, not stale errors from a previous run.
+    resetImageErrorBanner();
     setRegenBeats((prev) => new Set(prev).add(beat.beatNumber));
     try {
       // Single synchronous call to the regenerate route. The server
@@ -1016,6 +1189,7 @@ export default function GeneratePage({ params }: PageProps) {
 
   async function resumeVideos() {
     if (!selectedVideoModel || resumingVideos) return;
+    resetVideoErrorBanner();
     setResumingVideos(true);
     try {
       const res = await fetch("/api/generate/videos/resume", {
@@ -1042,13 +1216,19 @@ export default function GeneratePage({ params }: PageProps) {
 
   async function queueVideos(mode: "all" | "failed" = "all") {
     if (!selectedVideoModel || !beats.length) return;
+    resetVideoErrorBanner();
     setQueuingVideos(true);
     try {
       // "all" means everything that still needs a video (no URL yet),
       // not literally every beat — re-submitting a done beat would wipe
       // its video_url on the server. "failed" only retries failures.
+      // imageUrl is required: image-to-video models won't accept a beat
+      // without a source frame. Beats whose images are still rendering
+      // are skipped now and become eligible the next time the user
+      // clicks Queue.
       const eligible = beats.filter((b) => {
         if (!b.videoPrompt) return false;
+        if (!b.imageUrl) return false;
         if (b.videoUrl) return false;
         if (mode === "failed") return b.videoStatus === "failed";
         return true;
@@ -1275,20 +1455,42 @@ export default function GeneratePage({ params }: PageProps) {
                         ) : (
                           <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${b.imageUrl ? "opacity-0 group-hover:opacity-100" : "opacity-100"}`}
                             style={{ background: b.imageUrl ? "oklch(0 0 0 / 0.55)" : "transparent" }}>
-                            <button
-                              onClick={() => regenerateImage(b)}
-                              disabled={!selectedImageModel || generatingImages || generatingTts}
-                              title={generatingTts ? "Voiceover is generating — wait for it to finish" : `Regenerate beat ${b.beatNumber}`}
-                              aria-label={`Regenerate beat ${b.beatNumber}`}
-                              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 cursor-pointer"
-                              style={{
-                                background: "oklch(0.72 0.25 285)",
-                                color: "white",
-                                boxShadow: "0 4px 16px oklch(0.72 0.25 285 / 0.55), 0 0 0 2px oklch(1 0 0 / 0.15)",
-                              }}
-                            >
-                              <RotateCcw size={20} strokeWidth={2.4} />
-                            </button>
+                            {/* Status-specific affordance — matches the
+                                video side's icon system:
+                                  - no image + no status → Wand2 (Generate)
+                                  - imageStatus = "failed" → RefreshCw (Retry)
+                                  - has image → RotateCcw (Regenerate)
+                                Wand2 (a slanted magic wand) reads
+                                clearly as "create something new" and
+                                doesn't share the circular-arrow
+                                silhouette of RotateCcw / RefreshCw. */}
+                            {(() => {
+                              let Icon: typeof RotateCcw = RotateCcw;
+                              let label = "Regenerate";
+                              if (!b.imageUrl && !b.imageStatus) {
+                                Icon = Wand2;
+                                label = "Generate";
+                              } else if (b.imageStatus === "failed") {
+                                Icon = RefreshCw;
+                                label = "Retry";
+                              }
+                              return (
+                                <button
+                                  onClick={() => regenerateImage(b)}
+                                  disabled={!selectedImageModel || generatingImages || generatingTts}
+                                  title={generatingTts ? "Voiceover is generating — wait for it to finish" : `${label} beat ${b.beatNumber}`}
+                                  aria-label={`${label} beat ${b.beatNumber}`}
+                                  className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 cursor-pointer"
+                                  style={{
+                                    background: "oklch(0.72 0.25 285)",
+                                    color: "white",
+                                    boxShadow: "0 4px 16px oklch(0.72 0.25 285 / 0.55), 0 0 0 2px oklch(1 0 0 / 0.15)",
+                                  }}
+                                >
+                                  <Icon size={20} strokeWidth={2.4} />
+                                </button>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
@@ -1327,10 +1529,15 @@ export default function GeneratePage({ params }: PageProps) {
                         </span>
                       </div>
                     )}
-                    {isPartial && !generatingImages && !showCreditBanner && (
-                      <div className="px-3 py-2 rounded-lg text-xs leading-snug"
+                    {isPartial && !generatingImages && !showCreditBanner && !userStoppedImages && (
+                      <div ref={imageErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug space-y-1"
                         style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "oklch(0.78 0.12 25)" }}>
-                        {pendingCount} image{pendingCount === 1 ? "" : "s"} didn't generate on <span style={{ fontWeight: 600 }}>{workingImageName}</span>. Try switching to a different model above, then run again.
+                        <p>
+                          {pendingCount} image{pendingCount === 1 ? "" : "s"} didn't generate on <span style={{ fontWeight: 600 }}>{workingImageName}</span>. Try switching to a different model above, then run again.
+                        </p>
+                        {imageRunError && (
+                          <p style={{ color: "oklch(0.85 0.08 25)" }}>{imageRunError}</p>
+                        )}
                       </div>
                     )}
                     {generatingImages && (
@@ -1496,29 +1703,11 @@ export default function GeneratePage({ params }: PageProps) {
                           videoHideTimer.current = setTimeout(() => setHoveredVideoBeat(null), 200);
                         }}
                       >
+                        {/* Background layer: video if we have one,
+                            status badge otherwise. The regen overlay
+                            below sits on top of either. */}
                         {b.videoUrl ? (
-                          <>
-                            <video src={b.videoUrl} title={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
-                            {/* Regen overlay — fades in on hover, opens
-                                the per-beat regenerate confirm modal. */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setRegenVideoBeat(b.beatNumber);
-                              }}
-                              disabled={regeneratingVideo || queuingVideos || hasActiveVideos}
-                              title={`Regenerate beat ${b.beatNumber}`}
-                              aria-label={`Regenerate beat ${b.beatNumber}`}
-                              className="absolute top-1 right-1 w-6 h-6 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-                              style={{
-                                background: "oklch(0 0 0 / 0.6)",
-                                color: "white",
-                                backdropFilter: "blur(4px)",
-                              }}
-                            >
-                              <RotateCcw size={12} />
-                            </button>
-                          </>
+                          <video src={b.videoUrl} title={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
                         ) : (
                           <span className="text-[9px] px-1.5 py-0.5 rounded"
                             title={b.videoStatus === "failed" && b.videoError ? b.videoError : undefined}
@@ -1527,9 +1716,74 @@ export default function GeneratePage({ params }: PageProps) {
                               color: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285)" : b.videoStatus === "done" ? "oklch(0.7 0.15 145)" : b.videoStatus === "failed" ? "oklch(0.7 0.2 25)" : "var(--c-35)",
                               cursor: b.videoStatus === "failed" && b.videoError ? "help" : undefined,
                             }}>
+                            {/* Status badge maps 1:1 to the DB state so
+                                only the beat the worker is currently
+                                talking to KIE about reads as
+                                "submitting" — other beats in the same
+                                batch stay on "queued" until the worker
+                                gets to them. The transition the user
+                                sees per beat is:
+                                queued → submitting → rendering → done. */}
                             {b.videoStatus ?? "—"}
                           </span>
                         )}
+
+                        {/* Regen overlay — uniform across every tile
+                            state (done / failed / paused / pending /
+                            empty). Hover-fades a dim backdrop with
+                            a big centered purple-glow circle that
+                            opens the per-beat regenerate confirm
+                            modal. Disabled while the beat itself is
+                            actively in-flight (queued or rendering)
+                            so we don't double-queue the same task,
+                            and during global active-video ops. */}
+                        {(() => {
+                          const inFlight = b.videoStatus === "queued" || b.videoStatus === "submitting" || b.videoStatus === "rendering";
+                          const disabled = inFlight || regeneratingVideo || queuingVideos || hasActiveVideos;
+                          // Status-specific affordance so the icon
+                          // matches the intent at a glance:
+                          //   - paused  → ChevronsRight (fast-forward;
+                          //               "continue this work").
+                          //               Avoids the Play triangle
+                          //               which read as a video play
+                          //               button over the autoplaying
+                          //               clip.
+                          //   - failed  → RefreshCw (retry; the
+                          //               standard retry affordance).
+                          //   - other   → RotateCcw (regenerate;
+                          //               redo from scratch).
+                          let Icon: typeof RotateCcw = RotateCcw;
+                          let label = "Regenerate";
+                          if (b.videoStatus === "paused") {
+                            Icon = ChevronsRight;
+                            label = "Resume";
+                          } else if (b.videoStatus === "failed") {
+                            Icon = RefreshCw;
+                            label = "Retry";
+                          }
+                          return (
+                            <div className="absolute inset-0 flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100"
+                              style={{ background: "oklch(0 0 0 / 0.55)" }}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void regenerateVideoBeat(b.beatNumber);
+                                }}
+                                disabled={disabled}
+                                title={inFlight ? `Beat ${b.beatNumber} is ${b.videoStatus} — wait for it to finish` : `${label} beat ${b.beatNumber}`}
+                                aria-label={`${label} beat ${b.beatNumber}`}
+                                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 cursor-pointer"
+                                style={{
+                                  background: "oklch(0.72 0.25 285)",
+                                  color: "white",
+                                  boxShadow: "0 4px 16px oklch(0.72 0.25 285 / 0.55), 0 0 0 2px oklch(1 0 0 / 0.15)",
+                                }}
+                              >
+                                <Icon size={20} strokeWidth={2.4} />
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </div>
                     ))}
                   </div>
@@ -1541,10 +1795,25 @@ export default function GeneratePage({ params }: PageProps) {
               {failedVideos > 0 && !hasActiveVideos && (() => {
                 const workingId = project?.video_model_id as string | undefined;
                 const workingName = videoModels?.find((m) => m.id === workingId)?.name ?? "the selected model";
+                // Single "current error" — use the latest-failed
+                // beat's error (highest beat_number is the most
+                // recently submitted). Keeps the banner to one
+                // message no matter how many beats failed.
+                const failedWithError = beats
+                  .filter((b) => b.videoStatus === "failed" && b.videoError)
+                  .sort((a, b) => b.beatNumber - a.beatNumber);
+                const currentError = failedWithError.length > 0
+                  ? friendlyError(failedWithError[0].videoError!)
+                  : null;
                 return (
-                  <div className="px-3 py-2 rounded-lg text-xs leading-snug"
+                  <div ref={videoErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug space-y-1"
                     style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "oklch(0.78 0.12 25)" }}>
-                    {failedVideos} clip{failedVideos === 1 ? "" : "s"} failed on <span style={{ fontWeight: 600 }}>{workingName}</span>. Try switching to a different model above, then retry.
+                    <p>
+                      {failedVideos} clip{failedVideos === 1 ? "" : "s"} failed on <span style={{ fontWeight: 600 }}>{workingName}</span>. Try switching to a different model above, then retry.
+                    </p>
+                    {currentError && (
+                      <p style={{ color: "oklch(0.85 0.08 25)" }}>{currentError}</p>
+                    )}
                   </div>
                 );
               })()}
@@ -1608,14 +1877,14 @@ export default function GeneratePage({ params }: PageProps) {
               ) : (
                 <button
                   onClick={() => queueVideos("all")}
-                  disabled={!selectedVideoModel || !pendingVideos || hasActiveVideos || videosBlockedByImages}
+                  disabled={!selectedVideoModel || !pendingVideosWithImages || hasActiveVideos || videosBlockedByImages}
                   title={videoBlockReason}
                   className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                   style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                 >
                   {videosBlockedByImages
-                    ? `Waiting on images (${generatedImages}/${totalBeats})`
-                    : `Queue ${pendingVideos} Video Clip${pendingVideos === 1 ? "" : "s"}`}
+                    ? `Waiting on first image (${generatedImages}/${totalBeats})`
+                    : `Queue ${pendingVideosWithImages} Video Clip${pendingVideosWithImages === 1 ? "" : "s"}`}
                 </button>
               )}
               {/* Show the secondary "Retry Failed" only when there are also some
@@ -1771,40 +2040,6 @@ export default function GeneratePage({ params }: PageProps) {
           </div>
         </div>
       )}
-
-      <Dialog open={regenVideoBeat !== null} onOpenChange={(open) => { if (!regeneratingVideo && !open) setRegenVideoBeat(null); }}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Regenerate beat {regenVideoBeat} clip?</DialogTitle>
-            <DialogDescription>
-              This will discard the existing video clip for beat {regenVideoBeat} and submit a fresh render against the current model, prompt, and source image. KIE credits will be charged for the new render.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <button
-              onClick={() => setRegenVideoBeat(null)}
-              disabled={regeneratingVideo}
-              className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
-              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={confirmRegenVideo}
-              disabled={regeneratingVideo}
-              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-60"
-              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-            >
-              {regeneratingVideo ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  Re-queuing…
-                </span>
-              ) : "Regenerate clip"}
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={deleteVoiceoverConfirmOpen} onOpenChange={(open) => { if (!deletingVoiceover) setDeleteVoiceoverConfirmOpen(open); }}>
         <DialogContent showCloseButton={false}>

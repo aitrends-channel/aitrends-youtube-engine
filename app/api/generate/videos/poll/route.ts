@@ -15,7 +15,7 @@ export async function GET(req: Request) {
     supabase.from("project_beats")
       .select("beat_number")
       .eq("project_id", projectId)
-      .in("video_status", ["queued", "rendering"]),
+      .in("video_status", ["queued", "submitting", "rendering"]),
     supabase.from("project_beats")
       .select("video_error")
       .eq("project_id", projectId)

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
-import { deleteObject, r2KeyFromUrl } from "@/lib/supabase/storage";
 import type { User } from "@supabase/supabase-js";
 
 export const maxDuration = 30;
@@ -32,43 +31,42 @@ export async function POST(req: Request) {
       video_aspect_ratio: aspectRatio,
     }).eq("id", projectId).eq("user_id", user.id);
 
-    // Pre-fetch each beat's existing video_url so we can delete the
-    // R2 object before nulling the column. Worker uploads new renders
-    // to a unique timestamped key, so the prior file is otherwise
-    // orphaned. Failures during delete don't block queueing — the
-    // orphan costs almost nothing and re-queues are idempotent.
-    const beatNumbers = beats.map((b) => b.beatNumber);
-    const { data: existing } = await supabase
-      .from("project_beats")
-      .select("beat_number, video_url")
-      .eq("project_id", projectId)
-      .in("beat_number", beatNumbers);
-    const urlsToDelete = (existing ?? [])
-      .map((r) => r.video_url as string | null)
-      .filter((u): u is string => !!u);
-    if (urlsToDelete.length > 0) {
-      await Promise.all(urlsToDelete.map(async (url) => {
-        const key = r2KeyFromUrl(url);
-        if (!key) return;
-        try { await deleteObject(key); }
-        catch (e) { console.warn(`[video-submit] R2 delete failed for ${key}:`, e instanceof Error ? e.message : e); }
-      }));
-      console.log(`[video-submit] project=${projectId} cleaned ${urlsToDelete.length} prior video file(s) from R2 before requeue`);
-    }
-
-    // Mark each beat as queued
+    // Mark each beat as queued. We deliberately do NOT null
+    // video_url here — keeping the previous URL means the UI
+    // continues to show the old clip while the new one renders,
+    // and if the new render fails the user doesn't lose what they
+    // had. The worker reads the existing video_url before its
+    // upload and best-effort deletes the old R2 object only after
+    // the new URL has been written successfully (see worker
+    // processBeat).
     let submitted = 0;
     const failures: { beatNumber: number; error: string }[] = [];
 
+    // Conditional update — only flip the row to "queued" if it's
+    // NOT currently in-flight. Without the .not("video_status", "in",
+    // ...) guard, a user clicking Regen while the worker is still
+    // processing this beat would reset status to queued mid-render,
+    // and the next worker tick would re-claim the same beat → two
+    // KIE calls + two job IDs for one user action (the "double-
+    // submit" case we saw in worker logs). The conditional update
+    // returns 0 rows in that case, which we surface as a failure
+    // so the UI can tell the user "this beat is already rendering."
     for (const beat of beats) {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("project_beats")
-        .update({ video_status: "queued", video_url: null, video_job_id: null, video_error: null })
+        .update({ video_status: "queued", video_job_id: null, video_error: null })
         .eq("project_id", projectId)
-        .eq("beat_number", beat.beatNumber);
+        .eq("beat_number", beat.beatNumber)
+        .not("video_status", "in", "(queued,submitting,rendering)")
+        .select("beat_number");
 
       if (error) {
         failures.push({ beatNumber: beat.beatNumber, error: error.message });
+      } else if (!data || data.length === 0) {
+        failures.push({
+          beatNumber: beat.beatNumber,
+          error: "Beat is already in flight — wait for the current render to finish.",
+        });
       } else {
         submitted++;
       }
