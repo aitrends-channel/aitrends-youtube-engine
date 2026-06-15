@@ -240,16 +240,69 @@ function CostCell({ summary, showProviders = true }: { summary?: { totals: Recor
   const otherUnits = Object.entries(summary.totals).filter(
     ([k]) => !k.startsWith("claude_tokens_"),
   );
-  const parts: string[] = [];
-  if (tokensTotal > 0) parts.push(`${showProviders ? "An " : ""}${compactNumber(tokensTotal)} tok`);
+  const providerBgFor = (initial: string): string => {
+    switch (initial) {
+      case "An": return "oklch(0.72 0.25 285)"; // purple — Anthropic
+      case "Ki": return "oklch(0.55 0.15 220)"; // blue — KIE
+      case "El": return "oklch(0.7 0.15 145)";  // green — ElevenLabs
+      case "Su": return "oklch(0.55 0.18 65)";  // amber — Supadata
+      default:   return "oklch(0.50 0 0)";      // neutral grey
+    }
+  };
+  const providerBadge = (initial: string) => (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 18,
+        height: 18,
+        borderRadius: "9999px",
+        background: providerBgFor(initial),
+        color: "white",
+        fontSize: 9,
+        fontWeight: 700,
+        lineHeight: 1,
+        marginRight: 4,
+        verticalAlign: "middle",
+      }}
+    >
+      {initial}
+    </span>
+  );
+  const parts: React.ReactNode[] = [];
+  if (tokensTotal > 0) {
+    parts.push(
+      <>
+        {showProviders && providerBadge("An")}
+        {compactNumber(tokensTotal)} tok
+      </>,
+    );
+  }
   for (const [kind, units] of otherUnits) {
-    if (units > 0) parts.push(`${showProviders ? `${providerInitial(kind)} ` : ""}${compactNumber(units)} ${unitSuffix(kind)}`);
+    if (units > 0) {
+      parts.push(
+        <>
+          {showProviders && providerBadge(providerInitial(kind))}
+          {compactNumber(units)} {unitSuffix(kind)}
+        </>,
+      );
+    }
   }
   const tooltip = summary.breakdown
     .map((b) => `${b.provider}${b.model ? ` (${b.model})` : ""}: ${compactNumber(b.units)} ${unitLabel(b.unitKind)}`)
     .join("\n");
   return (
-    <span title={tooltip}>{parts.length > 0 ? parts.join(" · ") : <span style={{ color: "var(--c-35)" }}>—</span>}</span>
+    <span title={tooltip}>
+      {parts.length > 0
+        ? parts.map((p, i) => (
+            <span key={i}>
+              {i > 0 && " · "}
+              {p}
+            </span>
+          ))
+        : <span style={{ color: "var(--c-35)" }}>—</span>}
+    </span>
   );
 }
 

@@ -52,17 +52,35 @@ export async function finishImageTask(input: FinishImageInput): Promise<FinishIm
     const storagePath = `${folder}/${input.projectId}/images/beat-${input.beatNumber}_${Date.now()}.png`;
     const publicUrl = await uploadFromUrl(storagePath, result.url, "image/png");
 
-    // .is("image_url", null) is the idempotency guard. Webhook and cron
-    // can race on the same task; whichever runs second sees image_url
-    // already populated and the UPDATE affects zero rows. The double
-    // upload above is a small waste (one extra storage write under
-    // race), but the row stays consistent and the user-visible URL
-    // never flickers between two different objects.
-    await supabase.from("project_beats")
+    // .eq("image_task_id", taskId) is the idempotency guard. Webhook
+    // and cron can race on the same task; whichever wins flips the
+    // task id to null, and the loser's UPDATE then matches zero rows.
+    // The double upload above is a small waste (one extra storage
+    // write under race), but the row stays consistent.
+    //
+    // Previously this used .is("image_url", null) which only worked
+    // for first-time generation — on a regenerate click the row
+    // already had an image_url from the prior gen, so the UPDATE
+    // never matched and the UI kept the stale URL forever even
+    // though storage had the new image.
+    // .select() lets us see how many rows the UPDATE actually
+    // matched. We expect exactly one — anything else means the
+    // task_id changed under us (another finisher beat us; benign)
+    // or the row vanished (shouldn't happen). Both cases are
+    // recoverable but worth surfacing in logs so silent UI-not-
+    // updating bugs become obvious instead of mysterious.
+    const { data: updated, error: updateErr } = await supabase
+      .from("project_beats")
       .update({ image_url: publicUrl, image_status: "done", image_task_id: null, image_model_id: null })
       .eq("project_id", input.projectId)
       .eq("beat_number", input.beatNumber)
-      .is("image_url", null);
+      .eq("image_task_id", input.taskId)
+      .select("beat_number");
+    if (updateErr) {
+      console.warn(`[finishImageTask] beat ${input.beatNumber} task=${input.taskId} update error: ${updateErr.message}`);
+    } else if (!updated || updated.length === 0) {
+      console.warn(`[finishImageTask] beat ${input.beatNumber} task=${input.taskId} update matched 0 rows — another path likely finished first (benign) or task_id race`);
+    }
 
     return { status: "done", url: publicUrl };
   }
@@ -72,7 +90,7 @@ export async function finishImageTask(input: FinishImageInput): Promise<FinishIm
       .update({ image_status: "failed", image_task_id: null, image_model_id: null })
       .eq("project_id", input.projectId)
       .eq("beat_number", input.beatNumber)
-      .is("image_url", null);
+      .eq("image_task_id", input.taskId);
 
     return { status: "failed", error: result.error ?? "Image generation failed" };
   }

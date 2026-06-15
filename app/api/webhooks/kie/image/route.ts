@@ -13,11 +13,21 @@ import { supabase } from "@/lib/supabase/client";
 //
 // Idempotency: KIE warns "the same task_id may receive multiple
 // callbacks, ensure processing logic is idempotent." Our pattern:
-//   - If the beat already has image_url, return 200 silently.
-//   - If image_task_id is null (already finished by cron or foreground
-//     poll), return 200 silently.
-//   - Otherwise run finishImageTask. The conditional update inside it
-//     guards against the rare cron+webhook race window.
+//   - Look up the beat by image_task_id = taskId. The first path
+//     that finishes a task (webhook, poll, or cron) clears
+//     image_task_id to null inside finishImageTask, so a duplicate
+//     callback for the same task finds no beat and is a no-op.
+//   - finishImageTask itself uses .eq("image_task_id", taskId) in
+//     its UPDATE as a second-level guard against the cron+webhook
+//     race window — only the first writer's UPDATE matches.
+//
+// We do NOT check row.image_url here. On regeneration the beat
+// row carries the previous gen's URL from the moment the user
+// clicks Regenerate (we don't wipe it because we want to keep
+// showing the old frame in the UI until the new one lands). An
+// "if image_url" guard would silently swallow every regeneration
+// webhook and leave the new URL forever unwritten — that was the
+// "regen finished in KIE but UI never updated" bug.
 //
 // We always return 200 (even on internal errors) so KIE doesn't retry
 // us into a tight loop on a transient bug — the cron will pick up
@@ -71,10 +81,10 @@ export async function POST(req: Request) {
     console.log(`[webhooks/kie/image] no beat for task ${taskId}`);
     return NextResponse.json({ ok: true });
   }
-  if (row.image_url) {
-    // Already finished by cron or foreground poll — idempotent ack.
-    return NextResponse.json({ ok: true });
-  }
+  // No row.image_url guard here — see header comment. The
+  // image_task_id lookup above is the real idempotency check; if
+  // another path already finished this task it cleared the id and
+  // our maybeSingle() returned null (handled above).
   const projectRel = row.projects as unknown as { user_id: string } | null;
   const userId = projectRel?.user_id;
   if (!userId) {

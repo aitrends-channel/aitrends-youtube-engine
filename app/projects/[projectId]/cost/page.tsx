@@ -139,13 +139,53 @@ export default function ProjectCostPage({ params }: PageProps) {
     .sort((a, b) => a.localeCompare(b));
   const providers = [...PROVIDER_ORDER, ...extras];
 
-  const renderBucket = (bucket: StepProviderBucket | undefined) => {
+  const providerInitial = (provider: string): string => {
+    switch (provider) {
+      case "anthropic":  return "An";
+      case "kie":        return "Ki";
+      case "elevenlabs": return "El";
+      case "supadata":   return "Su";
+      default:           return provider.slice(0, 2).replace(/^./, (c) => c.toUpperCase());
+    }
+  };
+  const providerBgFor = (provider: string): string => {
+    switch (provider) {
+      case "anthropic":  return "oklch(0.72 0.25 285)"; // purple
+      case "kie":        return "oklch(0.55 0.15 220)"; // blue
+      case "elevenlabs": return "oklch(0.7 0.15 145)";  // green
+      case "supadata":   return "oklch(0.55 0.18 65)";  // amber
+      default:           return "oklch(0.50 0 0)";      // neutral grey
+    }
+  };
+  const providerBadge = (provider: string) => (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 18,
+        height: 18,
+        borderRadius: "9999px",
+        background: providerBgFor(provider),
+        color: "white",
+        fontSize: 9,
+        fontWeight: 700,
+        lineHeight: 1,
+        marginRight: 4,
+        verticalAlign: "middle",
+      }}
+    >
+      {providerInitial(provider)}
+    </span>
+  );
+  const renderBucket = (bucket: StepProviderBucket | undefined, provider: string) => {
     if (!bucket) return <span style={{ color: "oklch(0 0 0 / 0.35)" }}>—</span>;
     const parts: string[] = [];
     for (const [kind, units] of Object.entries(bucket)) {
       if (units > 0) parts.push(`${compactNumber(units)} ${unitSuffix(kind)}`);
     }
-    return parts.length ? parts.join(" · ") : <span style={{ color: "oklch(0 0 0 / 0.35)" }}>—</span>;
+    if (parts.length === 0) return <span style={{ color: "oklch(0 0 0 / 0.35)" }}>—</span>;
+    return <>{providerBadge(provider)}{parts.join(" · ")}</>;
   };
 
   const providerTotals: Record<string, StepProviderBucket> = {};
@@ -240,7 +280,7 @@ export default function ProjectCostPage({ params }: PageProps) {
                       </td>
                       {providers.map((prov) => (
                         <td key={prov} className="py-2.5 px-3 text-xs font-mono tabular-nums" style={{ color: "black", background: "white" }}>
-                          {renderBucket(matrix[c.key][prov])}
+                          {renderBucket(matrix[c.key][prov], prov)}
                         </td>
                       ))}
                     </tr>
@@ -255,7 +295,7 @@ export default function ProjectCostPage({ params }: PageProps) {
                     {providers.map((prov) => (
                       <td key={prov} className="py-2.5 px-3 text-xs font-mono font-bold tabular-nums"
                         style={{ color: "black", background: "white" }}>
-                        {renderBucket(providerTotals[prov])}
+                        {renderBucket(providerTotals[prov], prov)}
                       </td>
                     ))}
                   </tr>

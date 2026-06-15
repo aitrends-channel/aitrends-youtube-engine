@@ -14,6 +14,30 @@ import { supabase } from "@/lib/supabase/client";
  * having to re-fetch sent items from IMAP later.
  */
 
+// Friendly display names that show up in the recipient's mail client
+// instead of the bare address. Email clients render the value before
+// the angle brackets as the sender ("Heclus Support" vs.
+// "support@heclus.com"). Add an entry here for every alias we send
+// from; addresses missing from this map fall through to the raw form
+// (still works, just looks less polished).
+const SENDER_DISPLAY_NAMES: Record<string, string> = {
+  "support@heclus.com": "Heclus Support",
+  "info@heclus.com":    "Heclus",
+};
+
+/**
+ * Build the RFC 5322 From header. Returns `"Display Name" <addr>` if
+ * we have a display name for the address, otherwise the raw address.
+ * The DB always stores the raw address — the formatted version only
+ * lives on the wire.
+ */
+function formatFrom(address: string): string {
+  const name = SENDER_DISPLAY_NAMES[address.toLowerCase()];
+  if (!name) return address;
+  // Quote the name to be safe with commas / special chars.
+  return `"${name.replace(/"/g, '\\"')}" <${address}>`;
+}
+
 interface SendArgs {
   from: string;           // e.g. "support@heclus.com" or "info@heclus.com"
   to: string | string[];
@@ -69,7 +93,10 @@ export async function sendEmail(args: SendArgs): Promise<{ messageId: string }> 
   const transport = getTransport();
 
   const result = await transport.sendMail({
-    from: args.from,
+    // Format with the display name ("Heclus Support" <support@…>)
+    // so the recipient's mail client shows a friendly sender. The
+    // raw address used for DB storage is args.from unchanged.
+    from: formatFrom(args.from),
     to: args.to,
     cc: args.cc,
     subject: args.subject,

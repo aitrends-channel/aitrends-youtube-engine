@@ -7,6 +7,7 @@ import { useProject } from "@/hooks/useProject";
 import { RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Spinner } from "@/components/ui/spinner";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
@@ -434,6 +435,12 @@ export default function GeneratePage({ params }: PageProps) {
   // long-running job.
   const [outOfCredits, setOutOfCredits] = useState(false);
   const [hoveredImageBeat, setHoveredImageBeat] = useState<Beat | null>(null);
+  // Where the hover preview should appear, computed from the
+  // thumbnail's bounding rect on hover. We anchor in viewport
+  // coordinates (position: fixed) so scrolling the page or the
+  // grid doesn't drag the preview around. The mouseleave that
+  // would fire on scroll also clears the anchor, so this is safe.
+  const [hoveredImageAnchor, setHoveredImageAnchor] = useState<{ top: number; left: number } | null>(null);
   const [hoveredVideoBeat, setHoveredVideoBeat] = useState<Beat | null>(null);
   const videoHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1232,8 +1239,26 @@ export default function GeneratePage({ params }: PageProps) {
                         key={b.beatNumber}
                         className="relative aspect-video rounded-lg overflow-hidden group"
                         style={{ background: "var(--bg-progress)" }}
-                        onMouseEnter={() => { if (b.imageUrl && !clearingImages) setHoveredImageBeat(b); }}
-                        onMouseLeave={() => setHoveredImageBeat(null)}
+                        onMouseEnter={(e) => {
+                          if (!b.imageUrl || clearingImages) return;
+                          setHoveredImageBeat(b);
+                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                          const PREVIEW_WIDTH = 280;
+                          const GAP = 8;
+                          // Prefer right side of the thumbnail; flip
+                          // left if the preview would overflow the
+                          // viewport on the right (rightmost grid
+                          // column). Clamp top to keep the preview
+                          // on screen when the thumbnail is near
+                          // the bottom edge.
+                          let left = rect.right + GAP;
+                          if (left + PREVIEW_WIDTH > window.innerWidth - 8) {
+                            left = rect.left - PREVIEW_WIDTH - GAP;
+                          }
+                          const top = Math.max(8, Math.min(window.innerHeight - 280, rect.top));
+                          setHoveredImageAnchor({ top, left });
+                        }}
+                        onMouseLeave={() => { setHoveredImageBeat(null); setHoveredImageAnchor(null); }}
                       >
                         {b.imageUrl && !clearingImages ? (
                           <img src={b.imageUrl} alt={`Beat ${b.beatNumber}`} className="w-full h-full object-cover" />
@@ -1243,23 +1268,33 @@ export default function GeneratePage({ params }: PageProps) {
                           </div>
                         )}
 
-                        {/* Regen overlay */}
+                        {/* Regen overlay — spinner on top of a dimmed
+                            existing image so the user can see the
+                            old frame while waiting for the new one. */}
                         {isRegening ? (
-                          <div className="absolute inset-0 flex items-center justify-center"
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1"
                             style={{ background: "oklch(0 0 0 / 0.55)" }}>
-                            <span className="text-[9px]" style={{ color: "var(--c-55)" }}>…</span>
+                            <Spinner size={20} className="text-white" />
+                            <span className="text-[9px] font-medium" style={{ color: "oklch(0.95 0 0)" }}>
+                              Regenerating…
+                            </span>
                           </div>
                         ) : (
                           <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${b.imageUrl ? "opacity-0 group-hover:opacity-100" : "opacity-100"}`}
-                            style={{ background: b.imageUrl ? "oklch(0 0 0 / 0.45)" : "transparent" }}>
+                            style={{ background: b.imageUrl ? "oklch(0 0 0 / 0.55)" : "transparent" }}>
                             <button
                               onClick={() => regenerateImage(b)}
                               disabled={!selectedImageModel || generatingImages || generatingTts}
                               title={generatingTts ? "Voiceover is generating — wait for it to finish" : `Regenerate beat ${b.beatNumber}`}
-                              className="w-5 h-5 rounded flex items-center justify-center disabled:opacity-40 transition-transform hover:scale-110"
-                              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)", fontSize: "11px", lineHeight: 1 }}
+                              aria-label={`Regenerate beat ${b.beatNumber}`}
+                              className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 cursor-pointer"
+                              style={{
+                                background: "oklch(0.72 0.25 285)",
+                                color: "white",
+                                boxShadow: "0 4px 16px oklch(0.72 0.25 285 / 0.55), 0 0 0 2px oklch(1 0 0 / 0.15)",
+                              }}
                             >
-                              ↺
+                              <RotateCcw size={20} strokeWidth={2.4} />
                             </button>
                           </div>
                         )}
@@ -1712,13 +1747,16 @@ export default function GeneratePage({ params }: PageProps) {
         </div>
       )}
 
-      {/* Image hover preview */}
-      {hoveredImageBeat?.imageUrl && (
+      {/* Image hover preview — anchored next to the hovered
+          thumbnail via hoveredImageAnchor (computed onMouseEnter).
+          Flips to the left side automatically when the thumbnail
+          is in the rightmost grid column. */}
+      {hoveredImageBeat?.imageUrl && hoveredImageAnchor && (
         <div
           className="fixed z-50 pointer-events-none rounded-xl overflow-hidden shadow-2xl"
           style={{
-            bottom: "2rem",
-            right: "2rem",
+            top: hoveredImageAnchor.top,
+            left: hoveredImageAnchor.left,
             width: "280px",
             border: "1px solid var(--bd-10)",
             background: "var(--bg-panel)",

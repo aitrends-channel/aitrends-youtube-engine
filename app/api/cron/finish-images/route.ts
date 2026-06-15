@@ -50,11 +50,16 @@ export async function GET(req: Request) {
 
   const startedAt = Date.now();
 
+  // "image_task_id is not null" = the beat has an in-flight KIE task
+  // we still owe completion work on. We deliberately do NOT filter on
+  // image_url being null — on regeneration the row keeps the previous
+  // gen's URL until the new one lands, and filtering that out would
+  // make this cron skip every regen and leave them spinning forever
+  // (same bug class as the webhook/finishImageTask fixes).
   const { data, error } = await supabase
     .from("project_beats")
     .select("beat_number, image_task_id, image_model_id, project_id, projects(user_id)")
     .not("image_task_id", "is", null)
-    .is("image_url", null)
     .limit(MAX_PER_RUN);
 
   if (error) {

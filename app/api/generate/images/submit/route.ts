@@ -32,11 +32,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Beat ${beatNumber} has no image prompt` }, { status: 400 });
     }
 
-    await supabase.from("project_beats")
-      .update({ image_status: "generating", image_task_id: null, image_model_id: null })
-      .eq("project_id", projectId)
-      .eq("beat_number", beatNumber);
-
     // Webhook URL — KIE POSTs here the moment the image finishes, so
     // we don't depend on the cron tick or the browser polling. Cron and
     // page-resume effect remain as backstops in case the webhook is
@@ -46,11 +41,15 @@ export async function POST(req: Request) {
     const taskId = await submitImageTask(imagePrompt, modelId, aspectRatio, resolution, user.id, callBackUrl);
     console.log(`[images/submit] beat=${beatNumber} model=${modelId} taskId=${taskId}`);
 
-    // Persist the taskId so the UI can resume polling after a refresh,
-    // timeout, or tab close. The video pipeline has the equivalent
-    // video_job_id column; this is the missing image counterpart.
+    // Single atomic UPDATE so the webhook can never fire in a window
+    // where image_task_id has been cleared but not yet rewritten. The
+    // earlier version did two writes (clear, then set after submit),
+    // which left a race where a fast KIE callback couldn't find the
+    // row and silently dropped the regeneration. Image_url is left
+    // intact on purpose — we want the old frame visible under the
+    // spinner until the new one lands.
     await supabase.from("project_beats")
-      .update({ image_task_id: taskId, image_model_id: modelId })
+      .update({ image_status: "generating", image_task_id: taskId, image_model_id: modelId })
       .eq("project_id", projectId)
       .eq("beat_number", beatNumber);
 
