@@ -965,7 +965,13 @@ export default function GeneratePage({ params }: PageProps) {
     if (!selectedImageModel) return;
     setRegenBeats((prev) => new Set(prev).add(beat.beatNumber));
     try {
-      const submitRes = await fetch("/api/generate/images/submit", {
+      // Single synchronous call to the regenerate route. The server
+      // runs the whole flow (submit → poll KIE → upload → update DB
+      // → delete previous) and returns the new image URL when done.
+      // No client-side polling, no webhook race, no spinner
+      // gymnastics — when this resolves, the DB is updated and
+      // mutate() pulls the new URL into SWR.
+      const res = await fetch("/api/generate/images/regenerate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -977,26 +983,13 @@ export default function GeneratePage({ params }: PageProps) {
           ...(selectedResolution ? { resolution: selectedResolution } : {}),
         }),
       });
-      const submitData = await submitRes.json().catch(() => ({})) as { taskId?: string; error?: string };
-      if (!submitRes.ok || !submitData.taskId) throw new Error(submitData.error ?? "Failed to submit image task");
-
-      const taskId = submitData.taskId;
-      for (let attempt = 0; attempt < 40; attempt++) {
-        await new Promise((r) => setTimeout(r, 4000));
-        const pollRes = await fetch("/api/generate/images/poll", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, beatNumber: beat.beatNumber, taskId, modelId: selectedImageModel }),
-        });
-        const pollData = await pollRes.json().catch(() => ({})) as { status?: string; error?: string };
-        if (pollData.status === "done") { toast.success(`Beat ${beat.beatNumber} regenerated`); return; }
-        if (pollData.status === "failed") throw new Error(pollData.error ?? "Image generation failed");
-      }
-      throw new Error("timed out");
+      const data = await res.json().catch(() => ({})) as { ok?: boolean; url?: string; error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Regenerate failed");
+      toast.success(`Beat ${beat.beatNumber} regenerated`);
+      await mutate();
     } catch (err) {
       toast.error(friendlyError(err instanceof Error ? err.message : null));
     } finally {
-      await mutate();
       setRegenBeats((prev) => { const next = new Set(prev); next.delete(beat.beatNumber); return next; });
     }
   }

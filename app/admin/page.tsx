@@ -174,6 +174,7 @@ function compactNumber(n: number): string {
 // strings rather than silently disappearing.
 function unitSuffix(unitKind: string): string {
   switch (unitKind) {
+    case "claude_tokens":
     case "claude_tokens_in":
     case "claude_tokens_out":
     case "claude_tokens_cache_read":
@@ -3697,7 +3698,6 @@ export default function AdminPage() {
                       <p className="text-base font-semibold truncate" style={{ color: "var(--c-90)" }}>
                         {p.selectedTopic ?? p.channelName ?? "—"}
                       </p>
-                      <p className="text-[11px] mt-0.5 font-mono" style={{ color: "var(--c-50)" }}>{p.id}</p>
                     </div>
                   </div>
 
