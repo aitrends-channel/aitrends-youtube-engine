@@ -652,7 +652,7 @@ export default function AssemblePage({ params }: PageProps) {
 
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
         {/* Header */}
-        <div className="px-[60px] py-4 sm:py-5"
+        <div className="sm:px-8 lg:px-[60px] py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div>
             <h1 className="font-bold text-base sm:text-lg">Assemble Final Video</h1>
@@ -665,7 +665,7 @@ export default function AssemblePage({ params }: PageProps) {
           </div>
         </div>
 
-        <div className="px-[60px] py-4 sm:py-8 pb-24">
+        <div className="sm:px-8 lg:px-[60px] py-4 sm:py-8 pb-24">
           <div className="w-full space-y-6">
 
             {/* Status cards */}
@@ -745,7 +745,7 @@ export default function AssemblePage({ params }: PageProps) {
                 remove ×) into one horizontal row to keep the assemble
                 page dense. The chip + play-with-preview toggle still
                 renders inside each preview card. */}
-            <div className="flex items-center gap-3 rounded-2xl px-4 py-2.5"
+            <div className="flex items-center gap-3 rounded-2xl px-4 py-2.5 flex-wrap"
               style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
               <span aria-hidden="true" className="text-base shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>♫</span>
               {!bgmFile && !bgmUploadedUrl ? (
@@ -835,7 +835,7 @@ export default function AssemblePage({ params }: PageProps) {
                 they're resolution-agnostic. */}
             <div className="rounded-2xl px-4 py-2.5 space-y-3"
               style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-wrap">
                 <span aria-hidden="true" className="text-base shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>◈</span>
                 {!logoFile && !logoUploadedUrl ? (
                   <>

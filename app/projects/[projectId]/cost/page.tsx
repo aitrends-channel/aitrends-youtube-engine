@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR from "swr";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { X } from "lucide-react";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
@@ -99,14 +99,29 @@ const fetcher = (url: string) =>
 export default function ProjectCostPage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { project } = useProject(projectId);
+  // Summary mode: hide the wizard sidebar so the cost view stands on
+  // its own. Reached via the thumbnails-done flow, where the cost
+  // breakdown is the final reveal and the step nav would be visual
+  // noise. Read once from the URL — no need for state since changing
+  // the param implies a fresh navigation.
+  const summaryMode = searchParams.get("summary") === "1";
 
   // "Closes" the cost view by sending the user back to wherever they
   // came from in the workflow. router.back() respects browser history
   // — works even if they deep-linked here (falls back to no-op rather
   // than a fixed page, but in practice the Cost button is only reachable
   // from inside the workflow so history is always non-empty).
-  const handleClose = () => router.back();
+  // In summary mode (arrived from thumbnails Done), the wizard sidebar
+  // is hidden so there's no other route out of this view — send X to
+  // the dashboard, which is the natural end-of-workflow destination.
+  // Otherwise behave like a back button (returns to whatever workflow
+  // step they came from).
+  const handleClose = () => {
+    if (summaryMode) router.push("/dashboard");
+    else router.back();
+  };
   const { data, error, isLoading } = useSWR<CostsResponse>(
     projectId ? `/api/projects/${projectId}/costs` : null,
     fetcher,
@@ -208,9 +223,10 @@ export default function ProjectCostPage({ params }: PageProps) {
         currentState={project?.current_state ?? 1}
         highestState={project?.current_state}
         channelName={project?.channel_name}
+        hideSteps={summaryMode}
       />
 
-      <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
+      <main className={`flex-1 overflow-y-auto ${summaryMode ? "pt-16 md:pt-20" : "pt-[105px] md:pt-0"}`}>
         <div className="sm:px-8 py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <h1 className="font-bold text-lg">Cost breakdown</h1>
@@ -220,21 +236,25 @@ export default function ProjectCostPage({ params }: PageProps) {
           </p>
         </div>
 
-        <div className="max-w-5xl mx-auto sm:px-8 pt-6 sm:pt-8 pb-24 space-y-5">
+        <div className="sm:px-8 pt-6 sm:pt-8 pb-24 space-y-5">
           {/* Close button sits outside (above) the Title card,
               right-aligned. router.back() drops the user back on the
-              workflow step they came from. */}
-          <div className="flex justify-end">
-            <button
-              onClick={handleClose}
-              aria-label="Close cost view"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 cursor-pointer"
-              style={{ background: "oklch(0.58 0.22 25)", color: "white", boxShadow: "0 2px 6px oklch(0.58 0.22 25 / 0.3)" }}
-            >
-              <X size={13} />
-              Close
-            </button>
-          </div>
+              workflow step they came from. Hidden in summary mode
+              where the two end-of-flow CTAs at the bottom (Dashboard
+              / Start new video) are the intended exit paths. */}
+          {!summaryMode && (
+            <div className="flex justify-end">
+              <button
+                onClick={handleClose}
+                aria-label="Close cost view"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 cursor-pointer"
+                style={{ background: "oklch(0.58 0.22 25)", color: "white", boxShadow: "0 2px 6px oklch(0.58 0.22 25 / 0.3)" }}
+              >
+                <X size={13} />
+                Close
+              </button>
+            </div>
+          )}
 
           {/* Title strip — break-words on the topic keeps long values
               inside the card on narrow phones instead of overflowing
@@ -301,6 +321,29 @@ export default function ProjectCostPage({ params }: PageProps) {
                   </tr>
                 </tfoot>
               </table>
+            </div>
+          )}
+
+          {/* End-of-flow CTAs — only in summary mode (arrived via the
+              thumbnails-Done button). Two paths out: review at the
+              dashboard, or kick off a brand-new project from the
+              /next page. Stacked on mobile, side-by-side on sm+. */}
+          {summaryMode && (
+            <div className="flex flex-col sm:flex-row gap-3 pt-4">
+              <button
+                onClick={() => router.push("/dashboard")}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+              >
+                Go to Dashboard
+              </button>
+              <button
+                onClick={() => router.push(`/projects/${projectId}/next`)}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+              >
+                Start new video
+              </button>
             </div>
           )}
         </div>

@@ -53,9 +53,15 @@ interface WizardNavProps {
   activeOverridePath?: string;
   progressComplete?: boolean;
   topRightExtra?: React.ReactNode;
+  /** Hide the step navigation (desktop sidebar, mobile step-dots
+   *  row, mobile drawer) but keep the logo + Back/Cost/Theme/Profile
+   *  cluster. Used by the cost-summary view at the end of the
+   *  thumbnails-Done flow, where the workflow nav is irrelevant but
+   *  global controls should still be reachable. */
+  hideSteps?: boolean;
 }
 
-export function WizardNav({ projectId, currentState, highestState, channelName, activeOverridePath, progressComplete, topRightExtra }: WizardNavProps) {
+export function WizardNav({ projectId, currentState, highestState, channelName, activeOverridePath, progressComplete, topRightExtra, hideSteps }: WizardNavProps) {
   const reached = highestState ?? currentState;
   const router = useRouter();
   const pathname = usePathname();
@@ -279,6 +285,28 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
 
   return (
     <>
+      {/* ── Desktop top-left: Heclus logo (only when the sidebar is
+            hidden — otherwise the logo lives inside the sidebar). */}
+      {hideSteps && (
+        <div className="hidden md:flex fixed top-4 left-4 z-50 items-center gap-3">
+          <button onClick={() => router.push("/dashboard")} className="flex items-center gap-3 group">
+            <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center">
+              <Image src="/heclus-icon-white.svg" alt="Heclus" width={40} height={40} className="object-cover w-full h-full" />
+            </div>
+            <div className="min-w-0 text-left">
+              <p className="text-sm font-bold text-foreground/90 group-hover:text-foreground transition-colors leading-tight">
+                Heclus
+              </p>
+              {channelName && (
+                <p className="text-xs leading-tight mt-0.5 truncate max-w-[180px]" style={{ color: "var(--c-45)" }}>
+                  {channelName}
+                </p>
+              )}
+            </div>
+          </button>
+        </div>
+      )}
+
       {/* ── Desktop top-right: Back to Dashboard + Profile ──────────── */}
       <div className="hidden md:flex fixed top-4 right-4 z-50 items-center gap-2">
         {topRightExtra}
@@ -460,6 +488,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
         </div>
 
         {/* Step dots + labels row */}
+        {!hideSteps && (
         <div
           className="py-[10px]"
           style={{ borderTop: "1px solid var(--bd-6)" }}
@@ -526,10 +555,11 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
             })}
           </div>
         </div>
+        )}
       </div>
 
       {/* ── Mobile drawer ───────────────────────────────────────────── */}
-      {drawerOpen && (
+      {!hideSteps && drawerOpen && (
         <div className="md:hidden fixed inset-0 z-[300]">
           <div className="absolute inset-0 bg-black/60" onClick={closeDrawer} />
           <div
@@ -565,30 +595,32 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
       )}
 
       {/* ── Desktop sidebar ──────────────────────────────────────────── */}
-      <aside className="hidden md:flex w-64 shrink-0 flex-col h-screen sticky top-0 overflow-hidden"
-        style={{ background: "var(--bg-nav)", borderRight: "1px solid var(--bd-7)" }}>
+      {!hideSteps && (
+        <aside className="hidden md:flex w-64 shrink-0 flex-col h-screen sticky top-0 overflow-hidden"
+          style={{ background: "var(--bg-nav)", borderRight: "1px solid var(--bd-7)" }}>
 
-        <div className="px-5 py-5 border-b" style={{ borderColor: "var(--bd-7)" }}>
-          <button onClick={() => router.push("/dashboard")} className="flex items-center gap-3 group w-full">
-            <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center">
-              <Image src="/heclus-icon-white.svg" alt="Heclus" width={40} height={40} className="object-cover w-full h-full" />
-            </div>
-            <div className="min-w-0 text-left">
-              <p className="text-sm font-bold text-foreground/90 group-hover:text-foreground transition-colors leading-tight">
-                Heclus
-              </p>
-              <p className="text-xs leading-tight mt-0.5" style={{ color: "var(--c-45)" }}>
-                {channelName ? (
-                  <span className="truncate block max-w-[140px]">{channelName}</span>
-                ) : "Heclus"}
-              </p>
-            </div>
-          </button>
-        </div>
+          <div className="px-5 py-5 border-b" style={{ borderColor: "var(--bd-7)" }}>
+            <button onClick={() => router.push("/dashboard")} className="flex items-center gap-3 group w-full">
+              <div className="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center">
+                <Image src="/heclus-icon-white.svg" alt="Heclus" width={40} height={40} className="object-cover w-full h-full" />
+              </div>
+              <div className="min-w-0 text-left">
+                <p className="text-sm font-bold text-foreground/90 group-hover:text-foreground transition-colors leading-tight">
+                  Heclus
+                </p>
+                <p className="text-xs leading-tight mt-0.5" style={{ color: "var(--c-45)" }}>
+                  {channelName ? (
+                    <span className="truncate block max-w-[140px]">{channelName}</span>
+                  ) : "Heclus"}
+                </p>
+              </div>
+            </button>
+          </div>
 
-        {stepList}
-        {progressFooter}
-      </aside>
+          {stepList}
+          {progressFooter}
+        </aside>
+      )}
     </>
   );
 }

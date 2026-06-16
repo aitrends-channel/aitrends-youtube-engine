@@ -72,7 +72,7 @@ export function DashboardHeader({ rightExtra }: DashboardHeaderProps) {
   }
 
   return (
-    <header className="flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 sticky top-0 z-10"
+    <header className="flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 sticky top-0 z-50"
       style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
       <Link href="/dashboard" className="flex items-center gap-3 transition-opacity hover:opacity-80">
         <div className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center">

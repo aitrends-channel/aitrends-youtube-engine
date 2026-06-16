@@ -84,7 +84,7 @@ export function StepCostCard({ projectId, column, hideUnitKinds }: {
     .map((p) => `${p}-${formatProvider(p, byProvider[p])}`);
 
   return (
-    <span className="inline-block rounded-md px-3 py-2 text-xs font-bold whitespace-nowrap"
+    <span className="inline-block rounded-md px-3 py-2 text-xs font-bold break-words max-w-full"
       style={{ background: "oklch(0.55 0.15 145)", border: "1px solid oklch(0.55 0.15 145)", color: "oklch(1 0 0)" }}>
       Used: {parts.length === 0 ? "—" : parts.join(", ")}
     </span>

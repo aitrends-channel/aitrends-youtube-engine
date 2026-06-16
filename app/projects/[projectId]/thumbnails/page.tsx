@@ -1096,7 +1096,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
           <div className="sm:px-8 ">
             <button
-              onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/next`); }}
+              onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/cost?summary=1`); }}
               disabled={navigating}
               className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-80"
               style={{ background: "oklch(0.55 0.15 145)", color: "var(--bg-page-2)" }}

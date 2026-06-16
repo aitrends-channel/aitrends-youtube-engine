@@ -16,8 +16,8 @@ export default function NextVideoLandingPage({ params }: PageProps) {
     <div className="min-h-screen flex flex-col overflow-x-hidden" style={{ background: "var(--bg-page)" }}>
       <DashboardHeader />
 
-      <main className="flex-1 flex flex-col items-center justify-center sm:px-8 py-16">
-        <div className="w-full max-w-3xl space-y-8">
+      <main className="flex-1 px-5 sm:px-8 py-10 sm:py-16">
+        <div className="space-y-8">
           <div className="text-center space-y-3">
             <div className="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center"
               style={{ background: "oklch(0.55 0.15 145 / 0.12)", border: "1px solid oklch(0.55 0.15 145 / 0.3)" }}>

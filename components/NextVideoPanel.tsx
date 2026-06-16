@@ -167,7 +167,7 @@ export function NextVideoPanel({ projectId, project }: NextVideoPanelProps) {
                 <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 Starting…
               </span>
-            ) : "Start Next Video →"}
+            ) : "Continue"}
           </button>
           <button
             onClick={() => { setNavigatingDashboard(true); router.push("/dashboard"); }}
