@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
+import { StepCostCard } from "@/components/StepCostCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -703,14 +704,19 @@ export default function VoiceoverPage({ params }: PageProps) {
         {/* Header */}
         <div className="shrink-0 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <h1 className="font-bold text-base sm:text-lg">Voiceover</h1>
-          <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-            One narration clip per beat. Each beat&apos;s clip is the timing source for its visual — no matcher, no drift.
-          </p>
+          <div>
+            <h1 className="font-bold text-base sm:text-lg">Voiceover</h1>
+            <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+              One narration clip per beat. Each beat&apos;s clip is the timing source for its visual — no matcher, no drift.
+            </p>
+            <div className="mt-3">
+              <StepCostCard projectId={projectId} column="voiceover" />
+            </div>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto pb-[70px]">
-        <div className="py-4 sm:p-8 pb-24 max-w-4xl mx-auto space-y-6">
+        <div className="py-4 sm:p-8 pb-24 space-y-6">
 
           {/* Voice picker */}
           <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
@@ -1174,7 +1180,7 @@ export default function VoiceoverPage({ params }: PageProps) {
           className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}
         >
-          <div className="max-w-4xl mx-auto sm:px-8">
+          <div className="sm:px-8">
             <button
               onClick={() => router.push(`/projects/${projectId}/generate`)}
               className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all"

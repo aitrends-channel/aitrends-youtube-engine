@@ -3,6 +3,7 @@
 import { useState, use, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
+import { StepCostCard } from "@/components/StepCostCard";
 import { useProject } from "@/hooks/useProject";
 import { useStreamingScript } from "@/hooks/useStreamingScript";
 import { toast } from "sonner";
@@ -242,10 +243,13 @@ export default function ScriptPage({ params }: PageProps) {
           <div className="flex-1 min-w-0 mr-2">
             <h1 className="font-bold text-base sm:text-lg text-foreground">Script Editor</h1>
             {selectedTopic && (
-              <p className="text-xs truncate max-w-xs sm:max-w-sm mt-0.5" style={{ color: "var(--c-50)" }}>
+              <p className="text-xs truncate max-w-xs mt-0.5" style={{ color: "var(--c-50)" }}>
                 {selectedTopic}
               </p>
             )}
+            <div className="mt-3">
+              <StepCostCard projectId={projectId} column="script" />
+            </div>
           </div>
         </div>
 
@@ -321,7 +325,7 @@ export default function ScriptPage({ params }: PageProps) {
 
           {/* Script display / editor */}
           {(script || isStreaming) && (
-            <div className="max-w-3xl mx-auto">
+            <div className="">
               <div className="rounded-2xl overflow-hidden"
                 style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                 {/* Script header bar */}
@@ -468,7 +472,7 @@ export default function ScriptPage({ params }: PageProps) {
       {!isStreaming && script && (
         <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
-          <div className="max-w-3xl mx-auto sm:px-8 flex gap-3">
+          <div className="sm:px-8 flex gap-3">
             <button
               onClick={() => setConfirmRegen(true)}
               disabled={navigating}

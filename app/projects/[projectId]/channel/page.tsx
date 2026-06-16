@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { AlertCircle } from "lucide-react";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
+import { StepCostCard } from "@/components/StepCostCard";
+import { isAdminUser } from "@/lib/admin";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { toast } from "sonner";
@@ -237,10 +239,12 @@ export default function ChannelPage({ params }: PageProps) {
   // pipeline step (transcripts, Claude calls) runs.
   const [existingNiche, setExistingNiche] = useState<{ projectId: string; channelName: string } | null>(null);
 
+  const [isAdmin, setIsAdmin] = useState(false);
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
     supabase.auth.getUser().then(({ data }) => {
       if (data.user?.email) setUserEmail(data.user.email);
+      setIsAdmin(isAdminUser(data.user));
     });
   }, []);
 
@@ -489,7 +493,7 @@ export default function ChannelPage({ params }: PageProps) {
       <WizardNav projectId={projectId} currentState={1} highestState={project?.current_state} channelName={project?.channel_name} />
 
       <main className="flex-1 min-w-0 overflow-y-auto pt-[105px] md:pt-0">
-        <div className="max-w-2xl mx-auto sm:px-8 pt-6 sm:pt-10 pb-24 space-y-8">
+        <div className="sm:px-8 pt-6 sm:pt-10 pb-24 space-y-8">
 
           {/* Header */}
           <div>
@@ -497,6 +501,13 @@ export default function ChannelPage({ params }: PageProps) {
             <p className="text-sm mt-1" style={{ color: "var(--c-50)" }}>
               Enter a YouTube channel URL to automatically extract style DNA and generate content.
             </p>
+            <div className="mt-3">
+              <StepCostCard
+                projectId={projectId}
+                column="channel_analysis"
+                hideUnitKinds={isAdmin ? undefined : ["supadata_transcripts"]}
+              />
+            </div>
           </div>
 
           {/* URL input card */}

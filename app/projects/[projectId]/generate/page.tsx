@@ -6,6 +6,7 @@ import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { RotateCcw, RefreshCw, ChevronsRight, Wand2 } from "lucide-react";
 import { ImageSparkle } from "@/components/icons/ImageSparkle";
+import { StepCostCard } from "@/components/StepCostCard";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
@@ -1355,6 +1356,9 @@ export default function GeneratePage({ params }: PageProps) {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               Select a model for each service, then generate your final content
             </p>
+            <div className="mt-3">
+              <StepCostCard projectId={projectId} column="generate" />
+            </div>
           </div>
         </div>
 

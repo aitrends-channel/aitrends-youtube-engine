@@ -4,6 +4,7 @@ import { useState, use, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Lock } from "lucide-react";
 import { WizardNav } from "@/components/wizard/WizardNav";
+import { StepCostCard } from "@/components/StepCostCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 
@@ -122,13 +123,18 @@ export default function TopicPage({ params }: PageProps) {
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
         <div className="sm:px-8 py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <h1 className="font-bold text-lg">Choose Your Topic</h1>
-          <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-            {isTopicLocked ? "Topic is locked — already used in script generation" : "Select a video idea or enter a custom topic"}
-          </p>
+          <div>
+            <h1 className="font-bold text-lg">Choose Your Topic</h1>
+            <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+              {isTopicLocked ? "Topic is locked — already used in script generation" : "Select a video idea or enter a custom topic"}
+            </p>
+            <div className="mt-3">
+              <StepCostCard projectId={projectId} column="topic" />
+            </div>
+          </div>
         </div>
 
-        <div className="max-w-2xl mx-auto sm:px-8 pt-6 sm:pt-8 pb-24 space-y-5">
+        <div className="sm:px-8 pt-6 sm:pt-8 pb-24 space-y-5">
 
           {isTopicLocked ? (
             <>

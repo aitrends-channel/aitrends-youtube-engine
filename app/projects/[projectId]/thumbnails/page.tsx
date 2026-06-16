@@ -3,6 +3,7 @@
 import { useState, use, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
+import { StepCostCard } from "@/components/StepCostCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -748,16 +749,21 @@ export default function ThumbnailsPage({ params }: PageProps) {
         {/* Header */}
         <div className="sm:px-8 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <h1 className="font-bold text-lg">Thumbnails</h1>
-          {hasConcepts && (
-            <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-              {thumbnails.length} concepts · {thumbnails.filter((t) => t.imageUrl).length} images generated
-            </p>
-          )}
+          <div>
+            <h1 className="font-bold text-lg">Thumbnails</h1>
+            {hasConcepts && (
+              <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                {thumbnails.length} concepts · {thumbnails.filter((t) => t.imageUrl).length} images generated
+              </p>
+            )}
+            <div className="mt-3">
+              <StepCostCard projectId={projectId} column="thumbnail" />
+            </div>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="sm:px-8 pt-4 sm:pt-6 pb-24 space-y-4 max-w-5xl mx-auto">
+          <div className="sm:px-8 pt-4 sm:pt-6 pb-24 space-y-4 ">
 
             {/* Reference source — pick between auto (niche videos)
                 and manual (upload your own thumbnails). Same toggle
@@ -1088,7 +1094,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
       {allImagesGenerated && (
         <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
-          <div className="sm:px-8 max-w-5xl mx-auto">
+          <div className="sm:px-8 ">
             <button
               onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/next`); }}
               disabled={navigating}

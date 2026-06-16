@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, use, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
+import { StepCostCard } from "@/components/StepCostCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -1164,7 +1165,18 @@ export default function PromptsPage({ params }: PageProps) {
 
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
         {/* Header */}
-        
+        <div className="shrink-0 sm:px-8 py-4 sm:py-5"
+          style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
+          <div>
+            <h1 className="font-bold text-base sm:text-lg">Prompts</h1>
+            <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+              Image and video prompts generated from your script beats
+            </p>
+            <div className="mt-3">
+              <StepCostCard projectId={projectId} column="prompts" />
+            </div>
+          </div>
+        </div>
 
         <div className="mx-5">
         {/* Step cards. md:pr-44 keeps the right-edge action buttons
@@ -1172,7 +1184,7 @@ export default function PromptsPage({ params }: PageProps) {
             Back + ThemeToggle + Profile cluster in WizardNav. md:pt-16
             drops the first card below that cluster's vertical band so
             they don't visually collide near the top edge. */}
-        <div className="sm:px-8 md:pr-44 py-4 sm:py-5 md:pt-16 space-y-3"
+        <div className="sm:px-8 md:pr-44 py-4 sm:py-5 space-y-3"
           style={{ borderBottom: hasImageBeats ? "1px solid var(--bd-6)" : "none" }}>
           {beatsStale && (
             <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"

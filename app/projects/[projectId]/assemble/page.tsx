@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
+import { StepCostCard } from "@/components/StepCostCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -233,6 +234,17 @@ export default function AssemblePage({ params }: PageProps) {
     return () => clearTimeout(t);
   }, [trimSilence, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, projectId]);
   const [assembling, setAssembling] = useState(false);
+  // Monotonic high-water mark for the rendered stage index. We hold
+  // the latest matched stage so a transient unmatched status line
+  // from the worker doesn't drop the visible step back to 1 before
+  // the next valid line snaps it forward (the cause of the visible
+  // "reverses then continues" jump). Reset to -1 whenever assembling
+  // flips back on (a new run, or a Resume that may revisit earlier
+  // stages — both want the watermark to restart from scratch).
+  const lastStageIdxRef = useRef<number>(-1);
+  useEffect(() => {
+    if (assembling) lastStageIdxRef.current = -1;
+  }, [assembling]);
   // True from the moment the user clicks Stop until the worker
   // acknowledges by transitioning assembly_status to "stopped".
   // Lets the button label/disabled-state flip to "Stopping…"
@@ -303,14 +315,19 @@ export default function AssemblePage({ params }: PageProps) {
       setAssembling(true);
       setAssembleStatus((project?.assembly_progress as string | undefined) ?? "Stopped — click Resume to continue");
     } else if (status === "preview" || status === "done") {
-      // Same reassembleMode guard as the auto-restore effect above —
-      // stale "done" status from the SWR cache pre-refetch would
-      // otherwise re-populate assembledUrl with the deleted URL.
-      if (reassembleMode) return;
+      // Loading-state clears always run on terminal success — leaving
+      // `assembling` true after status=done left the progress panel
+      // stuck on screen with no way for the user to dismiss it.
+      // The reassembleMode guard now only gates re-populating
+      // assembledUrl (the original concern was that stale "done"
+      // status from the SWR cache pre-refetch would otherwise put
+      // the deleted URL back). Clearing the loading flag is safe
+      // either way: if the user is mid-reassemble flow they're
+      // looking at the config panel, not the progress strip.
       const url = project?.assembled_url as string | undefined;
       setAssembling(false);
       setAssembleStatus("");
-      if (url) setAssembledUrl(url);
+      if (!reassembleMode && url) setAssembledUrl(url);
     } else if (status === "failed") {
       if (assembling) toast.error((project?.assembly_error as string | undefined) ?? "Assembly failed");
       setAssembling(false);
@@ -637,14 +654,19 @@ export default function AssemblePage({ params }: PageProps) {
         {/* Header */}
         <div className="px-[60px] py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
-          <h1 className="font-bold text-base sm:text-lg">Assemble Final Video</h1>
-          <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-            Transcribes your voiceover to align each clip to the exact narration timing
-          </p>
+          <div>
+            <h1 className="font-bold text-base sm:text-lg">Assemble Final Video</h1>
+            <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+              Transcribes your voiceover to align each clip to the exact narration timing
+            </p>
+            <div className="mt-3">
+              <StepCostCard projectId={projectId} column="assemble" />
+            </div>
+          </div>
         </div>
 
         <div className="px-[60px] py-4 sm:py-8 pb-24">
-          <div className="w-full max-w-5xl mx-auto space-y-6">
+          <div className="w-full space-y-6">
 
             {/* Status cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
@@ -1243,10 +1265,18 @@ export default function AssemblePage({ params }: PageProps) {
                   { key: "mix",        label: hasBgm ? "Mix voiceover + music" : "Mix voiceover", match: (s: string) => s.startsWith("Mixing") },
                   { key: "upload",     label: "Upload to cloud",     match: (s: string) => s.startsWith("Uploading") },
                 ];
-                const currentIdx = (() => {
-                  const i = stages.findIndex((s) => s.match(assembleStatus));
-                  return i === -1 ? 0 : i;
-                })();
+                // Monotonic stage index: once we've seen progress to
+                // a later stage, don't ever fall back to an earlier
+                // one. The worker occasionally writes transient
+                // status lines that don't match any rule (e.g. a
+                // "Validating…" / "Cleaning up…" between stages),
+                // which would otherwise drop findIndex to -1 and
+                // make the progress bar visibly jump back to step 1
+                // before snapping forward on the next matching line.
+                const i = stages.findIndex((s) => s.match(assembleStatus));
+                if (i > lastStageIdxRef.current) lastStageIdxRef.current = i;
+                else if (i === -1 && lastStageIdxRef.current === -1) lastStageIdxRef.current = 0;
+                const currentIdx = lastStageIdxRef.current >= 0 ? lastStageIdxRef.current : 0;
                 const pct = Math.round((currentIdx / stages.length) * 100);
 
                 return (

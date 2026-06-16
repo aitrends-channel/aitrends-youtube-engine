@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, Fragment } from "react";
+import { useState, useEffect, useRef, useTransition, Fragment } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -116,6 +116,21 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
     return reached >= Math.min(...phase.states);
   }
 
+  // Prefetch every navigable phase URL so clicking a green-ticked
+  // step doesn't pay the page-bundle + RSC fetch on the critical
+  // click→render path. Re-runs when reached / current path changes
+  // because that's when the set of navigable phases shifts. Next.js
+  // dedupes redundant prefetches, so calling per render is safe.
+  useEffect(() => {
+    if (projectId === "new-fork") return;
+    for (const phase of PHASES) {
+      const phaseRank = PATH_RANK[phase.id] ?? 0;
+      const done = reached > Math.max(...phase.states);
+      const navigable = done || (phaseRank <= currentPathRank && reached >= Math.min(...phase.states));
+      if (navigable) router.prefetch(`/projects/${projectId}/${phase.path}`);
+    }
+  }, [reached, currentPathRank, projectId, router]);
+
   const currentPhaseIndex = PHASES.findIndex((p) => pathname.endsWith(`/${p.path}`));
   // Cap at 99% until progressComplete signals everything is truly done.
   // Thumbnails is the final phase (index 7 of 8) so the raw fraction would
@@ -125,10 +140,21 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
     ? 100
     : Math.min(99, Math.max(0, Math.round(((currentPhaseIndex + 1) / PHASES.length) * 100)));
 
+  const [, startTransition] = useTransition();
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
   function navigate(href: string) {
     setDrawerOpen(false);
-    router.push(href);
+    setPendingHref(href);
+    startTransition(() => {
+      router.push(href);
+    });
   }
+  // Clear the pending highlight once the URL settles on the target.
+  useEffect(() => {
+    if (pendingHref && pathname.endsWith(pendingHref.split("/").pop() ?? "")) {
+      setPendingHref(null);
+    }
+  }, [pathname, pendingHref]);
 
   function closeDrawer() {
     setDrawerOpen(false);
@@ -143,18 +169,21 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
         const isActive = status === "active";
         const isDone = status === "done";
         const isHighlighted = i === drawerHighlightPhase && drawerHighlightPhase >= 0;
+        const href = `/projects/${projectId}/${phase.path}`;
+        const isPending = pendingHref === href;
         const Icon = PHASE_ICONS[phase.id];
 
         return (
           <div key={phase.id}>
             <button
-              onClick={() => navigable && navigate(`/projects/${projectId}/${phase.path}`)}
-              disabled={!navigable}
+              onClick={() => navigable && navigate(href)}
+              disabled={!navigable || isPending}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all duration-200",
                 isDone && "cursor-pointer hover:bg-white/5",
                 !isActive && !isDone && navigable && "cursor-pointer hover:bg-white/5",
                 !navigable && "cursor-not-allowed",
+                isPending && "opacity-60",
               )}
               style={{
                 ...(isActive ? {
@@ -181,7 +210,11 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                   }
                 }
               >
-                {isDone ? <CheckCircle2 size={18} strokeWidth={2} /> : <Icon size={16} strokeWidth={1.75} />}
+                {isPending
+                  ? <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  : isDone
+                    ? <CheckCircle2 size={18} strokeWidth={2} />
+                    : <Icon size={16} strokeWidth={1.75} />}
               </div>
 
               <div className="min-w-0">
