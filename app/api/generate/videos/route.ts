@@ -42,22 +42,28 @@ export async function POST(req: Request) {
     let submitted = 0;
     const failures: { beatNumber: number; error: string }[] = [];
 
-    // Conditional update — only flip the row to "queued" if it's
-    // NOT currently in-flight. Without the .not("video_status", "in",
-    // ...) guard, a user clicking Regen while the worker is still
-    // processing this beat would reset status to queued mid-render,
-    // and the next worker tick would re-claim the same beat → two
-    // KIE calls + two job IDs for one user action (the "double-
-    // submit" case we saw in worker logs). The conditional update
-    // returns 0 rows in that case, which we surface as a failure
-    // so the UI can tell the user "this beat is already rendering."
+    // Unconditional re-queue. The previous in-flight guard
+    // (`.not("video_status", "in", ...)`) created false-positive
+    // "Beat is already in flight" errors when the UI showed an
+    // actionable icon (Retry / Generate) but the DB row had
+    // transiently moved into "submitting" / "rendering" — usually
+    // because the worker's startup re-queue or a prior sweep had
+    // changed state faster than SWR's refresh interval could
+    // observe. The user's intent in clicking is unambiguous: retry
+    // this beat. Honoring that intent matters more than preventing
+    // the rare double-KIE-call race, because the worker's commit
+    // guard (worker.processBeat:209) already discards orphan
+    // uploads from a stale in-flight job (it requires status in
+    // ["submitting", "rendering"] to commit, and the new claim
+    // gives the next worker tick a fresh job_id). Worst case is
+    // one extra KIE billing for the abandoned poll — acceptable
+    // for an explicit user retry.
     for (const beat of beats) {
       const { data, error } = await supabase
         .from("project_beats")
         .update({ video_status: "queued", video_job_id: null, video_error: null })
         .eq("project_id", projectId)
         .eq("beat_number", beat.beatNumber)
-        .not("video_status", "in", "(queued,submitting,rendering)")
         .select("beat_number");
 
       if (error) {
@@ -65,7 +71,7 @@ export async function POST(req: Request) {
       } else if (!data || data.length === 0) {
         failures.push({
           beatNumber: beat.beatNumber,
-          error: "Beat is already in flight — wait for the current render to finish.",
+          error: `Beat ${beat.beatNumber} not found.`,
         });
       } else {
         submitted++;

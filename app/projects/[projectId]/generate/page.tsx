@@ -374,18 +374,36 @@ export default function GeneratePage({ params }: PageProps) {
     setImageRunError(null);
     imageBannerShown.current = false;
   }
+  function resetVideoErrorBannerLocal() {
+    // Local-only reset: clears React state for the banner without
+    // touching the DB. Used by single-beat actions (regen), where
+    // we don't want to wipe other failed beats' video_error / status
+    // just because the user retried one of them. The acted-on beat
+    // gets its own video_error cleared by the queue route's UPDATE.
+    setVideoRunError(null);
+    videoBannerShown.current = false;
+  }
+
   function resetVideoErrorBanner() {
     setVideoRunError(null);
     videoBannerShown.current = false;
-    // Also wipe stored video_error on every beat for this project so
-    // the banner's DB-derived fallback doesn't immediately re-surface
-    // an old failure message after the user clicks a new action.
-    // Fire-and-forget; UI doesn't gate on this completing.
-    void fetch("/api/generate/videos/clear-errors", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId }),
-    }).catch(() => { /* best-effort — banner UI already cleared via state */ });
+    // Project-wide reset: clears video_error on every beat and flips
+    // failed beats' status back to null so the banner fully resets.
+    // Use this only for bulk actions (queue / resume) where the user
+    // is sweeping across multiple beats and a clean slate is what
+    // they want. After the route resolves, re-mutate SWR so the UI
+    // redraws — without this the banner would linger for up to the
+    // SWR refresh interval.
+    void (async () => {
+      try {
+        await fetch("/api/generate/videos/clear-errors", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId }),
+        });
+        await mutate();
+      } catch { /* best-effort — banner UI already cleared via state */ }
+    })();
   }
   // Latched flag: true after the user clicks Stop, false while a new
   // run is starting. Lets us suppress the "X images didn't generate"
@@ -426,9 +444,10 @@ export default function GeneratePage({ params }: PageProps) {
   // overlay button. The previous version routed through a confirm
   // modal; we dropped the modal so the overlay click is the action.
   async function regenerateVideoBeat(beatNumber: number) {
-    // Any user-initiated regen clears stale error UI before kicking
-    // off — see resetVideoErrorBanner comment for why.
-    resetVideoErrorBanner();
+    // SINGLE-BEAT path: clear ONLY the React banner state. Do not
+    // touch the DB sweep — other failed beats should keep their
+    // error context until the user explicitly retries them too.
+    resetVideoErrorBannerLocal();
     const beat = beats.find((b) => b.beatNumber === beatNumber);
     if (!beat || !beat.videoPrompt || !beat.imageUrl) {
       setVideoRunError("Cannot regenerate — beat is missing its prompt or source image.");
@@ -1743,8 +1762,8 @@ export default function GeneratePage({ params }: PageProps) {
                         }}
                       >
                         {/* Background layer: video if we have one,
-                            status badge otherwise. The regen overlay
-                            below sits on top of either. */}
+                            status badge otherwise. The spinner +
+                            regen overlays below sit on top of either. */}
                         {b.videoUrl ? (
                           <video src={b.videoUrl} title={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
                         ) : (
@@ -1765,6 +1784,24 @@ export default function GeneratePage({ params }: PageProps) {
                                 queued → submitting → rendering → done. */}
                             {b.videoStatus ?? "—"}
                           </span>
+                        )}
+
+                        {/* In-flight overlay — mirrors the image
+                            side's regen spinner. Replaces the static
+                            status badge with a spinner + matching
+                            "submitting…" / "rendering…" label so the
+                            user gets a clear "work is happening here
+                            right now" signal. Sits over the video
+                            too, dimming the old frame while a regen
+                            is mid-flight. */}
+                        {(b.videoStatus === "submitting" || b.videoStatus === "rendering") && (
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1"
+                            style={{ background: "oklch(0 0 0 / 0.55)" }}>
+                            <Spinner size={20} className="text-white" />
+                            <span className="text-[9px] font-medium" style={{ color: "oklch(0.95 0 0)" }}>
+                              {b.videoStatus}…
+                            </span>
+                          </div>
                         )}
 
                         {/* Regen overlay — uniform across every tile

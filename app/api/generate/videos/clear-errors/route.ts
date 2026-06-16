@@ -36,16 +36,29 @@ export async function POST(req: Request) {
     if (projectErr) return NextResponse.json({ error: projectErr.message }, { status: 500 });
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
-    const { data, error } = await supabase
+    // Two-step clean: (1) drop video_error on every beat that has
+    // one, (2) flip video_status back to null on currently-failed
+    // beats so the banner's "N clips failed" count resets to zero.
+    // video_url is intentionally left alone — a beat with a previous
+    // successful clip should keep showing it after we mark the
+    // failure dismissed. We only touch failed beats; queued /
+    // submitting / rendering rows are left as the worker owns them.
+    const { error: errClear } = await supabase
       .from("project_beats")
       .update({ video_error: null })
       .eq("project_id", projectId)
-      .not("video_error", "is", null)
+      .not("video_error", "is", null);
+    if (errClear) return NextResponse.json({ error: errClear.message }, { status: 500 });
+
+    const { data: cleared, error: errReset } = await supabase
+      .from("project_beats")
+      .update({ video_status: null })
+      .eq("project_id", projectId)
+      .eq("video_status", "failed")
       .select("beat_number");
+    if (errReset) return NextResponse.json({ error: errReset.message }, { status: 500 });
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-    return NextResponse.json({ cleared: data?.length ?? 0 });
+    return NextResponse.json({ cleared: cleared?.length ?? 0 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to clear errors";
     return NextResponse.json({ error: message }, { status: 500 });
