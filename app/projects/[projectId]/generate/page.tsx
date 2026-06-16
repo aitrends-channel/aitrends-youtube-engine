@@ -350,6 +350,11 @@ export default function GeneratePage({ params }: PageProps) {
   // shows ONE error — whichever was most recent. Cleared at the
   // start of every new run.
   const [imageRunError, setImageRunError] = useState<string | null>(null);
+  // Same shape for the video side. Captures any action-level failure
+  // (queue rejection, resume failure, single-regen rejection, etc.)
+  // so the section banner above the Queue button is the single home
+  // for video-failure context — no more toasts that scroll off-screen.
+  const [videoRunError, setVideoRunError] = useState<string | null>(null);
   // Refs to scroll the error banners into view once they appear so
   // the user actually sees the failure summary instead of having to
   // scan the page for it.
@@ -370,7 +375,17 @@ export default function GeneratePage({ params }: PageProps) {
     imageBannerShown.current = false;
   }
   function resetVideoErrorBanner() {
+    setVideoRunError(null);
     videoBannerShown.current = false;
+    // Also wipe stored video_error on every beat for this project so
+    // the banner's DB-derived fallback doesn't immediately re-surface
+    // an old failure message after the user clicks a new action.
+    // Fire-and-forget; UI doesn't gate on this completing.
+    void fetch("/api/generate/videos/clear-errors", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId }),
+    }).catch(() => { /* best-effort — banner UI already cleared via state */ });
   }
   // Latched flag: true after the user clicks Stop, false while a new
   // run is starting. Lets us suppress the "X images didn't generate"
@@ -416,11 +431,11 @@ export default function GeneratePage({ params }: PageProps) {
     resetVideoErrorBanner();
     const beat = beats.find((b) => b.beatNumber === beatNumber);
     if (!beat || !beat.videoPrompt || !beat.imageUrl) {
-      toast.error("Cannot regenerate — beat is missing its prompt or source image.");
+      setVideoRunError("Cannot regenerate — beat is missing its prompt or source image.");
       return;
     }
     if (!selectedVideoModel) {
-      toast.error("Pick a video model first.");
+      setVideoRunError("Pick a video model first.");
       return;
     }
     setRegeneratingVideo(true);
@@ -439,13 +454,13 @@ export default function GeneratePage({ params }: PageProps) {
       const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? `Request failed (HTTP ${res.status})`);
       if (data.failures?.length) {
-        toast.error(`Regenerate failed — ${friendlyError(data.failures[0].error)}`);
+        setVideoRunError(friendlyError(data.failures[0].error));
       } else {
         toast.success(`Beat ${beat.beatNumber} re-queued`);
         setVideosSubmitted(true);
       }
     } catch (err) {
-      toast.error(friendlyError(err instanceof Error ? err.message : null));
+      setVideoRunError(friendlyError(err instanceof Error ? err.message : null));
     } finally {
       setRegeneratingVideo(false);
     }
@@ -490,6 +505,11 @@ export default function GeneratePage({ params }: PageProps) {
   // would fire on scroll also clears the anchor, so this is safe.
   const [hoveredImageAnchor, setHoveredImageAnchor] = useState<{ top: number; left: number } | null>(null);
   const [hoveredVideoBeat, setHoveredVideoBeat] = useState<Beat | null>(null);
+  // Same anchoring model the image preview uses — computed from the
+  // hovered thumbnail's bounding rect on enter so the preview floats
+  // next to the actual tile instead of fixed at the bottom-right
+  // corner of the viewport.
+  const [hoveredVideoAnchor, setHoveredVideoAnchor] = useState<{ top: number; left: number } | null>(null);
   const videoHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const beats: Beat[] = project?.beats ?? [];
@@ -754,9 +774,9 @@ export default function GeneratePage({ params }: PageProps) {
       const data = await res.json().catch(() => ({})) as { pending?: number; firstError?: string | null };
       if (data.firstError && data.firstError !== lastError) {
         lastError = data.firstError;
-        // No toast — the section banner above the Queue button now
-        // lists every distinct error inline, which is where the user
-        // already looks for failure context.
+        // Push into the section banner — single source of truth for
+        // video failure context, no more disappearing toasts.
+        setVideoRunError(friendlyError(data.firstError));
         // Terminal "the model rejected this" errors will keep failing
         // for every remaining queued/rendering beat with the same
         // model. Sweep them all to failed in one shot so the worker
@@ -1181,7 +1201,7 @@ export default function GeneratePage({ params }: PageProps) {
       toast.success(`Paused ${data.paused ?? 0} pending clips`);
       await mutate();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Pause failed");
+      setVideoRunError(friendlyError(err instanceof Error ? err.message : "Pause failed"));
     } finally {
       setPausingVideos(false);
     }
@@ -1208,7 +1228,7 @@ export default function GeneratePage({ params }: PageProps) {
       setVideosSubmitted(true);
       await mutate();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Resume failed");
+      setVideoRunError(friendlyError(err instanceof Error ? err.message : "Resume failed"));
     } finally {
       setResumingVideos(false);
     }
@@ -1251,10 +1271,10 @@ export default function GeneratePage({ params }: PageProps) {
       const verb = mode === "failed" ? "re-submitted" : "submitted";
       if ((data.submitted ?? 0) > 0) toast.success(`${data.submitted ?? 0} video clips ${verb}`);
       if (data.failures?.length) {
-        toast.error(`${data.failures.length} clip(s) failed — ${friendlyError(data.failures[0].error)}`);
+        setVideoRunError(friendlyError(data.failures[0].error));
       }
     } catch (err) {
-      toast.error(friendlyError(err instanceof Error ? err.message : null));
+      setVideoRunError(friendlyError(err instanceof Error ? err.message : null));
     } finally {
       setQueuingVideos(false);
     }
@@ -1694,13 +1714,32 @@ export default function GeneratePage({ params }: PageProps) {
                         key={b.beatNumber}
                         className="aspect-video rounded-lg overflow-hidden flex items-center justify-center relative group"
                         style={{ background: "var(--bg-progress)" }}
-                        onMouseEnter={() => {
+                        onMouseEnter={(e) => {
                           if (!b.videoUrl) return;
                           if (videoHideTimer.current) clearTimeout(videoHideTimer.current);
                           setHoveredVideoBeat(b);
+                          // Always anchor the preview to the LEFT of
+                          // the thumbnail so the position is
+                          // consistent across the grid — no flip,
+                          // no surprise. Top is clamped so the
+                          // preview stays on screen near the grid's
+                          // bottom edge. If the leftmost column would
+                          // push the preview off the left side of
+                          // the viewport, we clamp to a small inset
+                          // so the user still sees it.
+                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                          const PREVIEW_WIDTH = 320;
+                          const PREVIEW_HEIGHT = 280;
+                          const GAP = 8;
+                          const left = Math.max(8, rect.left - PREVIEW_WIDTH - GAP);
+                          const top = Math.max(8, Math.min(window.innerHeight - PREVIEW_HEIGHT - 8, rect.top));
+                          setHoveredVideoAnchor({ top, left });
                         }}
                         onMouseLeave={() => {
-                          videoHideTimer.current = setTimeout(() => setHoveredVideoBeat(null), 200);
+                          videoHideTimer.current = setTimeout(() => {
+                            setHoveredVideoBeat(null);
+                            setHoveredVideoAnchor(null);
+                          }, 200);
                         }}
                       >
                         {/* Background layer: video if we have one,
@@ -1742,6 +1781,10 @@ export default function GeneratePage({ params }: PageProps) {
                           const disabled = inFlight || regeneratingVideo || queuingVideos || hasActiveVideos;
                           // Status-specific affordance so the icon
                           // matches the intent at a glance:
+                          //   - no clip yet (no videoUrl + no status)
+                          //              → Wand2 (Generate; matches the
+                          //                image-side affordance for
+                          //                first-time creation).
                           //   - paused  → ChevronsRight (fast-forward;
                           //               "continue this work").
                           //               Avoids the Play triangle
@@ -1754,7 +1797,10 @@ export default function GeneratePage({ params }: PageProps) {
                           //               redo from scratch).
                           let Icon: typeof RotateCcw = RotateCcw;
                           let label = "Regenerate";
-                          if (b.videoStatus === "paused") {
+                          if (!b.videoUrl && !b.videoStatus) {
+                            Icon = Wand2;
+                            label = "Generate";
+                          } else if (b.videoStatus === "paused") {
                             Icon = ChevronsRight;
                             label = "Resume";
                           } else if (b.videoStatus === "failed") {
@@ -1792,25 +1838,31 @@ export default function GeneratePage({ params }: PageProps) {
             )}
 
             <div className="p-5 mt-auto space-y-2">
-              {failedVideos > 0 && !hasActiveVideos && (() => {
+              {((failedVideos > 0 && !hasActiveVideos) || videoRunError) && (() => {
                 const workingId = project?.video_model_id as string | undefined;
                 const workingName = videoModels?.find((m) => m.id === workingId)?.name ?? "the selected model";
-                // Single "current error" — use the latest-failed
-                // beat's error (highest beat_number is the most
-                // recently submitted). Keeps the banner to one
-                // message no matter how many beats failed.
+                // Pick the message body: the most recent action-level
+                // error (videoRunError) wins over the per-beat error
+                // when both are present — it's almost always the more
+                // immediate failure to surface. Fall back to the
+                // latest failed beat's videoError (highest beatNumber
+                // = most recently submitted) when no action error is
+                // set.
                 const failedWithError = beats
                   .filter((b) => b.videoStatus === "failed" && b.videoError)
                   .sort((a, b) => b.beatNumber - a.beatNumber);
-                const currentError = failedWithError.length > 0
+                const beatError = failedWithError.length > 0
                   ? friendlyError(failedWithError[0].videoError!)
                   : null;
+                const currentError = videoRunError ?? beatError;
                 return (
                   <div ref={videoErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug space-y-1"
                     style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "oklch(0.78 0.12 25)" }}>
-                    <p>
-                      {failedVideos} clip{failedVideos === 1 ? "" : "s"} failed on <span style={{ fontWeight: 600 }}>{workingName}</span>. Try switching to a different model above, then retry.
-                    </p>
+                    {failedVideos > 0 && (
+                      <p>
+                        {failedVideos} clip{failedVideos === 1 ? "" : "s"} failed on <span style={{ fontWeight: 600 }}>{workingName}</span>. Try switching to a different model above, then retry.
+                      </p>
+                    )}
                     {currentError && (
                       <p style={{ color: "oklch(0.85 0.08 25)" }}>{currentError}</p>
                     )}
@@ -1970,13 +2022,15 @@ export default function GeneratePage({ params }: PageProps) {
         );
       })()}
 
-      {/* Video hover preview */}
-      {hoveredVideoBeat?.videoUrl && (
+      {/* Video hover preview — anchored next to the hovered tile via
+          hoveredVideoAnchor, matching the image preview's positioning
+          rather than fixing in the bottom-right corner. */}
+      {hoveredVideoBeat?.videoUrl && hoveredVideoAnchor && (
         <div
           className="fixed z-50 rounded-xl overflow-hidden shadow-2xl"
           style={{
-            bottom: "2rem",
-            right: "2rem",
+            top: hoveredVideoAnchor.top,
+            left: hoveredVideoAnchor.left,
             width: "320px",
             border: "1px solid var(--bd-10)",
             background: "var(--bg-page-2)",
@@ -1985,7 +2039,10 @@ export default function GeneratePage({ params }: PageProps) {
             if (videoHideTimer.current) clearTimeout(videoHideTimer.current);
           }}
           onMouseLeave={() => {
-            videoHideTimer.current = setTimeout(() => setHoveredVideoBeat(null), 200);
+            videoHideTimer.current = setTimeout(() => {
+              setHoveredVideoBeat(null);
+              setHoveredVideoAnchor(null);
+            }, 200);
           }}
         >
           <video
