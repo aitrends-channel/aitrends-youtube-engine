@@ -83,16 +83,17 @@ export async function GET(req: Request) {
       return NextResponse.json(promote(withAvgSpeed(withMinCredits(models, mins), speeds), defaults.image));
     }
     if (type === "video") {
-      const [models, defaults, mins] = await Promise.all([
+      const [models, defaults, mins, speeds] = await Promise.all([
         listVideoModels(),
         getAdminDefaults(),
         getMinCostPerSecByModel("video_gen"),
+        getAvgElapsedByModel("video_gen"),
       ]);
-      return NextResponse.json(promote(withMinCredits(models, mins), defaults.video));
+      return NextResponse.json(promote(withAvgSpeed(withMinCredits(models, mins), speeds), defaults.video));
     }
 
     // Return all
-    const [tts, images, videos, defaults, imageMins, videoMins, imageSpeeds] = await Promise.all([
+    const [tts, images, videos, defaults, imageMins, videoMins, imageSpeeds, videoSpeeds] = await Promise.all([
       listTTSVoices(),
       listImageModels(),
       listVideoModels(),
@@ -100,11 +101,12 @@ export async function GET(req: Request) {
       getMinKieCreditsByModel("image_gen"),
       getMinCostPerSecByModel("video_gen"),
       getAvgElapsedByModel("image_gen"),
+      getAvgElapsedByModel("video_gen"),
     ]);
     return NextResponse.json({
       tts,
       images: promote(withAvgSpeed(withMinCredits(images, imageMins), imageSpeeds), defaults.image),
-      videos: promote(withMinCredits(videos, videoMins), defaults.video),
+      videos: promote(withAvgSpeed(withMinCredits(videos, videoMins), videoSpeeds), defaults.video),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch models";

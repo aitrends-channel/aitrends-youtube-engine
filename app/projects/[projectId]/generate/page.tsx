@@ -332,6 +332,7 @@ export default function GeneratePage({ params }: PageProps) {
   const [selectedTtsModel, setSelectedTtsModel] = useState<string | null>(null);
   const [selectedImageModel, setSelectedImageModel] = useState<string | null>(null);
   const [imageModelTab, setImageModelTab] = useState<"all" | "fastest" | "cheapest">("all");
+  const [videoModelTab, setVideoModelTab] = useState<"all" | "fastest" | "cheapest">("all");
   const [selectedAspectRatio, setSelectedAspectRatio] = useState("16:9");
   const [selectedResolution, setSelectedResolution] = useState<string | null>(null);
   const [selectedVideoModel, setSelectedVideoModel] = useState<string | null>(null);
@@ -1413,13 +1414,25 @@ export default function GeneratePage({ params }: PageProps) {
                         ? !imageModels.some((m) => m.costPerUnit !== undefined && m.costPerUnit !== null)
                         : imageModels.length === 0;
                   if (!empty) return null;
+                  if (imageModelTab === "fastest") {
+                    return (
+                      <div className="text-xs px-1 py-2 space-y-1" style={{ color: "var(--c-40)" }}>
+                        <p className="font-medium" style={{ color: "var(--c-55)" }}>No speed data yet!</p>
+                        <p>Ranking is powered by real-time usage and will automatically populate as data comes in.</p>
+                      </div>
+                    );
+                  }
+                  if (imageModelTab === "cheapest") {
+                    return (
+                      <div className="text-xs px-1 py-2 space-y-1" style={{ color: "var(--c-40)" }}>
+                        <p className="font-medium" style={{ color: "var(--c-55)" }}>No cost data yet!</p>
+                        <p>Ranking is powered by real-time usage and will automatically populate as data comes in.</p>
+                      </div>
+                    );
+                  }
                   return (
                     <p className="text-xs px-1 py-2" style={{ color: "var(--c-40)" }}>
-                      {imageModelTab === "cheapest"
-                        ? "No cost data yet — generate a few images to populate this list."
-                        : imageModelTab === "fastest"
-                          ? "No speed data yet — generate a few images to populate this list."
-                          : "No image models available."}
+                      No image models available.
                     </p>
                   );
                 })()}
@@ -1708,10 +1721,76 @@ export default function GeneratePage({ params }: PageProps) {
               <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
                 Select Model
               </p>
+              {/* Tabs mirror the image-side picker: ledger-driven
+                  Fastest (avgSpeedMs ascending from elapsed_ms) and
+                  Cheapest (costPerUnit ascending — for videos this
+                  is observed minimum credits per second). Models
+                  without ledger data are hidden in Fastest/Cheapest
+                  so the tab only shows ranked entries. */}
+              <div className="flex gap-1 mb-2 p-0.5 rounded-lg" style={{ background: "var(--bg-track)" }}>
+                {(["all", "fastest", "cheapest"] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setVideoModelTab(t)}
+                    className="flex-1 px-2 py-1 rounded-md text-xs font-medium capitalize transition-all"
+                    style={videoModelTab === t ? {
+                      background: "oklch(0.72 0.25 285 / 0.15)",
+                      color: "oklch(0.88 0.12 285)",
+                      boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.35)",
+                    } : { background: "transparent", color: "var(--c-55)" }}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
               <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                {(videoModels ?? []).map((m) => (
+                {(() => {
+                  if (!videoModels) return null;
+                  const list = videoModels.slice();
+                  if (videoModelTab === "fastest") {
+                    return list
+                      .filter((m) => typeof m.avgSpeedMs === "number" && m.avgSpeedMs > 0)
+                      .sort((a, b) => (a.avgSpeedMs ?? Infinity) - (b.avgSpeedMs ?? Infinity));
+                  }
+                  if (videoModelTab === "cheapest") {
+                    return list
+                      .filter((m) => m.costPerUnit !== undefined && m.costPerUnit !== null)
+                      .sort((a, b) => Number(a.costPerUnit) - Number(b.costPerUnit));
+                  }
+                  return list;
+                })()?.map((m) => (
                   <ModelOption key={m.id} model={m} selected={selectedVideoModel === m.id} onSelect={() => setSelectedVideoModel(m.id)} />
                 ))}
+                {videoModels && (() => {
+                  const empty =
+                    videoModelTab === "fastest"
+                      ? !videoModels.some((m) => typeof m.avgSpeedMs === "number" && m.avgSpeedMs > 0)
+                      : videoModelTab === "cheapest"
+                        ? !videoModels.some((m) => m.costPerUnit !== undefined && m.costPerUnit !== null)
+                        : videoModels.length === 0;
+                  if (!empty) return null;
+                  if (videoModelTab === "fastest") {
+                    return (
+                      <div className="text-xs px-1 py-2 space-y-1" style={{ color: "var(--c-40)" }}>
+                        <p className="font-medium" style={{ color: "var(--c-55)" }}>No speed data yet!</p>
+                        <p>Ranking is powered by real-time usage and will automatically populate as data comes in.</p>
+                      </div>
+                    );
+                  }
+                  if (videoModelTab === "cheapest") {
+                    return (
+                      <div className="text-xs px-1 py-2 space-y-1" style={{ color: "var(--c-40)" }}>
+                        <p className="font-medium" style={{ color: "var(--c-55)" }}>No cost data yet!</p>
+                        <p>Ranking is powered by real-time usage and will automatically populate as data comes in.</p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <p className="text-xs px-1 py-2" style={{ color: "var(--c-40)" }}>
+                      No video models available.
+                    </p>
+                  );
+                })()}
                 {!videoModels && <p className="text-xs" style={{ color: "var(--c-40)" }}>Loading models...</p>}
               </div>
               <p className="text-[11px] mt-2 leading-snug" style={{ color: "var(--c-40)" }}>
