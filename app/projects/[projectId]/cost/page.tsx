@@ -211,7 +211,7 @@ export default function ProjectCostPage({ params }: PageProps) {
       />
 
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
-        <div className="px-4 sm:px-8 py-5"
+        <div className="sm:px-8 py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <h1 className="font-bold text-lg">Cost breakdown</h1>
           <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
@@ -220,7 +220,7 @@ export default function ProjectCostPage({ params }: PageProps) {
           </p>
         </div>
 
-        <div className="max-w-5xl mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-24 space-y-5">
+        <div className="max-w-5xl mx-auto sm:px-8 pt-6 sm:pt-8 pb-24 space-y-5">
           {/* Close button sits outside (above) the Title card,
               right-aligned. router.back() drops the user back on the
               workflow step they came from. */}

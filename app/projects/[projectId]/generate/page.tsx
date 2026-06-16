@@ -435,6 +435,10 @@ export default function GeneratePage({ params }: PageProps) {
   // pending* state is reset alongside so the audio elements unmount
   // without waiting for the SWR refetch.
   const [deleteVoiceoverConfirmOpen, setDeleteVoiceoverConfirmOpen] = useState(false);
+  // Regenerate All confirms before firing because it wipes every
+  // existing image on the project — paid work the user might lose
+  // by mis-clicking the secondary button.
+  const [regenerateAllConfirmOpen, setRegenerateAllConfirmOpen] = useState(false);
   const [deletingVoiceover, setDeletingVoiceover] = useState(false);
 
   // Per-beat video regenerate flow. The icon overlay on each generated
@@ -1344,7 +1348,7 @@ export default function GeneratePage({ params }: PageProps) {
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
         {/* Header */}
-        <div className="shrink-0 px-4 sm:px-8 md:pr-44 py-4 sm:py-5"
+        <div className="shrink-0 sm:px-8 md:pr-44 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div>
             <h1 className="font-bold text-base sm:text-lg">Generate Assets</h1>
@@ -1355,7 +1359,7 @@ export default function GeneratePage({ params }: PageProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto pb-[70px]">
-        <div className="p-4 sm:p-8 grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+        <div className="py-4 sm:p-8 grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
           {/* Image Gen Panel */}
           <div className="rounded-2xl flex flex-col overflow-hidden h-full"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
@@ -1699,12 +1703,13 @@ export default function GeneratePage({ params }: PageProps) {
                         partial state. Wipes existing images. */}
                     {isPartial && !generatingImages && (
                       <button
-                        onClick={() => generateImages({ mode: "all" })}
+                        onClick={() => setRegenerateAllConfirmOpen(true)}
                         disabled={generatingTts || !selectedImageModel || showCreditBanner}
-                        className="w-full py-2 rounded-xl text-xs font-medium disabled:opacity-40 transition-all"
-                        style={{ background: "transparent", color: "var(--c-50)", border: "1px solid var(--bd-8)" }}
+                        className="w-full py-2 rounded-xl text-xs font-semibold disabled:opacity-40 transition-all hover:opacity-90 flex items-center justify-center gap-1.5"
+                        style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                       >
-                        {`Regenerate All (${totalBeats}) — wipes existing`}
+                        <RotateCcw size={14} strokeWidth={2.4} />
+                        {`Regenerate All (${totalBeats})`}
                       </button>
                     )}
                   </>
@@ -2171,7 +2176,7 @@ export default function GeneratePage({ params }: PageProps) {
         return (
           <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
             style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
-            <div className="px-4 sm:px-8 space-y-2">
+            <div className="sm:px-8 space-y-2">
               {!canContinue && !navigating && (
                 <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
                   Generate at least one image to continue.
@@ -2285,6 +2290,35 @@ export default function GeneratePage({ params }: PageProps) {
           </div>
         </div>
       )}
+
+      <Dialog open={regenerateAllConfirmOpen} onOpenChange={(open) => { if (!generatingImages) setRegenerateAllConfirmOpen(open); }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Regenerate all images?</DialogTitle>
+            <DialogDescription>
+              This will <strong>wipe every existing image</strong> on this project and generate {totalBeats} fresh image{totalBeats === 1 ? "" : "s"} from your prompts. KIE credits will be charged for the new generations. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setRegenerateAllConfirmOpen(false)}
+              disabled={generatingImages}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
+              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => { setRegenerateAllConfirmOpen(false); void generateImages({ mode: "all" }); }}
+              disabled={generatingImages}
+              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-60"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              Regenerate all
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={deleteVoiceoverConfirmOpen} onOpenChange={(open) => { if (!deletingVoiceover) setDeleteVoiceoverConfirmOpen(open); }}>
         <DialogContent showCloseButton={false}>

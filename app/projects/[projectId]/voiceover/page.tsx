@@ -701,7 +701,7 @@ export default function VoiceoverPage({ params }: PageProps) {
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
         {/* Header */}
-        <div className="shrink-0 px-4 sm:px-8 py-4 sm:py-5"
+        <div className="shrink-0 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <h1 className="font-bold text-base sm:text-lg">Voiceover</h1>
           <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
@@ -710,7 +710,7 @@ export default function VoiceoverPage({ params }: PageProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto pb-[70px]">
-        <div className="p-4 sm:p-8 pb-24 max-w-4xl mx-auto space-y-6">
+        <div className="py-4 sm:p-8 pb-24 max-w-4xl mx-auto space-y-6">
 
           {/* Voice picker */}
           <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
@@ -1174,7 +1174,7 @@ export default function VoiceoverPage({ params }: PageProps) {
           className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}
         >
-          <div className="max-w-4xl mx-auto px-4 sm:px-8">
+          <div className="max-w-4xl mx-auto sm:px-8">
             <button
               onClick={() => router.push(`/projects/${projectId}/generate`)}
               className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all"

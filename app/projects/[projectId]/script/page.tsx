@@ -237,7 +237,7 @@ export default function ScriptPage({ params }: PageProps) {
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-2 px-4 sm:px-8 md:pr-44 py-3 sm:py-4 shrink-0"
+        <div className="flex flex-wrap items-center gap-2 sm:px-8 md:pr-44 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div className="flex-1 min-w-0 mr-2">
             <h1 className="font-bold text-base sm:text-lg text-foreground">Script Editor</h1>
@@ -250,7 +250,7 @@ export default function ScriptPage({ params }: PageProps) {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto pb-[70px] p-4 sm:p-8">
+        <div className="flex-1 overflow-y-auto pb-[70px] py-4 sm:p-8">
           {/* Background-generation state — user refreshed mid-stream
               or has another tab generating. project.script_active_run_id
               is the server-side "in flight" flag; useProject's 5s SWR
@@ -468,7 +468,7 @@ export default function ScriptPage({ params }: PageProps) {
       {!isStreaming && script && (
         <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
-          <div className="max-w-3xl mx-auto px-4 sm:px-8 flex gap-3">
+          <div className="max-w-3xl mx-auto sm:px-8 flex gap-3">
             <button
               onClick={() => setConfirmRegen(true)}
               disabled={navigating}

@@ -1172,7 +1172,7 @@ export default function PromptsPage({ params }: PageProps) {
             Back + ThemeToggle + Profile cluster in WizardNav. md:pt-16
             drops the first card below that cluster's vertical band so
             they don't visually collide near the top edge. */}
-        <div className="px-4 sm:px-8 md:pr-44 py-4 sm:py-5 md:pt-16 space-y-3"
+        <div className="sm:px-8 md:pr-44 py-4 sm:py-5 md:pt-16 space-y-3"
           style={{ borderBottom: hasImageBeats ? "1px solid var(--bd-6)" : "none" }}>
           {beatsStale && (
             <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
@@ -1216,7 +1216,7 @@ export default function PromptsPage({ params }: PageProps) {
         {/* Tabs + content */}
         {hasImageBeats && (
           <>
-            <div className="px-4 sm:px-8 pt-4 flex gap-1"
+            <div className="sm:px-8 pt-4 flex gap-1"
               style={{ borderBottom: "1px solid var(--bd-6)" }}>
               {tabs.map((tab) => (
                 <button
@@ -1246,7 +1246,7 @@ export default function PromptsPage({ params }: PageProps) {
               ))}
             </div>
 
-            <div className="px-4 sm:px-8 pt-6 pb-24 space-y-3">
+            <div className="sm:px-8 pt-6 pb-24 space-y-3">
               {activeTab === "beats" && beats.map((beat) => (
                 <BeatCard key={beat.beatNumber} beat={beat} />
               ))}
@@ -1299,7 +1299,7 @@ export default function PromptsPage({ params }: PageProps) {
           className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}
         >
-          <div className="mx-5 px-4 sm:px-8">
+          <div className="mx-5 sm:px-8">
           <button
             onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/voiceover`); }}
             disabled={anyRunning || navigating}

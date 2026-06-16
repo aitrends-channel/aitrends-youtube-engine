@@ -746,7 +746,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
         {/* Header */}
-        <div className="px-4 sm:px-8 py-3 sm:py-4 shrink-0"
+        <div className="sm:px-8 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <h1 className="font-bold text-lg">Thumbnails</h1>
           {hasConcepts && (
@@ -757,7 +757,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="px-4 sm:px-8 pt-4 sm:pt-6 pb-24 space-y-4 max-w-5xl mx-auto">
+          <div className="sm:px-8 pt-4 sm:pt-6 pb-24 space-y-4 max-w-5xl mx-auto">
 
             {/* Reference source — pick between auto (niche videos)
                 and manual (upload your own thumbnails). Same toggle
@@ -1088,7 +1088,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
       {allImagesGenerated && (
         <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
-          <div className="px-4 sm:px-8 max-w-5xl mx-auto">
+          <div className="sm:px-8 max-w-5xl mx-auto">
             <button
               onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/next`); }}
               disabled={navigating}
