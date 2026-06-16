@@ -45,15 +45,12 @@ const FAKE_IMAGE_MODELS = [
   { id: "flux-kontext-max",                    name: "Flux Kontext Max",   description: "Maximum quality context generation",    tags: ["Max Quality"],           cost: "4 cr/img" },
   { id: "flux-2/pro-text-to-image",            name: "Flux 2 Pro",         description: "Fast, professional-grade output",        tags: ["Fast"],                  cost: "2 cr/img" },
   { id: "flux-2/flex-text-to-image",           name: "Flux 2 Flex",        description: "Flexible styles and compositions",       tags: ["Flexible"],              cost: "2 cr/img" },
-  { id: "google/imagen4",                      name: "Imagen 4",           description: "Google's photorealistic model",          tags: ["Google"],                cost: "3 cr/img" },
   { id: "google/imagen4-ultra",                name: "Imagen 4 Ultra",     description: "Google ultra-high fidelity",             tags: ["Google", "Ultra"],       cost: "5 cr/img" },
   { id: "nano-banana-2",                       name: "Nano Banana 2",      description: "Up to 4K, wide ratio support",           tags: ["Google"],                cost: "2 cr/img" },
   { id: "nano-banana-pro",                     name: "Nano Banana Pro",    description: "Pro-grade 4K image output",              tags: ["Google", "Pro"],         cost: "3 cr/img" },
   { id: "bytedance/seedream-v4-text-to-image", name: "Seedream 4.0",       description: "ByteDance's latest image model",         tags: ["ByteDance", "Latest"],   cost: "3 cr/img" },
   { id: "grok-imagine/text-to-image",          name: "Grok Imagine",       description: "xAI's creative image generator",         tags: ["xAI"],                   cost: "3 cr/img" },
-  { id: "qwen2/text-to-image",                 name: "Qwen 2",             description: "Alibaba's image generation model",       tags: ["Alibaba"],               cost: "2 cr/img" },
   { id: "z-image",                             name: "Z-Image",            description: "Stylized artistic output",               tags: ["Stylized"],              cost: "2 cr/img" },
-  { id: "ideogram/v3-remix",                   name: "Ideogram V3",        description: "Strong text rendering, creative",        tags: ["Creative"],              cost: "2 cr/img" },
 ];
 
 const FAKE_IMAGE_RATIOS = ["16:9", "9:16", "1:1", "4:3", "3:2", "3:4", "2:3", "21:9"];
