@@ -102,11 +102,18 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
 
   function isNavigable(phase: (typeof PHASES)[0]) {
     const phaseRank = PATH_RANK[phase.id] ?? 0;
-    const effectiveMin = phase.navigableFrom !== undefined ? phase.navigableFrom : Math.min(...phase.states);
-    // Going backward or staying: navigable if you've reached the phase's start state
-    if (phaseRank <= currentPathRank) return reached >= Math.min(...phase.states);
-    // Going forward: only if the project has reached the navigableFrom threshold
-    return reached >= effectiveMin;
+    // Green-ticked (done) phases stay clickable regardless of
+    // position — if the user has demonstrably completed a phase,
+    // clicking its tick is a legitimate "revisit" action even when
+    // that phase sits ahead of the page they happen to be on.
+    if (getPhaseStatus(phase) === "done") return true;
+    // Otherwise, forward navigation is disabled — users advance via
+    // the wizard's Next / Continue buttons, not by jumping ahead.
+    // The previous navigableFrom-based shortcut let a user skip
+    // back to Channel and then click straight to Assemble, which
+    // surfaced half-initialized state on intermediate pages.
+    if (phaseRank > currentPathRank) return false;
+    return reached >= Math.min(...phase.states);
   }
 
   const currentPhaseIndex = PHASES.findIndex((p) => pathname.endsWith(`/${p.path}`));

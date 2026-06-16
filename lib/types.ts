@@ -163,6 +163,11 @@ export interface KieModel {
   tags?: string[];
   previewUrl?: string;
   costPerUnit?: string;
+  /** Observed average wall-clock generation time in milliseconds.
+   *  Powers the picker's "Fastest" tab — lower is faster. Injected
+   *  by /api/kie/models from the project_costs ledger. Absent for
+   *  models with no ledger history. */
+  avgSpeedMs?: number;
 }
 
 export interface JobStatus {

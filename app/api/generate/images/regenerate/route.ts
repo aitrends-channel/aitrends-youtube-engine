@@ -71,7 +71,12 @@ export async function POST(req: Request) {
     const previousImageUrl = beatRow?.image_url ?? null;
 
     // 2. Submit to KIE. No callBackUrl — this route owns the
-    //    completion path.
+    //    completion path. Stamp t0 here so the wall-clock elapsed
+    //    we log to project_costs.elapsed_ms covers the entire
+    //    KIE-side submit + poll, matching what the user perceives
+    //    as "how long this model took". Powers the picker's
+    //    "Fastest" tab ranking.
+    const submitT0 = Date.now();
     const taskId = await submitImageTask(imagePrompt, modelId, aspectRatio, resolution, user.id);
     console.log(`[images/regenerate] beat=${beatNumber} model=${modelId} taskId=${taskId}`);
 
@@ -109,6 +114,7 @@ export async function POST(req: Request) {
           void logProjectCost({
             projectId, userId: user.id, step: "image_gen", provider: "kie",
             model: modelId, units: result.creditsConsumed, unitKind: "kie_credits",
+            elapsedMs: Date.now() - submitT0,
           });
         }
         return NextResponse.json({ error: result.error ?? "Image generation failed" }, { status: 502 });
@@ -124,6 +130,7 @@ export async function POST(req: Request) {
       void logProjectCost({
         projectId, userId: user.id, step: "image_gen", provider: "kie",
         model: modelId, units: creditsConsumed, unitKind: "kie_credits",
+        elapsedMs: Date.now() - submitT0,
       });
     }
 

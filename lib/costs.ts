@@ -54,6 +54,16 @@ export interface CostEntry {
   model?: string | null;
   units: number;
   unitKind: CostUnitKind;
+  /** Generation duration in seconds. Used for video_gen kie_credits
+   *  rows so the picker can compute units/durationSec as a per-second
+   *  cost. Omit (or pass null) for steps where seconds aren't the
+   *  natural unit — e.g. frame-counted Sora, or any non-video step. */
+  durationSec?: number | null;
+  /** Wall-clock milliseconds from submit to result-ready. Used by
+   *  the model picker's "Fastest" tab to rank models by observed
+   *  speed. Set on image_gen kie_credits rows; safe to omit on rows
+   *  where speed isn't a useful metric. */
+  elapsedMs?: number | null;
 }
 
 /**
@@ -82,12 +92,164 @@ export async function logProjectCost(entry: CostEntry): Promise<void> {
         model: entry.model ?? null,
         units: entry.units,
         unit_kind: entry.unitKind,
+        duration_sec: entry.durationSec ?? null,
+        elapsed_ms: entry.elapsedMs ?? null,
       });
     if (error) {
       console.warn(`[costs] insert failed step=${entry.step} provider=${entry.provider} unit_kind=${entry.unitKind}:`, error.message);
     }
   } catch (e) {
     console.warn(`[costs] insert threw step=${entry.step}:`, e instanceof Error ? e.message : e);
+  }
+}
+
+/**
+ * Returns observed minimum total KIE credits charged per model for
+ * the given step. Used by the image model picker — images don't have
+ * a per-second notion, so we just want the cheapest observed single-
+ * generation charge per model.
+ *
+ * Aggregates across all users. Fail-soft: returns {} on any error so
+ * the picker still renders.
+ */
+export async function getMinKieCreditsByModel(step: CostStep): Promise<Record<string, number>> {
+  try {
+    const { data, error } = await supabase
+      .from("project_costs")
+      .select("model, units")
+      .eq("step", step)
+      .eq("provider", "kie")
+      .eq("unit_kind", "kie_credits")
+      .not("model", "is", null);
+
+    if (error) {
+      console.warn(`[costs] min-credits query failed step=${step}:`, error.message);
+      return {};
+    }
+
+    const mins: Record<string, number> = {};
+    for (const row of data ?? []) {
+      const model = (row as { model: string | null }).model;
+      const units = (row as { units: number }).units;
+      if (!model || typeof units !== "number" || units <= 0) continue;
+      if (mins[model] === undefined || units < mins[model]) mins[model] = units;
+    }
+    return mins;
+  } catch (e) {
+    console.warn(`[costs] min-credits threw step=${step}:`, e instanceof Error ? e.message : e);
+    return {};
+  }
+}
+
+/**
+ * Returns the observed minimum KIE credits-per-second charged per
+ * model. For each row we compute units / duration_sec and take the
+ * minimum across all rows for that model. Used by the video model
+ * picker to show "N cr/s" next to each model.
+ *
+ * Aggregates across all users — KIE bills consistently, so a larger
+ * sample size gives a better-grounded minimum. Rows without a
+ * duration_sec (historical pre-migration rows, plus frame-counted
+ * models like Sora) are ignored — including them as null would
+ * either skew the min or produce NaN.
+ *
+ * Returns a map keyed by KIE model id. Models with no usable rows
+ * are absent from the map (callers should treat as "no data yet").
+ *
+ * Fail-soft: a query error returns an empty map and logs a warning,
+ * because the picker should still render even if the ledger is
+ * unreachable.
+ */
+export async function getMinCostPerSecByModel(step: CostStep): Promise<Record<string, number>> {
+  try {
+    const { data, error } = await supabase
+      .from("project_costs")
+      .select("model, units, duration_sec")
+      .eq("step", step)
+      .eq("provider", "kie")
+      .eq("unit_kind", "kie_credits")
+      .not("model", "is", null)
+      .not("duration_sec", "is", null)
+      .gt("duration_sec", 0);
+
+    if (error) {
+      console.warn(`[costs] cost-per-sec query failed step=${step}:`, error.message);
+      return {};
+    }
+
+    const mins: Record<string, number> = {};
+    for (const row of data ?? []) {
+      const model = (row as { model: string | null }).model;
+      const units = (row as { units: number }).units;
+      const durationSec = (row as { duration_sec: number }).duration_sec;
+      if (!model || typeof units !== "number" || units <= 0) continue;
+      if (typeof durationSec !== "number" || durationSec <= 0) continue;
+      const perSec = units / durationSec;
+      if (mins[model] === undefined || perSec < mins[model]) mins[model] = perSec;
+    }
+    return mins;
+  } catch (e) {
+    console.warn(`[costs] cost-per-sec threw step=${step}:`, e instanceof Error ? e.message : e);
+    return {};
+  }
+}
+
+/**
+ * Returns the observed average wall-clock generation time per model
+ * (in milliseconds) for the given step. Used by the model picker's
+ * "Fastest" tab — lower is faster.
+ *
+ * Average (not min) because a single anomalously fast run (cache
+ * hit, empty KIE queue) would rank a usually-slow model ahead of
+ * a usually-fast one if we used min. Average smooths that out as
+ * samples accumulate.
+ *
+ * Aggregates across all users. Rows without elapsed_ms (historical
+ * pre-migration rows + steps that don't measure speed) are ignored.
+ *
+ * Fail-soft: returns {} on any error so the picker still renders.
+ */
+export async function getAvgElapsedByModel(step: CostStep): Promise<Record<string, number>> {
+  try {
+    const { data, error } = await supabase
+      .from("project_costs")
+      .select("model, elapsed_ms")
+      .eq("step", step)
+      .eq("provider", "kie")
+      .eq("unit_kind", "kie_credits")
+      .not("model", "is", null)
+      .not("elapsed_ms", "is", null)
+      .gt("elapsed_ms", 0);
+
+    if (error) {
+      console.warn(`[costs] avg-elapsed query failed step=${step}:`, error.message);
+      return {};
+    }
+
+    // Two-pass: sum + count → average. Doing this client-side rather
+    // than via a Postgres GROUP BY because the supabase-js builder
+    // doesn't expose aggregate functions cleanly, and the row volume
+    // for image_gen / video_gen is small enough that an in-memory
+    // aggregation is fine.
+    const sums: Record<string, number> = {};
+    const counts: Record<string, number> = {};
+    for (const row of data ?? []) {
+      const model = (row as { model: string | null }).model;
+      const elapsed = (row as { elapsed_ms: number }).elapsed_ms;
+      if (!model || typeof elapsed !== "number" || elapsed <= 0) continue;
+      sums[model] = (sums[model] ?? 0) + elapsed;
+      counts[model] = (counts[model] ?? 0) + 1;
+    }
+    const avgs: Record<string, number> = {};
+    for (const [model, sum] of Object.entries(sums)) {
+      const c = counts[model];
+      if (!c) continue;
+      avgs[model] = sum / c;
+    }
+    return avgs;
+  } catch (e) {
+    console.warn(`[costs] avg-elapsed threw step=${step}:`, e instanceof Error ? e.message : e);
+    return {};
   }
 }
 

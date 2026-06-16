@@ -49,7 +49,14 @@ export async function POST(req: Request) {
         batch.map(async (beat) => {
           await supabase.from("project_beats").update({ image_status: "generating" }).eq("project_id", projectId).eq("beat_number", beat.beatNumber);
 
+          // Wall-clock the entire KIE submit→poll→download for this
+          // beat. Used by the "Fastest" tab in the generate page's
+          // model picker to rank models by observed speed. Captures
+          // the user's actual experience (queue + generation + cdn
+          // fetch), not just the raw model inference time.
+          const t0 = Date.now();
           const { url: imageUrl, creditsConsumed } = await generateImage(beat.imagePrompt, modelId, aspectRatio, resolution, user.id);
+          const elapsedMs = Date.now() - t0;
           if (creditsConsumed) {
             void logProjectCost({
               projectId,
@@ -59,6 +66,7 @@ export async function POST(req: Request) {
               model: modelId,
               units: creditsConsumed,
               unitKind: "kie_credits",
+              elapsedMs,
             });
           }
           const storagePath = `${userFolderFor(user)}/${projectId}/images/beat-${beat.beatNumber}_${Date.now()}.png`;

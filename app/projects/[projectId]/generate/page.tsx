@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
 import { RotateCcw, RefreshCw, ChevronsRight, Wand2 } from "lucide-react";
+import { ImageSparkle } from "@/components/icons/ImageSparkle";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
@@ -194,7 +195,7 @@ function ModelOption({ model, selected, onSelect }: { model: KieModel; selected:
           {model.costPerUnit && (
             <span className="px-1.5 py-0.5 rounded text-xs"
               style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" }}>
-              {model.costPerUnit}/s
+              {model.costPerUnit} cr{model.type === "video" ? "/s" : ""}
             </span>
           )}
         </div>
@@ -330,6 +331,7 @@ export default function GeneratePage({ params }: PageProps) {
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [selectedTtsModel, setSelectedTtsModel] = useState<string | null>(null);
   const [selectedImageModel, setSelectedImageModel] = useState<string | null>(null);
+  const [imageModelTab, setImageModelTab] = useState<"all" | "fastest" | "cheapest">("all");
   const [selectedAspectRatio, setSelectedAspectRatio] = useState("16:9");
   const [selectedResolution, setSelectedResolution] = useState<string | null>(null);
   const [selectedVideoModel, setSelectedVideoModel] = useState<string | null>(null);
@@ -1361,10 +1363,66 @@ export default function GeneratePage({ params }: PageProps) {
               <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
                 Select Model
               </p>
+              {/* Tabs: All / Fastest / Cheapest. Both Fastest and
+                  Cheapest are ledger-driven: Fastest sorts by the
+                  observed average wall-clock generation time
+                  (avgSpeedMs from project_costs.elapsed_ms),
+                  Cheapest by observed minimum costPerUnit. Both
+                  hide models without ledger history so the tab
+                  reflects only models that have actually been
+                  used — no placeholders for unranked content. */}
+              <div className="flex gap-1 mb-2 p-0.5 rounded-lg" style={{ background: "var(--bg-track)" }}>
+                {(["all", "fastest", "cheapest"] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setImageModelTab(t)}
+                    className="flex-1 px-2 py-1 rounded-md text-xs font-medium capitalize transition-all"
+                    style={imageModelTab === t ? {
+                      background: "oklch(0.72 0.25 285 / 0.15)",
+                      color: "oklch(0.88 0.12 285)",
+                      boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.35)",
+                    } : { background: "transparent", color: "var(--c-55)" }}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
               <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                {(imageModels ?? []).map((m) => (
+                {(() => {
+                  if (!imageModels) return null;
+                  const list = imageModels.slice();
+                  if (imageModelTab === "fastest") {
+                    return list
+                      .filter((m) => typeof m.avgSpeedMs === "number" && m.avgSpeedMs > 0)
+                      .sort((a, b) => (a.avgSpeedMs ?? Infinity) - (b.avgSpeedMs ?? Infinity));
+                  }
+                  if (imageModelTab === "cheapest") {
+                    return list
+                      .filter((m) => m.costPerUnit !== undefined && m.costPerUnit !== null)
+                      .sort((a, b) => Number(a.costPerUnit) - Number(b.costPerUnit));
+                  }
+                  return list;
+                })()?.map((m) => (
                   <ModelOption key={m.id} model={m} selected={selectedImageModel === m.id} onSelect={() => setSelectedImageModel(m.id)} />
                 ))}
+                {imageModels && (() => {
+                  const empty =
+                    imageModelTab === "fastest"
+                      ? !imageModels.some((m) => typeof m.avgSpeedMs === "number" && m.avgSpeedMs > 0)
+                      : imageModelTab === "cheapest"
+                        ? !imageModels.some((m) => m.costPerUnit !== undefined && m.costPerUnit !== null)
+                        : imageModels.length === 0;
+                  if (!empty) return null;
+                  return (
+                    <p className="text-xs px-1 py-2" style={{ color: "var(--c-40)" }}>
+                      {imageModelTab === "cheapest"
+                        ? "No cost data yet — generate a few images to populate this list."
+                        : imageModelTab === "fastest"
+                          ? "No speed data yet — generate a few images to populate this list."
+                          : "No image models available."}
+                    </p>
+                  );
+                })()}
                 {!imageModels && <p className="text-xs" style={{ color: "var(--c-40)" }}>Loading models...</p>}
               </div>
               <p className="text-[11px] mt-2 leading-snug" style={{ color: "var(--c-40)" }}>
@@ -1498,22 +1556,34 @@ export default function GeneratePage({ params }: PageProps) {
                             style={{ background: b.imageUrl ? "oklch(0 0 0 / 0.55)" : "transparent" }}>
                             {/* Status-specific affordance — matches the
                                 video side's icon system:
-                                  - no image + no status → Wand2 (Generate)
-                                  - imageStatus = "failed" → RefreshCw (Retry)
+                                  - no image, status=failed → RefreshCw (Retry)
+                                  - no image (any other status) → Wand2 (Generate)
                                   - has image → RotateCcw (Regenerate)
-                                Wand2 (a slanted magic wand) reads
-                                clearly as "create something new" and
-                                doesn't share the circular-arrow
-                                silhouette of RotateCcw / RefreshCw. */}
+                                Previously we only used Wand2 when BOTH
+                                imageUrl AND imageStatus were nullish,
+                                so a tile carrying e.g. imageStatus
+                                "pending" fell through to RotateCcw
+                                even though no image had ever been
+                                produced — which read as a regenerate
+                                affordance for content that didn't
+                                exist yet. */}
                             {(() => {
-                              let Icon: typeof RotateCcw = RotateCcw;
+                              // Icon ref typed as the loose
+                              // component shape ({ size, strokeWidth,
+                              // className }) so both lucide icons
+                              // (ForwardRef components) and our
+                              // custom ImageSparkle (plain function
+                              // component) can be assigned.
+                              let Icon: React.ComponentType<{ size?: number; strokeWidth?: number; className?: string }> = RotateCcw;
                               let label = "Regenerate";
-                              if (!b.imageUrl && !b.imageStatus) {
-                                Icon = Wand2;
-                                label = "Generate";
-                              } else if (b.imageStatus === "failed") {
-                                Icon = RefreshCw;
-                                label = "Retry";
+                              if (!b.imageUrl) {
+                                if (b.imageStatus === "failed") {
+                                  Icon = RefreshCw;
+                                  label = "Retry";
+                                } else {
+                                  Icon = ImageSparkle;
+                                  label = "Generate";
+                                }
                               }
                               return (
                                 <button
