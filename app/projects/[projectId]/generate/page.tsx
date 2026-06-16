@@ -59,6 +59,8 @@ function friendlyError(raw: string | undefined | null): string {
     return "API key not set — go to Settings to add it";
   if (msg.includes("internal error") || msg.includes("internal server error") || msg.includes("fail code 500"))
     return "The selected model is temporarily unavailable — try a different one";
+  if (msg.includes("temporarily paused") || msg.includes("interface is paused") || msg.includes("model is paused") || msg.includes("paused by kie"))
+    return "KIE has temporarily paused this model — try a different one";
   if (msg.includes("this field is required"))
     return "Video model rejected the request — try a different video model";
   if (msg.includes("timed out") || msg.includes("timeout"))
