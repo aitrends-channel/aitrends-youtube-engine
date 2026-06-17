@@ -1535,7 +1535,7 @@ export default function GeneratePage({ params }: PageProps) {
             {(beats.some((b) => b.imageUrl || b.imageStatus) || regenBeats.size > 0) && (
               <div className="px-5 pt-4">
                 <ProgressBar value={clearingImages ? 0 : generatedImages} total={totalBeats} />
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-72 overflow-y-auto scroll-visible pr-1">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 mt-3 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
                   {beats.map((b) => {
                     const isRegening = regenBeats.has(b.beatNumber);
                     return (
@@ -1933,7 +1933,7 @@ export default function GeneratePage({ params }: PageProps) {
               <div className="px-5 pt-4">
                 <ProgressBar value={generatedVideos} total={videoBeats} />
                 {beats.some((b) => b.videoUrl || b.videoStatus) && (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-72 overflow-y-auto scroll-visible pr-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 mt-3 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
                     {beats.filter((b) => b.videoPrompt).map((b) => (
                       <div
                         key={b.beatNumber}
@@ -1981,7 +1981,17 @@ export default function GeneratePage({ params }: PageProps) {
                             status badge otherwise. The spinner +
                             regen overlays below sit on top of either. */}
                         {b.videoUrl ? (
-                          <video src={b.videoUrl} title={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
+                          <video
+                            src={b.videoUrl}
+                            title={b.videoUrl}
+                            className="w-full h-full object-cover"
+                            muted
+                            autoPlay
+                            loop
+                            playsInline
+                            disablePictureInPicture
+                            controlsList="nodownload nofullscreen noplaybackrate noremoteplayback"
+                          />
                         ) : (
                           <span className="text-[10px] px-1.5 py-0.5 rounded"
                             title={b.videoStatus === "failed" && b.videoError ? b.videoError : undefined}
