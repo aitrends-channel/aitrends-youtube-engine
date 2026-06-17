@@ -59,16 +59,9 @@ export async function POST(req: Request) {
     // one extra KIE billing for the abandoned poll — acceptable
     // for an explicit user retry.
     for (const beat of beats) {
-      // When the user edits a video prompt inline (edit-prompt modal
-      // on the generate page), persist the new prompt alongside the
-      // queue flip so the worker reads it on its next tick. The
-      // edited prompt becomes the prompt of record — Prompt Studio
-      // and re-runs both reflect it.
-      const update: Record<string, unknown> = { video_status: "queued", video_job_id: null, video_error: null };
-      if (beat.videoPrompt) update.video_prompt = beat.videoPrompt;
       const { data, error } = await supabase
         .from("project_beats")
-        .update(update)
+        .update({ video_status: "queued", video_job_id: null, video_error: null })
         .eq("project_id", projectId)
         .eq("beat_number", beat.beatNumber)
         .select("beat_number");

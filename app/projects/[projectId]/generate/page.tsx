@@ -453,7 +453,7 @@ export default function GeneratePage({ params }: PageProps) {
   // Single-beat video regen — fires immediately from the per-tile
   // overlay button. The previous version routed through a confirm
   // modal; we dropped the modal so the overlay click is the action.
-  async function regenerateVideoBeat(beatNumber: number, promptOverride?: string) {
+  async function regenerateVideoBeat(beatNumber: number) {
     // SINGLE-BEAT path: clear ONLY the React banner state. Do not
     // touch the DB sweep — other failed beats should keep their
     // error context until the user explicitly retries them too.
@@ -467,7 +467,6 @@ export default function GeneratePage({ params }: PageProps) {
       setVideoRunError("Pick a video model first.");
       return;
     }
-    const promptToUse = promptOverride ?? beat.videoPrompt;
     setRegeneratingVideo(true);
     try {
       const res = await fetch("/api/generate/videos", {
@@ -475,7 +474,7 @@ export default function GeneratePage({ params }: PageProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
-          beats: [{ beatNumber: beat.beatNumber, videoPrompt: promptToUse, imageUrl: beat.imageUrl }],
+          beats: [{ beatNumber: beat.beatNumber, videoPrompt: beat.videoPrompt, imageUrl: beat.imageUrl }],
           modelId: selectedVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
@@ -534,10 +533,10 @@ export default function GeneratePage({ params }: PageProps) {
   // Studio reflects the change.
   const [editPromptBeat, setEditPromptBeat] = useState<Beat | null>(null);
   const [editedPrompt, setEditedPrompt] = useState("");
-  // Same modal flow for video prompts — kept separate so opening one
-  // doesn't clobber the other's draft state.
-  const [editVideoPromptBeat, setEditVideoPromptBeat] = useState<Beat | null>(null);
-  const [editedVideoPrompt, setEditedVideoPrompt] = useState("");
+  // Mobile-only tap-to-preview: replaces the desktop hover preview on
+  // touch devices. Tile tap opens a centered modal showing the asset
+  // + beat number + prompt; backdrop tap dismisses.
+  const [previewBeat, setPreviewBeat] = useState<{ beat: Beat; type: "image" | "video" } | null>(null);
   // Where the hover preview should appear, computed from the
   // thumbnail's bounding rect on hover. We anchor in viewport
   // coordinates (position: fixed) so scrolling the page or the
@@ -1544,8 +1543,17 @@ export default function GeneratePage({ params }: PageProps) {
                         key={b.beatNumber}
                         className="relative aspect-video rounded-lg overflow-hidden group"
                         style={{ background: "var(--bg-progress)" }}
+                        onClick={() => {
+                          if (!b.imageUrl || clearingImages) return;
+                          // Touch-only: desktop already has the hover preview.
+                          if (!window.matchMedia("(hover: none) and (pointer: coarse)").matches) return;
+                          setPreviewBeat({ beat: b, type: "image" });
+                        }}
                         onMouseEnter={(e) => {
                           if (!b.imageUrl || clearingImages) return;
+                          // Same hover gate as the video tile — keeps mobile
+                          // taps from sticky-opening the floating preview.
+                          if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
                           setHoveredImageBeat(b);
                           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
                           const PREVIEW_WIDTH = 280;
@@ -1588,7 +1596,7 @@ export default function GeneratePage({ params }: PageProps) {
                             disabled={!selectedImageModel || generatingImages || generatingTts}
                             title="Edit prompt & regenerate"
                             aria-label={`Edit prompt for beat ${b.beatNumber}`}
-                            className="absolute top-1.5 right-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 disabled:opacity-30 disabled:cursor-not-allowed hover:scale-110"
+                            className="absolute top-1.5 right-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 disabled:opacity-30 disabled:cursor-not-allowed hover:scale-110"
                             style={{
                               background: "oklch(0 0 0 / 0.6)",
                               color: "white",
@@ -1646,7 +1654,7 @@ export default function GeneratePage({ params }: PageProps) {
                               }
                               return (
                                 <button
-                                  onClick={() => regenerateImage(b)}
+                                  onClick={(e) => { e.stopPropagation(); regenerateImage(b); }}
                                   disabled={!selectedImageModel || generatingImages || generatingTts}
                                   title={generatingTts ? "Voiceover is generating — wait for it to finish" : `${label} beat ${b.beatNumber}`}
                                   aria-label={`${label} beat ${b.beatNumber}`}
@@ -1931,8 +1939,18 @@ export default function GeneratePage({ params }: PageProps) {
                         key={b.beatNumber}
                         className="aspect-video rounded-lg overflow-hidden flex items-center justify-center relative group"
                         style={{ background: "var(--bg-progress)" }}
+                        onClick={() => {
+                          if (!b.videoUrl) return;
+                          if (!window.matchMedia("(hover: none) and (pointer: coarse)").matches) return;
+                          setPreviewBeat({ beat: b, type: "video" });
+                        }}
                         onMouseEnter={(e) => {
                           if (!b.videoUrl) return;
+                          // Touch devices fire mouseenter on tap but never
+                          // mouseleave — the preview would open and stick
+                          // until the user tapped something else. Gate the
+                          // hover preview to genuine hover-capable pointers.
+                          if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
                           if (videoHideTimer.current) clearTimeout(videoHideTimer.current);
                           setHoveredVideoBeat(b);
                           // Always anchor the preview to the LEFT of
@@ -2362,6 +2380,39 @@ export default function GeneratePage({ params }: PageProps) {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!previewBeat} onOpenChange={(open) => { if (!open) setPreviewBeat(null); }}>
+        <DialogContent className="sm:max-w-lg p-0 overflow-hidden" showCloseButton={false}>
+          {previewBeat?.type === "image" && previewBeat.beat.imageUrl && (
+            <img
+              src={previewBeat.beat.imageUrl}
+              alt={`Beat ${previewBeat.beat.beatNumber}`}
+              className="w-full"
+              style={{ aspectRatio: "16/9", objectFit: "cover", display: "block" }}
+            />
+          )}
+          {previewBeat?.type === "video" && previewBeat.beat.videoUrl && (
+            <video
+              key={previewBeat.beat.videoUrl}
+              src={previewBeat.beat.videoUrl}
+              className="w-full"
+              style={{ aspectRatio: "16/9", objectFit: "cover", display: "block" }}
+              autoPlay
+              loop
+              playsInline
+              controls
+            />
+          )}
+          <div className="px-4 py-3">
+            <p className="text-xs font-semibold mb-1" style={{ color: "var(--c-55)" }}>
+              Beat {previewBeat?.beat.beatNumber}
+            </p>
+            <p className="text-xs leading-relaxed" style={{ color: "var(--c-45)" }}>
+              {previewBeat?.type === "image" ? previewBeat?.beat.imagePrompt : previewBeat?.beat.videoPrompt}
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!editPromptBeat} onOpenChange={(open) => { if (!open) setEditPromptBeat(null); }}>
         <DialogContent
           className="sm:max-w-lg"
@@ -2371,7 +2422,7 @@ export default function GeneratePage({ params }: PageProps) {
             <DialogTitle style={{ color: "oklch(0.15 0 0)" }}>
               Edit prompt for beat {editPromptBeat?.beatNumber}
             </DialogTitle>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col-reverse sm:flex-row sm:items-center gap-3">
               <DialogDescription className="flex-1 m-0" style={{ color: "oklch(0.4 0 0)" }}>
                 Tweak the image prompt below. Saving will regenerate the image with the new prompt and update Prompt Studio to match.
               </DialogDescription>
@@ -2379,7 +2430,7 @@ export default function GeneratePage({ params }: PageProps) {
                 <img
                   src={editPromptBeat.imageUrl}
                   alt={`Beat ${editPromptBeat.beatNumber}`}
-                  className="w-32 rounded-md object-cover shrink-0"
+                  className="w-full sm:w-32 rounded-md object-cover shrink-0"
                   style={{ aspectRatio: "16/9", border: "1px solid oklch(0.9 0 0)" }}
                 />
               )}
@@ -2388,8 +2439,8 @@ export default function GeneratePage({ params }: PageProps) {
           <textarea
             value={editedPrompt}
             onChange={(e) => setEditedPrompt(e.target.value)}
-            rows={10}
-            className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-y"
+            rows={6}
+            className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-y sm:min-h-[180px]"
             style={{ background: "white", border: "1px solid oklch(0.85 0 0)", color: "oklch(0.15 0 0)" }}
             placeholder="Image prompt…"
           />
@@ -2401,21 +2452,34 @@ export default function GeneratePage({ params }: PageProps) {
             >
               Cancel
             </button>
-            <button
-              onClick={() => {
-                if (!editPromptBeat) return;
-                const trimmed = editedPrompt.trim();
-                if (!trimmed) return;
-                const beat = editPromptBeat;
-                setEditPromptBeat(null);
-                void regenerateImage(beat, trimmed);
-              }}
-              disabled={!editedPrompt.trim() || !selectedImageModel}
-              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-40"
-              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
-            >
-              Save &amp; regenerate
-            </button>
+            {(() => {
+              const trimmed = editedPrompt.trim();
+              const unchanged = trimmed === (editPromptBeat?.imagePrompt ?? "").trim();
+              const canSave = !!trimmed && !!selectedImageModel && !unchanged;
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!canSave || !editPromptBeat) return;
+                    const beat = editPromptBeat;
+                    setEditPromptBeat(null);
+                    void regenerateImage(beat, trimmed);
+                  }}
+                  disabled={!canSave}
+                  aria-disabled={!canSave}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+                  style={{
+                    background: canSave ? "oklch(0.72 0.25 285)" : "oklch(0.90 0 0)",
+                    color: canSave ? "white" : "oklch(0.65 0 0)",
+                    cursor: canSave ? "pointer" : "not-allowed",
+                    pointerEvents: canSave ? "auto" : "none",
+                    opacity: canSave ? 1 : 0.7,
+                  }}
+                >
+                  Save &amp; regenerate
+                </button>
+              );
+            })()}
           </DialogFooter>
         </DialogContent>
       </Dialog>
