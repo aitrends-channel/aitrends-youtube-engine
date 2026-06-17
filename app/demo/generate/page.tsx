@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
@@ -102,6 +102,50 @@ function ProgressBar({ value, total }: { value: number; total: number }) {
           style={{ width: `${pct}%`, background: "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))" }} />
       </div>
     </div>
+  );
+}
+
+function SkeletonTile() {
+  return (
+    <div className="absolute inset-0 shimmer" style={{ background: "var(--bg-progress)" }} />
+  );
+}
+
+function ImageTile({ src, alt }: { src: string; alt: string }) {
+  const [loaded, setLoaded] = useState(false);
+  // Reset when the source changes (e.g. regenerate)
+  useEffect(() => { setLoaded(false); }, [src]);
+  return (
+    <>
+      {!loaded && <SkeletonTile />}
+      <img
+        src={src}
+        alt={alt}
+        onLoad={() => setLoaded(true)}
+        className="w-full h-full object-cover"
+        style={{ opacity: loaded ? 1 : 0 }}
+      />
+    </>
+  );
+}
+
+function VideoTile({ src }: { src: string }) {
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => { setLoaded(false); }, [src]);
+  return (
+    <>
+      {!loaded && <SkeletonTile />}
+      <video
+        src={src}
+        onLoadedData={() => setLoaded(true)}
+        muted
+        autoPlay
+        loop
+        playsInline
+        className="w-full h-full object-cover"
+        style={{ opacity: loaded ? 1 : 0 }}
+      />
+    </>
   );
 }
 
@@ -331,13 +375,9 @@ export default function DemoGeneratePage() {
                         className="relative aspect-video rounded-lg overflow-hidden flex items-center justify-center"
                         style={{ background: "var(--bg-progress)" }}>
                         {revealed ? (
-                          <img
-                            src={beat.imageUrl}
-                            alt={`Beat ${beat.beat}`}
-                            className="w-full h-full object-cover"
-                          />
+                          <ImageTile src={beat.imageUrl} alt={`Beat ${beat.beat}`} />
                         ) : (
-                          <span className="text-[9px]" style={{ color: "var(--c-35)" }}>{beat.beat}</span>
+                          <span className="text-[9px] relative z-10" style={{ color: "var(--c-35)" }}>{beat.beat}</span>
                         )}
                       </div>
                     );
@@ -436,19 +476,12 @@ export default function DemoGeneratePage() {
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-72 overflow-y-auto">
                     {DEMO_DATA.promptBeats.map((beat) => (
                       <div key={beat.beat}
-                        className="aspect-video rounded-lg overflow-hidden flex items-center justify-center"
+                        className="relative aspect-video rounded-lg overflow-hidden flex items-center justify-center"
                         style={{ background: "var(--bg-progress)" }}>
                         {videosPhase === "done" ? (
-                          <video
-                            src={beat.videoUrl}
-                            className="w-full h-full object-cover"
-                            muted
-                            autoPlay
-                            loop
-                            playsInline
-                          />
+                          <VideoTile src={beat.videoUrl} />
                         ) : (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded"
+                          <span className="text-[9px] px-1.5 py-0.5 rounded relative z-10"
                             style={{
                               background: "oklch(0.72 0.25 285 / 0.1)",
                               color: "oklch(0.72 0.25 285)",
