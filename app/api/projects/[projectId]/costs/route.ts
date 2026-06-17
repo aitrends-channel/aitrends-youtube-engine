@@ -79,12 +79,31 @@ export async function GET(
     return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  const { data, error } = await supabase
-    .from("project_costs")
-    .select("step, provider, model, units, unit_kind")
-    .eq("project_id", projectId);
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  // Page through every row — Supabase JS caps a single response at
+  // 1000 rows by default. A single project with many beats (image +
+  // video + voiceover writes per beat, plus Claude rows for each
+  // step) can exceed that, silently dropping rows from the rollup.
+  // Mirrors the same fix in /api/admin/project-costs.
+  const PAGE_SIZE = 1000;
+  const data: Array<{
+    step: string;
+    provider: string;
+    model: string | null;
+    units: number;
+    unit_kind: string;
+  }> = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data: page, error } = await supabase
+      .from("project_costs")
+      .select("step, provider, model, units, unit_kind")
+      .eq("project_id", projectId)
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    if (!page || page.length === 0) break;
+    data.push(...page);
+    if (page.length < PAGE_SIZE) break;
   }
 
   const stepToColumn: Record<string, DisplayColumn> = {};

@@ -80,16 +80,39 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const projectIdFilter = searchParams.get("projectId");
 
-  let query = supabase
-    .from("project_costs")
-    .select("project_id, step, provider, model, units, unit_kind");
-  if (projectIdFilter) {
-    query = query.eq("project_id", projectIdFilter);
+  // Page through every row — Supabase JS caps a single response at
+  // 1000 rows by default, and project_costs grows quickly (each
+  // beat's image_gen + video_gen + voiceover write at least one row
+  // each, plus per-step Claude rows). Without paging, rows past the
+  // cap silently disappear from the rollup — the bug that made the
+  // Thumbnail column show "—" on projects that legitimately had
+  // thumbnail_concept + thumbnail_image rows in the DB.
+  const PAGE_SIZE = 1000;
+  const allRows: Array<{
+    project_id: string;
+    step: string;
+    provider: string;
+    model: string | null;
+    units: number;
+    unit_kind: string;
+  }> = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    let query = supabase
+      .from("project_costs")
+      .select("project_id, step, provider, model, units, unit_kind")
+      .range(offset, offset + PAGE_SIZE - 1);
+    if (projectIdFilter) {
+      query = query.eq("project_id", projectIdFilter);
+    }
+    const { data: page, error } = await query;
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    if (!page || page.length === 0) break;
+    allRows.push(...page);
+    if (page.length < PAGE_SIZE) break;
   }
-  const { data, error } = await query;
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  const data = allRows;
 
   // Pre-compute reverse lookup: step → display column.
   const stepToColumn: Record<string, DisplayColumn> = {};
