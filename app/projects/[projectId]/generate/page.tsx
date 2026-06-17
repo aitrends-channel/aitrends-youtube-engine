@@ -4,7 +4,7 @@ import { useState, use, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
-import { RotateCcw, RefreshCw, ChevronsRight, Wand2 } from "lucide-react";
+import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil } from "lucide-react";
 import { ImageSparkle } from "@/components/icons/ImageSparkle";
 import { StepCostCard } from "@/components/StepCostCard";
 import { toast } from "sonner";
@@ -453,7 +453,7 @@ export default function GeneratePage({ params }: PageProps) {
   // Single-beat video regen — fires immediately from the per-tile
   // overlay button. The previous version routed through a confirm
   // modal; we dropped the modal so the overlay click is the action.
-  async function regenerateVideoBeat(beatNumber: number) {
+  async function regenerateVideoBeat(beatNumber: number, promptOverride?: string) {
     // SINGLE-BEAT path: clear ONLY the React banner state. Do not
     // touch the DB sweep — other failed beats should keep their
     // error context until the user explicitly retries them too.
@@ -467,6 +467,7 @@ export default function GeneratePage({ params }: PageProps) {
       setVideoRunError("Pick a video model first.");
       return;
     }
+    const promptToUse = promptOverride ?? beat.videoPrompt;
     setRegeneratingVideo(true);
     try {
       const res = await fetch("/api/generate/videos", {
@@ -474,7 +475,7 @@ export default function GeneratePage({ params }: PageProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
-          beats: [{ beatNumber: beat.beatNumber, videoPrompt: beat.videoPrompt, imageUrl: beat.imageUrl }],
+          beats: [{ beatNumber: beat.beatNumber, videoPrompt: promptToUse, imageUrl: beat.imageUrl }],
           modelId: selectedVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
@@ -527,6 +528,16 @@ export default function GeneratePage({ params }: PageProps) {
   // long-running job.
   const [outOfCredits, setOutOfCredits] = useState(false);
   const [hoveredImageBeat, setHoveredImageBeat] = useState<Beat | null>(null);
+  // Edit-prompt modal: when set, opens a dialog letting the user
+  // tweak the beat's image prompt before kicking off a regen. The
+  // new prompt is persisted by the regenerate route so Prompt
+  // Studio reflects the change.
+  const [editPromptBeat, setEditPromptBeat] = useState<Beat | null>(null);
+  const [editedPrompt, setEditedPrompt] = useState("");
+  // Same modal flow for video prompts — kept separate so opening one
+  // doesn't clobber the other's draft state.
+  const [editVideoPromptBeat, setEditVideoPromptBeat] = useState<Beat | null>(null);
+  const [editedVideoPrompt, setEditedVideoPrompt] = useState("");
   // Where the hover preview should appear, computed from the
   // thumbnail's bounding rect on hover. We anchor in viewport
   // coordinates (position: fixed) so scrolling the page or the
@@ -1180,8 +1191,9 @@ export default function GeneratePage({ params }: PageProps) {
     }
   }
 
-  async function regenerateImage(beat: Beat) {
+  async function regenerateImage(beat: Beat, promptOverride?: string) {
     if (!selectedImageModel) return;
+    const promptToUse = promptOverride ?? beat.imagePrompt;
     // New regen → clear the section banner so the user sees a clean
     // slate for this attempt, not stale errors from a previous run.
     resetImageErrorBanner();
@@ -1199,7 +1211,7 @@ export default function GeneratePage({ params }: PageProps) {
         body: JSON.stringify({
           projectId,
           beatNumber: beat.beatNumber,
-          imagePrompt: beat.imagePrompt,
+          imagePrompt: promptToUse,
           modelId: selectedImageModel,
           aspectRatio: selectedAspectRatio,
           ...(selectedResolution ? { resolution: selectedResolution } : {}),
@@ -1559,6 +1571,32 @@ export default function GeneratePage({ params }: PageProps) {
                           <div className="w-full h-full flex items-center justify-center">
                             <span className="text-[9px]" style={{ color: "var(--c-35)" }}>{b.beatNumber}</span>
                           </div>
+                        )}
+
+                        {/* Edit-prompt affordance — top-right pill that
+                            opens the prompt-edit modal. Only shown
+                            for tiles with an existing image; the
+                            empty-tile state already has its own
+                            "Generate" CTA in the center. */}
+                        {b.imageUrl && !clearingImages && !isRegening && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditedPrompt(b.imagePrompt ?? "");
+                              setEditPromptBeat(b);
+                            }}
+                            disabled={!selectedImageModel || generatingImages || generatingTts}
+                            title="Edit prompt & regenerate"
+                            aria-label={`Edit prompt for beat ${b.beatNumber}`}
+                            className="absolute top-1.5 right-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 disabled:opacity-30 disabled:cursor-not-allowed hover:scale-110"
+                            style={{
+                              background: "oklch(0 0 0 / 0.6)",
+                              color: "white",
+                              border: "1px solid oklch(1 0 0 / 0.15)",
+                            }}
+                          >
+                            <Pencil size={12} strokeWidth={2.4} />
+                          </button>
                         )}
 
                         {/* Regen overlay — spinner on top of a dimmed
@@ -2319,6 +2357,64 @@ export default function GeneratePage({ params }: PageProps) {
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
             >
               Regenerate all
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!editPromptBeat} onOpenChange={(open) => { if (!open) setEditPromptBeat(null); }}>
+        <DialogContent
+          className="sm:max-w-lg"
+          style={{ background: "white", color: "oklch(0.15 0 0)" }}
+        >
+          <DialogHeader>
+            <DialogTitle style={{ color: "oklch(0.15 0 0)" }}>
+              Edit prompt for beat {editPromptBeat?.beatNumber}
+            </DialogTitle>
+            <div className="flex items-center gap-3">
+              <DialogDescription className="flex-1 m-0" style={{ color: "oklch(0.4 0 0)" }}>
+                Tweak the image prompt below. Saving will regenerate the image with the new prompt and update Prompt Studio to match.
+              </DialogDescription>
+              {editPromptBeat?.imageUrl && (
+                <img
+                  src={editPromptBeat.imageUrl}
+                  alt={`Beat ${editPromptBeat.beatNumber}`}
+                  className="w-32 rounded-md object-cover shrink-0"
+                  style={{ aspectRatio: "16/9", border: "1px solid oklch(0.9 0 0)" }}
+                />
+              )}
+            </div>
+          </DialogHeader>
+          <textarea
+            value={editedPrompt}
+            onChange={(e) => setEditedPrompt(e.target.value)}
+            rows={10}
+            className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-y"
+            style={{ background: "white", border: "1px solid oklch(0.85 0 0)", color: "oklch(0.15 0 0)" }}
+            placeholder="Image prompt…"
+          />
+          <DialogFooter style={{ background: "white", borderTop: "1px solid oklch(0.9 0 0)" }}>
+            <button
+              onClick={() => setEditPromptBeat(null)}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
+              style={{ background: "white", border: "1px solid oklch(0.85 0 0)", color: "oklch(0.3 0 0)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => {
+                if (!editPromptBeat) return;
+                const trimmed = editedPrompt.trim();
+                if (!trimmed) return;
+                const beat = editPromptBeat;
+                setEditPromptBeat(null);
+                void regenerateImage(beat, trimmed);
+              }}
+              disabled={!editedPrompt.trim() || !selectedImageModel}
+              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-40"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+            >
+              Save &amp; regenerate
             </button>
           </DialogFooter>
         </DialogContent>

@@ -141,10 +141,12 @@ export async function POST(req: Request) {
     const publicUrl = await uploadFromUrl(storagePath, kieUrl, "image/png");
     console.log(`[images/regenerate] beat=${beatNumber} uploaded ${publicUrl.slice(0, 80)}`);
 
-    // 6. Write the new URL. Single UPDATE — no idempotency tricks
-    //    needed because we're the only writer for this flow.
+    // 6. Write the new URL + the prompt that produced it. Persisting
+    //    the prompt keeps Prompt Studio in sync when the user edits
+    //    a prompt inline from the image regenerate modal — the
+    //    image and its prompt of record stay aligned.
     const { error: updateErr } = await supabase.from("project_beats")
-      .update({ image_url: publicUrl, image_status: "done", image_task_id: null, image_model_id: null })
+      .update({ image_url: publicUrl, image_prompt: imagePrompt, image_status: "done", image_task_id: null, image_model_id: null })
       .eq("project_id", projectId)
       .eq("beat_number", beatNumber);
     if (updateErr) {
