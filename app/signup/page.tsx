@@ -10,11 +10,13 @@ function SignupForm({ onSuccess }: { onSuccess: (email: string) => void }) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
+  const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!accepted) return;
     setError(null);
     setLoading(true);
     try {
@@ -127,9 +129,30 @@ function SignupForm({ onSuccess }: { onSuccess: (email: string) => void }) {
         </p>
       )}
 
+      <label className="flex items-start gap-2 text-xs cursor-pointer select-none pt-1" style={{ color: "var(--c-50)" }}>
+        <input
+          type="checkbox"
+          checked={accepted}
+          onChange={(e) => setAccepted(e.target.checked)}
+          className="mt-0.5 accent-current"
+          style={{ accentColor: "oklch(0.72 0.25 285)" }}
+        />
+        <span>
+          I agree to the{" "}
+          <a href="https://heclus.com/terms" target="_blank" rel="noopener noreferrer" className="underline hover:opacity-80" style={{ color: "oklch(0.72 0.25 285)" }}>
+            Terms of Service
+          </a>
+          {" "}and{" "}
+          <a href="https://heclus.com/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:opacity-80" style={{ color: "oklch(0.72 0.25 285)" }}>
+            Privacy Policy
+          </a>
+          .
+        </span>
+      </label>
+
       <button
         type="submit"
-        disabled={loading}
+        disabled={loading || !accepted}
         className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
         style={{ background: "oklch(0.72 0.25 285)", color: "oklch(0.08 0 0)" }}
       >
@@ -142,7 +165,7 @@ function SignupForm({ onSuccess }: { onSuccess: (email: string) => void }) {
         <div className="flex-1 h-px" style={{ background: "var(--bd-8)" }} />
       </div>
 
-      <GoogleSignInButton next="/dashboard" onError={setError} />
+      <GoogleSignInButton next="/dashboard" onError={setError} disabled={!accepted} />
 
       <p className="text-center text-xs" style={{ color: "var(--c-40)" }}>
         Already have an account?{" "}
@@ -178,7 +201,7 @@ export default function SignupPage() {
       className="min-h-screen flex items-center justify-center px-4"
       style={{ background: "var(--bg-page)" }}
     >
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-md">
         <Link href="/login" className="flex flex-col items-center mb-5 gap-2 transition-opacity hover:opacity-80">
           <div className="w-12 h-12 rounded-xl overflow-hidden" style={{ marginLeft: "6px" }}>
             <Image src="/heclus-icon-white.svg" alt="Heclus" width={48} height={48} className="object-cover w-full h-full" />

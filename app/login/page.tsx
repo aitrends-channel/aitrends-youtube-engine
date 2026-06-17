@@ -181,7 +181,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4"
       style={{ background: "var(--bg-page)" }}>
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-md">
         <Link href="/login" className="flex flex-col items-center mb-5 gap-2 transition-opacity hover:opacity-80">
           <div className="w-12 h-12 rounded-xl overflow-hidden" style={{ marginLeft: "6px" }}>
             <Image src="/heclus-icon-white.svg" alt="Heclus" width={48} height={48} className="object-cover w-full h-full" />

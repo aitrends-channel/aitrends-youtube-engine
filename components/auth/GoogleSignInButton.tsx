@@ -7,12 +7,14 @@ import { Spinner } from "@/components/ui/spinner";
 interface Props {
   next?: string;
   onError?: (msg: string) => void;
+  disabled?: boolean;
 }
 
-export function GoogleSignInButton({ next, onError }: Props) {
+export function GoogleSignInButton({ next, onError, disabled }: Props) {
   const [loading, setLoading] = useState(false);
 
   async function handleClick() {
+    if (disabled) return;
     setLoading(true);
     const supabase = createSupabaseBrowserClient();
     const callback = new URL("/auth/callback", window.location.origin);
@@ -36,7 +38,7 @@ export function GoogleSignInButton({ next, onError }: Props) {
     <button
       type="button"
       onClick={handleClick}
-      disabled={loading}
+      disabled={loading || disabled}
       className="w-full py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
       style={{ background: "white", color: "#1f1f1f", border: "1px solid var(--bd-10)" }}
     >

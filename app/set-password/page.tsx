@@ -92,7 +92,7 @@ function SetPasswordForm() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 pt-24"
       style={{ background: "var(--bg-page)" }}>
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-md">
         <Link href="/login" className="flex flex-col items-center mb-8 space-y-3 transition-opacity hover:opacity-80">
           <div className="w-14 h-14 rounded-xl">
             <Image src="/heclus-icon-white.svg" alt="Heclus" width={56} height={56} className="object-cover w-full h-full" />
