@@ -1638,7 +1638,7 @@ export default function HomePage() {
       </main>
 
       <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open && !deleting) setDeleteTarget(null); }}>
-        <DialogContent showCloseButton={false}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>
               {deleteTarget?.type === "niche" ? "Delete Niche" : "Delete Video"}

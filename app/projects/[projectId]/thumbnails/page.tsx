@@ -1109,7 +1109,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
       )}
 
       <Dialog open={regenConfirmPos !== null} onOpenChange={(open) => { if (!regenSubmitting && !open) setRegenConfirmPos(null); }}>
-        <DialogContent showCloseButton={false}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>Regenerate thumbnail {regenConfirmPos}?</DialogTitle>
             <DialogDescription>

@@ -501,7 +501,7 @@ export default function ScriptPage({ params }: PageProps) {
 
       {/* Regenerate confirm dialog */}
       <Dialog open={confirmRegen} onOpenChange={setConfirmRegen}>
-        <DialogContent style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-10)" }}>
+        <DialogContent className="sm:max-w-md" style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-10)" }}>
           <DialogHeader>
             <DialogTitle className="text-foreground">Regenerate Script?</DialogTitle>
             <DialogDescription style={{ color: "var(--c-50)" }}>

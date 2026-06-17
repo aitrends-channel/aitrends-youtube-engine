@@ -1485,7 +1485,7 @@ export default function AssemblePage({ params }: PageProps) {
       </main>
 
       <Dialog open={reassembleConfirmOpen} onOpenChange={(open) => { if (!clearingAssembled) setReassembleConfirmOpen(open); }}>
-        <DialogContent showCloseButton={false}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>Reassemble video?</DialogTitle>
             <DialogDescription>
@@ -1519,7 +1519,7 @@ export default function AssemblePage({ params }: PageProps) {
       </Dialog>
 
       <Dialog open={bgmDisclaimerOpen} onOpenChange={setBgmDisclaimerOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Background music disclaimer</DialogTitle>
             <DialogDescription>
@@ -1539,7 +1539,7 @@ export default function AssemblePage({ params }: PageProps) {
       </Dialog>
 
       <Dialog open={cancelAssemblyConfirmOpen} onOpenChange={(open) => { if (!cancellingAssembly) setCancelAssemblyConfirmOpen(open); }}>
-        <DialogContent showCloseButton={false}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>Cancel this assembly?</DialogTitle>
             <DialogDescription>

@@ -731,7 +731,7 @@ export default function ChannelPage({ params }: PageProps) {
         open={existingNiche !== null}
         onOpenChange={(open) => { if (!open) setExistingNiche(null); }}
       >
-        <DialogContent showCloseButton={false}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>You already have this niche</DialogTitle>
             <DialogDescription>

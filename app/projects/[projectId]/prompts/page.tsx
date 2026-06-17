@@ -1330,7 +1330,7 @@ export default function PromptsPage({ params }: PageProps) {
       )}
 
       <Dialog open={!!regenTarget} onOpenChange={(open) => { if (!open && !regenerating) setRegenTarget(null); }}>
-        <DialogContent showCloseButton={false}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>
               {regenTarget === "image" ? "Regenerate image prompts?" : "Regenerate video prompts?"}
@@ -1368,7 +1368,7 @@ export default function PromptsPage({ params }: PageProps) {
       </Dialog>
 
       <Dialog open={!!clearTarget} onOpenChange={(open) => { if (!open && !clearing) setClearTarget(null); }}>
-        <DialogContent showCloseButton={false}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>
               {clearTarget === "image" ? "Clear image prompts?" : "Clear video prompts?"}
