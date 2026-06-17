@@ -1577,7 +1577,7 @@ export default function GeneratePage({ params }: PageProps) {
                           <img src={b.imageUrl} alt={`Beat ${b.beatNumber}`} className="w-full h-full object-cover" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
-                            <span className="text-[9px]" style={{ color: "var(--c-35)" }}>{b.beatNumber}</span>
+                            <span className="text-[10px]" style={{ color: "var(--c-35)" }}>{b.beatNumber}</span>
                           </div>
                         )}
 
@@ -1614,7 +1614,7 @@ export default function GeneratePage({ params }: PageProps) {
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1"
                             style={{ background: "oklch(0 0 0 / 0.55)" }}>
                             <Spinner size={20} className="text-white" />
-                            <span className="text-[9px] font-medium" style={{ color: "oklch(0.95 0 0)" }}>
+                            <span className="text-[10px] font-medium" style={{ color: "oklch(0.95 0 0)" }}>
                               Regenerating…
                             </span>
                           </div>
@@ -1983,7 +1983,7 @@ export default function GeneratePage({ params }: PageProps) {
                         {b.videoUrl ? (
                           <video src={b.videoUrl} title={b.videoUrl} className="w-full h-full object-cover" muted autoPlay loop />
                         ) : (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded"
+                          <span className="text-[10px] px-1.5 py-0.5 rounded"
                             title={b.videoStatus === "failed" && b.videoError ? b.videoError : undefined}
                             style={{
                               background: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285 / 0.1)" : b.videoStatus === "done" ? "oklch(0.55 0.15 145 / 0.1)" : b.videoStatus === "failed" ? "oklch(0.6 0.22 25 / 0.1)" : "var(--bg-track)",
@@ -2014,7 +2014,7 @@ export default function GeneratePage({ params }: PageProps) {
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1"
                             style={{ background: "oklch(0 0 0 / 0.55)" }}>
                             <Spinner size={20} className="text-white" />
-                            <span className="text-[9px] font-medium" style={{ color: "oklch(0.95 0 0)" }}>
+                            <span className="text-[10px] font-medium" style={{ color: "oklch(0.95 0 0)" }}>
                               {b.videoStatus}…
                             </span>
                           </div>

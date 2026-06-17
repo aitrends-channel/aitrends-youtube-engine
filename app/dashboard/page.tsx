@@ -179,7 +179,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
             <div className="flex flex-col items-center gap-1.5 shrink-0">
               <DemoPieRing id="dcNiche" pct={niches / nicheLimit} color="#5bc48a" centerText={`${niches}/${nicheLimit}`} />
               <span
-                className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider"
+                className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider"
                 style={{
                   background: "oklch(0.55 0.15 145 / 0.15)",
                   color: "oklch(0.65 0.15 145)",
@@ -1038,7 +1038,7 @@ export default function HomePage() {
                           <div className="flex flex-col items-center gap-1.5 shrink-0">
                             {unlimited && (
                               <span
-                                className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider"
+                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider"
                                 style={{
                                   background: "oklch(0.55 0.15 145 / 0.15)",
                                   color: "oklch(0.65 0.15 145)",
@@ -1065,7 +1065,7 @@ export default function HomePage() {
                             )}
                             {!unlimited && (
                               <span
-                                className="px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider"
+                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider"
                                 style={{
                                   background: "oklch(0.55 0.15 145 / 0.15)",
                                   color: "oklch(0.65 0.15 145)",

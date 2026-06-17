@@ -402,7 +402,7 @@ export default function ScriptPage({ params }: PageProps) {
                                 border: `1px solid ${showGreen ? "oklch(0.55 0.15 145 / 0.3)" : "oklch(0.72 0.25 285 / 0.3)"}`,
                                 color: showGreen ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)",
                               }}>
-                              <span className="text-[9px] uppercase tracking-wide" style={{ opacity: 0.7 }}>Your Script</span>
+                              <span className="text-[10px] uppercase tracking-wide" style={{ opacity: 0.7 }}>Your Script</span>
                               <span className="tabular-nums font-semibold">{wordCount.toLocaleString()}</span>
                             </div>
                           );
@@ -413,7 +413,7 @@ export default function ScriptPage({ params }: PageProps) {
                             border: "1px solid var(--bd-8)",
                             color: "var(--c-55)",
                           }}>
-                          <span className="text-[9px] uppercase tracking-wide" style={{ opacity: 0.6 }}>Channel Avg</span>
+                          <span className="text-[10px] uppercase tracking-wide" style={{ opacity: 0.6 }}>Channel Avg</span>
                           <span className="tabular-nums font-semibold" style={{ color: "var(--c-80)" }}>{targetWordCount.toLocaleString()}</span>
                         </div>
                       </div>
