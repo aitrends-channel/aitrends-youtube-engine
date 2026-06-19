@@ -6,6 +6,7 @@ import { WizardNav } from "@/components/wizard/WizardNav";
 import { StepCostCard } from "@/components/StepCostCard";
 import { useProject } from "@/hooks/useProject";
 import { useStreamingScript } from "@/hooks/useStreamingScript";
+import { getEffectiveScriptTargetWordCount } from "@/lib/claude/prompts";
 import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
 import {
@@ -81,7 +82,17 @@ export default function ScriptPage({ params }: PageProps) {
   const [confirmRegen, setConfirmRegen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const targetWordCount = project?.target_word_count ?? project?.channel_analysis?.targetWordCount ?? 900;
+  // Mirrors the script-route cap so the on-screen "Channel Avg" target
+  // matches what the model was asked to hit. For channels whose true
+  // average exceeds the 45-min consent gate we display the capped
+  // value, not the raw channel average.
+  const rawTarget = project?.target_word_count ?? project?.channel_analysis?.targetWordCount ?? 900;
+  const targetWordCount = project?.channel_analysis
+    ? getEffectiveScriptTargetWordCount({
+        targetWordCount: rawTarget,
+        wordsPerSecond: project.channel_analysis.wordsPerSecond,
+      })
+    : rawTarget;
   // Paused-draft state: a previous generation was Stopped, partial was
   // saved, current_state never reached 7 (the success-save sentinel).
   // No active run id either — distinguishes from "still generating in

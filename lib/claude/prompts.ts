@@ -1,6 +1,33 @@
 import type { ChannelAnalysisOutput, VisualProfileOutput, ThumbnailAnalysisOutput } from "./schemas";
 import type { SupadataTranscript } from "@/lib/youtube/supadata";
 
+// Mirror of the channel-page 45-min consent gate. When the channel's
+// avg video length is past this, the user opts past the warning at the
+// channel step — but the analysis still returns the channel's true
+// (longer) average word count. For script generation we cap the target
+// here so the produced script lands at <=45min of video regardless of
+// the source channel's natural length. A no-op for channels already
+// under the threshold.
+export const MAX_SCRIPT_DURATION_SECONDS = 45 * 60;
+
+// Fallback WPS when analysis.wordsPerSecond is missing/zero. 2 is the
+// middle of the 1.5–2.5 band the analysis prompt asks Claude to pick
+// from, so a missing value still produces a sensible cap.
+const FALLBACK_WORDS_PER_SECOND = 2;
+
+export function getEffectiveScriptTargetWordCount(
+  analysis: Pick<ChannelAnalysisOutput, "targetWordCount" | "wordsPerSecond">
+): number {
+  const baseTarget = analysis.targetWordCount && analysis.targetWordCount > 0
+    ? analysis.targetWordCount
+    : 900;
+  const wps = analysis.wordsPerSecond && analysis.wordsPerSecond > 0
+    ? analysis.wordsPerSecond
+    : FALLBACK_WORDS_PER_SECOND;
+  const maxWords = Math.floor(MAX_SCRIPT_DURATION_SECONDS * wps);
+  return Math.min(baseTarget, maxWords);
+}
+
 // Long videos (1hr+ source content) produce 10-15k-word transcripts.
 // Sending several of those concatenated tips KIE's proxy past whatever
 // internal budget makes it return a generic 500. Sample each transcript
@@ -149,7 +176,17 @@ export function buildScriptPrompt(
   analysis: ChannelAnalysisOutput,
   topic: string
 ): string {
-  const targetWordCount = analysis.targetWordCount ?? 900;
+  const targetWordCount = getEffectiveScriptTargetWordCount(analysis);
+  // When the channel's natural average exceeds the 45-min consent gate
+  // we ship a shorter target than analysis.targetWordCount. The model
+  // must still go through the channel's full arc — opening hook, middle
+  // development, ending CTA — just paced tighter. Without this note the
+  // model tends to drop the middle development section or skip the
+  // signature ending move when asked to compress.
+  const isCompressed = (analysis.targetWordCount ?? 0) > targetWordCount;
+  const compressionNote = isCompressed
+    ? `\nNOTE: The channel's natural videos run longer than this target, but the script must still walk the FULL channel arc — same opening hook style, same middle development pattern, same signature ending / CTA move. Compress the pacing, never the structure. Do NOT drop or shorten the middle section to land on the word count; trim everywhere proportionally.\n`
+    : "";
   return `Generate a FULL YouTube video script for the topic: "${topic}"
 
 STYLE DNA (MUST FOLLOW EXACTLY):
@@ -170,12 +207,17 @@ STYLE DNA (MUST FOLLOW EXACTLY):
 - Direct Address: ${analysis.styleDNA.directAddress}
 - Detail Level: ${analysis.styleDNA.detailLevel}
 - Retention Techniques: ${analysis.retentionTechniques.join(", ")}
+${compressionNote}
+ARC STRUCTURE (MANDATORY — preserve all three phases):
+- BEGINNING: open with the channel's exact Hook Style above; set up the curiosity gap or stakes the same way the channel does.
+- MIDDLE: develop the topic following the channel's Script Flow and Emotional Pacing above — same beats, same callbacks, same retention techniques. This is the section that gets compressed when length is tight; it does NOT get cut.
+- END: close with the channel's signature ending move, then a natural CTA (subscribe, like, share) in the channel's Tone and Direct Address style.
 
 RULES:
 - Write ONLY the script — no headers, no stage directions, no notes
 - Match the style DNA above exactly — rhythm, sentence length, emotional arc
+- Preserve the full beginning → middle → end arc regardless of target length
 - DO NOT think about visuals or images
-- End with a natural CTA (subscribe, like, share) in the channel's tone
 - NEVER copy wording from source transcripts — be fully original
 
 Begin writing the script now. Output ONLY the script text.`;

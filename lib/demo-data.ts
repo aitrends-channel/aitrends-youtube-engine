@@ -6,12 +6,18 @@ export const DEMO_DATA = {
     avgViews: "18K",
   },
 
+  // Shape mirrors the actual flow's TopVideo: { videoId, title,
+  // viewCount, duration (ISO 8601), publishedAt (ISO date),
+  // hasCaptions, wordCount } so the demo channel page can render the
+  // same table without diverging from production data shape. Durations
+  // chosen to keep the avg under 45min so the demo path doesn't trip
+  // the long-video consent modal.
   channelTopVideos: [
-    { videoId: "t1", title: "How I Saved $50,000 in 2 Years on a $60K Salary",               viewCount: 1840000 },
-    { videoId: "t2", title: "Stop Paying These 7 Fees — You Don't Have To",                   viewCount: 1120000 },
-    { videoId: "t3", title: "The Exact Budget That Got Me Out of $40K Debt",                   viewCount:  980000 },
-    { videoId: "t4", title: "Index Funds vs ETFs — The Answer Nobody Gives You",               viewCount:  760000 },
-    { videoId: "t5", title: "Why 90% of Americans Will Never Build Real Wealth",               viewCount:  640000 },
+    { videoId: "t1", title: "How I Saved $50,000 in 2 Years on a $60K Salary",                viewCount: 1840000, duration: "PT12M42S", publishedAt: "2026-02-14T09:00:00Z", hasCaptions: true,  wordCount: 2104 },
+    { videoId: "t2", title: "Stop Paying These 7 Fees — You Don't Have To",                    viewCount: 1120000, duration: "PT9M08S",  publishedAt: "2026-03-22T09:00:00Z", hasCaptions: true,  wordCount: 1532 },
+    { videoId: "t3", title: "The Exact Budget That Got Me Out of $40K Debt",                   viewCount:  980000, duration: "PT15M21S", publishedAt: "2025-11-05T09:00:00Z", hasCaptions: true,  wordCount: 2418 },
+    { videoId: "t4", title: "Index Funds vs ETFs — The Answer Nobody Gives You",               viewCount:  760000, duration: "PT11M30S", publishedAt: "2026-01-08T09:00:00Z", hasCaptions: true,  wordCount: 1884 },
+    { videoId: "t5", title: "Why 90% of Americans Will Never Build Real Wealth",               viewCount:  640000, duration: "PT13M55S", publishedAt: "2025-12-12T09:00:00Z", hasCaptions: false, wordCount: 2196 },
   ],
 
   analysisSteps: [

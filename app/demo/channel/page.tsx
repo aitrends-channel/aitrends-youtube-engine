@@ -2,10 +2,49 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowUpRight } from "lucide-react";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
+
+// Mirror the actual channel page's helpers so the demo table renders
+// identical duration/avg formatting. Kept inline rather than shared
+// because the demo page is intentionally self-contained.
+function formatDuration(iso?: string): string {
+  if (!iso) return "—";
+  const m = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  if (!m) return "—";
+  const h = parseInt(m[1] ?? "0", 10);
+  const min = parseInt(m[2] ?? "0", 10);
+  const s = parseInt(m[3] ?? "0", 10);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${pad(h)}:${pad(min)}:${pad(s)}`;
+}
+
+function parseDurationSeconds(iso?: string): number | null {
+  if (!iso) return null;
+  const m = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  if (!m) return null;
+  const h = parseInt(m[1] ?? "0", 10);
+  const min = parseInt(m[2] ?? "0", 10);
+  const s = parseInt(m[3] ?? "0", 10);
+  return h * 3600 + min * 60 + s;
+}
+
+function formatSecondsAsHHMMSS(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
+
+function averageDurationSeconds(videos: { duration?: string }[]): number | null {
+  const seconds = videos.map((v) => parseDurationSeconds(v.duration)).filter((s): s is number => s != null);
+  if (!seconds.length) return null;
+  return Math.round(seconds.reduce((sum, s) => sum + s, 0) / seconds.length);
+}
 
 type StepStatus = "idle" | "running" | "done";
 
@@ -136,7 +175,7 @@ export default function DemoChannelPage() {
       <div className="flex-1 min-w-0 flex flex-col min-h-0">
         <DemoBanner />
         <main className="flex-1 overflow-y-auto">
-          <div className="max-w-2xl mx-auto px-4 sm:px-8 pt-6 sm:pt-8 pb-24 space-y-8">
+          <div className="px-4 sm:px-8 pt-6 sm:pt-8 pb-24 space-y-8">
 
             <div>
               <h1 className="text-2xl font-bold tracking-tight">Channel Setup</h1>
@@ -279,19 +318,81 @@ export default function DemoChannelPage() {
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
-                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
-                    Top Videos
-                  </p>
-                  {DEMO_DATA.channelTopVideos.map((v) => (
-                    <div key={v.videoId} className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm"
-                      style={{ background: "var(--bg-progress)" }}>
-                      <span className="text-xs shrink-0" style={{ color: "var(--c-50)" }}>
-                        {v.viewCount.toLocaleString()} views
-                      </span>
-                      <span className="truncate" style={{ color: "var(--c-75)" }}>{v.title}</span>
-                    </div>
-                  ))}
+                <div className="space-y-2">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
+                      Top {DEMO_DATA.channelTopVideos.length} Video{DEMO_DATA.channelTopVideos.length === 1 ? "" : "s"}
+                    </p>
+                    {(() => {
+                      const avg = averageDurationSeconds(DEMO_DATA.channelTopVideos);
+                      return avg != null ? (
+                        <p className="text-xs font-semibold uppercase tracking-wider tabular-nums" style={{ color: "var(--c-45)" }}>
+                          Avg duration <span style={{ color: "var(--c-75)" }}>{formatSecondsAsHHMMSS(avg)}</span>
+                        </p>
+                      ) : null;
+                    })()}
+                  </div>
+                  <div className="rounded-lg overflow-hidden" style={{ background: "var(--bg-progress)" }}>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
+                          <th className="text-left px-3 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>Title</th>
+                          <th className="text-right px-3 py-2 text-xs font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--c-45)" }}>Words</th>
+                          <th className="text-center px-3 py-2 text-xs font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--c-45)" }}>Captions</th>
+                          <th className="text-right px-3 py-2 text-xs font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--c-45)" }}>Duration</th>
+                          <th className="text-right px-3 py-2 text-xs font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--c-45)" }}>Views</th>
+                          <th className="text-right px-3 py-2 text-xs font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--c-45)" }}>Published</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {DEMO_DATA.channelTopVideos.map((v) => (
+                          <tr key={v.videoId} style={{ borderTop: "1px solid var(--bd-7)" }}>
+                            <td className="px-3 py-2 min-w-0">
+                              <a
+                                href={`https://www.youtube.com/watch?v=${v.videoId}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1.5 min-w-0 hover:opacity-80 transition-opacity"
+                                style={{ color: "oklch(0.72 0.25 285)" }}
+                                title={v.title}
+                              >
+                                <span
+                                  className="truncate underline underline-offset-2"
+                                  style={{ textDecorationColor: "oklch(0.72 0.25 285 / 0.5)" }}
+                                >
+                                  {v.title}
+                                </span>
+                                <ArrowUpRight size={12} strokeWidth={2.25} className="shrink-0 opacity-70" aria-hidden />
+                              </a>
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--c-75)" }}>
+                              {v.wordCount != null ? v.wordCount.toLocaleString() : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-center whitespace-nowrap">
+                              {v.hasCaptions === true ? (
+                                <span style={{ color: "oklch(0.65 0.15 145)" }}>Yes</span>
+                              ) : v.hasCaptions === false ? (
+                                <span style={{ color: "var(--c-45)" }}>No</span>
+                              ) : (
+                                <span style={{ color: "var(--c-45)" }}>—</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--c-75)" }}>
+                              {formatDuration(v.duration)}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--c-75)" }}>
+                              {v.viewCount.toLocaleString()}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--c-75)" }}>
+                              {v.publishedAt
+                                ? new Date(v.publishedAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+                                : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
 
                 <button

@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
-import { buildScriptPrompt } from "@/lib/claude/prompts";
+import { buildScriptPrompt, getEffectiveScriptTargetWordCount } from "@/lib/claude/prompts";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { stripCaptionCues } from "@/lib/youtube/supadata";
 import { supabase } from "@/lib/supabase/client";
@@ -158,15 +158,27 @@ export async function POST(req: Request) {
       }
     }
 
-    const target = analysis.targetWordCount ?? 900;
+    // Cap at the 45-min consent gate from the channel step — channels
+    // whose true average is past that produce a longer
+    // analysis.targetWordCount, but we don't want to ask the model for
+    // a >45min script. Sub-threshold channels pass through unchanged.
+    const target = getEffectiveScriptTargetWordCount(analysis);
     const initialPrompt = buildScriptPrompt(analysis, topic);
     const activeModel = MODEL;
 
-    // Request the full Opus ceiling — the model stops when the piece
-    // is done; the cap just sets the safety roof. Removing the
-    // target*1.6+200 squeeze means a script that wants to run a bit
-    // long isn't artificially truncated.
-    const maxTokens = OPUS_MAX_OUTPUT_TOKENS;
+    // Token budget. Sub-threshold channels stay on the full Opus ceiling
+    // (32K) so a script that wants to run a touch long isn't artificially
+    // truncated — same behavior as before. Compressed runs (channel's
+    // natural avg > 45min, so target was clamped) instead get a tight
+    // budget scaled to the target. Without this, the model has ~20K
+    // words of output budget but a 5400-word target — it routinely
+    // drifts to 9-12K words, blowing past the soft deadline and giving
+    // the user the "too slow" experience. 1.8 tokens/word + a 500-token
+    // buffer covers natural variance without inviting drift.
+    const isCompressed = (analysis.targetWordCount ?? 0) > target;
+    const maxTokens = isCompressed
+      ? Math.min(OPUS_MAX_OUTPUT_TOKENS, Math.ceil(target * 1.8) + 500)
+      : OPUS_MAX_OUTPUT_TOKENS;
 
     // Claim the run BEFORE returning the stream so the project row
      // already reflects "in flight" by the time the client receives the
@@ -289,10 +301,20 @@ export async function POST(req: Request) {
           // Length-goal directive: even with the full Opus budget,
           // models tend to wrap up early on creative writing. The
           // structural prompt + explicit target nudges Opus to actually
-          // aim for the channel's natural video length instead of
-          // landing 30% short. No hard enforcement after generation
-          // (no trim, no extend).
-          const userPrompt = `LENGTH GOAL\nThis script should be approximately ${target.toLocaleString()} words to match the channel's natural video length. Aim for that target — don't summarize or wrap up early.\n\nSTRUCTURE: roughly ${Math.max(6, Math.ceil(target / 800))} narrative sections of about ${Math.round(target / Math.max(6, Math.ceil(target / 800)))} words each, different angles, seamless transitions, do NOT label them in output.\n\n${initialPrompt}`;
+          // aim for the right length instead of landing 30% short. No
+          // hard enforcement after generation (no trim, no extend).
+          //
+          // The "compressed" branch fires for channels whose natural
+          // average exceeds the 45-min consent gate from the channel
+          // step. In that case `target` is the capped value, NOT the
+          // channel's true average — so the prompt needs to flag the
+          // compression explicitly and remind the model to preserve the
+          // full beginning → middle → end arc, not lop off the middle.
+          const lengthGoal = isCompressed
+            ? `LENGTH GOAL\nThis script must land at approximately ${target.toLocaleString()} words — a compressed version of the channel's natural length. STAY AT THAT TARGET — do not exceed it. The compression comes from tighter pacing across all phases (hook, development, ending), not from cutting any phase entirely.`
+            : `LENGTH GOAL\nThis script should be approximately ${target.toLocaleString()} words to match the channel's natural video length. Aim for that target — don't summarize or wrap up early.`;
+          const sectionCount = Math.max(6, Math.ceil(target / 800));
+          const userPrompt = `${lengthGoal}\n\nSTRUCTURE: roughly ${sectionCount} narrative sections of about ${Math.round(target / sectionCount)} words each, different angles, seamless transitions, do NOT label them in output. The arc still runs hook → development → ending CTA across those sections — preserve the channel's signature opening and ending moves.\n\n${initialPrompt}`;
 
           // Continue-mode prefix nudges the model to splice cleanly
           // rather than restating context or wrapping up early. The
@@ -309,12 +331,20 @@ export async function POST(req: Request) {
               { role: "user", content: userPrompt + continueDirective },
             ];
             if (mode === "continue") opusMessages.push({ role: "assistant", content: existingScript });
+            // Per-request timeout override. The default Anthropic client
+            // timeout (180s, see lib/claude/client.ts) is fine for
+            // analyze/ideas/thumbnails — sub-minute calls. Script
+            // generation routinely needs longer, especially on KIE which
+            // buffers the stream server-side and delivers nothing until
+            // generation completes. 700s sits just inside the route's
+            // 720s soft-deadline so the route's own deadline path still
+            // gets to save a partial.
             const stream = anthropic.messages.stream({
               model: model,
               max_tokens: maxTokens,
               system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
               messages: opusMessages,
-            });
+            }, { timeout: 700_000 });
             for await (const event of stream) {
               if (spiralAborted || cancelled || deadlineHit) {
                 try { stream.abort(); } catch { /* ignore */ }
