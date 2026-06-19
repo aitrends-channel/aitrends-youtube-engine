@@ -217,7 +217,7 @@ async function fetchTopVideos(
   const videosData = await youtubeGet<{
     items?: {
       id: string;
-      snippet: { title: string };
+      snippet: { title: string; publishedAt?: string };
       statistics: { viewCount?: string };
       contentDetails: { duration: string };
     }[];
@@ -229,6 +229,7 @@ async function fetchTopVideos(
     title: v.snippet.title,
     viewCount: parseInt(v.statistics.viewCount ?? "0", 10) || 0,
     duration: v.contentDetails.duration,
+    publishedAt: v.snippet.publishedAt,
   }));
 
   // The uploads-playlist path returns items in upload order, not view

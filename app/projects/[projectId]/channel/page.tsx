@@ -217,6 +217,21 @@ function StepIndicator({ step }: { step: AnalysisStep }) {
   );
 }
 
+// YouTube videos.list returns duration as ISO 8601 (PT1H23M45S). Format
+// as a fixed HH:MM:SS so column widths don't jump between short and
+// long videos; show "—" if missing (older cached channel_info rows
+// predate the field).
+function formatDuration(iso?: string): string {
+  if (!iso) return "—";
+  const m = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  if (!m) return "—";
+  const h = parseInt(m[1] ?? "0", 10);
+  const min = parseInt(m[2] ?? "0", 10);
+  const s = parseInt(m[3] ?? "0", 10);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${pad(h)}:${pad(min)}:${pad(s)}`;
+}
+
 export default function ChannelPage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
@@ -693,19 +708,62 @@ export default function ChannelPage({ params }: PageProps) {
                 </div>
               </div>
 
-              <div className="space-y-1.5">
+              <div className="space-y-2">
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
                   Top {channelInfo.topVideos.length} Video{channelInfo.topVideos.length === 1 ? "" : "s"}
                 </p>
-                {channelInfo.topVideos.map((v) => (
-                  <div key={v.videoId} className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm"
-                    style={{ background: "var(--bg-progress)" }}>
-                    <span className="text-xs shrink-0" style={{ color: "var(--c-50)" }}>
-                      {v.viewCount.toLocaleString()} views
-                    </span>
-                    <span className="truncate" style={{ color: "var(--c-75)" }}>{v.title}</span>
-                  </div>
-                ))}
+                {/* Word counts come from the transcripts fetch and are joined
+                    by videoId. Before transcripts run, "—" is shown so the
+                    column doesn't shift width once the data arrives. */}
+                <div className="rounded-lg overflow-hidden" style={{ background: "var(--bg-progress)" }}>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
+                        <th className="text-left px-3 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>Title</th>
+                        <th className="text-right px-3 py-2 text-xs font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--c-45)" }}>Words</th>
+                        <th className="text-right px-3 py-2 text-xs font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--c-45)" }}>Duration</th>
+                        <th className="text-right px-3 py-2 text-xs font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--c-45)" }}>Views</th>
+                        <th className="text-right px-3 py-2 text-xs font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--c-45)" }}>Published</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {channelInfo.topVideos.map((v) => {
+                        const transcript = transcripts.find((t) => t.videoId === v.videoId);
+                        const words = transcript?.success ? transcript.wordCount : null;
+                        return (
+                          <tr key={v.videoId} style={{ borderTop: "1px solid var(--bd-7)" }}>
+                            <td className="px-3 py-2 min-w-0">
+                              <a
+                                href={`https://www.youtube.com/watch?v=${v.videoId}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block truncate underline underline-offset-2 hover:opacity-80 transition-opacity"
+                                style={{ color: "oklch(0.72 0.25 285)", textDecorationColor: "oklch(0.72 0.25 285 / 0.5)" }}
+                                title={v.title}
+                              >
+                                {v.title}
+                              </a>
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--c-75)" }}>
+                              {words != null ? words.toLocaleString() : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--c-75)" }}>
+                              {formatDuration(v.duration)}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--c-75)" }}>
+                              {v.viewCount.toLocaleString()}
+                            </td>
+                            <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--c-75)" }}>
+                              {v.publishedAt
+                                ? new Date(v.publishedAt).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+                                : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}

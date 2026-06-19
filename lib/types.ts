@@ -11,6 +11,10 @@ export interface TopVideo {
   title: string;
   viewCount: number;
   duration?: string;
+  /** ISO 8601 timestamp from the videos.list snippet. Optional because
+   *  cached ChannelInfo rows written before this field existed won't have
+   *  it; the UI falls back to "—" in that case. */
+  publishedAt?: string;
 }
 
 export interface ChannelInfo {
