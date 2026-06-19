@@ -1414,9 +1414,9 @@ export default function HomePage() {
                       <div className="min-w-0">
                         <h2 className="text-base font-bold text-foreground truncate">{group.channelName}</h2>
                         {group.channelUrl && (
-                          <p className="text-xs mt-0.5 truncate" style={{ color: "var(--c-38)" }}>
+                          <Link href={group.channelUrl} target="_blank" className="text-xs mt-0.5 truncate" style={{ color: "oklch(0.72 0.25 285)" }}>
                             {group.channelUrl}
-                          </p>
+                          </Link>
                         )}
                       </div>
                     </div>

@@ -15,6 +15,11 @@ export interface TopVideo {
    *  cached ChannelInfo rows written before this field existed won't have
    *  it; the UI falls back to "—" in that case. */
   publishedAt?: string;
+  /** Set when transcripts are fetched and the result is merged back into
+   *  channel_info before the PATCH. Lets the channel page's videos table
+   *  render the per-video word count on subsequent visits without having
+   *  to re-fetch transcripts. */
+  wordCount?: number;
 }
 
 export interface ChannelInfo {
