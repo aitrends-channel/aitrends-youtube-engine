@@ -17,10 +17,21 @@ export async function retryClaudeCall<T>(
       const status =
         (err as { status?: number })?.status ??
         (err as { response?: { status?: number } })?.response?.status;
+      // Pull the upstream message off whichever shape the SDK threw —
+      // direct .message on the AnthropicError, or .error.message on the
+      // KIE-wrapped envelope. Without this the terminal only saw the
+      // status code and nothing about what Claude/KIE actually said.
+      const msg =
+        (err as { message?: string })?.message ??
+        (err as { error?: { message?: string } })?.error?.message ??
+        String(err);
       const isTransient = !status || (status >= 500 && status < 600) || status === 429;
-      if (!isTransient || i === attempts - 1) throw err;
+      if (!isTransient || i === attempts - 1) {
+        console.error(`[claude-retry] ${label} giving up after ${i + 1} attempt(s) (status=${status ?? "network"}): ${msg}`);
+        throw err;
+      }
       const delayMs = 1000 * Math.pow(2, i); // 1s, 2s, 4s
-      console.warn(`[claude-retry] ${label} attempt ${i + 1}/${attempts} failed (status=${status ?? "network"}); retrying in ${delayMs}ms`);
+      console.warn(`[claude-retry] ${label} attempt ${i + 1}/${attempts} failed (status=${status ?? "network"}): ${msg}; retrying in ${delayMs}ms`);
       await new Promise((r) => setTimeout(r, delayMs));
     }
   }

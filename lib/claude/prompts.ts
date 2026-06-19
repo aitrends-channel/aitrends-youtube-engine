@@ -1,17 +1,45 @@
 import type { ChannelAnalysisOutput, VisualProfileOutput, ThumbnailAnalysisOutput } from "./schemas";
 import type { SupadataTranscript } from "@/lib/youtube/supadata";
 
+// Long videos (1hr+ source content) produce 10-15k-word transcripts.
+// Sending several of those concatenated tips KIE's proxy past whatever
+// internal budget makes it return a generic 500. Sample each transcript
+// down to ~6000 words — head for the hook + opening cadence, tail for
+// the CTA / closer — preserving the signal the style-DNA prompt
+// actually keys on while keeping each video bounded.
+const PER_TRANSCRIPT_WORD_CAP = 15000;
+const HEAD_RATIO = 0.75;
+
+function sampleTranscript(text: string): { text: string; sampled: boolean; sampledWordCount: number } {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length <= PER_TRANSCRIPT_WORD_CAP) {
+    return { text, sampled: false, sampledWordCount: words.length };
+  }
+  const headSize = Math.floor(PER_TRANSCRIPT_WORD_CAP * HEAD_RATIO);
+  const tailSize = PER_TRANSCRIPT_WORD_CAP - headSize;
+  const head = words.slice(0, headSize).join(" ");
+  const tail = words.slice(-tailSize).join(" ");
+  return {
+    text: `${head}\n\n[... middle of video omitted for length — sample resumes near the end ...]\n\n${tail}`,
+    sampled: true,
+    sampledWordCount: PER_TRANSCRIPT_WORD_CAP,
+  };
+}
+
 export function buildAnalysisPrompt(transcripts: SupadataTranscript[]): string {
   const successful = transcripts.filter((t) => t.success && t.text.length > 0);
   const failed = transcripts.filter((t) => !t.success || !t.text.length);
 
   const videoText = successful.map((t, i) => {
-    const avgWordCount = successful.reduce((sum, s) => sum + s.wordCount, 0) / successful.length;
+    const sample = sampleTranscript(t.text);
+    const wordLine = sample.sampled
+      ? `Word count: ${t.wordCount} full / ${sample.sampledWordCount} sampled (head + tail)`
+      : `Word count (full transcript): ~${t.wordCount} words`;
     return `--- VIDEO ${i + 1}: "${t.title}" ---
-Word count (full transcript): ~${t.wordCount} words
+${wordLine}
 
 TRANSCRIPT:
-${t.text}`.trim();
+${sample.text}`.trim();
   }).join("\n\n");
 
   const failedNote = failed.length

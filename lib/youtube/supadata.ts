@@ -22,6 +22,20 @@ async function getClient(): Promise<Supadata> {
   return new Supadata({ apiKey: key });
 }
 
+// Format a useful diagnostic from a failed YoutubeBatchResults so the
+// thrown Error carries upstream stats + a sample of per-item errorCodes
+// instead of the previous opaque "Transcript batch job failed". Without
+// this the route's 500 body told us nothing about why the batch failed.
+function describeBatchFailure(res: YoutubeBatchResults): string {
+  const stats = res.stats ? `${res.stats.failed}/${res.stats.total} failed, ${res.stats.succeeded} succeeded` : "stats unavailable";
+  const errors = (res.results ?? [])
+    .filter(r => r.errorCode)
+    .slice(0, 5)
+    .map(r => `${r.videoId}=${r.errorCode}`);
+  const sample = errors.length > 0 ? ` — sample: ${errors.join(", ")}` : "";
+  return `Transcript batch job failed (${stats})${sample}`;
+}
+
 async function pollBatch(client: Supadata, jobId: string): Promise<YoutubeBatchResults> {
   // 280s sits ~20s under the transcripts route's maxDuration=300s so
   // this throws a clean "timed out" error before Vercel hard-kills the
@@ -29,13 +43,30 @@ async function pollBatch(client: Supadata, jobId: string): Promise<YoutubeBatchR
   // and the client saw FUNCTION_INVOCATION_TIMEOUT (plain text, not
   // JSON, which broke the error-mapper).
   const deadline = Date.now() + 280_000;
+  const startedAt = Date.now();
+  // Track each distinct status seen so on timeout we know whether the
+  // job was queued the whole time (worker never picked it up) vs
+  // active (working but slow). Two very different problems.
+  const statusCounts: Record<string, number> = {};
+  let lastStats: YoutubeBatchResults["stats"] | undefined;
   while (Date.now() < deadline) {
     const res = await client.youtube.batch.getBatchResults(jobId);
+    statusCounts[res.status] = (statusCounts[res.status] ?? 0) + 1;
+    if (res.stats) lastStats = res.stats;
     if (res.status === "completed") return res;
-    if (res.status === "failed") throw new Error("Transcript batch job failed");
+    if (res.status === "failed") {
+      console.error("[supadata] batch failed:", { jobId, status: res.status, stats: res.stats, results: res.results });
+      throw new Error(describeBatchFailure(res));
+    }
     await new Promise(r => setTimeout(r, 2000));
   }
-  throw new Error("Transcript batch job timed out");
+  const elapsedS = Math.round((Date.now() - startedAt) / 1000);
+  // Include status distribution + last seen stats so the timeout error
+  // tells us whether the worker ever started on this batch.
+  console.error("[supadata] batch timed out:", { jobId, elapsedS, statusCounts, lastStats });
+  const statusSummary = Object.entries(statusCounts).map(([s, n]) => `${s}×${n}`).join(", ") || "no polls completed";
+  const statsSummary = lastStats ? ` last stats: ${lastStats.succeeded}/${lastStats.total} done, ${lastStats.failed} failed` : "";
+  throw new Error(`Transcript batch job timed out after ${elapsedS}s (jobId=${jobId}, polls=${statusSummary}${statsSummary})`);
 }
 
 // YouTube auto-captions sprinkle SFX markers like [Music], [Applause],
@@ -163,8 +194,19 @@ export async function fetchTranscriptsViaSupadata(
       return { videoId: r.videoId, title, text, wordCount, success: true };
     });
   } catch (err) {
-    if (err instanceof SupadataError && err.error === "limit-exceeded") {
-      throw new Error("API quota exceeded. Please try again later or upgrade your Supadata plan.");
+    if (err instanceof SupadataError) {
+      console.error("[supadata] SupadataError in batch flow:", {
+        error: err.error,
+        message: err.message,
+        details: err.details,
+        documentationUrl: err.documentationUrl,
+      });
+      if (err.error === "limit-exceeded") {
+        throw new Error("API quota exceeded. Please try again later or upgrade your Supadata plan.");
+      }
+      // Surface the exact upstream code + message so the route's 500
+      // body tells the caller what Supadata actually rejected.
+      throw new Error(`Supadata ${err.error}: ${err.message || err.details || "no details"}`);
     }
     throw err;
   }
