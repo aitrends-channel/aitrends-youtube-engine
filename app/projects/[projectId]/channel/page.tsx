@@ -232,6 +232,36 @@ function formatDuration(iso?: string): string {
   return `${pad(h)}:${pad(min)}:${pad(s)}`;
 }
 
+function parseDurationSeconds(iso?: string): number | null {
+  if (!iso) return null;
+  const m = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
+  if (!m) return null;
+  const h = parseInt(m[1] ?? "0", 10);
+  const min = parseInt(m[2] ?? "0", 10);
+  const s = parseInt(m[3] ?? "0", 10);
+  return h * 3600 + min * 60 + s;
+}
+
+// Heclus's downstream pipeline (transcripts + analysis prompt size + KIE
+// proxy) handles short videos well but degrades on 45min+. Surface that
+// as an explicit user confirmation instead of silently truncating the
+// later analyze step.
+const MAX_AVG_DURATION_SECONDS = 45 * 60;
+
+function averageDurationSeconds(videos: { duration?: string }[]): number | null {
+  const seconds = videos.map((v) => parseDurationSeconds(v.duration)).filter((s): s is number => s != null);
+  if (!seconds.length) return null;
+  return Math.round(seconds.reduce((sum, s) => sum + s, 0) / seconds.length);
+}
+
+function formatSecondsAsHHMMSS(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}
+
 export default function ChannelPage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
@@ -253,6 +283,20 @@ export default function ChannelPage({ params }: PageProps) {
   // instead of creating a duplicate. Only fires before any expensive
   // pipeline step (transcripts, Claude calls) runs.
   const [existingNiche, setExistingNiche] = useState<{ projectId: string; channelName: string } | null>(null);
+  // Long-video consent gate. When the top-10 average duration exceeds
+  // MAX_AVG_DURATION_SECONDS we pause runFullAnalysis on this resolver
+  // and surface a modal so the user can accept the degraded analysis
+  // quality or cancel. The resolver lives in state (not a ref) because
+  // the dialog open/close is keyed off it being null.
+  const [longVideoConsent, setLongVideoConsent] = useState<{
+    avgSeconds: number;
+    resolve: (proceed: boolean) => void;
+  } | null>(null);
+  // Two-stage confirmation inside the consent modal: "warn" shows the
+  // 45min threshold message, "explain" elaborates on the trade-offs
+  // before they actually commit. Reset to "warn" every time the modal
+  // closes so the next open starts at stage 1.
+  const [consentStep, setConsentStep] = useState<"warn" | "explain">("warn");
 
   const [isAdmin, setIsAdmin] = useState(false);
   useEffect(() => {
@@ -293,60 +337,87 @@ export default function ChannelPage({ params }: PageProps) {
     let fetchedInfo: ChannelInfo | null = null;
     let fetchedTranscripts: SupadataTranscript[] = [];
 
-    // Step 1: Fetch channel
-    setStep("channel", "running");
-    try {
-      const res = await fetch("/api/youtube/channel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ channelUrl }),
-      });
-      // Read once as text and only parse if it looks like JSON.
-      // Guards against Vercel's plain-text runtime errors (e.g.
-      // function timeout, OOM) that the route can't intercept —
-      // res.json() on "An error occurred…" throws an opaque
-      // "Unexpected token 'A'…" that the error-mapper can't handle.
-      const bodyText = await res.text();
-      let parsed: { error?: string; [k: string]: unknown } | null = null;
-      try { parsed = bodyText ? JSON.parse(bodyText) : null; } catch { /* non-JSON body */ }
-      if (!res.ok) {
-        throw new Error(parsed?.error ?? bodyText ?? `Channel fetch failed (${res.status})`);
-      }
-      fetchedInfo = parsed as unknown as ChannelInfo;
-      setChannelInfo(fetchedInfo);
+    // If we already have channelInfo from a prior partial run (e.g. user
+    // cancelled the long-video consent modal, then clicked Continue),
+    // skip the channel fetch + dedup guard — those already succeeded
+    // and re-running them just wastes a YouTube quota call.
+    if (channelInfo) {
+      fetchedInfo = channelInfo;
       setStep("channel", "done");
-    } catch (err) {
-      setStep("channel", "error");
-      const msg = err instanceof Error ? err.message : "Failed to fetch channel";
-      setAnalysisError(msg);
-      toast.error(msg);
-      setIsWorking(false);
-      return;
+    } else {
+      // Step 1: Fetch channel
+      setStep("channel", "running");
+      try {
+        const res = await fetch("/api/youtube/channel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ channelUrl }),
+        });
+        // Read once as text and only parse if it looks like JSON.
+        // Guards against Vercel's plain-text runtime errors (e.g.
+        // function timeout, OOM) that the route can't intercept —
+        // res.json() on "An error occurred…" throws an opaque
+        // "Unexpected token 'A'…" that the error-mapper can't handle.
+        const bodyText = await res.text();
+        let parsed: { error?: string; [k: string]: unknown } | null = null;
+        try { parsed = bodyText ? JSON.parse(bodyText) : null; } catch { /* non-JSON body */ }
+        if (!res.ok) {
+          throw new Error(parsed?.error ?? bodyText ?? `Channel fetch failed (${res.status})`);
+        }
+        fetchedInfo = parsed as unknown as ChannelInfo;
+        setChannelInfo(fetchedInfo);
+        setStep("channel", "done");
+      } catch (err) {
+        setStep("channel", "error");
+        const msg = err instanceof Error ? err.message : "Failed to fetch channel";
+        setAnalysisError(msg);
+        toast.error(msg);
+        setIsWorking(false);
+        return;
+      }
+
+      // Dedup guard for fresh-niche flow: if the user already has a
+      // project for this channel, redirect them to fork it instead of
+      // burning a niche slot + Claude calls on a duplicate. We do this
+      // BEFORE transcripts so we don't hit Supadata uselessly.
+      if (projectId === "new" && fetchedInfo) {
+        const target = fetchedInfo.channelName.trim().toLowerCase();
+        try {
+          const res = await fetch("/api/projects");
+          if (res.ok) {
+            const userProjects = await res.json() as Array<{ id: string; channel_name: string | null }>;
+            const match = userProjects.find((p) => (p.channel_name ?? "").trim().toLowerCase() === target);
+            if (match) {
+              // Reset the pipeline back to idle and surface the redirect
+              // modal. The user picks: fork the existing niche or cancel.
+              setSteps((prev) => prev.map((s) => ({ ...s, status: "idle" })));
+              setExistingNiche({ projectId: match.id, channelName: fetchedInfo.channelName });
+              setIsWorking(false);
+              return;
+            }
+          }
+        } catch {
+          // Non-fatal — if the lookup itself errors, we'd rather continue
+          // and let the user create than block them on a transient.
+        }
+      }
     }
 
-    // Dedup guard for fresh-niche flow: if the user already has a
-    // project for this channel, redirect them to fork it instead of
-    // burning a niche slot + Claude calls on a duplicate. We do this
-    // BEFORE transcripts so we don't hit Supadata uselessly.
-    if (projectId === "new" && fetchedInfo) {
-      const target = fetchedInfo.channelName.trim().toLowerCase();
-      try {
-        const res = await fetch("/api/projects");
-        if (res.ok) {
-          const userProjects = await res.json() as Array<{ id: string; channel_name: string | null }>;
-          const match = userProjects.find((p) => (p.channel_name ?? "").trim().toLowerCase() === target);
-          if (match) {
-            // Reset the pipeline back to idle and surface the redirect
-            // modal. The user picks: fork the existing niche or cancel.
-            setSteps((prev) => prev.map((s) => ({ ...s, status: "idle" })));
-            setExistingNiche({ projectId: match.id, channelName: fetchedInfo.channelName });
-            setIsWorking(false);
-            return;
-          }
-        }
-      } catch {
-        // Non-fatal — if the lookup itself errors, we'd rather continue
-        // and let the user create than block them on a transient.
+    // Long-video gate: if the top-10's avg duration is past the 45min
+    // threshold, ask the user to opt in before burning Supadata calls
+    // + a likely-degraded Claude analysis. Cancel rolls the pipeline
+    // back to idle without surfacing an error (it's a user choice,
+    // not a failure).
+    const avg = averageDurationSeconds(fetchedInfo!.topVideos);
+    if (avg != null && avg > MAX_AVG_DURATION_SECONDS) {
+      const proceed = await new Promise<boolean>((resolve) => {
+        setLongVideoConsent({ avgSeconds: avg, resolve });
+      });
+      setLongVideoConsent(null);
+      if (!proceed) {
+        setSteps((prev) => prev.map((s) => ({ ...s, status: "idle" })));
+        setIsWorking(false);
+        return;
       }
     }
 
@@ -552,7 +623,13 @@ export default function ChannelPage({ params }: PageProps) {
                     ? "Retry"
                     : isAnalyzed
                       ? "Re-analyze"
-                      : "Analyze";
+                      : channelInfo
+                        // Partial run earlier this session — e.g. user
+                        // cancelled the long-video consent modal. The
+                        // channel fetch result is still in state, so
+                        // clicking resumes from there.
+                        ? "Continue"
+                        : "Analyze";
                 return (
                   <div className="flex gap-3">
                     <input
@@ -560,7 +637,16 @@ export default function ChannelPage({ params }: PageProps) {
                       placeholder="https://youtube.com/@channelname"
                       value={channelUrl}
                       readOnly={inputLocked}
-                      onChange={(e) => !inputLocked && setChannelUrl(e.target.value)}
+                      onChange={(e) => {
+                        if (inputLocked) return;
+                        setChannelUrl(e.target.value);
+                        // Drop any stale channelInfo from a prior partial
+                        // run so the button label flips back to "Analyze"
+                        // and the URL change actually triggers a fresh
+                        // fetch instead of "Continue" against the old
+                        // channel.
+                        if (channelInfo) setChannelInfo(null);
+                      }}
                       onKeyDown={(e) => e.key === "Enter" && !buttonDisabled && runFullAnalysis()}
                       className="flex-1 min-w-0 px-4 py-2.5 rounded-xl text-sm outline-none transition-all"
                       style={{
@@ -709,9 +795,19 @@ export default function ChannelPage({ params }: PageProps) {
               </div>
 
               <div className="space-y-2">
-                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
-                  Top {channelInfo.topVideos.length} Video{channelInfo.topVideos.length === 1 ? "" : "s"}
-                </p>
+                <div className="flex items-baseline justify-between gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
+                    Top {channelInfo.topVideos.length} Video{channelInfo.topVideos.length === 1 ? "" : "s"}
+                  </p>
+                  {(() => {
+                    const avg = averageDurationSeconds(channelInfo.topVideos);
+                    return avg != null ? (
+                      <p className="text-xs font-semibold uppercase tracking-wider tabular-nums" style={{ color: "var(--c-45)" }}>
+                        Avg duration <span style={{ color: "var(--c-75)" }}>{formatSecondsAsHHMMSS(avg)}</span>
+                      </p>
+                    ) : null;
+                  })()}
+                </div>
                 {/* Word counts come from the transcripts fetch and are joined
                     by videoId. Before transcripts run, "—" is shown so the
                     column doesn't shift width once the data arrives. */}
@@ -822,6 +918,85 @@ export default function ChannelPage({ params }: PageProps) {
               onClick={() => setExistingNiche(null)}
               className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80"
               style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Cancel
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={longVideoConsent !== null}
+        onOpenChange={(open) => {
+          // Dismissal via overlay click / Escape counts as Cancel —
+          // resolve(false) so runFullAnalysis's awaited promise exits.
+          if (!open && longVideoConsent) {
+            longVideoConsent.resolve(false);
+            setLongVideoConsent(null);
+            setConsentStep("warn");
+          }
+        }}
+      >
+        {/* Inline styles override the themed DialogContent (bg-popover,
+            text-popover-foreground) so this modal is unconditionally
+            white with dark text — matches the design call regardless
+            of the user's theme. */}
+        <DialogContent
+          className="sm:max-w-lg"
+          showCloseButton={false}
+          style={{ background: "#ffffff", color: "oklch(0.18 0 0)" }}
+        >
+          <DialogHeader style={{ marginBottom: "20px" }}>
+            <DialogTitle style={{ color: "oklch(0.15 0 0)" }}>
+              {consentStep === "warn"
+                ? `This channel has a video length of ${longVideoConsent ? formatSecondsAsHHMMSS(longVideoConsent.avgSeconds) : "00:00:00"}`
+                : "Before you proceed"}
+            </DialogTitle>
+            <DialogDescription style={{ color: "oklch(0.35 0 0)", marginTop: "20px" }}>
+              {consentStep === "warn" ? (
+                <>
+                  Heclus currently handles a maximum of <strong>45 minutes</strong> per video for
+                  the channel analysis step. This channel&apos;s top 10 videos exceed that on
+                  average, so the style analysis may be less detailed than usual.
+                </>
+              ) : (
+                <>
+                  Your generated video will still follow this channel&apos;s style and DNA, but the
+                  final length will stay within Heclus&apos;s current maximum.
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter style={{ background: "oklch(0.97 0 0)", borderTopColor: "oklch(0.9 0 0)" }}>
+            {consentStep === "warn" ? (
+              <button
+                onClick={() => setConsentStep("explain")}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                style={{ background: "oklch(0.72 0.25 285)", color: "#ffffff" }}
+              >
+                Proceed anyway
+              </button>
+            ) : (
+              <button
+                onClick={() => {
+                  longVideoConsent?.resolve(true);
+                  setLongVideoConsent(null);
+                  setConsentStep("warn");
+                }}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                style={{ background: "oklch(0.55 0.15 145)", color: "#ffffff" }}
+              >
+                Accept
+              </button>
+            )}
+            <button
+              onClick={() => {
+                longVideoConsent?.resolve(false);
+                setLongVideoConsent(null);
+                setConsentStep("warn");
+              }}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80"
+              style={{ background: "oklch(0.95 0 0)", color: "oklch(0.3 0 0)", border: "1px solid oklch(0.85 0 0)" }}
             >
               Cancel
             </button>
