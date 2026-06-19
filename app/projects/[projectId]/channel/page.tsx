@@ -2,7 +2,7 @@
 
 import { useState, use, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, ArrowUpRight } from "lucide-react";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
 import { StepCostCard } from "@/components/StepCostCard";
@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { toast } from "sonner";
 import { useProject } from "@/hooks/useProject";
-import type { ChannelInfo } from "@/lib/types";
+import type { ChannelInfo, TopVideo } from "@/lib/types";
 import type { SupadataTranscript } from "@/lib/youtube/supadata";
 
 type FailedStage = "channel" | "transcripts" | "analyze";
@@ -254,6 +254,24 @@ function averageDurationSeconds(videos: { duration?: string }[]): number | null 
   return Math.round(seconds.reduce((sum, s) => sum + s, 0) / seconds.length);
 }
 
+// When the channel's avg duration exceeds the threshold, the top-10 set
+// gets thinned before we hit Supadata. Two passes:
+//   1) Prefer videos that already have captions (Supadata pulls them
+//      directly, no slow speech-to-text). If we have >3 captioned
+//      videos, that's our full working set for analysis.
+//   2) Otherwise fall back to the 3 shortest videos by duration — small
+//      enough that Supadata can transcribe them within the route's
+//      budget even if it has to generate from audio.
+// Under the threshold this returns the original list unchanged.
+function pickVideosForTranscription(videos: TopVideo[], avgSeconds: number | null): TopVideo[] {
+  if (avgSeconds == null || avgSeconds <= MAX_AVG_DURATION_SECONDS) return videos;
+  const captioned = videos.filter((v) => v.hasCaptions === true);
+  if (captioned.length > 3) return captioned;
+  const withParsed = videos.map((v) => ({ v, secs: parseDurationSeconds(v.duration) ?? Infinity }));
+  withParsed.sort((a, b) => a.secs - b.secs);
+  return withParsed.slice(0, 3).map((x) => x.v);
+}
+
 function formatSecondsAsHHMMSS(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -431,11 +449,18 @@ export default function ChannelPage({ params }: PageProps) {
       setIsWorking(false);
       return;
     } else {
+      // When the channel exceeds the avg-duration threshold, thin the
+      // set we hand to Supadata: prefer captioned videos (fast, no
+      // STT), fall back to the 3 shortest. Under the threshold this is
+      // a no-op pass-through. The full topVideos array is still saved
+      // to channel_info — the picker only controls what gets
+      // transcribed for the analysis call.
+      const videosToFetch = pickVideosForTranscription(fetchedInfo!.topVideos, avg);
       try {
         const res = await fetch("/api/youtube/transcripts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ videos: fetchedInfo!.topVideos }),
+          body: JSON.stringify({ videos: videosToFetch }),
         });
         const bodyText = await res.text();
         let parsed: { error?: string; transcripts?: unknown; [k: string]: unknown } | null = null;
@@ -461,6 +486,15 @@ export default function ChannelPage({ params }: PageProps) {
           }),
         };
         setChannelInfo(fetchedInfo);
+        // Temporary diagnostic — confirms the merge actually wired
+        // wordCount onto topVideos. Remove once the not-populating
+        // issue is resolved.
+        console.log("[transcripts merge]", {
+          fetchedCount: fetchedTranscripts.length,
+          succeededCount: fetchedTranscripts.filter((t) => t.success).length,
+          mapSize: wordCountByVideo.size,
+          mergedWordCounts: fetchedInfo.topVideos.map((v) => ({ id: v.videoId, words: v.wordCount })),
+        });
 
         setStep("transcripts", "done");
       } catch (err) {
@@ -834,6 +868,7 @@ export default function ChannelPage({ params }: PageProps) {
                       <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
                         <th className="text-left px-3 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>Title</th>
                         <th className="text-right px-3 py-2 text-xs font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--c-45)" }}>Words</th>
+                        <th className="text-center px-3 py-2 text-xs font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--c-45)" }}>Captions</th>
                         <th className="text-right px-3 py-2 text-xs font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--c-45)" }}>Duration</th>
                         <th className="text-right px-3 py-2 text-xs font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--c-45)" }}>Views</th>
                         <th className="text-right px-3 py-2 text-xs font-semibold uppercase tracking-wider whitespace-nowrap" style={{ color: "var(--c-45)" }}>Published</th>
@@ -856,15 +891,30 @@ export default function ChannelPage({ params }: PageProps) {
                                 href={`https://www.youtube.com/watch?v=${v.videoId}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="block truncate underline underline-offset-2 hover:opacity-80 transition-opacity"
-                                style={{ color: "oklch(0.72 0.25 285)", textDecorationColor: "oklch(0.72 0.25 285 / 0.5)" }}
+                                className="flex items-center gap-1.5 min-w-0 hover:opacity-80 transition-opacity"
+                                style={{ color: "oklch(0.72 0.25 285)" }}
                                 title={v.title}
                               >
-                                {v.title}
+                                <span
+                                  className="truncate underline underline-offset-2"
+                                  style={{ textDecorationColor: "oklch(0.72 0.25 285 / 0.5)" }}
+                                >
+                                  {v.title}
+                                </span>
+                                <ArrowUpRight size={12} strokeWidth={2.25} className="shrink-0 opacity-70" aria-hidden />
                               </a>
                             </td>
                             <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--c-75)" }}>
                               {words != null ? words.toLocaleString() : "—"}
+                            </td>
+                            <td className="px-3 py-2 text-center whitespace-nowrap">
+                              {v.hasCaptions === true ? (
+                                <span style={{ color: "oklch(0.65 0.15 145)" }}>Yes</span>
+                              ) : v.hasCaptions === false ? (
+                                <span style={{ color: "var(--c-45)" }}>No</span>
+                              ) : (
+                                <span style={{ color: "var(--c-45)" }}>—</span>
+                              )}
                             </td>
                             <td className="px-3 py-2 text-right tabular-nums whitespace-nowrap" style={{ color: "var(--c-75)" }}>
                               {formatDuration(v.duration)}
@@ -889,6 +939,29 @@ export default function ChannelPage({ params }: PageProps) {
 
         </div>
       </main>
+
+      {/* Fixed bottom Continue bar — only on an already-analyzed
+          project, where the user is revisiting the channel page and
+          needs an explicit "go to topic" affordance (the first-run
+          path auto-redirects after analysis succeeds). md:left-64
+          offsets the wizard sidebar so the bar spans only the content
+          area on desktop. */}
+      {isAnalyzed && (
+        <div
+          className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
+          style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}
+        >
+          <div className="px-4 sm:px-8">
+            <button
+              onClick={() => router.push(`/projects/${projectId}/topic`)}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              Continue →
+            </button>
+          </div>
+        </div>
+      )}
 
       {showNicheLimitModal && limitInfo && (
         <NicheLimitModal

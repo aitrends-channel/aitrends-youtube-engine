@@ -20,6 +20,12 @@ export interface TopVideo {
    *  render the per-video word count on subsequent visits without having
    *  to re-fetch transcripts. */
   wordCount?: number;
+  /** YouTube videos.list contentDetails.caption flag. True when the
+   *  video has at least one caption track. Used by the long-video
+   *  selection strategy: when the channel's avg duration exceeds the
+   *  cap, we prefer videos with captions because Supadata can pull
+   *  them directly without slow speech-to-text. */
+  hasCaptions?: boolean;
 }
 
 export interface ChannelInfo {

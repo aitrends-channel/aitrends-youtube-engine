@@ -1,5 +1,5 @@
 import { Supadata, SupadataError } from "@supadata/js";
-import type { YoutubeBatchResults, TranscriptChunk } from "@supadata/js";
+import type { YoutubeBatchResults, TranscriptChunk, Transcript } from "@supadata/js";
 import { supabase } from "@/lib/supabase/client";
 import { getActiveProductKey } from "@/lib/claude/routing";
 
@@ -179,20 +179,64 @@ export async function fetchTranscriptsViaSupadata(
   let fresh: SupadataTranscript[] = [];
 
   try {
-    const batchJob = await client.youtube.transcript.batch({
-      videoIds: uncachedVideos.map(v => v.videoId),
-    });
-    const batchResults = await pollBatch(client, batchJob.jobId);
-
-    fresh = (batchResults.results ?? []).map(r => {
-      const title = titleMap[r.videoId] ?? r.videoId;
-      if (!r.transcript || r.errorCode) {
-        return { videoId: r.videoId, title, text: "", wordCount: 0, success: false, error: r.errorCode ?? "No transcript available" };
+    // ── Single-call transcript() per video ────────────────────────────
+    // Bypasses /v1/youtube/transcript/batch (paid endpoint that has
+    // been failing for long-video channels with stuck-active workers
+    // — see jobIds in earlier dev logs). Hits the per-URL endpoint
+    // (/v1/youtube/transcript) which is available on all plans and
+    // routes work per-video so a slow video doesn't sink the others.
+    // Original batch block is preserved below as a comment for easy
+    // revert if Supadata fixes the batch endpoint. pollBatch +
+    // describeBatchFailure helpers are left in place for the same
+    // reason.
+    fresh = await Promise.all(uncachedVideos.map(async (v) => {
+      const title = titleMap[v.videoId] ?? v.videoId;
+      try {
+        const res = await client.transcript({ url: `https://www.youtube.com/watch?v=${v.videoId}` });
+        let transcript: Transcript;
+        if ("jobId" in res) {
+          // Async path: Supadata deferred this video. Poll its own
+          // job status up to 60s.
+          const deadline = Date.now() + 60_000;
+          let resolved: Transcript | null = null;
+          while (Date.now() < deadline) {
+            const status = await client.transcript.getJobStatus(res.jobId);
+            if (status.status === "completed" && status.result) { resolved = status.result; break; }
+            if (status.status === "failed") throw new Error(status.error?.message ?? "Transcript job failed");
+            await new Promise(r => setTimeout(r, 2000));
+          }
+          if (!resolved) throw new Error("Transcript job timed out");
+          transcript = resolved;
+        } else {
+          transcript = res;
+        }
+        const text = extractText(transcript.content).trim();
+        const wordCount = text.split(/\s+/).filter(Boolean).length;
+        return { videoId: v.videoId, title, text, wordCount, success: true } satisfies SupadataTranscript;
+      } catch (err) {
+        // Limit-exceeded fails the whole call — bubble out to the outer
+        // catch so it becomes the quota message. Other per-video errors
+        // degrade to a success:false row that gets negative-cached.
+        if (err instanceof SupadataError && err.error === "limit-exceeded") throw err;
+        const msg = err instanceof Error ? err.message : "No transcript available";
+        return { videoId: v.videoId, title, text: "", wordCount: 0, success: false, error: msg } satisfies SupadataTranscript;
       }
-      const text = extractText(r.transcript.content).trim();
-      const wordCount = text.split(/\s+/).filter(Boolean).length;
-      return { videoId: r.videoId, title, text, wordCount, success: true };
-    });
+    }));
+
+    // ── Original batch path (kept for easy revert) ────────────────────
+    // const batchJob = await client.youtube.transcript.batch({
+    //   videoIds: uncachedVideos.map(v => v.videoId),
+    // });
+    // const batchResults = await pollBatch(client, batchJob.jobId);
+    // fresh = (batchResults.results ?? []).map(r => {
+    //   const title = titleMap[r.videoId] ?? r.videoId;
+    //   if (!r.transcript || r.errorCode) {
+    //     return { videoId: r.videoId, title, text: "", wordCount: 0, success: false, error: r.errorCode ?? "No transcript available" };
+    //   }
+    //   const text = extractText(r.transcript.content).trim();
+    //   const wordCount = text.split(/\s+/).filter(Boolean).length;
+    //   return { videoId: r.videoId, title, text, wordCount, success: true };
+    // });
   } catch (err) {
     if (err instanceof SupadataError) {
       console.error("[supadata] SupadataError in batch flow:", {

@@ -61,10 +61,20 @@ export function StepCostCard({ projectId, column, hideUnitKinds }: {
    *  channel page to hide Supadata transcripts from non-admins. */
   hideUnitKinds?: string[];
 }) {
-  const { data } = useSWR<CostResponse>(`/api/projects/${projectId}/costs`, fetcher, {
-    refreshInterval: 15_000,
-    revalidateOnFocus: false,
-  });
+  // Wizard placeholders like "new" / "new-fork" appear in the URL
+  // before a project row exists. The costs route would then run
+  // .eq("id", "new") against a uuid column and Postgres throws
+  // "invalid input syntax for type uuid" → 500. Skip the fetch until
+  // we have a real id.
+  const isRealProject = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId);
+  const { data } = useSWR<CostResponse>(
+    isRealProject ? `/api/projects/${projectId}/costs` : null,
+    fetcher,
+    {
+      refreshInterval: 15_000,
+      revalidateOnFocus: false,
+    },
+  );
 
   const totals = data?.columns?.[column]?.totals ?? {};
   const hidden = new Set(hideUnitKinds ?? []);
@@ -83,10 +93,34 @@ export function StepCostCard({ projectId, column, hideUnitKinds }: {
     .filter((p) => byProvider[p] !== undefined && byProvider[p] > 0)
     .map((p) => `${p}-${formatProvider(p, byProvider[p])}`);
 
+  // Rendered as a subtle status badge — a transparent green tint with
+  // a low-opacity border so it reads as a stat indicator (matching the
+  // "Free plan" / "Found" pills used elsewhere) rather than a CTA. The
+  // earlier solid-green-on-white look was easy to mistake for a button.
   return (
-    <span className="inline-block rounded-md px-3 py-2 text-xs font-bold break-words max-w-full"
-      style={{ background: "oklch(0.55 0.15 145)", border: "1px solid oklch(0.55 0.15 145)", color: "oklch(1 0 0)" }}>
-      Used: {parts.length === 0 ? "—" : parts.join(", ")}
+    <span
+      className="inline-flex items-center rounded-md overflow-hidden text-xs font-medium break-words max-w-full"
+      style={{ border: "1px solid oklch(0.55 0.15 145 / 0.3)" }}
+    >
+      <span
+        className="uppercase tracking-wider px-2 py-1"
+        style={{
+          fontSize: "10px",
+          background: "oklch(0.55 0.15 145)",
+          color: "oklch(1 0 0)",
+        }}
+      >
+        Used
+      </span>
+      <span
+        className="tabular-nums px-2.5 py-1"
+        style={{
+          background: "oklch(0.55 0.15 145 / 0.12)",
+          color: "oklch(0.7 0.15 145)",
+        }}
+      >
+        {parts.length === 0 ? "—" : parts.join(", ")}
+      </span>
     </span>
   );
 }
