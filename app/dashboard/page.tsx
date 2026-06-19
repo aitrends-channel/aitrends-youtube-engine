@@ -1414,7 +1414,15 @@ export default function HomePage() {
                       <div className="min-w-0">
                         <h2 className="text-base font-bold text-foreground truncate">{group.channelName}</h2>
                         {group.channelUrl && (
-                          <Link href={group.channelUrl} target="_blank" className="text-xs mt-0.5 truncate" style={{ color: "oklch(0.72 0.25 285)" }}>
+                          <Link
+                            href={group.channelUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs mt-0.5 block truncate underline underline-offset-2 hover:opacity-80 transition-opacity"
+                            style={{ color: "oklch(0.72 0.25 285)", textDecorationColor: "oklch(0.72 0.25 285 / 0.5)" }}
+                            title={group.channelUrl}
+                          >
                             {group.channelUrl}
                           </Link>
                         )}

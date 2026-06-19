@@ -445,6 +445,23 @@ export default function ChannelPage({ params }: PageProps) {
         }
         fetchedTranscripts = (parsed?.transcripts ?? []) as typeof fetchedTranscripts;
         setTranscripts(fetchedTranscripts);
+
+        // Merge per-video word counts into fetchedInfo.topVideos so they
+        // persist via channel_info on the upcoming PATCH. Without this
+        // the words column re-renders as "—" on every page visit until
+        // the transcripts step runs again.
+        const wordCountByVideo = new Map(
+          fetchedTranscripts.filter((t) => t.success).map((t) => [t.videoId, t.wordCount])
+        );
+        fetchedInfo = {
+          ...fetchedInfo!,
+          topVideos: fetchedInfo!.topVideos.map((v) => {
+            const wc = wordCountByVideo.get(v.videoId);
+            return wc != null ? { ...v, wordCount: wc } : v;
+          }),
+        };
+        setChannelInfo(fetchedInfo);
+
         setStep("transcripts", "done");
       } catch (err) {
         setStep("transcripts", "error");
@@ -824,8 +841,14 @@ export default function ChannelPage({ params }: PageProps) {
                     </thead>
                     <tbody>
                       {channelInfo.topVideos.map((v) => {
-                        const transcript = transcripts.find((t) => t.videoId === v.videoId);
-                        const words = transcript?.success ? transcript.wordCount : null;
+                        // Prefer the persisted word count on the video
+                        // (set during the transcripts step + saved in
+                        // channel_info). Fall back to the live transcripts
+                        // state for the moment between the fetch landing
+                        // and the channel_info PATCH, plus older rows
+                        // that pre-date persistence.
+                        const liveTranscript = transcripts.find((t) => t.videoId === v.videoId);
+                        const words = v.wordCount ?? (liveTranscript?.success ? liveTranscript.wordCount : null);
                         return (
                           <tr key={v.videoId} style={{ borderTop: "1px solid var(--bd-7)" }}>
                             <td className="px-3 py-2 min-w-0">
