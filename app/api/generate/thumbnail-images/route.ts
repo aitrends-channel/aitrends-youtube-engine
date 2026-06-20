@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateImage } from "@/lib/kie/images";
-import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
+import { deleteObject, r2KeyFromUrl, uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { getConcurrencyConfig } from "@/lib/concurrency-config";
@@ -32,8 +32,46 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "projectId, thumbnails, and modelId are required" }, { status: 400 });
     }
 
+    // Fetch text overlays + the current image_url for every position
+    // BEFORE any clearFirst wipe — otherwise the wipe would null out
+    // image_url and we'd lose the chance to delete the previous R2
+    // object, leaving an orphan in storage for every regen.
+    //
+    // text_overlay reason: Claude's generated stylePrompt only includes
+    // "text placement guidance" (where to put text); the literal overlay
+    // string lives on text_overlay and would never reach the image
+    // generator otherwise. We inject it on demand here so edits to the
+    // overlay text take effect immediately, no Claude rerun needed.
+    const positions = thumbnails.map((t) => t.position);
+    const { data: thumbRows } = await supabase
+      .from("project_thumbnails")
+      .select("position, text_overlay, image_url")
+      .eq("project_id", projectId)
+      .in("position", positions);
+    const textOverlayByPosition = new Map<number, string>(
+      (thumbRows ?? [])
+        .map((r) => [r.position as number, (r.text_overlay as string | null) ?? ""] as const)
+        .filter(([, v]) => v.length > 0)
+    );
+    const oldImageUrlByPosition = new Map<number, string>(
+      (thumbRows ?? [])
+        .map((r) => [r.position as number, (r.image_url as string | null) ?? ""] as const)
+        .filter(([, v]) => v.length > 0)
+    );
+
     if (clearFirst) {
       await supabase.from("project_thumbnails").update({ image_url: null, image_status: null }).eq("project_id", projectId);
+    }
+
+    function augmentPromptWithOverlay(stylePrompt: string, textOverlay: string | undefined): string {
+      if (!textOverlay) return stylePrompt;
+      // Skip the augmentation if Claude already included the literal
+      // overlay text in the prompt — appending again would just nag the
+      // image model and sometimes cause it to render the text twice.
+      // Match is case-insensitive on the full overlay phrase (cheap and
+      // good enough — overlays are short, exact-quoted strings).
+      if (stylePrompt.toLowerCase().includes(textOverlay.toLowerCase())) return stylePrompt;
+      return `${stylePrompt}\n\nThumbnail text overlay (render exactly as written, large and legible): ${textOverlay}`;
     }
 
     const results: { position: number; url: string }[] = [];
@@ -48,7 +86,8 @@ export async function POST(req: Request) {
         batch.map(async (thumb) => {
           await supabase.from("project_thumbnails").update({ image_status: "generating" }).eq("project_id", projectId).eq("position", thumb.position);
 
-          const { url: imageUrl, creditsConsumed } = await generateImage(thumb.stylePrompt, modelId, aspectRatio, resolution, user.id);
+          const finalPrompt = augmentPromptWithOverlay(thumb.stylePrompt, textOverlayByPosition.get(thumb.position));
+          const { url: imageUrl, creditsConsumed } = await generateImage(finalPrompt, modelId, aspectRatio, resolution, user.id);
           if (creditsConsumed) {
             void logProjectCost({
               projectId,
@@ -64,6 +103,24 @@ export async function POST(req: Request) {
           const publicUrl = await uploadFromUrl(storagePath, imageUrl, "image/png");
 
           await supabase.from("project_thumbnails").update({ image_url: publicUrl, image_status: "done" }).eq("project_id", projectId).eq("position", thumb.position);
+
+          // Best-effort cleanup of the previous R2 object now that the
+          // new one is live and the DB column points at it. Runs AFTER
+          // the DB write so a failed delete can't leave the user with
+          // no image. Non-fatal: a missed delete just orphans a file
+          // (cheap in R2; clear_for_script_regen sweeps the whole
+          // folder later anyway). r2KeyFromUrl returns null for any
+          // URL not owned by our bucket so we never try to delete
+          // someone else's asset.
+          const previousUrl = oldImageUrlByPosition.get(thumb.position);
+          if (previousUrl && previousUrl !== publicUrl) {
+            const previousKey = r2KeyFromUrl(previousUrl);
+            if (previousKey) {
+              deleteObject(previousKey).catch((err) => {
+                console.warn(`[thumbnail-images] failed to delete previous key ${previousKey}:`, err instanceof Error ? err.message : err);
+              });
+            }
+          }
 
           return { position: thumb.position, url: publicUrl };
         })

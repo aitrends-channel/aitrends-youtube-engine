@@ -80,6 +80,13 @@ export default function ScriptPage({ params }: PageProps) {
   const [saving, setSaving] = useState(false);
   const [navigating, setNavigating] = useState(false);
   const [confirmRegen, setConfirmRegen] = useState(false);
+  // Submitting flag for the Regenerate confirm dialog. Holds the modal
+  // open with a spinner during the slow wipe (PATCH × 2, R2 prefix
+  // delete) instead of dismissing instantly — otherwise the user
+  // clicks Regenerate and stares at an empty editor for ~2s with no
+  // feedback that anything is happening. Closes when the wipe is done
+  // and the new stream kick-off has started.
+  const [regenSubmitting, setRegenSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Mirrors the script-route cap so the on-screen "Channel Avg" target
@@ -144,8 +151,8 @@ export default function ScriptPage({ params }: PageProps) {
   }
 
   async function handleRegenerate() {
-    setConfirmRegen(false);
     if (!selectedTopic) return;
+    setRegenSubmitting(true);
     // Atomic clear before the new run: zero the DB script, the local
     // hook state, and any stale script_active_run_id. Without this,
     // a failed regen lets SWR re-hydrate the old text the next time
@@ -173,6 +180,12 @@ export default function ScriptPage({ params }: PageProps) {
       });
       await mutate();
     } catch { /* best-effort — the new stream will overwrite on success */ }
+    // Close the modal AFTER the wipe completes — the user has now seen
+    // the spinner the entire time the destructive work was running.
+    // generateScript starts streaming below; the editor's own progress
+    // UI takes over from here, so dismissing is safe.
+    setRegenSubmitting(false);
+    setConfirmRegen(false);
     await generateScript(selectedTopic);
   }
 
@@ -511,11 +524,11 @@ export default function ScriptPage({ params }: PageProps) {
       )}
 
       {/* Regenerate confirm dialog */}
-      <Dialog open={confirmRegen} onOpenChange={setConfirmRegen}>
-        <DialogContent className="sm:max-w-md" style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-10)" }}>
+      <Dialog open={confirmRegen} onOpenChange={(o) => { if (!regenSubmitting && !o) setConfirmRegen(false); }}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-foreground">Regenerate Script?</DialogTitle>
-            <DialogDescription style={{ color: "var(--c-50)" }}>
+            <DialogTitle>Regenerate Script?</DialogTitle>
+            <DialogDescription>
               This will discard your current script and generate a fresh one. Any manual edits will be lost.
             </DialogDescription>
           </DialogHeader>
@@ -523,17 +536,23 @@ export default function ScriptPage({ params }: PageProps) {
             <div className="flex gap-3">
               <button
                 onClick={() => setConfirmRegen(false)}
-                className="px-4 py-2 rounded-lg text-sm"
-                style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+                disabled={regenSubmitting}
+                className="px-4 py-2 rounded-lg text-sm font-medium border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
               >
                 Cancel
               </button>
               <button
                 onClick={handleRegenerate}
-                className="px-4 py-2 rounded-lg text-sm font-semibold"
-                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                disabled={regenSubmitting}
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-60"
+                style={{ background: "oklch(0.72 0.25 285)" }}
               >
-                Regenerate
+                {regenSubmitting ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    Clearing previous run…
+                  </span>
+                ) : "Regenerate"}
               </button>
             </div>
           </div>

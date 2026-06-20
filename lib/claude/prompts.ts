@@ -484,7 +484,7 @@ For each thumbnail, provide:
 - visualConcept: describe the main visual scene and composition in 2-3 sentences
 - textOverlay: exact text shown on thumbnail + font style + colors (e.g. "GOD IS REMOVING THEM — bold white text, red shadow, top-left")
 - emotionTrigger: the core emotion this thumbnail triggers (fear, curiosity, inspiration, shock, etc.)
-- stylePrompt: a COMPLETE, DETAILED AI image generation prompt for the thumbnail image (4-6 sentences). Must include: subject description, scene/background, lighting, composition, color palette, art style, text placement guidance, and technical quality tags. Write it as if you're instructing an image AI with full context — no shortcuts.
+- stylePrompt: a COMPLETE, DETAILED AI image generation prompt for the thumbnail image (4-6 sentences). Must include: subject description, scene/background, lighting, composition, color palette, art style, the LITERAL overlay text from textOverlay (quote the exact words inside the prompt, e.g. \`render the text "GOD IS REMOVING THEM" in bold white sans-serif with red shadow, top-left\` — describing only the placement without the actual words is NOT acceptable, the image model can't infer them), and technical quality tags. Write it as if you're instructing an image AI with full context — no shortcuts.
 
 Call the save_thumbnails tool with a "thumbnails" array. Do not write any text outside the tool call.`;
 }

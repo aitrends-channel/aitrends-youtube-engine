@@ -10,6 +10,7 @@ import { StepCostCard } from "@/components/StepCostCard";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
+import { ModelPicker } from "@/components/ModelPicker";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
@@ -168,43 +169,6 @@ function VoiceOption({ model, selected, onSelect, isPlaying, onPlayToggle }: {
   );
 }
 
-function ModelOption({ model, selected, onSelect }: { model: KieModel; selected: boolean; onSelect: () => void }) {
-  return (
-    <button
-      onClick={onSelect}
-      className="w-full text-left p-3 rounded-xl transition-all"
-      style={selected ? {
-        background: "oklch(0.72 0.25 285 / 0.1)",
-        border: "1px solid oklch(0.72 0.25 285 / 0.3)",
-        color: "var(--c-90)",
-      } : {
-        background: "var(--bg-input)",
-        border: "1px solid var(--bd-7)",
-        color: "var(--c-60)",
-      }}
-    >
-      <p className="font-medium text-xs">{model.name}</p>
-      {model.description && <p className="text-xs mt-0.5 opacity-60">{model.description}</p>}
-      {(model.tags?.length || model.costPerUnit) && (
-        <div className="flex gap-1 mt-2 flex-wrap">
-          {model.tags?.map((tag) => (
-            <span key={tag} className="px-1.5 py-0.5 rounded text-xs"
-              style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>
-              {tag}
-            </span>
-          ))}
-          {model.costPerUnit && (
-            <span className="px-1.5 py-0.5 rounded text-xs"
-              style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" }}>
-              {model.costPerUnit} cr{model.type === "video" ? "/s" : ""}
-            </span>
-          )}
-        </div>
-      )}
-    </button>
-  );
-}
-
 function SectionHeader({ icon, title, subtitle }: { icon: string; title: string; subtitle: string }) {
   return (
     <div className="flex items-center gap-3 mb-4">
@@ -332,8 +296,6 @@ export default function GeneratePage({ params }: PageProps) {
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [selectedTtsModel, setSelectedTtsModel] = useState<string | null>(null);
   const [selectedImageModel, setSelectedImageModel] = useState<string | null>(null);
-  const [imageModelTab, setImageModelTab] = useState<"all" | "fastest" | "cheapest">("all");
-  const [videoModelTab, setVideoModelTab] = useState<"all" | "fastest" | "cheapest">("all");
   const [selectedAspectRatio, setSelectedAspectRatio] = useState("16:9");
   const [selectedResolution, setSelectedResolution] = useState<string | null>(null);
   const [selectedVideoModel, setSelectedVideoModel] = useState<string | null>(null);
@@ -440,6 +402,13 @@ export default function GeneratePage({ params }: PageProps) {
   // existing image on the project — paid work the user might lose
   // by mis-clicking the secondary button.
   const [regenerateAllConfirmOpen, setRegenerateAllConfirmOpen] = useState(false);
+  // Submitting flags for modal action buttons. Each holds the modal
+  // open with a visible spinner while the click handler is in flight —
+  // long-running image / regen work continues in the background after
+  // the modal closes, but the brief in-modal feedback confirms the
+  // click before dismissing. Matches the project's modal-loading rule.
+  const [regenerateAllSubmitting, setRegenerateAllSubmitting] = useState(false);
+  const [editPromptSubmitting, setEditPromptSubmitting] = useState(false);
   const [deletingVoiceover, setDeletingVoiceover] = useState(false);
 
   // Per-beat video regenerate flow. The icon overlay on each generated
@@ -1380,143 +1349,16 @@ export default function GeneratePage({ params }: PageProps) {
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon="◈" title="AI Images" subtitle={`${totalBeats} images from script beats`} />
-              <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
-                Select Model
-              </p>
-              {/* Tabs: All / Fastest / Cheapest. Both Fastest and
-                  Cheapest are ledger-driven: Fastest sorts by the
-                  observed average wall-clock generation time
-                  (avgSpeedMs from project_costs.elapsed_ms),
-                  Cheapest by observed minimum costPerUnit. Both
-                  hide models without ledger history so the tab
-                  reflects only models that have actually been
-                  used — no placeholders for unranked content. */}
-              <div className="flex gap-1 mb-2 p-0.5 rounded-lg" style={{ background: "var(--bg-track)" }}>
-                {(["all", "fastest", "cheapest"] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setImageModelTab(t)}
-                    className="flex-1 px-2 py-1 rounded-md text-xs font-medium capitalize transition-all"
-                    style={imageModelTab === t ? {
-                      background: "oklch(0.72 0.25 285 / 0.15)",
-                      color: "oklch(0.88 0.12 285)",
-                      boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.35)",
-                    } : { background: "transparent", color: "var(--c-55)" }}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                {(() => {
-                  if (!imageModels) return null;
-                  const list = imageModels.slice();
-                  if (imageModelTab === "fastest") {
-                    return list
-                      .filter((m) => typeof m.avgSpeedMs === "number" && m.avgSpeedMs > 0)
-                      .sort((a, b) => (a.avgSpeedMs ?? Infinity) - (b.avgSpeedMs ?? Infinity));
-                  }
-                  if (imageModelTab === "cheapest") {
-                    return list
-                      .filter((m) => m.costPerUnit !== undefined && m.costPerUnit !== null)
-                      .sort((a, b) => Number(a.costPerUnit) - Number(b.costPerUnit));
-                  }
-                  return list;
-                })()?.map((m) => (
-                  <ModelOption key={m.id} model={m} selected={selectedImageModel === m.id} onSelect={() => setSelectedImageModel(m.id)} />
-                ))}
-                {imageModels && (() => {
-                  const empty =
-                    imageModelTab === "fastest"
-                      ? !imageModels.some((m) => typeof m.avgSpeedMs === "number" && m.avgSpeedMs > 0)
-                      : imageModelTab === "cheapest"
-                        ? !imageModels.some((m) => m.costPerUnit !== undefined && m.costPerUnit !== null)
-                        : imageModels.length === 0;
-                  if (!empty) return null;
-                  if (imageModelTab === "fastest") {
-                    return (
-                      <div className="text-xs px-1 py-2 space-y-1" style={{ color: "var(--c-40)" }}>
-                        <p className="font-medium" style={{ color: "var(--c-55)" }}>No speed data yet!</p>
-                        <p>Ranking is powered by real-time usage and will automatically populate as data comes in.</p>
-                      </div>
-                    );
-                  }
-                  if (imageModelTab === "cheapest") {
-                    return (
-                      <div className="text-xs px-1 py-2 space-y-1" style={{ color: "var(--c-40)" }}>
-                        <p className="font-medium" style={{ color: "var(--c-55)" }}>No cost data yet!</p>
-                        <p>Ranking is powered by real-time usage and will automatically populate as data comes in.</p>
-                      </div>
-                    );
-                  }
-                  return (
-                    <p className="text-xs px-1 py-2" style={{ color: "var(--c-40)" }}>
-                      No image models available.
-                    </p>
-                  );
-                })()}
-                {!imageModels && <p className="text-xs" style={{ color: "var(--c-40)" }}>Loading models...</p>}
-              </div>
-              <p className="text-[11px] mt-2 leading-snug" style={{ color: "var(--c-40)" }}>
-                Tip: if a model keeps failing, pick another above and re-run — successful images stay.
-              </p>
-              {(() => {
-                const config = selectedImageModel ? getModelConfig(selectedImageModel) : null;
-                return config ? (
-                  <>
-                    <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
-                      Aspect Ratio
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {config.aspectRatios.map((r) => (
-                        <button
-                          key={r}
-                          onClick={() => setSelectedAspectRatio(r)}
-                          className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                          style={selectedAspectRatio === r ? {
-                            background: "oklch(0.72 0.25 285 / 0.15)",
-                            border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                            color: "oklch(0.88 0.12 285)",
-                          } : {
-                            background: "var(--bg-input)",
-                            border: "1px solid var(--bd-7)",
-                            color: "var(--c-50)",
-                          }}
-                        >
-                          {r}
-                        </button>
-                      ))}
-                    </div>
-                    {config.resolutions && (
-                      <>
-                        <p className="text-xs font-semibold uppercase tracking-wider mt-3 mb-2" style={{ color: "var(--c-40)" }}>
-                          Resolution
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {config.resolutions.map((res) => (
-                            <button
-                              key={res}
-                              onClick={() => setSelectedResolution(res)}
-                              className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                              style={selectedResolution === res ? {
-                                background: "oklch(0.72 0.25 285 / 0.15)",
-                                border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                                color: "oklch(0.88 0.12 285)",
-                              } : {
-                                background: "var(--bg-input)",
-                                border: "1px solid var(--bd-7)",
-                                color: "var(--c-50)",
-                              }}
-                            >
-                              {res}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </>
-                ) : null;
-              })()}
+              <ModelPicker
+                type="image"
+                models={imageModels}
+                selectedModelId={selectedImageModel}
+                onSelectModel={setSelectedImageModel}
+                selectedAspectRatio={selectedAspectRatio}
+                onSelectAspectRatio={setSelectedAspectRatio}
+                selectedResolution={selectedResolution}
+                onSelectResolution={setSelectedResolution}
+              />
             </div>
 
             {beatsStale && (
@@ -1773,146 +1615,16 @@ export default function GeneratePage({ params }: PageProps) {
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon="⚡" title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
-              <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
-                Select Model
-              </p>
-              {/* Tabs mirror the image-side picker: ledger-driven
-                  Fastest (avgSpeedMs ascending from elapsed_ms) and
-                  Cheapest (costPerUnit ascending — for videos this
-                  is observed minimum credits per second). Models
-                  without ledger data are hidden in Fastest/Cheapest
-                  so the tab only shows ranked entries. */}
-              <div className="flex gap-1 mb-2 p-0.5 rounded-lg" style={{ background: "var(--bg-track)" }}>
-                {(["all", "fastest", "cheapest"] as const).map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setVideoModelTab(t)}
-                    className="flex-1 px-2 py-1 rounded-md text-xs font-medium capitalize transition-all"
-                    style={videoModelTab === t ? {
-                      background: "oklch(0.72 0.25 285 / 0.15)",
-                      color: "oklch(0.88 0.12 285)",
-                      boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.35)",
-                    } : { background: "transparent", color: "var(--c-55)" }}
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
-              <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                {(() => {
-                  if (!videoModels) return null;
-                  const list = videoModels.slice();
-                  if (videoModelTab === "fastest") {
-                    return list
-                      .filter((m) => typeof m.avgSpeedMs === "number" && m.avgSpeedMs > 0)
-                      .sort((a, b) => (a.avgSpeedMs ?? Infinity) - (b.avgSpeedMs ?? Infinity));
-                  }
-                  if (videoModelTab === "cheapest") {
-                    return list
-                      .filter((m) => m.costPerUnit !== undefined && m.costPerUnit !== null)
-                      .sort((a, b) => Number(a.costPerUnit) - Number(b.costPerUnit));
-                  }
-                  return list;
-                })()?.map((m) => (
-                  <ModelOption key={m.id} model={m} selected={selectedVideoModel === m.id} onSelect={() => setSelectedVideoModel(m.id)} />
-                ))}
-                {videoModels && (() => {
-                  const empty =
-                    videoModelTab === "fastest"
-                      ? !videoModels.some((m) => typeof m.avgSpeedMs === "number" && m.avgSpeedMs > 0)
-                      : videoModelTab === "cheapest"
-                        ? !videoModels.some((m) => m.costPerUnit !== undefined && m.costPerUnit !== null)
-                        : videoModels.length === 0;
-                  if (!empty) return null;
-                  if (videoModelTab === "fastest") {
-                    return (
-                      <div className="text-xs px-1 py-2 space-y-1" style={{ color: "var(--c-40)" }}>
-                        <p className="font-medium" style={{ color: "var(--c-55)" }}>No speed data yet!</p>
-                        <p>Ranking is powered by real-time usage and will automatically populate as data comes in.</p>
-                      </div>
-                    );
-                  }
-                  if (videoModelTab === "cheapest") {
-                    return (
-                      <div className="text-xs px-1 py-2 space-y-1" style={{ color: "var(--c-40)" }}>
-                        <p className="font-medium" style={{ color: "var(--c-55)" }}>No cost data yet!</p>
-                        <p>Ranking is powered by real-time usage and will automatically populate as data comes in.</p>
-                      </div>
-                    );
-                  }
-                  return (
-                    <p className="text-xs px-1 py-2" style={{ color: "var(--c-40)" }}>
-                      No video models available.
-                    </p>
-                  );
-                })()}
-                {!videoModels && <p className="text-xs" style={{ color: "var(--c-40)" }}>Loading models...</p>}
-              </div>
-              <p className="text-[11px] mt-2 leading-snug" style={{ color: "var(--c-40)" }}>
-                Tip: if a model keeps failing, pick another above and re-queue — existing clips stay.
-              </p>
-              {(() => {
-                if (!selectedVideoModel) return null;
-                const config = getVideoModelConfig(selectedVideoModel);
-                return (
-                  <>
-                    {config.aspectRatios.length > 0 && (
-                      <>
-                        <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
-                          Aspect Ratio
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {config.aspectRatios.map((r) => (
-                            <button
-                              key={r}
-                              onClick={() => setSelectedVideoAspectRatio(r)}
-                              className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                              style={selectedVideoAspectRatio === r ? {
-                                background: "oklch(0.72 0.25 285 / 0.15)",
-                                border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                                color: "oklch(0.88 0.12 285)",
-                              } : {
-                                background: "var(--bg-input)",
-                                border: "1px solid var(--bd-7)",
-                                color: "var(--c-50)",
-                              }}
-                            >
-                              {r}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                    {config.durations.length > 0 && (
-                      <>
-                        <p className="text-xs font-semibold uppercase tracking-wider mt-3 mb-2" style={{ color: "var(--c-40)" }}>
-                          Duration
-                        </p>
-                        <div className="flex gap-1">
-                          {config.durations.map((d) => (
-                            <button
-                              key={String(d.value)}
-                              onClick={() => setSelectedDuration(d.value)}
-                              className="flex-1 px-1.5 py-1 rounded-lg text-xs font-medium transition-all whitespace-nowrap"
-                              style={selectedDuration === d.value ? {
-                                background: "oklch(0.72 0.25 285 / 0.15)",
-                                border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                                color: "oklch(0.88 0.12 285)",
-                              } : {
-                                background: "var(--bg-input)",
-                                border: "1px solid var(--bd-7)",
-                                color: "var(--c-50)",
-                              }}
-                            >
-                              {d.label}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </>
-                );
-              })()}
+              <ModelPicker
+                type="video"
+                models={videoModels}
+                selectedModelId={selectedVideoModel}
+                onSelectModel={setSelectedVideoModel}
+                selectedAspectRatio={selectedVideoAspectRatio}
+                onSelectAspectRatio={setSelectedVideoAspectRatio}
+                selectedDuration={selectedDuration ?? ""}
+                onSelectDuration={setSelectedDuration}
+              />
             </div>
 
             {beatsStale && (
@@ -2361,7 +2073,7 @@ export default function GeneratePage({ params }: PageProps) {
         </div>
       )}
 
-      <Dialog open={regenerateAllConfirmOpen} onOpenChange={(open) => { if (!generatingImages) setRegenerateAllConfirmOpen(open); }}>
+      <Dialog open={regenerateAllConfirmOpen} onOpenChange={(open) => { if (!generatingImages && !regenerateAllSubmitting) setRegenerateAllConfirmOpen(open); }}>
         <DialogContent showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>Regenerate all images?</DialogTitle>
@@ -2372,19 +2084,33 @@ export default function GeneratePage({ params }: PageProps) {
           <DialogFooter>
             <button
               onClick={() => setRegenerateAllConfirmOpen(false)}
-              disabled={generatingImages}
-              className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
-              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+              disabled={generatingImages || regenerateAllSubmitting}
+              className="px-4 py-2 rounded-lg text-sm font-medium border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
             >
               Cancel
             </button>
             <button
-              onClick={() => { setRegenerateAllConfirmOpen(false); void generateImages({ mode: "all" }); }}
-              disabled={generatingImages}
-              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-60"
-              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+              onClick={async () => {
+                setRegenerateAllSubmitting(true);
+                // Kick off the long-running image work; it manages its
+                // own page-level progress UI from here. Brief await
+                // gives the user visual confirmation in the modal
+                // before we dismiss.
+                void generateImages({ mode: "all" });
+                await new Promise((r) => setTimeout(r, 400));
+                setRegenerateAllSubmitting(false);
+                setRegenerateAllConfirmOpen(false);
+              }}
+              disabled={generatingImages || regenerateAllSubmitting}
+              className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-60"
+              style={{ background: "oklch(0.72 0.25 285)" }}
             >
-              Regenerate all
+              {regenerateAllSubmitting ? (
+                <span className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Starting…
+                </span>
+              ) : "Regenerate all"}
             </button>
           </DialogFooter>
         </DialogContent>
@@ -2423,7 +2149,7 @@ export default function GeneratePage({ params }: PageProps) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!editPromptBeat} onOpenChange={(open) => { if (!open) setEditPromptBeat(null); }}>
+      <Dialog open={!!editPromptBeat} onOpenChange={(open) => { if (!open && !editPromptSubmitting) setEditPromptBeat(null); }}>
         <DialogContent
           className="sm:max-w-lg"
           style={{ background: "white", color: "oklch(0.15 0 0)" }}
@@ -2457,7 +2183,8 @@ export default function GeneratePage({ params }: PageProps) {
           <DialogFooter style={{ background: "white", borderTop: "1px solid oklch(0.9 0 0)" }}>
             <button
               onClick={() => setEditPromptBeat(null)}
-              className="px-4 py-2 rounded-lg text-sm font-medium transition-all"
+              disabled={editPromptSubmitting}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
               style={{ background: "white", border: "1px solid oklch(0.85 0 0)", color: "oklch(0.3 0 0)" }}
             >
               Cancel
@@ -2465,28 +2192,40 @@ export default function GeneratePage({ params }: PageProps) {
             {(() => {
               const trimmed = editedPrompt.trim();
               const unchanged = trimmed === (editPromptBeat?.imagePrompt ?? "").trim();
-              const canSave = !!trimmed && !!selectedImageModel && !unchanged;
+              const canSave = !!trimmed && !!selectedImageModel && !unchanged && !editPromptSubmitting;
               return (
                 <button
                   type="button"
-                  onClick={() => {
+                  onClick={async () => {
                     if (!canSave || !editPromptBeat) return;
                     const beat = editPromptBeat;
-                    setEditPromptBeat(null);
+                    setEditPromptSubmitting(true);
+                    // Fire-and-forget the regen; the beat card flips
+                    // to its own "regenerating" state in the page UI.
+                    // Brief await before closing so the click registers
+                    // visibly in the modal.
                     void regenerateImage(beat, trimmed);
+                    await new Promise((r) => setTimeout(r, 400));
+                    setEditPromptSubmitting(false);
+                    setEditPromptBeat(null);
                   }}
                   disabled={!canSave}
                   aria-disabled={!canSave}
                   className="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
                   style={{
-                    background: canSave ? "oklch(0.72 0.25 285)" : "oklch(0.90 0 0)",
-                    color: canSave ? "white" : "oklch(0.65 0 0)",
+                    background: canSave || editPromptSubmitting ? "oklch(0.72 0.25 285)" : "oklch(0.90 0 0)",
+                    color: canSave || editPromptSubmitting ? "white" : "oklch(0.65 0 0)",
                     cursor: canSave ? "pointer" : "not-allowed",
                     pointerEvents: canSave ? "auto" : "none",
-                    opacity: canSave ? 1 : 0.7,
+                    opacity: canSave || editPromptSubmitting ? 1 : 0.7,
                   }}
                 >
-                  Save &amp; regenerate
+                  {editPromptSubmitting ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      Starting…
+                    </span>
+                  ) : "Save & regenerate"}
                 </button>
               );
             })()}

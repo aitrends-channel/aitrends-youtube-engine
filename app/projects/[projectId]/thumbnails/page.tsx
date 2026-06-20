@@ -7,7 +7,7 @@ import { StepCostCard } from "@/components/StepCostCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import useSWR from "swr";
-import { RotateCw } from "lucide-react";
+import { Pencil, RotateCw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -16,8 +16,9 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { ModelPicker } from "@/components/ModelPicker";
 import type { ThumbnailConcept, KieModel } from "@/lib/types";
-import { getModelConfig } from "@/lib/kie/imageModels";
 import { presignedUpload } from "@/lib/upload-client";
 
 interface PageProps {
@@ -223,14 +224,18 @@ function ThumbnailCard({
   thumb,
   onPreview,
   onRegen,
+  onEdit,
   isRegenerating,
   canRegen,
+  canEdit,
 }: {
   thumb: ThumbnailConcept;
   onPreview?: () => void;
   onRegen?: () => void;
+  onEdit?: () => void;
   isRegenerating?: boolean;
   canRegen?: boolean;
+  canEdit?: boolean;
 }) {
   const [imgError, setImgError] = useState(false);
   // A card is "in progress" whenever either the DB status says
@@ -280,8 +285,22 @@ function ThumbnailCard({
           {thumb.position}
         </div>
 
-        {/* Top-right action row: regen + download */}
+        {/* Top-right action row: edit + regen + download. Edit shows
+            even before an image exists so the user can tweak the
+            initial concept Claude generated before paying for the
+            first KIE image render. */}
         <div className="absolute top-2 right-2 flex items-center gap-1.5">
+          {!isBusy && canEdit && onEdit && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onEdit(); }}
+              aria-label="Edit thumbnail concept"
+              title="Edit concept"
+              className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-90"
+              style={{ background: "var(--bg-overlay)", color: "var(--c-75)", border: "1px solid var(--bd-8)" }}
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          )}
           {/* Regen button — shows whenever there's an existing image or
               a failed attempt to retry, and the page is in a state where
               a regen can start. Hidden during in-flight states. */}
@@ -336,6 +355,240 @@ function ThumbnailCard({
         </div>
       </div>
     </div>
+  );
+}
+
+function EditThumbnailModal({
+  thumb,
+  open,
+  onClose,
+  onSave,
+  onSaveAndRegenerate,
+  canRegenerate,
+}: {
+  thumb: ThumbnailConcept | null;
+  open: boolean;
+  onClose: () => void;
+  onSave: (position: number, fields: {
+    title: string;
+    visualConcept: string;
+    textOverlay: string;
+    emotionTrigger: string;
+    stylePrompt: string;
+  }) => Promise<void>;
+  onSaveAndRegenerate: (position: number, fields: {
+    title: string;
+    visualConcept: string;
+    textOverlay: string;
+    emotionTrigger: string;
+    stylePrompt: string;
+  }) => Promise<void>;
+  canRegenerate: boolean;
+}) {
+  // Local edit buffer so the user can revert changes by hitting Cancel
+  // without us already having round-tripped the partial state through
+  // SWR. Reseeded whenever the modal opens against a new thumbnail —
+  // closing-and-reopening on the same position picks up the latest
+  // saved values from the project row, not the previous edit session's.
+  const [title, setTitle] = useState("");
+  const [visualConcept, setVisualConcept] = useState("");
+  const [textOverlay, setTextOverlay] = useState("");
+  const [emotionTrigger, setEmotionTrigger] = useState("");
+  const [stylePrompt, setStylePrompt] = useState("");
+  const [busy, setBusy] = useState<null | "save" | "regen">(null);
+
+  // Seed the local edit buffer ONLY when the modal opens against a new
+  // thumbnail position. Depending on `thumb` itself would re-fire this
+  // every time the parent's mutate() handed us a new object reference
+  // for the same position — which happens during save and regen — and
+  // that would (a) wipe the user's pending edits, and (b) reset busy
+  // back to null mid-flight, killing the spinner and re-enabling the
+  // button so a second click could fire a duplicate regen.
+  useEffect(() => {
+    if (open && thumb) {
+      setTitle(thumb.title);
+      setVisualConcept(thumb.visualConcept);
+      setTextOverlay(thumb.textOverlay);
+      setEmotionTrigger(thumb.emotionTrigger);
+      setStylePrompt(thumb.stylePrompt);
+      setBusy(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, thumb?.position]);
+
+  if (!thumb) return null;
+
+  const fields = { title, visualConcept, textOverlay, emotionTrigger, stylePrompt };
+  const dirty =
+    title !== thumb.title ||
+    visualConcept !== thumb.visualConcept ||
+    textOverlay !== thumb.textOverlay ||
+    emotionTrigger !== thumb.emotionTrigger ||
+    stylePrompt !== thumb.stylePrompt;
+
+  async function handleSave() {
+    setBusy("save");
+    try { await onSave(thumb!.position, fields); } finally { setBusy(null); }
+  }
+  async function handleSaveAndRegen() {
+    setBusy("regen");
+    try { await onSaveAndRegenerate(thumb!.position, fields); } finally { setBusy(null); }
+  }
+
+  const inputClass = "w-full px-3 py-2 rounded-lg text-sm outline-none transition-colors border border-zinc-200 bg-white text-zinc-900 focus-visible:border-zinc-400 disabled:bg-zinc-50 disabled:text-zinc-400";
+  const labelClass = "text-xs font-semibold uppercase tracking-wider text-zinc-500";
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!busy && !o) onClose(); }}>
+      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" showCloseButton={false}>
+        {/* Header row — text on the left, thumbnail preview on the
+            right. Aspect 16:9 matches the rendered thumbnail; w-40
+            keeps it small enough that the description text stays the
+            visual anchor. Falls back to a "no image yet" placeholder
+            when the user opens Edit before the first render. */}
+        <div className="flex gap-4 items-start">
+          <div className="flex-1 min-w-0">
+            <DialogHeader>
+              <DialogTitle>Edit thumbnail {thumb.position}</DialogTitle>
+              <DialogDescription>
+                Tweak the concept and prompt. Save updates the stored thumbnail; Save &amp; Regenerate
+                also kicks off a fresh image render from the new style prompt.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div
+            className="w-40 shrink-0 aspect-video rounded-lg overflow-hidden border border-zinc-200 bg-zinc-100 flex items-center justify-center"
+          >
+            {thumb.imageUrl ? (
+              <img src={thumb.imageUrl} alt={thumb.title} className="w-full h-full object-cover" />
+            ) : (
+              <span className="text-[10px] text-zinc-400">No image yet</span>
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-4 py-2">
+          {busy === "regen" ? (
+            // Replace the form with a centered loading state during a
+            // regen. The fields would just be disabled noise during the
+            // 10-30s wait, and a single anchored spinner reads as
+            // "actively working on this thumbnail" much more clearly
+            // than five greyed-out inputs would.
+            <div className="flex flex-col items-center justify-center gap-3 py-16">
+              <span
+                aria-label="Generating"
+                className="w-10 h-10 border-2 rounded-full animate-spin"
+                style={{ borderColor: "oklch(0.85 0 0)", borderTopColor: "oklch(0.72 0.25 285)" }}
+              />
+              <p className="text-sm font-semibold text-zinc-700">Generating…</p>
+              <p className="text-xs text-zinc-500">Rendering the new thumbnail from your updated prompt.</p>
+            </div>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <label className={labelClass}>Title</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  disabled={busy !== null}
+                  className={inputClass}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className={labelClass}>Visual Concept</label>
+                <Textarea
+                  value={visualConcept}
+                  onChange={(e) => setVisualConcept(e.target.value)}
+                  disabled={busy !== null}
+                  rows={3}
+                  className="bg-white text-zinc-900 border-zinc-200"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className={labelClass}>Text Overlay</label>
+                  <input
+                    type="text"
+                    value={textOverlay}
+                    onChange={(e) => setTextOverlay(e.target.value)}
+                    disabled={busy !== null}
+                    className={inputClass}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={labelClass}>Emotion Trigger</label>
+                  <input
+                    type="text"
+                    value={emotionTrigger}
+                    onChange={(e) => setEmotionTrigger(e.target.value)}
+                    disabled={busy !== null}
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className={labelClass}>Style Prompt</label>
+                  <span className="text-[10px] text-zinc-400">
+                    This is what feeds image generation.
+                  </span>
+                </div>
+                <Textarea
+                  value={stylePrompt}
+                  onChange={(e) => setStylePrompt(e.target.value)}
+                  disabled={busy !== null}
+                  rows={6}
+                  className="font-mono text-xs bg-white text-zinc-900 border-zinc-200"
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={busy !== null}
+            className="px-4 py-2 rounded-lg text-sm font-medium border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={busy !== null || !dirty}
+            className="px-4 py-2 rounded-lg text-sm font-semibold border border-zinc-200 bg-zinc-100 text-zinc-800 hover:bg-zinc-200 disabled:opacity-40"
+          >
+            {busy === "save" ? (
+              <span className="flex items-center gap-2">
+                <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Saving…
+              </span>
+            ) : "Save"}
+          </button>
+          <button
+            onClick={handleSaveAndRegen}
+            disabled={busy !== null || !canRegenerate}
+            title={!canRegenerate ? "Wait for the current run to finish, then pick an image model" : undefined}
+            className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-40 inline-flex items-center justify-center"
+            style={{ background: "oklch(0.72 0.25 285)", minWidth: "11rem" }}
+          >
+            {busy === "regen" ? (
+              <span className="flex items-center gap-2">
+                <span
+                  aria-label="Generating"
+                  className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"
+                />
+                Generating…
+              </span>
+            ) : "Save & Regenerate"}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -432,6 +685,11 @@ export default function ThumbnailsPage({ params }: PageProps) {
   const [regeneratingPositions, setRegeneratingPositions] = useState<Set<number>>(new Set());
   const [regenConfirmPos, setRegenConfirmPos] = useState<number | null>(null);
   const [regenSubmitting, setRegenSubmitting] = useState(false);
+  // Edit modal targets a single thumbnail by position. Null = closed.
+  // The modal seeds its local form state from the matching project
+  // thumbnail in an effect, so flipping this open is enough — no
+  // separate "draft" state lives up here.
+  const [editingPos, setEditingPos] = useState<number | null>(null);
 
   const [selectedModel, setSelectedModel] = useState<string | null>(null);
   const [selectedRatio, setSelectedRatio] = useState("16:9");
@@ -453,7 +711,6 @@ export default function ThumbnailsPage({ params }: PageProps) {
     hasConcepts ? { status: "done", message: "" } : IDLE;
 
   const activeModel = selectedModel ?? imageModels?.[0]?.id ?? null;
-  const modelConfig = activeModel ? getModelConfig(activeModel) : null;
 
   async function generateConcepts() {
     if (!project?.script || !project?.visual_profile) {
@@ -667,6 +924,133 @@ export default function ThumbnailsPage({ params }: PageProps) {
         body: JSON.stringify({
           projectId,
           thumbnails: [{ position, stylePrompt: concept.stylePrompt }],
+          modelId: activeModel,
+          aspectRatio: selectedRatio,
+          resolution: selectedResolution ?? undefined,
+          clearFirst: false,
+        }),
+      });
+      const data = await res.json() as { failures?: { position: number; error: string }[] };
+      if (!res.ok) throw new Error((data as { error?: string }).error ?? "Regeneration failed");
+      const firstError = data.failures?.[0]?.error;
+      if (firstError) {
+        toast.error(`Thumbnail ${position} failed: ${firstError}`);
+      } else {
+        toast.success(`Thumbnail ${position} regenerated`);
+      }
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Regeneration failed");
+      await mutate();
+    } finally {
+      setRegeneratingPositions((prev) => {
+        const next = new Set(prev);
+        next.delete(position);
+        return next;
+      });
+    }
+  }
+
+  // Persist edits via PATCH on the thumbnails route, optimistically
+  // update the SWR cache so the card reflects the new prompt
+  // immediately, then revalidate from the server to pick up any
+  // server-side normalization (trimming, etc.). Returns the updated
+  // thumbnail so the Save-and-Regenerate caller can hand the new
+  // prompt straight to regenOne without a SWR round-trip race.
+  async function saveThumbnailEdits(
+    position: number,
+    fields: {
+      title: string;
+      visualConcept: string;
+      textOverlay: string;
+      emotionTrigger: string;
+      stylePrompt: string;
+    },
+  ): Promise<ThumbnailConcept | null> {
+    if (project) {
+      mutate(
+        {
+          ...project,
+          thumbnails: thumbnails.map((t) => t.position === position
+            ? { ...t, ...fields }
+            : t),
+        },
+        { revalidate: false },
+      );
+    }
+    try {
+      const res = await fetch(`/api/projects/${projectId}/thumbnails`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ position, fields }),
+      });
+      const data = await res.json() as ThumbnailConcept & { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Failed to save");
+      await mutate();
+      return data;
+    } catch (err) {
+      // Roll back the optimistic update on failure so the card snaps
+      // back to the prior values instead of pretending the save stuck.
+      await mutate();
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+      return null;
+    }
+  }
+
+  async function handleEditSave(
+    position: number,
+    fields: Parameters<typeof saveThumbnailEdits>[1],
+  ) {
+    const saved = await saveThumbnailEdits(position, fields);
+    if (saved) {
+      toast.success(`Thumbnail ${position} updated`);
+      setEditingPos(null);
+    }
+  }
+
+  async function handleEditSaveAndRegenerate(
+    position: number,
+    fields: Parameters<typeof saveThumbnailEdits>[1],
+  ) {
+    if (!activeModel) { toast.error("Select an image model"); return; }
+    const saved = await saveThumbnailEdits(position, fields);
+    if (!saved) return;
+    // Keep the modal open through the actual regeneration so its
+    // button stays in the spinner state until the new image lands.
+    // Without this, the modal would dismiss the moment save completes
+    // (~1s) and the user wouldn't see the regen-in-progress feedback
+    // on the button itself — only on the card behind.
+    await regenOneWith(position, saved.stylePrompt);
+    setEditingPos(null);
+  }
+
+  // Variant of regenOne that takes an explicit stylePrompt instead of
+  // pulling from the project thumbnails list. Used right after a save
+  // to bypass any cache-read race.
+  async function regenOneWith(position: number, stylePrompt: string) {
+    if (!activeModel) { toast.error("Select an image model"); return; }
+    if (!stylePrompt) { toast.error("No prompt found for this thumbnail"); return; }
+
+    setRegeneratingPositions((prev) => new Set(prev).add(position));
+    if (project) {
+      mutate(
+        {
+          ...project,
+          thumbnails: thumbnails.map((t) => t.position === position
+            ? { ...t, imageUrl: undefined, imageStatus: "generating" }
+            : t),
+        },
+        { revalidate: false }
+      );
+    }
+
+    try {
+      const res = await fetch("/api/generate/thumbnail-images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          thumbnails: [{ position, stylePrompt }],
           modelId: activeModel,
           aspectRatio: selectedRatio,
           resolution: selectedResolution ?? undefined,
@@ -976,78 +1360,21 @@ export default function ThumbnailsPage({ params }: PageProps) {
                 </div>
               </div>
 
-              {/* Model + ratio selector */}
+              {/* Model + variants selector — shared with the generate
+                  step via ModelPicker so the look stays consistent
+                  everywhere the user picks an image model. */}
               {hasConcepts && !isImageRunning && (
-                <div className="px-4 pb-4 space-y-3" style={{ borderTop: "1px solid var(--bd-6)" }}>
-                  <p className="text-xs font-semibold uppercase tracking-wider pt-3" style={{ color: "var(--c-40)" }}>Image Model</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-48 overflow-y-auto">
-                    {(imageModels ?? []).map((m) => (
-                      <button key={m.id} onClick={() => { setSelectedModel(m.id); setSelectedResolution(null); }}
-                        className="text-left px-3 py-2 rounded-lg text-xs transition-all"
-                        style={activeModel === m.id ? {
-                          background: "oklch(0.72 0.25 285 / 0.1)",
-                          border: "1px solid oklch(0.72 0.25 285 / 0.3)",
-                          color: "var(--c-88)",
-                        } : {
-                          background: "var(--bg-input)",
-                          border: "1px solid var(--bd-7)",
-                          color: "var(--c-55)",
-                        }}>
-                        <p className="font-medium truncate">{m.name}</p>
-                        {m.tags?.slice(0, 2).map((tag) => (
-                          <span key={tag} className="inline-block mt-1 px-1.5 py-0.5 rounded text-xs mr-1"
-                            style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>{tag}</span>
-                        ))}
-                      </button>
-                    ))}
-                  </div>
-
-                  {modelConfig && (
-                    <div className="flex flex-wrap gap-3">
-                      <div>
-                        <p className="text-xs mb-1.5" style={{ color: "var(--c-40)" }}>Aspect Ratio</p>
-                        <div className="flex gap-1.5 flex-wrap">
-                          {modelConfig.aspectRatios.map((r) => (
-                            <button key={r} onClick={() => setSelectedRatio(r)}
-                              className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                              style={selectedRatio === r ? {
-                                background: "oklch(0.72 0.25 285 / 0.15)",
-                                color: "oklch(0.72 0.25 285)",
-                                border: "1px solid oklch(0.72 0.25 285 / 0.3)",
-                              } : {
-                                background: "var(--bg-control)",
-                                color: "var(--c-50)",
-                                border: "1px solid var(--bd-8)",
-                              }}>
-                              {r}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      {modelConfig.resolutions && modelConfig.resolutions.length > 0 && (
-                        <div>
-                          <p className="text-xs mb-1.5" style={{ color: "var(--c-40)" }}>Resolution</p>
-                          <div className="flex gap-1.5">
-                            {modelConfig.resolutions.map((res) => (
-                              <button key={res} onClick={() => setSelectedResolution(res === selectedResolution ? null : res)}
-                                className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                                style={selectedResolution === res ? {
-                                  background: "oklch(0.72 0.25 285 / 0.15)",
-                                  color: "oklch(0.72 0.25 285)",
-                                  border: "1px solid oklch(0.72 0.25 285 / 0.3)",
-                                } : {
-                                  background: "var(--bg-control)",
-                                  color: "var(--c-50)",
-                                  border: "1px solid var(--bd-8)",
-                                }}>
-                                {res}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                <div className="px-4 pb-4 pt-3" style={{ borderTop: "1px solid var(--bd-6)" }}>
+                  <ModelPicker
+                    type="image"
+                    models={imageModels}
+                    selectedModelId={activeModel}
+                    onSelectModel={(id) => { setSelectedModel(id); setSelectedResolution(null); }}
+                    selectedAspectRatio={selectedRatio}
+                    onSelectAspectRatio={setSelectedRatio}
+                    selectedResolution={selectedResolution}
+                    onSelectResolution={setSelectedResolution}
+                  />
                 </div>
               )}
             </div>
@@ -1063,8 +1390,10 @@ export default function ThumbnailsPage({ params }: PageProps) {
                       thumb={t}
                       onPreview={previewIdx >= 0 ? () => setPreviewIndex(previewIdx) : undefined}
                       onRegen={() => requestRegenOne(t.position)}
+                      onEdit={() => setEditingPos(t.position)}
                       isRegenerating={regeneratingPositions.has(t.position)}
                       canRegen={!anyRunning && !!activeModel}
+                      canEdit={!anyRunning && !regeneratingPositions.has(t.position)}
                     />
                   );
                 })}
@@ -1108,13 +1437,22 @@ export default function ThumbnailsPage({ params }: PageProps) {
         </div>
       )}
 
+      <EditThumbnailModal
+        thumb={editingPos !== null ? thumbnails.find((t) => t.position === editingPos) ?? null : null}
+        open={editingPos !== null}
+        onClose={() => setEditingPos(null)}
+        onSave={handleEditSave}
+        onSaveAndRegenerate={handleEditSaveAndRegenerate}
+        canRegenerate={!anyRunning && !!activeModel}
+      />
+
       <Dialog open={regenConfirmPos !== null} onOpenChange={(open) => { if (!regenSubmitting && !open) setRegenConfirmPos(null); }}>
         <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>Regenerate thumbnail {regenConfirmPos}?</DialogTitle>
             <DialogDescription>
               This will overwrite the existing image for thumbnail{" "}
-              <span className="font-semibold" style={{ color: "var(--c-80)" }}>#{regenConfirmPos}</span>
+              <span className="font-semibold text-zinc-900">#{regenConfirmPos}</span>
               {" "}with a fresh render from the same prompt and model.
               KIE credits will be charged for the new image.
             </DialogDescription>
@@ -1123,16 +1461,15 @@ export default function ThumbnailsPage({ params }: PageProps) {
             <button
               onClick={() => setRegenConfirmPos(null)}
               disabled={regenSubmitting}
-              className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
-              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+              className="px-4 py-2 rounded-lg text-sm font-medium border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
             >
               Cancel
             </button>
             <button
               onClick={confirmRegenOne}
               disabled={regenSubmitting}
-              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all disabled:opacity-60"
-              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+              className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-60"
+              style={{ background: "oklch(0.72 0.25 285)" }}
             >
               {regenSubmitting ? (
                 <span className="flex items-center gap-2">

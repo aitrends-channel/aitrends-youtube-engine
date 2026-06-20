@@ -53,7 +53,12 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // Modals are intentionally LIGHT regardless of the app's dark
+          // theme — bg-white + dark text gives a sheet-of-paper feel
+          // distinct from the dashboard chrome. Callers that want to
+          // override this should pass className (not inline style)
+          // since cn() merges classes deterministically.
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-white p-4 text-sm text-zinc-900 ring-1 ring-zinc-200 shadow-xl duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}
@@ -102,7 +107,9 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        // Subtle off-white footer band so the action buttons read as
+        // a distinct strip without breaking the white-modal aesthetic.
+        "-mx-4 -mb-4 flex flex-col-reverse gap-2 rounded-b-xl border-t border-zinc-200 bg-zinc-50 p-4 sm:flex-row sm:justify-end",
         className
       )}
       {...props}
@@ -138,7 +145,9 @@ function DialogDescription({
     <DialogPrimitive.Description
       data-slot="dialog-description"
       className={cn(
-        "text-sm text-muted-foreground *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-foreground",
+        // text-zinc-600 reads clearly on the white modal background;
+        // text-muted-foreground would render too pale against pure white.
+        "text-sm text-zinc-600 *:[a]:underline *:[a]:underline-offset-3 *:[a]:hover:text-zinc-900",
         className
       )}
       {...props}
