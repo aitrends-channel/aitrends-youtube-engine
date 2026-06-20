@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
+import { DemoStepCostCard } from "@/components/demo/DemoStepCostCard";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
 
@@ -31,6 +32,9 @@ export default function DemoPromptsPage() {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               {DEMO_DATA.promptBeats.length} beats · image & video prompts
             </p>
+            <div className="mt-3">
+              <DemoStepCostCard column="prompts" />
+            </div>
           </div>
 
           {/* Step cards */}

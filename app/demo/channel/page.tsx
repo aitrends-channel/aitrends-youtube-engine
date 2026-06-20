@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowUpRight } from "lucide-react";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
+import { DemoStepCostCard } from "@/components/demo/DemoStepCostCard";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
 
@@ -189,6 +190,9 @@ export default function DemoChannelPage() {
               <p className="text-sm mt-1" style={{ color: "var(--c-50)" }}>
                 Enter a YouTube channel URL to automatically extract style DNA and generate content.
               </p>
+              <div className="mt-3">
+                <DemoStepCostCard column="channel_analysis" />
+              </div>
             </div>
 
             {/* URL input + topic strategy card */}

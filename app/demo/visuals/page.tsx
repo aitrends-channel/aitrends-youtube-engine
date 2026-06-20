@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
+import { DemoStepCostCard } from "@/components/demo/DemoStepCostCard";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
 
@@ -125,6 +126,9 @@ export default function DemoVisualsPage() {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               Auto-capture screenshots so we can extract the channel&apos;s visual signature
             </p>
+            <div className="mt-3">
+              <DemoStepCostCard column="visuals" />
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto">

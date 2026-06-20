@@ -57,6 +57,24 @@ export const DEMO_DATA = {
     ],
   },
 
+  // Mocked per-step usage totals for DemoStepCostCard. Keys mirror the
+  // real workflow's StepCostCard `column` prop so the demo card can
+  // share the same column-naming contract. Values are realistic-looking
+  // numbers for a single mid-sized FinanceFuel-style video — enough to
+  // make the cost badge feel populated without dragging the demo into
+  // a discussion of actual platform pricing.
+  costs: {
+    channel_analysis: { kie: 1.2, sup: 5, ant: 28_400 },
+    topic:            { ant: 4_650 },
+    script:           { ant: 12_320 },
+    visuals:          { ant: 6_540 },
+    prompts:          { ant: 9_180 },
+    voiceover:        { el: 5_240 },
+    generate:         { kie: 124.8 },
+    assemble:         { kie: 2.4 },
+    thumbnail:        { kie: 26.5, ant: 3_120 },
+  } as const,
+
   analysisSteps: [
     { label: "Scanning",   sublabel: "" },
     { label: "Processing", sublabel: "" },

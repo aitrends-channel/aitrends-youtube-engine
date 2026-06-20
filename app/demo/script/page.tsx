@@ -5,6 +5,7 @@ import { RefreshCw } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
+import { DemoStepCostCard } from "@/components/demo/DemoStepCostCard";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
 
@@ -107,7 +108,7 @@ export default function DemoScriptPage() {
         <DemoBanner />
         <main className="flex-1 flex flex-col overflow-hidden">
         <div
-          className="flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 shrink-0"
+          className="flex items-center justify-between py-3 sm:py-4 shrink-0"
           style={{
             borderBottom: "1px solid var(--bd-6)",
             background: "var(--bg-header-2)",
@@ -121,13 +122,16 @@ export default function DemoScriptPage() {
                 {topic}
               </p>
             )}
+            <div className="mt-3">
+              <DemoStepCostCard column="script" />
+            </div>
           </div>
           <div />
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 sm:p-8 pb-[160px]">
+        <div className="flex-1 overflow-y-auto py-4 sm:py-8 pb-[160px]">
           {phase === "loading" && (
-            <div className="max-w-xl mx-auto text-center space-y-5 p-10 rounded-2xl"
+            <div className="text-center space-y-5 p-10 rounded-2xl"
               style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
               <div className="flex flex-col items-center gap-4">
                 <span className="w-8 h-8 border-2 border-current border-t-transparent rounded-full animate-spin inline-block"
@@ -143,7 +147,7 @@ export default function DemoScriptPage() {
           )}
 
           {phase === "done" && (
-            <div className="max-w-3xl mx-auto">
+            <div>
               <div className="rounded-2xl overflow-hidden"
                 style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                 <div
@@ -227,9 +231,9 @@ export default function DemoScriptPage() {
         </main>
       </div>
       {scriptDone && (
-        <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3 px-4 sm:px-8"
+        <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
-          <div className="max-w-3xl mx-auto flex gap-3">
+          <div className="flex gap-3">
             <button
               onClick={handleRegenerate}
               disabled={navigating}

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
+import { DemoStepCostCard } from "@/components/demo/DemoStepCostCard";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
 
@@ -225,6 +226,9 @@ export default function DemoGeneratePage() {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               Select a model for each service, then generate your final content
             </p>
+            <div className="mt-3">
+              <DemoStepCostCard column="generate" />
+            </div>
           </div>
 
           <div className="p-4 sm:p-8 pb-24 sm:pb-24 grid grid-cols-1 lg:grid-cols-3 gap-6">

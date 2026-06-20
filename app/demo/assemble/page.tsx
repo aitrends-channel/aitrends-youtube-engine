@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
+import { DemoStepCostCard } from "@/components/demo/DemoStepCostCard";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
 
@@ -111,6 +112,9 @@ export default function DemoAssemblePage() {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               Transcribes your voiceover to align each clip to the exact narration timing
             </p>
+            <div className="mt-3">
+              <DemoStepCostCard column="assemble" />
+            </div>
           </div>
 
           <div className="p-4 sm:p-8 pb-24 sm:pb-24">

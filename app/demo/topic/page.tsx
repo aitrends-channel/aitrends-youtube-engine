@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Lock } from "lucide-react";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
+import { DemoStepCostCard } from "@/components/demo/DemoStepCostCard";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
 
@@ -28,7 +29,7 @@ export default function DemoTopicPage() {
         <DemoBanner />
         <main className="flex-1 overflow-y-auto">
         <div
-          className="px-4 sm:px-8 py-4 sm:py-5"
+          className="py-4 sm:py-5"
           style={{
             borderBottom: "1px solid var(--bd-6)",
             background: "var(--bg-header-2)",
@@ -39,9 +40,12 @@ export default function DemoTopicPage() {
           <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
             {isTopicLocked ? "Topic is locked — already used in script generation" : "Select a video idea generated for FinanceFuel"}
           </p>
+          <div className="mt-3">
+            <DemoStepCostCard column="topic" />
+          </div>
         </div>
 
-        <div className="max-w-2xl mx-auto px-4 sm:px-8 pt-6 pb-24 space-y-5">
+        <div className="pt-6 pb-24 space-y-5">
 
           {isTopicLocked ? (
             <>
@@ -64,13 +68,6 @@ export default function DemoTopicPage() {
                   This topic has been used in script generation and cannot be changed.
                 </p>
               </div>
-              <button
-                onClick={() => router.push("/demo/script")}
-                className="w-full py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
-                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-              >
-                Go to Script →
-              </button>
             </>
           ) : (
             <>
@@ -133,10 +130,33 @@ export default function DemoTopicPage() {
                 })}
               </div>
 
+            </>
+          )}
+        </div>
+        </main>
+
+        {/* Fixed bottom Continue bar — pinned to the viewport bottom
+            (below DemoBanner, beside DemoNav on desktop) so the action
+            is always visible regardless of how far the user has
+            scrolled. Mirrors the real workflow's Continue bar pattern. */}
+        <div
+          className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
+          style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}
+        >
+          <div className="px-4 sm:px-8">
+            {isTopicLocked ? (
+              <button
+                onClick={() => router.push("/demo/script")}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+              >
+                Go to Script →
+              </button>
+            ) : (
               <button
                 onClick={handleContinue}
                 disabled={!selectedTopic || navigating}
-                className="w-full py-3 rounded-xl text-sm font-semibold transition-all disabled:opacity-40"
+                className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40"
                 style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
               >
                 {navigating ? (
@@ -146,10 +166,9 @@ export default function DemoTopicPage() {
                   </span>
                 ) : "Continue to Script →"}
               </button>
-            </>
-          )}
+            )}
+          </div>
         </div>
-        </main>
       </div>
     </div>
   );
