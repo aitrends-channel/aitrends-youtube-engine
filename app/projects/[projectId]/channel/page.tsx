@@ -641,8 +641,16 @@ export default function ChannelPage({ params }: PageProps) {
       }
 
       setStep("dna", "done");
-      await new Promise((r) => setTimeout(r, 400));
-      router.push(`/projects/${effectiveProjectId}/topic`);
+      // Stay on the channel page after analysis instead of auto-routing
+      // to /topic. The user advances via the persistent "Continue →" bar
+      // at the bottom of the page, which lets them re-analyze with a
+      // different content-type pick first if they want — matching the
+      // demo flow's behavior. effectiveProjectId is the niche we just
+      // created in the projects/new path; route there explicitly so the
+      // wizard sidebar reflects the saved project on the next nav.
+      if (effectiveProjectId !== projectId) {
+        router.replace(`/projects/${effectiveProjectId}/channel`);
+      }
     } catch (err) {
       setStep("analyze", "error");
       setStep("dna", "error");
@@ -1022,13 +1030,14 @@ export default function ChannelPage({ params }: PageProps) {
         </div>
       </main>
 
-      {/* Fixed bottom Continue bar — only on an already-analyzed
-          project, where the user is revisiting the channel page and
-          needs an explicit "go to topic" affordance (the first-run
-          path auto-redirects after analysis succeeds). md:left-64
-          offsets the wizard sidebar so the bar spans only the content
-          area on desktop. */}
-      {isAnalyzed && (
+      {/* Fixed bottom Continue bar. Shows whenever the channel has
+          been analyzed — either persisted on the project row (revisit)
+          or freshly completed in this session (allDone) — and we're
+          not currently mid-run. !isWorking gating keeps it hidden
+          during a re-analyze so the user can't race into /topic with
+          stale data. md:left-64 offsets the wizard sidebar so the bar
+          spans only the content area on desktop. */}
+      {!isWorking && (isAnalyzed || allDone) && (
         <div
           className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}

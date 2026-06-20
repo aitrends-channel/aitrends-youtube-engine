@@ -6,19 +6,56 @@ export const DEMO_DATA = {
     avgViews: "18K",
   },
 
+  // Top-10 sets keyed by the channel-step contentType pick (long /
+  // shorts / both). Mirrors the real flow's API-side filtering — the
+  // user picks a content type on the demo channel page, runs the
+  // analysis, and the top-videos table renders the matching set.
+  //
   // Shape mirrors the actual flow's TopVideo: { videoId, title,
   // viewCount, duration (ISO 8601), publishedAt (ISO date),
-  // hasCaptions, wordCount } so the demo channel page can render the
-  // same table without diverging from production data shape. Durations
-  // chosen to keep the avg under 45min so the demo path doesn't trip
-  // the long-video consent modal.
-  channelTopVideos: [
-    { videoId: "t1", title: "How I Saved $50,000 in 2 Years on a $60K Salary",                viewCount: 1840000, duration: "PT12M42S", publishedAt: "2026-02-14T09:00:00Z", hasCaptions: true,  wordCount: 2104 },
-    { videoId: "t2", title: "Stop Paying These 7 Fees — You Don't Have To",                    viewCount: 1120000, duration: "PT9M08S",  publishedAt: "2026-03-22T09:00:00Z", hasCaptions: true,  wordCount: 1532 },
-    { videoId: "t3", title: "The Exact Budget That Got Me Out of $40K Debt",                   viewCount:  980000, duration: "PT15M21S", publishedAt: "2025-11-05T09:00:00Z", hasCaptions: true,  wordCount: 2418 },
-    { videoId: "t4", title: "Index Funds vs ETFs — The Answer Nobody Gives You",               viewCount:  760000, duration: "PT11M30S", publishedAt: "2026-01-08T09:00:00Z", hasCaptions: true,  wordCount: 1884 },
-    { videoId: "t5", title: "Why 90% of Americans Will Never Build Real Wealth",               viewCount:  640000, duration: "PT13M55S", publishedAt: "2025-12-12T09:00:00Z", hasCaptions: false, wordCount: 2196 },
-  ],
+  // hasCaptions, wordCount }. Long durations stay under 45min avg so
+  // the demo path doesn't trip the long-video consent modal. Shorts
+  // sit under 60s. The "both" set is a top-by-views mix that skews
+  // shorts-heavy (shorts typically rack up far higher view counts on
+  // finance channels) with long-form holdovers at the top.
+  channelTopVideos: {
+    long: [
+      { videoId: "t1",  title: "How I Saved $50,000 in 2 Years on a $60K Salary",            viewCount: 1840000, duration: "PT12M42S", publishedAt: "2026-02-14T09:00:00Z", hasCaptions: true,  wordCount: 2104 },
+      { videoId: "t2",  title: "Stop Paying These 7 Fees — You Don't Have To",                viewCount: 1120000, duration: "PT9M08S",  publishedAt: "2026-03-22T09:00:00Z", hasCaptions: true,  wordCount: 1532 },
+      { videoId: "t3",  title: "The Exact Budget That Got Me Out of $40K Debt",               viewCount:  980000, duration: "PT15M21S", publishedAt: "2025-11-05T09:00:00Z", hasCaptions: true,  wordCount: 2418 },
+      { videoId: "t4",  title: "Index Funds vs ETFs — The Answer Nobody Gives You",           viewCount:  760000, duration: "PT11M30S", publishedAt: "2026-01-08T09:00:00Z", hasCaptions: true,  wordCount: 1884 },
+      { videoId: "t5",  title: "Why 90% of Americans Will Never Build Real Wealth",           viewCount:  640000, duration: "PT13M55S", publishedAt: "2025-12-12T09:00:00Z", hasCaptions: false, wordCount: 2196 },
+      { videoId: "t6",  title: "The Roth IRA Mistake That Cost Me $32,000",                   viewCount:  540000, duration: "PT14M08S", publishedAt: "2026-04-04T09:00:00Z", hasCaptions: true,  wordCount: 2287 },
+      { videoId: "t7",  title: "House Hacking: How I Live Free in a $480K Property",          viewCount:  470000, duration: "PT18M24S", publishedAt: "2026-03-09T09:00:00Z", hasCaptions: true,  wordCount: 3014 },
+      { videoId: "t8",  title: "I Lived on $1,200/Month for a Year — What I Learned",         viewCount:  410000, duration: "PT16M50S", publishedAt: "2025-10-18T09:00:00Z", hasCaptions: false, wordCount: 2731 },
+      { videoId: "t9",  title: "The 3-Step Plan That Doubled My Net Worth in 18 Months",      viewCount:  380000, duration: "PT11M55S", publishedAt: "2025-09-26T09:00:00Z", hasCaptions: true,  wordCount: 1953 },
+      { videoId: "t10", title: "Why Side Hustles Are Mostly a Scam (and the Ones That Work)", viewCount:  330000, duration: "PT13M20S", publishedAt: "2025-08-14T09:00:00Z", hasCaptions: true,  wordCount: 2168 },
+    ],
+    shorts: [
+      { videoId: "s1",  title: "The 3-fund portfolio in 45 seconds",                          viewCount: 4220000, duration: "PT44S", publishedAt: "2026-03-30T09:00:00Z", hasCaptions: true,  wordCount: 132 },
+      { videoId: "s2",  title: "Your bank is paying you 0.01%. Move it. Now.",                 viewCount: 3580000, duration: "PT38S", publishedAt: "2026-04-02T09:00:00Z", hasCaptions: true,  wordCount: 118 },
+      { videoId: "s3",  title: "Stop buying coffee? Wrong advice. Here's the real fix.",       viewCount: 2940000, duration: "PT57S", publishedAt: "2026-02-28T09:00:00Z", hasCaptions: true,  wordCount: 168 },
+      { videoId: "s4",  title: "How much you actually need in your emergency fund",            viewCount: 2110000, duration: "PT52S", publishedAt: "2026-01-19T09:00:00Z", hasCaptions: false, wordCount: 156 },
+      { videoId: "s5",  title: "The one credit card rule nobody tells you",                    viewCount: 1740000, duration: "PT41S", publishedAt: "2025-12-08T09:00:00Z", hasCaptions: true,  wordCount: 124 },
+      { videoId: "s6",  title: "The single line item that doubled my savings rate",            viewCount: 1600000, duration: "PT49S", publishedAt: "2026-04-12T09:00:00Z", hasCaptions: true,  wordCount: 146 },
+      { videoId: "s7",  title: "If you make under $80k, ignore this advice",                   viewCount: 1400000, duration: "PT36S", publishedAt: "2026-03-15T09:00:00Z", hasCaptions: true,  wordCount: 108 },
+      { videoId: "s8",  title: "Roth vs Traditional IRA in 60 seconds",                        viewCount: 1200000, duration: "PT60S", publishedAt: "2026-02-04T09:00:00Z", hasCaptions: true,  wordCount: 178 },
+      { videoId: "s9",  title: "Why your 401k match is non-negotiable",                        viewCount:  980000, duration: "PT32S", publishedAt: "2025-11-22T09:00:00Z", hasCaptions: true,  wordCount: 96  },
+      { videoId: "s10", title: "The credit score myth that's costing you money",               viewCount:  870000, duration: "PT47S", publishedAt: "2025-10-30T09:00:00Z", hasCaptions: false, wordCount: 142 },
+    ],
+    both: [
+      { videoId: "s1",  title: "The 3-fund portfolio in 45 seconds",                          viewCount: 4220000, duration: "PT44S",    publishedAt: "2026-03-30T09:00:00Z", hasCaptions: true,  wordCount: 132 },
+      { videoId: "s2",  title: "Your bank is paying you 0.01%. Move it. Now.",                 viewCount: 3580000, duration: "PT38S",    publishedAt: "2026-04-02T09:00:00Z", hasCaptions: true,  wordCount: 118 },
+      { videoId: "s3",  title: "Stop buying coffee? Wrong advice. Here's the real fix.",       viewCount: 2940000, duration: "PT57S",    publishedAt: "2026-02-28T09:00:00Z", hasCaptions: true,  wordCount: 168 },
+      { videoId: "s4",  title: "How much you actually need in your emergency fund",            viewCount: 2110000, duration: "PT52S",    publishedAt: "2026-01-19T09:00:00Z", hasCaptions: false, wordCount: 156 },
+      { videoId: "t1",  title: "How I Saved $50,000 in 2 Years on a $60K Salary",            viewCount: 1840000, duration: "PT12M42S", publishedAt: "2026-02-14T09:00:00Z", hasCaptions: true,  wordCount: 2104 },
+      { videoId: "s5",  title: "The one credit card rule nobody tells you",                    viewCount: 1740000, duration: "PT41S",    publishedAt: "2025-12-08T09:00:00Z", hasCaptions: true,  wordCount: 124 },
+      { videoId: "s6",  title: "The single line item that doubled my savings rate",            viewCount: 1600000, duration: "PT49S",    publishedAt: "2026-04-12T09:00:00Z", hasCaptions: true,  wordCount: 146 },
+      { videoId: "s7",  title: "If you make under $80k, ignore this advice",                   viewCount: 1400000, duration: "PT36S",    publishedAt: "2026-03-15T09:00:00Z", hasCaptions: true,  wordCount: 108 },
+      { videoId: "s8",  title: "Roth vs Traditional IRA in 60 seconds",                        viewCount: 1200000, duration: "PT60S",    publishedAt: "2026-02-04T09:00:00Z", hasCaptions: true,  wordCount: 178 },
+      { videoId: "t2",  title: "Stop Paying These 7 Fees — You Don't Have To",                viewCount: 1120000, duration: "PT9M08S",  publishedAt: "2026-03-22T09:00:00Z", hasCaptions: true,  wordCount: 1532 },
+    ],
+  },
 
   analysisSteps: [
     { label: "Scanning",   sublabel: "" },

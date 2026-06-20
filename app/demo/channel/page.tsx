@@ -106,7 +106,7 @@ function StepIndicator({ step }: { step: AnalysisStep }) {
 
 export default function DemoChannelPage() {
   const router = useRouter();
-  const { state, update, resetDemo } = useDemoState();
+  const { state, update } = useDemoState();
 
   const { channelPhase, channelContentType, channelTopicMode, channelTopicHint } = state;
 
@@ -133,7 +133,11 @@ export default function DemoChannelPage() {
           if (!cancelled) {
             update({ channelPhase: "done" });
             fetch("/api/demo-niche", { method: "POST" }).catch(() => {});
-            router.push("/demo/topic");
+            // Intentionally not auto-routing to /demo/topic here so the
+            // user can stay on the channel page, flip between content-
+            // type tabs, and re-analyze freely. They advance to topic
+            // via the existing "Continue to Topic →" button on the
+            // result card below when they're ready.
           }
         }, 400);
         return;
@@ -157,12 +161,15 @@ export default function DemoChannelPage() {
   }, [channelPhase]);
 
   function handleAnalyze() {
-    if (isDone) {
-      // Wipe all state and start fresh — resetDemo sets DEFAULTS (channelPhase:"idle"),
-      // then we immediately kick off loading so the effect fires.
-      resetDemo();
-    }
-    // Use a short delay when re-analyzing so the reset setState flush finishes first
+    // Demo re-analyze is intentionally cheap: flip the phase back to
+    // "loading" and let the effect re-run the steps animation. We
+    // deliberately DON'T resetDemo here — that would clobber the user's
+    // contentType pick and any downstream navigation, and the whole
+    // point of demo re-analyses is to let them swap between Long /
+    // Shorts / Both and see the resulting top-10 update without
+    // starting over. From "done" the channelPhase change is what
+    // triggers the useEffect; setTimeout(0) keeps the update on the
+    // next tick so React batches cleanly with the click.
     setTimeout(() => update({ channelPhase: "loading" }), 0);
   }
 
@@ -202,13 +209,23 @@ export default function DemoChannelPage() {
                     { value: "both", label: "Both", desc: "Long + shorts" },
                   ] as const).map((opt) => {
                     const selected = channelContentType === opt.value;
+                    // Demo flow: tabs are only locked WHILE the steps
+                    // animation is running. Once done, they're clickable
+                    // again so the user can flip to a different content
+                    // type and hit "Re-analyze" — supporting unlimited
+                    // re-runs is intentional for the demo.
+                    const locked = isLoading;
                     return (
                       <button
                         key={opt.value}
                         type="button"
                         onClick={() => update({ channelContentType: opt.value })}
-                        disabled={isLoading || isDone}
-                        className="px-4 py-2.5 rounded-xl text-sm text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={locked}
+                        // Selected tab stays fully visible even when the
+                        // group is locked during a run, so the user can
+                        // still read off which scope is being applied.
+                        // Only the unselected siblings dim.
+                        className={`px-4 py-2.5 rounded-xl text-sm text-left transition-all ${locked ? "cursor-not-allowed" : ""} ${locked && !selected ? "opacity-50" : ""}`}
                         style={{
                           background: selected ? "oklch(0.72 0.25 285 / 0.12)" : "var(--bg-progress)",
                           border: `1px solid ${selected ? "oklch(0.72 0.25 285 / 0.3)" : "var(--bd-8)"}`,
@@ -343,7 +360,18 @@ export default function DemoChannelPage() {
             )}
 
             {/* Channel info result card */}
-            {isDone && (
+            {isDone && (() => {
+              // Mirror the real flow: the top-10 table renders the set
+              // matching the user's contentType pick. Fallback to long
+              // covers the (rare) case of a stale session-storage row
+              // missing the field — same default the real channel page
+              // assumes when nothing is saved on the project row yet.
+              const topVideos = channelContentType === "shorts"
+                ? DEMO_DATA.channelTopVideos.shorts
+                : channelContentType === "both"
+                  ? DEMO_DATA.channelTopVideos.both
+                  : DEMO_DATA.channelTopVideos.long;
+              return (
               <div className="rounded-2xl p-6 space-y-4"
                 style={{ background: "var(--bg-panel)", border: "1px solid oklch(0.72 0.25 285 / 0.15)" }}>
                 <div className="flex items-center justify-between gap-3">
@@ -362,10 +390,10 @@ export default function DemoChannelPage() {
                 <div className="space-y-2">
                   <div className="flex items-baseline justify-between gap-3">
                     <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
-                      Top {DEMO_DATA.channelTopVideos.length} Video{DEMO_DATA.channelTopVideos.length === 1 ? "" : "s"}
+                      Top {topVideos.length} Video{topVideos.length === 1 ? "" : "s"}
                     </p>
                     {(() => {
-                      const avg = averageDurationSeconds(DEMO_DATA.channelTopVideos);
+                      const avg = averageDurationSeconds(topVideos);
                       return avg != null ? (
                         <p className="text-xs font-semibold uppercase tracking-wider tabular-nums" style={{ color: "var(--c-45)" }}>
                           Avg duration <span style={{ color: "var(--c-75)" }}>{formatSecondsAsHHMMSS(avg)}</span>
@@ -386,7 +414,7 @@ export default function DemoChannelPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {DEMO_DATA.channelTopVideos.map((v) => (
+                        {topVideos.map((v) => (
                           <tr key={v.videoId} style={{ borderTop: "1px solid var(--bd-7)" }}>
                             <td className="px-3 py-2 min-w-0">
                               <a
@@ -444,7 +472,8 @@ export default function DemoChannelPage() {
                   Continue to Topic →
                 </button>
               </div>
-            )}
+              );
+            })()}
 
           </div>
         </main>
