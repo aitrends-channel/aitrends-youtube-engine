@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowUpRight } from "lucide-react";
 import { DemoNav } from "@/components/demo/DemoNav";
@@ -120,6 +120,11 @@ export default function DemoChannelPage() {
   const [steps, setSteps] = useState<AnalysisStep[]>(
     channelPhase === "done" ? doneSteps() : initialSteps()
   );
+  // Anchored to the "Analysis Progress" panel below so clicking Analyse
+  // pulls the steps section into view — otherwise it lives further down
+  // the page and the user can miss the running animation entirely on a
+  // short viewport.
+  const progressRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (channelPhase !== "loading") return;
@@ -172,7 +177,21 @@ export default function DemoChannelPage() {
     // triggers the useEffect; setTimeout(0) keeps the update on the
     // next tick so React batches cleanly with the click.
     setTimeout(() => update({ channelPhase: "loading" }), 0);
+    // Scroll is wired separately via the useEffect on channelPhase
+    // below — doing it inline here would race the conditional-render
+    // mount of the Analysis Progress panel and fire before progressRef
+    // has a target to point at.
   }
+
+  // Scroll the Analysis Progress panel into view whenever a run kicks
+  // off. Tied to channelPhase rather than handleAnalyze so it also
+  // fires on re-analyze (done → loading) and after React has actually
+  // rendered the panel — refs are null until after the conditional
+  // render commits.
+  useEffect(() => {
+    if (channelPhase !== "loading") return;
+    progressRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [channelPhase]);
 
   const isLoading = channelPhase === "loading";
   const isDone    = channelPhase === "done";
@@ -337,8 +356,11 @@ export default function DemoChannelPage() {
 
             {/* Analysis progress */}
             {(isLoading || isDone) && (
-              <div className="rounded-2xl p-6 space-y-4"
-                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <div
+                ref={progressRef}
+                className="rounded-2xl p-6 space-y-4 scroll-mt-4"
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}
+              >
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
                   Analysis Progress
                 </p>

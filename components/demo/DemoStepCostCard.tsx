@@ -2,27 +2,19 @@
 
 import { DEMO_DATA } from "@/lib/demo-data";
 
-// Visual + naming twin of the real StepCostCard, but driven by static
-// values in DEMO_DATA.costs instead of the live /api/projects/.../costs
-// route. Same column-keying convention so swapping the import is the
-// only thing a demo page has to do.
+// Visual twin of the real StepCostCard, but the demo intentionally
+// surfaces only the unified KIE-credit total per step (no per-provider
+// breakdown). Underlying Claude / Supadata / ElevenLabs costs are
+// represented as KIE credits in the dashboard the user actually gets
+// billed against, so showing them separately here would over-expose
+// internals that don't matter to a demo viewer.
 export type DemoCostColumn = keyof typeof DEMO_DATA.costs;
 
-const PROVIDER_ORDER: Array<"kie" | "sup" | "ant" | "el"> = ["kie", "sup", "ant", "el"];
-
-function formatProvider(provider: string, units: number): string {
-  if (provider === "kie") {
-    return units.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  }
-  return Math.round(units).toLocaleString();
-}
-
 export function DemoStepCostCard({ column }: { column: DemoCostColumn }) {
-  const totals = DEMO_DATA.costs[column] as Partial<Record<"kie" | "sup" | "ant" | "el", number>>;
-
-  const parts = PROVIDER_ORDER
-    .filter((p) => (totals[p] ?? 0) > 0)
-    .map((p) => `${p}-${formatProvider(p, totals[p] as number)}`);
+  const kie = DEMO_DATA.costs[column]?.kie ?? 0;
+  const formatted = kie > 0
+    ? kie.toLocaleString(undefined, { maximumFractionDigits: 2 })
+    : "—";
 
   return (
     <span
@@ -46,7 +38,12 @@ export function DemoStepCostCard({ column }: { column: DemoCostColumn }) {
           color: "oklch(0.7 0.15 145)",
         }}
       >
-        {parts.length === 0 ? "—" : parts.join(", ")}
+        {kie > 0 ? (
+          <>
+            <span>Kie:</span>
+            <span style={{ marginLeft: "5px" }}>{formatted}</span>
+          </>
+        ) : "—"}
       </span>
     </span>
   );

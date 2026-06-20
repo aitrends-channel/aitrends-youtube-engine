@@ -59,20 +59,25 @@ export const DEMO_DATA = {
 
   // Mocked per-step usage totals for DemoStepCostCard. Keys mirror the
   // real workflow's StepCostCard `column` prop so the demo card can
-  // share the same column-naming contract. Values are realistic-looking
-  // numbers for a single mid-sized FinanceFuel-style video — enough to
-  // make the cost badge feel populated without dragging the demo into
-  // a discussion of actual platform pricing.
+  // share the same column-naming contract.
+  //
+  // Demo expresses every step in the same unified KIE-credit metric so
+  // the cost card displays one consistent number across the flow
+  // (mirrors what a billed user actually sees in their dashboard,
+  // where underlying Supadata / Claude / ElevenLabs costs are
+  // converted into KIE credits). Numbers are realistic-looking for a
+  // single mid-sized FinanceFuel-style video — heavy on image/video
+  // gen, lighter on text steps.
   costs: {
-    channel_analysis: { kie: 1.2, sup: 5, ant: 28_400 },
-    topic:            { ant: 4_650 },
-    script:           { ant: 12_320 },
-    visuals:          { ant: 6_540 },
-    prompts:          { ant: 9_180 },
-    voiceover:        { el: 5_240 },
+    channel_analysis: { kie: 8.4 },
+    topic:            { kie: 1.5 },
+    script:           { kie: 6.2 },
+    visuals:          { kie: 3.1 },
+    prompts:          { kie: 4.8 },
+    voiceover:        { kie: 12.6 },
     generate:         { kie: 124.8 },
     assemble:         { kie: 2.4 },
-    thumbnail:        { kie: 26.5, ant: 3_120 },
+    thumbnail:        { kie: 28.2 },
   } as const,
 
   analysisSteps: [

@@ -4,12 +4,33 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Clapperboard, Film, LayoutTemplate, CheckCircle2, RotateCcw, X, Settings, LogOut, ArrowLeft, KeyRound } from "lucide-react";
+import { Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Mic, Clapperboard, Film, LayoutTemplate, CheckCircle2, RotateCcw, X, Settings, LogOut, ArrowLeft, KeyRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useDemoState } from "@/lib/demo-context";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
+
+// Resolves whether the work for a given step index has actually been
+// completed, used by DemoNav to gate forward navigation. Keyed to the
+// same phase fields the per-page UIs update — staying in lockstep with
+// the user's actual progress instead of relying on the (auto-bumped
+// on visit) `highestStep` cursor.
+import type { DemoState } from "@/lib/demo-context";
+function isStepCompleted(index: number, s: DemoState): boolean {
+  switch (index) {
+    case 0: return s.channelPhase === "done";          // Channel
+    case 1: return s.selectedTopic.trim().length > 0;  // Topic
+    case 2: return s.scriptPhase === "done";           // Script
+    case 3: return s.visualsAnalyzePhase === "done";   // Visuals
+    case 4: return s.promptsPhase === "done";          // Prompts
+    case 5: return s.ttsPhase === "done";              // Voiceover
+    case 6: return s.imagesPhase === "done" && s.videosPhase === "done"; // Generate
+    case 7: return s.assemblePhase === "done";         // Assemble
+    case 8: return s.thumbImagePhase === "done";       // Thumbnails
+    default: return false;
+  }
+}
 
 export const DEMO_STEPS: { label: string; sublabel: string; Icon: LucideIcon; href: string }[] = [
   { label: "Channel",    sublabel: "Analysis & Style",    Icon: Tv,             href: "/demo/channel" },
@@ -17,6 +38,7 @@ export const DEMO_STEPS: { label: string; sublabel: string; Icon: LucideIcon; hr
   { label: "Script",     sublabel: "Generate & Edit",      Icon: ScrollText,     href: "/demo/script" },
   { label: "Visuals",    sublabel: "Style Extraction",     Icon: ImageIcon,      href: "/demo/visuals" },
   { label: "Prompts",    sublabel: "Image & Video Beats",  Icon: Wand2,          href: "/demo/prompts" },
+  { label: "Voiceover",  sublabel: "Text-to-Speech",       Icon: Mic,            href: "/demo/voiceover" },
   { label: "Generate",   sublabel: "Assets & Export",      Icon: Clapperboard,   href: "/demo/generate" },
   { label: "Assemble",   sublabel: "Final Video",          Icon: Film,           href: "/demo/assemble" },
   { label: "Thumbnails", sublabel: "Concepts & Images",    Icon: LayoutTemplate, href: "/demo/thumbnails" },
@@ -57,19 +79,48 @@ export function DemoNav({ currentStep }: DemoNavProps) {
     router.push("/login");
   }
 
-  const progressPct = Math.min(Math.round(((highestStep + 1) / 8) * 100), 100);
+  // Progress is "step reached" by default, but the last step's work
+  // (thumbnail image generation) isn't done just because the user
+  // landed on the page. Cap at 99% until the actual generation
+  // completes — only then do we surface 100%.
+  const onLastStep = highestStep >= DEMO_STEPS.length - 1;
+  const lastStepWorkDone = state.thumbImagePhase === "done";
+  const rawPct = Math.round(((highestStep + 1) / DEMO_STEPS.length) * 100);
+  const progressPct = onLastStep && !lastStepWorkDone
+    ? Math.min(99, rawPct)
+    : Math.min(100, rawPct);
 
   function navigateTo(href: string) {
     setDrawerOpen(false);
     router.push(href);
   }
 
+  // A step is reachable only if EVERY prior step's actual work has
+  // completed. The current step is always clickable (the user is
+  // already there); previous steps are clickable as long as their own
+  // prerequisites are met (which they trivially are if the user got
+  // there at some point). Future steps stay locked until the
+  // immediately-preceding step's phase signal flips done.
+  function isStepClickable(i: number): boolean {
+    if (i === currentStep) return true;
+    for (let j = 0; j < i; j++) {
+      if (!isStepCompleted(j, state)) return false;
+    }
+    return true;
+  }
+
   const stepList = (
     <nav className="flex-1 px-3 py-5 space-y-1 overflow-y-auto">
       {DEMO_STEPS.map((step, i) => {
         const isActive = i === currentStep;
-        const isDone = !isActive && i <= highestStep;
-        const isClickable = i <= highestStep;
+        // Done = the step's actual work has been completed, regardless
+        // of whether the user is currently on it. Decoupling from
+        // isActive lets the active step also show its green tick once
+        // the work lands ("you're here AND you finished it"); the
+        // outer row's active highlight still distinguishes "where you
+        // are" from "what's done".
+        const isDone = isStepCompleted(i, state);
+        const isClickable = isStepClickable(i);
         const isHighlighted = i === drawerHighlightStep && drawerHighlightStep >= 0;
 
         return (
@@ -77,13 +128,20 @@ export function DemoNav({ currentStep }: DemoNavProps) {
             <div
               role={isClickable ? "button" : undefined}
               onClick={isClickable ? () => navigateTo(step.href) : undefined}
+              title={!isClickable ? "Complete the previous step first" : undefined}
               className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-opacity"
               style={{
-                cursor: isClickable ? "pointer" : "default",
+                cursor: isClickable ? "pointer" : "not-allowed",
                 ...(isActive
                   ? { background: "oklch(0.72 0.25 285 / 0.12)", boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.25)" }
                   : isDone
+                  // Done-but-not-active rows dim slightly to keep the
+                  // active step the visual anchor; a fully-bright
+                  // completed step would compete with where the user
+                  // actually is.
                   ? { opacity: 0.75 }
+                  : !isClickable
+                  ? { opacity: 0.4 }
                   : {}),
                 ...(isHighlighted && !isActive
                   ? { boxShadow: "inset 0 0 0 1.5px oklch(0.72 0.25 285 / 0.55)" }
@@ -93,10 +151,13 @@ export function DemoNav({ currentStep }: DemoNavProps) {
               <div
                 className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-all"
                 style={
-                  isActive
+                  // Done wins over active so a step the user is still
+                  // on but has completed gets the green tick. The
+                  // outer row's purple ring still marks "you are here".
+                  isDone
+                    ? { background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.55 0.15 145)", boxShadow: "0 0 0 1px oklch(0.55 0.15 145 / 0.35)" }
+                    : isActive
                     ? { background: "oklch(0.72 0.25 285)", color: "oklch(0.06 0 0)", boxShadow: "0 0 14px oklch(0.72 0.25 285 / 0.5)" }
-                    : isDone
-                    ? { background: "transparent", color: "oklch(0.55 0.15 145)" }
                     : { background: "var(--bg-step-idle)", color: "var(--c-38)" }
                 }
               >

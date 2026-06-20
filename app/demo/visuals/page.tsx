@@ -119,7 +119,7 @@ export default function DemoVisualsPage() {
 
           {/* Header */}
           <div
-            className="shrink-0 px-4 sm:px-8 py-4 sm:py-5"
+            className="shrink-0 py-4 sm:py-5"
             style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}
           >
             <h1 className="font-bold text-lg">Visual Style Extraction</h1>
@@ -132,7 +132,7 @@ export default function DemoVisualsPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto">
-          <div className="p-4 sm:p-8 pb-[200px] max-w-4xl mx-auto space-y-6">
+          <div className="py-4 sm:py-8 pb-[200px] space-y-6">
 
             {/* Mode toggle (Manual locked) */}
             <div className="flex gap-2 p-1 rounded-xl"
@@ -335,7 +335,7 @@ export default function DemoVisualsPage() {
       {hasDone && (
         <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
-          <div className="px-4 sm:px-8 max-w-4xl mx-auto">
+          <div>
             <button
               onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/prompts"), 500); }}
               disabled={navigating}

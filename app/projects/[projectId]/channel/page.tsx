@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, use, useEffect } from "react";
+import { useState, use, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ArrowUpRight } from "lucide-react";
 import { WizardNav } from "@/components/wizard/WizardNav";
@@ -297,6 +297,11 @@ export default function ChannelPage({ params }: PageProps) {
   const [topicHint, setTopicHint] = useState("");
   const [customTopic, setCustomTopic] = useState("");
   const [isWorking, setIsWorking] = useState(false);
+  // Anchored to the "Analysis Progress" panel below so clicking
+  // Analyze pulls the steps section into view. Otherwise on a short
+  // viewport the panel mounts below the fold and the user can miss the
+  // run animation entirely. Matches the demo channel page's behavior.
+  const progressRef = useRef<HTMLDivElement | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState("");
   const [showNicheLimitModal, setShowNicheLimitModal] = useState(false);
@@ -361,6 +366,15 @@ export default function ChannelPage({ params }: PageProps) {
     }
   }, [project]);
 
+  // Scroll the Analysis Progress panel into view whenever a run kicks
+  // off. Tied to isWorking rather than runFullAnalysis directly so it
+  // fires on Retry / Re-analyze too, and after React has committed
+  // the conditional render — refs are null until then.
+  useEffect(() => {
+    if (!isWorking) return;
+    progressRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [isWorking]);
+
   async function runFullAnalysis() {
     if (!channelUrl.trim()) return;
     // Belt-and-suspenders — the button is already disabled when this is
@@ -372,6 +386,11 @@ export default function ChannelPage({ params }: PageProps) {
     setIsWorking(true);
     setAnalysisError(null);
     setSteps((prev) => prev.map((s) => ({ ...s, status: "idle" })));
+    // Scroll is handled by the useEffect on isWorking below — it
+    // fires AFTER React has committed the conditionally-mounted
+    // panel, so progressRef has an actual target. An inline
+    // requestAnimationFrame here would race the render and fire
+    // before the panel exists.
 
     let fetchedInfo: ChannelInfo | null = null;
     let fetchedTranscripts: SupadataTranscript[] = [];
@@ -873,8 +892,11 @@ export default function ChannelPage({ params }: PageProps) {
 
           {/* Analysis progress */}
           {(isWorking || steps.some((s) => s.status !== "idle")) && (
-            <div className="rounded-2xl p-6 space-y-4"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+            <div
+              ref={progressRef}
+              className="rounded-2xl p-6 space-y-4 scroll-mt-4"
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}
+            >
               <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
                 Analysis Progress
               </p>

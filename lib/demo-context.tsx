@@ -24,6 +24,7 @@ export interface DemoState {
 
   // Prompts
   promptsTab: "image" | "video";
+  promptsPhase: "idle" | "generating" | "done";
 
   // Generate — Voiceover
   selectedVoice: string;
@@ -50,6 +51,23 @@ export interface DemoState {
   captionsPosition: string;
   captionsLanguage: string;
   assemblePhase: "idle" | "assembling" | "done";
+  // Background music + logo. Stored as data URLs so they survive a
+  // navigate-away-and-back round trip (sessionStorage is the demo
+  // context's persistence layer; blob: URLs created from File objects
+  // die with the page). For typical small uploads (<1-2 MB) this fits
+  // comfortably in sessionStorage. If a user picks something huge and
+  // the save fails the state still works in-memory for the current
+  // session — they just lose persistence on a hard reload.
+  bgmName: string | null;
+  bgmSizeMb: number | null;
+  bgmDataUrl: string | null;
+  bgmVolume: number;
+  logoName: string | null;
+  logoSizeKb: number | null;
+  logoDataUrl: string | null;
+  logoSize: number;  // 0-1 fraction of canvas width
+  logoX: number;     // 0-1 fraction
+  logoY: number;     // 0-1 fraction
 
   // Thumbnails
   conceptPhase: "idle" | "running" | "done";
@@ -71,6 +89,7 @@ const DEFAULTS: DemoState = {
   visualsFetchPhase: "idle",
   visualsAnalyzePhase: "idle",
   promptsTab: "image",
+  promptsPhase: "idle",
   selectedVoice: "TX3LPaxmHKxFdv7VOQHJ",
   ttsPhase: "idle",
   selectedImageModel: "i1",
@@ -89,6 +108,16 @@ const DEFAULTS: DemoState = {
   captionsPosition: "bottom",
   captionsLanguage: "source",
   assemblePhase: "idle",
+  bgmName: null,
+  bgmSizeMb: null,
+  bgmDataUrl: null,
+  bgmVolume: 0.25,
+  logoName: null,
+  logoSizeKb: null,
+  logoDataUrl: null,
+  logoSize: 0.1,
+  logoX: 0.85,
+  logoY: 0.05,
   conceptPhase: "idle",
   thumbImagePhase: "idle",
   thumbImageProgress: 0,
@@ -109,6 +138,7 @@ const PHASE_RESETS: Partial<DemoState> = {
   ttsPhase:            "idle",
   visualsFetchPhase:   "idle",
   visualsAnalyzePhase: "idle",
+  promptsPhase:        "idle",
   conceptPhase:        "idle",
 };
 

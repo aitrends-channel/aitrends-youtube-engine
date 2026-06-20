@@ -74,14 +74,14 @@ export default function DemoThumbnailsPage() {
 
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
-      <DemoNav currentStep={7} />
+      <DemoNav currentStep={8} />
       <div className="flex-1 flex flex-col min-h-0">
         <DemoBanner />
         <main className="flex-1 overflow-y-auto">
 
           {/* Header */}
           <div
-            className="px-4 sm:px-8 py-4 sm:py-5"
+            className="py-4 sm:py-5"
             style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}
           >
             <h1 className="font-bold text-lg">Thumbnail Generator</h1>
@@ -93,7 +93,7 @@ export default function DemoThumbnailsPage() {
             </div>
           </div>
 
-          <div className="p-4 sm:p-8 pb-24 sm:pb-24 max-w-3xl space-y-6">
+          <div className="py-4 sm:py-8 pb-24 sm:pb-24 space-y-6">
 
             {/* Step 1 — Concepts */}
             <div
@@ -146,7 +146,17 @@ export default function DemoThumbnailsPage() {
                       <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-progress)" }}>
                         <div
                           className="h-full rounded-full transition-all"
-                          style={{ width: `${Math.round((imageProgress / thumbs.length) * 100)}%`, background: "oklch(0.72 0.25 285)" }}
+                          // Cap mid-run progress at 99% so the bar
+                          // never reads 100% before every thumbnail
+                          // has actually landed. Once imagePhase flips
+                          // to "done" the bar isn't rendered anyway
+                          // (this whole block is gated on running),
+                          // so users only ever see 100% via the
+                          // "X images generated" success state below.
+                          style={{
+                            width: `${Math.min(99, Math.round((imageProgress / thumbs.length) * 100))}%`,
+                            background: "oklch(0.72 0.25 285)",
+                          }}
                         />
                       </div>
                       <span className="text-xs shrink-0" style={{ color: "var(--c-40)" }}>{imageProgress}/{thumbs.length}</span>
@@ -276,7 +286,7 @@ export default function DemoThumbnailsPage() {
       {hasImages && (
         <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
-          <div className="px-4 sm:px-8 max-w-3xl mx-auto">
+          <div>
             <button
               onClick={() => { setNavigating(true); router.push("/dashboard"); }}
               disabled={navigating}
