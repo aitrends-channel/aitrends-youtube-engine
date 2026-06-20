@@ -288,6 +288,11 @@ export default function ChannelPage({ params }: PageProps) {
   const [channelUrl, setChannelUrl] = useState("");
   const [channelInfo, setChannelInfo] = useState<ChannelInfo | null>(null);
   const [transcripts, setTranscripts] = useState<SupadataTranscript[]>([]);
+  // Required pick before any analysis can run — scopes which videos
+  // the YouTube fetch + downstream pipeline care about. Null on first
+  // visit so the user has to opt in (no silent default like "long"
+  // that would commit a wrong-flavor pipeline behind their back).
+  const [contentType, setContentType] = useState<"long" | "shorts" | "both" | null>(null);
   const [topicMode, setTopicMode] = useState<"generate" | "custom">("generate");
   const [topicHint, setTopicHint] = useState("");
   const [customTopic, setCustomTopic] = useState("");
@@ -344,10 +349,26 @@ export default function ChannelPage({ params }: PageProps) {
     if (project?.channel_url && !channelUrl) {
       setChannelUrl(project.channel_url);
     }
+    // content_type is whitelisted on the server (long/shorts/both or null)
+    // but we still narrow on the client so a stale row from a future
+    // schema can't break the tab-render.
+    if (
+      project?.content_type &&
+      !contentType &&
+      (project.content_type === "long" || project.content_type === "shorts" || project.content_type === "both")
+    ) {
+      setContentType(project.content_type);
+    }
   }, [project]);
 
   async function runFullAnalysis() {
     if (!channelUrl.trim()) return;
+    // Belt-and-suspenders — the button is already disabled when this is
+    // null. Keeps any keyboard-Enter path honest.
+    if (!contentType) {
+      toast.error("Pick a content type first");
+      return;
+    }
     setIsWorking(true);
     setAnalysisError(null);
     setSteps((prev) => prev.map((s) => ({ ...s, status: "idle" })));
@@ -369,7 +390,7 @@ export default function ChannelPage({ params }: PageProps) {
         const res = await fetch("/api/youtube/channel", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ channelUrl }),
+          body: JSON.stringify({ channelUrl, contentType }),
         });
         // Read once as text and only parse if it looks like JSON.
         // Guards against Vercel's plain-text runtime errors (e.g.
@@ -443,7 +464,15 @@ export default function ChannelPage({ params }: PageProps) {
     setStep("transcripts", "running");
     if (!fetchedInfo!.topVideos.length) {
       setStep("transcripts", "error");
-      const msg = "No videos found for this channel";
+      // Contextualize the error by the scope the user just picked —
+      // "no videos" is misleading when they asked for shorts on a
+      // long-only channel (or vice-versa). The remediation is to swap
+      // the content-type tab, not retry, so surface that explicitly.
+      const msg = contentType === "shorts"
+        ? "No Shorts found in this channel's recent uploads. Try \"Long Videos\" or \"Both\"."
+        : contentType === "long"
+          ? "No long-form videos found on this channel. Try \"Shorts\" or \"Both\"."
+          : "No videos found for this channel";
       setAnalysisError(msg);
       toast.error(msg);
       setIsWorking(false);
@@ -553,6 +582,11 @@ export default function ChannelPage({ params }: PageProps) {
         channel_url: channelUrl,
         channel_name: fetchedInfo!.channelName,
         channel_info: fetchedInfo,
+        // Persist the user's pick so reloads + downstream steps see the
+        // same scope. The DB constraint (long/shorts/both) keeps this
+        // honest — the !!contentType guard upstream means we never
+        // PATCH a null and clobber an existing value.
+        ...(contentType ? { content_type: contentType } : {}),
       }),
     });
 
@@ -651,6 +685,47 @@ export default function ChannelPage({ params }: PageProps) {
           <div className="rounded-2xl p-6 space-y-5"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
 
+            {/* Content Type — first decision in the flow. Locked once a
+                niche has been analyzed so a downstream regen can't
+                silently swap long → shorts (which would invalidate the
+                cached transcripts + channel_info we're about to re-use). */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
+                Content Type
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { value: "long", label: "Long Videos", desc: "Standard YouTube videos" },
+                  { value: "shorts", label: "Shorts", desc: "Vertical short-form" },
+                  { value: "both", label: "Both", desc: "Long + shorts" },
+                ] as const).map((opt) => {
+                  const selected = contentType === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setContentType(opt.value)}
+                      disabled={isAnalyzed || isWorking}
+                      className="px-4 py-2.5 rounded-xl text-sm text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{
+                        background: selected ? "oklch(0.72 0.25 285 / 0.12)" : "var(--bg-progress)",
+                        border: `1px solid ${selected ? "oklch(0.72 0.25 285 / 0.3)" : "var(--bd-8)"}`,
+                        color: selected ? "oklch(0.72 0.25 285)" : "var(--c-55)",
+                      }}
+                    >
+                      <p className="font-medium">{opt.label}</p>
+                      <p className="text-xs mt-0.5 opacity-70">{opt.desc}</p>
+                    </button>
+                  );
+                })}
+              </div>
+              {!contentType && (
+                <p className="text-xs" style={{ color: "var(--c-45)" }}>
+                  Pick a content type to begin.
+                </p>
+              )}
+            </div>
+
             <div className="space-y-2">
               <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
                 YouTube Channel URL
@@ -667,7 +742,13 @@ export default function ChannelPage({ params }: PageProps) {
                 // on a post-save failure the URL is sticky but the
                 // button is still actionable for a Retry.
                 const inputLocked = isAnalyzed;
-                const buttonDisabled = isWorking || !channelUrl.trim();
+                // contentType is the first required decision — keep the
+                // URL field disabled until they've picked, so the flow
+                // visibly reads top-down. Once analyzed the content_type
+                // is already on the project row, so the lock-by-isAnalyzed
+                // branch keeps things stable for Retry / Re-analyze.
+                const contentTypeMissing = !contentType;
+                const buttonDisabled = isWorking || !channelUrl.trim() || contentTypeMissing;
                 const buttonLabel = isWorking
                   ? null
                   : hasError
@@ -685,9 +766,10 @@ export default function ChannelPage({ params }: PageProps) {
                   <div className="flex gap-3">
                     <input
                       type="text"
-                      placeholder="https://youtube.com/@channelname"
+                      placeholder={contentTypeMissing ? "Pick a content type above first" : "https://youtube.com/@channelname"}
                       value={channelUrl}
                       readOnly={inputLocked}
+                      disabled={contentTypeMissing && !inputLocked}
                       onChange={(e) => {
                         if (inputLocked) return;
                         setChannelUrl(e.target.value);
@@ -704,10 +786,10 @@ export default function ChannelPage({ params }: PageProps) {
                         background: "var(--bg-progress)",
                         border: "1px solid var(--bd-8)",
                         color: "var(--c-90)",
-                        opacity: inputLocked ? 0.6 : 1,
-                        cursor: inputLocked ? "default" : undefined,
+                        opacity: inputLocked || contentTypeMissing ? 0.6 : 1,
+                        cursor: inputLocked || contentTypeMissing ? "not-allowed" : undefined,
                       }}
-                      onFocus={(e) => { if (!inputLocked) (e.target as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.4)"; }}
+                      onFocus={(e) => { if (!inputLocked && !contentTypeMissing) (e.target as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.4)"; }}
                       onBlur={(e) => { (e.target as HTMLElement).style.borderColor = "var(--bd-8)"; }}
                     />
                     <button

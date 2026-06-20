@@ -8,6 +8,7 @@ export interface DemoState {
 
   // Channel
   channelPhase: "idle" | "loading" | "done";
+  channelContentType: "long" | "shorts" | "both" | null;
   channelTopicMode: "generate" | "custom";
   channelTopicHint: string;
 
@@ -62,6 +63,7 @@ export interface DemoState {
 const DEFAULTS: DemoState = {
   highestStep: 0,
   channelPhase: "idle",
+  channelContentType: null,
   channelTopicMode: "generate",
   channelTopicHint: "",
   selectedTopic: "",
@@ -118,6 +120,14 @@ function sanitize(s: DemoState): DemoState {
     }
   }
   if (out.channelPhase === ("loading" as string)) out.channelPhase = "idle";
+  // Defend against a stale sessionStorage row holding a value outside
+  // the new enum (e.g. an older build's "" placeholder).
+  if (out.channelContentType !== null
+      && out.channelContentType !== "long"
+      && out.channelContentType !== "shorts"
+      && out.channelContentType !== "both") {
+    out.channelContentType = null;
+  }
   return out;
 }
 

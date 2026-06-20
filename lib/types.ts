@@ -28,12 +28,23 @@ export interface TopVideo {
   hasCaptions?: boolean;
 }
 
+/** User's content-type pick from the channel step. Scopes which videos
+ *  the YouTube top-10 fetch returns ("long" = >60s, "shorts" = <=60s,
+ *  "both" = no filter). Shared by the API route, channel resolver,
+ *  and the channel page. */
+export type ContentType = "long" | "shorts" | "both";
+
 export interface ChannelInfo {
   channelId: string;
   channelName: string;
   subscribers: string;
   description?: string;
   topVideos: TopVideo[];
+  /** The contentType scope these topVideos were filtered against. Used
+   *  by the cache lookup to keep a prior "long" run from leaking into a
+   *  new "shorts" run on the same channel. Optional because cached rows
+   *  written before this field existed won't have it. */
+  contentType?: ContentType;
   lastCachedAt?: string;
 }
 

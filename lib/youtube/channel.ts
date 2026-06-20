@@ -1,5 +1,21 @@
-import type { ChannelInfo, TopVideo } from "@/lib/types";
+import type { ChannelInfo, ContentType, TopVideo } from "@/lib/types";
 import { supabase } from "@/lib/supabase/client";
+
+// YouTube Data API search.list videoDuration buckets:
+//   long   = > 20 min
+//   medium = 4-20 min
+//   short  = < 4 min
+//
+// We map contentType:
+//   "shorts" → videoDuration=short  (< 4 min, includes the Shorts product)
+//   "long"   → videoDuration=any    (search.list already biases long-form;
+//                                     the index drops Shorts so this is
+//                                     "everything that isn't a Short" in
+//                                     practice — what users mean by Long)
+//   "both"   → videoDuration=any    (no filter)
+function videoDurationFor(contentType: ContentType): "short" | "any" {
+  return contentType === "shorts" ? "short" : "any";
+}
 
 const YOUTUBE_DAILY_QUOTA = 10_000;
 // Quota units per call type (YouTube Data API v3)
@@ -24,7 +40,21 @@ async function youtubeGet<T>(url: URL): Promise<T> {
   if (reason === "playlistNotFound" || reason === "playlistItemsNotAccessible") {
     throw new YouTubeNotFoundError(reason, data.error?.message ?? "Playlist not found");
   }
-  if (data?.error) throw new Error(`YouTube API: ${data.error.message ?? "unknown error"}`);
+  if (data?.error) {
+    // Pull the endpoint (e.g. "search", "videos", "channels") off the
+    // URL so the surfaced error tells us which call tripped. The full
+    // params (with key) get logged once for debugging but not echoed
+    // to the user.
+    const endpoint = url.pathname.split("/").pop() ?? "unknown";
+    console.warn(`[youtube] ${endpoint} failed`, {
+      status: res.status,
+      reason,
+      message: data.error.message,
+      // Strip the key from the logged URL so we don't leak it.
+      url: url.toString().replace(/key=[^&]+/, "key=REDACTED"),
+    });
+    throw new Error(`YouTube API (${endpoint}): ${data.error.message ?? "unknown error"}`);
+  }
   return data as T;
 }
 
@@ -160,12 +190,25 @@ async function fetchChannelInfo(
   };
 }
 
+// Single-pass top-10 fetch. search.list does the heavy lifting:
+// `order=viewCount` ranks by views, `videoDuration` filters by the
+// channel page's content-type pick. We then make one videos.list call
+// to enrich the chosen 10 with duration/captions/publishedAt/viewCount
+// (search.list returns only snippet + id, so the enrichment call is
+// unavoidable but it's just 1 quota unit). No post-filter, no
+// pagination through uploads. Total cost: 101 quota per fetch.
+//
+// uploadsPlaylistId is no longer used here — the previous fallback
+// path was for empty search results, but with videoDuration buckets
+// the empty case is a legitimate "channel has no videos of this type"
+// signal the caller should surface, not paper over.
 async function fetchTopVideos(
   channelId: string,
-  uploadsPlaylistId: string,
-  apiKey: string
+  _uploadsPlaylistId: string,
+  apiKey: string,
+  contentType: ContentType,
 ): Promise<{ videos: TopVideo[]; quotaUsed: number }> {
-  let quotaUsed = QUOTA.search_list;
+  let quotaUsed = 0;
 
   const searchUrl = new URL("https://www.googleapis.com/youtube/v3/search");
   searchUrl.searchParams.set("part", "snippet");
@@ -173,45 +216,19 @@ async function fetchTopVideos(
   searchUrl.searchParams.set("type", "video");
   searchUrl.searchParams.set("order", "viewCount");
   searchUrl.searchParams.set("maxResults", "10");
+  searchUrl.searchParams.set("videoDuration", videoDurationFor(contentType));
   searchUrl.searchParams.set("key", apiKey);
 
   const searchData = await youtubeGet<{ items?: { id: { videoId: string } }[] }>(searchUrl);
-  let videoIds = (searchData.items ?? []).map(i => i.id.videoId);
+  quotaUsed += QUOTA.search_list;
+  const ids = (searchData.items ?? []).map((i) => i.id.videoId).filter(Boolean);
+  if (!ids.length) return { videos: [], quotaUsed };
 
-  // search.list with type=video silently drops Shorts on some channels
-  // (and returns nothing for channels with only livestreams or very new
-  // uploads). Fall back to the uploads playlist, which lists every
-  // upload regardless of format.
-  if (!videoIds.length && uploadsPlaylistId) {
-    const playlistUrl = new URL("https://www.googleapis.com/youtube/v3/playlistItems");
-    playlistUrl.searchParams.set("part", "contentDetails");
-    playlistUrl.searchParams.set("playlistId", uploadsPlaylistId);
-    playlistUrl.searchParams.set("maxResults", "50");
-    playlistUrl.searchParams.set("key", apiKey);
-
-    try {
-      const playlistData = await youtubeGet<{
-        items?: { contentDetails: { videoId: string } }[];
-      }>(playlistUrl);
-      quotaUsed += QUOTA.playlistItems_list;
-      videoIds = (playlistData.items ?? []).map(i => i.contentDetails.videoId);
-    } catch (err) {
-      // Uploads playlist 404s when the channel has no public uploads at
-      // all (or is terminated/region-blocked). Treat as "no videos" so
-      // the caller surfaces a real reason instead of a 500.
-      if (err instanceof YouTubeNotFoundError) {
-        quotaUsed += QUOTA.playlistItems_list;
-      } else {
-        throw err;
-      }
-    }
-  }
-
-  if (!videoIds.length) return { videos: [], quotaUsed };
-
+  // Enrichment — only fields not available on search.list.snippet
+  // (duration, caption flag, viewCount). 10 IDs fits in a single call.
   const videosUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
   videosUrl.searchParams.set("part", "snippet,statistics,contentDetails");
-  videosUrl.searchParams.set("id", videoIds.join(","));
+  videosUrl.searchParams.set("id", ids.join(","));
   videosUrl.searchParams.set("key", apiKey);
 
   const videosData = await youtubeGet<{
@@ -224,7 +241,7 @@ async function fetchTopVideos(
   }>(videosUrl);
   quotaUsed += QUOTA.videos_list;
 
-  const videos = (videosData.items ?? []).map(v => ({
+  const videos: TopVideo[] = (videosData.items ?? []).map((v) => ({
     videoId: v.id,
     title: v.snippet.title,
     viewCount: parseInt(v.statistics.viewCount ?? "0", 10) || 0,
@@ -233,19 +250,25 @@ async function fetchTopVideos(
     hasCaptions: v.contentDetails.caption === "true",
   }));
 
-  // The uploads-playlist path returns items in upload order, not view
-  // order. Sort by viewCount desc and cap at 10 so downstream sees the
-  // channel's strongest videos either way.
+  // search.list already returns in viewCount order, but videos.list
+  // doesn't preserve input order — re-sort so the channel's strongest
+  // videos lead the table.
   videos.sort((a, b) => b.viewCount - a.viewCount);
-  return { videos: videos.slice(0, 10), quotaUsed };
+  return { videos, quotaUsed };
 }
 
-async function getCachedChannel(channelId: string): Promise<ChannelInfo | null> {
+async function getCachedChannel(channelId: string, contentType: ContentType): Promise<ChannelInfo | null> {
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  // Partition the cache by contentType — a prior "long" run on this
+  // channel must NOT serve a "shorts" request, otherwise the downstream
+  // pipeline would see the wrong set of top videos. Old rows written
+  // before contentType existed won't match this filter; they re-fetch
+  // once and then start hitting the cache normally.
   const { data } = await supabase
     .from("projects")
     .select("channel_info")
     .eq("channel_info->>channelId", channelId)
+    .eq("channel_info->>contentType", contentType)
     .gte("channel_info->>lastCachedAt", cutoff)
     .limit(1)
     .single();
@@ -254,7 +277,7 @@ async function getCachedChannel(channelId: string): Promise<ChannelInfo | null> 
   return data.channel_info as ChannelInfo;
 }
 
-export async function resolveChannel(channelUrl: string): Promise<ChannelInfo> {
+export async function resolveChannel(channelUrl: string, contentType: ContentType): Promise<ChannelInfo> {
   const row = await getYouTubeKeyRow();
 
   let keys: string[] = [];
@@ -275,7 +298,7 @@ export async function resolveChannel(channelUrl: string): Promise<ChannelInfo> {
 
     try {
       const channel = await fetchChannelInfo(channelUrl, apiKey);
-      const cached = await getCachedChannel(channel.id);
+      const cached = await getCachedChannel(channel.id, contentType);
 
       if (cached) {
         // Fire-and-forget quota tracking (channels.list only)
@@ -283,7 +306,7 @@ export async function resolveChannel(channelUrl: string): Promise<ChannelInfo> {
         return cached;
       }
 
-      const { videos: topVideos, quotaUsed } = await fetchTopVideos(channel.id, channel.uploadsPlaylistId, apiKey);
+      const { videos: topVideos, quotaUsed } = await fetchTopVideos(channel.id, channel.uploadsPlaylistId, apiKey, contentType);
 
       // Fire-and-forget quota tracking (channels.list + whatever the top-videos path actually consumed)
       if (row) recordQuotaUsage(row.id, absoluteIndex, QUOTA.channels_list + quotaUsed).catch(() => {});
@@ -294,6 +317,7 @@ export async function resolveChannel(channelUrl: string): Promise<ChannelInfo> {
         subscribers: channel.subscribers,
         description: channel.description,
         topVideos,
+        contentType,
         lastCachedAt: new Date().toISOString(),
       };
     } catch (err) {

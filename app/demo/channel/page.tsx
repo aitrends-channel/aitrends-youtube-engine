@@ -108,7 +108,7 @@ export default function DemoChannelPage() {
   const router = useRouter();
   const { state, update, resetDemo } = useDemoState();
 
-  const { channelPhase, channelTopicMode, channelTopicHint } = state;
+  const { channelPhase, channelContentType, channelTopicMode, channelTopicHint } = state;
 
   const initialSteps = (): AnalysisStep[] =>
     DEMO_DATA.analysisSteps.map((s) => ({ ...s, status: "idle" as StepStatus }));
@@ -188,6 +188,46 @@ export default function DemoChannelPage() {
             <div className="rounded-2xl p-6 space-y-5"
               style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
 
+              {/* Content Type — mirrors the real flow's first decision.
+                  Locked once the demo analysis has run so a Re-analyze
+                  doesn't allow swapping scope mid-demo. */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
+                  Content Type
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {([
+                    { value: "long", label: "Long Videos", desc: "Standard YouTube videos" },
+                    { value: "shorts", label: "Shorts", desc: "Vertical short-form" },
+                    { value: "both", label: "Both", desc: "Long + shorts" },
+                  ] as const).map((opt) => {
+                    const selected = channelContentType === opt.value;
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => update({ channelContentType: opt.value })}
+                        disabled={isLoading || isDone}
+                        className="px-4 py-2.5 rounded-xl text-sm text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        style={{
+                          background: selected ? "oklch(0.72 0.25 285 / 0.12)" : "var(--bg-progress)",
+                          border: `1px solid ${selected ? "oklch(0.72 0.25 285 / 0.3)" : "var(--bd-8)"}`,
+                          color: selected ? "oklch(0.72 0.25 285)" : "var(--c-55)",
+                        }}
+                      >
+                        <p className="font-medium">{opt.label}</p>
+                        <p className="text-xs mt-0.5 opacity-70">{opt.desc}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+                {!channelContentType && (
+                  <p className="text-xs" style={{ color: "var(--c-45)" }}>
+                    Pick a content type to begin.
+                  </p>
+                )}
+              </div>
+
               {/* Channel URL */}
               <div className="space-y-2">
                 <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
@@ -198,24 +238,25 @@ export default function DemoChannelPage() {
                     type="text"
                     value={DEMO_DATA.channel.url}
                     readOnly
-                    disabled={isLoading}
+                    disabled={isLoading || !channelContentType}
+                    placeholder={!channelContentType ? "Pick a content type above first" : undefined}
                     className="flex-1 min-w-0 px-4 py-2.5 rounded-xl text-sm outline-none"
                     style={{
                       background: "var(--bg-progress)",
                       border: "1px solid var(--bd-8)",
                       color: "var(--c-90)",
-                      opacity: isLoading ? 0.6 : 1,
+                      opacity: isLoading || !channelContentType ? 0.6 : 1,
                     }}
                   />
                   <button
                     onClick={handleAnalyze}
-                    disabled={isLoading}
+                    disabled={isLoading || !channelContentType}
                     className="shrink-0 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40"
                     style={{
                       background: isDone ? "var(--bg-progress)" : "oklch(0.72 0.25 285)",
                       color: isDone ? "var(--c-60)" : "var(--bg-page-2)",
                       border: isDone ? "1px solid var(--bd-8)" : "none",
-                      boxShadow: isLoading || isDone ? "none" : "0 0 16px oklch(0.72 0.25 285 / 0.3)",
+                      boxShadow: isLoading || isDone || !channelContentType ? "none" : "0 0 16px oklch(0.72 0.25 285 / 0.3)",
                     }}
                   >
                     {isLoading ? "Running…" : isDone ? "Re-analyze" : "Analyze"}
