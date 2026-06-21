@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/finish-images",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/refresh-model-cost-and-speed",
+      "schedule": "0 3 * * *"
     }
   ]
 }
