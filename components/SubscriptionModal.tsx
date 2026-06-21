@@ -1,47 +1,23 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { X, Check, Zap, PlayCircle } from "lucide-react";
+import { X, Check, PlayCircle } from "lucide-react";
 
-const PLANS = [
-  {
-    id: "founder",
-    name: "Founder",
-    price: "$40",
-    period: " / year",
-    limit: "1 year · 20 niches",
-    features: ["20 niches", "HD image processing", "Full AI pipeline", "All features included", "1 year — no renewal"],
-    highlighted: false,
-    disabled: false,
-    founder: true,
-  },
-  {
-    id: "starter",
-    name: "Starter",
-    price: "$19",
-    period: "/mo",
-    limit: "5 niches/month",
-    features: ["5 niches/month", "Standard image processing", "Full AI pipeline", "All features included", "Community support"],
-    disabled: false,
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    price: "$49",
-    period: "/mo",
-    limit: "Unlimited niches",
-    features: ["Everything in Starter", "Clone unlimited YouTube niches", "Unlimited video creation", "Bulk video generation", "Priority rendering queue", "Priority support"],
-    highlighted: true,
-    disabled: false,
-  },
-];
-
-const DODO_PAYMENT_LINKS: Record<string, string> = {
-  founder: process.env.NEXT_PUBLIC_DODO_LINK_FOUNDER ?? "",
-  starter: process.env.NEXT_PUBLIC_DODO_LINK_STARTER ?? "",
-  pro:     process.env.NEXT_PUBLIC_DODO_LINK_PRO     ?? "",
-};
+interface PlanDTO {
+  slug: string;
+  name: string;
+  priceDisplay: string;
+  periodDisplay: string;
+  limitDisplay: string;
+  features: string[];
+  nichesPerMonth: number | null;
+  paymentLink: string | null;
+  highlighted: boolean;
+  disabled: boolean;
+  isFounder: boolean;
+  sortOrder: number;
+}
 
 interface Props {
   email: string;
@@ -52,13 +28,28 @@ interface Props {
 }
 
 
-export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hideTryDemo }: Props) {
+export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: Props) {
   const router = useRouter();
-  const [selectedPlan, setSelectedPlan] = useState(defaultPlan ?? "founder");
+  const [plans, setPlans] = useState<PlanDTO[] | null>(null);
+  const [selectedPlan, setSelectedPlan] = useState<string>(defaultPlan ?? "");
   const [spotsLeft, setSpotsLeft] = useState<number | null>(null);
   const [founderActive, setFounderActive] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [subscribing, setSubscribing] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/plans", { cache: "no-store" })
+      .then(r => r.json())
+      .then(d => {
+        const list = (d?.plans as PlanDTO[] | undefined) ?? [];
+        setPlans(list);
+        if (!defaultPlan && list.length > 0) {
+          const founder = list.find(p => p.isFounder && !p.disabled);
+          setSelectedPlan((founder ?? list.find(p => !p.disabled) ?? list[0]).slug);
+        }
+      })
+      .catch(() => setPlans([]));
+  }, [defaultPlan]);
 
   useEffect(() => {
     // cache: "no-store" so admin edits to the founder cap or slot
@@ -76,13 +67,31 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
   // Founder visibility gated by the single 'active' flag from the server.
   const founderAvailable = founderActive === null || founderActive === true;
 
-  // If the default lands on Founder but it's no longer available, fall back to Pro.
+  const visiblePlans = useMemo(() => {
+    if (!plans) return [];
+    return plans.filter((p) => !p.isFounder || founderAvailable);
+  }, [plans, founderAvailable]);
+
+  // If the currently-selected slug is a founder plan and founder is no
+  // longer available, fall back to the first non-founder, non-disabled
+  // plan. Mirrors the previous "fall back to pro" behavior generically.
   useEffect(() => {
-    if (selectedPlan === "founder" && !founderAvailable) setSelectedPlan("pro");
-  }, [founderAvailable, selectedPlan]);
+    if (!plans || !selectedPlan) return;
+    const current = plans.find(p => p.slug === selectedPlan);
+    if (!current) {
+      const fallback = visiblePlans.find(p => !p.disabled);
+      if (fallback) setSelectedPlan(fallback.slug);
+      return;
+    }
+    if (current.isFounder && !founderAvailable) {
+      const fallback = visiblePlans.find(p => !p.disabled && !p.isFounder);
+      if (fallback) setSelectedPlan(fallback.slug);
+    }
+  }, [plans, selectedPlan, founderAvailable, visiblePlans]);
 
   function handleSubscribe() {
-    const base = DODO_PAYMENT_LINKS[selectedPlan];
+    const plan = plans?.find(p => p.slug === selectedPlan);
+    const base = plan?.paymentLink;
     if (!base) {
       setError("Payment not configured for this plan. Contact support.");
       return;
@@ -95,6 +104,9 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
     if (email) url.searchParams.set("customer[email]", email);
     window.location.href = url.toString();
   }
+
+  const selected = plans?.find(p => p.slug === selectedPlan) ?? null;
+  const gridCols = visiblePlans.length >= 3 ? "grid-cols-3" : visiblePlans.length === 2 ? "grid-cols-2" : "grid-cols-1";
 
   return (
     <div
@@ -159,76 +171,86 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
           </span>
         </button>}
 
-        {/* Plan selector */}
-        <div className={`grid ${founderAvailable ? "grid-cols-3" : "grid-cols-2"} gap-3 mb-6`}>
-          {PLANS.filter((p) => p.id !== "founder" || founderAvailable).map((plan) => (
-            <button
-              key={plan.id}
-              onClick={() => !plan.disabled && setSelectedPlan(plan.id)}
-              className="relative rounded-xl p-3 text-left transition-all"
-              style={{
-                background: plan.disabled ? "oklch(1 0 0 / 0.01)" : selectedPlan === plan.id ? "oklch(0.72 0.25 285 / 0.12)" : "oklch(1 0 0 / 0.03)",
-                border: plan.disabled ? "1px solid oklch(1 0 0 / 0.05)" : selectedPlan === plan.id
-                  ? "1px solid oklch(0.72 0.25 285 / 0.50)"
-                  : "1px solid oklch(1 0 0 / 0.08)",
-                opacity: plan.disabled ? 0.4 : 1,
-                cursor: plan.disabled ? "not-allowed" : "pointer",
-              }}
-            >
-              {plan.founder && spotsLeft !== null && (
-                <span
-                  className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
-                  style={{ background: "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))", color: "white" }}
+        {plans === null ? (
+          <div className="flex items-center justify-center py-10 text-sm" style={{ color: "var(--c-50)" }}>
+            <span className="w-4 h-4 mr-2 border-2 border-current border-t-transparent rounded-full animate-spin" />
+            Loading plans…
+          </div>
+        ) : visiblePlans.length === 0 ? (
+          <p className="text-center text-sm py-10" style={{ color: "var(--c-50)" }}>
+            No plans are available right now.
+          </p>
+        ) : (
+          <>
+            {/* Plan selector */}
+            <div className={`grid ${gridCols} gap-3 mb-6`}>
+              {visiblePlans.map((plan) => (
+                <button
+                  key={plan.slug}
+                  onClick={() => !plan.disabled && setSelectedPlan(plan.slug)}
+                  className="relative rounded-xl p-3 text-left transition-all"
+                  style={{
+                    background: plan.disabled ? "oklch(1 0 0 / 0.01)" : selectedPlan === plan.slug ? "oklch(0.72 0.25 285 / 0.12)" : "oklch(1 0 0 / 0.03)",
+                    border: plan.disabled ? "1px solid oklch(1 0 0 / 0.05)" : selectedPlan === plan.slug
+                      ? "1px solid oklch(0.72 0.25 285 / 0.50)"
+                      : "1px solid oklch(1 0 0 / 0.08)",
+                    opacity: plan.disabled ? 0.4 : 1,
+                    cursor: plan.disabled ? "not-allowed" : "pointer",
+                  }}
                 >
-                  🔥 {spotsLeft} spots left
-                </span>
-              )}
-              {plan.highlighted && (
-                <span
-                  className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
-                  style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
-                >
-                  💪 Popular
-                </span>
-              )}
-              {plan.disabled && (
-                <span
-                  className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
-                  style={{ background: "oklch(0.35 0 0)", color: "oklch(0.60 0 0)" }}
-                >
-                  Soon
-                </span>
-              )}
-              <p className="text-xs font-semibold mb-1" style={{ color: selectedPlan === plan.id ? "oklch(0.82 0.18 285)" : "var(--c-60)" }}>
-                {plan.name}
-              </p>
-              <p className="text-base font-bold" style={{ color: "var(--c-90)" }}>
-                {plan.price}<span className="text-xs font-normal" style={{ color: "var(--c-40)" }}>{plan.period}</span>
-              </p>
-              <p className="text-[10px] mt-0.5" style={{ color: "var(--c-35)" }}>{plan.limit}</p>
-            </button>
-          ))}
-        </div>
-
-        {/* Selected plan features */}
-        {(() => {
-          const plan = PLANS.find(p => p.id === selectedPlan)!;
-          return (
-            <ul className="space-y-2 mb-6">
-              {plan.features.map((f) => (
-                <li key={f} className="flex items-center gap-2.5 text-sm" style={{ color: "var(--c-65)" }}>
-                  <span
-                    className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
-                    style={{ background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)" }}
-                  >
-                    <Check size={9} strokeWidth={3} />
-                  </span>
-                  {f}
-                </li>
+                  {plan.isFounder && spotsLeft !== null && (
+                    <span
+                      className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                      style={{ background: "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))", color: "white" }}
+                    >
+                      🔥 {spotsLeft} spots left
+                    </span>
+                  )}
+                  {plan.highlighted && (
+                    <span
+                      className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                      style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+                    >
+                      💪 Popular
+                    </span>
+                  )}
+                  {plan.disabled && (
+                    <span
+                      className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                      style={{ background: "oklch(0.35 0 0)", color: "oklch(0.60 0 0)" }}
+                    >
+                      Soon
+                    </span>
+                  )}
+                  <p className="text-xs font-semibold mb-1" style={{ color: selectedPlan === plan.slug ? "oklch(0.82 0.18 285)" : "var(--c-60)" }}>
+                    {plan.name}
+                  </p>
+                  <p className="text-base font-bold" style={{ color: "var(--c-90)" }}>
+                    {plan.priceDisplay}<span className="text-xs font-normal" style={{ color: "var(--c-40)" }}>{plan.periodDisplay}</span>
+                  </p>
+                  <p className="text-[10px] mt-0.5" style={{ color: "var(--c-35)" }}>{plan.limitDisplay}</p>
+                </button>
               ))}
-            </ul>
-          );
-        })()}
+            </div>
+
+            {/* Selected plan features */}
+            {selected && (
+              <ul className="space-y-2 mb-6">
+                {selected.features.map((f) => (
+                  <li key={f} className="flex items-center gap-2.5 text-sm" style={{ color: "var(--c-65)" }}>
+                    <span
+                      className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
+                      style={{ background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)" }}
+                    >
+                      <Check size={9} strokeWidth={3} />
+                    </span>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
+        )}
 
         {error && (
           <p
@@ -245,7 +267,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
 
         <button
           onClick={handleSubscribe}
-          disabled={subscribing}
+          disabled={subscribing || !selected || selected.disabled}
           className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
           style={{
             background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
@@ -258,7 +280,7 @@ export function SubscriptionModal({ email, onClose, onSuccess, defaultPlan, hide
               Loading…
             </>
           ) : (
-            `Subscribe to ${PLANS.find(p => p.id === selectedPlan)?.name}`
+            `Subscribe${selected ? ` to ${selected.name}` : ""}`
           )}
         </button>
 

@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, Mail, KeyRound,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, Mail, KeyRound, CreditCard,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -758,8 +758,8 @@ function SetupSection({
   keysLoading: boolean;
   mutateKeys: () => void;
 }) {
-  const [setupTab, setSetupTab] = usePersistentTab<"keys" | "models" | "anthropic" | "concurrency">(
-    "config", "keys", ["keys", "models", "anthropic", "concurrency"],
+  const [setupTab, setSetupTab] = usePersistentTab<"keys" | "models" | "anthropic" | "concurrency" | "plans">(
+    "config", "keys", ["keys", "models", "anthropic", "concurrency", "plans"],
   );
   const [serviceInput, setServiceInput] = useState<Service>("youtube_data_api_key");
   const [keyInput, setKeyInput] = useState("");
@@ -940,6 +940,7 @@ function SetupSection({
           { id: "models", label: "Models" },
           { id: "anthropic", label: "Anthropic" },
           { id: "concurrency", label: "Batched process" },
+          { id: "plans", label: "Plans" },
         ] as const).map((t) => (
           <button
             key={t.id}
@@ -962,6 +963,7 @@ function SetupSection({
       {setupTab === "models" && <ModelDefaultsPanel />}
       {setupTab === "anthropic" && <AnthropicRoutingPanel />}
       {setupTab === "concurrency" && <ConcurrencyPanel />}
+      {setupTab === "plans" && <PlansPanel />}
 
       {setupTab === "keys" && <>
 
@@ -2053,6 +2055,614 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
         onConfirm={() => { if (pending) applyStepRouting(pending.step, pending.value); }}
         onCancel={() => setPending(null)}
       />
+    </div>
+  );
+}
+
+interface AdminPlanDTO {
+  slug: string;
+  name: string;
+  priceDisplay: string;
+  periodDisplay: string;
+  limitDisplay: string;
+  features: string[];
+  nichesPerMonth: number | null;
+  paymentLink: string | null;
+  highlighted: boolean;
+  disabled: boolean;
+  isFounder: boolean;
+  sortOrder: number;
+}
+
+function PlansPanel() {
+  const { data, mutate, isLoading } = useSWR<{ plans: AdminPlanDTO[] }>(
+    "/api/admin/plans",
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+
+  const [editing, setEditing] = useState<AdminPlanDTO | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+
+  const plans = data?.plans ?? [];
+
+  async function handleDelete(slug: string) {
+    setDeleteSubmitting(true);
+    try {
+      const res = await fetch(`/api/admin/plans/${encodeURIComponent(slug)}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `Delete failed (${res.status})`);
+      toast.success(`Deleted ${slug}`);
+      mutate();
+      setDeletingSlug(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete");
+    } finally {
+      setDeleteSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs" style={{ color: "var(--c-50)" }}>
+          Subscription plans shown in the upgrade modal. Slug is read-only after creation — it&apos;s the value written to user.app_metadata.plan by the payment webhook.
+        </p>
+        <button
+          onClick={() => setCreating(true)}
+          className="shrink-0 px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 cursor-pointer"
+          style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
+        >
+          + Add plan
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-10 text-xs" style={{ color: "var(--c-50)" }}>
+          <Spinner size={14} className="mr-2" />
+          Loading plans…
+        </div>
+      ) : plans.length === 0 ? (
+        <p className="text-xs text-center py-10" style={{ color: "var(--c-50)" }}>No plans yet. Add one to get started.</p>
+      ) : (
+        <ul className="space-y-2">
+          {plans.map((p) => (
+            <li key={p.slug}
+              className="rounded-xl p-3"
+              style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid var(--bd-7)" }}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>{p.name}</p>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-mono"
+                      style={{ background: "oklch(0 0 0 / 0.04)", color: "var(--c-50)" }}>{p.slug}</span>
+                    {p.isFounder && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                        style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)" }}>founder</span>
+                    )}
+                    {p.highlighted && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                        style={{ background: "oklch(0.62 0.15 220 / 0.15)", color: "oklch(0.62 0.15 220)" }}>highlighted</span>
+                    )}
+                    {p.disabled && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                        style={{ background: "oklch(0 0 0 / 0.06)", color: "var(--c-50)" }}>disabled</span>
+                    )}
+                  </div>
+                  <p className="text-xs mt-1" style={{ color: "var(--c-60)" }}>
+                    {p.priceDisplay}{p.periodDisplay} · {p.nichesPerMonth === null ? "Unlimited niches" : `${p.nichesPerMonth} niches/mo`} · {p.features.length} feature{p.features.length === 1 ? "" : "s"}
+                    {p.paymentLink ? "" : " · no payment link"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => {
+                      if (!p.paymentLink) {
+                        toast.error("This plan has no payment link set.");
+                        return;
+                      }
+                      const url = new URL(p.paymentLink);
+                      url.searchParams.set("redirect_url", `${window.location.origin}/payment/callback`);
+                      window.open(url.toString(), "_blank", "noopener,noreferrer");
+                    }}
+                    disabled={!p.paymentLink}
+                    className="p-2 rounded-lg transition-all hover:bg-emerald-500/10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                    title={p.paymentLink ? "Initiate test purchase (opens checkout in new tab)" : "No payment link configured"}
+                  >
+                    <CreditCard size={14} style={{ color: "oklch(0.55 0.15 145)" }} />
+                  </button>
+                  <button
+                    onClick={() => setEditing(p)}
+                    className="p-2 rounded-lg transition-all hover:bg-black/5 cursor-pointer"
+                    title="Edit plan"
+                  >
+                    <Pencil size={14} style={{ color: "var(--c-60)" }} />
+                  </button>
+                  <button
+                    onClick={() => setDeletingSlug(p.slug)}
+                    className="p-2 rounded-lg transition-all hover:bg-red-500/10 cursor-pointer"
+                    title="Delete plan"
+                  >
+                    <Trash2 size={14} style={{ color: "oklch(0.6 0.22 25)" }} />
+                  </button>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {editing && (
+        <PlanEditModal
+          plan={editing}
+          mode="edit"
+          onClose={() => setEditing(null)}
+          onSaved={() => { mutate(); setEditing(null); }}
+        />
+      )}
+      {creating && (
+        <PlanEditModal
+          plan={null}
+          mode="create"
+          onClose={() => setCreating(false)}
+          onSaved={() => { mutate(); setCreating(false); }}
+        />
+      )}
+      {deletingSlug && (
+        <Dialog open onOpenChange={(open) => { if (!open && !deleteSubmitting) setDeletingSlug(null); }}>
+          <DialogContent showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle>Delete plan?</DialogTitle>
+              <DialogDescription>
+                This deletes the &quot;{deletingSlug}&quot; plan row. Users currently on this plan keep their app_metadata.plan value, but new signups won&apos;t see it in the modal. The action can&apos;t be undone from the UI.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <button
+                onClick={() => handleDelete(deletingSlug)}
+                disabled={deleteSubmitting}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+                style={{ background: "oklch(0.6 0.22 25)", color: "white" }}
+              >
+                {deleteSubmitting ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <Spinner size={14} className="text-white" />
+                    Deleting…
+                  </span>
+                ) : "Delete plan"}
+              </button>
+              <button
+                onClick={() => setDeletingSlug(null)}
+                disabled={deleteSubmitting}
+                className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+                style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+              >
+                Cancel
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+function PlanEditModal({
+  plan,
+  mode,
+  onClose,
+  onSaved,
+}: {
+  plan: AdminPlanDTO | null;
+  mode: "edit" | "create";
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [slug, setSlug] = useState(plan?.slug ?? "");
+  const [name, setName] = useState(plan?.name ?? "");
+  const [priceDisplay, setPriceDisplay] = useState(plan?.priceDisplay ?? "");
+  const [periodDisplay, setPeriodDisplay] = useState(plan?.periodDisplay ?? "/mo");
+  // Display strings shown next to the price ("$49" + period). The
+  // select offers the four standard cadences; the stored column stays
+  // free-text so any legacy or custom value already in the DB still
+  // round-trips on edit (it'll appear as an extra option labelled
+  // "Custom: <value>").
+  const PERIOD_OPTIONS: { label: string; value: string }[] = [
+    { label: "Annually",      value: " / year" },
+    { label: "Semi-Annually", value: " / 6 months" },
+    { label: "Quarterly",     value: " / quarter" },
+    { label: "Monthly",       value: "/mo" },
+  ];
+  const periodIsStandard = PERIOD_OPTIONS.some((o) => o.value === periodDisplay);
+  const [limitDisplay, setLimitDisplay] = useState(plan?.limitDisplay ?? "");
+  const [featuresText, setFeaturesText] = useState((plan?.features ?? []).join("\n"));
+  const [nichesUnlimited, setNichesUnlimited] = useState(plan?.nichesPerMonth === null);
+  const [nichesPerMonth, setNichesPerMonth] = useState<string>(
+    plan?.nichesPerMonth === null || plan === null ? "" : String(plan.nichesPerMonth)
+  );
+  const [paymentLink, setPaymentLink] = useState(plan?.paymentLink ?? "");
+  const [highlighted, setHighlighted] = useState(plan?.highlighted ?? false);
+  const [disabled, setDisabledFlag] = useState(plan?.disabled ?? false);
+  const [isFounder, setIsFounder] = useState(plan?.isFounder ?? false);
+  const [sortOrder, setSortOrder] = useState(String(plan?.sortOrder ?? 0));
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    if (mode === "create" && !/^[a-z][a-z0-9_-]{0,31}$/.test(slug)) {
+      toast.error("Slug must start with a lowercase letter and contain only a–z, 0–9, _ or -");
+      return;
+    }
+    if (!name.trim()) { toast.error("Name is required"); return; }
+    if (!priceDisplay.trim()) { toast.error("Price is required"); return; }
+
+    const nichesValue = nichesUnlimited ? null : (() => {
+      const n = Number(nichesPerMonth);
+      return Number.isInteger(n) && n >= 0 ? n : NaN;
+    })();
+    if (typeof nichesValue === "number" && Number.isNaN(nichesValue)) {
+      toast.error("Niches per month must be a non-negative integer or unlimited");
+      return;
+    }
+
+    const sortVal = Number(sortOrder);
+    if (!Number.isInteger(sortVal)) { toast.error("Sort order must be an integer"); return; }
+
+    const features = featuresText.split("\n").map((s) => s.trim()).filter(Boolean);
+
+    const payload = {
+      ...(mode === "create" ? { slug } : {}),
+      name: name.trim(),
+      price_display: priceDisplay.trim(),
+      period_display: periodDisplay,
+      limit_display: limitDisplay,
+      features,
+      niches_per_month: nichesValue,
+      payment_link: paymentLink.trim() || null,
+      highlighted,
+      disabled,
+      is_founder: isFounder,
+      sort_order: sortVal,
+    };
+
+    setSaving(true);
+    try {
+      const url = mode === "create"
+        ? "/api/admin/plans"
+        : `/api/admin/plans/${encodeURIComponent(plan!.slug)}`;
+      const method = mode === "create" ? "POST" : "PATCH";
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `Save failed (${res.status})`);
+      toast.success(mode === "create" ? "Plan created" : "Plan saved");
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputCls = "w-full px-3 py-2 rounded-lg text-sm outline-none bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400";
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose(); }}>
+      <DialogContent showCloseButton={false} className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{mode === "create" ? "New plan" : `Edit ${plan?.name}`}</DialogTitle>
+          <DialogDescription>
+            {mode === "create"
+              ? "The slug becomes the value written to user.app_metadata.plan when someone subscribes. Pick it carefully — it's read-only after creation."
+              : "Edits go live immediately. The slug can't be changed without orphaning paid users."}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-zinc-600">Slug</label>
+            <input
+              value={slug}
+              onChange={(e) => setSlug(e.target.value.toLowerCase())}
+              disabled={mode === "edit" || saving}
+              placeholder="e.g. pro-annual"
+              className={inputCls + " font-mono"}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-zinc-600">Name</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} disabled={saving} className={inputCls} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-zinc-600">Sort order</label>
+              <input value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} disabled={saving} className={inputCls + " tabular-nums"} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-zinc-600">Price display</label>
+              <input value={priceDisplay} onChange={(e) => setPriceDisplay(e.target.value)} disabled={saving} placeholder="$49" className={inputCls} />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-zinc-600">Billing period</label>
+              <select
+                value={periodDisplay}
+                onChange={(e) => setPeriodDisplay(e.target.value)}
+                disabled={saving}
+                className={inputCls}
+              >
+                {PERIOD_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+                {!periodIsStandard && (
+                  <option value={periodDisplay}>Custom: {periodDisplay || "(empty)"}</option>
+                )}
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-zinc-600">Limit display</label>
+            <input value={limitDisplay} onChange={(e) => setLimitDisplay(e.target.value)} disabled={saving} placeholder="Unlimited niches" className={inputCls} />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-zinc-600">Niches per month</label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={0}
+                step={1}
+                value={nichesPerMonth}
+                onChange={(e) => setNichesPerMonth(e.target.value)}
+                disabled={saving || nichesUnlimited}
+                placeholder="20"
+                className={inputCls + " tabular-nums flex-1"}
+              />
+              <label className="flex items-center gap-1.5 text-xs text-zinc-600 whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  checked={nichesUnlimited}
+                  onChange={(e) => setNichesUnlimited(e.target.checked)}
+                  disabled={saving}
+                />
+                Unlimited
+              </label>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-zinc-600">Payment link (Dodo)</label>
+            <input value={paymentLink} onChange={(e) => setPaymentLink(e.target.value)} disabled={saving} placeholder="https://checkout.dodopayments.com/…" className={inputCls + " font-mono text-xs"} />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-zinc-600">Features (one per line)</label>
+            <textarea
+              value={featuresText}
+              onChange={(e) => setFeaturesText(e.target.value)}
+              disabled={saving}
+              rows={5}
+              className={inputCls + " resize-y"}
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+              <input type="checkbox" checked={highlighted} onChange={(e) => setHighlighted(e.target.checked)} disabled={saving} />
+              Highlighted
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+              <input type="checkbox" checked={disabled} onChange={(e) => setDisabledFlag(e.target.checked)} disabled={saving} />
+              Disabled
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-zinc-600">
+              <input type="checkbox" checked={isFounder} onChange={(e) => setIsFounder(e.target.checked)} disabled={saving} />
+              Founder plan
+            </label>
+          </div>
+
+          {isFounder && <FounderSlotsControls disabled={saving} />}
+        </div>
+
+        <DialogFooter>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+            style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
+          >
+            {saving ? (
+              <span className="inline-flex items-center justify-center gap-2">
+                <Spinner size={14} className="text-white" />
+                {mode === "create" ? "Creating…" : "Saving…"}
+              </span>
+            ) : (mode === "create" ? "Create plan" : "Save changes")}
+          </button>
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+            style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+          >
+            Cancel
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function FounderSlotsControls({ disabled }: { disabled: boolean }) {
+  // Lives inside PlanEditModal but reads the same /api/founder-spots
+  // endpoint the stats card uses, so cap edits / resets from either
+  // surface stay in sync via SWR's shared cache.
+  const { data, mutate, isLoading } = useSWR<{ active: boolean; spots_left: number; limit: number }>(
+    "/api/founder-spots",
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+
+  const [capInput, setCapInput] = useState<string>("");
+  const [savingCap, setSavingCap] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const confirmRef = useRef<HTMLDivElement>(null);
+
+  // When the reset confirmation expands, scroll the modal's body so
+  // the Yes/Cancel buttons are in view. Without this, clicking Reset
+  // from the top of the section leaves the buttons below the fold and
+  // the user has to hunt for them.
+  useEffect(() => {
+    if (confirmReset) {
+      confirmRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [confirmReset]);
+
+  // Hydrate the input from the server once values arrive. Subsequent
+  // server refreshes don't clobber an unsaved edit — same pattern as
+  // ModelDefaultsPanel.
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (!data || hydratedRef.current) return;
+    hydratedRef.current = true;
+    setCapInput(String(data.limit));
+  }, [data]);
+
+  async function saveCap() {
+    const parsed = Number(capInput);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      toast.error("Enter a whole number ≥ 0");
+      return;
+    }
+    setSavingCap(true);
+    try {
+      const res = await fetch("/api/admin/founder-limit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: parsed }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `Update failed (${res.status})`);
+      await mutate();
+      toast.success(`Founder cap set to ${parsed}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Update failed");
+    } finally {
+      setSavingCap(false);
+    }
+  }
+
+  async function doReset() {
+    setResetting(true);
+    try {
+      const res = await fetch("/api/admin/reset-founder-slots", { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `Reset failed (${res.status})`);
+      await mutate();
+      toast.success("Founder slots reset");
+      setConfirmReset(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Reset failed");
+    } finally {
+      setResetting(false);
+    }
+  }
+
+  const inputCls = "w-full px-3 py-2 rounded-lg text-sm outline-none bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400";
+  const dirty = data ? String(data.limit) !== capInput.trim() : false;
+
+  return (
+    <div className="rounded-xl p-3 space-y-3 bg-zinc-50 ring-1 ring-zinc-200">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-zinc-700">Founder slot counter</p>
+        {isLoading || !data ? (
+          <p className="text-[11px] text-zinc-500">Loading…</p>
+        ) : (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold tabular-nums bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300">
+            {data.spots_left} of {data.limit} remaining
+          </span>
+        )}
+      </div>
+
+      <div className="flex items-end gap-2">
+        <div className="flex-1 space-y-1">
+          <label className="text-[11px] font-semibold text-zinc-600">Cap</label>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={capInput}
+            onChange={(e) => setCapInput(e.target.value)}
+            disabled={disabled || savingCap || !data}
+            placeholder="e.g. 100"
+            className={inputCls + " tabular-nums"}
+          />
+        </div>
+        <button
+          type="button"
+          onClick={saveCap}
+          disabled={disabled || savingCap || !dirty || !data}
+          className="h-[36px] px-3 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+          style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
+        >
+          {savingCap ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Spinner size={12} className="text-white" />
+              Saving…
+            </span>
+          ) : "Update cap"}
+        </button>
+      </div>
+
+      {!confirmReset ? (
+        <button
+          type="button"
+          onClick={() => setConfirmReset(true)}
+          disabled={disabled || !data}
+          className="inline-flex items-center justify-center gap-1.5 w-full py-2 rounded-lg text-xs font-semibold transition-all bg-white text-red-600 ring-1 ring-red-200 hover:bg-red-50 hover:ring-red-300 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <RotateCcw size={12} />
+          Reset slot counter
+        </button>
+      ) : (
+        <div ref={confirmRef} className="rounded-lg p-3 space-y-2 bg-red-50 ring-1 ring-red-200">
+          <p className="text-xs font-semibold text-red-700">Reset founder slots?</p>
+          <p className="text-[11px] text-red-700/80">
+            Sets the counter back to 0 and clears the claims log. Existing Founder subscriptions are unaffected, but new claims will start counting from 0 again.
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={doReset}
+              disabled={resetting}
+              className="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 bg-red-600 text-white"
+            >
+              {resetting ? (
+                <span className="inline-flex items-center justify-center gap-1.5">
+                  <Spinner size={12} className="text-white" />
+                  Resetting…
+                </span>
+              ) : "Yes, reset"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmReset(false)}
+              disabled={resetting}
+              className="flex-1 py-1.5 rounded-lg text-xs font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-40"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

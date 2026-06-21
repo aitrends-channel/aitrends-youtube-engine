@@ -11,45 +11,30 @@ import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { Spinner } from "@/components/ui/spinner";
 
-const PLANS: Record<string, {
+interface PlanDTO {
+  slug: string;
+  name: string;
+  priceDisplay: string;
+  periodDisplay: string;
+  features: string[];
+}
+
+interface PlanDisplay {
   name: string;
   price: string;
   period: string;
-  color: string;
   features: string[];
-}> = {
-  admin: {
-    // Admin "plan" — not actually a paid SKU, just a display tile
-    // for users promoted via the dashboard's Make admin action. No
-    // expiry, no price, unlimited everything. Color matches the
-    // gold Crown badge used in the admin users table.
-    name: "Admin",
-    price: "—",
-    period: "",
-    color: "oklch(0.72 0.18 75)",
-    features: ["Unlimited niches", "Full admin dashboard access", "Full AI pipeline", "All features included", "No expiry"],
-  },
-  founder: {
-    name: "Founder",
-    price: "$0.50",
-    period: "/ year",
-    color: "oklch(0.72 0.25 285)",
-    features: ["20 niches", "HD image processing", "Full AI pipeline", "All features included", "1 year — no renewal"],
-  },
-  starter: {
-    name: "Starter",
-    price: "$19",
-    period: "/mo",
-    color: "oklch(0.62 0.18 200)",
-    features: ["5 niches/month", "Standard image processing", "Full AI pipeline", "All features included", "Community support"],
-  },
-  pro: {
-    name: "Pro",
-    price: "$49",
-    period: "/mo",
-    color: "oklch(0.72 0.25 285)",
-    features: ["Unlimited niches", "HD image processing", "Full AI pipeline", "All features included", "Priority support"],
-  },
+}
+
+// Synthetic display for users with the admin role. Admin isn't a SKU
+// in the plans table — it's promoted via the dashboard's Make admin
+// action and has no price/expiry, so it lives here as a hardcoded
+// tile instead of polluting the DB.
+const ADMIN_DISPLAY: PlanDisplay = {
+  name: "Admin",
+  price: "—",
+  period: "",
+  features: ["Unlimited niches", "Full admin dashboard access", "Full AI pipeline", "All features included", "No expiry"],
 };
 
 interface PlanData {
@@ -71,6 +56,7 @@ function daysUntil(iso: string) {
 export default function PlanPage() {
   const router = useRouter();
   const [planData, setPlanData] = useState<PlanData | null>(null);
+  const [plansBySlug, setPlansBySlug] = useState<Record<string, PlanDisplay>>({ admin: ADMIN_DISPLAY });
   const [loading, setLoading] = useState(true);
   const [userEmail, setUserEmail] = useState("");
   const [showModal, setShowModal] = useState(false);
@@ -94,9 +80,32 @@ export default function PlanPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    // Fetched separately from /api/plan so the user's own subscription
+    // state and the plan catalog are independent loads — the catalog
+    // is admin-editable and changes shouldn't be coupled to per-user
+    // state. Admin entry is kept synthetic since it isn't in the DB.
+    fetch("/api/plans", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        const list = (d?.plans as PlanDTO[] | undefined) ?? [];
+        const map: Record<string, PlanDisplay> = { admin: ADMIN_DISPLAY };
+        for (const p of list) {
+          map[p.slug] = {
+            name: p.name,
+            price: p.priceDisplay,
+            period: p.periodDisplay,
+            features: p.features,
+          };
+        }
+        setPlansBySlug(map);
+      })
+      .catch(() => {});
+  }, []);
+
   if (loading) return <PageLoader />;
 
-  const plan = planData?.plan ? PLANS[planData.plan] : null;
+  const plan = planData?.plan ? plansBySlug[planData.plan] ?? null : null;
   const expiresAt = planData?.plan_expires_at;
   const paidAt = planData?.paid_at;
   const daysLeft = expiresAt ? daysUntil(expiresAt) : null;

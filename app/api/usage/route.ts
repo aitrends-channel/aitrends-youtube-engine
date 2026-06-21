@@ -3,9 +3,8 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { isAdminUser } from "@/lib/admin";
+import { getPlanBySlug } from "@/lib/plans";
 import type { User } from "@supabase/supabase-js";
-
-const PLAN_LIMITS: Record<string, number | null> = { founder: 20, starter: 5, pro: null };
 
 export async function GET() {
   let user: User;
@@ -17,20 +16,21 @@ export async function GET() {
   const isAdmin = isAdminUser(user);
   const plan = (user.app_metadata?.plan as string) ?? "demo";
   const isPaid = user.app_metadata?.paid === true;
-  // Lowercase + trim so " Starter " / "STARTER" still resolves against
-  // PLAN_LIMITS. Paid users with no recognised plan name (the Dodo
-  // webhook writes paid:true but not plan; the verify callback that
-  // sets plan may not have fired) get the Starter cap as the safest
-  // fallback. Unpaid users with no plan get the demo cap of 1.
-  // Use 'in' (not '?? 1') so Pro's legitimate null isn't clamped.
-  const planNorm = plan.toLowerCase().trim();
-  const planLimit: number | null = isAdmin
-    ? null
-    : planNorm in PLAN_LIMITS
-      ? PLAN_LIMITS[planNorm]
-      : isPaid
-        ? PLAN_LIMITS.starter
-        : 1;
+  // Resolved against the plans table. Paid users with an unrecognised
+  // plan name (the Dodo webhook writes paid:true but not plan; the
+  // verify callback that sets plan may not have fired) get the Starter
+  // cap as the safest fallback. Unpaid users with no plan get the demo
+  // cap of 1. getPlanBySlug returns null for unknown plans, distinct
+  // from a known plan with nichesPerMonth=null (Pro → unlimited).
+  let planLimit: number | null;
+  if (isAdmin) {
+    planLimit = null;
+  } else {
+    const resolved = await getPlanBySlug(plan);
+    if (resolved) planLimit = resolved.nichesPerMonth;
+    else if (isPaid) planLimit = (await getPlanBySlug("starter"))?.nichesPerMonth ?? null;
+    else planLimit = 1;
+  }
 
   const { data: settings } = await supabase
     .from("account_settings")

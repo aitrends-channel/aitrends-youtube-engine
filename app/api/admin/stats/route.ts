@@ -2,10 +2,9 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { isAdminUser } from "@/lib/admin";
 import { requireAdmin } from "@/lib/admin-server";
+import { getPlans } from "@/lib/plans";
 
 export const dynamic = "force-dynamic";
-
-const PLAN_LIMITS: Record<string, number | null> = { founder: 20, starter: 5, pro: null };
 
 const PHASE_LABELS: Record<number, string> = {
   1: "Setup", 2: "Setup", 3: "Setup", 4: "Analyzing", 5: "Analyzing",
@@ -23,7 +22,7 @@ export async function GET() {
   const guard = await requireAdmin();
   if (!guard.ok) return guard.response;
 
-  const [emailsRes, authUsersRes, projectsRes, settingsRes] = await Promise.all([
+  const [emailsRes, authUsersRes, projectsRes, settingsRes, plansList] = await Promise.all([
     supabase.from("allowed_emails").select("email"),
     supabase.auth.admin.listUsers({ perPage: 1000 }),
     // Order DESC so the admin videos table shows most-recent first
@@ -32,7 +31,14 @@ export async function GET() {
     // commutative — order doesn't change the chart numbers.
     supabase.from("projects").select("id, user_id, channel_name, current_state, selected_topic, created_at, assembled_url, assembly_started_at, assembly_finished_at").order("created_at", { ascending: false }),
     supabase.from("account_settings").select("user_id, niches_used, niche_limit_override"),
+    getPlans(),
   ]);
+
+  // Build a slug→limit map once so the per-user loop below is O(1)
+  // instead of hitting the plans table for every authenticated user.
+  const planLimitBySlug = new Map<string, number | null>();
+  for (const p of plansList) planLimitBySlug.set(p.slug, p.nichesPerMonth);
+  const starterFallback = planLimitBySlug.has("starter") ? planLimitBySlug.get("starter")! : null;
 
   const allowedEmails: string[] = (emailsRes.data ?? []).map((r) => r.email as string);
   const authUsers = authUsersRes.data?.users ?? [];
@@ -83,20 +89,19 @@ export async function GET() {
       const isPaid = authUser.app_metadata?.paid === true;
       const isAdmin = isAdminUser(authUser);
       const plan = (authUser.app_metadata?.plan as string | undefined) ?? null;
-      // Lowercase + trim so " Starter " / "STARTER" still resolves
-      // against PLAN_LIMITS instead of slipping through to the demo
-      // fallback. Paid users with no recognised plan (the Dodo
-      // webhook only writes paid=true; plan is set by the verify
-      // callback that may not have fired) get the Starter cap as
-      // the safest fallback for someone who actually paid.
+      // Resolved against the plans table. Paid users with an
+      // unrecognised plan (Dodo webhook writes paid=true; the verify
+      // callback that sets plan may not have fired) get Starter as
+      // the safest fallback. Unpaid users with no plan get the demo
+      // cap of 1. planLimitBySlug.get returns undefined on miss vs
+      // null on a known-unlimited plan, which is what distinguishes
+      // the two cases here.
       const planNorm = (plan ?? "").toLowerCase().trim();
-      const planDefaultLimit: number | null = isAdmin
-        ? null
-        : planNorm in PLAN_LIMITS
-          ? PLAN_LIMITS[planNorm]
-          : isPaid
-            ? PLAN_LIMITS.starter
-            : 1;
+      let planDefaultLimit: number | null;
+      if (isAdmin) planDefaultLimit = null;
+      else if (planLimitBySlug.has(planNorm)) planDefaultLimit = planLimitBySlug.get(planNorm) ?? null;
+      else if (isPaid) planDefaultLimit = starterFallback;
+      else planDefaultLimit = 1;
       const settings = settingsByUserId.get(authUser.id);
       const override = settings?.niche_limit_override ?? null;
       return {
