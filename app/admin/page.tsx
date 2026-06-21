@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, Mail, KeyRound, CreditCard,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, Mail, KeyRound, CreditCard, Rocket,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -2740,6 +2740,74 @@ function PlanEditModal({
   );
 }
 
+type LaunchTab = "users" | "logs";
+
+function LaunchModal({ onClose }: { onClose: () => void }) {
+  const [tab, setTab] = useState<LaunchTab>("users");
+
+  const tabs: { id: LaunchTab; label: string }[] = [
+    { id: "users", label: "Users" },
+    { id: "logs",  label: "Logs"  },
+  ];
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent showCloseButton={false} className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Rocket size={16} style={{ color: "oklch(0.55 0.15 145)" }} />
+            Launch Heclus
+          </DialogTitle>
+          <DialogDescription>
+            Review what gets cleared from each surface before flipping the switch.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex gap-1 p-1 rounded-xl bg-zinc-100 ring-1 ring-zinc-200">
+          {tabs.map((t) => {
+            const active = tab === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
+                style={active ? {
+                  background: "white",
+                  color: "oklch(0.55 0.15 145)",
+                  boxShadow: "0 1px 3px oklch(0 0 0 / 0.06)",
+                } : {
+                  background: "transparent",
+                  color: "oklch(0.45 0 0)",
+                }}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="min-h-[200px] max-h-[50vh] overflow-y-auto">
+          {tab === "users" && (
+            <p className="text-xs text-zinc-500 italic">Users tab — pending details.</p>
+          )}
+          {tab === "logs" && (
+            <p className="text-xs text-zinc-500 italic">Logs tab — pending details.</p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <button
+            onClick={onClose}
+            className="flex-1 py-2 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100"
+          >
+            Close
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ProductionTestEditModal({
   initialLink,
   onClose,
@@ -3315,6 +3383,7 @@ export default function AdminPage() {
   const [userEmail, setUserEmail] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const [launchOpen, setLaunchOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -3604,6 +3673,24 @@ export default function AdminPage() {
           </div>
         </div>
       </header>
+
+      <div className="w-full px-[30px] pt-6 flex justify-end">
+        <button
+          onClick={() => setLaunchOpen(true)}
+          className="inline-flex items-center justify-center gap-1.5 rounded-lg text-base font-bold transition-all hover:opacity-90 cursor-pointer"
+          style={{
+            width: "100px",
+            height: "50px",
+            padding: "10px",
+            background: "oklch(0.55 0.15 145)",
+            color: "white",
+            boxShadow: "0 0 12px oklch(0.55 0.15 145 / 0.25)",
+          }}
+        >
+          <Rocket size={16} />
+          Launch
+        </button>
+      </div>
 
       <main className="flex-1 w-full px-[30px] py-8 sm:py-12 space-y-6 sm:space-y-10">
         {/* Page heading */}
@@ -5052,6 +5139,8 @@ export default function AdminPage() {
           onSaved={() => mutate()}
         />
       )}
+
+      {launchOpen && <LaunchModal onClose={() => setLaunchOpen(false)} />}
 
       <Dialog
         open={promoteTarget !== null}
