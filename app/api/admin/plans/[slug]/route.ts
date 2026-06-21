@@ -11,7 +11,8 @@ interface PlanPatch {
   limit_display?: unknown;
   features?: unknown;
   niches_per_month?: unknown;
-  payment_link?: unknown;
+  payment_link_test?: unknown;
+  payment_link_production?: unknown;
   highlighted?: unknown;
   disabled?: unknown;
   is_founder?: unknown;
@@ -28,7 +29,8 @@ type UpdatableCol =
   | "limit_display"
   | "features"
   | "niches_per_month"
-  | "payment_link"
+  | "payment_link_test"
+  | "payment_link_production"
   | "highlighted"
   | "disabled"
   | "is_founder"
@@ -53,9 +55,10 @@ function coerce(col: UpdatableCol, raw: unknown): { ok: true; value: unknown } |
         return { ok: false, error: "niches_per_month must be integer or null" };
       }
       return { ok: true, value: raw };
-    case "payment_link":
+    case "payment_link_test":
+    case "payment_link_production":
       if (raw === null) return { ok: true, value: null };
-      if (typeof raw !== "string") return { ok: false, error: "payment_link must be string or null" };
+      if (typeof raw !== "string") return { ok: false, error: `${col} must be string or null` };
       return { ok: true, value: raw };
     case "highlighted":
     case "disabled":
@@ -85,7 +88,8 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ slug: string 
   const update: Record<string, unknown> = {};
   const cols: UpdatableCol[] = [
     "name", "price_display", "period_display", "limit_display",
-    "features", "niches_per_month", "payment_link",
+    "features", "niches_per_month",
+    "payment_link_test", "payment_link_production",
     "highlighted", "disabled", "is_founder", "sort_order",
   ];
   for (const col of cols) {

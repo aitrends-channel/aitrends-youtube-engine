@@ -765,6 +765,10 @@ function SetupSection({
   const [keyInput, setKeyInput] = useState("");
   const [adding, setAdding] = useState(false);
   const [removingKey, setRemovingKey] = useState<string | null>(null); // "rowId:index"
+  // Pending delete-key confirmation. When set, the Dialog at the bottom
+  // of SetupSection renders; the actual handleRemoveKey only fires
+  // after the admin confirms in the dialog.
+  const [removeKeyTarget, setRemoveKeyTarget] = useState<{ rowId: string; index: number; serviceLabel: string; maskedKey: string } | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [editingKey, setEditingKey] = useState<string | null>(null); // "rowId:index"
@@ -1199,7 +1203,15 @@ function SetupSection({
                                       </button>
                                       <button
                                         role="menuitem"
-                                        onClick={() => { setOpenMenuTag(null); handleRemoveKey(row.id, i); }}
+                                        onClick={() => {
+                                          setOpenMenuTag(null);
+                                          setRemoveKeyTarget({
+                                            rowId: row.id,
+                                            index: i,
+                                            serviceLabel: SERVICE_LABELS[service],
+                                            maskedKey: maskKey(k),
+                                          });
+                                        }}
                                         className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-all hover:bg-black/5 cursor-pointer"
                                         style={{ color: "oklch(0.6 0.22 25)" }}>
                                         <Trash2 size={13} /> Delete
@@ -1235,6 +1247,49 @@ function SetupSection({
       )}
 
       </>}
+
+      {removeKeyTarget && (
+        <Dialog open onOpenChange={(open) => {
+          if (!open && removingKey === null) setRemoveKeyTarget(null);
+        }}>
+          <DialogContent showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle>Delete API key?</DialogTitle>
+              <DialogDescription>
+                Permanently remove this <span className="font-semibold">{removeKeyTarget.serviceLabel}</span> key. The change applies immediately and can&apos;t be undone from this UI.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="rounded-lg p-3 bg-zinc-50 ring-1 ring-zinc-200">
+              <p className="text-xs font-mono text-zinc-700 truncate">{removeKeyTarget.maskedKey}</p>
+            </div>
+            <DialogFooter>
+              <button
+                onClick={async () => {
+                  const target = removeKeyTarget;
+                  await handleRemoveKey(target.rowId, target.index);
+                  setRemoveKeyTarget(null);
+                }}
+                disabled={removingKey !== null}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 bg-red-600 text-white"
+              >
+                {removingKey !== null ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <Spinner size={14} className="text-white" />
+                    Deleting…
+                  </span>
+                ) : "Delete key"}
+              </button>
+              <button
+                onClick={() => setRemoveKeyTarget(null)}
+                disabled={removingKey !== null}
+                className="flex-1 py-2 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </section>
   );
 }
@@ -2059,6 +2114,8 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
   );
 }
 
+type PaymentMode = "test" | "production";
+
 interface AdminPlanDTO {
   slug: string;
   name: string;
@@ -2068,6 +2125,8 @@ interface AdminPlanDTO {
   features: string[];
   nichesPerMonth: number | null;
   paymentLink: string | null;
+  paymentLinkTest: string | null;
+  paymentLinkProduction: string | null;
   highlighted: boolean;
   disabled: boolean;
   isFounder: boolean;
@@ -2075,7 +2134,7 @@ interface AdminPlanDTO {
 }
 
 function PlansPanel() {
-  const { data, mutate, isLoading } = useSWR<{ plans: AdminPlanDTO[] }>(
+  const { data, mutate, isLoading } = useSWR<{ plans: AdminPlanDTO[]; paymentMode: PaymentMode }>(
     "/api/admin/plans",
     fetcher,
     { revalidateOnFocus: false },
@@ -2085,8 +2144,38 @@ function PlansPanel() {
   const [creating, setCreating] = useState(false);
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [switchingMode, setSwitchingMode] = useState(false);
+
+  const { data: paymentSettings, mutate: mutatePaymentSettings } = useSWR<{
+    mode: PaymentMode;
+    productionTestLink: string | null;
+  }>("/api/admin/payment-mode", fetcher, { revalidateOnFocus: false });
+  const [editingProdTest, setEditingProdTest] = useState(false);
+  const [deletingProdTest, setDeletingProdTest] = useState(false);
 
   const plans = data?.plans ?? [];
+  const paymentMode: PaymentMode = data?.paymentMode ?? "test";
+  const prodTestLink = paymentSettings?.productionTestLink ?? null;
+
+  async function setMode(mode: PaymentMode) {
+    if (mode === paymentMode) return;
+    setSwitchingMode(true);
+    try {
+      const res = await fetch("/api/admin/payment-mode", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `Switch failed (${res.status})`);
+      await mutate();
+      toast.success(`Payment mode set to ${mode}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Switch failed");
+    } finally {
+      setSwitchingMode(false);
+    }
+  }
 
   async function handleDelete(slug: string) {
     setDeleteSubmitting(true);
@@ -2117,6 +2206,36 @@ function PlansPanel() {
         >
           + Add plan
         </button>
+      </div>
+
+      <div className="rounded-xl p-3 flex items-center justify-between gap-3"
+        style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid var(--bd-7)" }}>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold" style={{ color: "var(--c-78)" }}>Dodo payment mode</p>
+          <p className="text-[11px] mt-0.5" style={{ color: "var(--c-50)" }}>
+            Picks which URL the Subscribe button opens for every plan. Test mode routes to test.checkout.dodopayments.com — no real charges.
+          </p>
+        </div>
+        <div className="shrink-0 flex p-0.5 rounded-lg"
+          style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid var(--bd-7)" }}>
+          {(["test", "production"] as const).map((m) => {
+            const active = paymentMode === m;
+            return (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                disabled={switchingMode}
+                className="px-3 py-1 rounded-md text-[11px] font-semibold transition-all capitalize disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                style={active ? {
+                  background: m === "production" ? "oklch(0.55 0.15 145)" : "oklch(0.62 0.15 220)",
+                  color: "white",
+                } : { background: "transparent", color: "var(--c-55)" }}
+              >
+                {m === "production" ? "Production" : "Test"}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {isLoading ? (
@@ -2153,7 +2272,26 @@ function PlansPanel() {
                   </div>
                   <p className="text-xs mt-1" style={{ color: "var(--c-60)" }}>
                     {p.priceDisplay}{p.periodDisplay} · {p.nichesPerMonth === null ? "Unlimited niches" : `${p.nichesPerMonth} niches/mo`} · {p.features.length} feature{p.features.length === 1 ? "" : "s"}
-                    {p.paymentLink ? "" : " · no payment link"}
+                  </p>
+                  <p className="text-[11px] mt-1 flex flex-wrap items-center gap-x-2 gap-y-1" style={{ color: "var(--c-50)" }}>
+                    <span className={p.paymentLinkTest ? "text-zinc-600" : "text-zinc-400"}>
+                      test: {p.paymentLinkTest ? "✓" : "—"}
+                    </span>
+                    <span className={p.paymentLinkProduction ? "text-zinc-600" : "text-zinc-400"}>
+                      prod: {p.paymentLinkProduction ? "✓" : "—"}
+                    </span>
+                    {p.paymentLink ? (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                        style={paymentMode === "production"
+                          ? { background: "oklch(0.55 0.15 145 / 0.12)", color: "oklch(0.45 0.15 145)" }
+                          : { background: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.45 0.15 220)" }}>
+                        active: {paymentMode}
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700">
+                        {paymentMode} link missing
+                      </span>
+                    )}
                   </p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
@@ -2191,6 +2329,75 @@ function PlansPanel() {
               </div>
             </li>
           ))}
+
+          {paymentMode === "production" && (
+            <li className="rounded-xl p-3"
+              style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid var(--bd-7)" }}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Production test</p>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-mono"
+                      style={{ background: "oklch(0 0 0 / 0.04)", color: "var(--c-50)" }}>production_test</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                      style={{ background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.45 0.15 145)" }}>admin only</span>
+                  </div>
+                  <p className="text-xs mt-1" style={{ color: "var(--c-60)" }}>
+                    — live SKU · Admin checkout sanity check
+                  </p>
+                  <p className="text-[11px] mt-1 flex flex-wrap items-center gap-x-2 gap-y-1" style={{ color: "var(--c-50)" }}>
+                    <span className="text-zinc-400">test: —</span>
+                    <span className={prodTestLink ? "text-zinc-600" : "text-zinc-400"}>
+                      prod: {prodTestLink ? "✓" : "—"}
+                    </span>
+                    {prodTestLink ? (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                        style={{ background: "oklch(0.55 0.15 145 / 0.12)", color: "oklch(0.45 0.15 145)" }}>
+                        active: production
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700">
+                        production link missing
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => {
+                      if (!prodTestLink) {
+                        toast.error("Set the production test link first via the pencil icon.");
+                        return;
+                      }
+                      const url = new URL(prodTestLink);
+                      url.searchParams.set("redirect_url", `${window.location.origin}/payment/callback`);
+                      window.open(url.toString(), "_blank", "noopener,noreferrer");
+                    }}
+                    disabled={!prodTestLink}
+                    className="p-2 rounded-lg transition-all hover:bg-emerald-500/10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                    title={prodTestLink ? "Initiate test purchase (opens checkout in new tab)" : "Set the production test link first"}
+                  >
+                    <CreditCard size={14} style={{ color: "oklch(0.55 0.15 145)" }} />
+                  </button>
+                  <button
+                    onClick={() => setEditingProdTest(true)}
+                    className="p-2 rounded-lg transition-all hover:bg-black/5 cursor-pointer"
+                    title="Edit production test link"
+                  >
+                    <Pencil size={14} style={{ color: "var(--c-60)" }} />
+                  </button>
+                  <button
+                    onClick={() => setDeletingProdTest(true)}
+                    disabled={!prodTestLink}
+                    className="p-2 rounded-lg transition-all hover:bg-red-500/10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                    title={prodTestLink ? "Clear production test link" : "Nothing to clear"}
+                  >
+                    <Trash2 size={14} style={{ color: "oklch(0.6 0.22 25)" }} />
+                  </button>
+                </div>
+              </div>
+            </li>
+          )}
         </ul>
       )}
 
@@ -2208,6 +2415,19 @@ function PlansPanel() {
           mode="create"
           onClose={() => setCreating(false)}
           onSaved={() => { mutate(); setCreating(false); }}
+        />
+      )}
+      {editingProdTest && (
+        <ProductionTestEditModal
+          initialLink={prodTestLink}
+          onClose={() => setEditingProdTest(false)}
+          onSaved={() => { mutatePaymentSettings(); setEditingProdTest(false); }}
+        />
+      )}
+      {deletingProdTest && (
+        <ProductionTestDeleteDialog
+          onClose={() => setDeletingProdTest(false)}
+          onDeleted={() => { mutatePaymentSettings(); setDeletingProdTest(false); }}
         />
       )}
       {deletingSlug && (
@@ -2236,8 +2456,7 @@ function PlansPanel() {
               <button
                 onClick={() => setDeletingSlug(null)}
                 disabled={deleteSubmitting}
-                className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
-                style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+                className="flex-1 py-2 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-40"
               >
                 Cancel
               </button>
@@ -2282,7 +2501,8 @@ function PlanEditModal({
   const [nichesPerMonth, setNichesPerMonth] = useState<string>(
     plan?.nichesPerMonth === null || plan === null ? "" : String(plan.nichesPerMonth)
   );
-  const [paymentLink, setPaymentLink] = useState(plan?.paymentLink ?? "");
+  const [paymentLinkTest, setPaymentLinkTest] = useState(plan?.paymentLinkTest ?? "");
+  const [paymentLinkProduction, setPaymentLinkProduction] = useState(plan?.paymentLinkProduction ?? "");
   const [highlighted, setHighlighted] = useState(plan?.highlighted ?? false);
   const [disabled, setDisabledFlag] = useState(plan?.disabled ?? false);
   const [isFounder, setIsFounder] = useState(plan?.isFounder ?? false);
@@ -2319,7 +2539,8 @@ function PlanEditModal({
       limit_display: limitDisplay,
       features,
       niches_per_month: nichesValue,
-      payment_link: paymentLink.trim() || null,
+      payment_link_test: paymentLinkTest.trim() || null,
+      payment_link_production: paymentLinkProduction.trim() || null,
       highlighted,
       disabled,
       is_founder: isFounder,
@@ -2439,8 +2660,28 @@ function PlanEditModal({
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-zinc-600">Payment link (Dodo)</label>
-            <input value={paymentLink} onChange={(e) => setPaymentLink(e.target.value)} disabled={saving} placeholder="https://checkout.dodopayments.com/…" className={inputCls + " font-mono text-xs"} />
+            <label className="text-xs font-semibold text-zinc-600">Payment link — Test</label>
+            <input
+              value={paymentLinkTest}
+              onChange={(e) => setPaymentLinkTest(e.target.value)}
+              disabled={saving}
+              placeholder="https://test.checkout.dodopayments.com/…"
+              className={inputCls + " font-mono text-xs"}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-zinc-600">Payment link — Production</label>
+            <input
+              value={paymentLinkProduction}
+              onChange={(e) => setPaymentLinkProduction(e.target.value)}
+              disabled={saving}
+              placeholder="https://checkout.dodopayments.com/…"
+              className={inputCls + " font-mono text-xs"}
+            />
+            <p className="text-[11px] text-zinc-500">
+              The global Dodo payment mode toggle at the top of this tab picks which of these two URLs the Subscribe button opens.
+            </p>
           </div>
 
           <div className="space-y-1">
@@ -2489,8 +2730,148 @@ function PlanEditModal({
           <button
             onClick={onClose}
             disabled={saving}
-            className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
-            style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            className="flex-1 py-2 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-40"
+          >
+            Cancel
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ProductionTestEditModal({
+  initialLink,
+  onClose,
+  onSaved,
+}: {
+  initialLink: string | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [link, setLink] = useState(initialLink ?? "");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/payment-mode", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productionTestLink: link.trim() || null }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `Save failed (${res.status})`);
+      toast.success("Production test link saved");
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose(); }}>
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Edit production test link</DialogTitle>
+          <DialogDescription>
+            URL the Production test row&apos;s Subscribe button opens. Live SKU — fires a real production checkout.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-1">
+          <label className="text-xs font-semibold text-zinc-600">Dodo checkout URL</label>
+          <input
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            disabled={saving}
+            placeholder="https://checkout.dodopayments.com/buy/…"
+            className="w-full px-3 py-2 rounded-lg text-xs outline-none font-mono bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400"
+          />
+        </div>
+        <DialogFooter>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+            style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
+          >
+            {saving ? (
+              <span className="inline-flex items-center justify-center gap-2">
+                <Spinner size={14} className="text-white" />
+                Saving…
+              </span>
+            ) : "Save link"}
+          </button>
+          <button
+            onClick={onClose}
+            disabled={saving}
+            className="flex-1 py-2 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-40"
+          >
+            Cancel
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ProductionTestDeleteDialog({
+  onClose,
+  onDeleted,
+}: {
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/admin/payment-mode", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productionTestLink: null }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `Delete failed (${res.status})`);
+      toast.success("Production test link cleared");
+      onDeleted();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open && !deleting) onClose(); }}>
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>Clear production test link?</DialogTitle>
+          <DialogDescription>
+            The Production test row stays visible while mode is production, but the test-purchase button will be disabled until you set a new URL.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+            style={{ background: "oklch(0.6 0.22 25)", color: "white" }}
+          >
+            {deleting ? (
+              <span className="inline-flex items-center justify-center gap-2">
+                <Spinner size={14} className="text-white" />
+                Clearing…
+              </span>
+            ) : "Clear link"}
+          </button>
+          <button
+            onClick={onClose}
+            disabled={deleting}
+            className="flex-1 py-2 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-40"
           >
             Cancel
           </button>
@@ -2961,62 +3342,14 @@ export default function AdminPage() {
   );
   const productKeys: ProductApiKey[] = Array.isArray(productKeysRaw) ? productKeysRaw : [];
 
-  const { data: founderSpots, mutate: mutateFounderSpots } = useSWR<{ active: boolean; spots_left: number; limit: number }>(
+  // Stats card displays the founder-slot count; editing the cap and
+  // resetting the counter now live inside the Plans tab → Founder
+  // plan modal (FounderSlotsControls). SWR's shared cache means edits
+  // there reflect here on the next focus/render.
+  const { data: founderSpots } = useSWR<{ active: boolean; spots_left: number; limit: number }>(
     authChecked ? "/api/founder-spots" : null,
     fetcher,
   );
-
-  const [resettingSlots, setResettingSlots] = useState(false);
-  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
-  async function confirmResetFounderSlots() {
-    if (resettingSlots) return;
-    setResettingSlots(true);
-    try {
-      const res = await fetch("/api/admin/reset-founder-slots", { method: "POST" });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? `Reset failed (${res.status})`);
-      await mutateFounderSpots();
-      toast.success("Founder slots reset");
-      setResetConfirmOpen(false);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Reset failed");
-    } finally {
-      setResettingSlots(false);
-    }
-  }
-
-  const [editLimitOpen, setEditLimitOpen] = useState(false);
-  const [limitInput, setLimitInput] = useState("");
-  const [savingLimit, setSavingLimit] = useState(false);
-  function openEditLimit() {
-    setLimitInput(String(founderSpots?.limit ?? ""));
-    setEditLimitOpen(true);
-  }
-  async function confirmSetFounderLimit() {
-    if (savingLimit) return;
-    const parsed = Number(limitInput);
-    if (!Number.isInteger(parsed) || parsed < 0) {
-      toast.error("Enter a whole number ≥ 0");
-      return;
-    }
-    setSavingLimit(true);
-    try {
-      const res = await fetch("/api/admin/founder-limit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ limit: parsed }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? `Update failed (${res.status})`);
-      await mutateFounderSpots();
-      toast.success(`Founder cap set to ${parsed}`);
-      setEditLimitOpen(false);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Update failed");
-    } finally {
-      setSavingLimit(false);
-    }
-  }
 
   const [removing, setRemoving] = useState<string | null>(null);
   const [removeTarget, setRemoveTarget] = useState<AdminUser | null>(null);
@@ -3370,36 +3703,6 @@ export default function AdminPage() {
               </div>
             </div>
             <div className="flex items-end gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={openEditLimit}
-                disabled={!founderSpots}
-                title="Change the total Founder slot cap"
-                className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[10px] font-semibold uppercase tracking-wider transition disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{
-                  background: "oklch(0.97 0.005 240)",
-                  border: "1px solid oklch(0.88 0.01 240)",
-                  color: "oklch(0.35 0 0)",
-                }}
-              >
-                <Pencil size={10} />
-                Edit Limit
-              </button>
-              <button
-                type="button"
-                onClick={() => setResetConfirmOpen(true)}
-                disabled={!founderSpots}
-                title="Reset slot counter to 0 and clear the claims log"
-                className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full text-[10px] font-semibold uppercase tracking-wider transition disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{
-                  background: "oklch(0.97 0.005 240)",
-                  border: "1px solid oklch(0.88 0.01 240)",
-                  color: "oklch(0.35 0 0)",
-                }}
-              >
-                <RotateCcw size={10} />
-                Reset Slots
-              </button>
               <div className="flex flex-col items-center text-center">
                 <p
                   className="text-2xl font-bold tabular-nums leading-none"
@@ -4741,105 +5044,6 @@ export default function AdminPage() {
           <SetupSection productKeys={productKeys} keysLoading={keysLoading} mutateKeys={mutateKeys} />
         )}
       </main>
-
-      <Dialog
-        open={resetConfirmOpen}
-        onOpenChange={(open) => { if (!open && !resettingSlots) setResetConfirmOpen(false); }}
-      >
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Reset Founder slots?</DialogTitle>
-            <DialogDescription>This will:</DialogDescription>
-          </DialogHeader>
-          <ul className="space-y-1 pl-5 list-disc text-sm" style={{ color: "var(--c-55)" }}>
-            <li>
-              Set the counter back to <span className="font-semibold">0 of {founderSpots?.limit ?? 0}</span>
-            </li>
-            <li>Re-arm the promo so new claims can come in</li>
-            <li>Clear the claims log so old payment IDs can be reused for testing</li>
-          </ul>
-          <DialogFooter>
-            <button
-              onClick={confirmResetFounderSlots}
-              disabled={resettingSlots}
-              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
-              style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
-            >
-              {resettingSlots ? (
-                <span className="inline-flex items-center justify-center gap-2">
-                  <Spinner size={14} className="text-white" />
-                  Resetting…
-                </span>
-              ) : "Reset Slots"}
-            </button>
-            <button
-              onClick={() => setResetConfirmOpen(false)}
-              disabled={resettingSlots}
-              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
-              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
-            >
-              Cancel
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={editLimitOpen}
-        onOpenChange={(open) => { if (!open && !savingLimit) setEditLimitOpen(false); }}
-      >
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Set Founder slot cap</DialogTitle>
-            <DialogDescription>
-              Total number of Founder spots offered. Already-claimed spots are preserved — only the ceiling changes.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>
-              New cap
-            </label>
-            <input
-              type="number"
-              min={0}
-              step={1}
-              value={limitInput}
-              onChange={(e) => setLimitInput(e.target.value)}
-              disabled={savingLimit}
-              className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all tabular-nums"
-              style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
-            />
-            <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
-              Current cap: <span className="font-semibold tabular-nums">{founderSpots?.limit ?? "—"}</span>
-              {" · "}
-              Setting below the already-claimed count will mark the promo as ended.
-            </p>
-          </div>
-          <DialogFooter>
-            <button
-              onClick={confirmSetFounderLimit}
-              disabled={savingLimit}
-              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
-              style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
-            >
-              {savingLimit ? (
-                <span className="inline-flex items-center justify-center gap-2">
-                  <Spinner size={14} className="text-white" />
-                  Saving…
-                </span>
-              ) : "Save cap"}
-            </button>
-            <button
-              onClick={() => setEditLimitOpen(false)}
-              disabled={savingLimit}
-              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
-              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
-            >
-              Cancel
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {nicheLimitUser && (
         <NicheLimitOverrideModal

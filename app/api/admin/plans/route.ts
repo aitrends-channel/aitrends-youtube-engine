@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { requireAdmin } from "@/lib/admin-server";
-import { getPlans } from "@/lib/plans";
+import { getPlans, getPaymentMode } from "@/lib/plans";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +15,8 @@ interface PlanPayload {
   limit_display?: unknown;
   features?: unknown;
   niches_per_month?: unknown;
-  payment_link?: unknown;
+  payment_link_test?: unknown;
+  payment_link_production?: unknown;
   highlighted?: unknown;
   disabled?: unknown;
   is_founder?: unknown;
@@ -50,8 +51,8 @@ function asStringArray(v: unknown): string[] | undefined {
 export async function GET() {
   const guard = await requireAdmin();
   if (!guard.ok) return guard.response;
-  const plans = await getPlans();
-  return NextResponse.json({ plans });
+  const [plans, paymentMode] = await Promise.all([getPlans(), getPaymentMode()]);
+  return NextResponse.json({ plans, paymentMode });
 }
 
 export async function POST(req: Request) {
@@ -86,7 +87,8 @@ export async function POST(req: Request) {
     limit_display: asString(body.limit_display) ?? "",
     features,
     niches_per_month: nichesPerMonth,
-    payment_link: asNullableString(body.payment_link) ?? null,
+    payment_link_test: asNullableString(body.payment_link_test) ?? null,
+    payment_link_production: asNullableString(body.payment_link_production) ?? null,
     highlighted: asBool(body.highlighted) ?? false,
     disabled: asBool(body.disabled) ?? false,
     is_founder: asBool(body.is_founder) ?? false,
