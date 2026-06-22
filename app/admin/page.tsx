@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, Mail, KeyRound, CreditCard, Rocket,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, Mail, KeyRound, CreditCard, Rocket, X,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -2740,25 +2740,52 @@ function PlanEditModal({
   );
 }
 
-type LaunchTab = "users" | "logs";
+type LaunchTab = "users" | "logs" | "activity";
 
 function LaunchModal({ onClose }: { onClose: () => void }) {
   const [tab, setTab] = useState<LaunchTab>("users");
+  const [excludeEmails, setExcludeEmails] = useState<string[]>([]);
+  const [excludeInput, setExcludeInput] = useState("");
+  const [clearAllLogs, setClearAllLogs] = useState(false);
+  const [clearAllActivity, setClearAllActivity] = useState(false);
 
   const tabs: { id: LaunchTab; label: string }[] = [
-    { id: "users", label: "Users" },
-    { id: "logs",  label: "Logs"  },
+    { id: "users",    label: "Users"    },
+    { id: "logs",     label: "Logs"     },
+    { id: "activity", label: "Activity" },
   ];
+
+  function addExcludeEmail() {
+    const candidate = excludeInput.trim().toLowerCase();
+    if (!candidate) return;
+    // Loose email shape check — the deletion endpoint will validate
+    // against auth.users anyway; this just guards against obvious
+    // fat-finger entries.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate)) {
+      toast.error("Not a valid email");
+      return;
+    }
+    if (excludeEmails.includes(candidate)) {
+      toast.error("Already in the list");
+      return;
+    }
+    setExcludeEmails((prev) => [...prev, candidate]);
+    setExcludeInput("");
+  }
+
+  function removeExcludeEmail(email: string) {
+    setExcludeEmails((prev) => prev.filter((e) => e !== email));
+  }
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent showCloseButton={false} className="sm:max-w-2xl">
+      <DialogContent showCloseButton={false} className="sm:max-w-2xl text-base">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Rocket size={16} style={{ color: "oklch(0.55 0.15 145)" }} />
+          <DialogTitle className="flex items-center gap-2 text-lg">
+            <Rocket size={18} style={{ color: "oklch(0.55 0.15 145)" }} />
             Launch Heclus
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-sm">
             Review what gets cleared from each surface before flipping the switch.
           </DialogDescription>
         </DialogHeader>
@@ -2770,7 +2797,7 @@ function LaunchModal({ onClose }: { onClose: () => void }) {
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
-                className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
+                className="flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer"
                 style={active ? {
                   background: "white",
                   color: "oklch(0.55 0.15 145)",
@@ -2788,17 +2815,97 @@ function LaunchModal({ onClose }: { onClose: () => void }) {
 
         <div className="min-h-[200px] max-h-[50vh] overflow-y-auto">
           {tab === "users" && (
-            <p className="text-xs text-zinc-500 italic">Users tab — pending details.</p>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-sm font-semibold text-zinc-700">
+                  Exclude from deletion
+                </label>
+                <p className="text-xs text-zinc-500">
+                  Enter one email at a time and click Add. Listed emails are kept; everyone else gets deleted when launch fires.
+                </p>
+              </div>
+
+              <div className="flex items-stretch gap-2">
+                <input
+                  type="email"
+                  value={excludeInput}
+                  onChange={(e) => setExcludeInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addExcludeEmail();
+                    }
+                  }}
+                  placeholder="admin@heclus.io"
+                  className="flex-1 px-3 py-2.5 rounded-lg text-sm outline-none font-mono bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400"
+                />
+                <button
+                  type="button"
+                  onClick={addExcludeEmail}
+                  disabled={!excludeInput.trim()}
+                  className="px-4 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
+                >
+                  Add
+                </button>
+              </div>
+
+              {excludeEmails.length === 0 ? (
+                <p className="text-xs italic text-zinc-400">No emails added yet.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {excludeEmails.map((email) => (
+                    <li
+                      key={email}
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-zinc-50 ring-1 ring-zinc-200"
+                    >
+                      <span className="text-sm font-mono text-zinc-700 truncate">{email}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeExcludeEmail(email)}
+                        className="p-1 rounded transition-all hover:bg-red-100 cursor-pointer"
+                        title="Remove"
+                      >
+                        <X size={14} className="text-red-600" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
           {tab === "logs" && (
-            <p className="text-xs text-zinc-500 italic">Logs tab — pending details.</p>
+            <div className="flex items-center justify-center min-h-[180px]">
+              <label className="flex items-center gap-4 cursor-pointer text-lg font-semibold text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={clearAllLogs}
+                  onChange={(e) => setClearAllLogs(e.target.checked)}
+                  className="w-7 h-7 cursor-pointer accent-emerald-600"
+                />
+                Clear all?
+              </label>
+            </div>
+          )}
+          {tab === "activity" && (
+            <div className="flex items-center justify-center min-h-[180px]">
+              <label className="flex items-center gap-4 cursor-pointer text-lg font-semibold text-zinc-700">
+                <input
+                  type="checkbox"
+                  checked={clearAllActivity}
+                  onChange={(e) => setClearAllActivity(e.target.checked)}
+                  className="w-7 h-7 cursor-pointer accent-emerald-600"
+                />
+                Clear all?
+              </label>
+            </div>
           )}
         </div>
 
         <DialogFooter>
           <button
             onClick={onClose}
-            className="flex-1 py-2 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100"
+            className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100"
           >
             Close
           </button>
