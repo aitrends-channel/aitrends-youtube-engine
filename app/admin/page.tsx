@@ -9,10 +9,11 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, Mail, KeyRound, CreditCard, Rocket, X,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, Mail, KeyRound, CreditCard, Rocket, X, Check,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { launchAllowedClient } from "@/lib/env";
 import useSWR from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isAdminUser } from "@/lib/admin";
@@ -2740,20 +2741,53 @@ function PlanEditModal({
   );
 }
 
-type LaunchTab = "users" | "logs" | "activity";
+interface LaunchStepResult {
+  step: string;
+  ok: boolean;
+  detail?: string;
+}
 
 function LaunchModal({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<LaunchTab>("users");
   const [excludeEmails, setExcludeEmails] = useState<string[]>([]);
   const [excludeInput, setExcludeInput] = useState("");
   const [clearAllLogs, setClearAllLogs] = useState(false);
   const [clearAllActivity, setClearAllActivity] = useState(false);
+  const [resetFounderSlots, setResetFounderSlots] = useState(false);
+  const [clearEmails, setClearEmails] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [launching, setLaunching] = useState(false);
+  const [results, setResults] = useState<LaunchStepResult[] | null>(null);
+  const allOk = results !== null && results.every((r) => r.ok);
 
-  const tabs: { id: LaunchTab; label: string }[] = [
-    { id: "users",    label: "Users"    },
-    { id: "logs",     label: "Logs"     },
-    { id: "activity", label: "Activity" },
-  ];
+  async function fireLaunch() {
+    setLaunching(true);
+    try {
+      const res = await fetch("/api/admin/launch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          excludeEmails,
+          clearLogs: clearAllLogs,
+          clearActivity: clearAllActivity,
+          resetFounderSlots,
+          clearEmails,
+        }),
+      });
+      const json = await res.json().catch(() => ({})) as { results?: LaunchStepResult[]; error?: string };
+      if (json.results) {
+        setResults(json.results);
+        if (res.ok) toast.success("Launch complete");
+        else toast.error("Launch finished with errors — see details");
+      } else {
+        throw new Error(json.error ?? `Launch failed (${res.status})`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Launch failed");
+    } finally {
+      setLaunching(false);
+    }
+  }
 
   function addExcludeEmail() {
     const candidate = excludeInput.trim().toLowerCase();
@@ -2790,127 +2824,288 @@ function LaunchModal({ onClose }: { onClose: () => void }) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex gap-1 p-1 rounded-xl bg-zinc-100 ring-1 ring-zinc-200">
-          {tabs.map((t) => {
-            const active = tab === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className="flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer"
-                style={active ? {
-                  background: "white",
-                  color: "oklch(0.55 0.15 145)",
-                  boxShadow: "0 1px 3px oklch(0 0 0 / 0.06)",
-                } : {
-                  background: "transparent",
-                  color: "oklch(0.45 0 0)",
+        <div className="max-h-[60vh] overflow-y-auto space-y-5 pr-1">
+          {/* ── Users section ─────────────────────────────────── */}
+          <section className="space-y-3">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-zinc-800">Users</p>
+              <p className="text-xs text-zinc-500">
+                Enter one email at a time and click Add. Listed emails are kept; everyone else gets deleted when launch fires.
+              </p>
+            </div>
+
+            <div className="flex items-stretch gap-2">
+              <input
+                type="email"
+                value={excludeInput}
+                onChange={(e) => setExcludeInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addExcludeEmail();
+                  }
                 }}
+                placeholder="admin@heclus.io"
+                className="flex-1 px-3 py-2.5 rounded-lg text-sm outline-none font-mono bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400"
+              />
+              <button
+                type="button"
+                onClick={addExcludeEmail}
+                disabled={!excludeInput.trim()}
+                className="px-4 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
               >
-                {t.label}
+                Add
               </button>
-            );
-          })}
-        </div>
+            </div>
 
-        <div className="min-h-[200px] max-h-[50vh] overflow-y-auto">
-          {tab === "users" && (
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-sm font-semibold text-zinc-700">
-                  Exclude from deletion
-                </label>
-                <p className="text-xs text-zinc-500">
-                  Enter one email at a time and click Add. Listed emails are kept; everyone else gets deleted when launch fires.
-                </p>
-              </div>
-
-              <div className="flex items-stretch gap-2">
-                <input
-                  type="email"
-                  value={excludeInput}
-                  onChange={(e) => setExcludeInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addExcludeEmail();
-                    }
-                  }}
-                  placeholder="admin@heclus.io"
-                  className="flex-1 px-3 py-2.5 rounded-lg text-sm outline-none font-mono bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400"
-                />
-                <button
-                  type="button"
-                  onClick={addExcludeEmail}
-                  disabled={!excludeInput.trim()}
-                  className="px-4 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
-                >
-                  Add
-                </button>
-              </div>
-
-              {excludeEmails.length === 0 ? (
-                <p className="text-xs italic text-zinc-400">No emails added yet.</p>
-              ) : (
-                <ul className="space-y-1">
-                  {excludeEmails.map((email) => (
-                    <li
-                      key={email}
-                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-zinc-50 ring-1 ring-zinc-200"
+            {excludeEmails.length === 0 ? (
+              <p className="text-xs italic text-zinc-400">No emails added yet.</p>
+            ) : (
+              <ul className="space-y-1">
+                {excludeEmails.map((email) => (
+                  <li
+                    key={email}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-zinc-50 ring-1 ring-zinc-200"
+                  >
+                    <span className="text-sm font-mono text-zinc-700 truncate">{email}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeExcludeEmail(email)}
+                      className="p-1 rounded transition-all hover:bg-red-100 cursor-pointer"
+                      title="Remove"
                     >
-                      <span className="text-sm font-mono text-zinc-700 truncate">{email}</span>
-                      <button
-                        type="button"
-                        onClick={() => removeExcludeEmail(email)}
-                        className="p-1 rounded transition-all hover:bg-red-100 cursor-pointer"
-                        title="Remove"
-                      >
-                        <X size={14} className="text-red-600" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-          {tab === "logs" && (
-            <div className="flex items-center justify-center min-h-[180px]">
-              <label className="flex items-center gap-4 cursor-pointer text-lg font-semibold text-zinc-700">
-                <input
-                  type="checkbox"
-                  checked={clearAllLogs}
-                  onChange={(e) => setClearAllLogs(e.target.checked)}
-                  className="w-7 h-7 cursor-pointer accent-emerald-600"
-                />
-                Clear all?
-              </label>
-            </div>
-          )}
-          {tab === "activity" && (
-            <div className="flex items-center justify-center min-h-[180px]">
-              <label className="flex items-center gap-4 cursor-pointer text-lg font-semibold text-zinc-700">
-                <input
-                  type="checkbox"
-                  checked={clearAllActivity}
-                  onChange={(e) => setClearAllActivity(e.target.checked)}
-                  className="w-7 h-7 cursor-pointer accent-emerald-600"
-                />
-                Clear all?
-              </label>
-            </div>
-          )}
+                      <X size={14} className="text-red-600" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* ── Logs section ──────────────────────────────────── */}
+          <section className="space-y-2 pt-4 border-t border-zinc-200">
+            <p className="text-sm font-semibold text-zinc-800">Logs</p>
+            <label className="flex items-center gap-3 cursor-pointer text-sm text-zinc-700">
+              <input
+                type="checkbox"
+                checked={clearAllLogs}
+                onChange={(e) => setClearAllLogs(e.target.checked)}
+                className="w-5 h-5 cursor-pointer accent-emerald-600"
+              />
+              Clear all system logs
+            </label>
+          </section>
+
+          {/* ── Activity section ──────────────────────────────── */}
+          <section className="space-y-2 pt-4 border-t border-zinc-200">
+            <p className="text-sm font-semibold text-zinc-800">Activity</p>
+            <label className="flex items-center gap-3 cursor-pointer text-sm text-zinc-700">
+              <input
+                type="checkbox"
+                checked={clearAllActivity}
+                onChange={(e) => setClearAllActivity(e.target.checked)}
+                className="w-5 h-5 cursor-pointer accent-emerald-600"
+              />
+              Reset activity chart from launch day
+            </label>
+          </section>
+
+          {/* ── Founder promo section ─────────────────────────── */}
+          <section className="space-y-2 pt-4 border-t border-zinc-200">
+            <p className="text-sm font-semibold text-zinc-800">Founder promo</p>
+            <label className="flex items-center gap-3 cursor-pointer text-sm text-zinc-700">
+              <input
+                type="checkbox"
+                checked={resetFounderSlots}
+                onChange={(e) => setResetFounderSlots(e.target.checked)}
+                className="w-5 h-5 cursor-pointer accent-emerald-600"
+              />
+              Reset founder slot counter and clear claims log
+            </label>
+          </section>
+
+          {/* ── Emails section ────────────────────────────────── */}
+          <section className="space-y-2 pt-4 border-t border-zinc-200">
+            <p className="text-sm font-semibold text-zinc-800">Emails</p>
+            <label className="flex items-center gap-3 cursor-pointer text-sm text-zinc-700">
+              <input
+                type="checkbox"
+                checked={clearEmails}
+                onChange={(e) => setClearEmails(e.target.checked)}
+                className="w-5 h-5 cursor-pointer accent-emerald-600"
+              />
+              Clear email history (admin Emails panel)
+            </label>
+          </section>
         </div>
+
+        {results && (
+          <div className="rounded-lg p-3 space-y-2 bg-zinc-50 ring-1 ring-zinc-200">
+            <p className="text-sm font-semibold text-zinc-700">Launch results</p>
+            <ul className="space-y-1">
+              {results.map((r) => (
+                <li key={r.step} className="flex items-start gap-2 text-xs">
+                  <span className="mt-0.5 shrink-0">
+                    {r.ok ? <Check size={14} className="text-emerald-600" /> : <X size={14} className="text-red-600" />}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="font-mono text-zinc-700">{r.step}</p>
+                    {r.detail && <p className="text-zinc-500 break-words">{r.detail}</p>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <DialogFooter>
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100"
-          >
-            Close
-          </button>
+          {!results ? (
+            <>
+              {(() => {
+                // Disable Launch when the admin hasn't configured the
+                // form at all — either no exclude emails entered, or
+                // none of the optional cleanups checked. Forces an
+                // explicit "I picked who to keep AND what to clean"
+                // decision instead of a silent click-through.
+                const hasExcludes = excludeEmails.length > 0;
+                const hasAnyCheck = clearAllLogs || clearAllActivity || resetFounderSlots || clearEmails;
+                const canSubmit = hasExcludes && hasAnyCheck;
+                const reason = !hasExcludes && !hasAnyCheck
+                  ? "Add at least one exclude email and check at least one cleanup option"
+                  : !hasExcludes
+                    ? "Add at least one email to exclude from deletion"
+                    : "Check at least one cleanup option";
+                return (
+                  <button
+                    onClick={() => { setConfirmText(""); setConfirmOpen(true); }}
+                    disabled={launching || !canSubmit}
+                    title={canSubmit ? "Launch Heclus" : reason}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      background: "oklch(0.55 0.15 145)",
+                      color: "white",
+                      boxShadow: canSubmit ? "0 0 12px oklch(0.55 0.15 145 / 0.25)" : "none",
+                    }}
+                  >
+                    <span className="inline-flex items-center justify-center gap-2">
+                      <Rocket size={14} />
+                      Launch
+                    </span>
+                  </button>
+                );
+              })()}
+              <button
+                onClick={onClose}
+                disabled={launching}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100"
+            >
+              Close
+            </button>
+          )}
         </DialogFooter>
       </DialogContent>
+
+      {confirmOpen && (
+        <Dialog open onOpenChange={(open) => { if (!open && !launching) setConfirmOpen(false); }}>
+          <DialogContent showCloseButton={false} className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <Rocket size={16} style={{ color: "oklch(0.55 0.15 145)" }} />
+                Confirm launch
+              </DialogTitle>
+              <DialogDescription className="text-sm">
+                The following will happen, in order. None of it is reversible without backup.
+              </DialogDescription>
+            </DialogHeader>
+
+            <ul className="text-sm space-y-2 list-disc pl-5 text-zinc-700 max-h-[40vh] overflow-y-auto">
+              <li>
+                Delete <span className="font-semibold">every user</span> in auth.users except the {excludeEmails.length} email{excludeEmails.length === 1 ? "" : "s"} you excluded. Their projects, beats, voiceovers, account_settings, and other per-user rows cascade.
+              </li>
+              <li>
+                Sweep <code className="text-xs bg-zinc-100 px-1 rounded">project_costs</code> — delete every cost row not owned by an excluded user (catches orphans the FK cascade missed).
+              </li>
+              <li>
+                Wipe each deleted user&apos;s <span className="font-semibold">R2 bucket folder</span> (<code className="text-xs bg-zinc-100 px-1 rounded">&lt;email&gt;/</code>) — all their generated images, voiceovers, thumbnails, and assembled MP4s.
+              </li>
+              <li>
+                Drop any <code className="text-xs bg-zinc-100 px-1 rounded">assembly:&lt;projectId&gt;</code> entries from <span className="font-semibold">Upstash Redis</span> for the deleted projects.
+              </li>
+              {clearAllLogs && <li>Truncate <code className="text-xs bg-zinc-100 px-1 rounded">system_logs</code>.</li>}
+              {clearAllActivity && <li>Set the activity-chart cutoff to now — the admin chart starts fresh from launch day.</li>}
+              {resetFounderSlots && <li>Reset founder slot counter to 0, re-arm the promo, and truncate <code className="text-xs bg-zinc-100 px-1 rounded">founder_claims_log</code>.</li>}
+              {clearEmails && <li>Truncate <code className="text-xs bg-zinc-100 px-1 rounded">emails</code>.</li>}
+              <li>Flip <code className="text-xs bg-zinc-100 px-1 rounded">dodo_payment_mode</code> to <span className="font-semibold">production</span>.</li>
+            </ul>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-zinc-700">
+                Type <span className="font-mono">LAUNCH</span> to confirm
+              </label>
+              <input
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                disabled={launching}
+                autoFocus
+                placeholder="LAUNCH"
+                className="w-full px-3 py-2 rounded-lg text-sm outline-none font-mono bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400"
+              />
+            </div>
+
+            <DialogFooter>
+              <button
+                onClick={async () => {
+                  setConfirmOpen(false);
+                  await fireLaunch();
+                }}
+                disabled={launching || confirmText !== "LAUNCH"}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed bg-red-600 text-white"
+              >
+                {launching ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <Spinner size={14} className="text-white" />
+                    Launching…
+                  </span>
+                ) : "Yes, launch"}
+              </button>
+              <button
+                onClick={() => setConfirmOpen(false)}
+                disabled={launching}
+                className="flex-1 py-2 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {launching && (
+        <Dialog open onOpenChange={() => {}}>
+          <DialogContent showCloseButton={false} className="sm:max-w-xs">
+            <div className="flex flex-col items-center gap-3 py-4">
+              <Spinner size={24} className="text-emerald-600" />
+              <p className="text-sm font-semibold text-zinc-700">Launching…</p>
+              <p className="text-xs text-zinc-500 text-center">
+                Deleting users, then cleanup, then flipping payment mode. Don&apos;t close this tab.
+              </p>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* allOk drives an emerald banner above results when present;
+          kept inline so the modal layout stays single-scroll. */}
+      {results && allOk && null}
     </Dialog>
   );
 }
@@ -3512,6 +3707,21 @@ export default function AdminPage() {
     fetcher
   );
 
+  // Revenue tab reads everything (Total/MRR/ARR/paying count + chart)
+  // from the immutable revenue_events ledger so the numbers survive
+  // user deletion. MRR and ARR are rolling-window actual-revenue
+  // figures (last 30 / 365 days), not amortized recurring math.
+  const { data: revenue } = useSWR<{
+    totalCents: number;
+    mrrCents: number;
+    arrCents: number;
+    payingUserCount: number;
+    launchedAt: string | null;
+    last12Months: { month: string; amountCents: number }[];
+    recentEvents: { amountCents: number; occurredAt: string | null; userEmail: string | null; plan: string | null; eventType: string | null; dodoPaymentId: string | null }[];
+    eventCount: number;
+  }>(authChecked ? "/api/admin/revenue" : null, fetcher);
+
   const { data: productKeysRaw, isLoading: keysLoading, mutate: mutateKeys } = useSWR<ProductApiKey[]>(
     authChecked ? "/api/admin/product-keys" : null,
     fetcher
@@ -3781,36 +3991,57 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <div className="w-full px-[30px] pt-6 flex justify-end">
-        <button
-          onClick={() => setLaunchOpen(true)}
-          className="inline-flex items-center justify-center gap-1.5 rounded-lg text-base font-bold transition-all hover:opacity-90 cursor-pointer"
-          style={{
-            width: "100px",
-            height: "50px",
-            padding: "10px",
-            background: "oklch(0.55 0.15 145)",
-            color: "white",
-            boxShadow: "0 0 12px oklch(0.55 0.15 145 / 0.25)",
-          }}
-        >
-          <Rocket size={16} />
-          Launch
-        </button>
-      </div>
-
       <main className="flex-1 w-full px-[30px] py-8 sm:py-12 space-y-6 sm:space-y-10">
-        {/* Page heading */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-            style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-            <BarChart3 size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+        {/* Page heading + Launch action, sharing one row */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+              style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+              <BarChart3 size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-2xl font-bold text-foreground">Admin Dashboard</h1>
+              <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                Users, projects, and system overview
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Admin Dashboard</h1>
-            <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-              Users, projects, and system overview
-            </p>
+
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            {(() => {
+              const canLaunch = launchAllowedClient();
+              return (
+                <button
+                  onClick={() => setLaunchOpen(true)}
+                  disabled={!canLaunch}
+                  title={canLaunch ? "Launch Heclus" : "Disabled on staging — only enabled in production or local dev"}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg text-base font-bold transition-all hover:opacity-90 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{
+                    width: "100px",
+                    height: "50px",
+                    padding: "10px",
+                    background: "oklch(0.55 0.15 145)",
+                    color: "white",
+                    boxShadow: canLaunch ? "0 0 12px oklch(0.55 0.15 145 / 0.25)" : "none",
+                  }}
+                >
+                  <Rocket size={16} />
+                  Launch
+                </button>
+              );
+            })()}
+            {revenue?.launchedAt && (
+              <p className="text-xs" style={{ color: "var(--c-50)" }}>
+                Launched on:{" "}
+                <span className="font-semibold" style={{ color: "var(--c-78)" }}>
+                  {new Date(revenue.launchedAt).toLocaleDateString("en", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })}
+                </span>
+              </p>
+            )}
           </div>
         </div>
 
@@ -5015,36 +5246,56 @@ export default function AdminPage() {
         {/* Revenue section */}
         {(() => {
           const PLAN_MRR: Record<string, number> = { founder: 40 / 12, starter: 19, pro: 49 };
-          const PLAN_AMOUNT: Record<string, number> = { founder: 40, starter: 19, pro: 49 };
           const PLAN_LABEL: Record<string, string> = { founder: "Founder", starter: "Starter", pro: "Pro" };
           // Most-recent payments first; nulls-last for any paid user
           // whose paidAt isn't set (e.g. a manual grant without a
           // timestamp).
+          //
+          // Once the Launch action has set product_config
+          // .activity_cutoff_at, the table is scoped to post-launch
+          // subscriptions only — anyone whose paidAt predates launch
+          // is hidden, so the view stays focused on real day-1+
+          // customers instead of being mixed with pre-launch test
+          // accounts. Before launch (launchedAt = null) the filter is
+          // a no-op and everyone with paid=true is shown.
+          const launchedAtMs = revenue?.launchedAt ? new Date(revenue.launchedAt).getTime() : null;
           const paidUsers = users
             .filter((u) => u.status === "Paid")
+            .filter((u) => {
+              if (launchedAtMs === null) return true;
+              if (!u.paidAt) return false;
+              return new Date(u.paidAt).getTime() >= launchedAtMs;
+            })
             .sort((a, b) => {
               const ta = a.paidAt ? new Date(a.paidAt).getTime() : -Infinity;
               const tb = b.paidAt ? new Date(b.paidAt).getTime() : -Infinity;
               return tb - ta;
             });
-          const mrr = paidUsers.reduce((sum, u) => sum + (u.plan ? (PLAN_MRR[u.plan] ?? 0) : 0), 0);
-          const arr = mrr * 12;
+          // All four cards now sourced from revenue_events via
+          // /api/admin/revenue. paidUsers (derived from
+          // auth.users.app_metadata) is still used below for the
+          // "Paid users" table, which is intentionally a view of
+          // CURRENTLY-paying subscriptions and not historical revenue.
+          const mrr = (revenue?.mrrCents ?? 0) / 100;
+          const arr = (revenue?.arrCents ?? 0) / 100;
+          const payingUserCount = revenue?.payingUserCount ?? 0;
 
-          // Monthly revenue chart data — last 12 months
-          const last12 = Array.from({ length: 12 }, (_, i) => {
+          // Revenue history sourced from the immutable revenue_events
+          // ledger via /api/admin/revenue. Survives user deletion,
+          // unlike the prior approach which derived months from
+          // auth.users.app_metadata.paid_at and silently dropped any
+          // revenue tied to a deleted user.
+          const last12Months = revenue?.last12Months ?? Array.from({ length: 12 }, (_, i) => {
             const d = new Date();
             d.setUTCDate(1);
             d.setUTCMonth(d.getUTCMonth() - (11 - i));
-            return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+            return { month: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`, amountCents: 0 };
           });
-          const revenueByMonth = new Map<string, number>();
-          for (const u of paidUsers) {
-            if (!u.paidAt) continue;
-            const month = new Date(u.paidAt).toISOString().slice(0, 7);
-            revenueByMonth.set(month, (revenueByMonth.get(month) ?? 0) + (u.plan ? (PLAN_AMOUNT[u.plan] ?? 0) : 0));
-          }
-          const chartPts = last12.map(m => ({ month: m, revenue: revenueByMonth.get(m) ?? 0 }));
-          const totalRevenue = chartPts.reduce((s, p) => s + p.revenue, 0);
+          const chartPts = last12Months.map((m) => ({
+            month: m.month,
+            revenue: m.amountCents / 100,
+          }));
+          const totalRevenue = (revenue?.totalCents ?? 0) / 100;
 
           // SVG chart
           const W = 560, PAD_L = 40, PAD_R = 10, PAD_T = 14, PAD_B = 26;
@@ -5079,7 +5330,7 @@ export default function AdminPage() {
               {/* Summary cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
-                  { label: "Paid Users",     value: paidUsers.length.toString() },
+                  { label: "Paid Users",     value: payingUserCount.toString() },
                   { label: "Total Revenue",  value: `$${totalRevenue.toFixed(2)}` },
                   { label: "Est. MRR",       value: `$${mrr.toFixed(2)}` },
                   { label: "Est. ARR",       value: `$${arr.toFixed(2)}` },
