@@ -356,6 +356,32 @@ export default function VoiceoverPage({ params }: PageProps) {
       if (!isAbort) {
         toast.error(err instanceof Error ? err.message : "Generation failed");
       }
+      // "Stream ended unexpectedly" means the SSE connection dropped
+      // before the route emitted its terminal event — almost always a
+      // Vercel function timeout (800s) or a network blip. In either
+      // case the route's `finally` didn't get to clear
+      // voiceover_active_run_id, so the UI would keep treating the
+      // run as in-flight (via serverGenerationActive) until the
+      // 15-minute staleness check expires it. Clear the flag
+      // ourselves so the spinner + "Generating" pill go away
+      // immediately. The optimistic SWR mutate flips the UI this
+      // frame; the PATCH is the durable write.
+      const streamEnded = err instanceof Error && err.message.includes("Stream ended unexpectedly");
+      if (streamEnded) {
+        await mutate(
+          (cur: Record<string, unknown> | undefined) => cur ? { ...cur, voiceover_active_run_id: null, voiceover_run_started_at: null } : cur,
+          { revalidate: false }
+        );
+        try {
+          await fetch(`/api/projects/${projectId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ voiceover_active_run_id: null, voiceover_run_started_at: null }),
+          });
+        } catch (patchErr) {
+          console.warn("[voiceover] failed to clear active_run_id after stream-ended:", patchErr);
+        }
+      }
     } finally {
       setGenerating(false);
       setProgress(null);
