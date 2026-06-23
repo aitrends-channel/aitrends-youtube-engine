@@ -21,13 +21,13 @@ const KEY_FIELDS: KeyField[] = [
   {
     key: "kie_api_key",
     label: "KIE API Key",
-    description: "Powers everything: script generation & channel analysis, TTS voiceover, plus image and video generation — all through one provider",
+    description: "Powers script generation & channel analysis, plus image and video generation through one provider.",
     placeholder: "kie-…",
   },
   {
     key: "elevenlabs_api_key",
     label: "ElevenLabs API Key",
-    description: "Used by the assembler for speech-to-text alignment (matches each beat to the spoken word timestamps) and caption generation. Optional — falls back to the platform default if left blank.",
+    description: "Powers TTS voiceovers (direct ElevenLabs call — fast per-beat synthesis at per-character pricing) and assembler speech-to-text alignment for captions.",
     placeholder: "sk_…",
   },
 ];
@@ -408,13 +408,26 @@ export default function SettingsPage() {
               {
                 num: 1,
                 title: "Kie AI API Key",
-                sub: "Script generation, voiceovers, images & video clips",
+                sub: "Script generation, channel analysis, images & video clips",
                 href: "https://kie.ai",
                 linkLabel: "kie.ai",
                 steps: [
                   "Sign in and go to API Keys.",
                   "Create a key, name it, copy it.",
-                  "Top up credits — covers every AI call across the app.",
+                  "Top up credits — covers script, image, and video generation.",
+                ],
+              },
+              {
+                num: 2,
+                title: "ElevenLabs API Key",
+                sub: "Voiceover synthesis and caption-alignment STT",
+                href: "https://elevenlabs.io/app/settings/api-keys",
+                linkLabel: "elevenlabs.io",
+                steps: [
+                  "Sign in and open Settings → API Keys.",
+                  "Create a key with text-to-speech and speech-to-text permissions, then copy it.",
+                  "Pick a plan that fits your character volume (per-char billing — short beats are cheap).",
+                  "Optional: from the Voice Library, add any non-Premade voices you want available in the picker.",
                 ],
               },
             ].map(({ num, title, sub, href, linkLabel, steps }) => (
