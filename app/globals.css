@@ -321,25 +321,20 @@ body {
   animation: progress-indeterminate 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: oklch(0.3 0 0); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: oklch(0.4 0 0); }
-[data-theme="light"] ::-webkit-scrollbar-thumb { background: oklch(0.7 0 0); }
-[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: oklch(0.6 0 0); }
+/* Scrollbar — purple thumb on themed track, app-wide. Theme tokens
+   (--primary, --bg-track) handle light/dark automatically. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+* { scrollbar-width: auto; scrollbar-color: var(--primary) var(--bg-track); }
+::-webkit-scrollbar-track { background: var(--bg-track); border-radius: 5px; }
+::-webkit-scrollbar-thumb { background: var(--primary); border-radius: 5px; border: 2px solid var(--bg-track); }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in oklch, var(--primary), white 12%); }
 
-/* Always-visible scrollbar for overflow containers that benefit from a
-   clear scroll affordance (image / video grids on the generate page). */
-.scroll-visible { scrollbar-width: thin; scrollbar-color: oklch(0.45 0 0) transparent; }
+/* Wider variants — same look, beefier rail. Use .scroll-visible on
+   media grids (12px) and .scroll-themed on long lists like the voice
+   picker (14px). */
 .scroll-visible::-webkit-scrollbar { width: 12px; height: 12px; }
-.scroll-visible::-webkit-scrollbar-track { background: oklch(0.2 0 0 / 0.4); border-radius: 4px; }
-.scroll-visible::-webkit-scrollbar-thumb { background: oklch(0.45 0 0); border-radius: 4px; }
-.scroll-visible::-webkit-scrollbar-thumb:hover { background: oklch(0.55 0 0); }
-[data-theme="light"] .scroll-visible { scrollbar-color: oklch(0.55 0 0) transparent; }
-[data-theme="light"] .scroll-visible::-webkit-scrollbar-track { background: oklch(0.85 0 0 / 0.6); }
-[data-theme="light"] .scroll-visible::-webkit-scrollbar-thumb { background: oklch(0.6 0 0); }
-[data-theme="light"] .scroll-visible::-webkit-scrollbar-thumb:hover { background: oklch(0.5 0 0); }
+.scroll-themed::-webkit-scrollbar { width: 14px; height: 14px; }
+.scroll-themed::-webkit-scrollbar-thumb { border-width: 3px; }
 
 /* Light mode hover overrides for Tailwind opacity classes */
 [data-theme="light"] .hover\:bg-white\/5:hover { background-color: oklch(0 0 0 / 0.04) !important; }
