@@ -4,7 +4,7 @@ import { useState, use, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
-import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil } from "lucide-react";
+import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video } from "lucide-react";
 import { ImageSparkle } from "@/components/icons/ImageSparkle";
 import { StepCostCard } from "@/components/StepCostCard";
 import { toast } from "sonner";
@@ -1639,13 +1639,13 @@ export default function GeneratePage({ params }: PageProps) {
               </div>
             )}
 
-            {/* Video clip grid — mirrors image panel structure: progress + grid in one block,
-                shown whenever there's any video activity OR a queue has been submitted. */}
-            {(beats.some((b) => b.videoUrl || b.videoStatus) || videosSubmitted) && (
+            {/* Video clip grid — mirrors image panel structure: progress + grid in one block.
+                Renders placeholder cells (status "—") for every beat with a videoPrompt
+                so the user sees the workflow scaffold before queuing any clips. */}
+            {beats.some((b) => b.videoPrompt) && (
               <div className="px-5 pt-4">
                 <ProgressBar value={generatedVideos} total={videoBeats} />
-                {beats.some((b) => b.videoUrl || b.videoStatus) && (
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 mt-3 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 mt-3 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
                     {beats.filter((b) => b.videoPrompt).map((b) => (
                       <div
                         key={b.beatNumber}
@@ -1704,6 +1704,12 @@ export default function GeneratePage({ params }: PageProps) {
                             disablePictureInPicture
                             controlsList="nodownload nofullscreen noplaybackrate noremoteplayback"
                           />
+                        ) : !b.videoStatus ? (
+                          // Pre-queue placeholder — the beat has a prompt
+                          // but hasn't been submitted yet. A video icon
+                          // signals "this slot will hold a clip" more
+                          // clearly than a bare "—" badge.
+                          <Video size={20} style={{ color: "var(--c-30)" }} aria-label="No clip yet" />
                         ) : (
                           <span className="text-[10px] px-1.5 py-0.5 rounded"
                             title={b.videoStatus === "failed" && b.videoError ? b.videoError : undefined}
@@ -1720,7 +1726,7 @@ export default function GeneratePage({ params }: PageProps) {
                                 gets to them. The transition the user
                                 sees per beat is:
                                 queued → submitting → rendering → done. */}
-                            {b.videoStatus ?? "—"}
+                            {b.videoStatus}
                           </span>
                         )}
 
@@ -1807,8 +1813,7 @@ export default function GeneratePage({ params }: PageProps) {
                         })()}
                       </div>
                     ))}
-                  </div>
-                )}
+                </div>
               </div>
             )}
 

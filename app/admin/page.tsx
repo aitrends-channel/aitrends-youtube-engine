@@ -18,6 +18,7 @@ import useSWR from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isAdminUser } from "@/lib/admin";
 import EmailsPanel from "./EmailsPanel";
+import { TtsCostLens } from "@/components/admin/TtsCostLens";
 
 const PHASE_PATHS: Record<number, string> = {
   1: "channel", 2: "channel", 3: "channel", 4: "channel", 5: "channel",
@@ -4961,6 +4962,8 @@ export default function AdminPage() {
               <Pagination page={projectsPage} total={sortedProjects.length} onChange={setProjectsPage} />
             </div>
           ))}
+
+          {videosSubTab === "cost" && !selectedCostProject && <TtsCostLens />}
 
           {videosSubTab === "cost" && (() => {
             // Build a project-id → cost rollup map so the table can

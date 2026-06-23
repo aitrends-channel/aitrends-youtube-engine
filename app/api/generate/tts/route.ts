@@ -31,22 +31,22 @@ export async function POST(req: Request) {
         }
 
         try {
-          const { audio: audioBuffer, creditsConsumed } = await generateTTS(
+          const { audio: audioBuffer, charsConsumed } = await generateTTS(
             script,
             voiceId,
             (current, total) => { send({ type: "progress", current, total }); },
             (msg) => { send({ type: "status", message: msg }); },
             user.id
           );
-          if (creditsConsumed) {
+          if (charsConsumed) {
             void logProjectCost({
               projectId,
               userId: user.id,
               step: "tts",
-              provider: "kie",
+              provider: "elevenlabs",
               model: TTS_MODEL,
-              units: creditsConsumed,
-              unitKind: "kie_credits",
+              units: charsConsumed,
+              unitKind: "elevenlabs_chars",
             });
           }
 

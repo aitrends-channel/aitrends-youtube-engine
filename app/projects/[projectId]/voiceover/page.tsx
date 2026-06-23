@@ -795,39 +795,37 @@ export default function VoiceoverPage({ params }: PageProps) {
                 >{tab}</button>
               ))}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1">
-              {!ttsModels && <p className="text-xs px-1" style={{ color: "var(--c-40)" }}>Loading voices…</p>}
-              {ttsModels && filteredVoices.length === 0 && (
-                <p className="text-xs px-1" style={{ color: "var(--c-40)" }}>No {voiceTab} voices available</p>
+            <div className="scroll-themed grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1">
+              {(!ttsModels || project === undefined) ? (
+                // Single page-load indicator — keeps the rest of the
+                // page calm while voices + project data are fetched.
+                // The grid below replaces this once both land.
+                <div className="col-span-full flex flex-col items-center justify-center py-10 gap-2">
+                  <span className="block w-6 h-6 border-2 rounded-full animate-spin"
+                    style={{ borderColor: "oklch(0.72 0.25 285 / 0.3)", borderTopColor: "oklch(0.72 0.25 285)" }} />
+                  <p className="text-xs" style={{ color: "var(--c-40)" }}>Loading…</p>
+                </div>
+              ) : (
+                <>
+                  {filteredVoices.length === 0 && (
+                    <p className="text-xs px-1" style={{ color: "var(--c-40)" }}>No {voiceTab} voices available</p>
+                  )}
+                  {filteredVoices.map((m) => (
+                    <VoiceOption
+                      key={m.id}
+                      model={m}
+                      selected={selectedVoice === m.id}
+                      onSelect={() => setSelectedVoice(m.id)}
+                      isPlaying={previewingId === m.id}
+                      onPlayToggle={setPreviewingId}
+                    />
+                  ))}
+                </>
               )}
-              {filteredVoices.map((m) => (
-                <VoiceOption
-                  key={m.id}
-                  model={m}
-                  selected={selectedVoice === m.id}
-                  onSelect={() => setSelectedVoice(m.id)}
-                  isPlaying={previewingId === m.id}
-                  onPlayToggle={setPreviewingId}
-                />
-              ))}
             </div>
           </div>
 
-          {project === undefined ? (
-            // Project still loading — only the beats list / bulk panel
-            // depends on it. Voice picker above renders independently
-            // from its own SWR call, so we scope the loading state to
-            // this section instead of taking over the whole page.
-            <div className="rounded-2xl p-10 flex flex-col items-center gap-3"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-              <span className="block w-7 h-7 border-2 rounded-full animate-spin"
-                style={{ borderColor: "oklch(0.72 0.25 285 / 0.3)", borderTopColor: "oklch(0.72 0.25 285)" }} />
-              <p className="text-sm font-medium" style={{ color: "var(--c-60)" }}>Loading voiceover beats…</p>
-              <p className="text-xs" style={{ color: "var(--c-40)" }}>
-                Fetching beats and checking what&apos;s already on file.
-              </p>
-            </div>
-          ) : (
+          {project === undefined ? null : (
           <>
           {/* Bulk action panel */}
           <div className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
