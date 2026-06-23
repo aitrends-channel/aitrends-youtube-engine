@@ -17,10 +17,10 @@ interface PlanDTO {
   disabled: boolean;
   isFounder: boolean;
   sortOrder: number;
-  // Synthetic flag set only on the admin-only "Production test" plan
-  // (not in the DB). Drives the "Admin" pill so admins can tell at a
-  // glance which card customers never see.
-  isAdminOnly?: boolean;
+  // Synthetic flag set only on the "Production test" plan (not in
+  // the DB). Drives the small "Test" pill so the card is visually
+  // distinguishable from the real paid tiers.
+  isTestPlan?: boolean;
 }
 
 const PRODUCTION_TEST_SLUG = "production-test";
@@ -31,10 +31,9 @@ function buildProductionTestPlan(paymentLink: string): PlanDTO {
     name: "Production test",
     priceDisplay: "Test",
     periodDisplay: "",
-    limitDisplay: "Admin-only",
+    limitDisplay: "Verification only",
     features: [
       "Live Dodo production checkout",
-      "Invisible to regular customers",
       "For verifying the production payment flow end-to-end",
     ],
     nichesPerMonth: null,
@@ -43,7 +42,7 @@ function buildProductionTestPlan(paymentLink: string): PlanDTO {
     disabled: false,
     isFounder: false,
     sortOrder: 999,
-    isAdminOnly: true,
+    isTestPlan: true,
   };
 }
 
@@ -78,7 +77,7 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
         setPlans(full);
         if (!defaultPlan && full.length > 0) {
           const founder = full.find(p => p.isFounder && !p.disabled);
-          setSelectedPlan((founder ?? full.find(p => !p.disabled && !p.isAdminOnly) ?? full[0]).slug);
+          setSelectedPlan((founder ?? full.find(p => !p.disabled && !p.isTestPlan) ?? full[0]).slug);
         }
       })
       .catch(() => setPlans([]));
@@ -264,12 +263,12 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
                       Soon
                     </span>
                   )}
-                  {plan.isAdminOnly && (
+                  {plan.isTestPlan && (
                     <span
                       className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
                       style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
                     >
-                      Admin
+                      Test
                     </span>
                   )}
                   <p className="text-xs font-semibold mb-1" style={{ color: selectedPlan === plan.slug ? "oklch(0.82 0.18 285)" : "var(--c-60)" }}>
