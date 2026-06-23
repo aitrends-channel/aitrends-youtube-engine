@@ -4,7 +4,7 @@ import { useState, use, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
-import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video } from "lucide-react";
+import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon } from "lucide-react";
 import { ImageSparkle } from "@/components/icons/ImageSparkle";
 import { StepCostCard } from "@/components/StepCostCard";
 import { toast } from "sonner";
@@ -169,7 +169,7 @@ function VoiceOption({ model, selected, onSelect, isPlaying, onPlayToggle }: {
   );
 }
 
-function SectionHeader({ icon, title, subtitle }: { icon: string; title: string; subtitle: string }) {
+function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle: string }) {
   return (
     <div className="flex items-center gap-3 mb-4">
       <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base"
@@ -1348,7 +1348,7 @@ export default function GeneratePage({ params }: PageProps) {
           <div className="rounded-2xl flex flex-col overflow-hidden h-full"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
-              <SectionHeader icon="◈" title="AI Images" subtitle={`${totalBeats} images from script beats`} />
+              <SectionHeader icon={<ImageIcon size={18} />} title="AI Images" subtitle={`${totalBeats} images from script beats`} />
               <ModelPicker
                 type="image"
                 models={imageModels}
@@ -1614,7 +1614,7 @@ export default function GeneratePage({ params }: PageProps) {
           <div className="rounded-2xl flex flex-col overflow-hidden h-full"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
-              <SectionHeader icon="⚡" title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
+              <SectionHeader icon={<Video size={18} />} title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
               <ModelPicker
                 type="video"
                 models={videoModels}
