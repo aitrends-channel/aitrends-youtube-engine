@@ -1727,11 +1727,8 @@ export default function HomePage() {
         />
       )}
 
-      {showApiKeysModal && apiKeysStatus && (
-        <ApiKeysRequiredModal
-          missing={{ kie: !apiKeysStatus.kieSet, elevenlabs: !apiKeysStatus.elevenlabsSet }}
-          onClose={() => setShowApiKeysModal(false)}
-        />
+      {showApiKeysModal && (
+        <ApiKeysRequiredModal onClose={() => setShowApiKeysModal(false)} />
       )}
 
     </div>

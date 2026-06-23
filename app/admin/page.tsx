@@ -3744,9 +3744,14 @@ export default function AdminPage() {
   // one menu open at a time so the table can't end up cluttered.
   const [openUserMenu, setOpenUserMenu] = useState<string | null>(null);
   const [promotingUser, setPromotingUser] = useState<string | null>(null);
-  // Modal confirm for "Make admin" — promotion is irreversible from
-  // this UI (no "Demote" action yet) so we force a deliberate click.
+  // Modal confirm for "Make admin" — promotion is reversible via the
+  // Remove admin action below, but we still force a deliberate click
+  // on promotion since admin powers are sensitive.
   const [promoteTarget, setPromoteTarget] = useState<AdminUser | null>(null);
+  // Demotion (Remove admin) state — mirrors the promote pair so the
+  // spinner / confirm flow looks identical from the user's side.
+  const [demotingUser, setDemotingUser] = useState<string | null>(null);
+  const [demoteTarget, setDemoteTarget] = useState<AdminUser | null>(null);
   const [usersPage, setUsersPage] = useState(1);
   const [userSearch, setUserSearch] = useState("");
   type PlanBucket = "all" | "admin" | "founder" | "pro" | "starter" | "free" | "pending";
@@ -3833,6 +3838,22 @@ export default function AdminPage() {
       toast.error(err instanceof Error ? err.message : "Failed to make admin");
     } finally {
       setPromotingUser(null);
+    }
+  }
+
+  async function handleRemoveAdmin(email: string) {
+    setDemotingUser(email);
+    try {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(email)}/remove-admin`, { method: "POST" });
+      const json = await res.json().catch(() => ({})) as { ok?: boolean; alreadyNotAdmin?: boolean; error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to remove admin");
+      toast.success(json.alreadyNotAdmin ? `${email} was not an admin` : `${email} is no longer an admin`);
+      setDemoteTarget(null);
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove admin");
+    } finally {
+      setDemotingUser(null);
     }
   }
 
@@ -4542,27 +4563,28 @@ export default function AdminPage() {
                         {u.lastSignIn ? timeAgo(u.lastSignIn) : "Never"}
                       </td>
                       <td className="py-3 px-4">
-                        {/* Kebab menu — replaces the standalone Remove
-                            button. Admins (founder + promoted) have no
-                            menu since neither "Remove" nor "Make admin"
-                            applies to them. Pending users also have
-                            nothing actionable in this menu (they
-                            haven't signed up yet to be promoted, and
-                            the existing Cancel-invite path is
-                            elsewhere). */}
-                        {!u.isAdmin && u.status !== "Pending" && (
+                        {/* Kebab menu — Pending users have nothing
+                            actionable here (the Cancel-invite path
+                            lives elsewhere). Admins get a single
+                            "Remove admin" action; everyone else gets
+                            the Make admin + Remove pair. Hardcoded
+                            admins (lib/admin.ts ADMIN_EMAILS) can
+                            still open the menu, but the server-side
+                            demote will 409 and surface a toast that
+                            explains the rejection. */}
+                        {u.status !== "Pending" && (
                           <div className="relative inline-block">
                             <button
                               type="button"
                               onClick={() => setOpenUserMenu(openUserMenu === u.email ? null : u.email)}
-                              disabled={removing === u.email || promotingUser === u.email}
+                              disabled={removing === u.email || promotingUser === u.email || demotingUser === u.email}
                               className="w-7 h-7 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 inline-flex items-center justify-center"
                               style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)", color: "var(--c-55)" }}
                               aria-label="User actions"
                               aria-haspopup="menu"
                               aria-expanded={openUserMenu === u.email}
                             >
-                              {(removing === u.email || promotingUser === u.email)
+                              {(removing === u.email || promotingUser === u.email || demotingUser === u.email)
                                 ? <Spinner size={12} />
                                 : <MoreVertical size={14} />}
                             </button>
@@ -4584,27 +4606,42 @@ export default function AdminPage() {
                                     boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)",
                                   }}
                                 >
-                                  <button
-                                    type="button"
-                                    role="menuitem"
-                                    onClick={() => { setOpenUserMenu(null); setPromoteTarget(u); }}
-                                    className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0_0_0_/_0.04)] flex items-center gap-2 cursor-pointer"
-                                    style={{ color: "oklch(0.45 0.15 220)" }}
-                                  >
-                                    <Crown size={12} />
-                                    Make admin
-                                  </button>
-                                  <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
-                                  <button
-                                    type="button"
-                                    role="menuitem"
-                                    onClick={() => { setOpenUserMenu(null); setRemoveTarget(u); }}
-                                    className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0.6_0.22_25_/_0.08)] flex items-center gap-2 cursor-pointer"
-                                    style={{ color: "oklch(0.6 0.22 25)" }}
-                                  >
-                                    <Trash2 size={12} />
-                                    Remove
-                                  </button>
+                                  {u.isAdmin ? (
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() => { setOpenUserMenu(null); setDemoteTarget(u); }}
+                                      className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0.6_0.22_25_/_0.08)] flex items-center gap-2 cursor-pointer"
+                                      style={{ color: "oklch(0.6 0.22 25)" }}
+                                    >
+                                      <Crown size={12} />
+                                      Remove admin
+                                    </button>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => { setOpenUserMenu(null); setPromoteTarget(u); }}
+                                        className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0_0_0_/_0.04)] flex items-center gap-2 cursor-pointer"
+                                        style={{ color: "oklch(0.45 0.15 220)" }}
+                                      >
+                                        <Crown size={12} />
+                                        Make admin
+                                      </button>
+                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => { setOpenUserMenu(null); setRemoveTarget(u); }}
+                                        className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0.6_0.22_25_/_0.08)] flex items-center gap-2 cursor-pointer"
+                                        style={{ color: "oklch(0.6 0.22 25)" }}
+                                      >
+                                        <Trash2 size={12} />
+                                        Remove
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               </>
                             )}
@@ -5513,8 +5550,7 @@ export default function AdminPage() {
             <DialogDescription>
               The user will gain full access to the admin dashboard — including all
               user management actions, API key controls, and concurrency settings.
-              There&apos;s no &quot;Demote&quot; action in this UI yet, so undoing this
-              requires editing the user&apos;s app_metadata in Supabase.
+              You can reverse this later via &quot;Remove admin&quot; on the same kebab menu.
             </DialogDescription>
           </DialogHeader>
           {promoteTarget && (
@@ -5545,6 +5581,56 @@ export default function AdminPage() {
             <button
               onClick={() => setPromoteTarget(null)}
               disabled={promotingUser !== null}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Cancel
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={demoteTarget !== null}
+        onOpenChange={(open) => { if (!open && demotingUser === null) setDemoteTarget(null); }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Remove admin?</DialogTitle>
+            <DialogDescription>
+              The user will lose access to the admin dashboard immediately. Their
+              account, projects, and existing plan are untouched — you can re-promote
+              them later via &quot;Make admin&quot;.
+            </DialogDescription>
+          </DialogHeader>
+          {demoteTarget && (
+            <div className="rounded-xl p-3 space-y-1.5"
+              style={{ background: "oklch(0.6 0.22 25 / 0.06)", border: "1px solid oklch(0.6 0.22 25 / 0.2)" }}>
+              <p className="text-xs font-mono truncate" style={{ color: "var(--c-78)" }}>{demoteTarget.email}</p>
+              <div className="flex items-center gap-3 text-[11px] flex-wrap" style={{ color: "var(--c-55)" }}>
+                <span>Plan: <span className="font-semibold" style={{ color: "var(--c-90)" }}>{demoteTarget.plan ?? "—"}</span></span>
+                <span>Projects: <span className="font-semibold tabular-nums" style={{ color: "var(--c-90)" }}>{demoteTarget.projectCount}</span></span>
+                <span>Last sign-in: <span className="font-semibold" style={{ color: "var(--c-90)" }}>{demoteTarget.lastSignIn ? timeAgo(demoteTarget.lastSignIn) : "Never"}</span></span>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <button
+              onClick={() => { if (demoteTarget) handleRemoveAdmin(demoteTarget.email); }}
+              disabled={demotingUser !== null}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.6 0.22 25)", color: "white" }}
+            >
+              {demotingUser !== null ? (
+                <span className="inline-flex items-center justify-center gap-2">
+                  <Spinner size={14} className="text-white" />
+                  Removing…
+                </span>
+              ) : "Remove admin"}
+            </button>
+            <button
+              onClick={() => setDemoteTarget(null)}
+              disabled={demotingUser !== null}
               className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
               style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
             >

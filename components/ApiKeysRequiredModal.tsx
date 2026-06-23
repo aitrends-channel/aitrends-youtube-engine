@@ -6,9 +6,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Spinner } from "@/components/ui/spinner";
 
 interface Props {
-  /** Which of the two required keys are missing. Drives the body copy
-   *  so the message tells the user exactly what's left. */
-  missing: { kie: boolean; elevenlabs: boolean };
   onClose: () => void;
 }
 
@@ -16,18 +13,9 @@ interface Props {
 // whether the user has entered both KIE + ElevenLabs keys; this modal
 // fires from createProject() in the dashboard when bothSet is false.
 // Bypassed for admins (env-var fallback is acceptable there).
-export function ApiKeysRequiredModal({ missing, onClose }: Props) {
+export function ApiKeysRequiredModal({ onClose }: Props) {
   const router = useRouter();
   const [navigating, setNavigating] = useState(false);
-
-  const missingLabels: string[] = [];
-  if (missing.kie) missingLabels.push("KIE");
-  if (missing.elevenlabs) missingLabels.push("ElevenLabs");
-  const missingText = missingLabels.length === 2
-    ? "your KIE and ElevenLabs API keys"
-    : missingLabels.length === 1
-      ? `your ${missingLabels[0]} API key`
-      : "your API keys";
 
   function goToSetup() {
     setNavigating(true);
@@ -40,7 +28,7 @@ export function ApiKeysRequiredModal({ missing, onClose }: Props) {
         <DialogHeader>
           <DialogTitle>Add your API keys first</DialogTitle>
           <DialogDescription>
-            Niches generate scripts, images, video, and voiceover under your own API quotas — so we need {missingText} on file before you can start one. Takes about 5 minutes.
+            You need to setup your API keys first.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

@@ -4,7 +4,7 @@ import { useState, use, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
-import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon } from "lucide-react";
+import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp } from "lucide-react";
 import { ImageSparkle } from "@/components/icons/ImageSparkle";
 import { StepCostCard } from "@/components/StepCostCard";
 import { toast } from "sonner";
@@ -327,6 +327,11 @@ export default function GeneratePage({ params }: PageProps) {
   // the user actually sees the failure summary instead of having to
   // scan the page for it.
   const imageErrorBannerRef = useRef<HTMLDivElement | null>(null);
+  // Image + video grid scroll containers — used by the scroll-to-bottom
+  // affordance so users jump straight to whatever just queued / finished
+  // without having to drag the thumb through a long list of beats.
+  const imageGridRef = useRef<HTMLDivElement | null>(null);
+  const videoGridRef = useRef<HTMLDivElement | null>(null);
   const videoErrorBannerRef = useRef<HTMLDivElement | null>(null);
   // Latch the "was visible" state so we only scroll-into-view once per
   // banner appearance (not on every re-render while it's open).
@@ -1377,7 +1382,8 @@ export default function GeneratePage({ params }: PageProps) {
             {(beats.some((b) => b.imageUrl || b.imageStatus) || regenBeats.size > 0) && (
               <div className="px-5 pt-4">
                 <ProgressBar value={clearingImages ? 0 : generatedImages} total={totalBeats} />
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 mt-3 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
+                <div className="relative mt-3">
+                <div ref={imageGridRef} className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
                   {beats.map((b) => {
                     const isRegening = regenBeats.has(b.beatNumber);
                     return (
@@ -1517,6 +1523,27 @@ export default function GeneratePage({ params }: PageProps) {
                     );
                   })}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => imageGridRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+                  title="Jump to the first image"
+                  aria-label="Scroll to top"
+                  className="absolute top-2 right-3 w-8 h-8 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+                >
+                  <ChevronUp size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => imageGridRef.current?.scrollTo({ top: imageGridRef.current.scrollHeight, behavior: "smooth" })}
+                  title="Jump to the most recently generated image"
+                  aria-label="Scroll to bottom"
+                  className="absolute bottom-2 right-3 w-8 h-8 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+                >
+                  <ChevronDown size={16} />
+                </button>
+                </div>
               </div>
             )}
 
@@ -1645,7 +1672,8 @@ export default function GeneratePage({ params }: PageProps) {
             {beats.some((b) => b.videoPrompt) && (
               <div className="px-5 pt-4">
                 <ProgressBar value={generatedVideos} total={videoBeats} />
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 mt-3 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
+                <div className="relative mt-3">
+                <div ref={videoGridRef} className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
                     {beats.filter((b) => b.videoPrompt).map((b) => (
                       <div
                         key={b.beatNumber}
@@ -1813,6 +1841,27 @@ export default function GeneratePage({ params }: PageProps) {
                         })()}
                       </div>
                     ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => videoGridRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+                  title="Jump to the first clip"
+                  aria-label="Scroll to top"
+                  className="absolute top-2 right-3 w-8 h-8 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+                >
+                  <ChevronUp size={16} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => videoGridRef.current?.scrollTo({ top: videoGridRef.current.scrollHeight, behavior: "smooth" })}
+                  title="Jump to the most recently queued clip"
+                  aria-label="Scroll to bottom"
+                  className="absolute bottom-2 right-3 w-8 h-8 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+                >
+                  <ChevronDown size={16} />
+                </button>
                 </div>
               </div>
             )}

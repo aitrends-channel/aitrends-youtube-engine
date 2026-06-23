@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 import { getPlans, getPaymentSettings } from "@/lib/plans";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { isAdminUser } from "@/lib/admin";
 
 // Public plan list consumed by SubscriptionModal. Returns disabled
 // plans too — the modal needs them to render the greyed-out card —
@@ -12,22 +10,17 @@ import { isAdminUser } from "@/lib/admin";
 // indicator (and so QA can sanity-check which checkout flavor the
 // system is pointed at without opening the admin tab).
 //
-// productionTestLink is included only when the requester is admin —
-// the modal turns it into a synthetic 4th "Production test" plan
-// invisible to regular customers. Soft auth: anonymous demo / marketing
-// callers still get the public plan list, just without the admin link.
+// productionTestLink is exposed unconditionally — the modal renders
+// it as a synthetic "Production test" plan visible to every user.
+// When unset, the modal falls back to the original three plans.
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   const [plans, settings] = await Promise.all([getPlans(), getPaymentSettings()]);
-  let productionTestLink: string | null = null;
-  try {
-    const client = await createSupabaseServerClient();
-    const { data: { user } } = await client.auth.getUser();
-    if (user && isAdminUser(user)) productionTestLink = settings.productionTestLink;
-  } catch {
-    // Unauthenticated — no admin gate to fail, just no admin link.
-  }
-  return NextResponse.json({ plans, paymentMode: settings.mode, productionTestLink });
+  return NextResponse.json({
+    plans,
+    paymentMode: settings.mode,
+    productionTestLink: settings.productionTestLink,
+  });
 }
