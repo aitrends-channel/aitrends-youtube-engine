@@ -17,34 +17,9 @@ interface PlanDTO {
   disabled: boolean;
   isFounder: boolean;
   sortOrder: number;
-  // Synthetic flag set only on the "Production test" plan (not in
-  // the DB). Drives the small "Test" pill so the card is visually
-  // distinguishable from the real paid tiers.
-  isTestPlan?: boolean;
 }
 
 const PRODUCTION_TEST_SLUG = "production-test";
-
-function buildProductionTestPlan(paymentLink: string): PlanDTO {
-  return {
-    slug: PRODUCTION_TEST_SLUG,
-    name: "Production test",
-    priceDisplay: "Test",
-    periodDisplay: "",
-    limitDisplay: "Verification only",
-    features: [
-      "Live Dodo production checkout",
-      "For verifying the production payment flow end-to-end",
-    ],
-    nichesPerMonth: null,
-    paymentLink,
-    highlighted: false,
-    disabled: false,
-    isFounder: false,
-    sortOrder: 999,
-    isTestPlan: true,
-  };
-}
 
 interface Props {
   email: string;
@@ -69,15 +44,13 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
       .then(r => r.json())
       .then(d => {
         const list = (d?.plans as PlanDTO[] | undefined) ?? [];
-        // Append the admin-only "Production test" card when /api/plans
-        // returned a productionTestLink (server gates this on
-        // isAdminUser, so the link is null for non-admins).
-        const adminLink = typeof d?.productionTestLink === "string" ? d.productionTestLink : null;
-        const full = adminLink ? [...list, buildProductionTestPlan(adminLink)] : list;
-        setPlans(full);
-        if (!defaultPlan && full.length > 0) {
-          const founder = full.find(p => p.isFounder && !p.disabled);
-          setSelectedPlan((founder ?? full.find(p => !p.disabled && !p.isTestPlan) ?? full[0]).slug);
+        setPlans(list);
+        if (!defaultPlan && list.length > 0) {
+          const founder = list.find(p => p.isFounder && !p.disabled);
+          // Default to founder when active, otherwise the first
+          // non-disabled non-test plan — production-test is a payment
+          // verification harness, never a sensible default selection.
+          setSelectedPlan((founder ?? list.find(p => !p.disabled && p.slug !== PRODUCTION_TEST_SLUG) ?? list[0]).slug);
         }
       })
       .catch(() => setPlans([]));
@@ -263,7 +236,7 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
                       Soon
                     </span>
                   )}
-                  {plan.isTestPlan && (
+                  {plan.slug === PRODUCTION_TEST_SLUG && (
                     <span
                       className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
                       style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
