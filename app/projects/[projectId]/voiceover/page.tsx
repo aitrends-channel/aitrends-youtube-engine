@@ -368,6 +368,20 @@ export default function VoiceoverPage({ params }: PageProps) {
       // frame; the PATCH is the durable write.
       const streamEnded = err instanceof Error && err.message.includes("Stream ended unexpectedly");
       if (streamEnded) {
+        // Optimistically clear the live overlay for every beat the
+        // worker had marked queued or generating — the route's
+        // finally never ran, so they're stuck server-side too. The
+        // reset-stuck endpoint below fixes the DB; this just gets the
+        // UI to flip immediately instead of waiting for SWR.
+        setLiveBeats((prev) => {
+          const next = new Map(prev);
+          for (const [bn, val] of next) {
+            if (val.status === "queued" || val.status === "generating") {
+              next.delete(bn);
+            }
+          }
+          return next;
+        });
         await mutate(
           (cur: Record<string, unknown> | undefined) => cur ? { ...cur, voiceover_active_run_id: null, voiceover_run_started_at: null } : cur,
           { revalidate: false }
@@ -380,6 +394,19 @@ export default function VoiceoverPage({ params }: PageProps) {
           });
         } catch (patchErr) {
           console.warn("[voiceover] failed to clear active_run_id after stream-ended:", patchErr);
+        }
+        // Reset every per-beat row stuck in queued / generating —
+        // these are the orange "Queued" and purple "Generating" pills
+        // in the UI that lingered indefinitely otherwise. Done /
+        // failed beats are left intact.
+        try {
+          await fetch("/api/generate/tts/beats/reset-stuck", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId }),
+          });
+        } catch (resetErr) {
+          console.warn("[voiceover] failed to reset stuck beats after stream-ended:", resetErr);
         }
       }
     } finally {
