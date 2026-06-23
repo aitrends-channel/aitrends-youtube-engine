@@ -17,6 +17,34 @@ interface PlanDTO {
   disabled: boolean;
   isFounder: boolean;
   sortOrder: number;
+  // Synthetic flag set only on the admin-only "Production test" plan
+  // (not in the DB). Drives the "Admin" pill so admins can tell at a
+  // glance which card customers never see.
+  isAdminOnly?: boolean;
+}
+
+const PRODUCTION_TEST_SLUG = "production-test";
+
+function buildProductionTestPlan(paymentLink: string): PlanDTO {
+  return {
+    slug: PRODUCTION_TEST_SLUG,
+    name: "Production test",
+    priceDisplay: "Test",
+    periodDisplay: "",
+    limitDisplay: "Admin-only",
+    features: [
+      "Live Dodo production checkout",
+      "Invisible to regular customers",
+      "For verifying the production payment flow end-to-end",
+    ],
+    nichesPerMonth: null,
+    paymentLink,
+    highlighted: false,
+    disabled: false,
+    isFounder: false,
+    sortOrder: 999,
+    isAdminOnly: true,
+  };
 }
 
 interface Props {
@@ -42,10 +70,15 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
       .then(r => r.json())
       .then(d => {
         const list = (d?.plans as PlanDTO[] | undefined) ?? [];
-        setPlans(list);
-        if (!defaultPlan && list.length > 0) {
-          const founder = list.find(p => p.isFounder && !p.disabled);
-          setSelectedPlan((founder ?? list.find(p => !p.disabled) ?? list[0]).slug);
+        // Append the admin-only "Production test" card when /api/plans
+        // returned a productionTestLink (server gates this on
+        // isAdminUser, so the link is null for non-admins).
+        const adminLink = typeof d?.productionTestLink === "string" ? d.productionTestLink : null;
+        const full = adminLink ? [...list, buildProductionTestPlan(adminLink)] : list;
+        setPlans(full);
+        if (!defaultPlan && full.length > 0) {
+          const founder = full.find(p => p.isFounder && !p.disabled);
+          setSelectedPlan((founder ?? full.find(p => !p.disabled && !p.isAdminOnly) ?? full[0]).slug);
         }
       })
       .catch(() => setPlans([]));
@@ -106,7 +139,16 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
   }
 
   const selected = plans?.find(p => p.slug === selectedPlan) ?? null;
-  const gridCols = visiblePlans.length >= 3 ? "grid-cols-3" : visiblePlans.length === 2 ? "grid-cols-2" : "grid-cols-1";
+  // 4 plans wrap to 2x2 on mobile, single row on sm+ so the admin
+  // production-test card stays alongside the customer plans rather
+  // than overflowing the modal width.
+  const gridCols = visiblePlans.length >= 4
+    ? "grid-cols-2 sm:grid-cols-4"
+    : visiblePlans.length === 3
+      ? "grid-cols-3"
+      : visiblePlans.length === 2
+        ? "grid-cols-2"
+        : "grid-cols-1";
 
   return (
     <div
@@ -220,6 +262,14 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
                       style={{ background: "oklch(0.35 0 0)", color: "oklch(0.60 0 0)" }}
                     >
                       Soon
+                    </span>
+                  )}
+                  {plan.isAdminOnly && (
+                    <span
+                      className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                      style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
+                    >
+                      Admin
                     </span>
                   )}
                   <p className="text-xs font-semibold mb-1" style={{ color: selectedPlan === plan.slug ? "oklch(0.82 0.18 285)" : "var(--c-60)" }}>
