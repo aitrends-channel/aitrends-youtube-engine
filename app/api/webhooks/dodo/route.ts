@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { createHmac } from "crypto";
+import { getPaymentSettings } from "@/lib/plans";
 
 // Standard Webhooks spec: webhook-id + webhook-timestamp + webhook-signature headers
 // signed payload: "{msgId}\n{timestamp}\n{body}", secret is base64-encoded (whsec_ prefix)
@@ -19,8 +20,22 @@ function verifySignature(
 }
 
 export async function POST(request: Request) {
-  const secret = process.env.DODO_WEBHOOK_SECRET;
-  if (!secret) {
+  // Try every configured webhook secret in turn — Dodo lets you wire
+  // two webhook endpoints (one per env) at the same destination URL,
+  // and each has its own signing secret. We can't tell which env the
+  // incoming request came from until after we verify it, so we accept
+  // any secret that successfully signs the payload. Order: DB-managed
+  // values first (test + production, set via the admin "Dodo Variables"
+  // card), then the legacy single DODO_WEBHOOK_SECRET env var as a
+  // bootstrap fallback.
+  const settings = await getPaymentSettings();
+  const candidateSecrets = [
+    settings.webhookSecretTest,
+    settings.webhookSecretProduction,
+    process.env.DODO_WEBHOOK_SECRET ?? null,
+  ].filter((s): s is string => !!s);
+
+  if (candidateSecrets.length === 0) {
     return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
   }
 
@@ -30,10 +45,11 @@ export async function POST(request: Request) {
   const sigHeader = request.headers.get("webhook-signature");
 
   console.log("[dodo-webhook] msgId:", msgId, "timestamp:", msgTimestamp, "sig:", sigHeader);
-  console.log("[dodo-webhook] secret prefix:", secret.slice(0, 10));
+  console.log("[dodo-webhook] candidate secrets:", candidateSecrets.length);
   console.log("[dodo-webhook] body:", rawBody.slice(0, 200));
 
-  if (!verifySignature(rawBody, msgId, msgTimestamp, sigHeader, secret)) {
+  const verified = candidateSecrets.some((s) => verifySignature(rawBody, msgId, msgTimestamp, sigHeader, s));
+  if (!verified) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
