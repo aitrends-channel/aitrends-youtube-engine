@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, Mail, KeyRound, CreditCard, Rocket, X, Check,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -946,7 +946,7 @@ function SetupSection({
           { id: "models", label: "Models" },
           { id: "anthropic", label: "Anthropic" },
           { id: "concurrency", label: "Batched process" },
-          { id: "plans", label: "Plans" },
+          { id: "plans", label: "Payment" },
         ] as const).map((t) => (
           <button
             key={t.id}
@@ -2146,11 +2146,21 @@ function PlansPanel() {
   const [creating, setCreating] = useState(false);
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
-  const [switchingMode, setSwitchingMode] = useState(false);
+  // Which env's URLs the plans list displays. Independent of the
+  // runtime env (which comes from HECLUS_ENV via paymentMode below)
+  // — admins use this to peek at the test or production checkout
+  // URLs side-by-side without redeploying.
+  const [viewEnv, setViewEnv] = useState<PaymentMode>("test");
 
   const { data: paymentSettings, mutate: mutatePaymentSettings } = useSWR<{
     mode: PaymentMode;
     productionTestLink: string | null;
+    secretKeyTest: string | null;
+    secretKeyProduction: string | null;
+    baseUrlTest: string | null;
+    baseUrlProduction: string | null;
+    webhookSecretTest: string | null;
+    webhookSecretProduction: string | null;
   }>("/api/admin/payment-mode", fetcher, { revalidateOnFocus: false });
   const [editingProdTest, setEditingProdTest] = useState(false);
   const [deletingProdTest, setDeletingProdTest] = useState(false);
@@ -2159,25 +2169,16 @@ function PlansPanel() {
   const paymentMode: PaymentMode = data?.paymentMode ?? "test";
   const prodTestLink = paymentSettings?.productionTestLink ?? null;
 
-  async function setMode(mode: PaymentMode) {
-    if (mode === paymentMode) return;
-    setSwitchingMode(true);
-    try {
-      const res = await fetch("/api/admin/payment-mode", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? `Switch failed (${res.status})`);
-      await mutate();
-      toast.success(`Payment mode set to ${mode}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Switch failed");
-    } finally {
-      setSwitchingMode(false);
-    }
-  }
+  // Default the view tab to whichever env the deployment runs in, so
+  // the panel opens to the URLs that are actually live. Admins flip
+  // tabs to inspect the other env. Only seeds on first paymentMode
+  // load; subsequent admin interactions are sticky.
+  const viewEnvSeededRef = useRef(false);
+  useEffect(() => {
+    if (viewEnvSeededRef.current || !data) return;
+    viewEnvSeededRef.current = true;
+    setViewEnv(paymentMode);
+  }, [data, paymentMode]);
 
   async function handleDelete(slug: string) {
     setDeleteSubmitting(true);
@@ -2197,47 +2198,47 @@ function PlansPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs" style={{ color: "var(--c-50)" }}>
-          Subscription plans shown in the upgrade modal. Slug is read-only after creation — it&apos;s the value written to user.app_metadata.plan by the payment webhook.
-        </p>
-        <button
-          onClick={() => setCreating(true)}
-          className="shrink-0 px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 cursor-pointer"
-          style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
-        >
-          + Add plan
-        </button>
-      </div>
-
+      <div className="rounded-2xl p-5 space-y-4 mt-[15px]" style={{ background: "white", border: "2px solid silver" }}>
       <div className="rounded-xl p-3 flex items-center justify-between gap-3"
         style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid var(--bd-7)" }}>
         <div className="min-w-0">
-          <p className="text-xs font-semibold" style={{ color: "var(--c-78)" }}>Dodo payment mode</p>
-          <p className="text-[11px] mt-0.5" style={{ color: "var(--c-50)" }}>
-            Picks which URL the Subscribe button opens for every plan. Test mode routes to test.checkout.dodopayments.com — no real charges.
+          <p className="text-sm font-semibold" style={{ color: "var(--c-78)" }}>Dodo environment, plans and product links</p>
+          <p className="text-xs mt-0.5" style={{ color: "var(--c-50)" }}>
+            Runtime env is auto-detected from HECLUS_ENV (<span className="font-semibold capitalize">{paymentMode}</span> on this deployment). The tabs below let you preview either env&apos;s product URLs without redeploying.
           </p>
         </div>
         <div className="shrink-0 flex p-0.5 rounded-lg"
           style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid var(--bd-7)" }}>
           {(["test", "production"] as const).map((m) => {
-            const active = paymentMode === m;
+            const active = viewEnv === m;
             return (
               <button
                 key={m}
-                onClick={() => setMode(m)}
-                disabled={switchingMode}
-                className="px-3 py-1 rounded-md text-[11px] font-semibold transition-all capitalize disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                onClick={() => setViewEnv(m)}
+                className="px-3 py-1 rounded-md text-xs font-semibold transition-all capitalize cursor-pointer"
                 style={active ? {
                   background: m === "production" ? "oklch(0.55 0.15 145)" : "oklch(0.62 0.15 220)",
                   color: "white",
                 } : { background: "transparent", color: "var(--c-55)" }}
+                title={m === paymentMode ? `${m} is the runtime env on this deployment` : `Previewing ${m} URLs (deployment runs in ${paymentMode})`}
               >
                 {m === "production" ? "Production" : "Test"}
               </button>
             );
           })}
         </div>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm" style={{ color: "var(--c-50)" }}>
+          Subscription plans shown in the upgrade modal. Slug is read-only after creation — it&apos;s the value written to user.app_metadata.plan by the payment webhook.
+        </p>
+        <button
+          onClick={() => setCreating(true)}
+          className="shrink-0 px-3 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 cursor-pointer"
+          style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
+        >
+          + Add plan
+        </button>
       </div>
 
       {isLoading ? (
@@ -2275,44 +2276,65 @@ function PlansPanel() {
                   <p className="text-xs mt-1" style={{ color: "var(--c-60)" }}>
                     {p.priceDisplay}{p.periodDisplay} · {p.nichesPerMonth === null ? "Unlimited niches" : `${p.nichesPerMonth} niches/mo`} · {p.features.length} feature{p.features.length === 1 ? "" : "s"}
                   </p>
-                  <p className="text-[11px] mt-1 flex flex-wrap items-center gap-x-2 gap-y-1" style={{ color: "var(--c-50)" }}>
-                    <span className={p.paymentLinkTest ? "text-zinc-600" : "text-zinc-400"}>
-                      test: {p.paymentLinkTest ? "✓" : "—"}
-                    </span>
-                    <span className={p.paymentLinkProduction ? "text-zinc-600" : "text-zinc-400"}>
-                      prod: {p.paymentLinkProduction ? "✓" : "—"}
-                    </span>
-                    {p.paymentLink ? (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                        style={paymentMode === "production"
-                          ? { background: "oklch(0.55 0.15 145 / 0.12)", color: "oklch(0.45 0.15 145)" }
-                          : { background: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.45 0.15 220)" }}>
-                        active: {paymentMode}
-                      </span>
-                    ) : (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700">
-                        {paymentMode} link missing
-                      </span>
-                    )}
-                  </p>
+                  {(() => {
+                    const previewUrl = viewEnv === "production" ? p.paymentLinkProduction : p.paymentLinkTest;
+                    return (
+                      <>
+                        <p className="text-[11px] mt-1 flex flex-wrap items-center gap-x-2 gap-y-1" style={{ color: "var(--c-50)" }}>
+                          <span className={p.paymentLinkTest ? "text-zinc-600" : "text-zinc-400"}>
+                            test: {p.paymentLinkTest ? "✓" : "—"}
+                          </span>
+                          <span className={p.paymentLinkProduction ? "text-zinc-600" : "text-zinc-400"}>
+                            prod: {p.paymentLinkProduction ? "✓" : "—"}
+                          </span>
+                          {previewUrl ? (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                              style={viewEnv === "production"
+                                ? { background: "oklch(0.55 0.15 145 / 0.12)", color: "oklch(0.45 0.15 145)" }
+                                : { background: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.45 0.15 220)" }}>
+                              viewing: {viewEnv}
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700">
+                              {viewEnv} link missing
+                            </span>
+                          )}
+                        </p>
+                        {previewUrl && (
+                          <p
+                            className="text-xs font-mono break-all mt-1.5 leading-snug"
+                            style={{ color: "oklch(0.62 0.15 220)" }}
+                            title={`${viewEnv} checkout URL`}
+                          >
+                            {previewUrl}
+                          </p>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    onClick={() => {
-                      if (!p.paymentLink) {
-                        toast.error("This plan has no payment link set.");
-                        return;
-                      }
-                      const url = new URL(p.paymentLink);
-                      url.searchParams.set("redirect_url", `${window.location.origin}/payment/callback`);
-                      window.open(url.toString(), "_blank", "noopener,noreferrer");
-                    }}
-                    disabled={!p.paymentLink}
-                    className="p-2 rounded-lg transition-all hover:bg-emerald-500/10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-                    title={p.paymentLink ? "Initiate test purchase (opens checkout in new tab)" : "No payment link configured"}
-                  >
-                    <CreditCard size={14} style={{ color: "oklch(0.55 0.15 145)" }} />
-                  </button>
+                  {(() => {
+                    const previewUrl = viewEnv === "production" ? p.paymentLinkProduction : p.paymentLinkTest;
+                    return (
+                      <button
+                        onClick={() => {
+                          if (!previewUrl) {
+                            toast.error(`No ${viewEnv} payment link set for this plan.`);
+                            return;
+                          }
+                          const url = new URL(previewUrl);
+                          url.searchParams.set("redirect_url", `${window.location.origin}/payment/callback`);
+                          window.open(url.toString(), "_blank", "noopener,noreferrer");
+                        }}
+                        disabled={!previewUrl}
+                        className="p-2 rounded-lg transition-all hover:bg-emerald-500/10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                        title={previewUrl ? `Initiate ${viewEnv} purchase (opens checkout in new tab)` : `No ${viewEnv} payment link configured`}
+                      >
+                        <CreditCard size={14} style={{ color: "oklch(0.55 0.15 145)" }} />
+                      </button>
+                    );
+                  })()}
                   <button
                     onClick={() => setEditing(p)}
                     className="p-2 rounded-lg transition-all hover:bg-black/5 cursor-pointer"
@@ -2332,7 +2354,7 @@ function PlansPanel() {
             </li>
           ))}
 
-          {paymentMode === "production" && (
+          {viewEnv === "production" && !plans.some((p) => p.slug === "production-test") && (
             <li className="rounded-xl p-3"
               style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid var(--bd-7)" }}>
               <div className="flex items-start justify-between gap-3">
@@ -2363,6 +2385,15 @@ function PlansPanel() {
                       </span>
                     )}
                   </p>
+                  {prodTestLink && (
+                    <p
+                      className="text-xs font-mono break-all mt-1.5 leading-snug"
+                      style={{ color: "oklch(0.62 0.15 220)" }}
+                      title="Production test checkout URL"
+                    >
+                      {prodTestLink}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <button
@@ -2402,11 +2433,18 @@ function PlansPanel() {
           )}
         </ul>
       )}
+      </div>
+
+      <DodoApiKeysCard
+        settings={paymentSettings ?? null}
+        onSaved={() => mutatePaymentSettings()}
+      />
 
       {editing && (
         <PlanEditModal
           plan={editing}
           mode="edit"
+          viewEnv={viewEnv}
           onClose={() => setEditing(null)}
           onSaved={() => { mutate(); setEditing(null); }}
         />
@@ -2415,6 +2453,7 @@ function PlansPanel() {
         <PlanEditModal
           plan={null}
           mode="create"
+          viewEnv={viewEnv}
           onClose={() => setCreating(false)}
           onSaved={() => { mutate(); setCreating(false); }}
         />
@@ -2473,11 +2512,17 @@ function PlansPanel() {
 function PlanEditModal({
   plan,
   mode,
+  viewEnv,
   onClose,
   onSaved,
 }: {
   plan: AdminPlanDTO | null;
   mode: "edit" | "create";
+  // Which env's payment link the modal exposes for editing. The other
+  // env's URL stays untouched on save — its state buffer starts at
+  // the plan's existing value and the patch sends both columns
+  // regardless, so the hidden one round-trips unchanged.
+  viewEnv: PaymentMode;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -2662,27 +2707,32 @@ function PlanEditModal({
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-zinc-600">Payment link — Test</label>
+            <label className="text-xs font-semibold text-zinc-600">
+              {(() => {
+                // Special-case the label when editing the production-
+                // test plan on the Test tab: surface its name so it's
+                // obvious this isn't a generic "test URL" but the URL
+                // used by the Production test plan specifically.
+                if (viewEnv === "test" && (plan?.slug === "production-test" || slug === "production-test")) {
+                  return "Payment link — Production test";
+                }
+                return viewEnv === "production" ? "Payment link — Production" : "Payment link — Test";
+              })()}
+            </label>
             <input
-              value={paymentLinkTest}
-              onChange={(e) => setPaymentLinkTest(e.target.value)}
+              value={viewEnv === "production" ? paymentLinkProduction : paymentLinkTest}
+              onChange={(e) => (viewEnv === "production"
+                ? setPaymentLinkProduction(e.target.value)
+                : setPaymentLinkTest(e.target.value)
+              )}
               disabled={saving}
-              placeholder="https://test.checkout.dodopayments.com/…"
-              className={inputCls + " font-mono text-xs"}
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-zinc-600">Payment link — Production</label>
-            <input
-              value={paymentLinkProduction}
-              onChange={(e) => setPaymentLinkProduction(e.target.value)}
-              disabled={saving}
-              placeholder="https://checkout.dodopayments.com/…"
+              placeholder={viewEnv === "production"
+                ? "https://checkout.dodopayments.com/…"
+                : "https://test.checkout.dodopayments.com/…"}
               className={inputCls + " font-mono text-xs"}
             />
             <p className="text-[11px] text-zinc-500">
-              The global Dodo payment mode toggle at the top of this tab picks which of these two URLs the Subscribe button opens.
+              Editing the {viewEnv} URL only — switch tabs on the Plans card to edit the other env. The hidden URL is preserved as-is.
             </p>
           </div>
 
@@ -3249,6 +3299,246 @@ function ProductionTestDeleteDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface DodoApiKeysCardProps {
+  settings: {
+    secretKeyTest: string | null;
+    secretKeyProduction: string | null;
+    baseUrlTest: string | null;
+    baseUrlProduction: string | null;
+    webhookSecretTest: string | null;
+    webhookSecretProduction: string | null;
+  } | null;
+  onSaved: () => void;
+}
+
+// Single field row inside DodoApiKeysCard. The saved value (if any)
+// sits above the input in theme purple, truncated to a short preview
+// with an eye-toggle for the full string — the input itself stays
+// empty so the placeholder text is always visible and there's never
+// any confusion about whether the input shows the saved value vs.
+// what you're typing.
+function DodoVarField({
+  label,
+  saved,
+  value,
+  onChange,
+  placeholder,
+  disabled,
+  hint,
+}: {
+  label: string;
+  saved: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  disabled: boolean;
+  hint?: string;
+}) {
+  const [revealed, setRevealed] = useState(false);
+  // 12 chars + ellipsis is enough to recognize the prefix (sk_test_,
+  // sk_live_, whsec_, https://) without revealing the secret material.
+  const preview = saved.length > 12 ? `${saved.slice(0, 12)}…` : saved;
+
+  return (
+    <div>
+      <label className="text-sm font-semibold block mb-2" style={{ color: "var(--c-55)" }}>
+        {label}
+      </label>
+      {saved && (
+        <div className="flex items-center gap-2 mb-1.5 min-w-0">
+          <p
+            className="text-sm font-mono break-all leading-snug"
+            style={{ color: "oklch(0.62 0.15 220)" }}
+            title="Currently saved — type into the input below to replace"
+          >
+            {revealed ? saved : preview}
+          </p>
+          <button
+            type="button"
+            onClick={() => setRevealed((r) => !r)}
+            aria-label={revealed ? "Hide full value" : "Reveal full value"}
+            title={revealed ? "Hide full value" : "Reveal full value"}
+            className="shrink-0 w-7 h-7 rounded-md inline-flex items-center justify-center transition-colors hover:bg-[oklch(0_0_0_/_0.04)] cursor-pointer"
+            style={{ color: "oklch(0.62 0.15 220)" }}
+          >
+            {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
+          </button>
+        </div>
+      )}
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        placeholder={placeholder}
+        className="w-full px-3 py-2.5 rounded-lg text-sm outline-none font-mono text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400"
+        style={{ background: "#ecf0f1" }}
+      />
+      {hint && (
+        <p className="text-xs mt-1.5" style={{ color: "var(--c-40)" }}>
+          {hint}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Bottom-of-Payment-tab card for managing per-environment Dodo settings.
+// Test/Production tabs share three inputs (secret key, base URL,
+// webhook secret) and one save button — the active tab decides which
+// env the save patches. Values are shown in plain text since admins
+// need to verify what they pasted; the keys never leave the admin
+// response anyway.
+function DodoApiKeysCard({ settings, onSaved }: DodoApiKeysCardProps) {
+  const [activeEnv, setActiveEnv] = useState<"test" | "production">("test");
+  // Local edit buffers — start empty. Each input shows ONLY its
+  // placeholder; the saved value is rendered above the input in
+  // theme purple so the admin can see what's stored without it
+  // mixing visually with what they're typing. Saving clears these
+  // buffers and the "saved" line updates from the SWR revalidation.
+  const [testKey, setTestKey] = useState("");
+  const [prodKey, setProdKey] = useState("");
+  const [testUrl, setTestUrl] = useState("");
+  const [prodUrl, setProdUrl] = useState("");
+  const [testWebhook, setTestWebhook] = useState("");
+  const [prodWebhook, setProdWebhook] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const keyValue = activeEnv === "test" ? testKey : prodKey;
+  const urlValue = activeEnv === "test" ? testUrl : prodUrl;
+  const webhookValue = activeEnv === "test" ? testWebhook : prodWebhook;
+  const savedKey = (activeEnv === "test" ? settings?.secretKeyTest : settings?.secretKeyProduction) ?? "";
+  const savedUrl = (activeEnv === "test" ? settings?.baseUrlTest : settings?.baseUrlProduction) ?? "";
+  const savedWebhook = (activeEnv === "test" ? settings?.webhookSecretTest : settings?.webhookSecretProduction) ?? "";
+  // Dirty when the admin has typed something into any of the three
+  // inputs for the active env. Empty inputs are a no-op — clearing
+  // a saved value isn't supported through this card on purpose.
+  const dirty = !!keyValue.trim() || !!urlValue.trim() || !!webhookValue.trim();
+
+  function clearActiveEnvBuffers() {
+    if (activeEnv === "test") {
+      setTestKey(""); setTestUrl(""); setTestWebhook("");
+    } else {
+      setProdKey(""); setProdUrl(""); setProdWebhook("");
+    }
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const patch: Record<string, string | null> = {};
+      if (keyValue.trim()) {
+        patch[activeEnv === "test" ? "secretKeyTest" : "secretKeyProduction"] = keyValue.trim();
+      }
+      if (urlValue.trim()) {
+        patch[activeEnv === "test" ? "baseUrlTest" : "baseUrlProduction"] = urlValue.trim();
+      }
+      if (webhookValue.trim()) {
+        patch[activeEnv === "test" ? "webhookSecretTest" : "webhookSecretProduction"] = webhookValue.trim();
+      }
+      const res = await fetch("/api/admin/payment-mode", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `Save failed (${res.status})`);
+      toast.success(`Dodo ${activeEnv} settings saved`);
+      clearActiveEnvBuffers();
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const defaultBaseUrl = activeEnv === "production" ? "https://live.dodopayments.com" : "https://test.dodopayments.com";
+
+  return (
+    <div
+      className="rounded-2xl p-6 mt-[15px]"
+      style={{ background: "white", border: "2px solid silver" }}
+    >
+      <div className="mb-6">
+        <p className="text-base font-semibold" style={{ color: "var(--c-90)" }}>Dodo Variables</p>
+        <p className="text-sm mt-1.5 leading-relaxed" style={{ color: "var(--c-50)" }}>
+          Used by /api/dodo/verify and the Dodo webhook handler. Production-test plan always uses the Production env; other plans follow the current payment mode.
+        </p>
+      </div>
+
+      <div className="inline-flex p-0.5 rounded-lg mb-5" style={{ background: "oklch(0 0 0 / 0.05)" }}>
+        {(["test", "production"] as const).map((env) => (
+          <button
+            key={env}
+            type="button"
+            onClick={() => setActiveEnv(env)}
+            disabled={saving}
+            className="px-4 py-1.5 rounded-md text-sm font-semibold transition-all disabled:opacity-40 capitalize cursor-pointer"
+            style={activeEnv === env
+              ? { background: "white", color: "var(--c-90)", boxShadow: "0 1px 3px oklch(0 0 0 / 0.1)" }
+              : { background: "transparent", color: "var(--c-55)" }}
+          >
+            {env}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-5">
+        <DodoVarField
+          label={`Secret key (${activeEnv})`}
+          saved={savedKey}
+          value={keyValue}
+          onChange={(v) => (activeEnv === "test" ? setTestKey(v) : setProdKey(v))}
+          placeholder={activeEnv === "test" ? "sk_test_…" : "sk_live_…"}
+          disabled={saving}
+        />
+
+        <DodoVarField
+          label={`Base URL (${activeEnv})`}
+          saved={savedUrl}
+          value={urlValue}
+          onChange={(v) => (activeEnv === "test" ? setTestUrl(v) : setProdUrl(v))}
+          placeholder={defaultBaseUrl}
+          disabled={saving}
+          hint={`Leave blank to use the default (${defaultBaseUrl}).`}
+        />
+
+        <DodoVarField
+          label={`DODO_WEBHOOK_SECRET (${activeEnv})`}
+          saved={savedWebhook}
+          value={webhookValue}
+          onChange={(v) => (activeEnv === "test" ? setTestWebhook(v) : setProdWebhook(v))}
+          placeholder="whsec_…"
+          disabled={saving}
+          hint="Per-environment Dodo webhook signing secret. The handler tries every configured secret on each request, so test + production can both target the same /api/webhooks/dodo URL."
+        />
+      </div>
+
+      <div className="flex items-center gap-3 mt-6">
+        <button
+          onClick={save}
+          disabled={saving || !dirty}
+          className="py-2.5 px-5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
+        >
+          {saving ? (
+            <span className="inline-flex items-center gap-2">
+              <Spinner size={14} className="text-white" />
+              Saving…
+            </span>
+          ) : "Save changes"}
+        </button>
+        {!dirty && savedKey && (
+          <span className="text-sm" style={{ color: "var(--c-50)" }}>Saved</span>
+        )}
+        {!savedKey && !dirty && (
+          <span className="text-sm" style={{ color: "var(--c-40)" }}>No key set — verify falls back to the env var.</span>
+        )}
+      </div>
+    </div>
   );
 }
 

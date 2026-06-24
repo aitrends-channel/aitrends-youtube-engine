@@ -426,7 +426,7 @@ export default function SettingsPage() {
                 steps: [
                   "Sign in and open Settings → API Keys.",
                   "Create a key with text-to-speech and speech-to-text permissions, then copy it.",
-                  "Pick a plan that fits your character volume (per-char billing — short beats are cheap).",
+                  "Pick a plan that fits your character volume (per-char billing).",
                   "Optional: from the Voice Library, add any non-Premade voices you want available in the picker.",
                 ],
               },

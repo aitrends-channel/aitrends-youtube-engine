@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
+import { getPaymentSettings } from "@/lib/plans";
 
 export async function POST(request: Request) {
   let user;
@@ -13,14 +14,35 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing payment_id" }, { status: 400 });
   }
 
-  const secretKey = process.env.DODO_SECRET_KEY;
+  // Pick the Dodo environment for this payment from the deployment
+  // env (HECLUS_ENV → getEffectivePaymentMode). Local + staging
+  // always verify against test, live production always verifies
+  // against production. Then the secret key + base URL fall through
+  // this lookup chain:
+  //   1. admin-managed product_config (set via the "Dodo API keys"
+  //      card on the Plans tab — takes effect without a redeploy)
+  //   2. environment-specific env var
+  //   3. legacy DODO_SECRET_KEY / DODO_BASE_URL fallback so a one-
+  //      key bootstrap setup keeps working
+  const settings = await getPaymentSettings();
+  const env = settings.mode;
+
+  const secretKey = env === "production"
+    ? (settings.secretKeyProduction ?? process.env.DODO_SECRET_KEY_PRODUCTION ?? process.env.DODO_SECRET_KEY)
+    : (settings.secretKeyTest ?? process.env.DODO_SECRET_KEY_TEST ?? process.env.DODO_SECRET_KEY);
   if (!secretKey) {
-    return NextResponse.json({ error: "Payment not configured" }, { status: 500 });
+    return NextResponse.json(
+      { error: `Dodo ${env} secret key is not configured. Set it on the Plans tab.` },
+      { status: 500 },
+    );
   }
+
+  const dodoBase = env === "production"
+    ? (settings.baseUrlProduction ?? process.env.DODO_LIVE_BASE_URL ?? "https://live.dodopayments.com")
+    : (settings.baseUrlTest ?? process.env.DODO_TEST_BASE_URL ?? process.env.DODO_BASE_URL ?? "https://test.dodopayments.com");
 
   let dodoRes: Response;
   try {
-    const dodoBase = process.env.DODO_BASE_URL ?? "https://live.dodopayments.com";
     dodoRes = await fetch(`${dodoBase}/payments/${payment_id}`, {
       headers: { Authorization: `Bearer ${secretKey}` },
     });

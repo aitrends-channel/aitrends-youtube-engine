@@ -41,3 +41,17 @@ export function launchAllowed(): boolean {
 export function launchAllowedClient(): boolean {
   return isProductionEnvClient() || process.env.NODE_ENV === "development";
 }
+
+// Returns which Dodo environment this deployment should target.
+// Hard-coded by deployment (HECLUS_ENV) so local + staging never
+// accidentally bill a customer through the live production catalog,
+// and the live prod deployment never falls back to a test SKU.
+// Plans, secret keys, base URLs, and webhook secrets all key off
+// this — the admin "payment mode" toggle is informational only.
+export function getEffectivePaymentMode(): "test" | "production" {
+  return isProductionEnv() ? "production" : "test";
+}
+
+export function getEffectivePaymentModeClient(): "test" | "production" {
+  return isProductionEnvClient() ? "production" : "test";
+}
