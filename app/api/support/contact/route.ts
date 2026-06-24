@@ -33,14 +33,19 @@ export async function POST(req: Request) {
   // Trust the auth email over the client-supplied one when the
   // requester is signed in. Catches typos and prevents impersonation
   // via this endpoint. Anonymous senders keep whatever they typed
-  // (validated below).
+  // (validated below). Plan slug is snapshotted onto the ticket so
+  // the admin queue can sort/prioritize by tier without re-querying
+  // auth on every list request.
   let userId: string | null = null;
+  let plan: string | null = null;
   try {
     const client = await createSupabaseServerClient();
     const { data: { user } } = await client.auth.getUser();
     if (user) {
       userId = user.id;
       if (user.email) rawEmail = user.email;
+      const metaPlan = (user.app_metadata as { plan?: unknown } | undefined)?.plan;
+      if (typeof metaPlan === "string" && metaPlan.trim()) plan = metaPlan.trim();
     }
   } catch { /* unauthenticated — keep the typed value */ }
 
@@ -67,6 +72,7 @@ export async function POST(req: Request) {
       email: rawEmail,
       subject: rawSubject,
       message: rawMessage,
+      plan,
     })
     .select("id")
     .single();
@@ -84,6 +90,7 @@ export async function POST(req: Request) {
     `Ticket ID: ${ticketId}\n` +
     `From:      ${rawEmail}\n` +
     `User ID:   ${userId ?? "(anonymous)"}\n` +
+    `Plan:      ${plan ?? "(none)"}\n` +
     `Subject:   ${rawSubject}\n\n` +
     `--- Message ---\n` +
     `${rawMessage}\n\n` +

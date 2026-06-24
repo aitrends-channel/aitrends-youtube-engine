@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import type { Beat } from "@/lib/types";
 import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPreview";
 import { presignedUpload } from "@/lib/upload-client";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { SubscriptionModal } from "@/components/SubscriptionModal";
 
 interface PageProps {
   params: { projectId: string };
@@ -17,6 +19,13 @@ interface PageProps {
 
 const ASPECT_RATIOS = ["16:9", "9:16", "1:1"] as const;
 type AspectRatio = typeof ASPECT_RATIOS[number];
+
+// Resolutions that require a paid tier with priority rendering /
+// 2K+ output. Customers on Starter or Founder see the option grey
+// + tagged "Pro", and a click toast-nudges them to upgrade rather
+// than silently switching. Admin accounts bypass the gate.
+const PRO_RESOLUTIONS = new Set<string>(["1440p", "2160p"]);
+const PRO_TIER_PLANS = new Set<string>(["pro", "admin"]);
 
 const RESOLUTION_PRESETS = ["720p", "1080p", "1440p", "2160p"] as const;
 type ResolutionPreset = typeof RESOLUTION_PRESETS[number];
@@ -132,6 +141,34 @@ export default function AssemblePage({ params }: PageProps) {
   // Render resolution. Default 1080p (matches YouTube's HD standard
   // and the dimensions previously displayed in the Output card).
   const [selectedResolution, setSelectedResolution] = useState<ResolutionPreset>("1080p");
+
+  // Pro-tier gate for 1440p / 2160p. We look up app_metadata.plan
+  // once on mount via the browser Supabase client — same pattern as
+  // the dashboard. Defaults to "starter" so the UI gates Pro-only
+  // presets while the fetch is in flight; if the user actually has
+  // Pro the buttons flip enabled within a tick. Admins bypass.
+  const [userPlan, setUserPlan] = useState<string>("starter");
+  const [userEmail, setUserEmail] = useState<string>("");
+  // Drives the SubscriptionModal when a non-Pro user clicks a
+  // Pro-locked resolution. SubscriptionModal is mounted lazily —
+  // most assemble sessions never need it.
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const client = createSupabaseBrowserClient();
+    client.auth.getUser().then(({ data }) => {
+      if (cancelled) return;
+      const meta = (data.user?.app_metadata ?? {}) as { plan?: unknown; is_admin?: unknown };
+      if (meta.is_admin === true) {
+        setUserPlan("admin");
+      } else if (typeof meta.plan === "string" && meta.plan.trim()) {
+        setUserPlan(meta.plan.trim().toLowerCase());
+      }
+      if (data.user?.email) setUserEmail(data.user.email);
+    }).catch(() => { /* leave default */ });
+    return () => { cancelled = true; };
+  }, []);
+  const canUsePro = PRO_TIER_PLANS.has(userPlan);
   // Per-preview loading state — true while either A/B card is still
   // building on the server or buffering audio in the browser. Drives
   // the "Loading previews…" indicator under the Voiceover Source label.
@@ -693,26 +730,53 @@ export default function AssemblePage({ params }: PageProps) {
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Output</p>
                 <p className="text-sm font-medium" style={{ color: "var(--c-65)" }}>{dimsFor(aspectRatio, selectedResolution).label}</p>
                 <div className="flex gap-1 flex-wrap">
-                  {RESOLUTION_PRESETS.map((p) => (
-                    <button
-                      key={p}
-                      onClick={() => setSelectedResolution(p)}
-                      disabled={assembling}
-                      title={`Render at ${dimsFor(aspectRatio, p).label}`}
-                      className="px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all disabled:opacity-40"
-                      style={selectedResolution === p ? {
-                        background: "oklch(0.72 0.25 285 / 0.18)",
-                        border: "1px solid oklch(0.72 0.25 285 / 0.45)",
-                        color: "oklch(0.88 0.12 285)",
-                      } : {
-                        background: "var(--bg-input)",
-                        border: "1px solid var(--bd-7)",
-                        color: "var(--c-50)",
-                      }}
-                    >
-                      {p}
-                    </button>
-                  ))}
+                  {RESOLUTION_PRESETS.map((p) => {
+                    const isProOnly = PRO_RESOLUTIONS.has(p);
+                    const locked = isProOnly && !canUsePro;
+                    const active = selectedResolution === p;
+                    return (
+                      <button
+                        key={p}
+                        onClick={() => {
+                          if (locked) {
+                            // Pop the SubscriptionModal so the user
+                            // can upgrade in-place rather than just
+                            // being told "no" by a toast.
+                            setShowUpgradeModal(true);
+                            return;
+                          }
+                          setSelectedResolution(p);
+                        }}
+                        disabled={assembling}
+                        title={locked
+                          ? `Pro plan unlocks ${p} (${dimsFor(aspectRatio, p).label}) — click to upgrade`
+                          : `Render at ${dimsFor(aspectRatio, p).label}`}
+                        className="px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all disabled:opacity-40 inline-flex items-center gap-1"
+                        style={active ? {
+                          background: "oklch(0.72 0.25 285 / 0.18)",
+                          border: "1px solid oklch(0.72 0.25 285 / 0.45)",
+                          color: "oklch(0.88 0.12 285)",
+                        } : {
+                          background: "var(--bg-input)",
+                          border: "1px solid var(--bd-7)",
+                          color: "var(--c-50)",
+                        }}
+                      >
+                        {p}
+                        {isProOnly && (
+                          <span
+                            className="text-[8px] px-1 py-px rounded leading-none uppercase font-bold tracking-wide"
+                            style={{
+                              background: "oklch(0.72 0.25 285)",
+                              color: "white",
+                            }}
+                          >
+                            Pro
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -1571,6 +1635,16 @@ export default function AssemblePage({ params }: PageProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {showUpgradeModal && (
+        <SubscriptionModal
+          email={userEmail}
+          defaultPlan="pro"
+          hideTryDemo
+          onClose={() => setShowUpgradeModal(false)}
+          onSuccess={() => setShowUpgradeModal(false)}
+        />
+      )}
     </div>
   );
 }

@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -19,6 +19,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isAdminUser } from "@/lib/admin";
 import EmailsPanel from "./EmailsPanel";
 import { TtsCostLens } from "@/components/admin/TtsCostLens";
+import { SupportPanel } from "@/components/admin/SupportPanel";
 
 const PHASE_PATHS: Record<number, string> = {
   1: "channel", 2: "channel", 3: "channel", 4: "channel", 5: "channel",
@@ -4105,11 +4106,11 @@ export default function AdminPage() {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [hoveredRevIdx, setHoveredRevIdx] = useState<number | null>(null);
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "activity" | "users" | "projects" | "revenue" | "logs" | "emails" | "setup"
+    "stats" | "activity" | "users" | "projects" | "revenue" | "logs" | "emails" | "support" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "activity", "users", "projects", "revenue", "logs", "emails", "setup"],
+    ["stats", "activity", "users", "projects", "revenue", "logs", "emails", "support", "setup"],
   );
 
   // Per-project cost rollups for the Videos → Cost sub-tab. Only
@@ -4398,6 +4399,7 @@ export default function AdminPage() {
             { id: "revenue",  label: "Revenue",  icon: DollarSign },
             { id: "logs",     label: "Logs",     icon: FileText },
             { id: "emails",   label: "Emails",   icon: Mail },
+            { id: "support",  label: "Support tickets",  icon: LifeBuoy },
             { id: "setup",    label: "Config",   icon: Settings },
           ] as const;
 
@@ -5844,6 +5846,24 @@ export default function AdminPage() {
         {/* Emails section — Inbox/Sent + compose. Backed by Hostinger
             IMAP/SMTP via /api/admin/emails. */}
         {activeTab === "emails" && <EmailsPanel />}
+
+        {/* Support section — in-app HelpButton ticket queue, status
+            triage, admin notes. Backed by support_tickets table. */}
+        {activeTab === "support" && (
+          <section
+            id="support"
+            className="rounded-2xl max-w-full min-w-0"
+            style={{
+              background: "white",
+              border: "1px solid oklch(0 0 0 / 0.07)",
+              padding: "16px",
+              scrollMarginTop: "80px",
+              boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)",
+            }}
+          >
+            <SupportPanel />
+          </section>
+        )}
 
         {/* Setup section — product-wide API key management */}
         {activeTab === "setup" && (
