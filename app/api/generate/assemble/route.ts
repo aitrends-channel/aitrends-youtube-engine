@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { redis } from "@/lib/queue/client";
+import { isProResolution, isProTier } from "@/lib/plans-gating";
 import type { User } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,6 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
-  void user;
 
   const client = await createSupabaseServerClient();
 
@@ -47,6 +47,23 @@ export async function POST(req: Request) {
 
   const { projectId, ...options } = body;
   if (!projectId) return NextResponse.json({ error: "projectId is required" }, { status: 400 });
+
+  // Pro-tier gate. The Assemble UI hides 1440p / 2160p behind the
+  // Pro plan and pops the SubscriptionModal when a non-Pro user
+  // clicks one. This is the server-side enforcement for the same
+  // rule — a hand-crafted POST from devtools (or anywhere else)
+  // gets rejected with a 403 instead of silently spending the
+  // 4K render budget on a Starter customer.
+  if (isProResolution(options.resolution) && !isProTier(user)) {
+    return NextResponse.json(
+      {
+        error: `${options.resolution} output is part of the Pro plan. Upgrade to render at this resolution.`,
+        code: "PLAN_REQUIRED",
+        requiredPlan: "pro",
+      },
+      { status: 403 },
+    );
+  }
 
   console.log(`[api/generate/assemble] ${projectId}: bgm=${JSON.stringify(options.backgroundMusicUrl)} vol=${JSON.stringify(options.backgroundMusicVolume)} logo=${JSON.stringify(options.logoUrl)} logoXY=${JSON.stringify(options.logoX)},${JSON.stringify(options.logoY)} logoSize=${JSON.stringify(options.logoSize)} keys=[${Object.keys(options).join(",")}]`);
   await redis.set(`assembly:${projectId}`, JSON.stringify(options), { ex: 7200 });
