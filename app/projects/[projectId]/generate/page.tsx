@@ -1528,20 +1528,20 @@ export default function GeneratePage({ params }: PageProps) {
                   onClick={() => imageGridRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
                   title="Jump to the first image"
                   aria-label="Scroll to top"
-                  className="absolute top-2 right-3 w-8 h-8 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  className="absolute top-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
                 >
-                  <ChevronUp size={16} />
+                  <ChevronUp size={14} />
                 </button>
                 <button
                   type="button"
                   onClick={() => imageGridRef.current?.scrollTo({ top: imageGridRef.current.scrollHeight, behavior: "smooth" })}
                   title="Jump to the most recently generated image"
                   aria-label="Scroll to bottom"
-                  className="absolute bottom-2 right-3 w-8 h-8 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  className="absolute bottom-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
                 >
-                  <ChevronDown size={16} />
+                  <ChevronDown size={14} />
                 </button>
                 </div>
               </div>
@@ -1847,20 +1847,20 @@ export default function GeneratePage({ params }: PageProps) {
                   onClick={() => videoGridRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
                   title="Jump to the first clip"
                   aria-label="Scroll to top"
-                  className="absolute top-2 right-3 w-8 h-8 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  className="absolute top-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
                 >
-                  <ChevronUp size={16} />
+                  <ChevronUp size={14} />
                 </button>
                 <button
                   type="button"
                   onClick={() => videoGridRef.current?.scrollTo({ top: videoGridRef.current.scrollHeight, behavior: "smooth" })}
                   title="Jump to the most recently queued clip"
                   aria-label="Scroll to bottom"
-                  className="absolute bottom-2 right-3 w-8 h-8 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  className="absolute bottom-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
                 >
-                  <ChevronDown size={16} />
+                  <ChevronDown size={14} />
                 </button>
                 </div>
               </div>

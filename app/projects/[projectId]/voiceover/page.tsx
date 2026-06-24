@@ -1262,20 +1262,20 @@ export default function VoiceoverPage({ params }: PageProps) {
             onClick={() => bulkPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
             title="Jump to the bulk action panel"
             aria-label="Scroll to bulk action panel"
-            className="fixed top-24 right-5 z-30 w-9 h-9 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+            className="fixed top-24 right-5 z-30 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
             style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
           >
-            <ChevronUp size={18} />
+            <ChevronUp size={14} />
           </button>
           <button
             type="button"
             onClick={() => scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: "smooth" })}
             title="Jump to the last beat"
             aria-label="Scroll to bottom"
-            className="fixed bottom-24 right-5 z-30 w-9 h-9 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+            className="fixed bottom-24 right-5 z-30 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
             style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
           >
-            <ChevronDown size={18} />
+            <ChevronDown size={14} />
           </button>
         </>
       )}
