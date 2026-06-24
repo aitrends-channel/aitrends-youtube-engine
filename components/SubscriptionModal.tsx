@@ -74,7 +74,12 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
 
   const visiblePlans = useMemo(() => {
     if (!plans) return [];
-    return plans.filter((p) => !p.isFounder || founderAvailable);
+    return plans
+      // production-test is admin-only verification harness — never
+      // surface it in the customer subscription modal even though the
+      // DB row + admin Payment tab still need it.
+      .filter((p) => p.slug !== PRODUCTION_TEST_SLUG)
+      .filter((p) => !p.isFounder || founderAvailable);
   }, [plans, founderAvailable]);
 
   // If the currently-selected slug is a founder plan and founder is no
@@ -129,8 +134,8 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="relative w-full max-w-2xl rounded-2xl overflow-hidden"
-        style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)", maxHeight: "90vh" }}
+        className="relative w-full max-w-4xl rounded-2xl overflow-hidden"
+        style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
       >
         <button
           onClick={onClose}
@@ -156,7 +161,7 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
           <X size={14} />
           Close
         </button>
-        <div className="overflow-y-auto p-8" style={{ maxHeight: "90vh" }}>
+        <div className="p-8">
 
 
         <div className="text-center mb-6">
