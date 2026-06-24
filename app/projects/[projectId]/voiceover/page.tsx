@@ -9,7 +9,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
 import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPreview";
-import { RotateCw } from "lucide-react";
+import { RotateCw, ChevronUp, ChevronDown } from "lucide-react";
 
 // Per-beat voiceover step. Each beat shows its own row with status,
 // playback, and per-beat retry. A bulk Generate button kicks off all
@@ -159,6 +159,16 @@ export default function VoiceoverPage({ params }: PageProps) {
 
   const beats: Beat[] = useMemo(() => (project?.beats ?? []) as Beat[], [project]);
   const projectVoiceId = (project?.tts_voice_id as string | null | undefined) ?? null;
+
+  // Main scroll container for the per-beat content. Used by the
+  // floating jump-to buttons below so users can hop to the first or
+  // last beat without having to drag through a long script.
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  // Anchor for "jump to top": stops at the bulk action panel rather
+  // than the absolute top of the page (which would scroll past the
+  // counts + Generate button into the voice picker — the user wants
+  // to land at the actionable controls, not the picker).
+  const bulkPanelRef = useRef<HTMLDivElement | null>(null);
 
   // Voice picker state — defaults to the project's saved voice (i.e.
   // the voice that was actually used to generate any existing beats),
@@ -768,7 +778,7 @@ export default function VoiceoverPage({ params }: PageProps) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto pb-[70px]">
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto pb-[70px] relative">
         <div className="py-4 sm:p-8 pb-24 space-y-6">
 
           {/* Voice picker */}
@@ -828,7 +838,7 @@ export default function VoiceoverPage({ params }: PageProps) {
           {project === undefined ? null : (
           <>
           {/* Bulk action panel */}
-          <div className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+          <div ref={bulkPanelRef} className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
             {/* Selected-voice banner — sits above the count/action row
                 so the user always sees which voice the next batch will
                 use, right next to the beats list (the most relevant
@@ -1089,7 +1099,24 @@ export default function VoiceoverPage({ params }: PageProps) {
                         <StatusPill status={status} />
                       </div>
                       {status === "done" && url && (
-                        <audio controls src={url} className="h-7 w-full" preload="none" />
+                        // preload="metadata" loads just the audio
+                        // header (duration etc.) so the player UI
+                        // populates the moment the beat flips to
+                        // "done", without waiting for the user to
+                        // click play. preload="none" left the
+                        // player blank until interaction, which
+                        // looked broken during a live SSE run.
+                        // key={url} re-mounts the element if R2
+                        // ever hands back a new URL for the same
+                        // beat (e.g. regen), so the audio src
+                        // never stays stale on the old file.
+                        <audio
+                          key={url}
+                          controls
+                          src={url}
+                          className="h-7 w-full"
+                          preload="metadata"
+                        />
                       )}
                       {status === "failed" && err && (
                         <span
@@ -1221,6 +1248,37 @@ export default function VoiceoverPage({ params }: PageProps) {
         </div>
         </div>
       </main>
+
+      {/* Jump-to-top / jump-to-bottom — floating purple chevrons in
+          the right-edge corners of the page area. Mirrors the same
+          affordance on the Generate step. Only renders when there's
+          at least one beat (otherwise the buttons would scroll an
+          empty container). Up sits clear of the page header; Down
+          sits above the Help bubble and the Continue bar. */}
+      {beats.length > 0 && (
+        <>
+          <button
+            type="button"
+            onClick={() => bulkPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            title="Jump to the bulk action panel"
+            aria-label="Scroll to bulk action panel"
+            className="fixed top-24 right-5 z-30 w-9 h-9 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+            style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+          >
+            <ChevronUp size={18} />
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: "smooth" })}
+            title="Jump to the last beat"
+            aria-label="Scroll to bottom"
+            className="fixed bottom-24 right-5 z-30 w-9 h-9 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+            style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+          >
+            <ChevronDown size={18} />
+          </button>
+        </>
+      )}
 
       {/* Continue bar — shows as soon as at least one beat has audio
           so the user can advance without waiting for the whole batch.
