@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 import { Providers } from "@/components/Providers";
+import { HelpButton } from "@/components/HelpButton";
 
 const BASE_URL = "https://app.heclus.io";
 
@@ -60,7 +61,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-full bg-background text-foreground antialiased" suppressHydrationWarning>
         <ServiceWorkerRegistrar />
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+          <HelpButton />
+        </Providers>
       </body>
     </html>
   );
