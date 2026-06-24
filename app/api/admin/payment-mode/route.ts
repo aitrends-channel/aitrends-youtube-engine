@@ -113,8 +113,11 @@ export async function PATCH(req: Request) {
   }
 
   if (Object.keys(update).length === 0) {
+    console.warn("[payment-mode PATCH] no fields to update — body:", JSON.stringify(body));
     return NextResponse.json({ error: "no fields provided" }, { status: 400 });
   }
+
+  console.log("[payment-mode PATCH] update payload:", JSON.stringify(update));
 
   // product_config has no unique constraint on `service` (table was
   // created outside migrations), so a Postgres upsert would raise
@@ -124,19 +127,36 @@ export async function PATCH(req: Request) {
     .select("service")
     .eq("service", "_global")
     .maybeSingle();
-  if (lookupErr) return NextResponse.json({ error: lookupErr.message }, { status: 500 });
+  if (lookupErr) {
+    console.error("[payment-mode PATCH] lookup error:", lookupErr);
+    return NextResponse.json({ error: lookupErr.message }, { status: 500 });
+  }
+  console.log("[payment-mode PATCH] existing row:", existing ? "found" : "missing");
 
   if (existing) {
-    const { error } = await supabase
+    const { data: updated, error } = await supabase
       .from("product_config")
       .update(update)
-      .eq("service", "_global");
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      .eq("service", "_global")
+      .select("service, dodo_secret_key_test, dodo_secret_key_production, dodo_base_url_test, dodo_base_url_production, dodo_webhook_secret_test, dodo_webhook_secret_production");
+    if (error) {
+      console.error("[payment-mode PATCH] update error:", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    console.log(
+      `[payment-mode PATCH] update succeeded rows=${updated?.length ?? 0} ` +
+      `row=${JSON.stringify((updated?.[0] ?? null) && Object.fromEntries(Object.entries(updated![0]!).map(([k, v]) => [k, typeof v === "string" ? `${v.slice(0, 12)}…` : v])))}`,
+    );
   } else {
-    const { error } = await supabase
+    const { data: inserted, error } = await supabase
       .from("product_config")
-      .insert({ service: "_global", ...update });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      .insert({ service: "_global", ...update })
+      .select("service");
+    if (error) {
+      console.error("[payment-mode PATCH] insert error:", error);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+    console.log(`[payment-mode PATCH] insert succeeded rows=${inserted?.length ?? 0}`);
   }
 
   const settings = await getPaymentSettings();

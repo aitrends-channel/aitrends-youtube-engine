@@ -14,32 +14,68 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing payment_id" }, { status: 400 });
   }
 
-  // Pick the Dodo environment for this payment from the deployment
-  // env (HECLUS_ENV → getEffectivePaymentMode). Local + staging
-  // always verify against test, live production always verifies
-  // against production. Then the secret key + base URL fall through
-  // this lookup chain:
-  //   1. admin-managed product_config (set via the "Dodo API keys"
-  //      card on the Plans tab — takes effect without a redeploy)
+  // Pick the Dodo environment for this payment:
+  //   • production-test is always production — that plan's whole
+  //     purpose is to fire a real live charge from any deployment
+  //     (including staging), so the verify endpoint also has to
+  //     query the live Dodo API regardless of HECLUS_ENV. Using the
+  //     deployment env here would 404 when the payment is on live
+  //     but the deployment is in test mode.
+  //   • everything else follows the deployment env (HECLUS_ENV →
+  //     getEffectivePaymentMode), so local + staging always verify
+  //     against test and live prod always verifies against production
+  // Then the secret key + base URL fall through this lookup chain:
+  //   1. admin-managed product_config (set via the "Dodo Variables"
+  //      card on the Payment tab — takes effect without a redeploy)
   //   2. environment-specific env var
   //   3. legacy DODO_SECRET_KEY / DODO_BASE_URL fallback so a one-
   //      key bootstrap setup keeps working
   const settings = await getPaymentSettings();
-  const env = settings.mode;
+  const env: "test" | "production" = plan === "production-test" ? "production" : settings.mode;
 
-  const secretKey = env === "production"
-    ? (settings.secretKeyProduction ?? process.env.DODO_SECRET_KEY_PRODUCTION ?? process.env.DODO_SECRET_KEY)
-    : (settings.secretKeyTest ?? process.env.DODO_SECRET_KEY_TEST ?? process.env.DODO_SECRET_KEY);
-  if (!secretKey) {
+  // Track which source (DB row / env-specific var / legacy var)
+  // each value resolved from so the diagnostic log below can answer
+  // "is verify ignoring my admin-saved value?" in one read.
+  const pickSecret = () => {
+    const dbVal = env === "production" ? settings.secretKeyProduction : settings.secretKeyTest;
+    if (dbVal) return { value: dbVal, source: "db" as const };
+    const envVal = env === "production" ? process.env.DODO_SECRET_KEY_PRODUCTION : process.env.DODO_SECRET_KEY_TEST;
+    if (envVal) return { value: envVal, source: "env-specific" as const };
+    if (process.env.DODO_SECRET_KEY) return { value: process.env.DODO_SECRET_KEY, source: "legacy-env" as const };
+    return { value: null, source: "none" as const };
+  };
+  const pickBase = () => {
+    const dbVal = env === "production" ? settings.baseUrlProduction : settings.baseUrlTest;
+    if (dbVal) return { value: dbVal, source: "db" as const };
+    const envSpecific = env === "production" ? process.env.DODO_LIVE_BASE_URL : process.env.DODO_TEST_BASE_URL;
+    if (envSpecific) return { value: envSpecific, source: "env-specific" as const };
+    if (env === "test" && process.env.DODO_BASE_URL) return { value: process.env.DODO_BASE_URL, source: "legacy-env" as const };
+    return {
+      value: env === "production" ? "https://live.dodopayments.com" : "https://test.dodopayments.com",
+      source: "default" as const,
+    };
+  };
+
+  const keyPick = pickSecret();
+  const basePick = pickBase();
+  if (!keyPick.value) {
     return NextResponse.json(
-      { error: `Dodo ${env} secret key is not configured. Set it on the Plans tab.` },
+      { error: `Dodo ${env} secret key is not configured. Set it on the Payment tab.` },
       { status: 500 },
     );
   }
+  const secretKey = keyPick.value;
+  const dodoBase = basePick.value;
 
-  const dodoBase = env === "production"
-    ? (settings.baseUrlProduction ?? process.env.DODO_LIVE_BASE_URL ?? "https://live.dodopayments.com")
-    : (settings.baseUrlTest ?? process.env.DODO_TEST_BASE_URL ?? process.env.DODO_BASE_URL ?? "https://test.dodopayments.com");
+  // Surface where each value came from so a 404 from Dodo or a
+  // wrong-env mismatch can be diagnosed in one log line. Key prefix
+  // only — never the full secret.
+  console.log(
+    `[dodo-verify] plan=${plan} env=${env} ` +
+    `base=${dodoBase} base_src=${basePick.source} ` +
+    `key=${secretKey.slice(0, 8)}… key_src=${keyPick.source} ` +
+    `payment_id=${payment_id}`,
+  );
 
   let dodoRes: Response;
   try {
