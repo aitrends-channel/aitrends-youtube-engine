@@ -2180,6 +2180,18 @@ function PlansPanel() {
     setViewEnv(paymentMode);
   }, [data, paymentMode]);
 
+  // Hard-force production view on production deployments. The Test
+  // tab is hidden there, but viewEnv could still be "test" if the
+  // payment-mode response loads after the user (somehow) clicked
+  // the Test tab. Belt-and-braces — keeps the URL preview, test-
+  // purchase button, and PlanEditModal label aligned with the
+  // tab list.
+  useEffect(() => {
+    if (paymentMode === "production" && viewEnv !== "production") {
+      setViewEnv("production");
+    }
+  }, [paymentMode, viewEnv]);
+
   async function handleDelete(slug: string) {
     setDeleteSubmitting(true);
     try {
@@ -2204,12 +2216,18 @@ function PlansPanel() {
         <div className="min-w-0">
           <p className="text-sm font-semibold" style={{ color: "var(--c-78)" }}>Dodo environment, plans and product links</p>
           <p className="text-xs mt-0.5" style={{ color: "var(--c-50)" }}>
-            Runtime env is auto-detected from HECLUS_ENV (<span className="font-semibold capitalize">{paymentMode}</span> on this deployment). The tabs below let you preview either env&apos;s product URLs without redeploying.
+            {paymentMode === "production"
+              ? <>Runtime env is auto-detected from HECLUS_ENV — locked to <span className="font-semibold">Production</span> on this deployment. Test data is hidden here to avoid accidental edits on live config.</>
+              : <>Runtime env is auto-detected from HECLUS_ENV (<span className="font-semibold capitalize">{paymentMode}</span> on this deployment). The tabs below let you preview either env&apos;s product URLs without redeploying.</>}
           </p>
         </div>
         <div className="shrink-0 flex p-0.5 rounded-lg"
           style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid var(--bd-7)" }}>
-          {(["test", "production"] as const).map((m) => {
+          {/* On a production deployment, hide the Test tab entirely so
+              the admin never accidentally edits/previews test config
+              against live billing. Local + staging keep both tabs so
+              admins can compare the two envs side-by-side. */}
+          {(paymentMode === "production" ? (["production"] as const) : (["test", "production"] as const)).map((m) => {
             const active = viewEnv === m;
             return (
               <button
@@ -2437,6 +2455,7 @@ function PlansPanel() {
 
       <DodoApiKeysCard
         settings={paymentSettings ?? null}
+        runtimeEnv={paymentMode}
         onSaved={() => mutatePaymentSettings()}
       />
 
@@ -3311,6 +3330,10 @@ interface DodoApiKeysCardProps {
     webhookSecretTest: string | null;
     webhookSecretProduction: string | null;
   } | null;
+  // Deployment env (HECLUS_ENV). When "production", the Test tab is
+  // hidden so the admin can't edit test credentials on a live
+  // deployment — same rationale as the env card above.
+  runtimeEnv: PaymentMode;
   onSaved: () => void;
 }
 
@@ -3391,8 +3414,16 @@ function DodoVarField({
 // env the save patches. Values are shown in plain text since admins
 // need to verify what they pasted; the keys never leave the admin
 // response anyway.
-function DodoApiKeysCard({ settings, onSaved }: DodoApiKeysCardProps) {
-  const [activeEnv, setActiveEnv] = useState<"test" | "production">("test");
+function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps) {
+  // On a production deployment, force the active env to "production"
+  // and never let it back to "test" — the Test tab is hidden in the
+  // render and the inputs / save are pinned to production fields.
+  const [activeEnv, setActiveEnv] = useState<"test" | "production">(runtimeEnv);
+  useEffect(() => {
+    if (runtimeEnv === "production" && activeEnv !== "production") {
+      setActiveEnv("production");
+    }
+  }, [runtimeEnv, activeEnv]);
   // Local edit buffers — start empty. Each input shows ONLY its
   // placeholder; the saved value is rendered above the input in
   // theme purple so the admin can see what's stored without it
@@ -3470,7 +3501,7 @@ function DodoApiKeysCard({ settings, onSaved }: DodoApiKeysCardProps) {
       </div>
 
       <div className="inline-flex p-0.5 rounded-lg mb-5" style={{ background: "oklch(0 0 0 / 0.05)" }}>
-        {(["test", "production"] as const).map((env) => (
+        {(runtimeEnv === "production" ? (["production"] as const) : (["test", "production"] as const)).map((env) => (
           <button
             key={env}
             type="button"

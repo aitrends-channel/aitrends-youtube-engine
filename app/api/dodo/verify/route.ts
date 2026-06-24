@@ -108,15 +108,10 @@ export async function POST(request: Request) {
   // production — applying it to test charges blocks every legitimate
   // test purchase without protecting any real revenue.
   const paidCents = Number(result.total_amount ?? result.amount ?? 0);
-  // TEMPORARY — production-test rates pinned to 50¢ across every
-  // plan so QA can verify the live checkout flow without spending
-  // real money on each tier. REVERT to the real prices below before
-  // launching to real customers, or the production price guard will
-  // accept any non-zero charge as a valid plan purchase.
   const PLAN_PRICES_CENTS: Record<string, number> = {
-    starter: Number(process.env.DODO_STARTER_PRICE_CENTS ?? 50),  // TEMP: was 1900 ($19)
-    founder: Number(process.env.DODO_FOUNDER_PRICE_CENTS ?? 50),  // TEMP: was 4000 ($40)
-    pro:     Number(process.env.DODO_PRO_PRICE_CENTS ?? 50),      // TEMP: was 4900 ($49)
+    starter: Number(process.env.DODO_STARTER_PRICE_CENTS ?? 2100),  // $21
+    founder: Number(process.env.DODO_FOUNDER_PRICE_CENTS ?? 4000),  // $40
+    pro:     Number(process.env.DODO_PRO_PRICE_CENTS ?? 3900),      // $39
   };
   const claimedPlanPrice = PLAN_PRICES_CENTS[plan ?? ""];
 
