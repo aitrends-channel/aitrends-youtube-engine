@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import useSWR from "swr";
 import { X, Check, PlayCircle } from "lucide-react";
 
 interface PlanDTO {
@@ -32,42 +33,46 @@ interface Props {
 
 export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: Props) {
   const router = useRouter();
-  const [plans, setPlans] = useState<PlanDTO[] | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string>(defaultPlan ?? "");
-  const [spotsLeft, setSpotsLeft] = useState<number | null>(null);
-  const [founderActive, setFounderActive] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [subscribing, setSubscribing] = useState(false);
 
-  useEffect(() => {
-    fetch("/api/plans", { cache: "no-store" })
-      .then(r => r.json())
-      .then(d => {
-        const list = (d?.plans as PlanDTO[] | undefined) ?? [];
-        setPlans(list);
-        if (!defaultPlan && list.length > 0) {
-          const founder = list.find(p => p.isFounder && !p.disabled);
-          // Default to founder when active, otherwise the first
-          // non-disabled non-test plan — production-test is a payment
-          // verification harness, never a sensible default selection.
-          setSelectedPlan((founder ?? list.find(p => !p.disabled && p.slug !== PRODUCTION_TEST_SLUG) ?? list[0]).slug);
-        }
-      })
-      .catch(() => setPlans([]));
-  }, [defaultPlan]);
+  // SWR caches the response in-memory across modal opens, so the
+  // second + opens render instantly with last-known data while a
+  // background revalidate keeps it fresh. fetcher omits cache:
+  // "no-store" so the browser + edge can honor the Cache-Control
+  // headers we set on /api/plans (30s s-maxage + SWR 5min). The
+  // founder-spots query is left more aggressive (revalidate on
+  // focus + 30s polling) because the slot counter ticks down on
+  // every claim — staleness there is more visible to the user.
+  const swrFetcher = async (url: string) => {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  };
+  const { data: plansData } = useSWR<{ plans?: PlanDTO[] }>("/api/plans", swrFetcher, {
+    revalidateOnFocus: false,
+    dedupingInterval: 30_000,
+  });
+  const { data: founderData } = useSWR<{ active?: boolean; spots_left?: number }>(
+    "/api/founder-spots",
+    swrFetcher,
+    { revalidateOnFocus: true, refreshInterval: 30_000 },
+  );
+  const plans: PlanDTO[] | null = plansData?.plans ?? null;
+  const founderActive: boolean | null = typeof founderData?.active === "boolean" ? founderData.active : null;
+  const spotsLeft: number | null = typeof founderData?.spots_left === "number" ? founderData.spots_left : null;
 
+  // Seed the selectedPlan once plans land. SWR may resolve before
+  // this effect runs (cache hit), so we guard on a non-empty plans
+  // list rather than a "just loaded" trigger.
   useEffect(() => {
-    // cache: "no-store" so admin edits to the founder cap or slot
-    // count reflect immediately on the next modal open instead of
-    // sitting behind whatever the browser cached from a prior fetch.
-    fetch("/api/founder-spots", { cache: "no-store" })
-      .then(r => r.json())
-      .then(d => {
-        if (typeof d.active === "boolean") setFounderActive(d.active);
-        if (typeof d.spots_left === "number") setSpotsLeft(d.spots_left);
-      })
-      .catch(() => {});
-  }, []);
+    if (defaultPlan || !plans || plans.length === 0 || selectedPlan) return;
+    const founder = plans.find(p => p.isFounder && !p.disabled);
+    setSelectedPlan(
+      (founder ?? plans.find(p => !p.disabled && p.slug !== PRODUCTION_TEST_SLUG) ?? plans[0]).slug,
+    );
+  }, [plans, defaultPlan, selectedPlan]);
 
   // Founder visibility gated by the single 'active' flag from the server.
   const founderAvailable = founderActive === null || founderActive === true;
