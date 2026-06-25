@@ -297,11 +297,11 @@ export default function PlanPage() {
                 )}
                 <button
                   onClick={() => setShowModal(true)}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
                   style={{
-                    background: "oklch(1 0 0 / 0.06)",
-                    color: "var(--c-60)",
-                    border: "1px solid oklch(1 0 0 / 0.08)",
+                    background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+                    color: "var(--c-98)",
+                    boxShadow: "0 0 24px oklch(0.72 0.25 285 / 0.2)",
                   }}>
                   Change Plan
                 </button>

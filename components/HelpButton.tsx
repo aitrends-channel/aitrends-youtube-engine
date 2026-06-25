@@ -47,7 +47,7 @@ const FAQS: Faq[] = [
   },
   {
     q: "How do I change or cancel my plan?",
-    a: <>Plan changes flow through your Dodo customer portal. Use the contact form below and we'll send you the management link tied to your account.</>,
+    a: <>Make plan changes at user profile → Plan, or <a href="/plan" className="underline font-medium" style={{ color: "oklch(0.55 0.22 285)" }}>click here</a> directly.</>,
   },
 ];
 
@@ -252,7 +252,7 @@ export function HelpButton() {
                   />
                   <div>
                     <p className="text-sm font-semibold text-zinc-900">Contact us</p>
-                    <p className="text-xs text-zinc-500">A real person will review your ticket and response within 24 hours.</p>
+                    <p className="text-xs text-zinc-500">Someone will review your ticket and respond within 24 hours.</p>
                   </div>
                 </div>
                 <div className="space-y-1.5">
