@@ -26,6 +26,7 @@ interface PlanData {
   plan: string | null;
   plan_details: PlanDetails | null;
   plan_expires_at: string | null;
+  can_cancel_subscription?: boolean;
 }
 
 function formatDate(iso: string) {
@@ -42,8 +43,30 @@ export default function PlanPage() {
   const [loading, setLoading] = useState(true);
   const [userEmail, setUserEmail] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  async function handleCancelSubscription() {
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      const res = await fetch("/api/dodo/cancel-subscription", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setCancelError(body?.error ?? "Could not cancel subscription. Please try again.");
+        return;
+      }
+      setShowCancelModal(false);
+      window.location.reload();
+    } catch (e) {
+      setCancelError((e as Error).message || "Could not cancel subscription.");
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   async function handleSignOut() {
     const supabase = createSupabaseBrowserClient();
@@ -305,11 +328,59 @@ export default function PlanPage() {
                   }}>
                   Change Plan
                 </button>
+                {planData?.can_cancel_subscription && (
+                  <button
+                    onClick={() => { setCancelError(null); setShowCancelModal(true); }}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                    style={{
+                      background: "oklch(0.6 0.22 25)",
+                      color: "white",
+                      boxShadow: "0 0 24px oklch(0.6 0.22 25 / 0.2)",
+                    }}>
+                    Cancel Subscription
+                  </button>
+                )}
               </div>
             </div>
           </div>
         )}
       </main>
+
+      {showCancelModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => !cancelling && setShowCancelModal(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-zinc-900">Cancel your subscription?</h2>
+            <p className="mt-2 text-sm text-zinc-600">
+              You&apos;ll keep access to your current plan until
+              {expiresAt ? <> <span className="font-semibold text-zinc-900">{formatDate(expiresAt)}</span></> : <> the end of your current billing period</>}.
+              After that, your plan will end and you can re-subscribe any time.
+            </p>
+            {cancelError && (
+              <p className="mt-3 text-sm font-medium" style={{ color: "oklch(0.6 0.22 25)" }}>{cancelError}</p>
+            )}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setShowCancelModal(false)}
+                disabled={cancelling}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+              >
+                Keep Plan
+              </button>
+              <button
+                onClick={handleCancelSubscription}
+                disabled={cancelling}
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-60 flex items-center gap-2"
+                style={{ background: "oklch(0.6 0.22 25)" }}
+              >
+                {cancelling && (
+                  <span className="inline-block w-3.5 h-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                )}
+                {cancelling ? "Cancelling…" : "Cancel Subscription"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <SubscriptionModal
