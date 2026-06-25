@@ -12,6 +12,7 @@ import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPrevie
 import { presignedUpload } from "@/lib/upload-client";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
+import { PRO_RESOLUTIONS, PRO_TIER_PLANS } from "@/lib/plans-gating";
 
 interface PageProps {
   params: { projectId: string };
@@ -20,12 +21,8 @@ interface PageProps {
 const ASPECT_RATIOS = ["16:9", "9:16", "1:1"] as const;
 type AspectRatio = typeof ASPECT_RATIOS[number];
 
-// Resolutions that require a paid tier with priority rendering /
-// 2K+ output. Customers on Starter or Founder see the option grey
-// + tagged "Pro", and a click toast-nudges them to upgrade rather
-// than silently switching. Admin accounts bypass the gate.
-const PRO_RESOLUTIONS = new Set<string>(["1440p", "2160p"]);
-const PRO_TIER_PLANS = new Set<string>(["pro", "admin"]);
+// Pro-tier resolution gate constants live in lib/plans-gating so the
+// UI here and the assemble POST endpoint share one source of truth.
 
 const RESOLUTION_PRESETS = ["720p", "1080p", "1440p", "2160p"] as const;
 type ResolutionPreset = typeof RESOLUTION_PRESETS[number];
