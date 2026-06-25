@@ -153,9 +153,36 @@ export async function POST(request: Request) {
     }
   }
 
+  // Pull subscription identifiers from Dodo's payment response when
+  // present (subscription products fill these in; one-time purchases
+  // don't). Persisting them here means the /plan Cancel button shows
+  // immediately on redirect, without waiting for the webhook to
+  // arrive separately. Mirrors the merge logic in the webhook so
+  // either entry point produces the same shape.
+  const subscriptionIdFromResult =
+    (result.subscription_id as string | undefined) ??
+    ((result.subscription as Record<string, unknown> | undefined)?.subscription_id as string | undefined) ??
+    null;
+  const periodEndFromResult =
+    (result.current_period_end as string | undefined) ??
+    (result.next_billing_date as string | undefined) ??
+    ((result.subscription as Record<string, unknown> | undefined)?.next_billing_date as string | undefined) ??
+    null;
+
   const planExpiry = isFounder
     ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
-    : null;
+    : periodEndFromResult;
+
+  const baseDodo = (user.app_metadata?.dodo ?? {}) as Record<string, unknown>;
+  const mergedDodo = {
+    ...baseDodo,
+    event: "payment.verified",
+    status: result.status,
+    updated_at: new Date().toISOString(),
+    ...(subscriptionIdFromResult ? { subscription_id: subscriptionIdFromResult } : {}),
+    ...(periodEndFromResult ? { current_period_end: periodEndFromResult } : {}),
+    ...(!subscriptionIdFromResult && baseDodo.subscription_id ? { subscription_id: baseDodo.subscription_id } : {}),
+  };
 
   try {
     await supabase.auth.admin.updateUserById(user.id, {
@@ -164,7 +191,8 @@ export async function POST(request: Request) {
         paid: true,
         paid_at: new Date().toISOString(),
         plan: plan ?? "pro",
-        ...(isFounder && { plan_expires_at: planExpiry }),
+        dodo: mergedDodo,
+        ...(planExpiry ? { plan_expires_at: planExpiry } : {}),
       },
     });
   } catch (e) {
