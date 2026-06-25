@@ -90,6 +90,22 @@ export async function GET() {
     }
   }
 
+  // A subscription is cancellable when Dodo gave us a sub id and the
+  // user hasn't already cancelled (no plan_expires_at, or it's in the
+  // future and Dodo's state still says active). We surface a single
+  // boolean so the UI doesn't need to know about Dodo's lifecycle.
+  const dodo = (meta.dodo ?? {}) as Record<string, unknown>;
+  const subscriptionId = (dodo.subscription_id as string | undefined) ?? null;
+  const dodoStatus = (dodo.status as string | undefined) ?? null;
+  const alreadyCancelled =
+    dodoStatus === "cancelled" || dodoStatus === "expired" || dodoStatus === "failed";
+  const canCancelSubscription =
+    !admin &&
+    effectivePaid &&
+    !!subscriptionId &&
+    !alreadyCancelled &&
+    effectivePlan !== "founder";
+
   return NextResponse.json({
     email: user.email,
     paid: effectivePaid,
@@ -98,5 +114,6 @@ export async function GET() {
     plan_details: planDetails,
     plan_expires_at: meta.plan_expires_at ?? null,
     is_admin: admin,
+    can_cancel_subscription: canCancelSubscription,
   });
 }
