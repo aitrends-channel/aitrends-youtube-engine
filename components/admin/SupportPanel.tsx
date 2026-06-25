@@ -63,10 +63,10 @@ function isPriorityPlan(plan: string | null): boolean {
 }
 
 // Plans whose tickets render with a red "Priority" tag so admins can
-// pick them out of the queue at a glance. Currently only Starter —
-// higher tiers (Pro / Founder / Admin) are expected to self-serve or
-// reach out via other channels.
-const PRIORITY_PLANS = new Set(["starter"]);
+// pick them out of the queue at a glance. Pro customers get the
+// "Priority support" SLA listed on their plan card; their tickets
+// flag in the queue so they don't get lost behind self-serve tiers.
+const PRIORITY_PLANS = new Set(["pro"]);
 
 const STATUS_LABELS: Record<TicketStatus, string> = {
   open:        "Open",
@@ -347,7 +347,7 @@ function TicketRow({
           <span
             className="shrink-0 inline-flex items-center justify-center text-[10px] leading-none px-2 py-1 rounded font-semibold uppercase"
             style={{ background: "oklch(0.6 0.22 25)", color: "white" }}
-            title="Priority support — starter tier"
+            title="Priority support — pro tier"
           >
             Priority
           </span>
@@ -372,12 +372,29 @@ function TicketRow({
 
           <div className="grid sm:grid-cols-2 gap-3">
             <div>
-              <label className="text-xs uppercase tracking-wider block mb-1.5" style={{ color: "var(--c-40)" }}>Status</label>
+              <div className="inline-flex items-center gap-2 mb-1.5 leading-none">
+                <span
+                  className="text-xs uppercase tracking-wider font-semibold px-2.5 py-1 rounded"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+                >
+                  Status
+                </span>
+                <span
+                  className="text-xs font-bold"
+                  style={{ color: "var(--c-90)" }}
+                >
+                  {STATUS_LABELS[ticket.status]}
+                </span>
+              </div>
               <select
                 value={statusDraft}
                 onChange={(e) => setStatusDraft(e.target.value as TicketStatus)}
                 disabled={saving}
-                className="w-full px-3 py-2 rounded-lg text-base outline-none bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400 capitalize"
+                className="w-full px-3 py-2.5 rounded-lg text-base font-semibold outline-none bg-white text-zinc-900 capitalize cursor-pointer transition-all"
+                style={{
+                  border: "2px solid oklch(0.72 0.25 285 / 0.45)",
+                  boxShadow: "0 1px 3px oklch(0 0 0 / 0.08)",
+                }}
               >
                 {(["open", "in_progress", "resolved", "closed"] as const).map((s) => (
                   <option key={s} value={s}>{STATUS_LABELS[s]}</option>
