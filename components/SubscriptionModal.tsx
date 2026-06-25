@@ -37,22 +37,20 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
   const [error, setError] = useState<string | null>(null);
   const [subscribing, setSubscribing] = useState(false);
 
-  // SWR caches the response in-memory across modal opens, so the
-  // second + opens render instantly with last-known data while a
-  // background revalidate keeps it fresh. fetcher omits cache:
-  // "no-store" so the browser + edge can honor the Cache-Control
-  // headers we set on /api/plans (30s s-maxage + SWR 5min). The
-  // founder-spots query is left more aggressive (revalidate on
-  // focus + 30s polling) because the slot counter ticks down on
-  // every claim — staleness there is more visible to the user.
+  // SWR caches the response in-memory across modal opens for instant
+  // re-render, but each fetch bypasses the browser + edge cache so
+  // admin-edited features show up immediately. The founder-spots
+  // query is also live since the slot counter ticks down on every
+  // claim — staleness there is visible to the user.
   const swrFetcher = async (url: string) => {
-    const r = await fetch(url);
+    const r = await fetch(url, { cache: "no-store" });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return r.json();
   };
   const { data: plansData } = useSWR<{ plans?: PlanDTO[] }>("/api/plans", swrFetcher, {
-    revalidateOnFocus: false,
-    dedupingInterval: 30_000,
+    revalidateOnMount: true,
+    revalidateOnFocus: true,
+    dedupingInterval: 2_000,
   });
   const { data: founderData } = useSWR<{ active?: boolean; spots_left?: number }>(
     "/api/founder-spots",

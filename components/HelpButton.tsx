@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { HelpCircle, Send, X, CheckCircle2 } from "lucide-react";
+import Image from "next/image";
+import { HelpCircle, Send, X, CheckCircle2, ChevronDown } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -59,6 +60,9 @@ export function HelpButton() {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Index of the FAQ row currently expanded. -1 = all collapsed.
+  // Accordion-style: only one open at a time keeps the modal calm.
+  const [openFaqIdx, setOpenFaqIdx] = useState<number>(-1);
 
   // Look up the signed-in email lazily on first modal open. Saves the
   // unauthenticated case from paying for an auth round-trip on every
@@ -135,37 +139,50 @@ export function HelpButton() {
           className={
             // Mobile: keep the centered sheet — easier to thumb-reach and
             // the floating button is also nearer the center thumb zone.
-            // Desktop (sm+): anchor bottom-right, just above the help
-            // bubble (which lives at right-5 / bottom-5, 48px tall).
-            // bottom-20 = 80px → ~12px gap above the bubble. Width
-            // bumped to max-w-xl (576px) so the FAQ list + contact form
-            // breathe without crowding.
+            // Desktop (sm+): anchor bottom-right and stretch the modal
+            // all the way to the bottom edge of the viewport. sm:bottom-5
+            // matches the help bubble's bottom alignment so the modal
+            // sits flush with the same baseline. Width stays at max-w-xl
+            // (576px) so the FAQ list + contact form breathe without
+            // crowding.
             //
             // flex column + overflow-hidden keeps the inner scroll area
             // (FAQ + form combined) constrained inside the modal so the
             // contact form can't visibly bleed past the bottom edge on
             // shorter viewports.
             "max-w-lg sm:max-w-xl " +
-            "sm:top-auto sm:left-auto sm:bottom-20 sm:right-5 " +
+            "sm:top-5 sm:left-auto sm:bottom-5 sm:right-5 " +
             "sm:translate-x-0 sm:translate-y-0 " +
-            "max-h-[calc(100vh-6rem)] " +
+            "max-h-[calc(100vh-2.5rem)] " +
             "flex flex-col overflow-hidden"
           }
         >
-          <DialogHeader className="shrink-0">
+          <DialogHeader
+            className="shrink-0 -mx-4 -mt-4 px-4 pt-4 pb-3 rounded-t-xl"
+            style={{ background: "oklch(0.72 0.25 285)" }}
+          >
             <div className="flex items-center justify-between gap-3">
-              <DialogTitle>Help &amp; Support</DialogTitle>
+              <DialogTitle className="!text-white inline-flex items-center gap-2">
+                <Image
+                  src="/heclus-icon-white-transparent.svg"
+                  alt="Heclus"
+                  width={40}
+                  height={40}
+                  className="shrink-0"
+                />
+                Help &amp; Support
+              </DialogTitle>
               <button
                 type="button"
                 onClick={closeAndReset}
                 aria-label="Close help"
-                className="w-7 h-7 rounded-md inline-flex items-center justify-center transition-colors hover:bg-zinc-100 cursor-pointer"
+                className="w-7 h-7 rounded-md inline-flex items-center justify-center transition-colors cursor-pointer hover:bg-white/15"
               >
-                <X size={16} className="text-zinc-600" />
+                <X size={16} className="text-white" />
               </button>
             </div>
-            <DialogDescription>
-              Common questions first. Still stuck? Send a ticket — humans usually reply within a business day.
+            <DialogDescription className="!text-white/90">
+              Get help with common issues or submit a support ticket.
             </DialogDescription>
           </DialogHeader>
 
@@ -173,13 +190,35 @@ export function HelpButton() {
               min-h-0 + flex-1 lets it shrink inside the flex parent so
               the form section can never overflow past the modal bottom. */}
           <div className="flex-1 min-h-0 overflow-y-auto pr-1 -mr-1">
-            <div className="space-y-4 mt-2">
-              {FAQS.map((faq) => (
-                <div key={faq.q} className="space-y-1">
-                  <p className="text-sm font-semibold text-zinc-900">{faq.q}</p>
-                  <p className="text-sm text-zinc-600 leading-relaxed">{faq.a}</p>
-                </div>
-              ))}
+            <div className="space-y-2 mt-2">
+              {FAQS.map((faq, idx) => {
+                const isOpen = openFaqIdx === idx;
+                return (
+                  <div
+                    key={faq.q}
+                    className="rounded-lg overflow-hidden transition-all"
+                    style={{ border: "1px solid oklch(0 0 0 / 0.08)" }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setOpenFaqIdx(isOpen ? -1 : idx)}
+                      className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left cursor-pointer hover:bg-zinc-50 transition-colors"
+                    >
+                      <span className="text-sm font-semibold text-zinc-900">{faq.q}</span>
+                      <ChevronDown
+                        size={16}
+                        className="shrink-0 text-zinc-500 transition-transform"
+                        style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}
+                      />
+                    </button>
+                    {isOpen && (
+                      <div className="px-3 pb-3 -mt-0.5">
+                        <p className="text-sm text-zinc-600 leading-relaxed">{faq.a}</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
 
             <div className="mt-5 pt-4 border-t border-zinc-200">
@@ -203,24 +242,44 @@ export function HelpButton() {
               </div>
             ) : (
               <form onSubmit={submit} className="space-y-3">
-                <p className="text-sm font-semibold text-zinc-900">Contact us</p>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-zinc-600">Your email</label>
-                  <input
-                    type="email"
-                    value={emailInput}
-                    onChange={(e) => setEmailInput(e.target.value)}
-                    disabled={sending || !!authEmail}
-                    required
-                    placeholder="you@example.com"
-                    className="w-full px-3 py-2 rounded-lg text-sm outline-none bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400 disabled:bg-zinc-50 disabled:text-zinc-500"
+                <div className="flex items-center gap-3">
+                  <Image
+                    src="/avartar.png"
+                    alt="Heclus Support"
+                    width={44}
+                    height={44}
+                    className="rounded-full shrink-0"
                   />
-                  {authEmail && (
-                    <p className="text-[11px] text-zinc-500">Sent from your signed-in account.</p>
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-900">Contact us</p>
+                    <p className="text-xs text-zinc-500">A real person will review your ticket and response within 24 hours.</p>
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold text-zinc-900">Your email</label>
+                  {authEmail ? (
+                    <>
+                      <p className="text-sm font-bold text-zinc-900 break-all">{emailInput}</p>
+                      <p className="text-[11px] text-zinc-500">Sent from your signed-in account.</p>
+                    </>
+                  ) : (
+                    <input
+                      type="email"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                      disabled={sending}
+                      required
+                      placeholder="you@example.com"
+                      className="w-full px-3 py-2.5 rounded-lg text-sm outline-none bg-white text-zinc-900 transition-all"
+                      style={{
+                        border: "2px solid oklch(0.72 0.25 285 / 0.45)",
+                        boxShadow: "0 1px 3px oklch(0 0 0 / 0.08)",
+                      }}
+                    />
                   )}
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-zinc-600">Subject</label>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold text-zinc-900">Subject</label>
                   <input
                     type="text"
                     value={subject}
@@ -229,11 +288,15 @@ export function HelpButton() {
                     required
                     maxLength={200}
                     placeholder="Short summary of the issue"
-                    className="w-full px-3 py-2 rounded-lg text-sm outline-none bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400"
+                    className="w-full px-3 py-2.5 rounded-lg text-sm outline-none bg-white text-zinc-900 transition-all"
+                    style={{
+                      border: "2px solid oklch(0.72 0.25 285 / 0.45)",
+                      boxShadow: "0 1px 3px oklch(0 0 0 / 0.08)",
+                    }}
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-xs font-semibold text-zinc-600">Message</label>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-bold text-zinc-900">Message</label>
                   <textarea
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
@@ -241,7 +304,11 @@ export function HelpButton() {
                     required
                     rows={4}
                     placeholder="What's going on? Include any error message, project ID, or steps to reproduce."
-                    className="w-full px-3 py-2 rounded-lg text-sm outline-none bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400 resize-y"
+                    className="w-full px-3 py-2.5 rounded-lg text-sm outline-none bg-white text-zinc-900 resize-y transition-all"
+                    style={{
+                      border: "2px solid oklch(0.72 0.25 285 / 0.45)",
+                      boxShadow: "0 1px 3px oklch(0 0 0 / 0.08)",
+                    }}
                   />
                 </div>
                 {error && (
