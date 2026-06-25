@@ -317,6 +317,16 @@ export default function AssemblePage({ params }: PageProps) {
   const previewUrl: string | null = (reassembleMode || assembling) ? null : dbAssembledUrl;
   const showPreview = !!previewUrl;
 
+  // Inline preview-load error. The <video> element fires onError
+  // when the src URL is unreachable (worker temp file vanished, R2
+  // 404, etc.). We don't toast (it was popping every first page load
+  // for stale R2 URLs and felt like a hard error); we set this flag
+  // so an inline note appears under the player. onLoadedMetadata
+  // clears the flag, so a transient buffering hiccup that recovers
+  // doesn't leave the warning stuck.
+  const [previewLoadError, setPreviewLoadError] = useState(false);
+  useEffect(() => { setPreviewLoadError(false); }, [previewUrl]);
+
   useEffect(() => {
     // Don't auto-restore the preview URL while the user is actively
     // reassembling — the SWR cache can still have stale project data
@@ -1277,15 +1287,29 @@ export default function AssemblePage({ params }: PageProps) {
 
             {/* Assembly controls */}
             <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-              {showPreview && previewUrl && (
+              {showPreview && previewUrl && !previewLoadError && (
                 <video
                   key={previewUrl}
                   src={previewUrl}
                   controls
                   className="w-full rounded-xl"
                   style={{ background: "var(--bg-page-2)" }}
-                  onError={() => toast.error("Preview unavailable — the worker may have restarted. Try exporting or click Reassemble.")}
+                  onError={() => setPreviewLoadError(true)}
+                  onLoadedMetadata={() => setPreviewLoadError(false)}
                 />
+              )}
+              {showPreview && previewLoadError && (
+                <div
+                  className="w-full rounded-xl p-5 text-center space-y-1"
+                  style={{ background: "var(--bg-page-2)", border: "1px solid var(--bd-7)" }}
+                >
+                  <p className="text-sm font-medium" style={{ color: "var(--c-78)" }}>
+                    Preview unavailable
+                  </p>
+                  <p className="text-xs" style={{ color: "var(--c-50)" }}>
+                    The cached preview file may have expired. Click Reassemble to rebuild it.
+                  </p>
+                </div>
               )}
 
               {assembling && (() => {
@@ -1453,18 +1477,31 @@ export default function AssemblePage({ params }: PageProps) {
                   <div className="flex gap-2">
                     <button onClick={() => setReassembleConfirmOpen(true)}
                       className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all"
-                      style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
+                      style={previewLoadError
+                        // When the preview can't load, Reassemble is the
+                        // only path forward — promote it to the theme
+                        // purple so it reads as the primary CTA.
+                        ? { background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }
+                        : { background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
                       Reassemble
                     </button>
-                    <a href={previewUrl} download="assembled.mp4"
-                      className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all"
-                      style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                      ↓ Export
-                    </a>
+                    {/* Hide Export when the preview can't load — its
+                        href points at the same URL the player just
+                        failed on, so clicking it would 404 too.
+                        Reassemble fills the row via flex-1. */}
+                    {!previewLoadError && (
+                      <a href={previewUrl} download="assembled.mp4"
+                        className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all"
+                        style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                        ↓ Export
+                      </a>
+                    )}
                   </div>
                   <button
                     onClick={() => router.push(`/projects/${projectId}/thumbnails`)}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all"
+                    disabled={previewLoadError}
+                    title={previewLoadError ? "Reassemble the video before continuing — the cached preview can't be loaded." : undefined}
+                    className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)", marginTop: "50px", marginBottom: "20px" }}
                   >
                     Continue →
