@@ -57,9 +57,18 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
     swrFetcher,
     { revalidateOnFocus: true, refreshInterval: 30_000 },
   );
+  // Used solely to read is_production_test for the current user — the
+  // production-test plan card is otherwise hidden so customers never
+  // see it. is_admin is also returned here but we don't need it.
+  const { data: usageData } = useSWR<{ is_production_test?: boolean }>(
+    "/api/usage",
+    swrFetcher,
+    { revalidateOnFocus: true },
+  );
   const plans: PlanDTO[] | null = plansData?.plans ?? null;
   const founderActive: boolean | null = typeof founderData?.active === "boolean" ? founderData.active : null;
   const spotsLeft: number | null = typeof founderData?.spots_left === "number" ? founderData.spots_left : null;
+  const isProductionTest = usageData?.is_production_test === true;
 
   // Seed the selectedPlan once plans land. SWR may resolve before
   // this effect runs (cache hit), so we guard on a non-empty plans
@@ -78,12 +87,13 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
   const visiblePlans = useMemo(() => {
     if (!plans) return [];
     return plans
-      // production-test is admin-only verification harness — never
-      // surface it in the customer subscription modal even though the
-      // DB row + admin Payment tab still need it.
-      .filter((p) => p.slug !== PRODUCTION_TEST_SLUG)
+      // production-test is the live-Dodo verification harness — only
+      // accounts flagged with app_metadata.is_production_test see it,
+      // so real customers never get a "Test" card mixed in with their
+      // checkout options.
+      .filter((p) => p.slug !== PRODUCTION_TEST_SLUG || isProductionTest)
       .filter((p) => !p.isFounder || founderAvailable);
-  }, [plans, founderAvailable]);
+  }, [plans, founderAvailable, isProductionTest]);
 
   // If the currently-selected slug is a founder plan and founder is no
   // longer available, fall back to the first non-founder, non-disabled

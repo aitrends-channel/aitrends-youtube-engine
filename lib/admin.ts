@@ -32,3 +32,19 @@ export function isAdminUser(user: User | null | undefined): boolean {
   const flag = (user.app_metadata as { is_admin?: unknown } | undefined)?.is_admin;
   return flag === true;
 }
+
+/**
+ * "Production-test" accounts are the only users who see the
+ * production-test plan card in the SubscriptionModal. The flag exists
+ * so an internal QA account can run a real live Dodo charge against
+ * the production deployment without exposing that card to customers.
+ *
+ * Pure synchronous read off app_metadata.is_production_test — set
+ * via the admin dashboard's "Flag as production test account" kebab
+ * action (POST /api/admin/users/[email]/flag-production-test).
+ */
+export function isProductionTestUser(user: User | null | undefined): boolean {
+  if (!user) return false;
+  const flag = (user.app_metadata as { is_production_test?: unknown } | undefined)?.is_production_test;
+  return flag === true;
+}
