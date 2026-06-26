@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -4074,6 +4074,9 @@ export default function AdminPage() {
   // spinner / confirm flow looks identical from the user's side.
   const [demotingUser, setDemotingUser] = useState<string | null>(null);
   const [demoteTarget, setDemoteTarget] = useState<AdminUser | null>(null);
+  // Track which user row is mid-flag so the kebab button shows a
+  // spinner and the menu item disables itself during the request.
+  const [flaggingProdTest, setFlaggingProdTest] = useState<string | null>(null);
   const [usersPage, setUsersPage] = useState(1);
   const [userSearch, setUserSearch] = useState("");
   type PlanBucket = "all" | "admin" | "founder" | "pro" | "starter" | "free" | "pending";
@@ -4176,6 +4179,21 @@ export default function AdminPage() {
       toast.error(err instanceof Error ? err.message : "Failed to remove admin");
     } finally {
       setDemotingUser(null);
+    }
+  }
+
+  async function handleFlagProductionTest(email: string) {
+    setFlaggingProdTest(email);
+    try {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(email)}/flag-production-test`, { method: "POST" });
+      const json = await res.json().catch(() => ({})) as { ok?: boolean; alreadyFlagged?: boolean; error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to flag");
+      toast.success(json.alreadyFlagged ? `${email} is already a production test account` : `${email} flagged as production test`);
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to flag account");
+    } finally {
+      setFlaggingProdTest(null);
     }
   }
 
@@ -4900,14 +4918,14 @@ export default function AdminPage() {
                             <button
                               type="button"
                               onClick={() => setOpenUserMenu(openUserMenu === u.email ? null : u.email)}
-                              disabled={removing === u.email || promotingUser === u.email || demotingUser === u.email}
+                              disabled={removing === u.email || promotingUser === u.email || demotingUser === u.email || flaggingProdTest === u.email}
                               className="w-7 h-7 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 inline-flex items-center justify-center"
                               style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)", color: "var(--c-55)" }}
                               aria-label="User actions"
                               aria-haspopup="menu"
                               aria-expanded={openUserMenu === u.email}
                             >
-                              {(removing === u.email || promotingUser === u.email || demotingUser === u.email)
+                              {(removing === u.email || promotingUser === u.email || demotingUser === u.email || flaggingProdTest === u.email)
                                 ? <Spinner size={12} />
                                 : <MoreVertical size={14} />}
                             </button>
@@ -4930,16 +4948,30 @@ export default function AdminPage() {
                                   }}
                                 >
                                   {u.isAdmin ? (
-                                    <button
-                                      type="button"
-                                      role="menuitem"
-                                      onClick={() => { setOpenUserMenu(null); setDemoteTarget(u); }}
-                                      className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0.6_0.22_25_/_0.08)] flex items-center gap-2 cursor-pointer"
-                                      style={{ color: "oklch(0.6 0.22 25)" }}
-                                    >
-                                      <Crown size={12} />
-                                      Remove admin
-                                    </button>
+                                    <>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => { setOpenUserMenu(null); setDemoteTarget(u); }}
+                                        className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0.6_0.22_25_/_0.08)] flex items-center gap-2 cursor-pointer"
+                                        style={{ color: "oklch(0.6 0.22 25)" }}
+                                      >
+                                        <Crown size={12} />
+                                        Remove admin
+                                      </button>
+                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => { setOpenUserMenu(null); handleFlagProductionTest(u.email); }}
+                                        disabled={flaggingProdTest === u.email}
+                                        className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0_0_0_/_0.04)] flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                        style={{ color: "oklch(0.45 0.15 145)" }}
+                                      >
+                                        <FlaskConical size={12} />
+                                        Flag as production test account
+                                      </button>
+                                    </>
                                   ) : (
                                     <>
                                       <button
@@ -4951,6 +4983,17 @@ export default function AdminPage() {
                                       >
                                         <Crown size={12} />
                                         Make admin
+                                      </button>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => { setOpenUserMenu(null); handleFlagProductionTest(u.email); }}
+                                        disabled={flaggingProdTest === u.email}
+                                        className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0_0_0_/_0.04)] flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                        style={{ color: "oklch(0.45 0.15 145)" }}
+                                      >
+                                        <FlaskConical size={12} />
+                                        Flag as production test account
                                       </button>
                                       <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
                                       <button
