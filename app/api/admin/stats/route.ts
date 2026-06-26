@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
-import { isAdminUser } from "@/lib/admin";
+import { isAdminUser, isProductionTestUser } from "@/lib/admin";
 import { requireAdmin } from "@/lib/admin-server";
 import { getPlans } from "@/lib/plans";
 import { isProductionEnv } from "@/lib/env";
@@ -159,6 +159,10 @@ export async function GET() {
         // "Make admin" / "Remove" actions without re-deriving it
         // client-side from a hardcoded email list.
         isAdmin,
+        // Surface the production-test flag so the users table can
+        // mark flagged accounts with a "- PT" suffix on the plan
+        // badge.
+        isProductionTest: isProductionTestUser(authUser),
       };
     }),
     // Emails in allowed_emails that haven't signed up yet
@@ -177,6 +181,7 @@ export async function GET() {
         nicheLimitOverride: null,
         effectiveNicheLimit: null,
         isAdmin: false,
+        isProductionTest: false,
       })),
   ];
 
