@@ -97,6 +97,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Payment not successful (status: ${result.status})` }, { status: 400 });
   }
 
+  // Log the full Dodo response on success so we can inspect available
+  // fields (e.g. subscription_id presence, period dates) for a given
+  // plan/product configuration. Safe to keep on — Dodo doesn't return
+  // card numbers in this payload.
+  console.log(
+    `DODO RESPONSE: plan=${plan} payment_id=${payment_id} body=${JSON.stringify(result)}`,
+  );
+
   // Cross-check the paid amount against the claimed plan's price.
   // Dodo reports amounts in the smallest currency unit (cents).
   // Configurable via env so prices can change without redeploy.
