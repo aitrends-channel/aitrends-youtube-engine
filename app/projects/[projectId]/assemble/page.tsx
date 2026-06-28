@@ -1355,9 +1355,22 @@ export default function AssemblePage({ params }: PageProps) {
                   ...(captionsEnabled ? [{ key: "transcribe", label: "Transcribe voiceover", match: (s: string) => s.startsWith("Transcribing") }] : []),
                   ...(needsTranslate ? [{ key: "translate",  label: "Translate captions",   match: (s: string) => s.startsWith("Translating") }] : []),
                   { key: "clips",      label: "Process video clips", match: (s: string) => s.startsWith("Processing") || s.startsWith("Downloading channel logo") || s.startsWith("Finalizing") },
-                  { key: "join",       label: "Join clips",          match: (s: string) => s === "Joining clips…" },
+                  // "Join clips" absorbs the freeze-pad pass and any
+                  // Resume-path "Restoring joined/padded video…" line.
+                  // Pad only fires in legacy mode when the voiceover
+                  // has trailing silence — too situational to warrant
+                  // its own visible step, and folding it in here keeps
+                  // the stage count stable across runs.
+                  { key: "join",       label: "Join clips",          match: (s: string) => s === "Joining clips…" || s.startsWith("Padding video") || s.startsWith("Restoring joined") || s.startsWith("Restoring padded") },
                   ...(hasBgm ? [{ key: "bgm", label: "Download background music", match: (s: string) => s.startsWith("Downloading background music") }] : []),
-                  { key: "mix",        label: hasBgm ? "Mix voiceover + music" : "Mix voiceover", match: (s: string) => s.startsWith("Mixing") },
+                  { key: "mix",        label: hasBgm ? "Mix voiceover + music" : "Mix voiceover", match: (s: string) => s.startsWith("Mixing") || s.startsWith("Restoring mixed") },
+                  // Finalize covers the post-mix burn passes that run
+                  // on large projects (>80 beats or safe mode): the
+                  // captions/logo bake-in, the resolution upscale, or
+                  // both. Without this stage the progress UI froze on
+                  // the previous step while the worker was actively
+                  // doing a multi-minute re-encode here.
+                  { key: "finalize",   label: "Finalize video",      match: (s: string) => s.startsWith("Applying final burn") || s.startsWith("Upscaling to") },
                   { key: "upload",     label: "Upload to cloud",     match: (s: string) => s.startsWith("Uploading") },
                 ];
                 // Monotonic stage index: once we've seen progress to
