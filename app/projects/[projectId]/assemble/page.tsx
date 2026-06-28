@@ -472,13 +472,12 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }
 
-  // Skip the final-burn pass and ship the in-progress preview
-  // (mixed.mp4) as the final assembled video. The worker watches
-  // this flag the same way it watches assembly_stop_requested and
-  // promotes assembly_preview_url to assembled_url with status=done
-  // when it sees the abort. Only meaningful while
-  // project.assembly_preview_url is set — the button below is
-  // gated on that.
+  // Step 1 of the two-step "ship the preview" flow.
+  // PATCHes the finalize-preview flag; the worker watches it
+  // alongside assembly_stop_requested and aborts to a stopped state
+  // with the flag preserved. The UI then shows a Continue button
+  // (in place of Resume) which calls commitPreview() to actually
+  // promote the preview to assembled_url.
   async function finalizeWithPreview() {
     try {
       const res = await fetch(`/api/projects/${projectId}`, {
@@ -493,6 +492,31 @@ export default function AssemblePage({ params }: PageProps) {
       await mutate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Finalize failed");
+    }
+  }
+
+  // Step 2 of the two-step flow. Called from the Continue button on
+  // the stopped panel. Promotes assembly_preview_url to assembled_url
+  // and flips the project to done — no worker round-trip needed
+  // since mixed.mp4 is already in R2.
+  const [committingPreview, setCommittingPreview] = useState(false);
+  async function commitPreview() {
+    setCommittingPreview(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commit_preview: true }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to commit preview");
+      }
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not use this preview");
+    } finally {
+      setCommittingPreview(false);
     }
   }
 
@@ -1549,37 +1573,61 @@ export default function AssemblePage({ params }: PageProps) {
                     </ul>
 
                     <p className="text-[11px] text-center leading-snug" style={{ color: paused ? "oklch(0.7 0.15 60)" : "var(--c-45)" }}>
-                      {/* When the user has clicked Stop or Use this
-                          version but the worker hasn't acknowledged
-                          yet (status still "processing"), the last
-                          assembleStatus would read like normal progress
-                          and make the click feel ignored. Surface the
-                          right "…" line instead. Once the worker
-                          transitions to "stopped"/"done", the
+                      {/* While the worker is acknowledging an
+                          interrupt, surface the right "…" line so
+                          the click doesn't feel ignored. Once the
+                          worker transitions to stopped/done, the
                           useEffect above sets assembleStatus to a
                           terminal line and we fall through. */}
                       {finalizeRequested && !stopped
-                        ? "Finalizing with current preview…"
+                        ? "Stopping to confirm preview…"
                         : stopRequested && !stopped
                         ? "Stopping…"
                         : (assembleStatus || "Working…")}
                     </p>
 
                     {project?.assembly_status === "stopped" ? (
-                      <div className="flex gap-2">
-                        <button onClick={() => setCancelAssemblyConfirmOpen(true)}
-                          disabled={cancellingAssembly}
-                          className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
-                          style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
-                          Cancel
-                        </button>
-                        <button onClick={resumeAssembly}
-                          disabled={cancellingAssembly}
-                          className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
-                          style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                          Resume
-                        </button>
-                      </div>
+                      // Two stopped flavors:
+                      //   - Stopped via "Use this version":
+                      //     assembly_finalize_preview_requested stays
+                      //     true after the worker's stop, signaling
+                      //     the user wants to ship the preview. Show
+                      //     Continue instead of Resume — clicking it
+                      //     promotes the preview to assembled_url and
+                      //     marks the assembly done without running
+                      //     any remaining work.
+                      //   - Stopped via Stop: the usual Resume path.
+                      finalizeRequested ? (
+                        <div className="flex gap-2">
+                          <button onClick={() => setCancelAssemblyConfirmOpen(true)}
+                            disabled={cancellingAssembly || committingPreview}
+                            className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
+                            style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
+                            Cancel
+                          </button>
+                          <button onClick={commitPreview}
+                            disabled={cancellingAssembly || committingPreview}
+                            className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+                            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                            {committingPreview ? "Continuing…" : "Continue"}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button onClick={() => setCancelAssemblyConfirmOpen(true)}
+                            disabled={cancellingAssembly}
+                            className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
+                            style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
+                            Cancel
+                          </button>
+                          <button onClick={resumeAssembly}
+                            disabled={cancellingAssembly}
+                            className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+                            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                            Resume
+                          </button>
+                        </div>
+                      )
                     ) : inProgressPreviewUrl ? (
                       // Two-button row whenever the in-progress preview
                       // is available: "Use this version" promotes the
