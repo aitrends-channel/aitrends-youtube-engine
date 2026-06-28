@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -20,6 +20,7 @@ import { isAdminUser } from "@/lib/admin";
 import EmailsPanel from "./EmailsPanel";
 import { TtsCostLens } from "@/components/admin/TtsCostLens";
 import { SupportPanel } from "@/components/admin/SupportPanel";
+import { MemoryPanel } from "@/components/admin/MemoryPanel";
 
 const PHASE_PATHS: Record<number, string> = {
   1: "channel", 2: "channel", 3: "channel", 4: "channel", 5: "channel",
@@ -4109,11 +4110,11 @@ export default function AdminPage() {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [hoveredRevIdx, setHoveredRevIdx] = useState<number | null>(null);
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "activity" | "users" | "projects" | "revenue" | "logs" | "emails" | "support" | "setup"
+    "stats" | "activity" | "users" | "projects" | "revenue" | "logs" | "emails" | "support" | "memory" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "activity", "users", "projects", "revenue", "logs", "emails", "support", "setup"],
+    ["stats", "activity", "users", "projects", "revenue", "logs", "emails", "support", "memory", "setup"],
   );
 
   // Per-project cost rollups for the Videos → Cost sub-tab. Only
@@ -4418,6 +4419,7 @@ export default function AdminPage() {
             { id: "logs",     label: "Logs",     icon: FileText },
             { id: "emails",   label: "Emails",   icon: Mail },
             { id: "support",  label: "Support tickets",  icon: LifeBuoy },
+            { id: "memory",   label: "Memory",   icon: MemoryStick },
             { id: "setup",    label: "Config",   icon: Settings },
           ] as const;
 
@@ -5907,6 +5909,11 @@ export default function AdminPage() {
             <SupportPanel />
           </section>
         )}
+
+        {/* Memory section — per-stage RSS + timing from the video
+            worker's projects.assembly_metrics column. Helps locate
+            where assembly memory peaks and which stage takes longest. */}
+        {activeTab === "memory" && <MemoryPanel />}
 
         {/* Setup section — product-wide API key management */}
         {activeTab === "setup" && (
