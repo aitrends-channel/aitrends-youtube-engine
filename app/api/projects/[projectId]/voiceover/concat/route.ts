@@ -57,6 +57,22 @@ async function downloadToFile(url: string, dest: string): Promise<void> {
   });
 }
 
+// Bounded parallelism — run `items` through `fn` with at most `limit`
+// in flight. Used to cap ffmpeg/fetch fan-out on long projects where
+// Promise.all would otherwise blow past the lambda fd limit (EMFILE)
+// or undici's connection pool ("fetch failed").
+async function runWithLimit<T>(items: T[], limit: number, fn: (item: T, idx: number) => Promise<void>): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    while (true) {
+      const idx = next++;
+      if (idx >= items.length) return;
+      await fn(items[idx], idx);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+}
+
 function concatWithFfmpeg(listFile: string, outFile: string): Promise<void> {
   return new Promise((resolve, reject) => {
     ffmpeg()
