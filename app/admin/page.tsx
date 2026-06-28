@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, Mail, KeyRound, CreditCard, Rocket, X,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, Mail, KeyRound, CreditCard, Rocket, X, MemoryStick,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -17,6 +17,7 @@ import useSWR from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isAdminUser } from "@/lib/admin";
 import EmailsPanel from "./EmailsPanel";
+import { MemoryPanel } from "@/components/admin/MemoryPanel";
 
 const PHASE_PATHS: Record<number, string> = {
   1: "channel", 2: "channel", 3: "channel", 4: "channel", 5: "channel",
@@ -3568,11 +3569,11 @@ export default function AdminPage() {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [hoveredRevIdx, setHoveredRevIdx] = useState<number | null>(null);
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "activity" | "users" | "projects" | "revenue" | "logs" | "emails" | "setup"
+    "stats" | "activity" | "users" | "projects" | "revenue" | "logs" | "emails" | "memory" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "activity", "users", "projects", "revenue", "logs", "emails", "setup"],
+    ["stats", "activity", "users", "projects", "revenue", "logs", "emails", "memory", "setup"],
   );
 
   // Per-project cost rollups for the Videos → Cost sub-tab. Only
@@ -3824,6 +3825,7 @@ export default function AdminPage() {
             { id: "revenue",  label: "Revenue",  icon: DollarSign },
             { id: "logs",     label: "Logs",     icon: FileText },
             { id: "emails",   label: "Emails",   icon: Mail },
+            { id: "memory",   label: "Memory",   icon: MemoryStick },
             { id: "setup",    label: "Config",   icon: Settings },
           ] as const;
 
@@ -5232,6 +5234,12 @@ export default function AdminPage() {
         {/* Emails section — Inbox/Sent + compose. Backed by Hostinger
             IMAP/SMTP via /api/admin/emails. */}
         {activeTab === "emails" && <EmailsPanel />}
+
+        {/* Memory section — per-stage RSS + timing from the video
+            worker's projects.assembly_metrics column. Helps locate
+            where assembly memory peaks and which stage takes longest. */}
+        {activeTab === "memory" && <MemoryPanel />}
+
 
         {/* Setup section — product-wide API key management */}
         {activeTab === "setup" && (
