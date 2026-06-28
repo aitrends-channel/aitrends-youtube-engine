@@ -285,6 +285,7 @@ export default function AssemblePage({ params }: PageProps) {
   // instantly while the worker finishes its current ffmpeg stage and
   // persists the checkpoint.
   const stopRequested = !!project?.assembly_stop_requested;
+  const finalizeRequested = !!project?.assembly_finalize_preview_requested;
   // Confirm dialog for Reassemble. Reassemble doesn't start the run
   // directly anymore — it asks first, then on confirm flips the page
   // into reassembleMode, which hides the current assembled video and
@@ -316,6 +317,18 @@ export default function AssemblePage({ params }: PageProps) {
   const dbAssembledUrl = (project?.assembled_url as string | undefined) ?? null;
   const previewUrl: string | null = (reassembleMode || assembling) ? null : dbAssembledUrl;
   const showPreview = !!previewUrl;
+
+  // In-progress preview — the worker uploads mixed.mp4 (full audio +
+  // visuals at intermediate resolution, no captions/logo yet) as soon
+  // as the mix step lands, BEFORE the multi-minute final-burn pass.
+  // On the >80-beat path that burn can take 10-25 min; this gives
+  // the user something watchable while they wait. Only shown while
+  // assembly is still in progress; cleared by the worker on every
+  // terminal transition.
+  const inProgressPreviewUrl: string | null =
+    assembling && !reassembleMode
+      ? ((project?.assembly_preview_url as string | undefined) ?? null)
+      : null;
 
   // Inline preview-load error. The <video> element fires onError
   // when the src URL is unreachable (worker temp file vanished, R2
@@ -456,6 +469,30 @@ export default function AssemblePage({ params }: PageProps) {
       await mutate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Stop failed");
+    }
+  }
+
+  // Skip the final-burn pass and ship the in-progress preview
+  // (mixed.mp4) as the final assembled video. The worker watches
+  // this flag the same way it watches assembly_stop_requested and
+  // promotes assembly_preview_url to assembled_url with status=done
+  // when it sees the abort. Only meaningful while
+  // project.assembly_preview_url is set — the button below is
+  // gated on that.
+  async function finalizeWithPreview() {
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assembly_finalize_preview_requested: true }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to request finalize");
+      }
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Finalize failed");
     }
   }
 
@@ -1312,6 +1349,26 @@ export default function AssemblePage({ params }: PageProps) {
                 </div>
               )}
 
+              {/* In-progress preview — visible while assembling, only
+                  after the worker has uploaded mixed.mp4. The video is
+                  watchable but is missing the final-burn pass (captions
+                  + logo bake + upscale), so we label it clearly so the
+                  user knows the cosmetic touch-ups are still rendering. */}
+              {assembling && inProgressPreviewUrl && (
+                <div className="space-y-2">
+                  <video
+                    key={inProgressPreviewUrl}
+                    src={inProgressPreviewUrl}
+                    controls
+                    className="w-full rounded-xl"
+                    style={{ background: "var(--bg-page-2)" }}
+                  />
+                  <p className="text-[11px] text-center leading-snug" style={{ color: "oklch(0.72 0.18 60)" }}>
+                    Preview — captions, logo, and final resolution still rendering
+                  </p>
+                </div>
+              )}
+
               {assembling && (() => {
                 /* Stage-aware progress: the worker emits short status strings
                    for each phase via setProgress(); we match the current one
@@ -1323,9 +1380,10 @@ export default function AssemblePage({ params }: PageProps) {
                    stripe keep moving while we wait the few seconds for the
                    worker to acknowledge — visually indistinguishable from
                    normal progress, which makes the Stop click feel ignored.
-                   Active when EITHER stopRequested (user just clicked) or
+                   Active when stopRequested (user clicked Stop),
+                   finalizeRequested (user clicked Use this version), or
                    the worker has already transitioned to "stopped". */
-                const paused = stopRequested || project?.assembly_status === "stopped";
+                const paused = stopRequested || finalizeRequested || project?.assembly_status === "stopped";
                 const stopped = project?.assembly_status === "stopped";
                 // Matchers are tightened so each one only catches its own
                 // worker progress string. The old "Downloading" prefix
@@ -1482,15 +1540,20 @@ export default function AssemblePage({ params }: PageProps) {
                     </ul>
 
                     <p className="text-[11px] text-center leading-snug" style={{ color: paused ? "oklch(0.7 0.15 60)" : "var(--c-45)" }}>
-                      {/* When the user has clicked Stop but the worker
-                          hasn't acknowledged yet (status still
-                          "processing"), the last assembleStatus would
-                          read like normal progress and make Stop feel
-                          ignored. Surface "Stopping…" instead. Once the
-                          worker transitions to "stopped", the useEffect
-                          above sets assembleStatus to the stopped line
-                          so we fall through to the default branch. */}
-                      {paused && !stopped ? "Stopping…" : (assembleStatus || "Working…")}
+                      {/* When the user has clicked Stop or Use this
+                          version but the worker hasn't acknowledged
+                          yet (status still "processing"), the last
+                          assembleStatus would read like normal progress
+                          and make the click feel ignored. Surface the
+                          right "…" line instead. Once the worker
+                          transitions to "stopped"/"done", the
+                          useEffect above sets assembleStatus to a
+                          terminal line and we fall through. */}
+                      {finalizeRequested && !stopped
+                        ? "Finalizing with current preview…"
+                        : stopRequested && !stopped
+                        ? "Stopping…"
+                        : (assembleStatus || "Working…")}
                     </p>
 
                     {project?.assembly_status === "stopped" ? (
@@ -1506,6 +1569,26 @@ export default function AssemblePage({ params }: PageProps) {
                           className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
                           style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
                           Resume
+                        </button>
+                      </div>
+                    ) : inProgressPreviewUrl ? (
+                      // Two-button row whenever the in-progress preview
+                      // is available: "Use this version" promotes the
+                      // preview to the final assembled video and skips
+                      // the remaining final-burn re-encode (saves 5-25
+                      // min on long projects); Stop preserves the
+                      // checkpoint for later Resume. Disabled-state
+                      // labels reflect whichever click is in flight.
+                      <div className="flex gap-2">
+                        <button onClick={stopAssembly} disabled={stopRequested || finalizeRequested}
+                          className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
+                          style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
+                          {stopRequested ? "Stopping…" : "Stop"}
+                        </button>
+                        <button onClick={finalizeWithPreview} disabled={finalizeRequested || stopRequested}
+                          className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+                          style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                          {finalizeRequested ? "Finalizing…" : "Use this version"}
                         </button>
                       </div>
                     ) : (
