@@ -1316,7 +1316,17 @@ export default function AssemblePage({ params }: PageProps) {
                 /* Stage-aware progress: the worker emits short status strings
                    for each phase via setProgress(); we match the current one
                    to a known stage and render every stage with a done/doing/
-                   pending indicator + an overall % bar. */
+                   pending indicator + an overall % bar.
+
+                   `paused` freezes the animations the moment the user clicks
+                   Stop. Without this the per-step spinner + indeterminate
+                   stripe keep moving while we wait the few seconds for the
+                   worker to acknowledge — visually indistinguishable from
+                   normal progress, which makes the Stop click feel ignored.
+                   Active when EITHER stopRequested (user just clicked) or
+                   the worker has already transitioned to "stopped". */
+                const paused = stopRequested || project?.assembly_status === "stopped";
+                const stopped = project?.assembly_status === "stopped";
                 // Matchers are tightened so each one only catches its own
                 // worker progress string. The old "Downloading" prefix
                 // greedily swallowed bgm and logo downloads too, which
@@ -1392,17 +1402,28 @@ export default function AssemblePage({ params }: PageProps) {
                           ? Math.round((parseInt(clipMatch[1], 10) / parseInt(clipMatch[2], 10)) * 100)
                           : 0;
                         const showIndeterminate = doing && !clipMatch;
+                        // Active-step palette swaps to amber when paused so
+                        // the row visually reads "halted here" rather than
+                        // "still working." `pausedHere` only fires on the
+                        // doing step; other steps keep their done/pending
+                        // styling regardless.
+                        const pausedHere = paused && doing;
                         return (
                           <li key={s.key} className="space-y-1">
                             <div className="flex items-center gap-2 text-xs">
                               <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
                                 style={{
-                                  background: done ? "oklch(0.55 0.15 145 / 0.15)" : doing ? "oklch(0.72 0.25 285 / 0.15)" : "var(--bg-track)",
-                                  border: `1px solid ${done ? "oklch(0.55 0.15 145 / 0.4)" : doing ? "oklch(0.72 0.25 285 / 0.4)" : "var(--bd-7)"}`,
-                                  color: done ? "oklch(0.7 0.15 145)" : doing ? "oklch(0.88 0.12 285)" : "var(--c-35)",
+                                  background: done ? "oklch(0.55 0.15 145 / 0.15)" : pausedHere ? "oklch(0.65 0.18 60 / 0.15)" : doing ? "oklch(0.72 0.25 285 / 0.15)" : "var(--bg-track)",
+                                  border: `1px solid ${done ? "oklch(0.55 0.15 145 / 0.4)" : pausedHere ? "oklch(0.65 0.18 60 / 0.5)" : doing ? "oklch(0.72 0.25 285 / 0.4)" : "var(--bd-7)"}`,
+                                  color: done ? "oklch(0.7 0.15 145)" : pausedHere ? "oklch(0.72 0.18 60)" : doing ? "oklch(0.88 0.12 285)" : "var(--c-35)",
                                   fontSize: "9px",
                                 }}>
-                                {done ? "✓" : doing ? (
+                                {done ? "✓" : pausedHere ? (
+                                  // Pause glyph: two short vertical bars.
+                                  // Inline SVG so it inherits currentColor
+                                  // and doesn't pull in an icon dep.
+                                  <svg width="7" height="8" viewBox="0 0 6 8" fill="currentColor"><rect x="0" y="0" width="2" height="8" rx="0.5" /><rect x="4" y="0" width="2" height="8" rx="0.5" /></svg>
+                                ) : doing ? (
                                   <span className="w-2 h-2 border-[1.5px] border-current border-t-transparent rounded-full animate-spin" />
                                 ) : i + 1}
                               </span>
@@ -1425,9 +1446,15 @@ export default function AssemblePage({ params }: PageProps) {
                               )}
                             </div>
                             <div className="ml-6 h-1 rounded-full overflow-hidden relative" style={{ background: "var(--bg-track)" }}>
-                              {showIndeterminate ? (
+                              {showIndeterminate && !pausedHere ? (
                                 <div className="progress-indeterminate h-full"
                                   style={{ background: "oklch(0.72 0.25 285)" }} />
+                              ) : pausedHere ? (
+                                // Frozen stripe — solid amber at a fixed
+                                // fill so the user can still see this is
+                                // the active step, just not animating.
+                                <div className="h-full"
+                                  style={{ width: "30%", background: "oklch(0.72 0.18 60)" }} />
                               ) : (
                                 <div className="h-full transition-all duration-500"
                                   style={{
@@ -1441,8 +1468,16 @@ export default function AssemblePage({ params }: PageProps) {
                       })}
                     </ul>
 
-                    <p className="text-[11px] text-center leading-snug" style={{ color: "var(--c-45)" }}>
-                      {assembleStatus || "Working…"}
+                    <p className="text-[11px] text-center leading-snug" style={{ color: paused ? "oklch(0.7 0.15 60)" : "var(--c-45)" }}>
+                      {/* When the user has clicked Stop but the worker
+                          hasn't acknowledged yet (status still
+                          "processing"), the last assembleStatus would
+                          read like normal progress and make Stop feel
+                          ignored. Surface "Stopping…" instead. Once the
+                          worker transitions to "stopped", the useEffect
+                          above sets assembleStatus to the stopped line
+                          so we fall through to the default branch. */}
+                      {paused && !stopped ? "Stopping…" : (assembleStatus || "Working…")}
                     </p>
 
                     {project?.assembly_status === "stopped" ? (
