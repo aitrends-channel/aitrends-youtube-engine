@@ -62,6 +62,16 @@ export async function GET(
       imageUrl: t.image_url,
       imageStatus: t.image_status,
     })),
+  }, {
+    // Polling clients (SWR every 5s on the assemble page) need fresh
+    // data to see the worker's column writes — without no-store the
+    // browser/CDN HTTP cache could serve a stale response and the
+    // UI wouldn't pick up new fields (e.g. assembly_preview_url
+    // landing mid-assembly) until a hard refresh.
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Pragma": "no-cache",
+    },
   });
 }
 

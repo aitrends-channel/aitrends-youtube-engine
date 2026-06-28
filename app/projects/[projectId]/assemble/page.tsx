@@ -1462,6 +1462,15 @@ export default function AssemblePage({ params }: PageProps) {
                       {stages.map((s, i) => {
                         const done = i < currentIdx;
                         const doing = i === currentIdx;
+                        // While the in-progress preview is showing,
+                        // the user already knows the early stages
+                        // completed — they're watching the video.
+                        // Collapse the list to only the still-active
+                        // and pending steps so the panel focuses on
+                        // what they're waiting for (Finalize, Upload).
+                        // The overall % bar + "Step X of N" header
+                        // above keep showing total progress.
+                        if (inProgressPreviewUrl && done) return null;
                         /* Per-stage progress: parse "X of N" out of the status
                            when possible (clips stage). Otherwise we show an
                            indeterminate animated stripe so the user still sees
