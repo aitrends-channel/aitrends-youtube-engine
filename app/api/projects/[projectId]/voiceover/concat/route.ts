@@ -154,16 +154,26 @@ export async function POST(req: Request, { params }: { params: { projectId: stri
       audioPaths[i] = dest;
     }));
 
-    // Optional silence-trim pass per beat. Runs in parallel for speed;
-    // every output uses the same codec/sample rate (mp3 128k 44.1kHz)
-    // so the downstream concat -c copy is still valid.
-    const concatPaths = trimSilence
-      ? await Promise.all(audioPaths.map(async (src, i) => {
-          const dest = path.join(tmpDir, `t${String(i).padStart(4, "0")}.mp3`);
-          await trimSilenceOne(src, dest);
-          return dest;
-        }))
-      : audioPaths;
+    // Optional silence-trim pass per beat. Bounded at 4 concurrent
+    // ffmpeg spawns — Promise.all over hundreds of beats blew past
+    // the Vercel lambda's file-descriptor limit with EMFILE on big
+    // projects. Each ffmpeg spawn holds 3 descriptors (stdio) + the
+    // two file handles it opens, and the default ulimit is 1024.
+    // Cap at 4 leaves comfortable headroom for the lambda's own
+    // sockets and any other concurrent work. Every output still uses
+    // mp3 128k 44.1kHz so the downstream concat -c copy is valid.
+    let concatPaths: string[];
+    if (trimSilence) {
+      const trimmed: string[] = new Array(audioPaths.length);
+      await runWithLimit(audioPaths, 4, async (src, i) => {
+        const dest = path.join(tmpDir, `t${String(i).padStart(4, "0")}.mp3`);
+        await trimSilenceOne(src, dest);
+        trimmed[i] = dest;
+      });
+      concatPaths = trimmed;
+    } else {
+      concatPaths = audioPaths;
+    }
 
     const listPath = path.join(tmpDir, "concat.txt");
     await fs.writeFile(
