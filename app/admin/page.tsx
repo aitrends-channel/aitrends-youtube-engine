@@ -1748,7 +1748,7 @@ function AssemblyBeatRulesPanel() {
       <div className="space-y-2">
         {draft.map((rule, idx) => (
           <div key={idx} className="p-3 rounded-lg space-y-2"
-            style={{ background: "white", border: "4px solid oklch(0.72 0.25 285)" }}>
+            style={{ background: "white", border: "4px solid oklch(0.72 0.25 285 / 0.4)", marginTop: 4, marginBottom: 4 }}>
             <div className="flex items-center gap-2">
               <input
                 type="text"
