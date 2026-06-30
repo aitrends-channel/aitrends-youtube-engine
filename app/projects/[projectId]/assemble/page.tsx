@@ -92,25 +92,6 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }, [project?.current_state, projectId, mutate]);
 
-  // Read the admin assembly-config flag once at mount. Drives the
-  // wording on the in-progress preview block: when Stage B already
-  // encoded at final resolution, Stage F is only "Burning captions";
-  // when Stage B used the 720p intermediate, Stage F is both
-  // "Captions + final resolution". Null while loading — we default
-  // the label to the more conservative wording.
-  const [beatsAtFinalRes, setBeatsAtFinalRes] = useState<boolean | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/assembly-config")
-      .then((r) => r.json())
-      .then((d: { beats_at_final_res?: boolean }) => {
-        if (!cancelled && typeof d.beats_at_final_res === "boolean") {
-          setBeatsAtFinalRes(d.beats_at_final_res);
-        }
-      })
-      .catch(() => { /* non-blocking — label falls back to the conservative wording */ });
-    return () => { cancelled = true; };
-  }, []);
 
   // Hydrate BGM, logo, trim-silence, and the five caption knobs from
   // the project row on first load. Migrations 047 (BGM + logo) and 051
@@ -1428,9 +1409,7 @@ export default function AssemblePage({ params }: PageProps) {
                     style={{ background: "var(--bg-page-2)" }}
                   />
                   <p className="text-sm text-center font-medium leading-snug" style={{ color: "oklch(0.72 0.18 60)" }}>
-                    {beatsAtFinalRes
-                      ? "Preview — Burning captions"
-                      : "Preview — Captions + final resolution"}
+                    Preview — finishing up
                   </p>
                 </div>
               )}
@@ -1504,32 +1483,13 @@ export default function AssemblePage({ params }: PageProps) {
                     || s.startsWith("Downloading background music") || s.startsWith("Downloading channel logo")
                     || s.startsWith("Mixing") || s.startsWith("Restoring mixed")
                   ) },
-                  // Burn captions: the final-burn pass. The label is
-                  // resolved dynamically below — "Burn captions -
-                  // Coconut" when the worker is using the offloaded
-                  // path, "Burn captions - VW" when local ffmpeg is
-                  // running. The matcher recognises both prefixes
-                  // plus the older labels (still emitted on workers
-                  // that haven't redeployed yet).
-                  { key: "burn",       label: "Burn captions",   match: (s: string) => (
-                    s.startsWith("Burn captions -")
-                    || s.startsWith("Submitting final-burn") || s.startsWith("Finalizing on Coconut") || s.startsWith("Coconut")
-                    || s.startsWith("Burning captions") || s.startsWith("Applying final burn") || s.startsWith("Upscaling to")
-                  ) },
+                  // Stage F removed in the post-Coconut refactor.
+                  // Captions are baked per-beat during Build clips;
+                  // logo composites at Mix audio; there's no final-
+                  // burn pass anymore. mixed.mp4 IS the final video,
+                  // which uploads directly from Stage D's output.
                   { key: "upload",     label: "Upload",          match: (s: string) => s.startsWith("Uploading") },
                 ];
-                // Dynamic label override for the burn step — the
-                // user wants to see exactly which engine is doing
-                // the work. Worker now writes the path into the
-                // status prefix; we just check the substring.
-                const burnIdx = stages.findIndex((s) => s.key === "burn");
-                if (burnIdx >= 0) {
-                  if (assembleStatus.includes("Burn captions - Coconut")) {
-                    stages[burnIdx] = { ...stages[burnIdx], label: "Burn captions - Coconut" };
-                  } else if (assembleStatus.includes("Burn captions - VW")) {
-                    stages[burnIdx] = { ...stages[burnIdx], label: "Burn captions - VW" };
-                  }
-                }
                 // Monotonic stage index: once we've seen progress to
                 // a later stage, don't ever fall back to an earlier
                 // one. The worker occasionally writes transient
