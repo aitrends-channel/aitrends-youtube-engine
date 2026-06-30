@@ -970,12 +970,7 @@ function SetupSection({
 
       {setupTab === "models" && <ModelDefaultsPanel />}
       {setupTab === "anthropic" && <AnthropicRoutingPanel />}
-      {setupTab === "concurrency" && (
-        <>
-          <ConcurrencyPanel />
-          <AssemblyBeatRulesPanel />
-        </>
-      )}
+      {setupTab === "concurrency" && <ConcurrencyPanel />}
       {setupTab === "plans" && <PlansPanel />}
 
       {setupTab === "keys" && <>
@@ -1653,6 +1648,7 @@ function ConcurrencyPanel() {
                   {b.group}
                 </h3>
                 {b.fields.map((f) => renderRow(f, true))}
+                {b.group === "Assemble" && <AssemblyBeatRulesPanel />}
               </div>
             );
           });
@@ -1737,14 +1733,13 @@ function AssemblyBeatRulesPanel() {
   } as const;
 
   return (
-    <div className="space-y-4 mt-6 p-3 rounded-xl"
-      style={{ background: "oklch(0.62 0.15 220 / 0.08)", border: "1px solid oklch(0.62 0.15 220 / 0.22)" }}>
-      <div>
-        <h3 className="text-xs font-bold uppercase tracking-wide px-1 mb-2" style={{ color: "oklch(0.55 0.15 220)" }}>
-          Stage B concurrency rules
-        </h3>
-        <p className="text-xs px-1" style={{ color: "var(--c-50)" }}>
-          Override beats-per-assembly per scenario. The first matching rule wins; if no rule matches, the global Beats slider applies. The Beats slider is still the absolute ceiling — a rule cannot exceed it.
+    <div className="space-y-3 mt-3 pt-3" style={{ borderTop: "1px dashed oklch(0.55 0.15 220 / 0.3)" }}>
+      <div className="px-1">
+        <h4 className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>
+          Beats rules (per scenario)
+        </h4>
+        <p className="text-xs mt-0.5" style={{ color: "var(--c-50)" }}>
+          Override the Beats value above when the project matches the conditions. First matching rule wins. The Beats slider is still the absolute ceiling.
         </p>
       </div>
 
