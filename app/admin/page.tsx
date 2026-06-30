@@ -1439,7 +1439,7 @@ const CONCURRENCY_FIELDS: {
   { key: "image_generation_batch", label: "AI image generation",  description: "How many images generated at once.",   default: 3, min: 1, max: 20, group: "Media" },
   { key: "assembly_projects",      label: "Projects",            description: "How many videos assembled at once.",   default: 1, min: 1, max: 5,  group: "Assemble" },
   { key: "assembly_beats",         label: "Beats",               description: "Beats processed at once per video.",   default: 1, min: 1, max: 10, group: "Assemble" },
-  { key: "finish_images_poll",     label: "Image finishers",     description: "Workers finalizing completed images.", default: 5, min: 1, max: 50, disabled: true, group: "Others" },
+  { key: "finish_images_poll",     label: "Image finishers",     description: "Workers finalizing completed images.", default: 5, min: 1, max: 50, group: "Others" },
   { key: "thumbnail_batch",        label: "Thumbnail batch",     description: "Thumbnails generated per batch.",      default: 2, min: 1, max: 20, group: "Others" },
 ];
 

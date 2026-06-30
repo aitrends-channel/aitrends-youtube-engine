@@ -592,36 +592,49 @@ export default function AssemblePage({ params }: PageProps) {
   // Upload the picked BGM file once and cache its URL on this page
   // for the lifetime of the file selection. Re-uploads only when the
   // user picks a different file. Returns null on no-file or failure.
+  // Shared upload helper. Uploads `file` to R2 via the presigned-URL
+  // flow, mirrors the URL into the project row immediately, and
+  // returns the public URL. Used by both the file-picker onChange
+  // (upload on select) and the Assemble click path (retry if state
+  // somehow has a file but no URL). The DB persist is fire-and-forget
+  // — UI already reflects the upload, a transient persist failure
+  // shouldn't block the user.
+  async function uploadAndPersist(
+    file: File,
+    kind: "bgm" | "logo",
+  ): Promise<string | null> {
+    const folder = kind === "bgm" ? "background-music" : "channel-logo";
+    const column = kind === "bgm" ? "background_music_url" : "logo_url";
+    const setUploading = kind === "bgm" ? setBgmUploading : setLogoUploading;
+    const setUrl = kind === "bgm" ? setBgmUploadedUrl : setLogoUploadedUrl;
+    setUploading(true);
+    try {
+      const url = await presignedUpload(file, projectId, folder);
+      setUrl(url);
+      fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [column]: url }),
+      }).catch(() => { /* non-blocking */ });
+      return url;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `${kind === "bgm" ? "Music" : "Logo"} upload failed`);
+      return null;
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function ensureBgmUploaded(): Promise<string | null> {
     if (!bgmFile) return null;
     if (bgmUploadedUrl) return bgmUploadedUrl;
-    setBgmUploading(true);
-    try {
-      const url = await presignedUpload(bgmFile, projectId, "background-music");
-      setBgmUploadedUrl(url);
-      return url;
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Music upload failed");
-      return null;
-    } finally {
-      setBgmUploading(false);
-    }
+    return uploadAndPersist(bgmFile, "bgm");
   }
 
   async function ensureLogoUploaded(): Promise<string | null> {
     if (!logoFile) return null;
     if (logoUploadedUrl) return logoUploadedUrl;
-    setLogoUploading(true);
-    try {
-      const url = await presignedUpload(logoFile, projectId, "channel-logo");
-      setLogoUploadedUrl(url);
-      return url;
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Logo upload failed");
-      return null;
-    } finally {
-      setLogoUploading(false);
-    }
+    return uploadAndPersist(logoFile, "logo");
   }
 
   // Clear local state AND the persisted URL on the project row so
@@ -953,7 +966,12 @@ export default function AssemblePage({ params }: PageProps) {
                   if (!f) return;
                   setBgmFile(f);
                   // New file → invalidate any previously-uploaded URL
+                  // and immediately upload + persist so a refresh
+                  // doesn't lose the selection. Fire-and-forget
+                  // since the user may continue tweaking other
+                  // settings while the upload runs in the background.
                   setBgmUploadedUrl(null);
+                  void uploadAndPersist(f, "bgm");
                 }}
               />
             </div>
@@ -1034,6 +1052,8 @@ export default function AssemblePage({ params }: PageProps) {
                     if (!f) return;
                     setLogoFile(f);
                     setLogoUploadedUrl(null);
+                    // Immediately upload + persist (same reasoning as bgm above).
+                    void uploadAndPersist(f, "logo");
                   }}
                 />
               </div>
