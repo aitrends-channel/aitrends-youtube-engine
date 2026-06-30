@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
-import { isAdminUser } from "@/lib/admin";
+import { isAdminUser, isProductionTestUser } from "@/lib/admin";
 import { requireAdmin } from "@/lib/admin-server";
 import { getPlans } from "@/lib/plans";
+import { isProductionEnv } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export async function GET() {
   const guard = await requireAdmin();
   if (!guard.ok) return guard.response;
 
-  const [emailsRes, authUsersRes, projectsRes, settingsRes, plansList] = await Promise.all([
+  const [emailsRes, authUsersRes, projectsRes, settingsRes, plansList, cutoffRes] = await Promise.all([
     supabase.from("allowed_emails").select("email"),
     supabase.auth.admin.listUsers({ perPage: 1000 }),
     // Order DESC so the admin videos table shows most-recent first
@@ -32,7 +33,21 @@ export async function GET() {
     supabase.from("projects").select("id, user_id, channel_name, current_state, selected_topic, created_at, assembled_url, assembly_started_at, assembly_finished_at").order("created_at", { ascending: false }),
     supabase.from("account_settings").select("user_id, niches_used, niche_limit_override"),
     getPlans(),
+    supabase.from("product_config").select("activity_cutoff_at").eq("service", "_global").maybeSingle(),
   ]);
+
+  // Activity-chart cutoff. When set (admin clicks Launch with the
+  // Activity "Clear all?" toggle on), the daily/monthly aggregates
+  // ignore rows older than this timestamp so the chart starts from
+  // launch day. The big-number total cards above the chart still
+  // count everything — only the trend chart is sliced.
+  const activityCutoffRaw = (cutoffRes.data as { activity_cutoff_at: string | null } | null)?.activity_cutoff_at ?? null;
+  const activityCutoffMs = activityCutoffRaw ? new Date(activityCutoffRaw).getTime() : null;
+  const afterCutoff = (createdAt: string | null | undefined): boolean => {
+    if (activityCutoffMs === null) return true;
+    if (!createdAt) return false;
+    return new Date(createdAt).getTime() >= activityCutoffMs;
+  };
 
   // Build a slug→limit map once so the per-user loop below is O(1)
   // instead of hitting the plans table for every authenticated user.
@@ -74,6 +89,29 @@ export async function GET() {
   const emailToAuthUser = new Map(authUsers.map((u) => [u.email?.toLowerCase() ?? "", u]));
   const userIdToEmail = new Map(authUsers.map((u) => [u.id, u.email ?? "Unknown"]));
   const allowedEmailSet = new Set(allowedEmails.map((e) => e.toLowerCase()));
+
+  // Admin self-activity is stripped from aggregates only on the
+  // live production deployment (HECLUS_ENV=production). Dev + staging
+  // keep admins in the counts so we can verify our own test traffic
+  // shows up correctly. Detection happens via lib/env.ts so the
+  // env-var name lives in one place.
+  const filterAdmins = isProductionEnv();
+  const adminUserIds = new Set<string>();
+  const adminEmails = new Set<string>();
+  if (filterAdmins) {
+    for (const u of authUsers) {
+      if (isAdminUser(u)) {
+        adminUserIds.add(u.id);
+        if (u.email) adminEmails.add(u.email.toLowerCase());
+      }
+    }
+  }
+  const nonAdminUsers = filterAdmins
+    ? authUsers.filter((u) => !adminUserIds.has(u.id))
+    : authUsers;
+  const nonAdminProjects = filterAdmins
+    ? projects.filter((p) => !p.user_id || !adminUserIds.has(p.user_id))
+    : projects;
 
   // Per-user project counts
   const projectCountByUserId = new Map<string, number>();
@@ -121,6 +159,10 @@ export async function GET() {
         // "Make admin" / "Remove" actions without re-deriving it
         // client-side from a hardcoded email list.
         isAdmin,
+        // Surface the production-test flag so the users table can
+        // mark flagged accounts with a "- PT" suffix on the plan
+        // badge.
+        isProductionTest: isProductionTestUser(authUser),
       };
     }),
     // Emails in allowed_emails that haven't signed up yet
@@ -139,6 +181,7 @@ export async function GET() {
         nicheLimitOverride: null,
         effectiveNicheLimit: null,
         isAdmin: false,
+        isProductionTest: false,
       })),
   ];
 
@@ -182,8 +225,8 @@ export async function GET() {
     };
   });
 
-  const completed = projects.filter((p) => p.assembled_url || (p.current_state ?? 0) >= 15).length;
-  const videosInProgress = projects.filter((p) => (p.current_state ?? 1) > 1 && !p.assembled_url && (p.current_state ?? 0) < 15).length;
+  const completed = nonAdminProjects.filter((p) => p.assembled_url || (p.current_state ?? 0) >= 15).length;
+  const videosInProgress = nonAdminProjects.filter((p) => (p.current_state ?? 1) > 1 && !p.assembled_url && (p.current_state ?? 0) < 15).length;
 
   // Last 30 days activity
   const activityDates = Array.from({ length: 30 }, (_, i) => {
@@ -193,15 +236,17 @@ export async function GET() {
   });
   const projectsByDay = new Map<string, number>();
   const videosByDay = new Map<string, number>();
-  for (const p of projects) {
+  for (const p of nonAdminProjects) {
     if (!p.created_at) continue;
+    if (!afterCutoff(p.created_at)) continue;
     const day = new Date(p.created_at).toISOString().slice(0, 10);
     projectsByDay.set(day, (projectsByDay.get(day) ?? 0) + 1);
     if (p.assembled_url || (p.current_state ?? 0) >= 15) videosByDay.set(day, (videosByDay.get(day) ?? 0) + 1);
   }
   const usersByDay = new Map<string, number>();
-  for (const u of authUsers) {
+  for (const u of nonAdminUsers) {
     if (!u.created_at) continue;
+    if (!afterCutoff(u.created_at)) continue;
     const day = new Date(u.created_at).toISOString().slice(0, 10);
     usersByDay.set(day, (usersByDay.get(day) ?? 0) + 1);
   }
@@ -221,15 +266,17 @@ export async function GET() {
   });
   const projectsByMonth = new Map<string, number>();
   const videosByMonth = new Map<string, number>();
-  for (const p of projects) {
+  for (const p of nonAdminProjects) {
     if (!p.created_at) continue;
+    if (!afterCutoff(p.created_at)) continue;
     const month = new Date(p.created_at).toISOString().slice(0, 7);
     projectsByMonth.set(month, (projectsByMonth.get(month) ?? 0) + 1);
     if (p.assembled_url || (p.current_state ?? 0) >= 15) videosByMonth.set(month, (videosByMonth.get(month) ?? 0) + 1);
   }
   const usersByMonth = new Map<string, number>();
-  for (const u of authUsers) {
+  for (const u of nonAdminUsers) {
     if (!u.created_at) continue;
+    if (!afterCutoff(u.created_at)) continue;
     const month = new Date(u.created_at).toISOString().slice(0, 7);
     usersByMonth.set(month, (usersByMonth.get(month) ?? 0) + 1);
   }
@@ -241,15 +288,23 @@ export async function GET() {
   }));
 
   const paidEmails = new Set(
-    authUsers.filter((u) => u.app_metadata?.paid).map((u) => u.email?.toLowerCase() ?? "")
+    nonAdminUsers.filter((u) => u.app_metadata?.paid).map((u) => u.email?.toLowerCase() ?? "")
   );
-  const accessGranted = new Set([...allowedEmails.map((e) => e.toLowerCase()), ...paidEmails]).size;
+  // accessGranted = unique non-admin emails that either passed the
+  // allowlist gate or paid for a plan. allowedEmails entries belonging
+  // to admins are filtered out so the count tracks customers only.
+  const accessGranted = new Set(
+    [
+      ...allowedEmails.map((e) => e.toLowerCase()).filter((e) => !adminEmails.has(e)),
+      ...paidEmails,
+    ]
+  ).size;
 
   return NextResponse.json({
     stats: {
       accessGranted,
-      activeAccounts: authUsers.length,
-      totalProjects: projects.length,
+      activeAccounts: nonAdminUsers.length,
+      totalProjects: nonAdminProjects.length,
       completed,
       videosInProgress,
     },

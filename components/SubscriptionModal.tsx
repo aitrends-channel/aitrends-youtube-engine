@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import useSWR from "swr";
 import { X, Check, PlayCircle } from "lucide-react";
 
 interface PlanDTO {
@@ -19,6 +20,8 @@ interface PlanDTO {
   sortOrder: number;
 }
 
+const PRODUCTION_TEST_SLUG = "production-test";
+
 interface Props {
   email: string;
   onClose: () => void;
@@ -30,47 +33,67 @@ interface Props {
 
 export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: Props) {
   const router = useRouter();
-  const [plans, setPlans] = useState<PlanDTO[] | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string>(defaultPlan ?? "");
-  const [spotsLeft, setSpotsLeft] = useState<number | null>(null);
-  const [founderActive, setFounderActive] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [subscribing, setSubscribing] = useState(false);
 
-  useEffect(() => {
-    fetch("/api/plans", { cache: "no-store" })
-      .then(r => r.json())
-      .then(d => {
-        const list = (d?.plans as PlanDTO[] | undefined) ?? [];
-        setPlans(list);
-        if (!defaultPlan && list.length > 0) {
-          const founder = list.find(p => p.isFounder && !p.disabled);
-          setSelectedPlan((founder ?? list.find(p => !p.disabled) ?? list[0]).slug);
-        }
-      })
-      .catch(() => setPlans([]));
-  }, [defaultPlan]);
+  // SWR caches the response in-memory across modal opens for instant
+  // re-render, but each fetch bypasses the browser + edge cache so
+  // admin-edited features show up immediately. The founder-spots
+  // query is also live since the slot counter ticks down on every
+  // claim — staleness there is visible to the user.
+  const swrFetcher = async (url: string) => {
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  };
+  const { data: plansData } = useSWR<{ plans?: PlanDTO[] }>("/api/plans", swrFetcher, {
+    revalidateOnMount: true,
+    revalidateOnFocus: true,
+    dedupingInterval: 2_000,
+  });
+  const { data: founderData } = useSWR<{ active?: boolean; spots_left?: number }>(
+    "/api/founder-spots",
+    swrFetcher,
+    { revalidateOnFocus: true, refreshInterval: 30_000 },
+  );
+  // Used solely to read is_production_test for the current user — the
+  // production-test plan card is otherwise hidden so customers never
+  // see it. is_admin is also returned here but we don't need it.
+  const { data: usageData } = useSWR<{ is_production_test?: boolean }>(
+    "/api/usage",
+    swrFetcher,
+    { revalidateOnFocus: true },
+  );
+  const plans: PlanDTO[] | null = plansData?.plans ?? null;
+  const founderActive: boolean | null = typeof founderData?.active === "boolean" ? founderData.active : null;
+  const spotsLeft: number | null = typeof founderData?.spots_left === "number" ? founderData.spots_left : null;
+  const isProductionTest = usageData?.is_production_test === true;
 
+  // Seed the selectedPlan once plans land. SWR may resolve before
+  // this effect runs (cache hit), so we guard on a non-empty plans
+  // list rather than a "just loaded" trigger.
   useEffect(() => {
-    // cache: "no-store" so admin edits to the founder cap or slot
-    // count reflect immediately on the next modal open instead of
-    // sitting behind whatever the browser cached from a prior fetch.
-    fetch("/api/founder-spots", { cache: "no-store" })
-      .then(r => r.json())
-      .then(d => {
-        if (typeof d.active === "boolean") setFounderActive(d.active);
-        if (typeof d.spots_left === "number") setSpotsLeft(d.spots_left);
-      })
-      .catch(() => {});
-  }, []);
+    if (defaultPlan || !plans || plans.length === 0 || selectedPlan) return;
+    const founder = plans.find(p => p.isFounder && !p.disabled);
+    setSelectedPlan(
+      (founder ?? plans.find(p => !p.disabled && p.slug !== PRODUCTION_TEST_SLUG) ?? plans[0]).slug,
+    );
+  }, [plans, defaultPlan, selectedPlan]);
 
   // Founder visibility gated by the single 'active' flag from the server.
   const founderAvailable = founderActive === null || founderActive === true;
 
   const visiblePlans = useMemo(() => {
     if (!plans) return [];
-    return plans.filter((p) => !p.isFounder || founderAvailable);
-  }, [plans, founderAvailable]);
+    return plans
+      // production-test is the live-Dodo verification harness — only
+      // accounts flagged with app_metadata.is_production_test see it,
+      // so real customers never get a "Test" card mixed in with their
+      // checkout options.
+      .filter((p) => p.slug !== PRODUCTION_TEST_SLUG || isProductionTest)
+      .filter((p) => !p.isFounder || founderAvailable);
+  }, [plans, founderAvailable, isProductionTest]);
 
   // If the currently-selected slug is a founder plan and founder is no
   // longer available, fall back to the first non-founder, non-disabled
@@ -106,7 +129,16 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
   }
 
   const selected = plans?.find(p => p.slug === selectedPlan) ?? null;
-  const gridCols = visiblePlans.length >= 3 ? "grid-cols-3" : visiblePlans.length === 2 ? "grid-cols-2" : "grid-cols-1";
+  // 4 plans wrap to 2x2 on mobile, single row on sm+ so the admin
+  // production-test card stays alongside the customer plans rather
+  // than overflowing the modal width.
+  const gridCols = visiblePlans.length >= 4
+    ? "grid-cols-2 sm:grid-cols-4"
+    : visiblePlans.length === 3
+      ? "grid-cols-3"
+      : visiblePlans.length === 2
+        ? "grid-cols-2"
+        : "grid-cols-1";
 
   return (
     <div
@@ -115,8 +147,8 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="relative w-full max-w-2xl rounded-2xl overflow-hidden"
-        style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)", maxHeight: "90vh" }}
+        className="relative w-full max-w-4xl rounded-2xl overflow-hidden"
+        style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
       >
         <button
           onClick={onClose}
@@ -142,7 +174,7 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
           <X size={14} />
           Close
         </button>
-        <div className="overflow-y-auto p-8" style={{ maxHeight: "90vh" }}>
+        <div className="p-8">
 
 
         <div className="text-center mb-6">
@@ -220,6 +252,14 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
                       style={{ background: "oklch(0.35 0 0)", color: "oklch(0.60 0 0)" }}
                     >
                       Soon
+                    </span>
+                  )}
+                  {plan.slug === PRODUCTION_TEST_SLUG && (
+                    <span
+                      className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                      style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
+                    >
+                      Test
                     </span>
                   )}
                   <p className="text-xs font-semibold mb-1" style={{ color: selectedPlan === plan.slug ? "oklch(0.82 0.18 285)" : "var(--c-60)" }}>

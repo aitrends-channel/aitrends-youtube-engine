@@ -4,7 +4,7 @@ import { useState, use, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
-import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil } from "lucide-react";
+import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp } from "lucide-react";
 import { ImageSparkle } from "@/components/icons/ImageSparkle";
 import { StepCostCard } from "@/components/StepCostCard";
 import { toast } from "sonner";
@@ -169,7 +169,7 @@ function VoiceOption({ model, selected, onSelect, isPlaying, onPlayToggle }: {
   );
 }
 
-function SectionHeader({ icon, title, subtitle }: { icon: string; title: string; subtitle: string }) {
+function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle: string }) {
   return (
     <div className="flex items-center gap-3 mb-4">
       <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base"
@@ -361,6 +361,11 @@ export default function GeneratePage({ params }: PageProps) {
   // the user actually sees the failure summary instead of having to
   // scan the page for it.
   const imageErrorBannerRef = useRef<HTMLDivElement | null>(null);
+  // Image + video grid scroll containers — used by the scroll-to-bottom
+  // affordance so users jump straight to whatever just queued / finished
+  // without having to drag the thumb through a long list of beats.
+  const imageGridRef = useRef<HTMLDivElement | null>(null);
+  const videoGridRef = useRef<HTMLDivElement | null>(null);
   const videoErrorBannerRef = useRef<HTMLDivElement | null>(null);
   // Latch the "was visible" state so we only scroll-into-view once per
   // banner appearance (not on every re-render while it's open).
@@ -1382,7 +1387,7 @@ export default function GeneratePage({ params }: PageProps) {
           <div className="rounded-2xl flex flex-col overflow-hidden h-full"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
-              <SectionHeader icon="◈" title="AI Images" subtitle={`${totalBeats} images from script beats`} />
+              <SectionHeader icon={<ImageIcon size={18} />} title="AI Images" subtitle={`${totalBeats} images from script beats`} />
               <ModelPicker
                 type="image"
                 models={imageModels}
@@ -1411,7 +1416,8 @@ export default function GeneratePage({ params }: PageProps) {
             {(beats.some((b) => b.imageUrl || b.imageStatus) || regenBeats.size > 0) && (
               <div className="px-5 pt-4">
                 <ProgressBar value={clearingImages ? 0 : generatedImages} total={totalBeats} />
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 mt-3 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
+                <div className="relative mt-3">
+                <div ref={imageGridRef} className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
                   {beats.map((b) => {
                     const isRegening = regenBeats.has(b.beatNumber);
                     return (
@@ -1551,6 +1557,27 @@ export default function GeneratePage({ params }: PageProps) {
                     );
                   })}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => imageGridRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+                  title="Jump to the first image"
+                  aria-label="Scroll to top"
+                  className="absolute top-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+                >
+                  <ChevronUp size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => imageGridRef.current?.scrollTo({ top: imageGridRef.current.scrollHeight, behavior: "smooth" })}
+                  title="Jump to the most recently generated image"
+                  aria-label="Scroll to bottom"
+                  className="absolute bottom-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+                >
+                  <ChevronDown size={14} />
+                </button>
+                </div>
               </div>
             )}
 
@@ -1648,7 +1675,7 @@ export default function GeneratePage({ params }: PageProps) {
           <div className="rounded-2xl flex flex-col overflow-hidden h-full"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
-              <SectionHeader icon="⚡" title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
+              <SectionHeader icon={<Video size={18} />} title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
               <ModelPicker
                 type="video"
                 models={videoModels}
@@ -1673,13 +1700,14 @@ export default function GeneratePage({ params }: PageProps) {
               </div>
             )}
 
-            {/* Video clip grid — mirrors image panel structure: progress + grid in one block,
-                shown whenever there's any video activity OR a queue has been submitted. */}
-            {(beats.some((b) => b.videoUrl || b.videoStatus) || videosSubmitted) && (
+            {/* Video clip grid — mirrors image panel structure: progress + grid in one block.
+                Renders placeholder cells (status "—") for every beat with a videoPrompt
+                so the user sees the workflow scaffold before queuing any clips. */}
+            {beats.some((b) => b.videoPrompt) && (
               <div className="px-5 pt-4">
                 <ProgressBar value={generatedVideos} total={videoBeats} />
-                {beats.some((b) => b.videoUrl || b.videoStatus) && (
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 mt-3 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
+                <div className="relative mt-3">
+                <div ref={videoGridRef} className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
                     {beats.filter((b) => b.videoPrompt).map((b) => (
                       <div
                         key={b.beatNumber}
@@ -1737,6 +1765,12 @@ export default function GeneratePage({ params }: PageProps) {
                             disablePictureInPicture
                             controlsList="nodownload nofullscreen noplaybackrate noremoteplayback"
                           />
+                        ) : !b.videoStatus ? (
+                          // Pre-queue placeholder — the beat has a prompt
+                          // but hasn't been submitted yet. A video icon
+                          // signals "this slot will hold a clip" more
+                          // clearly than a bare "—" badge.
+                          <Video size={20} style={{ color: "var(--c-30)" }} aria-label="No clip yet" />
                         ) : (
                           <span className="text-[10px] px-1.5 py-0.5 rounded"
                             title={b.videoStatus === "failed" && b.videoError ? b.videoError : undefined}
@@ -1753,7 +1787,7 @@ export default function GeneratePage({ params }: PageProps) {
                                 gets to them. The transition the user
                                 sees per beat is:
                                 queued → submitting → rendering → done. */}
-                            {b.videoStatus ?? "—"}
+                            {b.videoStatus}
                           </span>
                         )}
 
@@ -1840,8 +1874,28 @@ export default function GeneratePage({ params }: PageProps) {
                         })()}
                       </div>
                     ))}
-                  </div>
-                )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => videoGridRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+                  title="Jump to the first clip"
+                  aria-label="Scroll to top"
+                  className="absolute top-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+                >
+                  <ChevronUp size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => videoGridRef.current?.scrollTo({ top: videoGridRef.current.scrollHeight, behavior: "smooth" })}
+                  title="Jump to the most recently queued clip"
+                  aria-label="Scroll to bottom"
+                  className="absolute bottom-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+                >
+                  <ChevronDown size={14} />
+                </button>
+                </div>
               </div>
             )}
 

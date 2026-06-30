@@ -291,16 +291,16 @@ export async function POST(req: Request) {
                 .update({ voiceover_status: "generating" })
                 .eq("project_id", projectId)
                 .eq("beat_number", beat.beat_number);
-              const { audio: audioBuf, creditsConsumed } = await generateTTS(ttsText, voiceId, undefined, undefined, user.id);
-              if (creditsConsumed) {
+              const { audio: audioBuf, charsConsumed } = await generateTTS(ttsText, voiceId, undefined, undefined, user.id);
+              if (charsConsumed) {
                 void logProjectCost({
                   projectId,
                   userId: user.id,
                   step: "tts",
-                  provider: "kie",
+                  provider: "elevenlabs",
                   model: TTS_MODEL,
-                  units: creditsConsumed,
-                  unitKind: "kie_credits",
+                  units: charsConsumed,
+                  unitKind: "elevenlabs_chars",
                 });
               }
               // Hash the RAW segment (matches what selectStaleBeats

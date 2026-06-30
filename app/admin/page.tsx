@@ -9,14 +9,17 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, Mail, KeyRound, CreditCard, Rocket, X, MemoryStick,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { launchAllowedClient } from "@/lib/env";
 import useSWR from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isAdminUser } from "@/lib/admin";
 import EmailsPanel from "./EmailsPanel";
+import { TtsCostLens } from "@/components/admin/TtsCostLens";
+import { SupportPanel } from "@/components/admin/SupportPanel";
 import { MemoryPanel } from "@/components/admin/MemoryPanel";
 
 const PHASE_PATHS: Record<number, string> = {
@@ -945,7 +948,7 @@ function SetupSection({
           { id: "models", label: "Models" },
           { id: "anthropic", label: "Anthropic" },
           { id: "concurrency", label: "Batched process" },
-          { id: "plans", label: "Plans" },
+          { id: "plans", label: "Payment" },
         ] as const).map((t) => (
           <button
             key={t.id}
@@ -2145,11 +2148,21 @@ function PlansPanel() {
   const [creating, setCreating] = useState(false);
   const [deletingSlug, setDeletingSlug] = useState<string | null>(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
-  const [switchingMode, setSwitchingMode] = useState(false);
+  // Which env's URLs the plans list displays. Independent of the
+  // runtime env (which comes from HECLUS_ENV via paymentMode below)
+  // — admins use this to peek at the test or production checkout
+  // URLs side-by-side without redeploying.
+  const [viewEnv, setViewEnv] = useState<PaymentMode>("test");
 
   const { data: paymentSettings, mutate: mutatePaymentSettings } = useSWR<{
     mode: PaymentMode;
     productionTestLink: string | null;
+    secretKeyTest: string | null;
+    secretKeyProduction: string | null;
+    baseUrlTest: string | null;
+    baseUrlProduction: string | null;
+    webhookSecretTest: string | null;
+    webhookSecretProduction: string | null;
   }>("/api/admin/payment-mode", fetcher, { revalidateOnFocus: false });
   const [editingProdTest, setEditingProdTest] = useState(false);
   const [deletingProdTest, setDeletingProdTest] = useState(false);
@@ -2158,25 +2171,28 @@ function PlansPanel() {
   const paymentMode: PaymentMode = data?.paymentMode ?? "test";
   const prodTestLink = paymentSettings?.productionTestLink ?? null;
 
-  async function setMode(mode: PaymentMode) {
-    if (mode === paymentMode) return;
-    setSwitchingMode(true);
-    try {
-      const res = await fetch("/api/admin/payment-mode", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? `Switch failed (${res.status})`);
-      await mutate();
-      toast.success(`Payment mode set to ${mode}`);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Switch failed");
-    } finally {
-      setSwitchingMode(false);
+  // Default the view tab to whichever env the deployment runs in, so
+  // the panel opens to the URLs that are actually live. Admins flip
+  // tabs to inspect the other env. Only seeds on first paymentMode
+  // load; subsequent admin interactions are sticky.
+  const viewEnvSeededRef = useRef(false);
+  useEffect(() => {
+    if (viewEnvSeededRef.current || !data) return;
+    viewEnvSeededRef.current = true;
+    setViewEnv(paymentMode);
+  }, [data, paymentMode]);
+
+  // Hard-force production view on production deployments. The Test
+  // tab is hidden there, but viewEnv could still be "test" if the
+  // payment-mode response loads after the user (somehow) clicked
+  // the Test tab. Belt-and-braces — keeps the URL preview, test-
+  // purchase button, and PlanEditModal label aligned with the
+  // tab list.
+  useEffect(() => {
+    if (paymentMode === "production" && viewEnv !== "production") {
+      setViewEnv("production");
     }
-  }
+  }, [paymentMode, viewEnv]);
 
   async function handleDelete(slug: string) {
     setDeleteSubmitting(true);
@@ -2196,47 +2212,53 @@ function PlansPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs" style={{ color: "var(--c-50)" }}>
-          Subscription plans shown in the upgrade modal. Slug is read-only after creation — it&apos;s the value written to user.app_metadata.plan by the payment webhook.
-        </p>
-        <button
-          onClick={() => setCreating(true)}
-          className="shrink-0 px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 cursor-pointer"
-          style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
-        >
-          + Add plan
-        </button>
-      </div>
-
+      <div className="rounded-2xl p-5 space-y-4 mt-[15px]" style={{ background: "white", border: "2px solid silver" }}>
       <div className="rounded-xl p-3 flex items-center justify-between gap-3"
         style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid var(--bd-7)" }}>
         <div className="min-w-0">
-          <p className="text-xs font-semibold" style={{ color: "var(--c-78)" }}>Dodo payment mode</p>
-          <p className="text-[11px] mt-0.5" style={{ color: "var(--c-50)" }}>
-            Picks which URL the Subscribe button opens for every plan. Test mode routes to test.checkout.dodopayments.com — no real charges.
+          <p className="text-sm font-semibold" style={{ color: "var(--c-78)" }}>Dodo environment, plans and product links</p>
+          <p className="text-xs mt-0.5" style={{ color: "var(--c-50)" }}>
+            {paymentMode === "production"
+              ? <>Runtime env is auto-detected from HECLUS_ENV — locked to <span className="font-semibold">Production</span> on this deployment. Test data is hidden here to avoid accidental edits on live config.</>
+              : <>Runtime env is auto-detected from HECLUS_ENV (<span className="font-semibold capitalize">{paymentMode}</span> on this deployment). The tabs below let you preview either env&apos;s product URLs without redeploying.</>}
           </p>
         </div>
         <div className="shrink-0 flex p-0.5 rounded-lg"
           style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid var(--bd-7)" }}>
-          {(["test", "production"] as const).map((m) => {
-            const active = paymentMode === m;
+          {/* On a production deployment, hide the Test tab entirely so
+              the admin never accidentally edits/previews test config
+              against live billing. Local + staging keep both tabs so
+              admins can compare the two envs side-by-side. */}
+          {(paymentMode === "production" ? (["production"] as const) : (["test", "production"] as const)).map((m) => {
+            const active = viewEnv === m;
             return (
               <button
                 key={m}
-                onClick={() => setMode(m)}
-                disabled={switchingMode}
-                className="px-3 py-1 rounded-md text-[11px] font-semibold transition-all capitalize disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                onClick={() => setViewEnv(m)}
+                className="px-3 py-1 rounded-md text-xs font-semibold transition-all capitalize cursor-pointer"
                 style={active ? {
                   background: m === "production" ? "oklch(0.55 0.15 145)" : "oklch(0.62 0.15 220)",
                   color: "white",
                 } : { background: "transparent", color: "var(--c-55)" }}
+                title={m === paymentMode ? `${m} is the runtime env on this deployment` : `Previewing ${m} URLs (deployment runs in ${paymentMode})`}
               >
                 {m === "production" ? "Production" : "Test"}
               </button>
             );
           })}
         </div>
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm" style={{ color: "var(--c-50)" }}>
+          Subscription plans shown in the upgrade modal. Slug is read-only after creation — it&apos;s the value written to user.app_metadata.plan by the payment webhook.
+        </p>
+        <button
+          onClick={() => setCreating(true)}
+          className="shrink-0 px-3 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 cursor-pointer"
+          style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
+        >
+          + Add plan
+        </button>
       </div>
 
       {isLoading ? (
@@ -2274,44 +2296,65 @@ function PlansPanel() {
                   <p className="text-xs mt-1" style={{ color: "var(--c-60)" }}>
                     {p.priceDisplay}{p.periodDisplay} · {p.nichesPerMonth === null ? "Unlimited niches" : `${p.nichesPerMonth} niches/mo`} · {p.features.length} feature{p.features.length === 1 ? "" : "s"}
                   </p>
-                  <p className="text-[11px] mt-1 flex flex-wrap items-center gap-x-2 gap-y-1" style={{ color: "var(--c-50)" }}>
-                    <span className={p.paymentLinkTest ? "text-zinc-600" : "text-zinc-400"}>
-                      test: {p.paymentLinkTest ? "✓" : "—"}
-                    </span>
-                    <span className={p.paymentLinkProduction ? "text-zinc-600" : "text-zinc-400"}>
-                      prod: {p.paymentLinkProduction ? "✓" : "—"}
-                    </span>
-                    {p.paymentLink ? (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                        style={paymentMode === "production"
-                          ? { background: "oklch(0.55 0.15 145 / 0.12)", color: "oklch(0.45 0.15 145)" }
-                          : { background: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.45 0.15 220)" }}>
-                        active: {paymentMode}
-                      </span>
-                    ) : (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700">
-                        {paymentMode} link missing
-                      </span>
-                    )}
-                  </p>
+                  {(() => {
+                    const previewUrl = viewEnv === "production" ? p.paymentLinkProduction : p.paymentLinkTest;
+                    return (
+                      <>
+                        <p className="text-[11px] mt-1 flex flex-wrap items-center gap-x-2 gap-y-1" style={{ color: "var(--c-50)" }}>
+                          <span className={p.paymentLinkTest ? "text-zinc-600" : "text-zinc-400"}>
+                            test: {p.paymentLinkTest ? "✓" : "—"}
+                          </span>
+                          <span className={p.paymentLinkProduction ? "text-zinc-600" : "text-zinc-400"}>
+                            prod: {p.paymentLinkProduction ? "✓" : "—"}
+                          </span>
+                          {previewUrl ? (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                              style={viewEnv === "production"
+                                ? { background: "oklch(0.55 0.15 145 / 0.12)", color: "oklch(0.45 0.15 145)" }
+                                : { background: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.45 0.15 220)" }}>
+                              viewing: {viewEnv}
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700">
+                              {viewEnv} link missing
+                            </span>
+                          )}
+                        </p>
+                        {previewUrl && (
+                          <p
+                            className="text-xs font-mono break-all mt-1.5 leading-snug"
+                            style={{ color: "oklch(0.62 0.15 220)" }}
+                            title={`${viewEnv} checkout URL`}
+                          >
+                            {previewUrl}
+                          </p>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    onClick={() => {
-                      if (!p.paymentLink) {
-                        toast.error("This plan has no payment link set.");
-                        return;
-                      }
-                      const url = new URL(p.paymentLink);
-                      url.searchParams.set("redirect_url", `${window.location.origin}/payment/callback`);
-                      window.open(url.toString(), "_blank", "noopener,noreferrer");
-                    }}
-                    disabled={!p.paymentLink}
-                    className="p-2 rounded-lg transition-all hover:bg-emerald-500/10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-                    title={p.paymentLink ? "Initiate test purchase (opens checkout in new tab)" : "No payment link configured"}
-                  >
-                    <CreditCard size={14} style={{ color: "oklch(0.55 0.15 145)" }} />
-                  </button>
+                  {(() => {
+                    const previewUrl = viewEnv === "production" ? p.paymentLinkProduction : p.paymentLinkTest;
+                    return (
+                      <button
+                        onClick={() => {
+                          if (!previewUrl) {
+                            toast.error(`No ${viewEnv} payment link set for this plan.`);
+                            return;
+                          }
+                          const url = new URL(previewUrl);
+                          url.searchParams.set("redirect_url", `${window.location.origin}/payment/callback`);
+                          window.open(url.toString(), "_blank", "noopener,noreferrer");
+                        }}
+                        disabled={!previewUrl}
+                        className="p-2 rounded-lg transition-all hover:bg-emerald-500/10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                        title={previewUrl ? `Initiate ${viewEnv} purchase (opens checkout in new tab)` : `No ${viewEnv} payment link configured`}
+                      >
+                        <CreditCard size={14} style={{ color: "oklch(0.55 0.15 145)" }} />
+                      </button>
+                    );
+                  })()}
                   <button
                     onClick={() => setEditing(p)}
                     className="p-2 rounded-lg transition-all hover:bg-black/5 cursor-pointer"
@@ -2331,7 +2374,7 @@ function PlansPanel() {
             </li>
           ))}
 
-          {paymentMode === "production" && (
+          {viewEnv === "production" && !plans.some((p) => p.slug === "production-test") && (
             <li className="rounded-xl p-3"
               style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid var(--bd-7)" }}>
               <div className="flex items-start justify-between gap-3">
@@ -2362,6 +2405,15 @@ function PlansPanel() {
                       </span>
                     )}
                   </p>
+                  {prodTestLink && (
+                    <p
+                      className="text-xs font-mono break-all mt-1.5 leading-snug"
+                      style={{ color: "oklch(0.62 0.15 220)" }}
+                      title="Production test checkout URL"
+                    >
+                      {prodTestLink}
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   <button
@@ -2401,11 +2453,19 @@ function PlansPanel() {
           )}
         </ul>
       )}
+      </div>
+
+      <DodoApiKeysCard
+        settings={paymentSettings ?? null}
+        runtimeEnv={paymentMode}
+        onSaved={() => mutatePaymentSettings()}
+      />
 
       {editing && (
         <PlanEditModal
           plan={editing}
           mode="edit"
+          viewEnv={viewEnv}
           onClose={() => setEditing(null)}
           onSaved={() => { mutate(); setEditing(null); }}
         />
@@ -2414,6 +2474,7 @@ function PlansPanel() {
         <PlanEditModal
           plan={null}
           mode="create"
+          viewEnv={viewEnv}
           onClose={() => setCreating(false)}
           onSaved={() => { mutate(); setCreating(false); }}
         />
@@ -2472,11 +2533,17 @@ function PlansPanel() {
 function PlanEditModal({
   plan,
   mode,
+  viewEnv,
   onClose,
   onSaved,
 }: {
   plan: AdminPlanDTO | null;
   mode: "edit" | "create";
+  // Which env's payment link the modal exposes for editing. The other
+  // env's URL stays untouched on save — its state buffer starts at
+  // the plan's existing value and the patch sends both columns
+  // regardless, so the hidden one round-trips unchanged.
+  viewEnv: PaymentMode;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -2661,27 +2728,32 @@ function PlanEditModal({
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-semibold text-zinc-600">Payment link — Test</label>
+            <label className="text-xs font-semibold text-zinc-600">
+              {(() => {
+                // Special-case the label when editing the production-
+                // test plan on the Test tab: surface its name so it's
+                // obvious this isn't a generic "test URL" but the URL
+                // used by the Production test plan specifically.
+                if (viewEnv === "test" && (plan?.slug === "production-test" || slug === "production-test")) {
+                  return "Payment link — Production test";
+                }
+                return viewEnv === "production" ? "Payment link — Production" : "Payment link — Test";
+              })()}
+            </label>
             <input
-              value={paymentLinkTest}
-              onChange={(e) => setPaymentLinkTest(e.target.value)}
+              value={viewEnv === "production" ? paymentLinkProduction : paymentLinkTest}
+              onChange={(e) => (viewEnv === "production"
+                ? setPaymentLinkProduction(e.target.value)
+                : setPaymentLinkTest(e.target.value)
+              )}
               disabled={saving}
-              placeholder="https://test.checkout.dodopayments.com/…"
-              className={inputCls + " font-mono text-xs"}
-            />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs font-semibold text-zinc-600">Payment link — Production</label>
-            <input
-              value={paymentLinkProduction}
-              onChange={(e) => setPaymentLinkProduction(e.target.value)}
-              disabled={saving}
-              placeholder="https://checkout.dodopayments.com/…"
+              placeholder={viewEnv === "production"
+                ? "https://checkout.dodopayments.com/…"
+                : "https://test.checkout.dodopayments.com/…"}
               className={inputCls + " font-mono text-xs"}
             />
             <p className="text-[11px] text-zinc-500">
-              The global Dodo payment mode toggle at the top of this tab picks which of these two URLs the Subscribe button opens.
+              Editing the {viewEnv} URL only — switch tabs on the Plans card to edit the other env. The hidden URL is preserved as-is.
             </p>
           </div>
 
@@ -2741,20 +2813,53 @@ function PlanEditModal({
   );
 }
 
-type LaunchTab = "users" | "logs" | "activity";
+interface LaunchStepResult {
+  step: string;
+  ok: boolean;
+  detail?: string;
+}
 
 function LaunchModal({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<LaunchTab>("users");
   const [excludeEmails, setExcludeEmails] = useState<string[]>([]);
   const [excludeInput, setExcludeInput] = useState("");
   const [clearAllLogs, setClearAllLogs] = useState(false);
   const [clearAllActivity, setClearAllActivity] = useState(false);
+  const [resetFounderSlots, setResetFounderSlots] = useState(false);
+  const [clearEmails, setClearEmails] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [launching, setLaunching] = useState(false);
+  const [results, setResults] = useState<LaunchStepResult[] | null>(null);
+  const allOk = results !== null && results.every((r) => r.ok);
 
-  const tabs: { id: LaunchTab; label: string }[] = [
-    { id: "users",    label: "Users"    },
-    { id: "logs",     label: "Logs"     },
-    { id: "activity", label: "Activity" },
-  ];
+  async function fireLaunch() {
+    setLaunching(true);
+    try {
+      const res = await fetch("/api/admin/launch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          excludeEmails,
+          clearLogs: clearAllLogs,
+          clearActivity: clearAllActivity,
+          resetFounderSlots,
+          clearEmails,
+        }),
+      });
+      const json = await res.json().catch(() => ({})) as { results?: LaunchStepResult[]; error?: string };
+      if (json.results) {
+        setResults(json.results);
+        if (res.ok) toast.success("Launch complete");
+        else toast.error("Launch finished with errors — see details");
+      } else {
+        throw new Error(json.error ?? `Launch failed (${res.status})`);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Launch failed");
+    } finally {
+      setLaunching(false);
+    }
+  }
 
   function addExcludeEmail() {
     const candidate = excludeInput.trim().toLowerCase();
@@ -2791,127 +2896,288 @@ function LaunchModal({ onClose }: { onClose: () => void }) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex gap-1 p-1 rounded-xl bg-zinc-100 ring-1 ring-zinc-200">
-          {tabs.map((t) => {
-            const active = tab === t.id;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className="flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-all cursor-pointer"
-                style={active ? {
-                  background: "white",
-                  color: "oklch(0.55 0.15 145)",
-                  boxShadow: "0 1px 3px oklch(0 0 0 / 0.06)",
-                } : {
-                  background: "transparent",
-                  color: "oklch(0.45 0 0)",
+        <div className="max-h-[60vh] overflow-y-auto space-y-5 pr-1">
+          {/* ── Users section ─────────────────────────────────── */}
+          <section className="space-y-3">
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-zinc-800">Users</p>
+              <p className="text-xs text-zinc-500">
+                Enter one email at a time and click Add. Listed emails are kept; everyone else gets deleted when launch fires.
+              </p>
+            </div>
+
+            <div className="flex items-stretch gap-2">
+              <input
+                type="email"
+                value={excludeInput}
+                onChange={(e) => setExcludeInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addExcludeEmail();
+                  }
                 }}
+                placeholder="admin@heclus.io"
+                className="flex-1 px-3 py-2.5 rounded-lg text-sm outline-none font-mono bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400"
+              />
+              <button
+                type="button"
+                onClick={addExcludeEmail}
+                disabled={!excludeInput.trim()}
+                className="px-4 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
               >
-                {t.label}
+                Add
               </button>
-            );
-          })}
-        </div>
+            </div>
 
-        <div className="min-h-[200px] max-h-[50vh] overflow-y-auto">
-          {tab === "users" && (
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-sm font-semibold text-zinc-700">
-                  Exclude from deletion
-                </label>
-                <p className="text-xs text-zinc-500">
-                  Enter one email at a time and click Add. Listed emails are kept; everyone else gets deleted when launch fires.
-                </p>
-              </div>
-
-              <div className="flex items-stretch gap-2">
-                <input
-                  type="email"
-                  value={excludeInput}
-                  onChange={(e) => setExcludeInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addExcludeEmail();
-                    }
-                  }}
-                  placeholder="admin@heclus.io"
-                  className="flex-1 px-3 py-2.5 rounded-lg text-sm outline-none font-mono bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400"
-                />
-                <button
-                  type="button"
-                  onClick={addExcludeEmail}
-                  disabled={!excludeInput.trim()}
-                  className="px-4 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
-                >
-                  Add
-                </button>
-              </div>
-
-              {excludeEmails.length === 0 ? (
-                <p className="text-xs italic text-zinc-400">No emails added yet.</p>
-              ) : (
-                <ul className="space-y-1">
-                  {excludeEmails.map((email) => (
-                    <li
-                      key={email}
-                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-zinc-50 ring-1 ring-zinc-200"
+            {excludeEmails.length === 0 ? (
+              <p className="text-xs italic text-zinc-400">No emails added yet.</p>
+            ) : (
+              <ul className="space-y-1">
+                {excludeEmails.map((email) => (
+                  <li
+                    key={email}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-zinc-50 ring-1 ring-zinc-200"
+                  >
+                    <span className="text-sm font-mono text-zinc-700 truncate">{email}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeExcludeEmail(email)}
+                      className="p-1 rounded transition-all hover:bg-red-100 cursor-pointer"
+                      title="Remove"
                     >
-                      <span className="text-sm font-mono text-zinc-700 truncate">{email}</span>
-                      <button
-                        type="button"
-                        onClick={() => removeExcludeEmail(email)}
-                        className="p-1 rounded transition-all hover:bg-red-100 cursor-pointer"
-                        title="Remove"
-                      >
-                        <X size={14} className="text-red-600" />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          )}
-          {tab === "logs" && (
-            <div className="flex items-center justify-center min-h-[180px]">
-              <label className="flex items-center gap-4 cursor-pointer text-lg font-semibold text-zinc-700">
-                <input
-                  type="checkbox"
-                  checked={clearAllLogs}
-                  onChange={(e) => setClearAllLogs(e.target.checked)}
-                  className="w-7 h-7 cursor-pointer accent-emerald-600"
-                />
-                Clear all?
-              </label>
-            </div>
-          )}
-          {tab === "activity" && (
-            <div className="flex items-center justify-center min-h-[180px]">
-              <label className="flex items-center gap-4 cursor-pointer text-lg font-semibold text-zinc-700">
-                <input
-                  type="checkbox"
-                  checked={clearAllActivity}
-                  onChange={(e) => setClearAllActivity(e.target.checked)}
-                  className="w-7 h-7 cursor-pointer accent-emerald-600"
-                />
-                Clear all?
-              </label>
-            </div>
-          )}
+                      <X size={14} className="text-red-600" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* ── Logs section ──────────────────────────────────── */}
+          <section className="space-y-2 pt-4 border-t border-zinc-200">
+            <p className="text-sm font-semibold text-zinc-800">Logs</p>
+            <label className="flex items-center gap-3 cursor-pointer text-sm text-zinc-700">
+              <input
+                type="checkbox"
+                checked={clearAllLogs}
+                onChange={(e) => setClearAllLogs(e.target.checked)}
+                className="w-5 h-5 cursor-pointer accent-emerald-600"
+              />
+              Clear all system logs
+            </label>
+          </section>
+
+          {/* ── Activity section ──────────────────────────────── */}
+          <section className="space-y-2 pt-4 border-t border-zinc-200">
+            <p className="text-sm font-semibold text-zinc-800">Activity</p>
+            <label className="flex items-center gap-3 cursor-pointer text-sm text-zinc-700">
+              <input
+                type="checkbox"
+                checked={clearAllActivity}
+                onChange={(e) => setClearAllActivity(e.target.checked)}
+                className="w-5 h-5 cursor-pointer accent-emerald-600"
+              />
+              Reset activity chart from launch day
+            </label>
+          </section>
+
+          {/* ── Founder promo section ─────────────────────────── */}
+          <section className="space-y-2 pt-4 border-t border-zinc-200">
+            <p className="text-sm font-semibold text-zinc-800">Founder promo</p>
+            <label className="flex items-center gap-3 cursor-pointer text-sm text-zinc-700">
+              <input
+                type="checkbox"
+                checked={resetFounderSlots}
+                onChange={(e) => setResetFounderSlots(e.target.checked)}
+                className="w-5 h-5 cursor-pointer accent-emerald-600"
+              />
+              Reset founder slot counter and clear claims log
+            </label>
+          </section>
+
+          {/* ── Emails section ────────────────────────────────── */}
+          <section className="space-y-2 pt-4 border-t border-zinc-200">
+            <p className="text-sm font-semibold text-zinc-800">Emails</p>
+            <label className="flex items-center gap-3 cursor-pointer text-sm text-zinc-700">
+              <input
+                type="checkbox"
+                checked={clearEmails}
+                onChange={(e) => setClearEmails(e.target.checked)}
+                className="w-5 h-5 cursor-pointer accent-emerald-600"
+              />
+              Clear email history (admin Emails panel)
+            </label>
+          </section>
         </div>
+
+        {results && (
+          <div className="rounded-lg p-3 space-y-2 bg-zinc-50 ring-1 ring-zinc-200">
+            <p className="text-sm font-semibold text-zinc-700">Launch results</p>
+            <ul className="space-y-1">
+              {results.map((r) => (
+                <li key={r.step} className="flex items-start gap-2 text-xs">
+                  <span className="mt-0.5 shrink-0">
+                    {r.ok ? <Check size={14} className="text-emerald-600" /> : <X size={14} className="text-red-600" />}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="font-mono text-zinc-700">{r.step}</p>
+                    {r.detail && <p className="text-zinc-500 break-words">{r.detail}</p>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <DialogFooter>
-          <button
-            onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100"
-          >
-            Close
-          </button>
+          {!results ? (
+            <>
+              {(() => {
+                // Disable Launch when the admin hasn't configured the
+                // form at all — either no exclude emails entered, or
+                // none of the optional cleanups checked. Forces an
+                // explicit "I picked who to keep AND what to clean"
+                // decision instead of a silent click-through.
+                const hasExcludes = excludeEmails.length > 0;
+                const hasAnyCheck = clearAllLogs || clearAllActivity || resetFounderSlots || clearEmails;
+                const canSubmit = hasExcludes && hasAnyCheck;
+                const reason = !hasExcludes && !hasAnyCheck
+                  ? "Add at least one exclude email and check at least one cleanup option"
+                  : !hasExcludes
+                    ? "Add at least one email to exclude from deletion"
+                    : "Check at least one cleanup option";
+                return (
+                  <button
+                    onClick={() => { setConfirmText(""); setConfirmOpen(true); }}
+                    disabled={launching || !canSubmit}
+                    title={canSubmit ? "Launch Heclus" : reason}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      background: "oklch(0.55 0.15 145)",
+                      color: "white",
+                      boxShadow: canSubmit ? "0 0 12px oklch(0.55 0.15 145 / 0.25)" : "none",
+                    }}
+                  >
+                    <span className="inline-flex items-center justify-center gap-2">
+                      <Rocket size={14} />
+                      Launch
+                    </span>
+                  </button>
+                );
+              })()}
+              <button
+                onClick={onClose}
+                disabled={launching}
+                className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100"
+            >
+              Close
+            </button>
+          )}
         </DialogFooter>
       </DialogContent>
+
+      {confirmOpen && (
+        <Dialog open onOpenChange={(open) => { if (!open && !launching) setConfirmOpen(false); }}>
+          <DialogContent showCloseButton={false} className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base">
+                <Rocket size={16} style={{ color: "oklch(0.55 0.15 145)" }} />
+                Confirm launch
+              </DialogTitle>
+              <DialogDescription className="text-sm">
+                The following will happen, in order. None of it is reversible without backup.
+              </DialogDescription>
+            </DialogHeader>
+
+            <ul className="text-sm space-y-2 list-disc pl-5 text-zinc-700 max-h-[40vh] overflow-y-auto">
+              <li>
+                Delete <span className="font-semibold">every user</span> in auth.users except the {excludeEmails.length} email{excludeEmails.length === 1 ? "" : "s"} you excluded. Their projects, beats, voiceovers, account_settings, and other per-user rows cascade.
+              </li>
+              <li>
+                Sweep <code className="text-xs bg-zinc-100 px-1 rounded">project_costs</code> — delete every cost row not owned by an excluded user (catches orphans the FK cascade missed).
+              </li>
+              <li>
+                Wipe each deleted user&apos;s <span className="font-semibold">R2 bucket folder</span> (<code className="text-xs bg-zinc-100 px-1 rounded">&lt;email&gt;/</code>) — all their generated images, voiceovers, thumbnails, and assembled MP4s.
+              </li>
+              <li>
+                Drop any <code className="text-xs bg-zinc-100 px-1 rounded">assembly:&lt;projectId&gt;</code> entries from <span className="font-semibold">Upstash Redis</span> for the deleted projects.
+              </li>
+              {clearAllLogs && <li>Truncate <code className="text-xs bg-zinc-100 px-1 rounded">system_logs</code>.</li>}
+              {clearAllActivity && <li>Set the activity-chart cutoff to now — the admin chart starts fresh from launch day.</li>}
+              {resetFounderSlots && <li>Reset founder slot counter to 0, re-arm the promo, and truncate <code className="text-xs bg-zinc-100 px-1 rounded">founder_claims_log</code>.</li>}
+              {clearEmails && <li>Truncate <code className="text-xs bg-zinc-100 px-1 rounded">emails</code>.</li>}
+              <li>Flip <code className="text-xs bg-zinc-100 px-1 rounded">dodo_payment_mode</code> to <span className="font-semibold">production</span>.</li>
+            </ul>
+
+            <div className="space-y-1">
+              <label className="text-xs font-semibold text-zinc-700">
+                Type <span className="font-mono">LAUNCH</span> to confirm
+              </label>
+              <input
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                disabled={launching}
+                autoFocus
+                placeholder="LAUNCH"
+                className="w-full px-3 py-2 rounded-lg text-sm outline-none font-mono bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400"
+              />
+            </div>
+
+            <DialogFooter>
+              <button
+                onClick={async () => {
+                  setConfirmOpen(false);
+                  await fireLaunch();
+                }}
+                disabled={launching || confirmText !== "LAUNCH"}
+                className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed bg-red-600 text-white"
+              >
+                {launching ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <Spinner size={14} className="text-white" />
+                    Launching…
+                  </span>
+                ) : "Yes, launch"}
+              </button>
+              <button
+                onClick={() => setConfirmOpen(false)}
+                disabled={launching}
+                className="flex-1 py-2 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {launching && (
+        <Dialog open onOpenChange={() => {}}>
+          <DialogContent showCloseButton={false} className="sm:max-w-xs">
+            <div className="flex flex-col items-center gap-3 py-4">
+              <Spinner size={24} className="text-emerald-600" />
+              <p className="text-sm font-semibold text-zinc-700">Launching…</p>
+              <p className="text-xs text-zinc-500 text-center">
+                Deleting users, then cleanup, then flipping payment mode. Don&apos;t close this tab.
+              </p>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* allOk drives an emerald banner above results when present;
+          kept inline so the modal layout stays single-scroll. */}
+      {results && allOk && null}
     </Dialog>
   );
 }
@@ -3054,6 +3320,258 @@ function ProductionTestDeleteDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+interface DodoApiKeysCardProps {
+  settings: {
+    secretKeyTest: string | null;
+    secretKeyProduction: string | null;
+    baseUrlTest: string | null;
+    baseUrlProduction: string | null;
+    webhookSecretTest: string | null;
+    webhookSecretProduction: string | null;
+  } | null;
+  // Deployment env (HECLUS_ENV). When "production", the Test tab is
+  // hidden so the admin can't edit test credentials on a live
+  // deployment — same rationale as the env card above.
+  runtimeEnv: PaymentMode;
+  onSaved: () => void;
+}
+
+// Single field row inside DodoApiKeysCard. The saved value (if any)
+// sits above the input in theme purple, truncated to a short preview
+// with an eye-toggle for the full string — the input itself stays
+// empty so the placeholder text is always visible and there's never
+// any confusion about whether the input shows the saved value vs.
+// what you're typing.
+function DodoVarField({
+  label,
+  saved,
+  value,
+  onChange,
+  placeholder,
+  disabled,
+  hint,
+}: {
+  label: string;
+  saved: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  disabled: boolean;
+  hint?: string;
+}) {
+  const [revealed, setRevealed] = useState(false);
+  // 12 chars + ellipsis is enough to recognize the prefix (sk_test_,
+  // sk_live_, whsec_, https://) without revealing the secret material.
+  const preview = saved.length > 12 ? `${saved.slice(0, 12)}…` : saved;
+
+  return (
+    <div>
+      <label className="text-sm font-semibold block mb-2" style={{ color: "var(--c-55)" }}>
+        {label}
+      </label>
+      {saved && (
+        <div className="flex items-center gap-2 mb-1.5 min-w-0">
+          <p
+            className="text-sm font-mono break-all leading-snug"
+            style={{ color: "oklch(0.62 0.15 220)" }}
+            title="Currently saved — type into the input below to replace"
+          >
+            {revealed ? saved : preview}
+          </p>
+          <button
+            type="button"
+            onClick={() => setRevealed((r) => !r)}
+            aria-label={revealed ? "Hide full value" : "Reveal full value"}
+            title={revealed ? "Hide full value" : "Reveal full value"}
+            className="shrink-0 w-7 h-7 rounded-md inline-flex items-center justify-center transition-colors hover:bg-[oklch(0_0_0_/_0.04)] cursor-pointer"
+            style={{ color: "oklch(0.62 0.15 220)" }}
+          >
+            {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
+          </button>
+        </div>
+      )}
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        placeholder={placeholder}
+        className="w-full px-3 py-2.5 rounded-lg text-sm outline-none font-mono text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400"
+        style={{ background: "#ecf0f1" }}
+      />
+      {hint && (
+        <p className="text-xs mt-1.5" style={{ color: "var(--c-40)" }}>
+          {hint}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Bottom-of-Payment-tab card for managing per-environment Dodo settings.
+// Test/Production tabs share three inputs (secret key, base URL,
+// webhook secret) and one save button — the active tab decides which
+// env the save patches. Values are shown in plain text since admins
+// need to verify what they pasted; the keys never leave the admin
+// response anyway.
+function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps) {
+  // On a production deployment, force the active env to "production"
+  // and never let it back to "test" — the Test tab is hidden in the
+  // render and the inputs / save are pinned to production fields.
+  const [activeEnv, setActiveEnv] = useState<"test" | "production">(runtimeEnv);
+  useEffect(() => {
+    if (runtimeEnv === "production" && activeEnv !== "production") {
+      setActiveEnv("production");
+    }
+  }, [runtimeEnv, activeEnv]);
+  // Local edit buffers — start empty. Each input shows ONLY its
+  // placeholder; the saved value is rendered above the input in
+  // theme purple so the admin can see what's stored without it
+  // mixing visually with what they're typing. Saving clears these
+  // buffers and the "saved" line updates from the SWR revalidation.
+  const [testKey, setTestKey] = useState("");
+  const [prodKey, setProdKey] = useState("");
+  const [testUrl, setTestUrl] = useState("");
+  const [prodUrl, setProdUrl] = useState("");
+  const [testWebhook, setTestWebhook] = useState("");
+  const [prodWebhook, setProdWebhook] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const keyValue = activeEnv === "test" ? testKey : prodKey;
+  const urlValue = activeEnv === "test" ? testUrl : prodUrl;
+  const webhookValue = activeEnv === "test" ? testWebhook : prodWebhook;
+  const savedKey = (activeEnv === "test" ? settings?.secretKeyTest : settings?.secretKeyProduction) ?? "";
+  const savedUrl = (activeEnv === "test" ? settings?.baseUrlTest : settings?.baseUrlProduction) ?? "";
+  const savedWebhook = (activeEnv === "test" ? settings?.webhookSecretTest : settings?.webhookSecretProduction) ?? "";
+  // Dirty when the admin has typed something into any of the three
+  // inputs for the active env. Empty inputs are a no-op — clearing
+  // a saved value isn't supported through this card on purpose.
+  const dirty = !!keyValue.trim() || !!urlValue.trim() || !!webhookValue.trim();
+
+  function clearActiveEnvBuffers() {
+    if (activeEnv === "test") {
+      setTestKey(""); setTestUrl(""); setTestWebhook("");
+    } else {
+      setProdKey(""); setProdUrl(""); setProdWebhook("");
+    }
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const patch: Record<string, string | null> = {};
+      if (keyValue.trim()) {
+        patch[activeEnv === "test" ? "secretKeyTest" : "secretKeyProduction"] = keyValue.trim();
+      }
+      if (urlValue.trim()) {
+        patch[activeEnv === "test" ? "baseUrlTest" : "baseUrlProduction"] = urlValue.trim();
+      }
+      if (webhookValue.trim()) {
+        patch[activeEnv === "test" ? "webhookSecretTest" : "webhookSecretProduction"] = webhookValue.trim();
+      }
+      const res = await fetch("/api/admin/payment-mode", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? `Save failed (${res.status})`);
+      toast.success(`Dodo ${activeEnv} settings saved`);
+      clearActiveEnvBuffers();
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const defaultBaseUrl = activeEnv === "production" ? "https://live.dodopayments.com" : "https://test.dodopayments.com";
+
+  return (
+    <div
+      className="rounded-2xl p-6 mt-[15px]"
+      style={{ background: "white", border: "2px solid silver" }}
+    >
+      <div className="mb-6">
+        <p className="text-base font-semibold" style={{ color: "var(--c-90)" }}>Dodo Variables</p>
+        <p className="text-sm mt-1.5 leading-relaxed" style={{ color: "var(--c-50)" }}>
+          Used by /api/dodo/verify and the Dodo webhook handler. Production-test plan always uses the Production env; other plans follow the current payment mode.
+        </p>
+      </div>
+
+      <div className="inline-flex p-0.5 rounded-lg mb-5" style={{ background: "oklch(0 0 0 / 0.05)" }}>
+        {(runtimeEnv === "production" ? (["production"] as const) : (["test", "production"] as const)).map((env) => (
+          <button
+            key={env}
+            type="button"
+            onClick={() => setActiveEnv(env)}
+            disabled={saving}
+            className="px-4 py-1.5 rounded-md text-sm font-semibold transition-all disabled:opacity-40 capitalize cursor-pointer"
+            style={activeEnv === env
+              ? { background: "white", color: "var(--c-90)", boxShadow: "0 1px 3px oklch(0 0 0 / 0.1)" }
+              : { background: "transparent", color: "var(--c-55)" }}
+          >
+            {env}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-5">
+        <DodoVarField
+          label={`Secret key (${activeEnv})`}
+          saved={savedKey}
+          value={keyValue}
+          onChange={(v) => (activeEnv === "test" ? setTestKey(v) : setProdKey(v))}
+          placeholder={activeEnv === "test" ? "sk_test_…" : "sk_live_…"}
+          disabled={saving}
+        />
+
+        <DodoVarField
+          label={`Base URL (${activeEnv})`}
+          saved={savedUrl}
+          value={urlValue}
+          onChange={(v) => (activeEnv === "test" ? setTestUrl(v) : setProdUrl(v))}
+          placeholder={defaultBaseUrl}
+          disabled={saving}
+          hint={`Leave blank to use the default (${defaultBaseUrl}).`}
+        />
+
+        <DodoVarField
+          label={`DODO_WEBHOOK_SECRET (${activeEnv})`}
+          saved={savedWebhook}
+          value={webhookValue}
+          onChange={(v) => (activeEnv === "test" ? setTestWebhook(v) : setProdWebhook(v))}
+          placeholder="whsec_…"
+          disabled={saving}
+          hint="Per-environment Dodo webhook signing secret. The handler tries every configured secret on each request, so test + production can both target the same /api/webhooks/dodo URL."
+        />
+      </div>
+
+      <div className="flex items-center gap-3 mt-6">
+        <button
+          onClick={save}
+          disabled={saving || !dirty}
+          className="py-2.5 px-5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
+        >
+          {saving ? (
+            <span className="inline-flex items-center gap-2">
+              <Spinner size={14} className="text-white" />
+              Saving…
+            </span>
+          ) : "Save changes"}
+        </button>
+        {!dirty && savedKey && (
+          <span className="text-sm" style={{ color: "var(--c-50)" }}>Saved</span>
+        )}
+        {!savedKey && !dirty && (
+          <span className="text-sm" style={{ color: "var(--c-40)" }}>No key set — verify falls back to the env var.</span>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -3513,6 +4031,21 @@ export default function AdminPage() {
     fetcher
   );
 
+  // Revenue tab reads everything (Total/MRR/ARR/paying count + chart)
+  // from the immutable revenue_events ledger so the numbers survive
+  // user deletion. MRR and ARR are rolling-window actual-revenue
+  // figures (last 30 / 365 days), not amortized recurring math.
+  const { data: revenue } = useSWR<{
+    totalCents: number;
+    mrrCents: number;
+    arrCents: number;
+    payingUserCount: number;
+    launchedAt: string | null;
+    last12Months: { month: string; amountCents: number }[];
+    recentEvents: { amountCents: number; occurredAt: string | null; userEmail: string | null; plan: string | null; eventType: string | null; dodoPaymentId: string | null }[];
+    eventCount: number;
+  }>(authChecked ? "/api/admin/revenue" : null, fetcher);
+
   const { data: productKeysRaw, isLoading: keysLoading, mutate: mutateKeys } = useSWR<ProductApiKey[]>(
     authChecked ? "/api/admin/product-keys" : null,
     fetcher
@@ -3534,9 +4067,17 @@ export default function AdminPage() {
   // one menu open at a time so the table can't end up cluttered.
   const [openUserMenu, setOpenUserMenu] = useState<string | null>(null);
   const [promotingUser, setPromotingUser] = useState<string | null>(null);
-  // Modal confirm for "Make admin" — promotion is irreversible from
-  // this UI (no "Demote" action yet) so we force a deliberate click.
+  // Modal confirm for "Make admin" — promotion is reversible via the
+  // Remove admin action below, but we still force a deliberate click
+  // on promotion since admin powers are sensitive.
   const [promoteTarget, setPromoteTarget] = useState<AdminUser | null>(null);
+  // Demotion (Remove admin) state — mirrors the promote pair so the
+  // spinner / confirm flow looks identical from the user's side.
+  const [demotingUser, setDemotingUser] = useState<string | null>(null);
+  const [demoteTarget, setDemoteTarget] = useState<AdminUser | null>(null);
+  // Track which user row is mid-flag so the kebab button shows a
+  // spinner and the menu item disables itself during the request.
+  const [flaggingProdTest, setFlaggingProdTest] = useState<string | null>(null);
   const [usersPage, setUsersPage] = useState(1);
   const [userSearch, setUserSearch] = useState("");
   type PlanBucket = "all" | "admin" | "founder" | "pro" | "starter" | "free" | "pending";
@@ -3569,11 +4110,11 @@ export default function AdminPage() {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [hoveredRevIdx, setHoveredRevIdx] = useState<number | null>(null);
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "activity" | "users" | "projects" | "revenue" | "logs" | "emails" | "memory" | "setup"
+    "stats" | "activity" | "users" | "projects" | "revenue" | "logs" | "emails" | "support" | "memory" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "activity", "users", "projects", "revenue", "logs", "emails", "memory", "setup"],
+    ["stats", "activity", "users", "projects", "revenue", "logs", "emails", "support", "memory", "setup"],
   );
 
   // Per-project cost rollups for the Videos → Cost sub-tab. Only
@@ -3623,6 +4164,37 @@ export default function AdminPage() {
       toast.error(err instanceof Error ? err.message : "Failed to make admin");
     } finally {
       setPromotingUser(null);
+    }
+  }
+
+  async function handleRemoveAdmin(email: string) {
+    setDemotingUser(email);
+    try {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(email)}/remove-admin`, { method: "POST" });
+      const json = await res.json().catch(() => ({})) as { ok?: boolean; alreadyNotAdmin?: boolean; error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to remove admin");
+      toast.success(json.alreadyNotAdmin ? `${email} was not an admin` : `${email} is no longer an admin`);
+      setDemoteTarget(null);
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove admin");
+    } finally {
+      setDemotingUser(null);
+    }
+  }
+
+  async function handleFlagProductionTest(email: string) {
+    setFlaggingProdTest(email);
+    try {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(email)}/flag-production-test`, { method: "POST" });
+      const json = await res.json().catch(() => ({})) as { ok?: boolean; alreadyFlagged?: boolean; error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to flag");
+      toast.success(json.alreadyFlagged ? `${email} is already a production test account` : `${email} flagged as production test`);
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to flag account");
+    } finally {
+      setFlaggingProdTest(null);
     }
   }
 
@@ -3782,36 +4354,57 @@ export default function AdminPage() {
         </div>
       </header>
 
-      <div className="w-full px-[30px] pt-6 flex justify-end">
-        <button
-          onClick={() => setLaunchOpen(true)}
-          className="inline-flex items-center justify-center gap-1.5 rounded-lg text-base font-bold transition-all hover:opacity-90 cursor-pointer"
-          style={{
-            width: "100px",
-            height: "50px",
-            padding: "10px",
-            background: "oklch(0.55 0.15 145)",
-            color: "white",
-            boxShadow: "0 0 12px oklch(0.55 0.15 145 / 0.25)",
-          }}
-        >
-          <Rocket size={16} />
-          Launch
-        </button>
-      </div>
-
       <main className="flex-1 w-full px-[30px] py-8 sm:py-12 space-y-6 sm:space-y-10">
-        {/* Page heading */}
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-            style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-            <BarChart3 size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+        {/* Page heading + Launch action, sharing one row */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+              style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+              <BarChart3 size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+            </div>
+            <div className="min-w-0">
+              <h1 className="text-2xl font-bold text-foreground">Admin Dashboard</h1>
+              <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                Users, projects, and system overview
+              </p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Admin Dashboard</h1>
-            <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-              Users, projects, and system overview
-            </p>
+
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            {(() => {
+              const canLaunch = launchAllowedClient();
+              return (
+                <button
+                  onClick={() => setLaunchOpen(true)}
+                  disabled={!canLaunch}
+                  title={canLaunch ? "Launch Heclus" : "Disabled on staging — only enabled in production or local dev"}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg text-base font-bold transition-all hover:opacity-90 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{
+                    width: "100px",
+                    height: "50px",
+                    padding: "10px",
+                    background: "oklch(0.55 0.15 145)",
+                    color: "white",
+                    boxShadow: canLaunch ? "0 0 12px oklch(0.55 0.15 145 / 0.25)" : "none",
+                  }}
+                >
+                  <Rocket size={16} />
+                  Launch
+                </button>
+              );
+            })()}
+            {revenue?.launchedAt && (
+              <p className="text-xs" style={{ color: "var(--c-50)" }}>
+                Launched on:{" "}
+                <span className="font-semibold" style={{ color: "var(--c-78)" }}>
+                  {new Date(revenue.launchedAt).toLocaleDateString("en", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })}
+                </span>
+              </p>
+            )}
           </div>
         </div>
 
@@ -3825,6 +4418,7 @@ export default function AdminPage() {
             { id: "revenue",  label: "Revenue",  icon: DollarSign },
             { id: "logs",     label: "Logs",     icon: FileText },
             { id: "emails",   label: "Emails",   icon: Mail },
+            { id: "support",  label: "Support tickets",  icon: LifeBuoy },
             { id: "memory",   label: "Memory",   icon: MemoryStick },
             { id: "setup",    label: "Config",   icon: Settings },
           ] as const;
@@ -4312,27 +4906,28 @@ export default function AdminPage() {
                         {u.lastSignIn ? timeAgo(u.lastSignIn) : "Never"}
                       </td>
                       <td className="py-3 px-4">
-                        {/* Kebab menu — replaces the standalone Remove
-                            button. Admins (founder + promoted) have no
-                            menu since neither "Remove" nor "Make admin"
-                            applies to them. Pending users also have
-                            nothing actionable in this menu (they
-                            haven't signed up yet to be promoted, and
-                            the existing Cancel-invite path is
-                            elsewhere). */}
-                        {!u.isAdmin && u.status !== "Pending" && (
+                        {/* Kebab menu — Pending users have nothing
+                            actionable here (the Cancel-invite path
+                            lives elsewhere). Admins get a single
+                            "Remove admin" action; everyone else gets
+                            the Make admin + Remove pair. Hardcoded
+                            admins (lib/admin.ts ADMIN_EMAILS) can
+                            still open the menu, but the server-side
+                            demote will 409 and surface a toast that
+                            explains the rejection. */}
+                        {u.status !== "Pending" && (
                           <div className="relative inline-block">
                             <button
                               type="button"
                               onClick={() => setOpenUserMenu(openUserMenu === u.email ? null : u.email)}
-                              disabled={removing === u.email || promotingUser === u.email}
+                              disabled={removing === u.email || promotingUser === u.email || demotingUser === u.email || flaggingProdTest === u.email}
                               className="w-7 h-7 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 inline-flex items-center justify-center"
                               style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)", color: "var(--c-55)" }}
                               aria-label="User actions"
                               aria-haspopup="menu"
                               aria-expanded={openUserMenu === u.email}
                             >
-                              {(removing === u.email || promotingUser === u.email)
+                              {(removing === u.email || promotingUser === u.email || demotingUser === u.email || flaggingProdTest === u.email)
                                 ? <Spinner size={12} />
                                 : <MoreVertical size={14} />}
                             </button>
@@ -4354,27 +4949,67 @@ export default function AdminPage() {
                                     boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)",
                                   }}
                                 >
-                                  <button
-                                    type="button"
-                                    role="menuitem"
-                                    onClick={() => { setOpenUserMenu(null); setPromoteTarget(u); }}
-                                    className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0_0_0_/_0.04)] flex items-center gap-2 cursor-pointer"
-                                    style={{ color: "oklch(0.45 0.15 220)" }}
-                                  >
-                                    <Crown size={12} />
-                                    Make admin
-                                  </button>
-                                  <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
-                                  <button
-                                    type="button"
-                                    role="menuitem"
-                                    onClick={() => { setOpenUserMenu(null); setRemoveTarget(u); }}
-                                    className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0.6_0.22_25_/_0.08)] flex items-center gap-2 cursor-pointer"
-                                    style={{ color: "oklch(0.6 0.22 25)" }}
-                                  >
-                                    <Trash2 size={12} />
-                                    Remove
-                                  </button>
+                                  {u.isAdmin ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => { setOpenUserMenu(null); setDemoteTarget(u); }}
+                                        className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0.6_0.22_25_/_0.08)] flex items-center gap-2 cursor-pointer"
+                                        style={{ color: "oklch(0.6 0.22 25)" }}
+                                      >
+                                        <Crown size={12} />
+                                        Remove admin
+                                      </button>
+                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => { setOpenUserMenu(null); handleFlagProductionTest(u.email); }}
+                                        disabled={flaggingProdTest === u.email}
+                                        className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0_0_0_/_0.04)] flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                        style={{ color: "oklch(0.45 0.15 145)" }}
+                                      >
+                                        <FlaskConical size={12} />
+                                        Flag as production test account
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => { setOpenUserMenu(null); setPromoteTarget(u); }}
+                                        className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0_0_0_/_0.04)] flex items-center gap-2 cursor-pointer"
+                                        style={{ color: "oklch(0.45 0.15 220)" }}
+                                      >
+                                        <Crown size={12} />
+                                        Make admin
+                                      </button>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => { setOpenUserMenu(null); handleFlagProductionTest(u.email); }}
+                                        disabled={flaggingProdTest === u.email}
+                                        className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0_0_0_/_0.04)] flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                        style={{ color: "oklch(0.45 0.15 145)" }}
+                                      >
+                                        <FlaskConical size={12} />
+                                        Flag as production test account
+                                      </button>
+                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => { setOpenUserMenu(null); setRemoveTarget(u); }}
+                                        className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0.6_0.22_25_/_0.08)] flex items-center gap-2 cursor-pointer"
+                                        style={{ color: "oklch(0.6 0.22 25)" }}
+                                      >
+                                        <Trash2 size={12} />
+                                        Remove
+                                      </button>
+                                    </>
+                                  )}
                                 </div>
                               </>
                             )}
@@ -4733,6 +5368,8 @@ export default function AdminPage() {
             </div>
           ))}
 
+          {videosSubTab === "cost" && !selectedCostProject && <TtsCostLens />}
+
           {videosSubTab === "cost" && (() => {
             // Build a project-id → cost rollup map so the table can
             // render a row per project (using the same pagination
@@ -5017,36 +5654,56 @@ export default function AdminPage() {
         {/* Revenue section */}
         {(() => {
           const PLAN_MRR: Record<string, number> = { founder: 40 / 12, starter: 19, pro: 49 };
-          const PLAN_AMOUNT: Record<string, number> = { founder: 40, starter: 19, pro: 49 };
           const PLAN_LABEL: Record<string, string> = { founder: "Founder", starter: "Starter", pro: "Pro" };
           // Most-recent payments first; nulls-last for any paid user
           // whose paidAt isn't set (e.g. a manual grant without a
           // timestamp).
+          //
+          // Once the Launch action has set product_config
+          // .activity_cutoff_at, the table is scoped to post-launch
+          // subscriptions only — anyone whose paidAt predates launch
+          // is hidden, so the view stays focused on real day-1+
+          // customers instead of being mixed with pre-launch test
+          // accounts. Before launch (launchedAt = null) the filter is
+          // a no-op and everyone with paid=true is shown.
+          const launchedAtMs = revenue?.launchedAt ? new Date(revenue.launchedAt).getTime() : null;
           const paidUsers = users
             .filter((u) => u.status === "Paid")
+            .filter((u) => {
+              if (launchedAtMs === null) return true;
+              if (!u.paidAt) return false;
+              return new Date(u.paidAt).getTime() >= launchedAtMs;
+            })
             .sort((a, b) => {
               const ta = a.paidAt ? new Date(a.paidAt).getTime() : -Infinity;
               const tb = b.paidAt ? new Date(b.paidAt).getTime() : -Infinity;
               return tb - ta;
             });
-          const mrr = paidUsers.reduce((sum, u) => sum + (u.plan ? (PLAN_MRR[u.plan] ?? 0) : 0), 0);
-          const arr = mrr * 12;
+          // All four cards now sourced from revenue_events via
+          // /api/admin/revenue. paidUsers (derived from
+          // auth.users.app_metadata) is still used below for the
+          // "Paid users" table, which is intentionally a view of
+          // CURRENTLY-paying subscriptions and not historical revenue.
+          const mrr = (revenue?.mrrCents ?? 0) / 100;
+          const arr = (revenue?.arrCents ?? 0) / 100;
+          const payingUserCount = revenue?.payingUserCount ?? 0;
 
-          // Monthly revenue chart data — last 12 months
-          const last12 = Array.from({ length: 12 }, (_, i) => {
+          // Revenue history sourced from the immutable revenue_events
+          // ledger via /api/admin/revenue. Survives user deletion,
+          // unlike the prior approach which derived months from
+          // auth.users.app_metadata.paid_at and silently dropped any
+          // revenue tied to a deleted user.
+          const last12Months = revenue?.last12Months ?? Array.from({ length: 12 }, (_, i) => {
             const d = new Date();
             d.setUTCDate(1);
             d.setUTCMonth(d.getUTCMonth() - (11 - i));
-            return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+            return { month: `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`, amountCents: 0 };
           });
-          const revenueByMonth = new Map<string, number>();
-          for (const u of paidUsers) {
-            if (!u.paidAt) continue;
-            const month = new Date(u.paidAt).toISOString().slice(0, 7);
-            revenueByMonth.set(month, (revenueByMonth.get(month) ?? 0) + (u.plan ? (PLAN_AMOUNT[u.plan] ?? 0) : 0));
-          }
-          const chartPts = last12.map(m => ({ month: m, revenue: revenueByMonth.get(m) ?? 0 }));
-          const totalRevenue = chartPts.reduce((s, p) => s + p.revenue, 0);
+          const chartPts = last12Months.map((m) => ({
+            month: m.month,
+            revenue: m.amountCents / 100,
+          }));
+          const totalRevenue = (revenue?.totalCents ?? 0) / 100;
 
           // SVG chart
           const W = 560, PAD_L = 40, PAD_R = 10, PAD_T = 14, PAD_B = 26;
@@ -5081,7 +5738,7 @@ export default function AdminPage() {
               {/* Summary cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
-                  { label: "Paid Users",     value: paidUsers.length.toString() },
+                  { label: "Paid Users",     value: payingUserCount.toString() },
                   { label: "Total Revenue",  value: `$${totalRevenue.toFixed(2)}` },
                   { label: "Est. MRR",       value: `$${mrr.toFixed(2)}` },
                   { label: "Est. ARR",       value: `$${arr.toFixed(2)}` },
@@ -5235,11 +5892,28 @@ export default function AdminPage() {
             IMAP/SMTP via /api/admin/emails. */}
         {activeTab === "emails" && <EmailsPanel />}
 
+        {/* Support section — in-app HelpButton ticket queue, status
+            triage, admin notes. Backed by support_tickets table. */}
+        {activeTab === "support" && (
+          <section
+            id="support"
+            className="rounded-2xl max-w-full min-w-0"
+            style={{
+              background: "white",
+              border: "1px solid oklch(0 0 0 / 0.07)",
+              padding: "16px",
+              scrollMarginTop: "80px",
+              boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)",
+            }}
+          >
+            <SupportPanel />
+          </section>
+        )}
+
         {/* Memory section — per-stage RSS + timing from the video
             worker's projects.assembly_metrics column. Helps locate
             where assembly memory peaks and which stage takes longest. */}
         {activeTab === "memory" && <MemoryPanel />}
-
 
         {/* Setup section — product-wide API key management */}
         {activeTab === "setup" && (
@@ -5267,8 +5941,7 @@ export default function AdminPage() {
             <DialogDescription>
               The user will gain full access to the admin dashboard — including all
               user management actions, API key controls, and concurrency settings.
-              There&apos;s no &quot;Demote&quot; action in this UI yet, so undoing this
-              requires editing the user&apos;s app_metadata in Supabase.
+              You can reverse this later via &quot;Remove admin&quot; on the same kebab menu.
             </DialogDescription>
           </DialogHeader>
           {promoteTarget && (
@@ -5299,6 +5972,56 @@ export default function AdminPage() {
             <button
               onClick={() => setPromoteTarget(null)}
               disabled={promotingUser !== null}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Cancel
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={demoteTarget !== null}
+        onOpenChange={(open) => { if (!open && demotingUser === null) setDemoteTarget(null); }}
+      >
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Remove admin?</DialogTitle>
+            <DialogDescription>
+              The user will lose access to the admin dashboard immediately. Their
+              account, projects, and existing plan are untouched — you can re-promote
+              them later via &quot;Make admin&quot;.
+            </DialogDescription>
+          </DialogHeader>
+          {demoteTarget && (
+            <div className="rounded-xl p-3 space-y-1.5"
+              style={{ background: "oklch(0.6 0.22 25 / 0.06)", border: "1px solid oklch(0.6 0.22 25 / 0.2)" }}>
+              <p className="text-xs font-mono truncate" style={{ color: "var(--c-78)" }}>{demoteTarget.email}</p>
+              <div className="flex items-center gap-3 text-[11px] flex-wrap" style={{ color: "var(--c-55)" }}>
+                <span>Plan: <span className="font-semibold" style={{ color: "var(--c-90)" }}>{demoteTarget.plan ?? "—"}</span></span>
+                <span>Projects: <span className="font-semibold tabular-nums" style={{ color: "var(--c-90)" }}>{demoteTarget.projectCount}</span></span>
+                <span>Last sign-in: <span className="font-semibold" style={{ color: "var(--c-90)" }}>{demoteTarget.lastSignIn ? timeAgo(demoteTarget.lastSignIn) : "Never"}</span></span>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <button
+              onClick={() => { if (demoteTarget) handleRemoveAdmin(demoteTarget.email); }}
+              disabled={demotingUser !== null}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.6 0.22 25)", color: "white" }}
+            >
+              {demotingUser !== null ? (
+                <span className="inline-flex items-center justify-center gap-2">
+                  <Spinner size={14} className="text-white" />
+                  Removing…
+                </span>
+              ) : "Remove admin"}
+            </button>
+            <button
+              onClick={() => setDemoteTarget(null)}
+              disabled={demotingUser !== null}
               className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
               style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
             >

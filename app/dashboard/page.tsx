@@ -12,6 +12,8 @@ import { ADMIN_EMAILS } from "@/lib/admin";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
+import { ApiKeysRequiredModal } from "@/components/ApiKeysRequiredModal";
+import type { ApiKeysStatus } from "@/app/api/me/api-keys-status/route";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
@@ -462,6 +464,7 @@ export default function HomePage() {
   const [userEmail, setUserEmail] = useState("");
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [showNicheLimitModal, setShowNicheLimitModal] = useState(false);
+  const [showApiKeysModal, setShowApiKeysModal] = useState(false);
   const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
 
   // Prefetch the most common destinations so navigation is near-instant once
@@ -624,6 +627,14 @@ export default function HomePage() {
     is_admin: boolean;
   }>("/api/usage", fetcher);
 
+  // User-only API keys check (admins skip the gate since they can use
+  // platform env vars). Drives the pre-niche modal in createProject.
+  const { data: apiKeysStatus } = useSWR<ApiKeysStatus>(
+    isAdmin ? null : "/api/me/api-keys-status",
+    fetcher,
+    { revalidateOnFocus: true },
+  );
+
   const nicheLimit = usage?.niche_limit ?? null;
   const nichesUsed = usage?.niches_used ?? 0;
   const atNicheLimit = !!usage?.at_limit;
@@ -658,12 +669,24 @@ export default function HomePage() {
     router.push("/projects/new/channel");
   }
 
+  function requireApiKeys(action: () => void) {
+    // Admins bypass the gate — the platform env-var fallback covers
+    // their setup. Paid customers must have entered both keys before
+    // we let them burn project resources against shared credentials.
+    if (isAdmin) { action(); return; }
+    if (apiKeysStatus && !apiKeysStatus.bothSet) {
+      setShowApiKeysModal(true);
+      return;
+    }
+    action();
+  }
+
   function createProject() {
     if (atNicheLimit && nicheLimit !== null) {
       setShowNicheLimitModal(true);
       return;
     }
-    requireSubscription(doCreateProject);
+    requireSubscription(() => requireApiKeys(doCreateProject));
   }
 
   function doCreateVideoForChannel(group: ChannelGroup) {
@@ -673,7 +696,7 @@ export default function HomePage() {
   }
 
   function createVideoForChannel(group: ChannelGroup) {
-    requireSubscription(() => doCreateVideoForChannel(group));
+    requireSubscription(() => requireApiKeys(() => doCreateVideoForChannel(group)));
   }
 
   async function deleteOne(id: string): Promise<{ id: string; ok: boolean; error?: string; warnings?: string[] }> {
@@ -1702,6 +1725,10 @@ export default function HomePage() {
           onClose={() => setShowNicheLimitModal(false)}
           onSuccess={handleSubscriptionSuccess}
         />
+      )}
+
+      {showApiKeysModal && (
+        <ApiKeysRequiredModal onClose={() => setShowApiKeysModal(false)} />
       )}
 
     </div>

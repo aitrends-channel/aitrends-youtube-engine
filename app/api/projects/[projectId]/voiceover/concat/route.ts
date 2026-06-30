@@ -57,8 +57,29 @@ async function downloadToFile(url: string, dest: string): Promise<void> {
   });
 }
 
+// Retry wrapper — undici's "fetch failed" (transport-layer error) is
+// almost always transient: DNS hiccup, socket reset, connection-pool
+// exhaustion when many parallel downloads burst. Two quick retries
+// clear the vast majority of cases. HTTP-status failures
+// (`HTTP 4xx/5xx`) are not retried — those won't change on retry.
+async function downloadToFileWithRetry(url: string, dest: string): Promise<void> {
+  const delays = [500, 1500];
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      await downloadToFile(url, dest);
+      return;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const transient = /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i.test(msg);
+      if (!transient || attempt === delays.length) throw e;
+      console.warn(`[voiceover-concat] download attempt ${attempt + 1} failed (${msg}); retrying in ${delays[attempt]}ms`);
+      await new Promise((r) => setTimeout(r, delays[attempt]));
+    }
+  }
+}
+
 // Bounded parallelism — run `items` through `fn` with at most `limit`
-// in flight. Used to cap ffmpeg/fetch fan-out on long projects where
+// in flight. Caps ffmpeg/fetch fan-out on long projects where
 // Promise.all would otherwise blow past the lambda fd limit (EMFILE)
 // or undici's connection pool ("fetch failed").
 async function runWithLimit<T>(items: T[], limit: number, fn: (item: T, idx: number) => Promise<void>): Promise<void> {
@@ -162,13 +183,18 @@ export async function POST(req: Request, { params }: { params: { projectId: stri
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), `vo-concat-${projectId}-`));
   const audioPaths: string[] = [];
   try {
-    // Download all beats in parallel — order is preserved by index, not
-    // by completion time, so we can safely Promise.all here.
-    await Promise.all(withAudio.map(async (b, i) => {
+    // Download all beats in parallel, capped at 6 concurrent. Order is
+    // preserved by writing to audioPaths[i] (index, not completion).
+    // Unbounded Promise.all here used to open one socket per beat at
+    // once — 30+ simultaneous HTTPS fetches reliably tripped undici's
+    // "fetch failed" under any network blip. 6 stays well under the
+    // pool limit while keeping wall-clock essentially the same on
+    // typical script sizes.
+    await runWithLimit(withAudio, 6, async (b, i) => {
       const dest = path.join(tmpDir, `b${String(i).padStart(4, "0")}.mp3`);
-      await downloadToFile(b.voiceover_url!, dest);
+      await downloadToFileWithRetry(b.voiceover_url!, dest);
       audioPaths[i] = dest;
-    }));
+    });
 
     // Optional silence-trim pass per beat. Bounded at 4 concurrent
     // ffmpeg spawns — Promise.all over hundreds of beats blew past

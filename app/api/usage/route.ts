@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
-import { isAdminUser } from "@/lib/admin";
+import { isAdminUser, isProductionTestUser } from "@/lib/admin";
 import { getPlanBySlug } from "@/lib/plans";
 import type { User } from "@supabase/supabase-js";
 
@@ -14,6 +14,7 @@ export async function GET() {
   // user promoted via the dashboard. Without this, promoted admins
   // would still be subject to their original plan's niche cap.
   const isAdmin = isAdminUser(user);
+  const isProductionTest = isProductionTestUser(user);
   const plan = (user.app_metadata?.plan as string) ?? "demo";
   const isPaid = user.app_metadata?.paid === true;
   // Resolved against the plans table. Paid users with an unrecognised
@@ -67,6 +68,7 @@ export async function GET() {
     at_limit,
     plan: effectivePlan,
     is_admin: isAdmin,
+    is_production_test: isProductionTest,
     email: user.email ?? null,
   });
 }
