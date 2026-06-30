@@ -1487,30 +1487,49 @@ export default function AssemblePage({ params }: PageProps) {
                     s.startsWith("Loading") || s === "Queued…" || s === "Starting…"
                     || s.startsWith("Preparing") || s.startsWith("Prepared") || s.startsWith("Downloading voiceover") || s === "Joining per-beat audio…"
                     || s.startsWith("Transcribing") || s.startsWith("Translating")
-                    || s.startsWith("Downloading channel logo")
                   ) },
                   // Build clips: per-beat encode pass + the post-encode
                   // "Finalizing…" debounce the worker emits when a
                   // worker pool finishes its last beat.
                   { key: "clips",      label: "Build clips",     match: (s: string) => s.startsWith("Processing") || s.startsWith("Finalizing") },
-                  // Mix audio: join clips, freeze-pad, BGM download,
-                  // and the actual mix pass. The freeze-pad only fires
-                  // in legacy mode with trailing silence; folding it
-                  // into this stage keeps step counts run-stable.
+                  // Mix audio: join clips, freeze-pad, BGM + logo
+                  // download, and the actual mix pass. Logo download
+                  // lives here now (used to be a Stage B prereq) so
+                  // both BGM and logo prep land in one user-visible
+                  // step. The freeze-pad only fires in legacy mode
+                  // with trailing silence; folding it in keeps step
+                  // counts run-stable.
                   { key: "mix",        label: "Mix audio",       match: (s: string) => (
                     s === "Joining clips…" || s.startsWith("Padding video") || s.startsWith("Restoring joined") || s.startsWith("Restoring padded")
-                    || s.startsWith("Downloading background music")
+                    || s.startsWith("Downloading background music") || s.startsWith("Downloading channel logo")
                     || s.startsWith("Mixing") || s.startsWith("Restoring mixed")
                   ) },
-                  // Burn captions: the final-burn pass — Coconut or
-                  // local ffmpeg. Covers the captions bake-in, logo,
-                  // and resolution upscale on large projects.
+                  // Burn captions: the final-burn pass. The label is
+                  // resolved dynamically below — "Burn captions -
+                  // Coconut" when the worker is using the offloaded
+                  // path, "Burn captions - VW" when local ffmpeg is
+                  // running. The matcher recognises both prefixes
+                  // plus the older labels (still emitted on workers
+                  // that haven't redeployed yet).
                   { key: "burn",       label: "Burn captions",   match: (s: string) => (
-                    s.startsWith("Submitting final-burn") || s.startsWith("Finalizing on Coconut") || s.startsWith("Coconut")
+                    s.startsWith("Burn captions -")
+                    || s.startsWith("Submitting final-burn") || s.startsWith("Finalizing on Coconut") || s.startsWith("Coconut")
                     || s.startsWith("Burning captions") || s.startsWith("Applying final burn") || s.startsWith("Upscaling to")
                   ) },
                   { key: "upload",     label: "Upload",          match: (s: string) => s.startsWith("Uploading") },
                 ];
+                // Dynamic label override for the burn step — the
+                // user wants to see exactly which engine is doing
+                // the work. Worker now writes the path into the
+                // status prefix; we just check the substring.
+                const burnIdx = stages.findIndex((s) => s.key === "burn");
+                if (burnIdx >= 0) {
+                  if (assembleStatus.includes("Burn captions - Coconut")) {
+                    stages[burnIdx] = { ...stages[burnIdx], label: "Burn captions - Coconut" };
+                  } else if (assembleStatus.includes("Burn captions - VW")) {
+                    stages[burnIdx] = { ...stages[burnIdx], label: "Burn captions - VW" };
+                  }
+                }
                 // Monotonic stage index: once we've seen progress to
                 // a later stage, don't ever fall back to an earlier
                 // one. The worker occasionally writes transient
