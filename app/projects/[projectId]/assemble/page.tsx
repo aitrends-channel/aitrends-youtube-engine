@@ -92,6 +92,26 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }, [project?.current_state, projectId, mutate]);
 
+  // Read the admin assembly-config flag once at mount. Drives the
+  // wording on the in-progress preview block: when Stage B already
+  // encoded at final resolution, Stage F is only "Burning captions";
+  // when Stage B used the 720p intermediate, Stage F is both
+  // "Captions + final resolution". Null while loading — we default
+  // the label to the more conservative wording.
+  const [beatsAtFinalRes, setBeatsAtFinalRes] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/assembly-config")
+      .then((r) => r.json())
+      .then((d: { beats_at_final_res?: boolean }) => {
+        if (!cancelled && typeof d.beats_at_final_res === "boolean") {
+          setBeatsAtFinalRes(d.beats_at_final_res);
+        }
+      })
+      .catch(() => { /* non-blocking — label falls back to the conservative wording */ });
+    return () => { cancelled = true; };
+  }, []);
+
   // Hydrate BGM, logo, trim-silence, and the five caption knobs from
   // the project row on first load. Migrations 047 (BGM + logo) and 051
   // (trim + captions) backed these columns; /api/generate/assemble
@@ -1408,7 +1428,9 @@ export default function AssemblePage({ params }: PageProps) {
                     style={{ background: "var(--bg-page-2)" }}
                   />
                   <p className="text-sm text-center font-medium leading-snug" style={{ color: "oklch(0.72 0.18 60)" }}>
-                    Burning captions
+                    {beatsAtFinalRes
+                      ? "Preview — Burning captions"
+                      : "Preview — Captions + final resolution"}
                   </p>
                 </div>
               )}
@@ -1449,31 +1471,45 @@ export default function AssemblePage({ params }: PageProps) {
                 //     own stage when captions translation is needed.
                 //   - join only matches the final visuals concat now;
                 //     "Joining per-beat audio…" lands in voiceover.
-                const hasBgm = !!bgmUploadedUrl;
-                const needsTranslate = captionsEnabled && captionsLanguage !== "source";
+                // Five high-level stages. The previous 9-step layout
+                // exposed pipeline internals (transcribe, translate,
+                // download bgm, restore-from-checkpoint) that the
+                // user can't act on and that change run-to-run based
+                // on whether captions/translation/BGM are configured.
+                // Collapsing into Prepare / Build clips / Mix audio /
+                // Burn captions / Upload keeps the count stable and
+                // the labels meaningful regardless of options.
                 const stages = [
-                  { key: "load",       label: "Load project",        match: (s: string) => s.startsWith("Loading") || s === "Queued…" || s === "Starting…" },
-                  { key: "voiceover",  label: "Prepare voiceover",   match: (s: string) => s.startsWith("Preparing") || s.startsWith("Prepared") || s.startsWith("Downloading voiceover") || s === "Joining per-beat audio…" },
-                  ...(captionsEnabled ? [{ key: "transcribe", label: "Transcribe voiceover", match: (s: string) => s.startsWith("Transcribing") }] : []),
-                  ...(needsTranslate ? [{ key: "translate",  label: "Translate captions",   match: (s: string) => s.startsWith("Translating") }] : []),
-                  { key: "clips",      label: "Process video clips", match: (s: string) => s.startsWith("Processing") || s.startsWith("Downloading channel logo") || s.startsWith("Finalizing") },
-                  // "Join clips" absorbs the freeze-pad pass and any
-                  // Resume-path "Restoring joined/padded video…" line.
-                  // Pad only fires in legacy mode when the voiceover
-                  // has trailing silence — too situational to warrant
-                  // its own visible step, and folding it in here keeps
-                  // the stage count stable across runs.
-                  { key: "join",       label: "Join clips",          match: (s: string) => s === "Joining clips…" || s.startsWith("Padding video") || s.startsWith("Restoring joined") || s.startsWith("Restoring padded") },
-                  ...(hasBgm ? [{ key: "bgm", label: "Download background music", match: (s: string) => s.startsWith("Downloading background music") }] : []),
-                  { key: "mix",        label: hasBgm ? "Mix voiceover + music" : "Mix voiceover", match: (s: string) => s.startsWith("Mixing") || s.startsWith("Restoring mixed") },
-                  // Finalize covers the post-mix burn passes that run
-                  // on large projects (>80 beats or safe mode): the
-                  // captions/logo bake-in, the resolution upscale, or
-                  // both. Without this stage the progress UI froze on
-                  // the previous step while the worker was actively
-                  // doing a multi-minute re-encode here.
-                  { key: "finalize",   label: "Finalize video",      match: (s: string) => s.startsWith("Applying final burn") || s.startsWith("Upscaling to") },
-                  { key: "upload",     label: "Upload to cloud",     match: (s: string) => s.startsWith("Uploading") },
+                  // Prepare: queue claim, voiceover ready, transcribe,
+                  // translate, channel-logo download (the latter is
+                  // an early-stage prereq, not part of clip encoding).
+                  { key: "prepare",    label: "Prepare",         match: (s: string) => (
+                    s.startsWith("Loading") || s === "Queued…" || s === "Starting…"
+                    || s.startsWith("Preparing") || s.startsWith("Prepared") || s.startsWith("Downloading voiceover") || s === "Joining per-beat audio…"
+                    || s.startsWith("Transcribing") || s.startsWith("Translating")
+                    || s.startsWith("Downloading channel logo")
+                  ) },
+                  // Build clips: per-beat encode pass + the post-encode
+                  // "Finalizing…" debounce the worker emits when a
+                  // worker pool finishes its last beat.
+                  { key: "clips",      label: "Build clips",     match: (s: string) => s.startsWith("Processing") || s.startsWith("Finalizing") },
+                  // Mix audio: join clips, freeze-pad, BGM download,
+                  // and the actual mix pass. The freeze-pad only fires
+                  // in legacy mode with trailing silence; folding it
+                  // into this stage keeps step counts run-stable.
+                  { key: "mix",        label: "Mix audio",       match: (s: string) => (
+                    s === "Joining clips…" || s.startsWith("Padding video") || s.startsWith("Restoring joined") || s.startsWith("Restoring padded")
+                    || s.startsWith("Downloading background music")
+                    || s.startsWith("Mixing") || s.startsWith("Restoring mixed")
+                  ) },
+                  // Burn captions: the final-burn pass — Coconut or
+                  // local ffmpeg. Covers the captions bake-in, logo,
+                  // and resolution upscale on large projects.
+                  { key: "burn",       label: "Burn captions",   match: (s: string) => (
+                    s.startsWith("Submitting final-burn") || s.startsWith("Finalizing on Coconut") || s.startsWith("Coconut")
+                    || s.startsWith("Burning captions") || s.startsWith("Applying final burn") || s.startsWith("Upscaling to")
+                  ) },
+                  { key: "upload",     label: "Upload",          match: (s: string) => s.startsWith("Uploading") },
                 ];
                 // Monotonic stage index: once we've seen progress to
                 // a later stage, don't ever fall back to an earlier
@@ -1665,7 +1701,7 @@ export default function AssemblePage({ params }: PageProps) {
                         <button onClick={finalizeWithPreview} disabled={finalizeRequested || stopRequested}
                           className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
                           style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                          {finalizeRequested ? "Finalizing…" : "Use without captions"}
+                          {finalizeRequested ? "Finalizing…" : "Export anyway"}
                         </button>
                       </div>
                     ) : (
