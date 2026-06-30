@@ -23,6 +23,19 @@ export type ConcurrencyConfig = {
   assembly_projects: number;
   /** Parallel per-beat clip-normalize jobs inside a single assembly (Stage B). */
   assembly_beats: number;
+  /**
+   * Controls WHERE the upscale to the user's chosen final resolution
+   * happens:
+   *   true  → Stage B encodes every per-beat clip at the final
+   *           resolution. Coconut (or local Stage F) only burns
+   *           captions on top.
+   *   false → Stage B encodes at a 720p intermediate, and
+   *           Coconut handles the upscale + captions in one pass.
+   * Trade-off: Stage B at final resolution is ~4× slower per beat
+   * at 1080p and ~16× at 2160p, but captions/logo render at native
+   * resolution and Coconut's job is simpler.
+   */
+  assembly_beats_at_final_res: boolean;
 };
 
 export const CONCURRENCY_DEFAULTS: ConcurrencyConfig = {
@@ -35,13 +48,40 @@ export const CONCURRENCY_DEFAULTS: ConcurrencyConfig = {
   tts_beat_batch: 5,
   assembly_projects: 1,
   assembly_beats: 1,
+  // Default preserves current behavior: 720p intermediate Stage B,
+  // Coconut handles the upscale to final resolution.
+  assembly_beats_at_final_res: false,
 };
+
+// Boolean-typed Assemble flags. Kept in a separate array from the
+// numeric CONCURRENCY_FIELDS because the admin UI renders them
+// differently (checkbox vs number input) and the validator path
+// for booleans skips the min/max bounds check.
+export const ASSEMBLY_FLAG_FIELDS: {
+  key: "assembly_beats_at_final_res";
+  label: string;
+  description: string;
+}[] = [
+  {
+    key: "assembly_beats_at_final_res",
+    label: "Encode beats at final resolution",
+    description: "When ON, Stage B encodes each per-beat clip at the user's chosen output resolution and Coconut only burns captions. When OFF, Stage B uses a 720p intermediate and Coconut does the upscale + captions in one pass. Stage B at final resolution costs ~4× more CPU per beat at 1080p and ~16× at 2160p — but the resulting captions/logo render at native final resolution.",
+  },
+];
+
+// Narrow the key type to ONLY the numeric-valued fields. Without
+// this, `out[f.key] = number` below fails to type-check because
+// the boolean fields would be candidates for f.key and the
+// assignment target is `number | boolean` (never).
+type NumericKey = {
+  [K in keyof ConcurrencyConfig]: ConcurrencyConfig[K] extends number ? K : never;
+}[keyof ConcurrencyConfig];
 
 // Human-readable labels + per-knob bounds for the admin UI and the
 // PUT validator. Keep these together so a new knob lights up in
 // both places with a single edit.
 export const CONCURRENCY_FIELDS: {
-  key: keyof ConcurrencyConfig;
+  key: NumericKey;
   label: string;
   description: string;
   min: number;
@@ -123,6 +163,10 @@ export function coerceConcurrencyConfig(raw: unknown): ConcurrencyConfig {
         out[f.key] = n;
       }
     }
+    for (const f of ASSEMBLY_FLAG_FIELDS) {
+      const v = (raw as Record<string, unknown>)[f.key];
+      if (typeof v === "boolean") out[f.key] = v;
+    }
   }
   return out;
 }
@@ -168,6 +212,14 @@ export function validateConcurrencyInput(input: unknown): { ok: true; value: Con
       return { ok: false, error: `${f.key} must be an integer between ${f.min} and ${f.max}` };
     }
     out[f.key] = n;
+  }
+  for (const f of ASSEMBLY_FLAG_FIELDS) {
+    const v = (input as Record<string, unknown>)[f.key];
+    if (v === undefined) continue;
+    if (typeof v !== "boolean") {
+      return { ok: false, error: `${f.key} must be a boolean` };
+    }
+    out[f.key] = v;
   }
   return { ok: true, value: out };
 }

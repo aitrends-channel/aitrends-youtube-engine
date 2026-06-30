@@ -1417,7 +1417,24 @@ type ConcurrencyConfig = {
   tts_beat_batch: number;
   assembly_projects: number;
   assembly_beats: number;
+  assembly_beats_at_final_res: boolean;
 };
+
+// Boolean-typed Assemble flags. Rendered as checkboxes that save
+// immediately on toggle (no draft state — the click IS the commit).
+// Mirrors lib/concurrency-config.ts ASSEMBLY_FLAG_FIELDS; keep in
+// sync by hand.
+const ASSEMBLY_FLAG_FIELDS: {
+  key: "assembly_beats_at_final_res";
+  label: string;
+  description: string;
+}[] = [
+  {
+    key: "assembly_beats_at_final_res",
+    label: "Encode beats at final resolution",
+    description: "When ON, Stage B encodes each per-beat clip at the user's chosen output resolution and Coconut only burns captions. When OFF, Stage B uses a 720p intermediate and Coconut does the upscale + captions in one pass. Stage B at final resolution costs ~4× more CPU per beat at 1080p and ~16× at 2160p.",
+  },
+];
 
 // Mirrors lib/concurrency-config.ts CONCURRENCY_FIELDS + CONCURRENCY_DEFAULTS —
 // kept in sync by hand. Defaults live here too so the UI can seed the
@@ -1521,6 +1538,30 @@ function ConcurrencyPanel() {
     const next = { ...draft };
     for (const f of CONCURRENCY_FIELDS) next[f.key] = String(f.default);
     setDraft(next);
+  }
+
+  // Boolean-flag save — no draft, no validation step. The checkbox
+  // click is the commit. The PUT is a partial body containing just
+  // this one key so it doesn't clobber an admin's in-progress edits
+  // to the numeric knobs above.
+  const [savingFlag, setSavingFlag] = useState<"assembly_beats_at_final_res" | null>(null);
+  async function saveFlag(key: "assembly_beats_at_final_res", value: boolean) {
+    setSavingFlag(key);
+    try {
+      const res = await fetch("/api/admin/concurrency", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: value }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? "Failed to save");
+      toast.success("Saved");
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSavingFlag(null);
+    }
   }
 
   return (
@@ -1630,6 +1671,38 @@ function ConcurrencyPanel() {
                   {b.group}
                 </h3>
                 {b.fields.map((f) => renderRow(f, true))}
+                {b.group === "Assemble" && ASSEMBLY_FLAG_FIELDS.map((flag) => {
+                  const checked = data?.[flag.key] === true;
+                  const saving = savingFlag === flag.key;
+                  return (
+                    <label key={flag.key} className="p-3 rounded-xl flex items-start gap-3 cursor-pointer transition-colors hover:bg-white"
+                      style={{
+                        background: "white",
+                        border: "1px solid oklch(0 0 0 / 0.06)",
+                        opacity: saving ? 0.6 : 1,
+                      }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={isLoading || saving || savingKey !== null || savingFlag !== null}
+                        onChange={(e) => saveFlag(flag.key, e.target.checked)}
+                        className="mt-0.5 shrink-0"
+                        style={{ accentColor: "oklch(0.62 0.15 220)" }}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>
+                          {flag.label}
+                        </span>
+                        <p className="text-xs mt-0.5" style={{ color: "var(--c-50)" }}>
+                          {flag.description}
+                        </p>
+                        {saving && (
+                          <p className="text-xs mt-1" style={{ color: "var(--c-42)" }}>Saving…</p>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
               </div>
             );
           });
