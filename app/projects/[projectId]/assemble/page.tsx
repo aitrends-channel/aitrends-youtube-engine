@@ -1407,8 +1407,8 @@ export default function AssemblePage({ params }: PageProps) {
                     className="w-full rounded-xl"
                     style={{ background: "var(--bg-page-2)" }}
                   />
-                  <p className="text-[11px] text-center leading-snug" style={{ color: "oklch(0.72 0.18 60)" }}>
-                    Preview — captions, logo, and final resolution still rendering
+                  <p className="text-sm text-center font-medium leading-snug" style={{ color: "oklch(0.72 0.18 60)" }}>
+                    Burning captions
                   </p>
                 </div>
               )}
@@ -1665,7 +1665,7 @@ export default function AssemblePage({ params }: PageProps) {
                         <button onClick={finalizeWithPreview} disabled={finalizeRequested || stopRequested}
                           className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
                           style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                          {finalizeRequested ? "Finalizing…" : "Use this version"}
+                          {finalizeRequested ? "Finalizing…" : "Use without captions"}
                         </button>
                       </div>
                     ) : (
