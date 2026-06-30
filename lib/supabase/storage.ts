@@ -18,6 +18,11 @@ const r2 = new S3Client({
   // r2.send(...) are unaffected (R2 still validates the signature).
   requestChecksumCalculation: "WHEN_REQUIRED",
   responseChecksumValidation: "WHEN_REQUIRED",
+  // R2 only fully supports path-style addressing. Without this the
+  // SDK signs with virtual-hosted style (bucket as subdomain) and R2
+  // rejects with SignatureDoesNotMatch on some operations — same
+  // class of issue we hit on the worker.
+  forcePathStyle: true,
 });
 
 const BUCKET = process.env.R2_BUCKET_NAME!;
