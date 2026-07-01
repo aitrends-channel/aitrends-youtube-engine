@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { supabase as supabaseService } from "@/lib/supabase/client";
 import { isAdminUser } from "@/lib/admin";
-import { getPaymentSettings, getPlanBySlug } from "@/lib/plans";
+import { getPlanBySlug } from "@/lib/plans";
 
 const PLAN_PRICES_CENTS: Record<string, number> = {
   starter: Number(process.env.DODO_STARTER_PRICE_CENTS ?? 2100),
@@ -115,21 +115,13 @@ export async function GET() {
     !alreadyCancelled &&
     effectivePlan !== "founder";
 
-  // Resolve the "Manage billing" URL for the current env, substituting
-  // {customer_id} if the admin's stored URL uses it as a template.
-  // We hand the fully-resolved URL to the client so the /plan page just
-  // does an <a href> — no per-user API round-trip.
-  let customerPortalUrl: string | null = null;
-  if (!admin && effectivePaid) {
-    const settings = await getPaymentSettings();
-    const rawUrl = settings.mode === "production"
-      ? settings.customerPortalUrlProduction
-      : settings.customerPortalUrlTest;
-    if (rawUrl) {
-      const customerId = (dodo.customer_id as string | undefined) ?? "";
-      customerPortalUrl = rawUrl.replace(/\{customer_id\}/g, customerId);
-    }
-  }
+  // "Manage billing" button visibility: the /plan page shows a Manage
+  // link that POSTs to /api/dodo/portal-session for a per-user portal
+  // URL. It only works if we have a customer_id stamped on
+  // app_metadata.dodo — hide the button otherwise so the user doesn't
+  // get an error toast.
+  const customerId = (dodo.customer_id as string | undefined) ?? null;
+  const manageBillingAvailable = !admin && effectivePaid && !!customerId;
 
   return NextResponse.json({
     email: user.email,
@@ -144,8 +136,8 @@ export async function GET() {
     // hasn't ended yet — UI uses this to swap the primary CTA and show
     // an "Access ends on" note instead of the normal renewal messaging.
     subscription_cancelled: alreadyCancelled,
-    // Resolved Dodo customer portal URL (env-aware, with {customer_id}
-    // already substituted). Null when the admin hasn't configured it.
-    customer_portal_url: customerPortalUrl,
+    // True when the /plan page should render the "Manage" billing
+    // button (paid non-admin with a Dodo customer_id on file).
+    manage_billing_available: manageBillingAvailable,
   });
 }

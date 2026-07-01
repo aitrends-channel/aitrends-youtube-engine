@@ -28,7 +28,7 @@ interface PlanData {
   plan_expires_at: string | null;
   can_cancel_subscription?: boolean;
   subscription_cancelled?: boolean;
-  customer_portal_url?: string | null;
+  manage_billing_available?: boolean;
 }
 
 function formatDate(iso: string) {
@@ -50,6 +50,26 @@ export default function PlanPage() {
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const [openingPortal, setOpeningPortal] = useState(false);
+
+  async function handleManageBilling() {
+    setOpeningPortal(true);
+    try {
+      const res = await fetch("/api/dodo/portal-session", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.url) {
+        alert(body?.error ?? "Could not open the billing portal. Try again in a moment.");
+        return;
+      }
+      // New tab so the /plan page state (checkpoints, modals) survives
+      // if the user comes back to it.
+      window.open(body.url, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      alert((e as Error).message || "Could not open the billing portal.");
+    } finally {
+      setOpeningPortal(false);
+    }
+  }
 
   async function handleCancelSubscription() {
     setCancelling(true);
@@ -333,23 +353,31 @@ export default function PlanPage() {
                   </div>
                 )}
 
-                {planData?.customer_portal_url && (
+                {planData?.manage_billing_available && (
                   <div className="flex items-center gap-3 pt-3" style={{ borderTop: "1px solid oklch(1 0 0 / 0.07)" }}>
                     <CreditCard size={14} style={{ color: "var(--c-40)" }} />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs" style={{ color: "var(--c-40)" }}>Payment method</p>
                       <p className="text-sm font-medium text-foreground">Card on file</p>
                     </div>
-                    <a
-                      href={planData.customer_portal_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+                    <button
+                      onClick={handleManageBilling}
+                      disabled={openingPortal}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-60 cursor-pointer"
                       style={{ background: "transparent", color: "var(--c-70)", border: "1px solid var(--bd-8)" }}
                     >
-                      Manage
-                      <ExternalLink size={11} />
-                    </a>
+                      {openingPortal ? (
+                        <>
+                          <span className="inline-block w-3 h-3 rounded-full border-2 border-current/40 border-t-current animate-spin" />
+                          Opening…
+                        </>
+                      ) : (
+                        <>
+                          Manage
+                          <ExternalLink size={11} />
+                        </>
+                      )}
+                    </button>
                   </div>
                 )}
               </div>
