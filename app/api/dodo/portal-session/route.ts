@@ -49,11 +49,9 @@ export async function POST() {
     );
   }
 
-  // Dodo's session-create endpoint. Trailing "customer-portal/sessions"
-  // is the convention we've seen in their docs — if this returns 404
-  // once we test, the log line below shows the full URL so we can
-  // adjust in one edit.
-  const url = `${dodoBase}/customers/${customerId}/customer-portal/sessions`;
+  // Dodo's session-create endpoint. Docs:
+  // https://docs.dodopayments.com/api-reference/customers/create-customer-portal-session
+  const url = `${dodoBase}/customers/${customerId}/customer-portal/session`;
   console.log(`[dodo-portal] user=${user.id} env=${env} url=${url}`);
 
   let dodoRes: Response;
