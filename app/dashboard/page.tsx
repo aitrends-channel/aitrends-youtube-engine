@@ -1376,6 +1376,7 @@ export default function HomePage() {
               {/* API Keys Status */}
               {(() => {
                 const kie = apiStatus?.kie as { configured: boolean; valid: boolean | null; credits?: number } | undefined;
+                const elevenlabs = apiStatus?.elevenlabs as { configured: boolean; valid: boolean | null; remaining?: number; limit?: number } | undefined;
 
                 function StatusBadge({ data, color }: { data: { configured: boolean; valid: boolean | null } | undefined; color: string }) {
                   void color;
@@ -1468,6 +1469,34 @@ export default function HomePage() {
                         )}
                         {kie?.configured && kie.valid && kie.credits === undefined && (
                           <p className="text-[10px]" style={{ color: "var(--c-30)" }}>Check balance in KIE dashboard</p>
+                        )}
+                      </div>
+
+                      {/* ElevenLabs. Uses UsageBar (used/limit) instead of
+                          CreditsBar because ElevenLabs quota is bounded per
+                          plan — we have both numerator and denominator. */}
+                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>ElevenLabs</p>
+                            {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mt-0.5" style={{ color: "#f0a855" }}>Pending setup</p>}
+                            <p className="text-[10px] mt-0.5" style={{ color: "var(--c-38)" }}>Voiceover generation & transcription</p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <StatusBadge data={elevenlabs} color="#c084fc" />
+                            {elevenlabs?.configured && elevenlabs.valid && typeof elevenlabs.remaining === "number" && (
+                              <span className="text-[10px] font-medium tabular-nums"
+                                style={{ color: elevenlabs.remaining <= 0 ? "#f87171" : "var(--c-50)" }}>
+                                {elevenlabs.remaining.toLocaleString()} chars left
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {elevenlabs?.configured && elevenlabs.valid && typeof elevenlabs.remaining === "number" && typeof elevenlabs.limit === "number" && (
+                          <UsageBar used={elevenlabs.limit - elevenlabs.remaining} limit={elevenlabs.limit} color="#c084fc" />
+                        )}
+                        {elevenlabs?.configured && elevenlabs.valid && elevenlabs.remaining === undefined && (
+                          <p className="text-[10px]" style={{ color: "var(--c-30)" }}>Enable user_read scope on your key to see character balance</p>
                         )}
                       </div>
 
