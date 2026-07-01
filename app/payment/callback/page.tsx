@@ -46,11 +46,24 @@ function CallbackContent() {
 
     (async () => {
       // Read the plan the user selected before redirecting to Dodo.
-      // Do NOT remove it until verify succeeds — on a transient failure +
-      // page refresh, we'd lose the selection and a fallback default could
-      // mark the user on the wrong tier even though they paid for another.
-      let plan: string | null = null;
-      try { plan = sessionStorage.getItem("dodo_pending_plan"); } catch {}
+      // Do NOT remove until verify succeeds — on a transient failure +
+      // page refresh we'd lose the selection and a fallback default
+      // could mark the user on the wrong tier even though they paid.
+      //
+      // Sources, in order:
+      //   1. URL param — set by SubscriptionModal / NicheLimitModal
+      //      when they encode plan=<slug> into the redirect_url. Robust
+      //      because Dodo preserves the caller's query params.
+      //   2. localStorage — set alongside sessionStorage; survives the
+      //      new-tab checkout flow where sessionStorage is per-tab.
+      //   3. sessionStorage — legacy same-tab path, kept for safety.
+      let plan: string | null = searchParams.get("plan");
+      if (!plan) {
+        try { plan = localStorage.getItem("dodo_pending_plan"); } catch {}
+      }
+      if (!plan) {
+        try { plan = sessionStorage.getItem("dodo_pending_plan"); } catch {}
+      }
 
       if (!plan) {
         setStage("failed");
@@ -78,6 +91,7 @@ function CallbackContent() {
 
       // Only clear the pending plan after verification confirmed success.
       try { sessionStorage.removeItem("dodo_pending_plan"); } catch {}
+      try { localStorage.removeItem("dodo_pending_plan"); } catch {}
 
       const supabase = createSupabaseBrowserClient();
       await supabase.auth.refreshSession();

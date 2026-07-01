@@ -18,6 +18,11 @@ export interface Plan {
   slug: string;
   name: string;
   priceDisplay: string;
+  /** Actual chargeable amount in the smallest currency unit (cents).
+   * Read by /api/dodo/verify's price guard and /api/plan's post-webhook
+   * plan backfill. Null when the plan has no strict price (custom,
+   * gifted, etc.) — guard skips those. */
+  priceCents: number | null;
   periodDisplay: string;
   limitDisplay: string;
   features: string[];
@@ -35,6 +40,7 @@ interface PlanRow {
   slug: string;
   name: string;
   price_display: string;
+  price_cents: number | null;
   period_display: string;
   limit_display: string;
   features: unknown;
@@ -53,6 +59,7 @@ function rowToPlan(r: PlanRow, mode: PaymentMode): Plan {
     slug: r.slug,
     name: r.name,
     priceDisplay: r.price_display,
+    priceCents: typeof r.price_cents === "number" ? r.price_cents : null,
     periodDisplay: r.period_display,
     limitDisplay: r.limit_display,
     features: Array.isArray(r.features) ? (r.features as string[]) : [],

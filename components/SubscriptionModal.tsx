@@ -60,7 +60,7 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
   // Used solely to read is_production_test for the current user — the
   // production-test plan card is otherwise hidden so customers never
   // see it. is_admin is also returned here but we don't need it.
-  const { data: usageData } = useSWR<{ is_production_test?: boolean }>(
+  const { data: usageData } = useSWR<{ is_production_test?: boolean; has_active_subscription?: boolean; has_current_access?: boolean }>(
     "/api/usage",
     swrFetcher,
     { revalidateOnFocus: true },
@@ -69,6 +69,9 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
   const founderActive: boolean | null = typeof founderData?.active === "boolean" ? founderData.active : null;
   const spotsLeft: number | null = typeof founderData?.spots_left === "number" ? founderData.spots_left : null;
   const isProductionTest = usageData?.is_production_test === true;
+  // Hide the production-test card while the user still has access —
+  // either an active sub OR a cancelled-but-in-grace-period sub.
+  const hasCurrentAccess = usageData?.has_current_access === true;
 
   // Seed the selectedPlan once plans land. SWR may resolve before
   // this effect runs (cache hit), so we guard on a non-empty plans
@@ -89,11 +92,13 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
     return plans
       // production-test is the live-Dodo verification harness — only
       // accounts flagged with app_metadata.is_production_test see it,
-      // so real customers never get a "Test" card mixed in with their
-      // checkout options.
-      .filter((p) => p.slug !== PRODUCTION_TEST_SLUG || isProductionTest)
+      // AND only when the user has no current access (unpaid or fully
+      // expired). Once someone is paid — even if they've cancelled and
+      // are riding out the paid period — the "Try end-to-end" card is
+      // noise.
+      .filter((p) => p.slug !== PRODUCTION_TEST_SLUG || (isProductionTest && !hasCurrentAccess))
       .filter((p) => !p.isFounder || founderAvailable);
-  }, [plans, founderAvailable, isProductionTest]);
+  }, [plans, founderAvailable, isProductionTest, hasCurrentAccess]);
 
   // If the currently-selected slug is a founder plan and founder is no
   // longer available, fall back to the first non-founder, non-disabled
@@ -120,12 +125,33 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
       return;
     }
     setSubscribing(true);
+    // Save the pending plan in TWO places:
+    //   - sessionStorage on this tab (unchanged, so a same-tab flow
+    //     still works if a browser ever blocks the new-tab open)
+    //   - localStorage so the checkout tab (a new window/tab) can read
+    //     it — sessionStorage is per-tab and doesn't cross windows.
+    // Also encode the plan in the callback URL as a third fallback in
+    // case both storages are blocked (private/incognito profiles).
     try { sessionStorage.setItem("dodo_pending_plan", selectedPlan); } catch {}
-    const callbackUrl = `${window.location.origin}/payment/callback`;
+    try { localStorage.setItem("dodo_pending_plan", selectedPlan); } catch {}
+    const callbackUrl = new URL("/payment/callback", window.location.origin);
+    callbackUrl.searchParams.set("plan", selectedPlan);
     const url = new URL(base);
-    url.searchParams.set("redirect_url", callbackUrl);
+    url.searchParams.set("redirect_url", callbackUrl.toString());
     if (email) url.searchParams.set("customer[email]", email);
-    window.location.href = url.toString();
+    // Open Dodo checkout in a new tab via a synthetic anchor click.
+    // window.open with "noopener" returns null even on success in most
+    // browsers, so relying on its return value for a same-tab fallback
+    // caused BOTH tabs to navigate (double-open). The anchor approach
+    // never lies: the tab opens, the current tab stays put.
+    const a = document.createElement("a");
+    a.href = url.toString();
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setSubscribing(false);
   }
 
   const selected = plans?.find(p => p.slug === selectedPlan) ?? null;
