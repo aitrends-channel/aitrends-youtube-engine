@@ -454,6 +454,70 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
 
 // ── Real dashboard ────────────────────────────────────────────────────────────
 
+// Module-level cache so navigating away and back doesn't re-fetch
+// metadata for the same video URL. Keyed by URL; value is duration in
+// seconds (or null when the metadata load failed).
+const videoDurationCache = new Map<string, number | null>();
+
+function formatVideoDuration(sec: number): string {
+  const total = Math.floor(sec);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const two = (n: number) => n.toString().padStart(2, "0");
+  return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
+}
+
+function VideoDurationBadge({ src }: { src: string }) {
+  const [duration, setDuration] = useState<number | null>(() =>
+    videoDurationCache.has(src) ? videoDurationCache.get(src) ?? null : null,
+  );
+  const already = videoDurationCache.has(src);
+  useEffect(() => {
+    if (already) return;
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.muted = true;
+    let cancelled = false;
+    const onLoaded = () => {
+      if (cancelled) return;
+      const d = isFinite(v.duration) ? v.duration : null;
+      videoDurationCache.set(src, d);
+      setDuration(d);
+    };
+    const onError = () => {
+      if (cancelled) return;
+      videoDurationCache.set(src, null);
+      setDuration(null);
+    };
+    v.addEventListener("loadedmetadata", onLoaded);
+    v.addEventListener("error", onError);
+    v.src = src;
+    return () => {
+      cancelled = true;
+      v.removeEventListener("loadedmetadata", onLoaded);
+      v.removeEventListener("error", onError);
+      v.removeAttribute("src");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (v as any).load?.();
+    };
+  }, [src, already]);
+  if (duration == null) return null;
+  return (
+    <span
+      className="text-xs px-2 py-0.5 rounded-full font-medium tabular-nums"
+      style={{
+        background: "oklch(0 0 0 / 0.4)",
+        color: "var(--c-88)",
+        border: "1px solid oklch(1 0 0 / 0.08)",
+      }}
+      title="Assembled video length"
+    >
+      {formatVideoDuration(duration)}
+    </span>
+  );
+}
+
 export default function HomePage() {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
@@ -1506,18 +1570,23 @@ export default function HomePage() {
                           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)"; }}
                         >
                           <div className="flex items-start justify-between mb-3">
-                            <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
-                              style={isComplete ? {
-                                background: "oklch(0.55 0.15 145 / 0.15)",
-                                color: "oklch(0.65 0.15 145)",
-                                border: "1px solid oklch(0.55 0.15 145 / 0.3)",
-                              } : {
-                                background: "oklch(0.72 0.25 285 / 0.1)",
-                                color: "oklch(0.72 0.25 285)",
-                                border: "1px solid oklch(0.72 0.25 285 / 0.2)",
-                              }}>
-                              {stateLabel}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
+                                style={isComplete ? {
+                                  background: "oklch(0.55 0.15 145 / 0.15)",
+                                  color: "oklch(0.65 0.15 145)",
+                                  border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                                } : {
+                                  background: "oklch(0.72 0.25 285 / 0.1)",
+                                  color: "oklch(0.72 0.25 285)",
+                                  border: "1px solid oklch(0.72 0.25 285 / 0.2)",
+                                }}>
+                                {stateLabel}
+                              </span>
+                              {isComplete && p.assembled_url && (
+                                <VideoDurationBadge src={p.assembled_url} />
+                              )}
+                            </div>
 
                             <div className="flex items-center gap-1.5">
                               <span className="text-xs" style={{ color: "var(--c-38)" }}>{timeAgo(p.created_at)}</span>
