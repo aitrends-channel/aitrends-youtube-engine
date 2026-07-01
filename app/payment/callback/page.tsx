@@ -24,13 +24,21 @@ function CallbackContent() {
     verifyStartedRef.current = true;
     const status = searchParams.get("status");
     const paymentId = searchParams.get("payment_id");
+    // Subscription products (Pro, Starter, production-test) redirect
+    // with subscription_id + status=active instead of payment_id +
+    // status=succeeded. Accept either shape so both flows land on the
+    // same success path.
+    const subscriptionId = searchParams.get("subscription_id");
 
     if (status === "cancelled") {
       setStage("cancelled");
       return;
     }
 
-    if (!paymentId || (status && status !== "succeeded")) {
+    const goodStatuses = new Set(["succeeded", "active", "on_trial"]);
+    const hasId = !!(paymentId || subscriptionId);
+    const statusOk = !status || goodStatuses.has(status);
+    if (!hasId || !statusOk) {
       setStage("failed");
       setErrorMsg("Payment was not completed.");
       return;
@@ -54,7 +62,7 @@ function CallbackContent() {
         const res = await fetch("/api/dodo/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ payment_id: paymentId, plan }),
+          body: JSON.stringify({ payment_id: paymentId, subscription_id: subscriptionId, plan }),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({})) as { error?: string };
