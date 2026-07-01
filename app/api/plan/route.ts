@@ -97,8 +97,17 @@ export async function GET() {
   const dodo = (meta.dodo ?? {}) as Record<string, unknown>;
   const subscriptionId = (dodo.subscription_id as string | undefined) ?? null;
   const dodoStatus = (dodo.status as string | undefined) ?? null;
+  const dodoEvent = (dodo.event as string | undefined) ?? null;
+  // Cancelled state can be indicated by either status or event depending
+  // on which Dodo webhook landed last — check both to survive naming
+  // drift in the payload.
   const alreadyCancelled =
-    dodoStatus === "cancelled" || dodoStatus === "expired" || dodoStatus === "failed";
+    dodoStatus === "cancelled" ||
+    dodoStatus === "expired" ||
+    dodoStatus === "failed" ||
+    dodoEvent === "subscription.cancelled" ||
+    dodoEvent === "subscription.expired" ||
+    dodoEvent === "subscription.failed";
   const canCancelSubscription =
     !admin &&
     effectivePaid &&
@@ -115,5 +124,9 @@ export async function GET() {
     plan_expires_at: meta.plan_expires_at ?? null,
     is_admin: admin,
     can_cancel_subscription: canCancelSubscription,
+    // True while the user has cancelled but their paid-through period
+    // hasn't ended yet — UI uses this to swap the primary CTA and show
+    // an "Access ends on" note instead of the normal renewal messaging.
+    subscription_cancelled: alreadyCancelled,
   });
 }
