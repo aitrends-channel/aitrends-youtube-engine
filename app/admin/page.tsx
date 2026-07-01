@@ -3166,7 +3166,7 @@ function LaunchModal({ onClose }: { onClose: () => void }) {
             <div className="space-y-1">
               <p className="text-sm font-semibold text-zinc-800">Users</p>
               <p className="text-xs text-zinc-500">
-                Enter one email at a time and click Add. Listed emails are kept; everyone else gets deleted when launch fires.
+                Enter one email at a time and click Add. Everyone <em>not</em> listed here is fully deleted. Listed accounts stay (login, API keys, subscription intact) but <strong>all their niches, videos, and files still get wiped</strong> so day-1 is clean.
               </p>
             </div>
 

@@ -213,8 +213,12 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
           <p className="text-sm" style={{ color: "var(--c-45)" }}>Pick the plan that fits your workflow.</p>
         </div>
 
-        {/* Try Demo */}
-        {!hideTryDemo && <button
+        {/* Try Demo — hidden when the caller explicitly opts out
+            (hideTryDemo) OR when the user already has current access.
+            Both signals mean the "explore Heclus free" pitch is either
+            noise (they've already committed) or actively confusing
+            (they're a paying user reading a "free" card). */}
+        {!hideTryDemo && !hasCurrentAccess && <button
           onClick={() => { onClose(); router.push("/demo/channel"); }}
           className="w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all hover:opacity-90 cursor-pointer"
           style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.08)", marginBottom: "30px" }}
