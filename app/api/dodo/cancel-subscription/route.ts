@@ -76,21 +76,35 @@ export async function POST() {
     );
   }
 
-  // Best-effort: optimistically set plan_expires_at so the UI reflects
-  // the cancellation immediately, without waiting for the webhook
-  // round-trip. If the webhook later carries a more authoritative
-  // value it'll overwrite this.
+  // Best-effort: optimistically stamp both plan_expires_at AND the
+  // cancelled state on dodo.{status,event} so the /plan UI can flip
+  // to the cancelled treatment immediately, without waiting for the
+  // webhook round-trip (which can be delayed by seconds or minutes).
+  // The webhook still fires afterwards and will overwrite these with
+  // the authoritative values — same pattern as /api/dodo/verify.
   const result = await dodoRes.json().catch(() => ({} as Record<string, unknown>));
   const periodEnd =
     (result.current_period_end as string | undefined) ??
     (result.next_billing_date as string | undefined) ??
     (user.app_metadata?.plan_expires_at as string | undefined) ??
     null;
-  if (periodEnd) {
-    await supabaseService.auth.admin.updateUserById(user.id, {
-      app_metadata: { ...user.app_metadata, plan_expires_at: periodEnd },
-    });
-  }
+
+  const baseMeta = user.app_metadata ?? {};
+  const baseDodo = (baseMeta.dodo ?? {}) as Record<string, unknown>;
+  const mergedDodo = {
+    ...baseDodo,
+    event: "subscription.cancelled",
+    status: "cancelled",
+    updated_at: new Date().toISOString(),
+    ...(periodEnd ? { current_period_end: periodEnd } : {}),
+  };
+  await supabaseService.auth.admin.updateUserById(user.id, {
+    app_metadata: {
+      ...baseMeta,
+      dodo: mergedDodo,
+      ...(periodEnd ? { plan_expires_at: periodEnd } : {}),
+    },
+  });
 
   return NextResponse.json({ success: true, period_end: periodEnd });
 }

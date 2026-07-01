@@ -95,11 +95,13 @@ export async function getPaymentSettings(): Promise<{
   baseUrlProduction: string | null;
   webhookSecretTest: string | null;
   webhookSecretProduction: string | null;
+  customerPortalUrlTest: string | null;
+  customerPortalUrlProduction: string | null;
 }> {
   const mode = getEffectivePaymentMode();
   const { data, error } = await supabase
     .from("product_config")
-    .select("dodo_production_test_link, dodo_secret_key_test, dodo_secret_key_production, dodo_base_url_test, dodo_base_url_production, dodo_webhook_secret_test, dodo_webhook_secret_production")
+    .select("dodo_production_test_link, dodo_secret_key_test, dodo_secret_key_production, dodo_base_url_test, dodo_base_url_production, dodo_webhook_secret_test, dodo_webhook_secret_production, dodo_customer_portal_url_test, dodo_customer_portal_url_production")
     .eq("service", "_global")
     .maybeSingle();
   if (error) {
@@ -113,6 +115,8 @@ export async function getPaymentSettings(): Promise<{
       baseUrlProduction: null,
       webhookSecretTest: null,
       webhookSecretProduction: null,
+      customerPortalUrlTest: null,
+      customerPortalUrlProduction: null,
     };
   }
   const row = data as {
@@ -123,6 +127,8 @@ export async function getPaymentSettings(): Promise<{
     dodo_base_url_production: string | null;
     dodo_webhook_secret_test: string | null;
     dodo_webhook_secret_production: string | null;
+    dodo_customer_portal_url_test: string | null;
+    dodo_customer_portal_url_production: string | null;
   } | null;
   const trimOrNull = (v: string | null | undefined) => v?.trim() || null;
   return {
@@ -134,6 +140,8 @@ export async function getPaymentSettings(): Promise<{
     baseUrlProduction: trimOrNull(row?.dodo_base_url_production),
     webhookSecretTest: trimOrNull(row?.dodo_webhook_secret_test),
     webhookSecretProduction: trimOrNull(row?.dodo_webhook_secret_production),
+    customerPortalUrlTest: trimOrNull(row?.dodo_customer_portal_url_test),
+    customerPortalUrlProduction: trimOrNull(row?.dodo_customer_portal_url_production),
   };
 }
 

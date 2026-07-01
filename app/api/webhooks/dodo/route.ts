@@ -79,6 +79,13 @@ export async function POST(request: Request) {
     (data.subscription_id as string | undefined) ??
     ((data.subscription as Record<string, unknown> | undefined)?.subscription_id as string | undefined) ??
     null;
+  // customer_id feeds the "Manage billing" portal URL substitution on
+  // the /plan page. Dodo puts it either at the top level or nested
+  // under customer depending on the event, so check both.
+  const customerId =
+    (data.customer_id as string | undefined) ??
+    (customer?.customer_id as string | undefined) ??
+    null;
   const currentPeriodEnd =
     (data.current_period_end as string | undefined) ??
     (data.next_billing_date as string | undefined) ??
@@ -90,6 +97,7 @@ export async function POST(request: Request) {
     status: data.status,
     updated_at: updatedAt,
     ...(subscriptionId ? { subscription_id: subscriptionId } : {}),
+    ...(customerId ? { customer_id: customerId } : {}),
     ...(currentPeriodEnd ? { current_period_end: currentPeriodEnd } : {}),
   };
 
@@ -109,6 +117,7 @@ export async function POST(request: Request) {
     ...baseDodo,
     ...dodoMeta,
     ...(!subscriptionId && baseDodo.subscription_id ? { subscription_id: baseDodo.subscription_id } : {}),
+    ...(!customerId && baseDodo.customer_id ? { customer_id: baseDodo.customer_id } : {}),
   };
 
   if (event === "payment.succeeded") {

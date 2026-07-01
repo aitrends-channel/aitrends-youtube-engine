@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Check, LogOut, Zap, CalendarDays, RefreshCw, KeyRound } from "lucide-react";
+import { ArrowLeft, Check, LogOut, Zap, CalendarDays, RefreshCw, KeyRound, CreditCard, ExternalLink } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { PageLoader } from "@/components/PageLoader";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
@@ -27,6 +27,8 @@ interface PlanData {
   plan_details: PlanDetails | null;
   plan_expires_at: string | null;
   can_cancel_subscription?: boolean;
+  subscription_cancelled?: boolean;
+  manage_billing_available?: boolean;
 }
 
 function formatDate(iso: string) {
@@ -48,6 +50,26 @@ export default function PlanPage() {
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const [openingPortal, setOpeningPortal] = useState(false);
+
+  async function handleManageBilling() {
+    setOpeningPortal(true);
+    try {
+      const res = await fetch("/api/dodo/portal-session", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.url) {
+        alert(body?.error ?? "Could not open the billing portal. Try again in a moment.");
+        return;
+      }
+      // New tab so the /plan page state (checkpoints, modals) survives
+      // if the user comes back to it.
+      window.open(body.url, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      alert((e as Error).message || "Could not open the billing portal.");
+    } finally {
+      setOpeningPortal(false);
+    }
+  }
 
   async function handleCancelSubscription() {
     setCancelling(true);
@@ -93,6 +115,11 @@ export default function PlanPage() {
   const daysLeft = expiresAt ? daysUntil(expiresAt) : null;
   const isExpired = daysLeft !== null && daysLeft <= 0;
   const expiringSOon = daysLeft !== null && daysLeft > 0 && daysLeft <= 30;
+  // "Cancelled" = user asked Dodo to stop renewing but the current
+  // period hasn't run out yet. Distinct from `isExpired` (period ran
+  // out) — cancelled users still have access and see a "Resubscribe"
+  // primary CTA instead of "Renew".
+  const isCancelled = !!planData?.subscription_cancelled && !isExpired;
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-page)" }}>
@@ -223,13 +250,37 @@ export default function PlanPage() {
                     Expired
                   </span>
                 )}
-                {expiringSOon && !isExpired && (
+                {isCancelled && (
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full shrink-0"
+                    style={{ background: "oklch(0.6 0.22 25 / 0.10)", color: "oklch(0.65 0.20 25)", border: "1px solid oklch(0.6 0.22 25 / 0.22)" }}>
+                    Cancelled
+                  </span>
+                )}
+                {expiringSOon && !isExpired && !isCancelled && (
                   <span className="text-xs font-semibold px-2.5 py-1 rounded-full shrink-0"
                     style={{ background: "oklch(0.75 0.18 70 / 0.12)", color: "oklch(0.75 0.18 70)", border: "1px solid oklch(0.75 0.18 70 / 0.25)" }}>
                     Expiring soon
                   </span>
                 )}
               </div>
+
+              {isCancelled && (
+                <div className="p-3 rounded-xl flex items-start gap-3"
+                  style={{ background: "oklch(0.6 0.22 25 / 0.06)", border: "1px solid oklch(0.6 0.22 25 / 0.20)" }}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+                    style={{ background: "oklch(0.6 0.22 25 / 0.10)", border: "1px solid oklch(0.6 0.22 25 / 0.20)" }}>
+                    <CalendarDays size={14} style={{ color: "oklch(0.65 0.20 25)" }} />
+                  </div>
+                  <div className="text-sm">
+                    <p className="font-semibold" style={{ color: "var(--c-88)" }}>Subscription cancelled</p>
+                    <p className="mt-0.5" style={{ color: "var(--c-55)" }}>
+                      You&apos;ll keep access
+                      {expiresAt ? <> until <span className="font-semibold" style={{ color: "var(--c-88)" }}>{formatDate(expiresAt)}</span></> : <> until the end of your current billing period</>}
+                      . Resubscribe any time to keep going.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="pt-4" style={{ borderTop: "1px solid oklch(1 0 0 / 0.07)" }}>
                 <p className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "var(--c-40)" }}>
@@ -273,15 +324,15 @@ export default function PlanPage() {
 
                 {expiresAt && (
                   <div className="flex items-center gap-3">
-                    <CalendarDays size={14} style={{ color: isExpired ? "oklch(0.7 0.2 25)" : expiringSOon ? "oklch(0.75 0.18 70)" : "var(--c-40)" }} />
+                    <CalendarDays size={14} style={{ color: isExpired ? "oklch(0.7 0.2 25)" : isCancelled ? "oklch(0.65 0.20 25)" : expiringSOon ? "oklch(0.75 0.18 70)" : "var(--c-40)" }} />
                     <div>
                       <p className="text-xs" style={{ color: "var(--c-40)" }}>
-                        {isExpired ? "Expired on" : "Expires on"}
+                        {isExpired ? "Expired on" : isCancelled ? "Access ends on" : "Expires on"}
                       </p>
                       <p className="text-sm font-medium" style={{ color: isExpired ? "oklch(0.7 0.2 25)" : "var(--c-88)" }}>
                         {formatDate(expiresAt)}
                         {!isExpired && daysLeft !== null && (
-                          <span className="ml-2 text-xs font-normal" style={{ color: expiringSOon ? "oklch(0.75 0.18 70)" : "var(--c-40)" }}>
+                          <span className="ml-2 text-xs font-normal" style={{ color: isCancelled ? "oklch(0.65 0.20 25)" : expiringSOon ? "oklch(0.75 0.18 70)" : "var(--c-40)" }}>
                             ({daysLeft} day{daysLeft !== 1 ? "s" : ""} left)
                           </span>
                         )}
@@ -301,11 +352,39 @@ export default function PlanPage() {
                     </div>
                   </div>
                 )}
+
+                {planData?.manage_billing_available && (
+                  <div className="flex items-center gap-3 pt-3" style={{ borderTop: "1px solid oklch(1 0 0 / 0.07)" }}>
+                    <CreditCard size={14} style={{ color: "var(--c-40)" }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs" style={{ color: "var(--c-40)" }}>Payment method</p>
+                      <p className="text-sm font-medium text-foreground">Card on file</p>
+                    </div>
+                    <button
+                      onClick={handleManageBilling}
+                      disabled={openingPortal}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-60 cursor-pointer"
+                      style={{ background: "transparent", color: "var(--c-70)", border: "1px solid var(--bd-8)" }}
+                    >
+                      {openingPortal ? (
+                        <>
+                          <span className="inline-block w-3 h-3 rounded-full border-2 border-current/40 border-t-current animate-spin" />
+                          Opening…
+                        </>
+                      ) : (
+                        <>
+                          Manage
+                          <ExternalLink size={11} />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
 
-              {/* Renew / Change Plan */}
+              {/* Renew / Resubscribe / Change Plan */}
               <div className="space-y-3">
-                {(isExpired || expiresAt) && (
+                {isCancelled ? (
                   <button
                     onClick={() => setShowModal(true)}
                     className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
@@ -315,19 +394,35 @@ export default function PlanPage() {
                       boxShadow: "0 0 24px oklch(0.72 0.25 285 / 0.2)",
                     }}>
                     <RefreshCw size={15} />
-                    {isExpired ? "Renew Plan" : "Renew Early"}
+                    Resubscribe
                   </button>
+                ) : (
+                  <>
+                    {(isExpired || expiresAt) && (
+                      <button
+                        onClick={() => setShowModal(true)}
+                        className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                        style={{
+                          background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+                          color: "var(--c-98)",
+                          boxShadow: "0 0 24px oklch(0.72 0.25 285 / 0.2)",
+                        }}>
+                        <RefreshCw size={15} />
+                        {isExpired ? "Renew Plan" : "Renew Early"}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setShowModal(true)}
+                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                      style={{
+                        background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+                        color: "var(--c-98)",
+                        boxShadow: "0 0 24px oklch(0.72 0.25 285 / 0.2)",
+                      }}>
+                      Change Plan
+                    </button>
+                  </>
                 )}
-                <button
-                  onClick={() => setShowModal(true)}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
-                  style={{
-                    background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-                    color: "var(--c-98)",
-                    boxShadow: "0 0 24px oklch(0.72 0.25 285 / 0.2)",
-                  }}>
-                  Change Plan
-                </button>
                 {planData?.can_cancel_subscription && (
                   <button
                     onClick={() => { setCancelError(null); setShowCancelModal(true); }}

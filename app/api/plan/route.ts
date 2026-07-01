@@ -97,14 +97,31 @@ export async function GET() {
   const dodo = (meta.dodo ?? {}) as Record<string, unknown>;
   const subscriptionId = (dodo.subscription_id as string | undefined) ?? null;
   const dodoStatus = (dodo.status as string | undefined) ?? null;
+  const dodoEvent = (dodo.event as string | undefined) ?? null;
+  // Cancelled state can be indicated by either status or event depending
+  // on which Dodo webhook landed last — check both to survive naming
+  // drift in the payload.
   const alreadyCancelled =
-    dodoStatus === "cancelled" || dodoStatus === "expired" || dodoStatus === "failed";
+    dodoStatus === "cancelled" ||
+    dodoStatus === "expired" ||
+    dodoStatus === "failed" ||
+    dodoEvent === "subscription.cancelled" ||
+    dodoEvent === "subscription.expired" ||
+    dodoEvent === "subscription.failed";
   const canCancelSubscription =
     !admin &&
     effectivePaid &&
     !!subscriptionId &&
     !alreadyCancelled &&
     effectivePlan !== "founder";
+
+  // "Manage billing" button visibility: the /plan page shows a Manage
+  // link that POSTs to /api/dodo/portal-session for a per-user portal
+  // URL. It only works if we have a customer_id stamped on
+  // app_metadata.dodo — hide the button otherwise so the user doesn't
+  // get an error toast.
+  const customerId = (dodo.customer_id as string | undefined) ?? null;
+  const manageBillingAvailable = !admin && effectivePaid && !!customerId;
 
   return NextResponse.json({
     email: user.email,
@@ -115,5 +132,12 @@ export async function GET() {
     plan_expires_at: meta.plan_expires_at ?? null,
     is_admin: admin,
     can_cancel_subscription: canCancelSubscription,
+    // True while the user has cancelled but their paid-through period
+    // hasn't ended yet — UI uses this to swap the primary CTA and show
+    // an "Access ends on" note instead of the normal renewal messaging.
+    subscription_cancelled: alreadyCancelled,
+    // True when the /plan page should render the "Manage" billing
+    // button (paid non-admin with a Dodo customer_id on file).
+    manage_billing_available: manageBillingAvailable,
   });
 }

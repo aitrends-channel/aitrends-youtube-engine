@@ -201,6 +201,13 @@ export async function POST(request: Request) {
     ((result.subscription as Record<string, unknown> | undefined)?.subscription_id as string | undefined) ??
     subscription_id ??
     null;
+  // Dodo returns customer_id both on top-level and nested under customer
+  // depending on the payload shape. Persisting it lets us substitute
+  // {customer_id} into the admin-configured portal URL later.
+  const customerIdFromResult =
+    (result.customer_id as string | undefined) ??
+    ((result.customer as Record<string, unknown> | undefined)?.customer_id as string | undefined) ??
+    null;
   const periodEndFromResult =
     (result.current_period_end as string | undefined) ??
     (result.next_billing_date as string | undefined) ??
@@ -218,8 +225,10 @@ export async function POST(request: Request) {
     status: result.status,
     updated_at: new Date().toISOString(),
     ...(subscriptionIdFromResult ? { subscription_id: subscriptionIdFromResult } : {}),
+    ...(customerIdFromResult ? { customer_id: customerIdFromResult } : {}),
     ...(periodEndFromResult ? { current_period_end: periodEndFromResult } : {}),
     ...(!subscriptionIdFromResult && baseDodo.subscription_id ? { subscription_id: baseDodo.subscription_id } : {}),
+    ...(!customerIdFromResult && baseDodo.customer_id ? { customer_id: baseDodo.customer_id } : {}),
   };
 
   try {
