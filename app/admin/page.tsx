@@ -2389,6 +2389,8 @@ function PlansPanel() {
     baseUrlProduction: string | null;
     webhookSecretTest: string | null;
     webhookSecretProduction: string | null;
+    customerPortalUrlTest: string | null;
+    customerPortalUrlProduction: string | null;
   }>("/api/admin/payment-mode", fetcher, { revalidateOnFocus: false });
   const [editingProdTest, setEditingProdTest] = useState(false);
   const [deletingProdTest, setDeletingProdTest] = useState(false);
@@ -3557,6 +3559,8 @@ interface DodoApiKeysCardProps {
     baseUrlProduction: string | null;
     webhookSecretTest: string | null;
     webhookSecretProduction: string | null;
+    customerPortalUrlTest: string | null;
+    customerPortalUrlProduction: string | null;
   } | null;
   // Deployment env (HECLUS_ENV). When "production", the Test tab is
   // hidden so the admin can't edit test credentials on a live
@@ -3663,24 +3667,28 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
   const [prodUrl, setProdUrl] = useState("");
   const [testWebhook, setTestWebhook] = useState("");
   const [prodWebhook, setProdWebhook] = useState("");
+  const [testPortal, setTestPortal] = useState("");
+  const [prodPortal, setProdPortal] = useState("");
   const [saving, setSaving] = useState(false);
 
   const keyValue = activeEnv === "test" ? testKey : prodKey;
   const urlValue = activeEnv === "test" ? testUrl : prodUrl;
   const webhookValue = activeEnv === "test" ? testWebhook : prodWebhook;
+  const portalValue = activeEnv === "test" ? testPortal : prodPortal;
   const savedKey = (activeEnv === "test" ? settings?.secretKeyTest : settings?.secretKeyProduction) ?? "";
   const savedUrl = (activeEnv === "test" ? settings?.baseUrlTest : settings?.baseUrlProduction) ?? "";
   const savedWebhook = (activeEnv === "test" ? settings?.webhookSecretTest : settings?.webhookSecretProduction) ?? "";
-  // Dirty when the admin has typed something into any of the three
-  // inputs for the active env. Empty inputs are a no-op — clearing
-  // a saved value isn't supported through this card on purpose.
-  const dirty = !!keyValue.trim() || !!urlValue.trim() || !!webhookValue.trim();
+  const savedPortal = (activeEnv === "test" ? settings?.customerPortalUrlTest : settings?.customerPortalUrlProduction) ?? "";
+  // Dirty when the admin has typed something into any of the inputs
+  // for the active env. Empty inputs are a no-op — clearing a saved
+  // value isn't supported through this card on purpose.
+  const dirty = !!keyValue.trim() || !!urlValue.trim() || !!webhookValue.trim() || !!portalValue.trim();
 
   function clearActiveEnvBuffers() {
     if (activeEnv === "test") {
-      setTestKey(""); setTestUrl(""); setTestWebhook("");
+      setTestKey(""); setTestUrl(""); setTestWebhook(""); setTestPortal("");
     } else {
-      setProdKey(""); setProdUrl(""); setProdWebhook("");
+      setProdKey(""); setProdUrl(""); setProdWebhook(""); setProdPortal("");
     }
   }
 
@@ -3696,6 +3704,9 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
       }
       if (webhookValue.trim()) {
         patch[activeEnv === "test" ? "webhookSecretTest" : "webhookSecretProduction"] = webhookValue.trim();
+      }
+      if (portalValue.trim()) {
+        patch[activeEnv === "test" ? "customerPortalUrlTest" : "customerPortalUrlProduction"] = portalValue.trim();
       }
       const res = await fetch("/api/admin/payment-mode", {
         method: "PATCH",
@@ -3773,6 +3784,16 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
           placeholder="whsec_…"
           disabled={saving}
           hint="Per-environment Dodo webhook signing secret. The handler tries every configured secret on each request, so test + production can both target the same /api/webhooks/dodo URL."
+        />
+
+        <DodoVarField
+          label={`Customer portal URL (${activeEnv})`}
+          saved={savedPortal}
+          value={portalValue}
+          onChange={(v) => (activeEnv === "test" ? setTestPortal(v) : setProdPortal(v))}
+          placeholder="https://…/portal/{customer_id}"
+          disabled={saving}
+          hint="Where the /plan page's 'Manage' billing button sends users. Optional: use {customer_id} as a placeholder to have it substituted per user. Leave blank to hide the button."
         />
       </div>
 

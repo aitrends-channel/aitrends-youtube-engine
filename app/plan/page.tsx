@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Check, LogOut, Zap, CalendarDays, RefreshCw, KeyRound } from "lucide-react";
+import { ArrowLeft, Check, LogOut, Zap, CalendarDays, RefreshCw, KeyRound, CreditCard, ExternalLink } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { PageLoader } from "@/components/PageLoader";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
@@ -28,6 +28,7 @@ interface PlanData {
   plan_expires_at: string | null;
   can_cancel_subscription?: boolean;
   subscription_cancelled?: boolean;
+  customer_portal_url?: string | null;
 }
 
 function formatDate(iso: string) {
@@ -329,6 +330,26 @@ export default function PlanPage() {
                         {plan?.periodDisplay === "/mo" ? "Monthly" : "Annual"}
                       </p>
                     </div>
+                  </div>
+                )}
+
+                {planData?.customer_portal_url && (
+                  <div className="flex items-center gap-3 pt-3" style={{ borderTop: "1px solid oklch(1 0 0 / 0.07)" }}>
+                    <CreditCard size={14} style={{ color: "var(--c-40)" }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs" style={{ color: "var(--c-40)" }}>Payment method</p>
+                      <p className="text-sm font-medium text-foreground">Card on file</p>
+                    </div>
+                    <a
+                      href={planData.customer_portal_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+                      style={{ background: "transparent", color: "var(--c-70)", border: "1px solid var(--bd-8)" }}
+                    >
+                      Manage
+                      <ExternalLink size={11} />
+                    </a>
                   </div>
                 )}
               </div>

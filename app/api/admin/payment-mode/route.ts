@@ -22,6 +22,8 @@ interface PaymentSettingsPatch {
   baseUrlProduction?: unknown;
   webhookSecretTest?: unknown;
   webhookSecretProduction?: unknown;
+  customerPortalUrlTest?: unknown;
+  customerPortalUrlProduction?: unknown;
 }
 
 // Normalize an arbitrary string-or-null patch value into the form
@@ -110,6 +112,22 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "webhookSecretProduction must be string, null, or ''" }, { status: 400 });
     }
     update.dodo_webhook_secret_production = normalized;
+  }
+
+  if (body.customerPortalUrlTest !== undefined) {
+    const normalized = normalizeNullableString(body.customerPortalUrlTest);
+    if (normalized === undefined) {
+      return NextResponse.json({ error: "customerPortalUrlTest must be string, null, or ''" }, { status: 400 });
+    }
+    update.dodo_customer_portal_url_test = normalized;
+  }
+
+  if (body.customerPortalUrlProduction !== undefined) {
+    const normalized = normalizeNullableString(body.customerPortalUrlProduction);
+    if (normalized === undefined) {
+      return NextResponse.json({ error: "customerPortalUrlProduction must be string, null, or ''" }, { status: 400 });
+    }
+    update.dodo_customer_portal_url_production = normalized;
   }
 
   if (Object.keys(update).length === 0) {
