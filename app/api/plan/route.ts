@@ -3,13 +3,8 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { supabase as supabaseService } from "@/lib/supabase/client";
 import { isAdminUser } from "@/lib/admin";
-import { getPlanBySlug } from "@/lib/plans";
+import { getPlanBySlug, getPlans } from "@/lib/plans";
 
-const PLAN_PRICES_CENTS: Record<string, number> = {
-  starter: Number(process.env.DODO_STARTER_PRICE_CENTS ?? 2100),
-  founder: Number(process.env.DODO_FOUNDER_PRICE_CENTS ?? 4000),
-  pro: Number(process.env.DODO_PRO_PRICE_CENTS ?? 3900),
-};
 
 export async function GET() {
   const supabase = await createSupabaseServerClient();
@@ -46,7 +41,8 @@ export async function GET() {
       .maybeSingle();
     const cents = Number(rev?.amount_cents ?? 0);
     if (cents > 0) {
-      const matched = Object.entries(PLAN_PRICES_CENTS).find(([, c]) => c === cents)?.[0] ?? null;
+      const allPlans = await getPlans();
+      const matched = allPlans.find((p) => p.priceCents === cents)?.slug ?? null;
       if (matched) {
         effectivePlan = matched;
         await supabaseService.auth.admin.updateUserById(user.id, {

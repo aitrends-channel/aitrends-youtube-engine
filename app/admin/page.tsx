@@ -2350,6 +2350,7 @@ interface AdminPlanDTO {
   slug: string;
   name: string;
   priceDisplay: string;
+  priceCents: number | null;
   periodDisplay: string;
   limitDisplay: string;
   features: string[];
@@ -2778,6 +2779,9 @@ function PlanEditModal({
   const [slug, setSlug] = useState(plan?.slug ?? "");
   const [name, setName] = useState(plan?.name ?? "");
   const [priceDisplay, setPriceDisplay] = useState(plan?.priceDisplay ?? "");
+  const [priceCents, setPriceCents] = useState<string>(
+    plan?.priceCents == null ? "" : String(plan.priceCents),
+  );
   const [periodDisplay, setPeriodDisplay] = useState(plan?.periodDisplay ?? "/mo");
   // Display strings shown next to the price ("$49" + period). The
   // select offers the four standard cadences; the stored column stays
@@ -2827,10 +2831,28 @@ function PlanEditModal({
 
     const features = featuresText.split("\n").map((s) => s.trim()).filter(Boolean);
 
+    // price_cents is the guarded chargeable amount (integer or null).
+    // Empty input maps to null → price guard skips this plan (helpful
+    // for custom-priced tiers). Any other non-integer input is a bug
+    // in the form, surface it up-front.
+    const priceCentsTrimmed = priceCents.trim();
+    let priceCentsValue: number | null;
+    if (priceCentsTrimmed === "") {
+      priceCentsValue = null;
+    } else {
+      const parsed = Number(priceCentsTrimmed);
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        toast.error("Price (cents) must be a non-negative integer or blank");
+        return;
+      }
+      priceCentsValue = parsed;
+    }
+
     const payload = {
       ...(mode === "create" ? { slug } : {}),
       name: name.trim(),
       price_display: priceDisplay.trim(),
+      price_cents: priceCentsValue,
       period_display: periodDisplay,
       limit_display: limitDisplay,
       features,
@@ -2906,23 +2928,37 @@ function PlanEditModal({
             <div className="space-y-1">
               <label className="text-xs font-semibold text-zinc-600">Price display</label>
               <input value={priceDisplay} onChange={(e) => setPriceDisplay(e.target.value)} disabled={saving} placeholder="$49" className={inputCls} />
+              <p className="text-[10px] text-zinc-500">Shown to users on the checkout modal.</p>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-zinc-600">Billing period</label>
-              <select
-                value={periodDisplay}
-                onChange={(e) => setPeriodDisplay(e.target.value)}
+              <label className="text-xs font-semibold text-zinc-600">Price (cents)</label>
+              <input
+                value={priceCents}
+                onChange={(e) => setPriceCents(e.target.value)}
                 disabled={saving}
-                className={inputCls}
-              >
-                {PERIOD_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-                {!periodIsStandard && (
-                  <option value={periodDisplay}>Custom: {periodDisplay || "(empty)"}</option>
-                )}
-              </select>
+                placeholder="4900"
+                inputMode="numeric"
+                className={inputCls + " tabular-nums"}
+              />
+              <p className="text-[10px] text-zinc-500">Charged amount in cents (e.g. 4900 for $49). Guards against underpayment. Blank disables the guard for this plan.</p>
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-zinc-600">Billing period</label>
+            <select
+              value={periodDisplay}
+              onChange={(e) => setPeriodDisplay(e.target.value)}
+              disabled={saving}
+              className={inputCls}
+            >
+              {PERIOD_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+              {!periodIsStandard && (
+                <option value={periodDisplay}>Custom: {periodDisplay || "(empty)"}</option>
+              )}
+            </select>
           </div>
 
           <div className="space-y-1">

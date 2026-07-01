@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
-import { getPaymentSettings } from "@/lib/plans";
+import { getPaymentSettings, getPlanBySlug, getPlans } from "@/lib/plans";
 
 export async function POST(request: Request) {
   let user;
@@ -137,24 +137,21 @@ export async function POST(request: Request) {
   // Falling through them all keeps the price guard useful across both
   // flows without needing separate branches.
   const paidCents = Number(result.total_amount ?? result.amount ?? result.recurring_amount ?? 0);
-  const PLAN_PRICES_CENTS: Record<string, number> = {
-    starter: Number(process.env.DODO_STARTER_PRICE_CENTS ?? 2100),  // $21
-    founder: Number(process.env.DODO_FOUNDER_PRICE_CENTS ?? 4000),  // $40
-    pro:     Number(process.env.DODO_PRO_PRICE_CENTS ?? 3900),      // $39
-  };
-  const claimedPlanPrice = PLAN_PRICES_CENTS[plan ?? ""];
+  const claimedPlanRow = plan ? await getPlanBySlug(plan) : null;
+  const claimedPlanPrice = claimedPlanRow?.priceCents ?? 0;
 
   if (env === "production" && paidCents > 0 && claimedPlanPrice > 0 && paidCents < claimedPlanPrice) {
     // Try to identify which plan the amount actually matches — helps support
     // figure out the right correction without spelunking through Dodo logs.
-    const actualPlan = Object.entries(PLAN_PRICES_CENTS).find(([, cents]) => paidCents === cents)?.[0];
+    const allPlans = await getPlans();
+    const actualPlan = allPlans.find((p) => p.priceCents === paidCents)?.slug ?? null;
     return NextResponse.json({
       error: actualPlan
         ? `Plan mismatch: paid amount ($${paidCents / 100}) matches '${actualPlan}', not '${plan}'. Contact support to correct.`
         : `Paid amount ($${paidCents / 100}) is below the '${plan}' price ($${claimedPlanPrice / 100}). Contact support.`,
       paidCents,
       claimedPlan: plan,
-      actualPlan: actualPlan ?? null,
+      actualPlan,
     }, { status: 400 });
   }
 
