@@ -28,10 +28,15 @@ interface Props {
   onSuccess: () => void;
   defaultPlan?: string;
   hideTryDemo?: boolean;
+  /** Force-hide the production-test card regardless of the QA flag or
+   * has_current_access. Set from surfaces (like /plan) that already
+   * know the user is subscribed — even if /api/usage's cache is stale,
+   * the card stays hidden. */
+  hideProductionTest?: boolean;
 }
 
 
-export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: Props) {
+export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hideProductionTest }: Props) {
   const router = useRouter();
   const [selectedPlan, setSelectedPlan] = useState<string>(defaultPlan ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -96,9 +101,9 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
       // expired). Once someone is paid — even if they've cancelled and
       // are riding out the paid period — the "Try end-to-end" card is
       // noise.
-      .filter((p) => p.slug !== PRODUCTION_TEST_SLUG || (isProductionTest && !hasCurrentAccess))
+      .filter((p) => p.slug !== PRODUCTION_TEST_SLUG || (isProductionTest && !hasCurrentAccess && !hideProductionTest))
       .filter((p) => !p.isFounder || founderAvailable);
-  }, [plans, founderAvailable, isProductionTest, hasCurrentAccess]);
+  }, [plans, founderAvailable, isProductionTest, hasCurrentAccess, hideProductionTest]);
 
   // If the currently-selected slug is a founder plan and founder is no
   // longer available, fall back to the first non-founder, non-disabled
