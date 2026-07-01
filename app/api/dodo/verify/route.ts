@@ -8,10 +8,17 @@ export async function POST(request: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   const body = await request.json().catch(() => ({}));
-  const { payment_id, plan } = body as { payment_id?: string; plan?: string };
+  const { payment_id, subscription_id, plan } = body as {
+    payment_id?: string;
+    subscription_id?: string;
+    plan?: string;
+  };
 
-  if (!payment_id) {
-    return NextResponse.json({ error: "Missing payment_id" }, { status: 400 });
+  // Subscription products come back with subscription_id (no payment_id
+  // until the first invoice). One-time products come back with payment_id.
+  // Either is enough to look the record up on Dodo and confirm the sale.
+  if (!payment_id && !subscription_id) {
+    return NextResponse.json({ error: "Missing payment_id or subscription_id" }, { status: 400 });
   }
 
   // Pick the Dodo environment for this payment:
@@ -67,6 +74,14 @@ export async function POST(request: Request) {
   const secretKey = keyPick.value;
   const dodoBase = basePick.value;
 
+  // Which endpoint on Dodo we hit depends on which id we received.
+  // Subscription products yield subscription_id + status=active|on_trial;
+  // one-time products yield payment_id + status=succeeded. Both are
+  // legitimate purchases — we accept either and route accordingly.
+  const usePath = payment_id ? `payments/${payment_id}` : `subscriptions/${subscription_id}`;
+  const idLabel = payment_id ? `payment_id=${payment_id}` : `subscription_id=${subscription_id}`;
+  const acceptableStatuses = payment_id ? ["succeeded"] : ["active", "on_trial"];
+
   // Surface where each value came from so a 404 from Dodo or a
   // wrong-env mismatch can be diagnosed in one log line. Key prefix
   // only — never the full secret.
@@ -74,12 +89,12 @@ export async function POST(request: Request) {
     `[dodo-verify] plan=${plan} env=${env} ` +
     `base=${dodoBase} base_src=${basePick.source} ` +
     `key=${secretKey.slice(0, 8)}… key_src=${keyPick.source} ` +
-    `payment_id=${payment_id}`,
+    `${idLabel} path=${usePath}`,
   );
 
   let dodoRes: Response;
   try {
-    dodoRes = await fetch(`${dodoBase}/payments/${payment_id}`, {
+    dodoRes = await fetch(`${dodoBase}/${usePath}`, {
       headers: { Authorization: `Bearer ${secretKey}` },
     });
   } catch (e) {
@@ -93,8 +108,11 @@ export async function POST(request: Request) {
 
   const result = await dodoRes.json();
 
-  if (result.status !== "succeeded") {
-    return NextResponse.json({ error: `Payment not successful (status: ${result.status})` }, { status: 400 });
+  if (!acceptableStatuses.includes(result.status)) {
+    return NextResponse.json(
+      { error: `${payment_id ? "Payment" : "Subscription"} not active (status: ${result.status})` },
+      { status: 400 },
+    );
   }
 
   // Log the full Dodo response on success so we can inspect available
@@ -115,7 +133,10 @@ export async function POST(request: Request) {
   // guard exists to catch fraud against the LIVE prices in
   // production — applying it to test charges blocks every legitimate
   // test purchase without protecting any real revenue.
-  const paidCents = Number(result.total_amount ?? result.amount ?? 0);
+  // Subscription responses use recurring_amount instead of total_amount.
+  // Falling through them all keeps the price guard useful across both
+  // flows without needing separate branches.
+  const paidCents = Number(result.total_amount ?? result.amount ?? result.recurring_amount ?? 0);
   const PLAN_PRICES_CENTS: Record<string, number> = {
     starter: Number(process.env.DODO_STARTER_PRICE_CENTS ?? 2100),  // $21
     founder: Number(process.env.DODO_FOUNDER_PRICE_CENTS ?? 4000),  // $40
@@ -140,7 +161,15 @@ export async function POST(request: Request) {
   const isFounder = plan === "founder";
 
   if (isFounder) {
-
+    // Founder is one-time — we should always have payment_id here. If
+    // someone claims founder via a subscription redirect, reject up-
+    // front instead of feeding NULL into the RPC.
+    if (!payment_id) {
+      return NextResponse.json(
+        { error: "Founder plan requires a one-time payment; got a subscription redirect. Contact support." },
+        { status: 400 },
+      );
+    }
     // Atomically claim a Founder spot, keyed on payment_id for
     // idempotency. First call for a given payment_id consumes a slot;
     // duplicate calls (React StrictMode, user reload, network retry,
@@ -170,6 +199,7 @@ export async function POST(request: Request) {
   const subscriptionIdFromResult =
     (result.subscription_id as string | undefined) ??
     ((result.subscription as Record<string, unknown> | undefined)?.subscription_id as string | undefined) ??
+    subscription_id ??
     null;
   const periodEndFromResult =
     (result.current_period_end as string | undefined) ??
