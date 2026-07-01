@@ -120,12 +120,31 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
       return;
     }
     setSubscribing(true);
+    // Save the pending plan in TWO places:
+    //   - sessionStorage on this tab (unchanged, so a same-tab flow
+    //     still works if a browser ever blocks the new-tab open)
+    //   - localStorage so the checkout tab (a new window/tab) can read
+    //     it — sessionStorage is per-tab and doesn't cross windows.
+    // Also encode the plan in the callback URL as a third fallback in
+    // case both storages are blocked (private/incognito profiles).
     try { sessionStorage.setItem("dodo_pending_plan", selectedPlan); } catch {}
-    const callbackUrl = `${window.location.origin}/payment/callback`;
+    try { localStorage.setItem("dodo_pending_plan", selectedPlan); } catch {}
+    const callbackUrl = new URL("/payment/callback", window.location.origin);
+    callbackUrl.searchParams.set("plan", selectedPlan);
     const url = new URL(base);
-    url.searchParams.set("redirect_url", callbackUrl);
+    url.searchParams.set("redirect_url", callbackUrl.toString());
     if (email) url.searchParams.set("customer[email]", email);
-    window.location.href = url.toString();
+    // Open Dodo checkout in a new tab. If the popup is blocked, fall
+    // back to same-tab navigation so users don't get silently stranded.
+    const opened = window.open(url.toString(), "_blank", "noopener,noreferrer");
+    if (!opened) {
+      window.location.href = url.toString();
+      return;
+    }
+    // Modal stays open on the original tab so the user has context if
+    // they come back. Clear the subscribing spinner — the button
+    // shouldn't stay stuck once the new tab has spawned.
+    setSubscribing(false);
   }
 
   const selected = plans?.find(p => p.slug === selectedPlan) ?? null;

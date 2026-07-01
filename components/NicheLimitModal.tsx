@@ -65,12 +65,23 @@ export function NicheLimitModal({ email, currentPlan, nichesUsed, nicheLimit, on
       return;
     }
     setLoadingPlanId(planSlug);
+    // Belt-and-suspenders storage so the checkout tab (opened in a new
+    // window below) can still recover the pending plan on return. See
+    // SubscriptionModal.handleSubscribe for the rationale.
     try { sessionStorage.setItem("dodo_pending_plan", planSlug); } catch {}
-    const callbackUrl = `${window.location.origin}/payment/callback`;
+    try { localStorage.setItem("dodo_pending_plan", planSlug); } catch {}
+    const callbackUrl = new URL("/payment/callback", window.location.origin);
+    callbackUrl.searchParams.set("plan", planSlug);
     const url = new URL(base);
-    url.searchParams.set("redirect_url", callbackUrl);
+    url.searchParams.set("redirect_url", callbackUrl.toString());
     if (email) url.searchParams.set("customer[email]", email);
-    window.location.href = url.toString();
+    // New tab, with same-tab fallback if the popup was blocked.
+    const opened = window.open(url.toString(), "_blank", "noopener,noreferrer");
+    if (!opened) {
+      window.location.href = url.toString();
+      return;
+    }
+    setLoadingPlanId(null);
   }
 
   // Founder visibility is gated by the single 'active' flag.
