@@ -75,12 +75,15 @@ export function NicheLimitModal({ email, currentPlan, nichesUsed, nicheLimit, on
     const url = new URL(base);
     url.searchParams.set("redirect_url", callbackUrl.toString());
     if (email) url.searchParams.set("customer[email]", email);
-    // New tab, with same-tab fallback if the popup was blocked.
-    const opened = window.open(url.toString(), "_blank", "noopener,noreferrer");
-    if (!opened) {
-      window.location.href = url.toString();
-      return;
-    }
+    // Synthetic anchor click — see SubscriptionModal for why this beats
+    // window.open (which returns null even on success under noopener).
+    const a = document.createElement("a");
+    a.href = url.toString();
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
     setLoadingPlanId(null);
   }
 

@@ -134,16 +134,18 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
     const url = new URL(base);
     url.searchParams.set("redirect_url", callbackUrl.toString());
     if (email) url.searchParams.set("customer[email]", email);
-    // Open Dodo checkout in a new tab. If the popup is blocked, fall
-    // back to same-tab navigation so users don't get silently stranded.
-    const opened = window.open(url.toString(), "_blank", "noopener,noreferrer");
-    if (!opened) {
-      window.location.href = url.toString();
-      return;
-    }
-    // Modal stays open on the original tab so the user has context if
-    // they come back. Clear the subscribing spinner — the button
-    // shouldn't stay stuck once the new tab has spawned.
+    // Open Dodo checkout in a new tab via a synthetic anchor click.
+    // window.open with "noopener" returns null even on success in most
+    // browsers, so relying on its return value for a same-tab fallback
+    // caused BOTH tabs to navigate (double-open). The anchor approach
+    // never lies: the tab opens, the current tab stays put.
+    const a = document.createElement("a");
+    a.href = url.toString();
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
     setSubscribing(false);
   }
 
