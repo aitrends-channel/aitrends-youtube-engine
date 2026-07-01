@@ -481,6 +481,7 @@ export default function PlanPage() {
         <SubscriptionModal
           email={userEmail}
           defaultPlan={planData?.plan === "starter" ? "pro" : undefined}
+          hideProductionTest
           onClose={() => setShowModal(false)}
           onSuccess={() => {
             setShowModal(false);
