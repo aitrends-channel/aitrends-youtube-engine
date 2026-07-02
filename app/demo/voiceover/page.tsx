@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
@@ -47,6 +47,16 @@ export default function DemoVoiceoverPage() {
   const { state, update } = useDemoState();
   const { selectedVoice, ttsPhase } = state;
   const [navigating, setNavigating] = useState(false);
+  // Force the <audio> element to re-fetch its source when the phase
+  // flips into "done" after Generate/Regen. Without this call, Chrome
+  // renders the controls but leaves the media unloaded — the timer
+  // stays at --:-- and pressing play does nothing — until the user
+  // hard-refreshes the page and the element mounts at initial render
+  // alongside everything else.
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    if (ttsPhase === "done") audioRef.current?.load();
+  }, [ttsPhase]);
   // Voices have gender as their first tag ("Male" or "Female"). The
   // tab state lives locally — picking a gender just filters the visible
   // grid, it doesn't alter selectedVoice, so a user can pick Liam under
@@ -166,7 +176,13 @@ export default function DemoVoiceoverPage() {
                       <a href="/demo/voiceover/voiceover.mp3" download="voiceover.mp3"
                         className="text-xs" style={{ color: "var(--c-45)" }}>↓ Download</a>
                     </div>
-                    <audio controls src="/demo/voiceover/voiceover.mp3" className="w-full h-8" />
+                    <audio
+                      ref={audioRef}
+                      controls
+                      src="/demo/voiceover/voiceover.mp3"
+                      preload="auto"
+                      className="w-full h-8"
+                    />
                   </div>
                   <div className="flex gap-2">
                     <button disabled
