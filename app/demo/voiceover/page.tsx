@@ -163,10 +163,10 @@ export default function DemoVoiceoverPage() {
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Original</span>
-                      <a href="/demo/voiceover/demo-voiceover_short.mp3" download="voiceover.mp3"
+                      <a href="/demo/voiceover/voiceover.mp3" download="voiceover.mp3"
                         className="text-xs" style={{ color: "var(--c-45)" }}>↓ Download</a>
                     </div>
-                    <audio controls src="/demo/voiceover/demo-voiceover_short.mp3" className="w-full h-8" />
+                    <audio controls src="/demo/voiceover/voiceover.mp3" className="w-full h-8" />
                   </div>
                   <div className="flex gap-2">
                     <button disabled
