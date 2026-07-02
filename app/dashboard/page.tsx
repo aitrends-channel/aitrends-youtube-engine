@@ -1444,7 +1444,7 @@ export default function HomePage() {
                 return (
                   <div style={{ marginTop: "40px" }}>
                     <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Key Status</h3>
-                    <div className="grid grid-cols-1 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
                       {/* KIE */}
                       <div className="rounded-xl px-5 py-4" style={cardStyle}>
