@@ -1,4 +1,5 @@
 import type { User } from "@supabase/supabase-js";
+import { isAdminUser } from "@/lib/admin";
 
 // Shared source of truth for which features are gated behind which
 // plan tiers. UI components (resolution picker on Assemble) and
@@ -35,15 +36,15 @@ export function planSlugOf(user: User | null | undefined): string {
 }
 
 /**
- * True when the user has a Pro-tier plan OR carries the
- * app_metadata.is_admin flag. Admins always pass feature gates
- * regardless of their visible plan, so we treat them as Pro for
- * access decisions.
+ * True when the user has a Pro-tier plan OR counts as an admin.
+ * Admin detection is delegated to isAdminUser so BOTH the metadata
+ * flag and the legacy hardcoded email backstop qualify — otherwise
+ * the founder admin (recognised by email only) gets locked out of
+ * Pro-only features like 4K assemble.
  */
 export function isProTier(user: User | null | undefined): boolean {
   if (!user) return false;
-  const flag = (user.app_metadata as { is_admin?: unknown } | undefined)?.is_admin;
-  if (flag === true) return true;
+  if (isAdminUser(user)) return true;
   return PRO_TIER_PLANS.has(planSlugOf(user));
 }
 

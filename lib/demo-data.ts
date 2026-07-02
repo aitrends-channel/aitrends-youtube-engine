@@ -91,50 +91,76 @@ export const DEMO_DATA = {
     "FinanceFuel delivers personal finance content with a fast-paced, no-fluff style — opening with a sharp hook that challenges conventional money wisdom before delivering actionable steps backed by real numbers. The tone is conversational yet authoritative, blending relatable middle-class scenarios with aspirational outcomes to keep viewers engaged through the full runtime.",
 
   videoIdeas: [
-    "5 Money Habits That Are Making You Poorer",
-    "Why Your Emergency Fund Is the Wrong Size (And the Exact Number You Need)",
-    "The Silent 401(k) Fee That's Stealing Years From Your Retirement",
-    "I Tracked Every Dollar for 90 Days — Here's What Actually Changed",
-    "Stop Budgeting. Do This Instead to Build Wealth Faster",
+    "How Did Ancient Humans Name Their Children?",
+    "The 12,000-Year-Old Word Every Human Still Understands",
+    "What Ancient Humans Actually Died From (It Wasn't What You Think)",
+    "The First Song Ever Sung — And Why We Still Hum It",
+    "Why Every Ancient Civilization Feared Left-Handedness",
   ],
 
-  script: `Here's the uncomfortable truth: most people who are broke aren't broke because they don't earn enough. They're broke because of five habits they do every single day without even realizing it. And the worst part? Most financial advice out there is telling you to do these things.
+  script: `You don't remember being named.
 
-Let's fix that right now.
+Think about that for a second. The single word that will follow you through every doorway, every classroom, every love letter, every hospital form, every gravestone — you had absolutely no say in it. Someone leaned over a crib, or a fire, or a bundle of moss, and made a sound. And that sound became you.
 
-Habit number one: paying yourself last. You've heard "pay yourself first," but I'm guessing your actual bank account tells a different story. Here's what most people actually do — they pay rent, cover subscriptions, hit the grocery store, maybe go out twice, and then they save whatever's left. Which is usually nothing. The fix is brutally simple: automate a transfer to savings on the same day your paycheck hits. Even if it's $50. Especially if it's $50. You spend what's available. So make less available.
+There's no birth certificate. There's no baby book. There's no aunt on a group chat suggesting something French.
 
-Habit number two: treating your lifestyle like it scales with income. Every time you get a raise, do you feel richer for about three weeks — then somehow end up with the same amount left over at month's end? That's lifestyle inflation, and it is silent wealth destruction. A $10,000 raise should not mean $10,000 more in annual spending. It should mean $3,000 more in spending and $7,000 more in investments. Map out what happens to every dollar of new income before you start earning it.
+It's roughly 40,000 years ago. You're a human — anatomically identical to us, same brain, same lungs, same capacity for love and grief and stupid jokes. A woman you'll one day call mother is holding you. She hasn't slept properly in weeks. The fire is low. The others are watching. And at some point in the next few days, or maybe the next few years, she is going to open her mouth and give you a sound that means you.
 
-Habit number three: buying depreciating assets on credit. A car financed at 7.9% APR is not transportation — it's a subscription to poverty. A couch on 0% financing that you can't pay off before the promo period ends is the same trap in slower motion. Interest on things that lose value is wealth destruction in its purest form. The rule: if it goes down in value, pay cash or don't buy it.
+Wait. How did she choose it?
 
-Habit number four: ignoring the small subscriptions. You probably have between 8 and 14 active subscriptions right now. I want you to actually pull up your bank statement and count them. Most people are off by at least four. At an average of $18 per subscription, that's potentially $1,700 a year going to services you may not even use. Invested at a 9% average return, that's over $25,000 in a decade. From subscriptions you barely remember you have.
+Not from a book. Not from a saint. Not from a cousin who died in a war that hadn't been invented yet. She reached into something — memory, weather, animal, ancestor, dream — and pulled out a syllable. And that syllable stuck.
 
-Habit number five — and this one is the most expensive — is keeping money idle in a savings account earning 0.01%. The average big-bank savings account still pays nearly nothing, even in a high-rate environment. Meanwhile, high-yield savings accounts are paying 4 to 5 percent. That's not a rounding error — on a $20,000 emergency fund, that's the difference between earning $20 per year and earning $900 per year. For doing exactly nothing different with your money.
+This is the story of how humans first learned to name each other. And by the end of this video, I promise you'll never think about your own name the same way again.
 
-Here's the thing about all five of these habits: none of them require willpower, a budget spreadsheet, or a complete lifestyle overhaul. They require a system. Automate the savings transfer. Set a rule for raises. Stop financing depreciation. Audit subscriptions quarterly. Move idle cash to a high-yield account.
+Let's back up.
 
-The gap between people who build wealth and people who don't is rarely income. It's almost always these invisible habits running in the background, quietly draining the difference. Fix the system, and the results follow.
+Because the question sounds simple, but it isn't. Naming a child is one of the strangest things our species does. It's a decision made entirely by other people, about a person who cannot yet object, using a symbolic technology — language — that took us hundreds of thousands of years to develop. Every human alive today is walking around wearing a sound that someone else chose for them. And that sound, in almost every culture we've ever studied, is treated as sacred.
+
+That's not nothing. That's a species-level pattern.
 
 If you want to go deeper on any of these — especially habit three, because the real math on car financing is genuinely disturbing — drop a comment below and I'll make a dedicated video. And if this was useful, the subscribe button is right there. It costs you nothing, and it keeps content like this coming.`,
 
   visualProfile: {
-    palette: ["#1a1a2e", "#7c5cbf", "#f5c842", "#e8e8e8", "#2d2d44"],
-    paletteLabels: ["Background", "Accent", "Highlight", "Text", "Panel"],
-    style: "Dark, high-contrast with bold typography and data-driven overlays. Thumbnails use split-screen layouts with strong directional lighting and a consistent purple/gold color language to signal premium finance content.",
-    thumbnailPattern: "Bold sans-serif headline on left, punchy visual on right. Always includes a number or percentage in large type.",
-    editingPace: "Fast-cut — average shot length 2.1 seconds. Hook delivered in first 8 seconds.",
-    musicMood: "Tense, motivational underscore with occasional silence for emphasis.",
-    artStyle: "Dark cinematic with high-contrast split-screen compositions and bold sans-serif typography",
-    lightingStyle: "Dramatic directional lighting with deep shadows and purple accent glow",
-    cameraStyle: "Close-up punchy shots mixed with data overlays; minimal camera movement",
-    mood: "Urgent and aspirational — creates tension then resolution within each video",
+    palette: ["#f7f2ea", "#1c1c1c", "#c94a3d", "#d9c9ad", "#f0d15c"],
+    paletteLabels: ["Paper background", "Bold outline", "Red accent", "Warm beige", "Highlight yellow"],
+    style: "Simple 2D flat cartoon explainer aesthetic — bald stick figures with dot eyes on warm paper-colored backgrounds. Bold hand-drawn outlines and flat color fills carry the whole visual language; single-idea-per-frame compositions with prop-driven symbolism rather than photorealism.",
+    thumbnailPattern: "Central stick figure with a single loud prop (question mark, red X, glowing halo), one bold hand-drawn label word floating in the frame, off-white or beige background.",
+    editingPace: "Deliberate — average shot length 4-6 seconds, giving each illustrated beat room to land. Cuts on narrative breath, not on beat.",
+    musicMood: "Warm acoustic underscore, sparse — piano, soft strings, small silences before the biggest ideas.",
+    artStyle: "Hand-drawn childlike flat cartoon: bald stick figures, dot eyes, bold outlines, flat color fills, warm paper-colored backgrounds",
+    lightingStyle: "Flat — no shading, no cast shadows. Warm firelight or overcast paper tones instead of directional lighting",
+    cameraStyle: "Static hold with subtle push-in or drift; each beat sits on-screen long enough to read the drawing",
+    mood: "Curious, patient, quietly wondrous — an unhurried invitation to think about something obvious that turns out to be strange",
   },
 
   fakeScreenshots: [
-    { videoId: "v1", title: "5 Money Habits That Are Making You Poorer",           thumbnailUrl: "/demo/images/Gemini_Generated_Image_6e55gj6e55gj6e55.png", frameUrls: ["/demo/images/Gemini_Generated_Image_b8var0b8var0b8va.png", "/demo/images/Gemini_Generated_Image_s4y61cs4y61cs4y6.png"] },
-    { videoId: "v2", title: "Why Your Emergency Fund Is the Wrong Size",            thumbnailUrl: "/demo/images/Gemini_Generated_Image_urxej0urxej0urxe.png", frameUrls: ["/demo/images/Gemini_Generated_Image_6e55gj6e55gj6e55.png", "/demo/images/Gemini_Generated_Image_b8var0b8var0b8va.png"] },
-    { videoId: "v3", title: "The Silent 401(k) Fee That's Stealing Your Retirement", thumbnailUrl: "/demo/images/Gemini_Generated_Image_s4y61cs4y61cs4y6.png", frameUrls: ["/demo/images/Gemini_Generated_Image_urxej0urxej0urxe.png", "/demo/images/Gemini_Generated_Image_6e55gj6e55gj6e55.png"] },
+    {
+      videoId: "v1",
+      title: "The 12,000-Year-Old Word Every Human Still Understands",
+      thumbnailUrl: "/demo/visual-analysis/stick-figure-cross-legged.jpeg",
+      frameUrls: [
+        "/demo/visual-analysis/stick-figure-road-fork.jpeg",
+        "/demo/visual-analysis/stick-figure-confused-map.jpeg",
+      ],
+    },
+    {
+      videoId: "v2",
+      title: "What Ancient Humans Actually Died From (It Wasn't What You Think)",
+      thumbnailUrl: "/demo/visual-analysis/stick-figure-flexing-exhausted.jpeg",
+      frameUrls: [
+        "/demo/visual-analysis/stick-figure-lies-on-ground.jpeg",
+        "/demo/visual-analysis/stick-figure-slams-alarm.jpeg",
+      ],
+    },
+    {
+      videoId: "v3",
+      title: "The First Song Ever Sung — And Why We Still Hum It",
+      thumbnailUrl: "/demo/visual-analysis/stick-figures-working-table.jpeg",
+      frameUrls: [
+        "/demo/visual-analysis/stick-figures-reach.jpeg",
+        "/demo/visual-analysis/stick-figure-shocked-unread.jpeg",
+      ],
+    },
   ],
 
   promptBeats: [
@@ -175,51 +201,141 @@ If you want to go deeper on any of these — especially habit three, because the
     "Stack of credit cards melting into liquid, surreal macro photography, warm orange and red tones, studio lighting",
   ],
 
+  // Prompts step uses this longer beat list — 59 beats matching the
+  // "How Did Ancient Humans Name Their Children?" script. Kept
+  // separate from promptBeats above so the generate/assemble demo
+  // steps keep working with their 4-item asset set; only prompts/page
+  // reads from here to show the full range the real workflow produces.
+  promptStepBeats: buildPromptStepBeats(),
+
   thumbnailConcepts: [
     {
       position: 1,
-      title: "The Split Screen Trap",
-      visualConcept: "Split screen — man in luxury car on left (Lifestyle), phone showing $47 balance on right (Reality). Purple dividing line, dark cinematic tone.",
-      textOverlay: "LOOKS RICH. IS BROKE.",
-      emotionTrigger: "Instant self-recognition — viewers see the gap between appearances and reality",
-      stylePrompt: "Dark cinematic split-screen, bold yellow sans-serif headline, purple accent divider, shallow depth of field, $47 balance visible on phone screen",
-      imageUrl: "/demo/thumbnail/Gemini_Generated_Image_v5xttuv5xttuv5xt.png",
+      title: "Who Chose Your Name?",
+      visualConcept: "Stick-figure adult peering into a crib, giant question mark hovering above the baby. Warm beige background, single bold hand-drawn label.",
+      textOverlay: "WHO CHOSE YOUR NAME?",
+      emotionTrigger: "Instant self-recognition — viewers realize they've never really thought about this",
+      stylePrompt: "Flat cartoon stick figures, dot eyes, bold outlines, warm beige paper background, oversized red question mark, hand-drawn label across the top",
+      imageUrl: "/demo/thumbnail/thumbnail-1.png",
     },
     {
       position: 2,
-      title: "The Hidden Drain",
-      visualConcept: "Phone screen packed with subscription app icons, crumpled shocked paper face beside it. Dark matte surface, dramatic spotlight. '$1,700/yr' in giant white text top-left.",
-      textOverlay: "$1,700/yr",
-      emotionTrigger: "Guilt and urgency — 'I definitely have subscriptions I forgot about'",
-      stylePrompt: "Dark flat-lay, oversized bold white dollar figure top-left, crumpled paper shocked face, warm spotlight on phone showing app grid",
-      imageUrl: "/demo/thumbnail/Gemini_Generated_Image_9emb9l9emb9l9emb.png",
+      title: "40,000 Years Ago",
+      visualConcept: "Prehistoric stick-figure mother by a small campfire cradling a swaddled baby, silhouette of a savanna hill behind. Bold time-stamp label.",
+      textOverlay: "40,000 YEARS AGO",
+      emotionTrigger: "Curiosity spike — the deep-time framing signals a big historical reveal",
+      stylePrompt: "Warm beige and firelight tones, prehistoric stick figures in hide wraps, small campfire, oversized time-label across the top of frame",
+      imageUrl: "/demo/thumbnail/thumbnail-2.png",
     },
     {
       position: 3,
-      title: "The Raise Betrayal",
-      visualConcept: "Person holding a $5,250 paycheck with a confused/frustrated expression, phone showing a $1,420 bank balance. Dark office background.",
-      textOverlay: "GOT A RAISE. STILL BROKE.",
-      emotionTrigger: "Frustrated recognition — the raise that somehow changed nothing",
-      stylePrompt: "Dark moody office setting, gold text overlay, paycheck in hand, phone showing low balance, shallow depth of field, cinematic grade",
-      imageUrl: "/demo/thumbnail/Gemini_Generated_Image_umnnv3umnnv3umnn.png",
+      title: "The First Word for You",
+      visualConcept: "Prehistoric mother stick-figure mouth open in an O, wavy sound-waves flowing into a glowing baby with a halo. Single-syllable speech bubble.",
+      textOverlay: "THE FIRST WORD FOR YOU",
+      emotionTrigger: "Wonder — the visual of the first sound of a name being spoken",
+      stylePrompt: "Flat cartoon mother-and-baby, wavy sound-wave lines, glowing yellow halo around the baby, warm firelight backdrop, hand-drawn label",
+      imageUrl: "/demo/thumbnail/thumbnail-3.png",
     },
     {
       position: 4,
-      title: "The Debt Clock",
-      visualConcept: "Giant ticking clock with money burning off the hands, car key in foreground. '7.9% APR' in large red text at bottom.",
-      textOverlay: "EVERY SECOND YOU FINANCE THIS, YOU LOSE.",
-      emotionTrigger: "Dread and urgency — time literally burning money on a depreciating asset",
-      stylePrompt: "Dark dramatic clock face, burning money motion blur, car key foreground, bold white headline, red 7.9% APR callout, cinematic fire glow",
-      imageUrl: "/demo/thumbnail/Gemini_Generated_Image_w8fakww8fakww8fa.png",
+      title: "No Book. No Saint. No Aunt.",
+      visualConcept: "Three panels crossed out with red X marks — a closed book, a haloed saint figure, a smartphone with chat bubbles. Bold striking label.",
+      textOverlay: "NO BOOK. NO SAINT. NO AUNT.",
+      emotionTrigger: "Frame-flip — the modern crutches for naming didn't exist, so how did anyone name anyone?",
+      stylePrompt: "Three side-by-side flat cartoon icons each crossed out with a bold red X, clean beige background, oversized punchy label along the top",
+      imageUrl: "/demo/thumbnail/thumbnail-4.png",
     },
     {
       position: 5,
-      title: "The Idle Money Wake-Up",
-      visualConcept: "Two bank statements side by side — Generic Bank 0.01% earning $20, High-Yield Bank 5.00% earning $900. Red X on left, green check on right.",
-      textOverlay: "YOUR BANK IS STEALING FROM YOU",
-      emotionTrigger: "Outrage and urgency — the exact same money, wildly different outcomes",
-      stylePrompt: "Dark background, two glowing bank statement cards, red X and green checkmark overlays, bold white headline, green accent on the winning side",
-      imageUrl: "/demo/thumbnail/Gemini_Generated_Image_45g7b45g7b45g7b4.png",
+      title: "One Sound. Forever You.",
+      visualConcept: "Modern stick figure staring at their own name inside a floating speech bubble, radiating yellow insight lines behind them. Meditative pause.",
+      textOverlay: "ONE SOUND. FOREVER YOU.",
+      emotionTrigger: "Existential recognition — the video's payoff line in a single frame",
+      stylePrompt: "Modern stick figure with dot eyes wide open, name-shape floating in a speech bubble, glowing yellow radiating insight lines, clean warm background",
+      imageUrl: "/demo/thumbnail/thumbnail-5.png",
     },
   ],
 };
+
+// ── Prompts-step long beat list ─────────────────────────────────────────
+// One-per-beat image prompts for the "How Did Ancient Humans Name Their
+// Children?" demo script. Paired with rotating short motion cues so the
+// video-prompts tab has meaningful content per beat instead of blank
+// strings. Assembled at module load and exposed via
+// DEMO_DATA.promptStepBeats.
+
+const DEMO_PROMPT_STEP_IMAGE_PROMPTS: string[] = [
+  "Simple 2D flat cartoon illustration of a bald round-headed stick figure adult with dot eyes and a puzzled expression, tapping their temple with one finger, thought bubble above containing a large red question mark, clean white background, bold outlines and flat color fills, explainer-video aesthetic.",
+  "Simple 2D flat cartoon illustration of a bald stick figure sitting cross-legged with chin resting on fist in a thinker pose, dot eyes closed in concentration, small swirl above head indicating thought, clean white background, hand-drawn childlike style with bold outlines.",
+  "Simple 2D flat cartoon illustration of a bald stick figure walking through a simple rectangular wooden doorway, a floating speech bubble containing a squiggly word-shape trailing behind them like a tag on a string, muted beige background, clean bold outlines.",
+  "Simple 2D flat cartoon illustration of a small bald stick figure child sitting at a wooden school desk in front of a green chalkboard, holding up a name card, other tiny stick figure classmates seated nearby, warm beige floor, flat colors.",
+  "Simple 2D flat cartoon illustration of a bald stick figure with dot eyes and a small smile holding an open envelope with a red heart seal, a folded letter peeking out showing a squiggly signature at the bottom, soft peach background, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of a bald stick figure in a clinical setting holding a clipboard with a form showing labeled blank lines, a red cross symbol floating in the corner of the frame, clean white background with light blue accents, minimalistic style.",
+  "Simple 2D flat cartoon illustration of a single rounded gray gravestone standing in muted green grass, a squiggly line etched across it representing an inscribed name, a small flat cartoon flower resting at its base, soft overcast sky background, minimal detail.",
+  "Simple 2D flat cartoon illustration of a swaddled baby stick figure with dot eyes lying in a simple bassinet, a large red X mark hovering above them, arms raised in tiny helpless gesture, clean white background, bold outlines, explainer-video style.",
+  "Simple 2D flat cartoon illustration of a bald adult stick figure bending forward at the waist over a simple wooden crib, dot eyes gazing down, a swaddled baby figure visible inside, warm beige interior background, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of a bald stick figure squatting beside a small crackling campfire with warm orange and yellow flame shapes and radiating glow lines, leaning forward toward a small bundle on the ground, deep navy nighttime background.",
+  "Simple 2D flat cartoon illustration of a small mossy green bundle resting on the earth with a tiny swaddled baby face peeking out, surrounded by simple leaves and a couple of small stones, muted green and tan background, minimalistic hand-drawn style.",
+  "Simple 2D flat cartoon illustration of a bald adult stick figure with mouth open in a small O shape, wavy sound-wave lines radiating outward from their lips like ripples, clean white background, bold outlines, explainer-video aesthetic.",
+  "Simple 2D flat cartoon illustration of a wavy sound-wave arrow flowing from the left toward a small bald stick figure child on the right, with a glowing yellow radiating halo around the child indicating identity, clean beige background, flat colors.",
+  "Simple 2D flat cartoon illustration of a rectangular paper birth certificate with decorative border and blank lines, overlaid with a large bold red X mark across it, clean white background, iconographic explainer style.",
+  "Simple 2D flat cartoon illustration of a small pastel-colored baby memory book with a tiny footprint icon on its cover, marked with a bold red X across it, clean white background, minimal childlike detail.",
+  "Simple 2D flat cartoon illustration of a smartphone screen showing chat bubbles with a tiny Eiffel Tower icon inside one bubble, a bald stick figure aunt avatar in a corner, whole phone crossed out with a large red X, clean white background.",
+  "Simple 2D flat cartoon illustration of a large bold hand-drawn label reading 40,000 YEARS AGO with a small backward-pointing arrow beside it, a tiny silhouette of a savanna hill and a distant campfire below, warm beige and tan background.",
+  "Simple 2D flat cartoon illustration of two bald stick figures standing side by side, one wearing a simple animal-hide wrap and the other wearing a modern t-shirt, an equals sign between them, clean white background, bold outlines.",
+  "Simple 2D flat cartoon illustration of a simple pink cartoon brain shape floating centered in frame with a small glowing yellow halo of radiating lines around it, clean white background, iconographic childlike style.",
+  "Simple 2D flat cartoon illustration of a pair of simple pink cartoon lungs shown centered in frame with small blue arrows indicating inhale and exhale, clean white background, minimal iconographic detail.",
+  "Simple 2D flat cartoon illustration of two bald stick figures embracing in a gentle hug, a bright red heart floating above their heads with a soft warm glow, muted peach background, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of a single bald stick figure kneeling with head bowed and dot eyes closed, a single blue teardrop falling from their face, muted gray-blue background, minimal detail.",
+  "Simple 2D flat cartoon illustration of two bald stick figures laughing with wide open curved mouths and small squiggle lines around their heads indicating giggles, a small banana peel on the ground between them, clean white background, playful bold outlines.",
+  "Simple 2D flat cartoon illustration of a bald prehistoric woman stick figure in a simple animal-hide wrap cradling a swaddled baby against her chest, seated on the ground, warm beige and tan cave interior background, hand-drawn style.",
+  "Simple 2D flat cartoon illustration of the same prehistoric woman stick figure with dark half-circle shadows under her dot eyes, tiny Z letters floating away crossed out with small red X marks, muted beige background, minimal detail.",
+  "Simple 2D flat cartoon illustration of a small dwindling campfire with only a few short orange flame shapes and thin curls of gray smoke rising, glowing embers on the ground, deep navy nighttime background, minimal warm glow.",
+  "Simple 2D flat cartoon illustration of three bald prehistoric stick figures in simple hide wraps standing in a semicircle in the background, all dot eyes turned toward the viewer, warm beige and tan cave background with dim firelight.",
+  "Simple 2D flat cartoon illustration of a small calendar-like row of three tan squares each showing a simple sun icon, a small arrow pointing rightward along them, clean beige background, iconographic childlike style.",
+  "Simple 2D flat cartoon illustration of a small bald child stick figure shown growing taller in three stages left to right, small forward arrows between each stage, warm beige background, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of the prehistoric mother stick figure with her mouth open in a soft O shape, gentle wavy sound-wave lines radiating from her lips toward a small swaddled baby in her arms, warm firelight glow.",
+  "Simple 2D flat cartoon illustration of a tiny swaddled baby stick figure with a bright yellow glowing halo of radiating lines around them, a small arrow labeled YOU pointing directly at them, clean beige background, iconographic style.",
+  "Simple 2D flat cartoon illustration of a bald stick figure narrator holding up one hand palm-out in a stop gesture, dot eyes wide open, a small exclamation mark floating above their head, clean white background, bold outlines.",
+  "Simple 2D flat cartoon illustration of the prehistoric mother stick figure with dot eyes looking upward, a large red question mark floating above her head, warm beige background with faint firelight glow, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of a closed hardcover book with a plain brown cover sitting centered in frame, overlaid with a large bold red X mark across it, clean white background, iconographic style.",
+  "Simple 2D flat cartoon illustration of a bald stick figure with a small golden halo above their head and hands folded in front, overlaid with a large bold red X mark, clean white background, minimal iconographic style.",
+  "Simple 2D flat cartoon illustration of a small gray gravestone with a tiny crossed-swords icon etched on it, overlaid with a large bold red X mark and a small clock symbol showing the concept of not-yet-happened, clean beige background.",
+  "Simple 2D flat cartoon illustration of the prehistoric mother stick figure reaching one arm forward into a soft glowing swirling cloud of muted color, dot eyes focused, warm beige background, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of a small cloud-shaped thought bubble containing a faint silhouette of an older stick figure ancestor, floating centered in frame, clean beige background, minimalistic iconographic style.",
+  "Simple 2D flat cartoon illustration of a simple gray cloud with a few zigzag yellow lightning bolts and small blue raindrops falling below it, clean sky-blue background, iconographic childlike style.",
+  "Simple 2D flat cartoon illustration of a simplified brown four-legged animal shape resembling a deer with small antlers, standing in profile centered in frame, muted green grass beneath, clean beige background, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of a faded translucent bald stick figure elder with a small curly outline of hair and dot eyes closed, standing behind and slightly above a solid figure, ghostly presence, muted beige background.",
+  "Simple 2D flat cartoon illustration of a sleeping bald stick figure lying on the ground with dot eyes as small curves, a cloud-shaped dream bubble above containing tiny stars and a crescent moon, deep navy nighttime background.",
+  "Simple 2D flat cartoon illustration of the prehistoric mother stick figure holding up a small glowing speech bubble between her fingertips containing a single squiggly syllable-shape, warm yellow glow around it, beige background.",
+  "Simple 2D flat cartoon illustration of a small squiggly syllable-shape in a speech bubble firmly attached to a swaddled baby stick figure by a bold line, tiny motion marks around it suggesting it snapped into place, clean beige background.",
+  "Simple 2D flat cartoon illustration of a wide banner-style title card showing three bald prehistoric stick figures standing together, each with a small speech bubble containing a different squiggly name-shape floating above them, warm beige savanna background.",
+  "Simple 2D flat cartoon illustration of a simple horizontal progress bar with a small arrow near the right end, above it a tiny play-triangle icon, clean white background, iconographic explainer style.",
+  "Simple 2D flat cartoon illustration of a modern bald stick figure viewer staring at their own name written in a squiggly line inside a floating speech bubble beside their head, dot eyes wide in realization, small yellow radiating lines of insight, clean white background.",
+  "Simple 2D flat cartoon illustration of a bald stick figure narrator taking a step backward with one foot lifted, a curved leftward-pointing arrow behind them, clean white background, bold outlines, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of two side-by-side question marks: a small tidy black one on the left with a green checkmark labeled SIMPLE, and a large tangled scribbled red one on the right labeled with a red X, clean white background.",
+  "Simple 2D flat cartoon illustration of a bald adult stick figure holding a swaddled baby, a large squiggly speech bubble with a name-shape hovering above, small orbiting question marks and swirl lines around them suggesting strangeness, clean beige background.",
+  "Simple 2D flat cartoon illustration of three bald adult stick figures standing in a semicircle pointing inward toward a single swaddled baby in the center, each with a small speech bubble containing a different squiggly name-suggestion, clean white background.",
+  "Simple 2D flat cartoon illustration of a swaddled baby stick figure with a small speech bubble above containing only a large red X, tiny arms raised in a helpless shrug, clean white background, minimal iconographic style.",
+  "Simple 2D flat cartoon illustration of a floating cluster of simple symbols including a squiggle, a triangle, a small drawing of a hand, and a labeled tag reading LANGUAGE, all connected by thin lines, clean white background, iconographic explainer style.",
+  "Simple 2D flat cartoon illustration of a long horizontal timeline arrow stretching across the frame with three small bald stick figures at different points progressing from a hunched early figure to an upright modern one, small numeric labels along the line, clean beige background.",
+  "Simple 2D flat cartoon illustration of a small crowd of five bald stick figures walking together in a row, each with a distinct squiggly name-shape floating in a speech bubble tethered above their head like a tag, clean beige background, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of a simple flat globe icon centered in frame with several small speech bubbles containing different squiggly name-shapes floating around it at various positions, muted sky-blue background, iconographic style.",
+  "Simple 2D flat cartoon illustration of a single glowing squiggly name-shape inside a speech bubble resting on a small pedestal, warm yellow radiating halo lines around it, two tiny bald stick figures kneeling on either side with heads bowed, muted beige background.",
+  "Simple 2D flat cartoon illustration of a bald stick figure narrator pointing emphatically at a bold hand-drawn label reading NOT NOTHING with a small green checkmark beside it, clean white background, explainer-video style.",
+  "Simple 2D flat cartoon illustration of a wide grid of many small identical bald stick figures arranged in neat rows, each with a tiny speech-bubble name-tag above them, a bold hand-drawn label reading SPECIES-LEVEL PATTERN across the top, clean beige background.",
+];
+
+function buildPromptStepBeats(): { beat: number; imagePrompt: string; videoPrompt: string }[] {
+  // Image + video prompts use the same per-beat description in this
+  // demo's script. The real workflow can diverge them (image = look,
+  // video = motion) but for the "How Did Ancient Humans Name Their
+  // Children?" storyline both tabs should show the same illustrated
+  // scene copy — matches what the user actually generated in their
+  // script authoring pass.
+  return DEMO_PROMPT_STEP_IMAGE_PROMPTS.map((prompt, i) => ({
+    beat: i + 1,
+    imagePrompt: prompt,
+    videoPrompt: prompt,
+  }));
+}
