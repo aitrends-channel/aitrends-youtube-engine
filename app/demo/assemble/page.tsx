@@ -609,8 +609,8 @@ export default function DemoAssemblePage() {
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover Source</p>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                   {([
-                    { id: "trimmed",  title: "Trimmed voiceover",  hint: "Silence between beats removed — tighter pacing",   src: "/demo/voiceover/demo-voiceover_short.mp3" },
-                    { id: "original", title: "Original voiceover", hint: "Full TTS output with natural pauses left intact", src: "/demo/voiceover/demo-voiceover_short.mp3" },
+                    { id: "trimmed",  title: "Trimmed voiceover",  hint: "Silence between beats removed — tighter pacing",   src: "/demo/voiceover/voiceover.mp3" },
+                    { id: "original", title: "Original voiceover", hint: "Full TTS output with natural pauses left intact", src: "/demo/voiceover/voiceover.mp3" },
                   ] as const).map((v) => (
                     <VoiceoverPreviewCard
                       key={v.id}
