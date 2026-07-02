@@ -86,7 +86,6 @@ export async function POST(req: Request) {
   // BEFORE the delete loop because the cascade would otherwise wipe
   // them out of the projects table before we can read them.
   const excludedUserIds: string[] = [];
-  const excludedUserEmails: string[] = [];
   const deletedUserEmails: string[] = [];
   const deletedProjectIds: string[] = [];
   try {
@@ -102,7 +101,6 @@ export async function POST(req: Request) {
       const email = u.email?.toLowerCase() ?? "";
       if (email && excludeEmails.has(email)) {
         excludedUserIds.push(u.id);
-        excludedUserEmails.push(email);
         continue;
       }
       toDelete.push({ id: u.id, email });
@@ -204,73 +202,6 @@ export async function POST(req: Request) {
     }
   } else {
     results.push({ step: "clear-redis", ok: true, detail: "no projects deleted, nothing to drop" });
-  }
-
-  // ── Step 1e: wipe niches, videos & files for EXCLUDED users ────
-  // Excluded users keep their auth.users row (so their login,
-  // account_settings + API keys, and any subscription state survive),
-  // but every asset they created during pre-launch testing gets
-  // deleted so day-1 metrics are clean and no test video lingers in
-  // their account:
-  //   • projects (cascades → project_beats, project_costs)
-  //   • R2 folder for the user's email
-  //   • assembly:<projectId> Redis cache entries
-  //   • niches_used counter reset to 0 so their post-launch niche
-  //     allocation starts fresh
-  if (excludedUserIds.length > 0) {
-    try {
-      // Collect project IDs BEFORE the delete cascade blanks the
-      // projects table — needed for the Redis cleanup below.
-      const { data: excludedProjRows, error: projErr } = await supabase
-        .from("projects")
-        .select("id")
-        .in("user_id", excludedUserIds);
-      if (projErr) throw new Error(`project-id collection failed: ${projErr.message}`);
-      const excludedProjectIds = ((excludedProjRows ?? []) as { id: string }[]).map((p) => p.id);
-
-      // Delete projects — cascade wipes project_beats + project_costs.
-      const { error: delProjErr } = await supabase
-        .from("projects")
-        .delete()
-        .in("user_id", excludedUserIds);
-      if (delProjErr) throw new Error(`projects delete failed: ${delProjErr.message}`);
-
-      // Wipe R2 folders. Best-effort per email — a single failed
-      // folder shouldn't collapse the step.
-      let r2Cleaned = 0;
-      const r2Failures: string[] = [];
-      for (const email of excludedUserEmails) {
-        try {
-          await deleteFolder(`${email}/`);
-          r2Cleaned++;
-        } catch (err) {
-          r2Failures.push(`${email}: ${err instanceof Error ? err.message : "unknown"}`);
-        }
-      }
-
-      // Drop assembly cache keys for the deleted projects.
-      let redisRemoved = 0;
-      if (excludedProjectIds.length > 0) {
-        const keys = excludedProjectIds.map((id) => `assembly:${id}`);
-        redisRemoved = await redis.del(...keys);
-      }
-
-      // Reset the niches_used counter so their post-launch cap starts
-      // clean. account_settings row itself is preserved.
-      const { error: settingsErr } = await supabase
-        .from("account_settings")
-        .update({ niches_used: 0 })
-        .in("user_id", excludedUserIds);
-      if (settingsErr) console.warn("[launch] niches_used reset failed:", settingsErr.message);
-
-      const detail = `users=${excludedUserIds.length}, projects=${excludedProjectIds.length}, r2=${r2Cleaned}, redis=${redisRemoved}` +
-        (r2Failures.length ? `, r2 failed=${r2Failures.length} (${r2Failures.slice(0, 3).join("; ")}${r2Failures.length > 3 ? "…" : ""})` : "");
-      results.push({ step: "clear-excluded-content", ok: r2Failures.length === 0, detail });
-    } catch (err) {
-      results.push({ step: "clear-excluded-content", ok: false, detail: err instanceof Error ? err.message : "unknown error" });
-    }
-  } else {
-    results.push({ step: "clear-excluded-content", ok: true, detail: "no excluded users, nothing to wipe" });
   }
 
   // ── Step 2: optionally truncate system_logs ────────────────────
