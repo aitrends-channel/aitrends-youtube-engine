@@ -38,7 +38,7 @@ export default function DemoTopicPage() {
         >
           <h1 className="font-bold text-lg">Choose Your Topic</h1>
           <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-            {isTopicLocked ? "Topic is locked — already used in script generation" : "Select a video idea generated for FinanceFuel"}
+            {isTopicLocked ? "Topic is locked — already used in script generation" : "Select a video idea generated for AncientHeclus"}
           </p>
           <div className="mt-3">
             <DemoStepCostCard column="topic" />

@@ -26,7 +26,7 @@ const DEMO_STEP_HREFS  = [
   "/demo/channel", "/demo/topic", "/demo/script", "/demo/visuals",
   "/demo/prompts", "/demo/generate", "/demo/assemble", "/demo/thumbnails",
 ];
-const DEMO_DEFAULT_TOPIC = "5 Money Habits That Are Making You Poorer";
+const DEMO_DEFAULT_TOPIC = "How Did Ancient Humans Name Their Children?";
 
 interface DemoProgress {
   topic: string;
@@ -159,7 +159,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
   const plotH = H - PAD_T - PAD_B;
   const barW = 52, rx = 5;
   const bars = [
-    { label: "FinanceFuel", count: 1 },
+    { label: "AncientHeclus", count: 1 },
   ];
   const maxCount = 1;
   const plotW = W - PAD_X * 2;
@@ -308,7 +308,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
         </div>
       ) : (
       <>
-      {/* FinanceFuel channel group */}
+      {/* AncientHeclus channel group */}
       <div>
         <div className="rounded-2xl px-4 sm:px-6 py-6 sm:py-8" style={cardStyle}>
           <div className="flex items-center justify-between gap-3 mb-5">

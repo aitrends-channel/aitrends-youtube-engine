@@ -23,7 +23,7 @@ const DEMO_STEP_HREFS  = [
 
 const MOCK_VIDEO_BASE = {
   id: "d1",
-  title: "5 Money Habits That Are Making You Poorer",
+  title: "How Did Ancient Humans Name Their Children?",
   timeAgo: "2d ago",
 };
 
@@ -137,7 +137,7 @@ export default function DemoDashboardPage() {
   const nichePct     = nicheReady ? NICHES / NICHE_LIMIT : 0;
   const nicheColor    = "#9b7ff5";
 
-  // Bar chart (single bar — FinanceFuel)
+  // Bar chart (single bar — AncientHeclus)
   const W = 600, PAD_X = 16, PAD_T = 16, PAD_B = 32, H = 160;
   const plotH = H - PAD_T - PAD_B;
   const plotW = W - PAD_X * 2;
@@ -372,7 +372,7 @@ export default function DemoDashboardPage() {
                     <g>
                       <rect x={TX} y={TY} width={TW} height={TH} rx={5} fill="#1e1533" stroke="#9b7ff5" strokeOpacity="0.4" strokeWidth="1" />
                       <text x={TX + TW / 2} y={TY + 12} textAnchor="middle" fontSize="9.5" fill="rgba(255,255,255,0.7)" fontWeight="500">
-                        FinanceFuel
+                        AncientHeclus
                       </text>
                       <text x={TX + TW / 2} y={TY + 24} textAnchor="middle" fontSize="10" fill="#9b7ff5" fontWeight="700">
                         {totalVideos} Videos
@@ -382,7 +382,7 @@ export default function DemoDashboardPage() {
                 })()}
                 <text x={cx} y={PAD_T + plotH + 18} textAnchor="middle" fontSize="10"
                   fill={hoveredBar ? "#9b7ff5" : "rgba(255,255,255,0.3)"} fontWeight={hoveredBar ? "600" : "400"}>
-                  FinanceFuel
+                  AncientHeclus
                 </text>
               </g>
             </svg>

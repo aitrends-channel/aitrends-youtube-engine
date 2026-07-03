@@ -85,7 +85,7 @@ const DEMO_BEATS = buildDemoBeats();
 
 export const DEMO_DATA = {
   channel: {
-    name: "FinanceFuel",
+    name: "AncientHeclus",
     url: "https://youtube.com/@ancientheclus",
     subscribers: "124K",
     avgViews: "18K",
