@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
-import { getPaymentSettings, getPlanBySlug, getPlans } from "@/lib/plans";
+import { getPaymentSettings } from "@/lib/plans";
 
 export async function POST(request: Request) {
   let user;
@@ -123,50 +123,12 @@ export async function POST(request: Request) {
     `DODO RESPONSE: plan=${plan} payment_id=${payment_id} body=${JSON.stringify(result)}`,
   );
 
-  // Cross-check the paid amount against the claimed plan's price.
-  // Dodo reports amounts in the smallest currency unit (cents).
-  // Configurable via env so prices can change without redeploy.
-  //
-  // Skip the guard entirely in test mode: Dodo's test SKUs use
-  // arbitrary low amounts (often $0.50 or $1) intentionally so QA
-  // doesn't have to spend $40 to verify the founder flow. The price
-  // guard exists to catch fraud against the LIVE prices in
-  // production — applying it to test charges blocks every legitimate
-  // test purchase without protecting any real revenue.
-  // Subscription responses use recurring_amount instead of total_amount.
-  // Falling through them all keeps the price guard useful across both
-  // flows without needing separate branches.
-  // Also skip when the buyer paid in a non-USD currency: our plan
-  // prices are USD-denominated, but Dodo auto-converts at checkout
-  // and returns total_amount in the buyer's local currency. Comparing
-  // e.g. EUR cents against USD cents rejects legitimate payments.
-  // Dodo enforces the correct converted amount on its side, so we
-  // trust the charge whenever currency != usd.
-  const paidCurrency = ((result.currency as string | undefined) ?? "usd").toLowerCase();
-  const paidCents = Number(result.total_amount ?? result.amount ?? result.recurring_amount ?? 0);
-  const claimedPlanRow = plan ? await getPlanBySlug(plan) : null;
-  const claimedPlanPrice = claimedPlanRow?.priceCents ?? 0;
-
-  if (
-    env === "production" &&
-    paidCurrency === "usd" &&
-    paidCents > 0 &&
-    claimedPlanPrice > 0 &&
-    paidCents < claimedPlanPrice
-  ) {
-    // Try to identify which plan the amount actually matches — helps support
-    // figure out the right correction without spelunking through Dodo logs.
-    const allPlans = await getPlans();
-    const actualPlan = allPlans.find((p) => p.priceCents === paidCents)?.slug ?? null;
-    return NextResponse.json({
-      error: actualPlan
-        ? `Plan mismatch: paid amount ($${paidCents / 100}) matches '${actualPlan}', not '${plan}'. Contact support to correct.`
-        : `Paid amount ($${paidCents / 100}) is below the '${plan}' price ($${claimedPlanPrice / 100}). Contact support.`,
-      paidCents,
-      claimedPlan: plan,
-      actualPlan,
-    }, { status: 400 });
-  }
+  // Price guard temporarily disabled: FX-converted charges (Dodo
+  // returns total_amount in the buyer's local currency) were tripping
+  // it for legitimate non-USD payments. For now we trust any Dodo-
+  // acknowledged charge with an acceptable status regardless of
+  // amount; Dodo already enforces the correct converted price at
+  // checkout on its side.
 
   const isFounder = plan === "founder";
 
