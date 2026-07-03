@@ -23,6 +23,20 @@ export async function POST() {
     return NextResponse.json({ allowed: true });
   }
 
+  // Users who originally signed up via OAuth (Google, etc.) bypass the
+  // allowlist gate, matching the auth callback's OAuth-skip behavior.
+  // Without this, a Google-signup user who later attaches an email
+  // identity via /account's "Set password" flow gets blocked on their
+  // first email+password login — the callback let them in, but this
+  // route doesn't know their non-email identity exists. Downstream
+  // paywalls still gate actual product usage.
+  const hasOAuthIdentity = (user.identities ?? []).some(
+    (i) => typeof i.provider === "string" && i.provider !== "email"
+  );
+  if (hasOAuthIdentity) {
+    return NextResponse.json({ allowed: true });
+  }
+
   // Fallback: allowed_emails covers the admin account and manually comped users
   const { data } = await supabase
     .from("allowed_emails")
