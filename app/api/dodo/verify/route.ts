@@ -136,11 +136,24 @@ export async function POST(request: Request) {
   // Subscription responses use recurring_amount instead of total_amount.
   // Falling through them all keeps the price guard useful across both
   // flows without needing separate branches.
+  // Also skip when the buyer paid in a non-USD currency: our plan
+  // prices are USD-denominated, but Dodo auto-converts at checkout
+  // and returns total_amount in the buyer's local currency. Comparing
+  // e.g. EUR cents against USD cents rejects legitimate payments.
+  // Dodo enforces the correct converted amount on its side, so we
+  // trust the charge whenever currency != usd.
+  const paidCurrency = ((result.currency as string | undefined) ?? "usd").toLowerCase();
   const paidCents = Number(result.total_amount ?? result.amount ?? result.recurring_amount ?? 0);
   const claimedPlanRow = plan ? await getPlanBySlug(plan) : null;
   const claimedPlanPrice = claimedPlanRow?.priceCents ?? 0;
 
-  if (env === "production" && paidCents > 0 && claimedPlanPrice > 0 && paidCents < claimedPlanPrice) {
+  if (
+    env === "production" &&
+    paidCurrency === "usd" &&
+    paidCents > 0 &&
+    claimedPlanPrice > 0 &&
+    paidCents < claimedPlanPrice
+  ) {
     // Try to identify which plan the amount actually matches — helps support
     // figure out the right correction without spelunking through Dodo logs.
     const allPlans = await getPlans();
