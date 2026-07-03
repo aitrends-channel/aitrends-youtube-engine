@@ -924,7 +924,7 @@ export default function DemoAssemblePage() {
               <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                 {assemblePhase === "done" && (
                   <AssembledVideoPlayer
-                    src={captionsEnabled ? "/demo/videos/with_captions.mp4" : "/demo/videos/without_captions.mp4"}
+                    src={"/demo/videos/assemble.mp4"}
                     bgmUrl={bgmDataUrl}
                     bgmVolume={bgmVolume}
                     logoUrl={logoDataUrl}
@@ -953,7 +953,7 @@ export default function DemoAssemblePage() {
                       Reassemble
                     </button>
                     <a
-                      href={captionsEnabled ? "/demo/videos/with_captions.mp4" : "/demo/videos/without_captions.mp4"}
+                      href={"/demo/videos/assemble.mp4"}
                       download={captionsEnabled ? "heclus-demo-with-captions.mp4" : "heclus-demo-no-captions.mp4"}
                       className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all"
                       style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>

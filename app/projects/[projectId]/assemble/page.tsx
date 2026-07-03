@@ -13,6 +13,7 @@ import { presignedUpload } from "@/lib/upload-client";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { PRO_RESOLUTIONS, PRO_TIER_PLANS } from "@/lib/plans-gating";
+import { isAdminUser } from "@/lib/admin";
 
 interface PageProps {
   params: { projectId: string };
@@ -156,8 +157,12 @@ export default function AssemblePage({ params }: PageProps) {
     const client = createSupabaseBrowserClient();
     client.auth.getUser().then(({ data }) => {
       if (cancelled) return;
-      const meta = (data.user?.app_metadata ?? {}) as { plan?: unknown; is_admin?: unknown };
-      if (meta.is_admin === true) {
+      const meta = (data.user?.app_metadata ?? {}) as { plan?: unknown };
+      // isAdminUser folds in both the app_metadata.is_admin flag AND
+      // the legacy hardcoded ADMIN_EMAILS backstop — otherwise the
+      // founder admin (recognised by email) would fail canUsePro and
+      // get locked out of 4K assemble.
+      if (isAdminUser(data.user)) {
         setUserPlan("admin");
       } else if (typeof meta.plan === "string" && meta.plan.trim()) {
         setUserPlan(meta.plan.trim().toLowerCase());
