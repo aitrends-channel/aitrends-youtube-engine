@@ -1,3 +1,78 @@
+// ── Prompts-step long beat list ─────────────────────────────────────────
+// Declared above DEMO_DATA because DEMO_DATA.promptStepBeats calls
+// buildPromptStepBeats() during module init — the function's body reads
+// DEMO_PROMPT_STEP_IMAGE_PROMPTS, so the const must already be in scope
+// (function decls are hoisted; consts are in TDZ until this point).
+const DEMO_PROMPT_STEP_IMAGE_PROMPTS: string[] = [
+  "Simple 2D flat cartoon illustration of a bald round-headed stick figure adult with dot eyes and a puzzled expression, tapping their temple with one finger, thought bubble above containing a large red question mark, clean white background, bold outlines and flat color fills, explainer-video aesthetic.",
+  "Simple 2D flat cartoon illustration of a bald stick figure sitting cross-legged with chin resting on fist in a thinker pose, dot eyes closed in concentration, small swirl above head indicating thought, clean white background, hand-drawn childlike style with bold outlines.",
+  "Simple 2D flat cartoon illustration of a bald stick figure walking through a simple rectangular wooden doorway, a floating speech bubble containing a squiggly word-shape trailing behind them like a tag on a string, muted beige background, clean bold outlines.",
+  "Simple 2D flat cartoon illustration of a small bald stick figure child sitting at a wooden school desk in front of a green chalkboard, holding up a name card, other tiny stick figure classmates seated nearby, warm beige floor, flat colors.",
+  "Simple 2D flat cartoon illustration of a bald stick figure with dot eyes and a small smile holding an open envelope with a red heart seal, a folded letter peeking out showing a squiggly signature at the bottom, soft peach background, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of a bald stick figure in a clinical setting holding a clipboard with a form showing labeled blank lines, a red cross symbol floating in the corner of the frame, clean white background with light blue accents, minimalistic style.",
+  "Simple 2D flat cartoon illustration of a single rounded gray gravestone standing in muted green grass, a squiggly line etched across it representing an inscribed name, a small flat cartoon flower resting at its base, soft overcast sky background, minimal detail.",
+  "Simple 2D flat cartoon illustration of a swaddled baby stick figure with dot eyes lying in a simple bassinet, a large red X mark hovering above them, arms raised in tiny helpless gesture, clean white background, bold outlines, explainer-video style.",
+  "Simple 2D flat cartoon illustration of a bald adult stick figure bending forward at the waist over a simple wooden crib, dot eyes gazing down, a swaddled baby figure visible inside, warm beige interior background, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of a bald stick figure squatting beside a small crackling campfire with warm orange and yellow flame shapes and radiating glow lines, leaning forward toward a small bundle on the ground, deep navy nighttime background.",
+  "Simple 2D flat cartoon illustration of a small mossy green bundle resting on the earth with a tiny swaddled baby face peeking out, surrounded by simple leaves and a couple of small stones, muted green and tan background, minimalistic hand-drawn style.",
+  "Simple 2D flat cartoon illustration of a bald adult stick figure with mouth open in a small O shape, wavy sound-wave lines radiating outward from their lips like ripples, clean white background, bold outlines, explainer-video aesthetic.",
+  "Simple 2D flat cartoon illustration of a wavy sound-wave arrow flowing from the left toward a small bald stick figure child on the right, with a glowing yellow radiating halo around the child indicating identity, clean beige background, flat colors.",
+  "Simple 2D flat cartoon illustration of a rectangular paper birth certificate with decorative border and blank lines, overlaid with a large bold red X mark across it, clean white background, iconographic explainer style.",
+  "Simple 2D flat cartoon illustration of a small pastel-colored baby memory book with a tiny footprint icon on its cover, marked with a bold red X across it, clean white background, minimal childlike detail.",
+  "Simple 2D flat cartoon illustration of a smartphone screen showing chat bubbles with a tiny Eiffel Tower icon inside one bubble, a bald stick figure aunt avatar in a corner, whole phone crossed out with a large red X, clean white background.",
+  "Simple 2D flat cartoon illustration of a large bold hand-drawn label reading 40,000 YEARS AGO with a small backward-pointing arrow beside it, a tiny silhouette of a savanna hill and a distant campfire below, warm beige and tan background.",
+  "Simple 2D flat cartoon illustration of two bald stick figures standing side by side, one wearing a simple animal-hide wrap and the other wearing a modern t-shirt, an equals sign between them, clean white background, bold outlines.",
+  "Simple 2D flat cartoon illustration of a simple pink cartoon brain shape floating centered in frame with a small glowing yellow halo of radiating lines around it, clean white background, iconographic childlike style.",
+  "Simple 2D flat cartoon illustration of a pair of simple pink cartoon lungs shown centered in frame with small blue arrows indicating inhale and exhale, clean white background, minimal iconographic detail.",
+  "Simple 2D flat cartoon illustration of two bald stick figures embracing in a gentle hug, a bright red heart floating above their heads with a soft warm glow, muted peach background, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of a single bald stick figure kneeling with head bowed and dot eyes closed, a single blue teardrop falling from their face, muted gray-blue background, minimal detail.",
+  "Simple 2D flat cartoon illustration of two bald stick figures laughing with wide open curved mouths and small squiggle lines around their heads indicating giggles, a small banana peel on the ground between them, clean white background, playful bold outlines.",
+  "Simple 2D flat cartoon illustration of a bald prehistoric woman stick figure in a simple animal-hide wrap cradling a swaddled baby against her chest, seated on the ground, warm beige and tan cave interior background, hand-drawn style.",
+  "Simple 2D flat cartoon illustration of the same prehistoric woman stick figure with dark half-circle shadows under her dot eyes, tiny Z letters floating away crossed out with small red X marks, muted beige background, minimal detail.",
+  "Simple 2D flat cartoon illustration of a small dwindling campfire with only a few short orange flame shapes and thin curls of gray smoke rising, glowing embers on the ground, deep navy nighttime background, minimal warm glow.",
+  "Simple 2D flat cartoon illustration of three bald prehistoric stick figures in simple hide wraps standing in a semicircle in the background, all dot eyes turned toward the viewer, warm beige and tan cave background with dim firelight.",
+  "Simple 2D flat cartoon illustration of a small calendar-like row of three tan squares each showing a simple sun icon, a small arrow pointing rightward along them, clean beige background, iconographic childlike style.",
+  "Simple 2D flat cartoon illustration of a small bald child stick figure shown growing taller in three stages left to right, small forward arrows between each stage, warm beige background, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of the prehistoric mother stick figure with her mouth open in a soft O shape, gentle wavy sound-wave lines radiating from her lips toward a small swaddled baby in her arms, warm firelight glow.",
+  "Simple 2D flat cartoon illustration of a tiny swaddled baby stick figure with a bright yellow glowing halo of radiating lines around them, a small arrow labeled YOU pointing directly at them, clean beige background, iconographic style.",
+  "Simple 2D flat cartoon illustration of a bald stick figure narrator holding up one hand palm-out in a stop gesture, dot eyes wide open, a small exclamation mark floating above their head, clean white background, bold outlines.",
+  "Simple 2D flat cartoon illustration of the prehistoric mother stick figure with dot eyes looking upward, a large red question mark floating above her head, warm beige background with faint firelight glow, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of a closed hardcover book with a plain brown cover sitting centered in frame, overlaid with a large bold red X mark across it, clean white background, iconographic style.",
+  "Simple 2D flat cartoon illustration of a bald stick figure with a small golden halo above their head and hands folded in front, overlaid with a large bold red X mark, clean white background, minimal iconographic style.",
+  "Simple 2D flat cartoon illustration of a small gray gravestone with a tiny crossed-swords icon etched on it, overlaid with a large bold red X mark and a small clock symbol showing the concept of not-yet-happened, clean beige background.",
+  "Simple 2D flat cartoon illustration of the prehistoric mother stick figure reaching one arm forward into a soft glowing swirling cloud of muted color, dot eyes focused, warm beige background, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of a small cloud-shaped thought bubble containing a faint silhouette of an older stick figure ancestor, floating centered in frame, clean beige background, minimalistic iconographic style.",
+  "Simple 2D flat cartoon illustration of a simple gray cloud with a few zigzag yellow lightning bolts and small blue raindrops falling below it, clean sky-blue background, iconographic childlike style.",
+  "Simple 2D flat cartoon illustration of a simplified brown four-legged animal shape resembling a deer with small antlers, standing in profile centered in frame, muted green grass beneath, clean beige background, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of a faded translucent bald stick figure elder with a small curly outline of hair and dot eyes closed, standing behind and slightly above a solid figure, ghostly presence, muted beige background.",
+  "Simple 2D flat cartoon illustration of a sleeping bald stick figure lying on the ground with dot eyes as small curves, a cloud-shaped dream bubble above containing tiny stars and a crescent moon, deep navy nighttime background.",
+  "Simple 2D flat cartoon illustration of the prehistoric mother stick figure holding up a small glowing speech bubble between her fingertips containing a single squiggly syllable-shape, warm yellow glow around it, beige background.",
+  "Simple 2D flat cartoon illustration of a small squiggly syllable-shape in a speech bubble firmly attached to a swaddled baby stick figure by a bold line, tiny motion marks around it suggesting it snapped into place, clean beige background.",
+  "Simple 2D flat cartoon illustration of a wide banner-style title card showing three bald prehistoric stick figures standing together, each with a small speech bubble containing a different squiggly name-shape floating above them, warm beige savanna background.",
+  "Simple 2D flat cartoon illustration of a simple horizontal progress bar with a small arrow near the right end, above it a tiny play-triangle icon, clean white background, iconographic explainer style.",
+  "Simple 2D flat cartoon illustration of a modern bald stick figure viewer staring at their own name written in a squiggly line inside a floating speech bubble beside their head, dot eyes wide in realization, small yellow radiating lines of insight, clean white background.",
+  "Simple 2D flat cartoon illustration of a bald stick figure narrator taking a step backward with one foot lifted, a curved leftward-pointing arrow behind them, clean white background, bold outlines, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of two side-by-side question marks: a small tidy black one on the left with a green checkmark labeled SIMPLE, and a large tangled scribbled red one on the right labeled with a red X, clean white background.",
+  "Simple 2D flat cartoon illustration of a bald adult stick figure holding a swaddled baby, a large squiggly speech bubble with a name-shape hovering above, small orbiting question marks and swirl lines around them suggesting strangeness, clean beige background.",
+  "Simple 2D flat cartoon illustration of three bald adult stick figures standing in a semicircle pointing inward toward a single swaddled baby in the center, each with a small speech bubble containing a different squiggly name-suggestion, clean white background.",
+  "Simple 2D flat cartoon illustration of a swaddled baby stick figure with a small speech bubble above containing only a large red X, tiny arms raised in a helpless shrug, clean white background, minimal iconographic style.",
+  "Simple 2D flat cartoon illustration of a floating cluster of simple symbols including a squiggle, a triangle, a small drawing of a hand, and a labeled tag reading LANGUAGE, all connected by thin lines, clean white background, iconographic explainer style.",
+  "Simple 2D flat cartoon illustration of a long horizontal timeline arrow stretching across the frame with three small bald stick figures at different points progressing from a hunched early figure to an upright modern one, small numeric labels along the line, clean beige background.",
+  "Simple 2D flat cartoon illustration of a small crowd of five bald stick figures walking together in a row, each with a distinct squiggly name-shape floating in a speech bubble tethered above their head like a tag, clean beige background, hand-drawn childlike style.",
+  "Simple 2D flat cartoon illustration of a simple flat globe icon centered in frame with several small speech bubbles containing different squiggly name-shapes floating around it at various positions, muted sky-blue background, iconographic style.",
+  "Simple 2D flat cartoon illustration of a single glowing squiggly name-shape inside a speech bubble resting on a small pedestal, warm yellow radiating halo lines around it, two tiny bald stick figures kneeling on either side with heads bowed, muted beige background.",
+  "Simple 2D flat cartoon illustration of a bald stick figure narrator pointing emphatically at a bold hand-drawn label reading NOT NOTHING with a small green checkmark beside it, clean white background, explainer-video style.",
+  "Simple 2D flat cartoon illustration of a wide grid of many small identical bald stick figures arranged in neat rows, each with a tiny speech-bubble name-tag above them, a bold hand-drawn label reading SPECIES-LEVEL PATTERN across the top, clean beige background.",
+];
+
+function buildPromptStepBeats(): { beat: number; imagePrompt: string; videoPrompt: string }[] {
+  return DEMO_PROMPT_STEP_IMAGE_PROMPTS.map((prompt, i) => ({
+    beat: i + 1,
+    imagePrompt: prompt,
+    videoPrompt: prompt,
+  }));
+}
+
 export const DEMO_DATA = {
   channel: {
     name: "FinanceFuel",
@@ -257,85 +332,3 @@ If you want to go deeper on any of these — especially habit three, because the
   ],
 };
 
-// ── Prompts-step long beat list ─────────────────────────────────────────
-// One-per-beat image prompts for the "How Did Ancient Humans Name Their
-// Children?" demo script. Paired with rotating short motion cues so the
-// video-prompts tab has meaningful content per beat instead of blank
-// strings. Assembled at module load and exposed via
-// DEMO_DATA.promptStepBeats.
-
-const DEMO_PROMPT_STEP_IMAGE_PROMPTS: string[] = [
-  "Simple 2D flat cartoon illustration of a bald round-headed stick figure adult with dot eyes and a puzzled expression, tapping their temple with one finger, thought bubble above containing a large red question mark, clean white background, bold outlines and flat color fills, explainer-video aesthetic.",
-  "Simple 2D flat cartoon illustration of a bald stick figure sitting cross-legged with chin resting on fist in a thinker pose, dot eyes closed in concentration, small swirl above head indicating thought, clean white background, hand-drawn childlike style with bold outlines.",
-  "Simple 2D flat cartoon illustration of a bald stick figure walking through a simple rectangular wooden doorway, a floating speech bubble containing a squiggly word-shape trailing behind them like a tag on a string, muted beige background, clean bold outlines.",
-  "Simple 2D flat cartoon illustration of a small bald stick figure child sitting at a wooden school desk in front of a green chalkboard, holding up a name card, other tiny stick figure classmates seated nearby, warm beige floor, flat colors.",
-  "Simple 2D flat cartoon illustration of a bald stick figure with dot eyes and a small smile holding an open envelope with a red heart seal, a folded letter peeking out showing a squiggly signature at the bottom, soft peach background, hand-drawn childlike style.",
-  "Simple 2D flat cartoon illustration of a bald stick figure in a clinical setting holding a clipboard with a form showing labeled blank lines, a red cross symbol floating in the corner of the frame, clean white background with light blue accents, minimalistic style.",
-  "Simple 2D flat cartoon illustration of a single rounded gray gravestone standing in muted green grass, a squiggly line etched across it representing an inscribed name, a small flat cartoon flower resting at its base, soft overcast sky background, minimal detail.",
-  "Simple 2D flat cartoon illustration of a swaddled baby stick figure with dot eyes lying in a simple bassinet, a large red X mark hovering above them, arms raised in tiny helpless gesture, clean white background, bold outlines, explainer-video style.",
-  "Simple 2D flat cartoon illustration of a bald adult stick figure bending forward at the waist over a simple wooden crib, dot eyes gazing down, a swaddled baby figure visible inside, warm beige interior background, hand-drawn childlike style.",
-  "Simple 2D flat cartoon illustration of a bald stick figure squatting beside a small crackling campfire with warm orange and yellow flame shapes and radiating glow lines, leaning forward toward a small bundle on the ground, deep navy nighttime background.",
-  "Simple 2D flat cartoon illustration of a small mossy green bundle resting on the earth with a tiny swaddled baby face peeking out, surrounded by simple leaves and a couple of small stones, muted green and tan background, minimalistic hand-drawn style.",
-  "Simple 2D flat cartoon illustration of a bald adult stick figure with mouth open in a small O shape, wavy sound-wave lines radiating outward from their lips like ripples, clean white background, bold outlines, explainer-video aesthetic.",
-  "Simple 2D flat cartoon illustration of a wavy sound-wave arrow flowing from the left toward a small bald stick figure child on the right, with a glowing yellow radiating halo around the child indicating identity, clean beige background, flat colors.",
-  "Simple 2D flat cartoon illustration of a rectangular paper birth certificate with decorative border and blank lines, overlaid with a large bold red X mark across it, clean white background, iconographic explainer style.",
-  "Simple 2D flat cartoon illustration of a small pastel-colored baby memory book with a tiny footprint icon on its cover, marked with a bold red X across it, clean white background, minimal childlike detail.",
-  "Simple 2D flat cartoon illustration of a smartphone screen showing chat bubbles with a tiny Eiffel Tower icon inside one bubble, a bald stick figure aunt avatar in a corner, whole phone crossed out with a large red X, clean white background.",
-  "Simple 2D flat cartoon illustration of a large bold hand-drawn label reading 40,000 YEARS AGO with a small backward-pointing arrow beside it, a tiny silhouette of a savanna hill and a distant campfire below, warm beige and tan background.",
-  "Simple 2D flat cartoon illustration of two bald stick figures standing side by side, one wearing a simple animal-hide wrap and the other wearing a modern t-shirt, an equals sign between them, clean white background, bold outlines.",
-  "Simple 2D flat cartoon illustration of a simple pink cartoon brain shape floating centered in frame with a small glowing yellow halo of radiating lines around it, clean white background, iconographic childlike style.",
-  "Simple 2D flat cartoon illustration of a pair of simple pink cartoon lungs shown centered in frame with small blue arrows indicating inhale and exhale, clean white background, minimal iconographic detail.",
-  "Simple 2D flat cartoon illustration of two bald stick figures embracing in a gentle hug, a bright red heart floating above their heads with a soft warm glow, muted peach background, hand-drawn childlike style.",
-  "Simple 2D flat cartoon illustration of a single bald stick figure kneeling with head bowed and dot eyes closed, a single blue teardrop falling from their face, muted gray-blue background, minimal detail.",
-  "Simple 2D flat cartoon illustration of two bald stick figures laughing with wide open curved mouths and small squiggle lines around their heads indicating giggles, a small banana peel on the ground between them, clean white background, playful bold outlines.",
-  "Simple 2D flat cartoon illustration of a bald prehistoric woman stick figure in a simple animal-hide wrap cradling a swaddled baby against her chest, seated on the ground, warm beige and tan cave interior background, hand-drawn style.",
-  "Simple 2D flat cartoon illustration of the same prehistoric woman stick figure with dark half-circle shadows under her dot eyes, tiny Z letters floating away crossed out with small red X marks, muted beige background, minimal detail.",
-  "Simple 2D flat cartoon illustration of a small dwindling campfire with only a few short orange flame shapes and thin curls of gray smoke rising, glowing embers on the ground, deep navy nighttime background, minimal warm glow.",
-  "Simple 2D flat cartoon illustration of three bald prehistoric stick figures in simple hide wraps standing in a semicircle in the background, all dot eyes turned toward the viewer, warm beige and tan cave background with dim firelight.",
-  "Simple 2D flat cartoon illustration of a small calendar-like row of three tan squares each showing a simple sun icon, a small arrow pointing rightward along them, clean beige background, iconographic childlike style.",
-  "Simple 2D flat cartoon illustration of a small bald child stick figure shown growing taller in three stages left to right, small forward arrows between each stage, warm beige background, hand-drawn childlike style.",
-  "Simple 2D flat cartoon illustration of the prehistoric mother stick figure with her mouth open in a soft O shape, gentle wavy sound-wave lines radiating from her lips toward a small swaddled baby in her arms, warm firelight glow.",
-  "Simple 2D flat cartoon illustration of a tiny swaddled baby stick figure with a bright yellow glowing halo of radiating lines around them, a small arrow labeled YOU pointing directly at them, clean beige background, iconographic style.",
-  "Simple 2D flat cartoon illustration of a bald stick figure narrator holding up one hand palm-out in a stop gesture, dot eyes wide open, a small exclamation mark floating above their head, clean white background, bold outlines.",
-  "Simple 2D flat cartoon illustration of the prehistoric mother stick figure with dot eyes looking upward, a large red question mark floating above her head, warm beige background with faint firelight glow, hand-drawn childlike style.",
-  "Simple 2D flat cartoon illustration of a closed hardcover book with a plain brown cover sitting centered in frame, overlaid with a large bold red X mark across it, clean white background, iconographic style.",
-  "Simple 2D flat cartoon illustration of a bald stick figure with a small golden halo above their head and hands folded in front, overlaid with a large bold red X mark, clean white background, minimal iconographic style.",
-  "Simple 2D flat cartoon illustration of a small gray gravestone with a tiny crossed-swords icon etched on it, overlaid with a large bold red X mark and a small clock symbol showing the concept of not-yet-happened, clean beige background.",
-  "Simple 2D flat cartoon illustration of the prehistoric mother stick figure reaching one arm forward into a soft glowing swirling cloud of muted color, dot eyes focused, warm beige background, hand-drawn childlike style.",
-  "Simple 2D flat cartoon illustration of a small cloud-shaped thought bubble containing a faint silhouette of an older stick figure ancestor, floating centered in frame, clean beige background, minimalistic iconographic style.",
-  "Simple 2D flat cartoon illustration of a simple gray cloud with a few zigzag yellow lightning bolts and small blue raindrops falling below it, clean sky-blue background, iconographic childlike style.",
-  "Simple 2D flat cartoon illustration of a simplified brown four-legged animal shape resembling a deer with small antlers, standing in profile centered in frame, muted green grass beneath, clean beige background, hand-drawn childlike style.",
-  "Simple 2D flat cartoon illustration of a faded translucent bald stick figure elder with a small curly outline of hair and dot eyes closed, standing behind and slightly above a solid figure, ghostly presence, muted beige background.",
-  "Simple 2D flat cartoon illustration of a sleeping bald stick figure lying on the ground with dot eyes as small curves, a cloud-shaped dream bubble above containing tiny stars and a crescent moon, deep navy nighttime background.",
-  "Simple 2D flat cartoon illustration of the prehistoric mother stick figure holding up a small glowing speech bubble between her fingertips containing a single squiggly syllable-shape, warm yellow glow around it, beige background.",
-  "Simple 2D flat cartoon illustration of a small squiggly syllable-shape in a speech bubble firmly attached to a swaddled baby stick figure by a bold line, tiny motion marks around it suggesting it snapped into place, clean beige background.",
-  "Simple 2D flat cartoon illustration of a wide banner-style title card showing three bald prehistoric stick figures standing together, each with a small speech bubble containing a different squiggly name-shape floating above them, warm beige savanna background.",
-  "Simple 2D flat cartoon illustration of a simple horizontal progress bar with a small arrow near the right end, above it a tiny play-triangle icon, clean white background, iconographic explainer style.",
-  "Simple 2D flat cartoon illustration of a modern bald stick figure viewer staring at their own name written in a squiggly line inside a floating speech bubble beside their head, dot eyes wide in realization, small yellow radiating lines of insight, clean white background.",
-  "Simple 2D flat cartoon illustration of a bald stick figure narrator taking a step backward with one foot lifted, a curved leftward-pointing arrow behind them, clean white background, bold outlines, hand-drawn childlike style.",
-  "Simple 2D flat cartoon illustration of two side-by-side question marks: a small tidy black one on the left with a green checkmark labeled SIMPLE, and a large tangled scribbled red one on the right labeled with a red X, clean white background.",
-  "Simple 2D flat cartoon illustration of a bald adult stick figure holding a swaddled baby, a large squiggly speech bubble with a name-shape hovering above, small orbiting question marks and swirl lines around them suggesting strangeness, clean beige background.",
-  "Simple 2D flat cartoon illustration of three bald adult stick figures standing in a semicircle pointing inward toward a single swaddled baby in the center, each with a small speech bubble containing a different squiggly name-suggestion, clean white background.",
-  "Simple 2D flat cartoon illustration of a swaddled baby stick figure with a small speech bubble above containing only a large red X, tiny arms raised in a helpless shrug, clean white background, minimal iconographic style.",
-  "Simple 2D flat cartoon illustration of a floating cluster of simple symbols including a squiggle, a triangle, a small drawing of a hand, and a labeled tag reading LANGUAGE, all connected by thin lines, clean white background, iconographic explainer style.",
-  "Simple 2D flat cartoon illustration of a long horizontal timeline arrow stretching across the frame with three small bald stick figures at different points progressing from a hunched early figure to an upright modern one, small numeric labels along the line, clean beige background.",
-  "Simple 2D flat cartoon illustration of a small crowd of five bald stick figures walking together in a row, each with a distinct squiggly name-shape floating in a speech bubble tethered above their head like a tag, clean beige background, hand-drawn childlike style.",
-  "Simple 2D flat cartoon illustration of a simple flat globe icon centered in frame with several small speech bubbles containing different squiggly name-shapes floating around it at various positions, muted sky-blue background, iconographic style.",
-  "Simple 2D flat cartoon illustration of a single glowing squiggly name-shape inside a speech bubble resting on a small pedestal, warm yellow radiating halo lines around it, two tiny bald stick figures kneeling on either side with heads bowed, muted beige background.",
-  "Simple 2D flat cartoon illustration of a bald stick figure narrator pointing emphatically at a bold hand-drawn label reading NOT NOTHING with a small green checkmark beside it, clean white background, explainer-video style.",
-  "Simple 2D flat cartoon illustration of a wide grid of many small identical bald stick figures arranged in neat rows, each with a tiny speech-bubble name-tag above them, a bold hand-drawn label reading SPECIES-LEVEL PATTERN across the top, clean beige background.",
-];
-
-function buildPromptStepBeats(): { beat: number; imagePrompt: string; videoPrompt: string }[] {
-  // Image + video prompts use the same per-beat description in this
-  // demo's script. The real workflow can diverge them (image = look,
-  // video = motion) but for the "How Did Ancient Humans Name Their
-  // Children?" storyline both tabs should show the same illustrated
-  // scene copy — matches what the user actually generated in their
-  // script authoring pass.
-  return DEMO_PROMPT_STEP_IMAGE_PROMPTS.map((prompt, i) => ({
-    beat: i + 1,
-    imagePrompt: prompt,
-    videoPrompt: prompt,
-  }));
-}
