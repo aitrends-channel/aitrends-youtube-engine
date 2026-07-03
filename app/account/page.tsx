@@ -104,6 +104,12 @@ export default function AccountPage() {
       // a second submit without refresh asks for the password we just
       // set rather than skipping reauth.
       setHasPassword(true);
+      // Push updated session cookies + identity list to any server
+      // components that already rendered against the pre-password
+      // user object. Without this, RSC-driven surfaces (nav, header
+      // avatar, etc.) show the stale identity set until the user
+      // manually reloads the page.
+      router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update password.");
     } finally {
