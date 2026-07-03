@@ -54,29 +54,39 @@ const DEMO_PROMPT_STEP_IMAGE_PROMPTS: string[] = [
   "Simple 2D flat cartoon illustration of a bald stick figure narrator taking a step backward with one foot lifted, a curved leftward-pointing arrow behind them, clean white background, bold outlines, hand-drawn childlike style.",
   "Simple 2D flat cartoon illustration of two side-by-side question marks: a small tidy black one on the left with a green checkmark labeled SIMPLE, and a large tangled scribbled red one on the right labeled with a red X, clean white background.",
   "Simple 2D flat cartoon illustration of a bald adult stick figure holding a swaddled baby, a large squiggly speech bubble with a name-shape hovering above, small orbiting question marks and swirl lines around them suggesting strangeness, clean beige background.",
-  "Simple 2D flat cartoon illustration of three bald adult stick figures standing in a semicircle pointing inward toward a single swaddled baby in the center, each with a small speech bubble containing a different squiggly name-suggestion, clean white background.",
-  "Simple 2D flat cartoon illustration of a swaddled baby stick figure with a small speech bubble above containing only a large red X, tiny arms raised in a helpless shrug, clean white background, minimal iconographic style.",
-  "Simple 2D flat cartoon illustration of a floating cluster of simple symbols including a squiggle, a triangle, a small drawing of a hand, and a labeled tag reading LANGUAGE, all connected by thin lines, clean white background, iconographic explainer style.",
-  "Simple 2D flat cartoon illustration of a long horizontal timeline arrow stretching across the frame with three small bald stick figures at different points progressing from a hunched early figure to an upright modern one, small numeric labels along the line, clean beige background.",
-  "Simple 2D flat cartoon illustration of a small crowd of five bald stick figures walking together in a row, each with a distinct squiggly name-shape floating in a speech bubble tethered above their head like a tag, clean beige background, hand-drawn childlike style.",
-  "Simple 2D flat cartoon illustration of a simple flat globe icon centered in frame with several small speech bubbles containing different squiggly name-shapes floating around it at various positions, muted sky-blue background, iconographic style.",
-  "Simple 2D flat cartoon illustration of a single glowing squiggly name-shape inside a speech bubble resting on a small pedestal, warm yellow radiating halo lines around it, two tiny bald stick figures kneeling on either side with heads bowed, muted beige background.",
-  "Simple 2D flat cartoon illustration of a bald stick figure narrator pointing emphatically at a bold hand-drawn label reading NOT NOTHING with a small green checkmark beside it, clean white background, explainer-video style.",
-  "Simple 2D flat cartoon illustration of a wide grid of many small identical bald stick figures arranged in neat rows, each with a tiny speech-bubble name-tag above them, a bold hand-drawn label reading SPECIES-LEVEL PATTERN across the top, clean beige background.",
 ];
 
-function buildPromptStepBeats(): { beat: number; imagePrompt: string; videoPrompt: string }[] {
-  return DEMO_PROMPT_STEP_IMAGE_PROMPTS.map((prompt, i) => ({
-    beat: i + 1,
-    imagePrompt: prompt,
-    videoPrompt: prompt,
-  }));
+// Image assets under /public/demo/images live at {beat}.jpeg except
+// for these two which are PNGs — the source generator kept the .png
+// extension for beats 16 and 26.
+const DEMO_IMAGE_PNG_BEATS = new Set([16, 26]);
+
+function buildDemoBeats(): {
+  beat: number;
+  imageUrl: string;
+  videoUrl: string;
+  imagePrompt: string;
+  videoPrompt: string;
+}[] {
+  return DEMO_PROMPT_STEP_IMAGE_PROMPTS.map((prompt, i) => {
+    const beat = i + 1;
+    const ext = DEMO_IMAGE_PNG_BEATS.has(beat) ? "png" : "jpeg";
+    return {
+      beat,
+      imageUrl: `/demo/images/${beat}.${ext}`,
+      videoUrl: `/demo/videos/${beat}.mp4`,
+      imagePrompt: prompt,
+      videoPrompt: prompt,
+    };
+  });
 }
+
+const DEMO_BEATS = buildDemoBeats();
 
 export const DEMO_DATA = {
   channel: {
     name: "FinanceFuel",
-    url: "https://youtube.com/@financefuel",
+    url: "https://youtube.com/@ancientheclus",
     subscribers: "124K",
     avgViews: "18K",
   },
@@ -95,40 +105,40 @@ export const DEMO_DATA = {
   // finance channels) with long-form holdovers at the top.
   channelTopVideos: {
     long: [
-      { videoId: "t1",  title: "How I Saved $50,000 in 2 Years on a $60K Salary",            viewCount: 1840000, duration: "PT12M42S", publishedAt: "2026-02-14T09:00:00Z", hasCaptions: true,  wordCount: 2104 },
-      { videoId: "t2",  title: "Stop Paying These 7 Fees — You Don't Have To",                viewCount: 1120000, duration: "PT9M08S",  publishedAt: "2026-03-22T09:00:00Z", hasCaptions: true,  wordCount: 1532 },
-      { videoId: "t3",  title: "The Exact Budget That Got Me Out of $40K Debt",               viewCount:  980000, duration: "PT15M21S", publishedAt: "2025-11-05T09:00:00Z", hasCaptions: true,  wordCount: 2418 },
-      { videoId: "t4",  title: "Index Funds vs ETFs — The Answer Nobody Gives You",           viewCount:  760000, duration: "PT11M30S", publishedAt: "2026-01-08T09:00:00Z", hasCaptions: true,  wordCount: 1884 },
-      { videoId: "t5",  title: "Why 90% of Americans Will Never Build Real Wealth",           viewCount:  640000, duration: "PT13M55S", publishedAt: "2025-12-12T09:00:00Z", hasCaptions: false, wordCount: 2196 },
-      { videoId: "t6",  title: "The Roth IRA Mistake That Cost Me $32,000",                   viewCount:  540000, duration: "PT14M08S", publishedAt: "2026-04-04T09:00:00Z", hasCaptions: true,  wordCount: 2287 },
-      { videoId: "t7",  title: "House Hacking: How I Live Free in a $480K Property",          viewCount:  470000, duration: "PT18M24S", publishedAt: "2026-03-09T09:00:00Z", hasCaptions: true,  wordCount: 3014 },
-      { videoId: "t8",  title: "I Lived on $1,200/Month for a Year — What I Learned",         viewCount:  410000, duration: "PT16M50S", publishedAt: "2025-10-18T09:00:00Z", hasCaptions: false, wordCount: 2731 },
-      { videoId: "t9",  title: "The 3-Step Plan That Doubled My Net Worth in 18 Months",      viewCount:  380000, duration: "PT11M55S", publishedAt: "2025-09-26T09:00:00Z", hasCaptions: true,  wordCount: 1953 },
-      { videoId: "t10", title: "Why Side Hustles Are Mostly a Scam (and the Ones That Work)", viewCount:  330000, duration: "PT13M20S", publishedAt: "2025-08-14T09:00:00Z", hasCaptions: true,  wordCount: 2168 },
+      { videoId: "t1",  title: "The 12,000-Year-Old Word Every Human Still Understands",        viewCount: 1840000, duration: "PT12M42S", publishedAt: "2026-02-14T09:00:00Z", hasCaptions: true,  wordCount: 2104 },
+      { videoId: "t2",  title: "What Ancient Humans Actually Died From (It Wasn't What You Think)", viewCount: 1120000, duration: "PT13M18S", publishedAt: "2026-03-22T09:00:00Z", hasCaptions: true,  wordCount: 1932 },
+      { videoId: "t3",  title: "The First Song Ever Sung — And Why We Still Hum It",             viewCount:  980000, duration: "PT15M21S", publishedAt: "2025-11-05T09:00:00Z", hasCaptions: true,  wordCount: 2418 },
+      { videoId: "t4",  title: "Why Every Ancient Civilization Feared Left-Handedness",          viewCount:  760000, duration: "PT11M30S", publishedAt: "2026-01-08T09:00:00Z", hasCaptions: true,  wordCount: 1884 },
+      { videoId: "t5",  title: "The Real Reason Early Humans Started Cooking Food",              viewCount:  640000, duration: "PT13M55S", publishedAt: "2025-12-12T09:00:00Z", hasCaptions: false, wordCount: 2196 },
+      { videoId: "t6",  title: "How Cave Paintings Reveal What Our Ancestors Believed About Death", viewCount:  540000, duration: "PT16M08S", publishedAt: "2026-04-04T09:00:00Z", hasCaptions: true,  wordCount: 2687 },
+      { videoId: "t7",  title: "Why Ancient Humans Buried Their Dead With Flowers",              viewCount:  470000, duration: "PT10M24S", publishedAt: "2026-03-09T09:00:00Z", hasCaptions: true,  wordCount: 1614 },
+      { videoId: "t8",  title: "The Ice Age Winter That Nearly Wiped Out Our Species",           viewCount:  410000, duration: "PT18M50S", publishedAt: "2025-10-18T09:00:00Z", hasCaptions: false, wordCount: 3131 },
+      { videoId: "t9",  title: "What the First Humans Sounded Like When They Laughed",           viewCount:  380000, duration: "PT9M55S",  publishedAt: "2025-09-26T09:00:00Z", hasCaptions: true,  wordCount: 1553 },
+      { videoId: "t10", title: "The Handprint on the Cave Wall That Changed What We Know About Us", viewCount: 330000, duration: "PT14M20S", publishedAt: "2025-08-14T09:00:00Z", hasCaptions: true,  wordCount: 2368 },
     ],
     shorts: [
-      { videoId: "s1",  title: "The 3-fund portfolio in 45 seconds",                          viewCount: 4220000, duration: "PT44S", publishedAt: "2026-03-30T09:00:00Z", hasCaptions: true,  wordCount: 132 },
-      { videoId: "s2",  title: "Your bank is paying you 0.01%. Move it. Now.",                 viewCount: 3580000, duration: "PT38S", publishedAt: "2026-04-02T09:00:00Z", hasCaptions: true,  wordCount: 118 },
-      { videoId: "s3",  title: "Stop buying coffee? Wrong advice. Here's the real fix.",       viewCount: 2940000, duration: "PT57S", publishedAt: "2026-02-28T09:00:00Z", hasCaptions: true,  wordCount: 168 },
-      { videoId: "s4",  title: "How much you actually need in your emergency fund",            viewCount: 2110000, duration: "PT52S", publishedAt: "2026-01-19T09:00:00Z", hasCaptions: false, wordCount: 156 },
-      { videoId: "s5",  title: "The one credit card rule nobody tells you",                    viewCount: 1740000, duration: "PT41S", publishedAt: "2025-12-08T09:00:00Z", hasCaptions: true,  wordCount: 124 },
-      { videoId: "s6",  title: "The single line item that doubled my savings rate",            viewCount: 1600000, duration: "PT49S", publishedAt: "2026-04-12T09:00:00Z", hasCaptions: true,  wordCount: 146 },
-      { videoId: "s7",  title: "If you make under $80k, ignore this advice",                   viewCount: 1400000, duration: "PT36S", publishedAt: "2026-03-15T09:00:00Z", hasCaptions: true,  wordCount: 108 },
-      { videoId: "s8",  title: "Roth vs Traditional IRA in 60 seconds",                        viewCount: 1200000, duration: "PT60S", publishedAt: "2026-02-04T09:00:00Z", hasCaptions: true,  wordCount: 178 },
-      { videoId: "s9",  title: "Why your 401k match is non-negotiable",                        viewCount:  980000, duration: "PT32S", publishedAt: "2025-11-22T09:00:00Z", hasCaptions: true,  wordCount: 96  },
-      { videoId: "s10", title: "The credit score myth that's costing you money",               viewCount:  870000, duration: "PT47S", publishedAt: "2025-10-30T09:00:00Z", hasCaptions: false, wordCount: 142 },
+      { videoId: "s1",  title: "This 40,000-year-old symbol shows up on every continent",         viewCount: 4220000, duration: "PT44S", publishedAt: "2026-03-30T09:00:00Z", hasCaptions: true,  wordCount: 132 },
+      { videoId: "s2",  title: "Why ancient humans never got cavities",                            viewCount: 3580000, duration: "PT38S", publishedAt: "2026-04-02T09:00:00Z", hasCaptions: true,  wordCount: 118 },
+      { videoId: "s3",  title: "The bone flute that rewrote music history",                        viewCount: 2940000, duration: "PT57S", publishedAt: "2026-02-28T09:00:00Z", hasCaptions: true,  wordCount: 168 },
+      { videoId: "s4",  title: "Neanderthals had bigger brains than us — here's why they lost",    viewCount: 2110000, duration: "PT52S", publishedAt: "2026-01-19T09:00:00Z", hasCaptions: false, wordCount: 156 },
+      { videoId: "s5",  title: "The oldest recorded human name isn't what you think",              viewCount: 1740000, duration: "PT41S", publishedAt: "2025-12-08T09:00:00Z", hasCaptions: true,  wordCount: 124 },
+      { videoId: "s6",  title: "What ancient humans dreamed about — the surprising evidence",      viewCount: 1600000, duration: "PT49S", publishedAt: "2026-04-12T09:00:00Z", hasCaptions: true,  wordCount: 146 },
+      { videoId: "s7",  title: "This one gesture existed before language",                         viewCount: 1400000, duration: "PT36S", publishedAt: "2026-03-15T09:00:00Z", hasCaptions: true,  wordCount: 108 },
+      { videoId: "s8",  title: "Why babies cry the same way in every culture",                     viewCount: 1200000, duration: "PT60S", publishedAt: "2026-02-04T09:00:00Z", hasCaptions: true,  wordCount: 178 },
+      { videoId: "s9",  title: "The 30,000-year-old lullaby anthropologists just decoded",          viewCount:  980000, duration: "PT32S", publishedAt: "2025-11-22T09:00:00Z", hasCaptions: true,  wordCount: 96  },
+      { videoId: "s10", title: "Ancient humans could smell fear — literally",                       viewCount:  870000, duration: "PT47S", publishedAt: "2025-10-30T09:00:00Z", hasCaptions: false, wordCount: 142 },
     ],
     both: [
-      { videoId: "s1",  title: "The 3-fund portfolio in 45 seconds",                          viewCount: 4220000, duration: "PT44S",    publishedAt: "2026-03-30T09:00:00Z", hasCaptions: true,  wordCount: 132 },
-      { videoId: "s2",  title: "Your bank is paying you 0.01%. Move it. Now.",                 viewCount: 3580000, duration: "PT38S",    publishedAt: "2026-04-02T09:00:00Z", hasCaptions: true,  wordCount: 118 },
-      { videoId: "s3",  title: "Stop buying coffee? Wrong advice. Here's the real fix.",       viewCount: 2940000, duration: "PT57S",    publishedAt: "2026-02-28T09:00:00Z", hasCaptions: true,  wordCount: 168 },
-      { videoId: "s4",  title: "How much you actually need in your emergency fund",            viewCount: 2110000, duration: "PT52S",    publishedAt: "2026-01-19T09:00:00Z", hasCaptions: false, wordCount: 156 },
-      { videoId: "t1",  title: "How I Saved $50,000 in 2 Years on a $60K Salary",            viewCount: 1840000, duration: "PT12M42S", publishedAt: "2026-02-14T09:00:00Z", hasCaptions: true,  wordCount: 2104 },
-      { videoId: "s5",  title: "The one credit card rule nobody tells you",                    viewCount: 1740000, duration: "PT41S",    publishedAt: "2025-12-08T09:00:00Z", hasCaptions: true,  wordCount: 124 },
-      { videoId: "s6",  title: "The single line item that doubled my savings rate",            viewCount: 1600000, duration: "PT49S",    publishedAt: "2026-04-12T09:00:00Z", hasCaptions: true,  wordCount: 146 },
-      { videoId: "s7",  title: "If you make under $80k, ignore this advice",                   viewCount: 1400000, duration: "PT36S",    publishedAt: "2026-03-15T09:00:00Z", hasCaptions: true,  wordCount: 108 },
-      { videoId: "s8",  title: "Roth vs Traditional IRA in 60 seconds",                        viewCount: 1200000, duration: "PT60S",    publishedAt: "2026-02-04T09:00:00Z", hasCaptions: true,  wordCount: 178 },
-      { videoId: "t2",  title: "Stop Paying These 7 Fees — You Don't Have To",                viewCount: 1120000, duration: "PT9M08S",  publishedAt: "2026-03-22T09:00:00Z", hasCaptions: true,  wordCount: 1532 },
+      { videoId: "s1",  title: "This 40,000-year-old symbol shows up on every continent",         viewCount: 4220000, duration: "PT44S",    publishedAt: "2026-03-30T09:00:00Z", hasCaptions: true,  wordCount: 132 },
+      { videoId: "s2",  title: "Why ancient humans never got cavities",                            viewCount: 3580000, duration: "PT38S",    publishedAt: "2026-04-02T09:00:00Z", hasCaptions: true,  wordCount: 118 },
+      { videoId: "s3",  title: "The bone flute that rewrote music history",                        viewCount: 2940000, duration: "PT57S",    publishedAt: "2026-02-28T09:00:00Z", hasCaptions: true,  wordCount: 168 },
+      { videoId: "s4",  title: "Neanderthals had bigger brains than us — here's why they lost",    viewCount: 2110000, duration: "PT52S",    publishedAt: "2026-01-19T09:00:00Z", hasCaptions: false, wordCount: 156 },
+      { videoId: "t1",  title: "The 12,000-Year-Old Word Every Human Still Understands",           viewCount: 1840000, duration: "PT12M42S", publishedAt: "2026-02-14T09:00:00Z", hasCaptions: true,  wordCount: 2104 },
+      { videoId: "s5",  title: "The oldest recorded human name isn't what you think",              viewCount: 1740000, duration: "PT41S",    publishedAt: "2025-12-08T09:00:00Z", hasCaptions: true,  wordCount: 124 },
+      { videoId: "s6",  title: "What ancient humans dreamed about — the surprising evidence",      viewCount: 1600000, duration: "PT49S",    publishedAt: "2026-04-12T09:00:00Z", hasCaptions: true,  wordCount: 146 },
+      { videoId: "s7",  title: "This one gesture existed before language",                         viewCount: 1400000, duration: "PT36S",    publishedAt: "2026-03-15T09:00:00Z", hasCaptions: true,  wordCount: 108 },
+      { videoId: "s8",  title: "Why babies cry the same way in every culture",                     viewCount: 1200000, duration: "PT60S",    publishedAt: "2026-02-04T09:00:00Z", hasCaptions: true,  wordCount: 178 },
+      { videoId: "t2",  title: "What Ancient Humans Actually Died From (It Wasn't What You Think)", viewCount: 1120000, duration: "PT13M18S", publishedAt: "2026-03-22T09:00:00Z", hasCaptions: true,  wordCount: 1932 },
     ],
   },
 
@@ -143,16 +153,22 @@ export const DEMO_DATA = {
   // converted into KIE credits). Numbers are realistic-looking for a
   // single mid-sized FinanceFuel-style video — heavy on image/video
   // gen, lighter on text steps.
+  // Every step declares both kie and el so the DemoStepCostCard can
+  // render a consistent two-metric chip across the whole flow. Kie
+  // numbers are realistic-looking; ElevenLabs char counts are the
+  // same for voiceover (~450-word TTS pass) plus plausible small
+  // consumption on the other steps so the card never displays a
+  // dead-looking "El: —".
   costs: {
-    channel_analysis: { kie: 8.4 },
-    topic:            { kie: 1.5 },
-    script:           { kie: 6.2 },
-    visuals:          { kie: 3.1 },
-    prompts:          { kie: 4.8 },
-    voiceover:        { kie: 12.6 },
-    generate:         { kie: 124.8 },
-    assemble:         { kie: 2.4 },
-    thumbnail:        { kie: 28.2 },
+    channel_analysis: { kie: 8.4,   el: 42   },
+    topic:            { kie: 1.5,   el: 18   },
+    script:           { kie: 6.2,   el: 124  },
+    visuals:          { kie: 3.1,   el: 36   },
+    prompts:          { kie: 4.8,   el: 58   },
+    voiceover:        { kie: 12.6,  el: 2680 },
+    generate:         { kie: 124.8, el: 214  },
+    assemble:         { kie: 2.4,   el: 47   },
+    thumbnail:        { kie: 28.2,  el: 176  },
   } as const,
 
   analysisSteps: [
@@ -238,36 +254,7 @@ If you want to go deeper on any of these — especially habit three, because the
     },
   ],
 
-  promptBeats: [
-    {
-      beat: 1,
-      imageUrl: "/demo/images/Gemini_Generated_Image_6e55gj6e55gj6e55.png",
-      videoUrl: "/demo/videos/PixVerse_V6_Image_Text_360P_A_splitscreen_comp.mp4",
-      imagePrompt: "Split screen: pile of coins on left, empty wallet on right, dramatic cinematic lighting with purple accent glow",
-      videoPrompt: "Slow push-in on the split screen, slight rack focus from coins to empty wallet",
-    },
-    {
-      beat: 2,
-      imageUrl: "/demo/images/Gemini_Generated_Image_b8var0b8var0b8va.png",
-      videoUrl: "/demo/videos/PixVerse_V6_Image_Text_360P_A_concerned_person.mp4",
-      imagePrompt: "Person staring at laptop showing bank statement, late night, dim lamp light, concerned expression, shallow depth of field",
-      videoPrompt: "Subtle handheld drift to the right, subject stays sharp while background softly blurs",
-    },
-    {
-      beat: 3,
-      imageUrl: "/demo/images/Gemini_Generated_Image_s4y61cs4y61cs4y6.png",
-      videoUrl: "/demo/videos/PixVerse_V6_Image_Text_360P_A_futuristic_anima.mp4",
-      imagePrompt: "Animated bar chart rising steeply, dark background, glowing purple data bars, futuristic financial dashboard aesthetic",
-      videoPrompt: "Quick zoom-out from a single bar to the full chart, then freeze on peak",
-    },
-    {
-      beat: 4,
-      imageUrl: "/demo/images/Gemini_Generated_Image_urxej0urxej0urxe.png",
-      videoUrl: "/demo/videos/PixVerse_V6_Image_Text_360P_A_surreal_macro_sh.mp4",
-      imagePrompt: "Stack of credit cards melting into liquid, surreal macro photography, warm orange and red tones, studio lighting",
-      videoPrompt: "Slow downward tilt revealing the melting base, held for two seconds",
-    },
-  ],
+  promptBeats: DEMO_BEATS,
 
   imagePrompts: [
     "Split screen: pile of coins on left, empty wallet on right, dramatic cinematic lighting with purple accent glow",
@@ -276,12 +263,9 @@ If you want to go deeper on any of these — especially habit three, because the
     "Stack of credit cards melting into liquid, surreal macro photography, warm orange and red tones, studio lighting",
   ],
 
-  // Prompts step uses this longer beat list — 59 beats matching the
-  // "How Did Ancient Humans Name Their Children?" script. Kept
-  // separate from promptBeats above so the generate/assemble demo
-  // steps keep working with their 4-item asset set; only prompts/page
-  // reads from here to show the full range the real workflow produces.
-  promptStepBeats: buildPromptStepBeats(),
+  // Prompts step reads the same beat list as generate/assemble. Points
+  // at the same array so counts and prompt text stay in sync.
+  promptStepBeats: DEMO_BEATS,
 
   thumbnailConcepts: [
     {
