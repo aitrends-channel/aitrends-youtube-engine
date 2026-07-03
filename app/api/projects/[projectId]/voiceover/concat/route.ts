@@ -57,23 +57,31 @@ async function downloadToFile(url: string, dest: string): Promise<void> {
   });
 }
 
-// Retry wrapper — undici's "fetch failed" (transport-layer error) is
-// almost always transient: DNS hiccup, socket reset, connection-pool
-// exhaustion when many parallel downloads burst. Two quick retries
-// clear the vast majority of cases. HTTP-status failures
-// (`HTTP 4xx/5xx`) are not retried — those won't change on retry.
+// Retry wrapper — retries on:
+//   • transport-layer errors (undici "fetch failed", ECONNRESET, ...) —
+//     usually a DNS hiccup or connection-pool exhaustion under burst
+//   • HTTP 429 (rate limit) and 5xx (R2 SlowDown / transient 500-503)
+//     — the concat route bursts 6 R2 downloads at once for a big script
+//     and R2 will throttle under load; a couple of backed-off retries
+//     clear it. Non-retryable HTTP 4xx (404, 403, ...) fail fast.
+// Backoff grows exponentially with jitter so parallel workers don't
+// re-collide on the same tick after being throttled.
 async function downloadToFileWithRetry(url: string, dest: string): Promise<void> {
-  const delays = [500, 1500];
-  for (let attempt = 0; attempt <= delays.length; attempt++) {
+  const baseDelays = [500, 1500, 4000, 9000];
+  for (let attempt = 0; attempt <= baseDelays.length; attempt++) {
     try {
       await downloadToFile(url, dest);
       return;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      const transient = /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i.test(msg);
-      if (!transient || attempt === delays.length) throw e;
-      console.warn(`[voiceover-concat] download attempt ${attempt + 1} failed (${msg}); retrying in ${delays[attempt]}ms`);
-      await new Promise((r) => setTimeout(r, delays[attempt]));
+      const transportError = /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i.test(msg);
+      const rateLimit = /HTTP 429|HTTP 5\d\d/.test(msg);
+      const retryable = transportError || rateLimit;
+      if (!retryable || attempt === baseDelays.length) throw e;
+      const jitter = Math.floor(Math.random() * 400);
+      const delay = baseDelays[attempt] + jitter;
+      console.warn(`[voiceover-concat] download attempt ${attempt + 1} failed (${msg}); retrying in ${delay}ms`);
+      await new Promise((r) => setTimeout(r, delay));
     }
   }
 }
@@ -183,14 +191,16 @@ export async function POST(req: Request, { params }: { params: { projectId: stri
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), `vo-concat-${projectId}-`));
   const audioPaths: string[] = [];
   try {
-    // Download all beats in parallel, capped at 6 concurrent. Order is
+    // Download all beats in parallel, capped at 4 concurrent. Order is
     // preserved by writing to audioPaths[i] (index, not completion).
     // Unbounded Promise.all here used to open one socket per beat at
     // once — 30+ simultaneous HTTPS fetches reliably tripped undici's
-    // "fetch failed" under any network blip. 6 stays well under the
-    // pool limit while keeping wall-clock essentially the same on
-    // typical script sizes.
-    await runWithLimit(withAudio, 6, async (b, i) => {
+    // "fetch failed" under any network blip. Dropped from 6 → 4 after
+    // R2 started returning 429/5xx under sustained burst on long
+    // scripts; the retry loop above catches occasional throttles but
+    // narrower concurrency keeps the request rate below R2's
+    // per-prefix throttle window.
+    await runWithLimit(withAudio, 4, async (b, i) => {
       const dest = path.join(tmpDir, `b${String(i).padStart(4, "0")}.mp3`);
       await downloadToFileWithRetry(b.voiceover_url!, dest);
       audioPaths[i] = dest;
