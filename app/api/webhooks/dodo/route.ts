@@ -101,7 +101,14 @@ export async function POST(request: Request) {
     ...(currentPeriodEnd ? { current_period_end: currentPeriodEnd } : {}),
   };
 
-  const { data: { users }, error: listError } = await supabase.auth.admin.listUsers();
+  // perPage default is 50 — matches the rest of the codebase, which
+  // uses 1000 for email lookups. Without this, once the auth table
+  // has >50 users, new paying customers fall off the first page,
+  // aren't found here, get routed to the invite branch (which fails
+  // because they already exist), and the webhook returns 500. Net
+  // effect: metadata never flips to paid, revenue_events row is
+  // never written, user shows "paid on Dodo" but not on our side.
+  const { data: { users }, error: listError } = await supabase.auth.admin.listUsers({ perPage: 1000 });
   if (listError) {
     return NextResponse.json({ error: listError.message }, { status: 500 });
   }
