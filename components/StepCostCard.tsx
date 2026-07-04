@@ -91,7 +91,7 @@ export function StepCostCard({ projectId, column, hideUnitKinds }: {
 
   const parts = PROVIDER_ORDER
     .filter((p) => byProvider[p] !== undefined && byProvider[p] > 0)
-    .map((p) => `${p}-${formatProvider(p, byProvider[p])}`);
+    .map((p) => ({ key: p, value: formatProvider(p, byProvider[p]) }));
 
   // Rendered as a subtle status badge — a transparent green tint with
   // a low-opacity border so it reads as a stat indicator (matching the
@@ -119,7 +119,12 @@ export function StepCostCard({ projectId, column, hideUnitKinds }: {
           color: "oklch(0.7 0.15 145)",
         }}
       >
-        {parts.length === 0 ? "—" : parts.join(", ")}
+        {parts.length === 0 ? "—" : parts.map((p, i) => (
+          <span key={p.key}>
+            {i > 0 && ", "}
+            {p.key}<span style={{ marginRight: "3px" }}>:</span>{p.value}
+          </span>
+        ))}
       </span>
     </span>
   );
