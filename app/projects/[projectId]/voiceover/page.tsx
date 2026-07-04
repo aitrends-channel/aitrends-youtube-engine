@@ -764,7 +764,7 @@ export default function VoiceoverPage({ params }: PageProps) {
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={9} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
+      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
         <div className="shrink-0 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>

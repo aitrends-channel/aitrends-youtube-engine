@@ -20,7 +20,7 @@ import { isAdminUser } from "@/lib/admin";
 import EmailsPanel from "./EmailsPanel";
 import { TtsCostLens } from "@/components/admin/TtsCostLens";
 import { SupportPanel } from "@/components/admin/SupportPanel";
-import { ReviewsPanel } from "@/components/admin/ReviewsPanel";
+import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
 import { MemoryPanel } from "@/components/admin/MemoryPanel";
 
 const PHASE_PATHS: Record<number, string> = {
@@ -4703,7 +4703,7 @@ export default function AdminPage() {
             { id: "logs",     label: "Logs",     icon: FileText },
             { id: "emails",   label: "Emails",   icon: Mail },
             { id: "support",  label: "Support",  icon: LifeBuoy },
-            { id: "reviews",  label: "Reviews",  icon: Star },
+            { id: "reviews",  label: "Feedback", icon: Star },
             { id: "memory",   label: "Memory",   icon: MemoryStick },
             { id: "setup",    label: "Config",   icon: Settings },
           ] as const;
@@ -6207,7 +6207,7 @@ export default function AdminPage() {
               boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)",
             }}
           >
-            <ReviewsPanel />
+            <FeedbackPanel />
           </section>
         )}
 

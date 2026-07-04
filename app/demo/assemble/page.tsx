@@ -417,7 +417,7 @@ export default function DemoAssemblePage() {
       <DemoNav currentStep={7} />
       <div className="flex-1 flex flex-col min-h-0">
         <DemoBanner />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto lg:px-[15px]">
 
           {/* Header */}
           <div className="py-4 sm:py-5"

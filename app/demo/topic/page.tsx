@@ -27,7 +27,7 @@ export default function DemoTopicPage() {
       <DemoNav currentStep={1} />
       <div className="flex-1 flex flex-col min-h-0">
         <DemoBanner />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto lg:px-[15px]">
         <div
           className="py-4 sm:py-5"
           style={{

@@ -38,7 +38,7 @@ export default function DemoPromptsPage() {
       <DemoNav currentStep={4} />
       <div className="flex-1 min-w-0 flex flex-col min-h-0">
         <DemoBanner />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto lg:px-[15px]">
           {/* Header */}
           <div
             className="py-4 sticky top-0 z-10"

@@ -3,9 +3,9 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Star, Pencil, X } from "lucide-react";
+import { Star, Pencil, X, Trash2 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-import type { AdminReviewsResponse, AdminReview } from "@/app/api/admin/reviews/route";
+import type { AdminFeedbackResponse, AdminFeedback } from "@/app/api/admin/feedback/route";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -40,11 +40,41 @@ function Stars({ rating, onSelect, disabled }: { rating: number; onSelect?: (n: 
   );
 }
 
-function ReviewRow({ review, onSaved }: { review: AdminReview; onSaved: () => void }) {
+function FeedbackRow({ feedback, onSaved }: { feedback: AdminFeedback; onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
-  const [rating, setRating] = useState(review.rating ?? 0);
-  const [reviewText, setReviewText] = useState(review.review_text ?? "");
+  const [rating, setRating] = useState(feedback.rating ?? 0);
+  const [feedbackText, setFeedbackText] = useState(feedback.feedback_text ?? "");
   const [saving, setSaving] = useState(false);
+  // Two-step delete: first click arms the confirm state (button turns
+  // red "Confirm"), second click actually deletes. Any other
+  // interaction can leave it armed harmlessly — it disarms on save.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    if (!confirmingDelete) {
+      setConfirmingDelete(true);
+      return;
+    }
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/admin/feedback", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: feedback.user_id }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error ?? "Failed to delete feedback");
+      }
+      toast.success("Feedback deleted. The user will be prompted again after their next completion signal.");
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete feedback");
+      setDeleting(false);
+      setConfirmingDelete(false);
+    }
+  }
 
   async function handleSave() {
     if (rating < 1) {
@@ -53,20 +83,20 @@ function ReviewRow({ review, onSaved }: { review: AdminReview; onSaved: () => vo
     }
     setSaving(true);
     try {
-      const res = await fetch("/api/admin/reviews", {
+      const res = await fetch("/api/admin/feedback", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: review.user_id, rating, reviewText: reviewText.trim() || undefined }),
+        body: JSON.stringify({ userId: feedback.user_id, rating, feedbackText: feedbackText.trim() || undefined }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err?.error ?? "Failed to save review");
+        throw new Error(err?.error ?? "Failed to save feedback");
       }
-      toast.success("Review updated.");
+      toast.success("Feedback updated.");
       setEditing(false);
       onSaved();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save review");
+      toast.error(err instanceof Error ? err.message : "Failed to save feedback");
     } finally {
       setSaving(false);
     }
@@ -79,31 +109,55 @@ function ReviewRow({ review, onSaved }: { review: AdminReview; onSaved: () => vo
         <div className="flex items-center gap-3 min-w-0">
           {editing
             ? <Stars rating={rating} onSelect={setRating} disabled={saving} />
-            : <Stars rating={review.rating ?? 0} />}
-          <span className="text-xs font-medium truncate text-foreground">
-            {review.user_email ?? review.user_id}
+            : <Stars rating={feedback.rating ?? 0} />}
+          <span className="min-w-0 flex flex-col leading-tight">
+            <span className="text-xs font-medium truncate text-foreground">
+              {[feedback.first_name, feedback.last_name].filter(Boolean).join(" ")
+                || feedback.user_email
+                || feedback.user_id}
+            </span>
+            {(feedback.first_name || feedback.last_name) && feedback.user_email && (
+              <span className="text-[10px] truncate" style={{ color: "oklch(0.55 0 0)" }}>
+                {feedback.user_email}
+              </span>
+            )}
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <span className="text-[11px]" style={{ color: "oklch(0.55 0 0)" }}>
-            {new Date(review.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}
+            {new Date(feedback.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}
           </span>
           <button
             onClick={() => {
               if (editing) {
                 // Cancel — reset draft state back to the stored values.
-                setRating(review.rating ?? 0);
-                setReviewText(review.review_text ?? "");
+                setRating(feedback.rating ?? 0);
+                setFeedbackText(feedback.feedback_text ?? "");
               }
               setEditing((v) => !v);
             }}
-            disabled={saving}
-            aria-label={editing ? "Cancel edit" : "Edit review"}
+            disabled={saving || deleting}
+            aria-label={editing ? "Cancel edit" : "Edit feedback"}
             title={editing ? "Cancel" : "Edit"}
             className="p-1.5 rounded-lg transition-all cursor-pointer hover:bg-zinc-100 disabled:opacity-50"
             style={{ color: "oklch(0.5 0 0)" }}
           >
             {editing ? <X size={13} /> : <Pencil size={13} />}
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={saving || deleting}
+            aria-label={confirmingDelete ? "Confirm delete" : "Delete feedback"}
+            title={confirmingDelete ? "Click again to confirm" : "Delete"}
+            className={`p-1.5 rounded-lg transition-all cursor-pointer disabled:opacity-50 inline-flex items-center gap-1 ${
+              confirmingDelete ? "bg-red-50 hover:bg-red-100" : "hover:bg-zinc-100"
+            }`}
+            style={{ color: confirmingDelete ? "oklch(0.55 0.2 25)" : "oklch(0.5 0 0)" }}
+          >
+            {deleting
+              ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              : <Trash2 size={13} />}
+            {confirmingDelete && !deleting && <span className="text-[10px] font-semibold">Confirm</span>}
           </button>
         </div>
       </div>
@@ -111,12 +165,12 @@ function ReviewRow({ review, onSaved }: { review: AdminReview; onSaved: () => vo
       {editing ? (
         <div className="mt-3 space-y-3">
           <textarea
-            value={reviewText}
-            onChange={(e) => setReviewText(e.target.value)}
+            value={feedbackText}
+            onChange={(e) => setFeedbackText(e.target.value)}
             disabled={saving}
             rows={3}
             maxLength={1000}
-            placeholder="Review text (optional)"
+            placeholder="Feedback text (optional)"
             className="w-full px-3 py-2 rounded-lg bg-white border border-zinc-200 text-sm text-zinc-900 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500 disabled:opacity-60 resize-none"
           />
           <div className="flex justify-end">
@@ -135,9 +189,9 @@ function ReviewRow({ review, onSaved }: { review: AdminReview; onSaved: () => vo
           </div>
         </div>
       ) : (
-        review.review_text && (
+        feedback.feedback_text && (
           <p className="text-sm mt-2 whitespace-pre-wrap" style={{ color: "oklch(0.35 0 0)" }}>
-            {review.review_text}
+            {feedback.feedback_text}
           </p>
         )
       )}
@@ -145,8 +199,8 @@ function ReviewRow({ review, onSaved }: { review: AdminReview; onSaved: () => vo
   );
 }
 
-export function ReviewsPanel() {
-  const { data, isLoading, mutate } = useSWR<AdminReviewsResponse>("/api/admin/reviews", fetcher, {
+export function FeedbackPanel() {
+  const { data, isLoading, mutate } = useSWR<AdminFeedbackResponse>("/api/admin/feedback", fetcher, {
     revalidateOnFocus: false,
   });
 
@@ -161,9 +215,9 @@ export function ReviewsPanel() {
           <Star size={16} style={{ color: "oklch(0.7 0.15 85)" }} />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-foreground">Reviews</h2>
+          <h2 className="text-lg font-bold text-foreground">Feedback</h2>
           <p className="text-xs" style={{ color: "oklch(0.5 0 0)" }}>
-            One-time ratings collected after a user&apos;s first completed pipeline
+            One-time feedback collected after a user&apos;s first completed pipeline
           </p>
         </div>
       </div>
@@ -202,7 +256,7 @@ export function ReviewsPanel() {
           ) : (
             <div className="space-y-2">
               {withRating.map((r) => (
-                <ReviewRow key={r.user_id} review={r} onSaved={() => mutate()} />
+                <FeedbackRow key={r.user_id} feedback={r} onSaved={() => mutate()} />
               ))}
             </div>
           )}

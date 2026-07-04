@@ -206,7 +206,7 @@ export default function DemoChannelPage() {
       <DemoNav currentStep={0} />
       <div className="flex-1 min-w-0 flex flex-col min-h-0">
         <DemoBanner />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto lg:px-[15px]">
           <div className="px-4 sm:px-8 pt-6 sm:pt-8 pb-24 space-y-8">
 
             <div>

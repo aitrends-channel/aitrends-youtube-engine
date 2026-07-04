@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { HelpCircle, Send, X, CheckCircle2, ChevronDown } from "lucide-react";
+import { HelpCircle, Send, X, CheckCircle2, ChevronDown, LifeBuoy, Star } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { FeedbackDialog } from "@/components/FeedbackDialog";
 
 // Floating help bubble, bottom-right on every page. Opens a small
 // white dialog with a fixed-list FAQ and a contact form that files
@@ -53,6 +54,21 @@ const FAQS: Faq[] = [
 
 export function HelpButton() {
   const [open, setOpen] = useState(false);
+  // Chooser menu (Support / Feedback) shown above the bubble. The
+  // bubble no longer opens the support dialog directly.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // Feedback requires auth (rows are keyed to user_id) — hide the
+  // option for anonymous visitors. getSession reads local storage, so
+  // this costs nothing on page load.
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    createSupabaseBrowserClient().auth.getSession().then(({ data }) => {
+      if (!cancelled && data.session) setSignedIn(true);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [authEmail, setAuthEmail] = useState<string | null>(null);
   const [emailInput, setEmailInput] = useState("");
   const [subject, setSubject] = useState("");
@@ -124,14 +140,46 @@ export function HelpButton() {
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
-        aria-label="Open help"
+        onClick={() => setMenuOpen((v) => !v)}
+        aria-label="Open help menu"
         title="Help"
         className="fixed bottom-5 right-5 z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-105 active:scale-95 cursor-pointer"
         style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 6px 18px oklch(0.72 0.25 285 / 0.45)" }}
       >
-        <HelpCircle size={22} />
+        {menuOpen ? <X size={20} /> : <HelpCircle size={22} />}
       </button>
+
+      {/* Support / Feedback chooser — small white card above the bubble. */}
+      {menuOpen && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+          <div
+            className="fixed bottom-[4.75rem] right-5 z-50 w-48 rounded-xl bg-white shadow-2xl p-1.5 space-y-0.5"
+            style={{ border: "1px solid oklch(0 0 0 / 0.08)" }}
+          >
+            <button
+              type="button"
+              onClick={() => { setMenuOpen(false); setOpen(true); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer text-left"
+            >
+              <LifeBuoy size={16} style={{ color: "oklch(0.72 0.25 285)" }} />
+              Support
+            </button>
+            {signedIn && (
+              <button
+                type="button"
+                onClick={() => { setMenuOpen(false); setFeedbackOpen(true); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer text-left"
+              >
+                <Star size={16} style={{ color: "oklch(0.75 0.15 85)" }} />
+                Feedback
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
 
       <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : closeAndReset())}>
         <DialogContent
