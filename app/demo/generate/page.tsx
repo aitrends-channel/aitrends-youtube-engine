@@ -184,7 +184,7 @@ export default function DemoGeneratePage() {
       <DemoNav currentStep={6} />
       <div className="flex-1 flex flex-col min-h-0">
         <DemoBanner />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto lg:px-[15px]">
           {/* Header */}
           <div className="py-4 sm:py-5"
             style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>

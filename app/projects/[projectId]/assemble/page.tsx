@@ -775,7 +775,7 @@ export default function AssemblePage({ params }: PageProps) {
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={15} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
+      <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
         <div className="sm:px-8 lg:px-[60px] py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>

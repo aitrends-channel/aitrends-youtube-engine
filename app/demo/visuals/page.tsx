@@ -115,7 +115,7 @@ export default function DemoVisualsPage() {
       <DemoNav currentStep={3} />
       <div className="flex-1 flex flex-col min-h-0">
         <DemoBanner />
-        <main className="flex-1 flex flex-col overflow-hidden">
+        <main className="flex-1 flex flex-col overflow-hidden lg:px-[15px]">
 
           {/* Header */}
           <div
