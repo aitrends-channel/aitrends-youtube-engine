@@ -218,5 +218,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Failed to update user: ${(e as Error).message}` }, { status: 500 });
   }
 
+  // Immutable revenue ledger — mirrors the insert in the Dodo webhook
+  // so a payment is recorded by whichever path lands first. Unique on
+  // dodo_payment_id: when both paths run (the normal case) the second
+  // insert dedupes as 23505. This closed a real gap where Dodo webhook
+  // delivery stopped and payments granted access via this verify path
+  // but never appeared in revenue stats. Fail-soft: the customer is
+  // paid regardless; ledger logging is best-effort.
+  const ledgerPaymentId =
+    payment_id ??
+    (result.payment_id as string | undefined) ??
+    ((result.latest_payment as Record<string, unknown> | undefined)?.payment_id as string | undefined);
+  const ledgerAmountCents = Number(result.total_amount ?? result.amount ?? 0);
+  if (ledgerPaymentId && ledgerAmountCents > 0) {
+    const { error: revErr } = await supabase
+      .from("revenue_events")
+      .insert({
+        user_id: user.id,
+        user_email: (user.email ?? "").toLowerCase() || null,
+        event_type: "payment_succeeded",
+        amount_cents: ledgerAmountCents,
+        currency: ((result.currency as string | undefined) ?? "usd").toLowerCase(),
+        plan: plan ?? null,
+        dodo_payment_id: ledgerPaymentId,
+        dodo_raw: result,
+        occurred_at: (result.created_at as string | undefined) ?? new Date().toISOString(),
+      });
+    if (revErr && revErr.code !== "23505") {
+      console.warn("[dodo-verify] revenue_events insert failed:", revErr.message);
+    }
+  }
+
   return NextResponse.json({ success: true });
 }
