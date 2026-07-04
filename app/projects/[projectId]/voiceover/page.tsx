@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { StepCostCard } from "@/components/StepCostCard";
+import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -772,8 +773,9 @@ export default function VoiceoverPage({ params }: PageProps) {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               One narration clip per beat. Each beat&apos;s clip is the timing source for its visual — no matcher, no drift.
             </p>
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
               <StepCostCard projectId={projectId} column="voiceover" />
+              <StepBalanceCard />
             </div>
           </div>
         </div>
