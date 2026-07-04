@@ -14,12 +14,14 @@
 -- KIE recovery query — it is not usable here because the poll does not
 -- carry the `image_task_id IS NOT NULL AND image_url IS NULL` predicate.
 --
--- CONCURRENTLY keeps writes flowing during the build (no ACCESS EXCLUSIVE
--- lock). Must run outside a transaction; Supabase's migration runner
--- handles that automatically per statement.
+-- Plain CREATE INDEX (not CONCURRENTLY) because Supabase's migration
+-- runner wraps every migration in a transaction and CONCURRENTLY can't
+-- run inside one. project_beats and project_thumbnails are per-project
+-- tables (tens of rows per project), so the ACCESS EXCLUSIVE lock lasts
+-- milliseconds — not worth splitting into a separate out-of-band script.
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS project_beats_project_id_idx
+CREATE INDEX IF NOT EXISTS project_beats_project_id_idx
   ON project_beats (project_id);
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS project_thumbnails_project_id_idx
+CREATE INDEX IF NOT EXISTS project_thumbnails_project_id_idx
   ON project_thumbnails (project_id);
