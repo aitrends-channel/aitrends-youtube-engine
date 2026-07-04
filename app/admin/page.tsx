@@ -4393,6 +4393,10 @@ export default function AdminPage() {
   );
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [hoveredRevIdx, setHoveredRevIdx] = useState<number | null>(null);
+  // Revenue tab: optional date-range filter for the payments table.
+  // yyyy-mm-dd strings straight from <input type="date">; empty = off.
+  const [revDateFrom, setRevDateFrom] = useState("");
+  const [revDateTo, setRevDateTo] = useState("");
   const [activeTab, setActiveTab] = usePersistentTab<
     "stats" | "activity" | "users" | "projects" | "revenue" | "logs" | "emails" | "support" | "reviews" | "memory" | "setup"
   >(
@@ -5952,12 +5956,28 @@ export default function AdminPage() {
           // accounts. Before launch (launchedAt = null) the filter is
           // a no-op and everyone with paid=true is shown.
           const launchedAtMs = revenue?.launchedAt ? new Date(revenue.launchedAt).getTime() : null;
+          // Date-range filter for the payments table. From/To are
+          // inclusive; To covers the entire selected day (23:59:59.999)
+          // so picking the same date in both inputs shows that day's
+          // payments. Rows without a paidAt are hidden while a filter
+          // is active — an unknown date can't be proven in-range.
+          const fromMs = revDateFrom ? new Date(`${revDateFrom}T00:00:00`).getTime() : null;
+          const toMs = revDateTo ? new Date(`${revDateTo}T23:59:59.999`).getTime() : null;
+          const dateFilterActive = fromMs !== null || toMs !== null;
           const paidUsers = users
             .filter((u) => u.status === "Paid")
             .filter((u) => {
               if (launchedAtMs === null) return true;
               if (!u.paidAt) return false;
               return new Date(u.paidAt).getTime() >= launchedAtMs;
+            })
+            .filter((u) => {
+              if (!dateFilterActive) return true;
+              if (!u.paidAt) return false;
+              const t = new Date(u.paidAt).getTime();
+              if (fromMs !== null && t < fromMs) return false;
+              if (toMs !== null && t > toMs) return false;
+              return true;
             })
             .sort((a, b) => {
               const ta = a.paidAt ? new Date(a.paidAt).getTime() : -Infinity;
@@ -6121,9 +6141,67 @@ export default function AdminPage() {
                 </div>
               </div>
 
+              {/* Date-range filter for the payments table */}
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-1">
+                  <label htmlFor="rev-date-from" className="block text-[11px] font-medium uppercase tracking-wider" style={{ color: "oklch(0.5 0 0)" }}>From</label>
+                  <input
+                    id="rev-date-from"
+                    type="date"
+                    value={revDateFrom}
+                    max={revDateTo || undefined}
+                    onChange={(e) => setRevDateFrom(e.target.value)}
+                    className="px-3 py-2 rounded-lg text-sm bg-white text-zinc-900 outline-none transition-all"
+                    style={{ border: "1px solid oklch(0 0 0 / 0.12)" }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label htmlFor="rev-date-to" className="block text-[11px] font-medium uppercase tracking-wider" style={{ color: "oklch(0.5 0 0)" }}>To</label>
+                  <input
+                    id="rev-date-to"
+                    type="date"
+                    value={revDateTo}
+                    min={revDateFrom || undefined}
+                    onChange={(e) => setRevDateTo(e.target.value)}
+                    className="px-3 py-2 rounded-lg text-sm bg-white text-zinc-900 outline-none transition-all"
+                    style={{ border: "1px solid oklch(0 0 0 / 0.12)" }}
+                  />
+                </div>
+                <button
+                  onClick={() => {
+                    // Local date, not toISOString() — UTC would point at
+                    // yesterday/tomorrow near midnight in non-UTC zones.
+                    const d = new Date();
+                    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                    setRevDateFrom(today);
+                    setRevDateTo(today);
+                  }}
+                  className="px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer hover:bg-zinc-100"
+                  style={{ color: "oklch(0.72 0.18 65)", border: "1px solid oklch(0.55 0.18 65 / 0.3)" }}
+                >
+                  Today
+                </button>
+                {dateFilterActive && (
+                  <button
+                    onClick={() => { setRevDateFrom(""); setRevDateTo(""); }}
+                    className="px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer hover:bg-zinc-100"
+                    style={{ color: "oklch(0.5 0 0)", border: "1px solid oklch(0 0 0 / 0.12)" }}
+                  >
+                    Clear
+                  </button>
+                )}
+                {dateFilterActive && (
+                  <span className="text-xs pb-2.5" style={{ color: "oklch(0.5 0 0)" }}>
+                    {paidUsers.length} payment{paidUsers.length === 1 ? "" : "s"} in range
+                  </span>
+                )}
+              </div>
+
               {/* Paid users table */}
               {paidUsers.length === 0 ? (
-                <p className="text-sm italic py-2" style={{ color: "var(--c-35)" }}>No paid users yet.</p>
+                <p className="text-sm italic py-2" style={{ color: "var(--c-35)" }}>
+                  {dateFilterActive ? "No payments in the selected date range." : "No paid users yet."}
+                </p>
               ) : (
                 <div className="rounded-2xl overflow-x-auto"
                   style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
