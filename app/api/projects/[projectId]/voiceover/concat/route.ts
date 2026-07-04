@@ -57,8 +57,37 @@ async function downloadToFile(url: string, dest: string): Promise<void> {
   });
 }
 
+// Retry wrapper — retries on:
+//   • transport-layer errors (undici "fetch failed", ECONNRESET, ...) —
+//     usually a DNS hiccup or connection-pool exhaustion under burst
+//   • HTTP 429 (rate limit) and 5xx (R2 SlowDown / transient 500-503)
+//     — the concat route bursts 6 R2 downloads at once for a big script
+//     and R2 will throttle under load; a couple of backed-off retries
+//     clear it. Non-retryable HTTP 4xx (404, 403, ...) fail fast.
+// Backoff grows exponentially with jitter so parallel workers don't
+// re-collide on the same tick after being throttled.
+async function downloadToFileWithRetry(url: string, dest: string): Promise<void> {
+  const baseDelays = [500, 1500, 4000, 9000];
+  for (let attempt = 0; attempt <= baseDelays.length; attempt++) {
+    try {
+      await downloadToFile(url, dest);
+      return;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const transportError = /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i.test(msg);
+      const rateLimit = /HTTP 429|HTTP 5\d\d/.test(msg);
+      const retryable = transportError || rateLimit;
+      if (!retryable || attempt === baseDelays.length) throw e;
+      const jitter = Math.floor(Math.random() * 400);
+      const delay = baseDelays[attempt] + jitter;
+      console.warn(`[voiceover-concat] download attempt ${attempt + 1} failed (${msg}); retrying in ${delay}ms`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+}
+
 // Bounded parallelism — run `items` through `fn` with at most `limit`
-// in flight. Used to cap ffmpeg/fetch fan-out on long projects where
+// in flight. Caps ffmpeg/fetch fan-out on long projects where
 // Promise.all would otherwise blow past the lambda fd limit (EMFILE)
 // or undici's connection pool ("fetch failed").
 async function runWithLimit<T>(items: T[], limit: number, fn: (item: T, idx: number) => Promise<void>): Promise<void> {
@@ -162,13 +191,20 @@ export async function POST(req: Request, { params }: { params: { projectId: stri
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), `vo-concat-${projectId}-`));
   const audioPaths: string[] = [];
   try {
-    // Download all beats in parallel — order is preserved by index, not
-    // by completion time, so we can safely Promise.all here.
-    await Promise.all(withAudio.map(async (b, i) => {
+    // Download all beats in parallel, capped at 4 concurrent. Order is
+    // preserved by writing to audioPaths[i] (index, not completion).
+    // Unbounded Promise.all here used to open one socket per beat at
+    // once — 30+ simultaneous HTTPS fetches reliably tripped undici's
+    // "fetch failed" under any network blip. Dropped from 6 → 4 after
+    // R2 started returning 429/5xx under sustained burst on long
+    // scripts; the retry loop above catches occasional throttles but
+    // narrower concurrency keeps the request rate below R2's
+    // per-prefix throttle window.
+    await runWithLimit(withAudio, 4, async (b, i) => {
       const dest = path.join(tmpDir, `b${String(i).padStart(4, "0")}.mp3`);
-      await downloadToFile(b.voiceover_url!, dest);
+      await downloadToFileWithRetry(b.voiceover_url!, dest);
       audioPaths[i] = dest;
-    }));
+    });
 
     // Optional silence-trim pass per beat. Bounded at 4 concurrent
     // ffmpeg spawns — Promise.all over hundreds of beats blew past

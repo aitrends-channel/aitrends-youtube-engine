@@ -8,6 +8,13 @@ const r2 = new S3Client({
     accessKeyId: process.env.R2_ACCESS_KEY_ID!,
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
   },
+  // R2 will 429/503 under sustained burst (the voiceover-concat route
+  // fans out N parallel PutObjects on top of parallel downloads).
+  // Default maxAttempts=3 with base-1 backoff drops requests before
+  // R2's throttle window clears. Bumping to 6 gives ~15s of total
+  // backoff (AWS SDK uses exponential jitter internally) which is
+  // enough to ride out typical SlowDown responses.
+  maxAttempts: 6,
   // AWS SDK v3 added a CRC32 integrity checksum to every PutObject by
   // default. The checksum gets baked into presigned URLs as
   // x-amz-checksum-crc32=AAAAAA== plus x-amz-sdk-checksum-algorithm=CRC32,
