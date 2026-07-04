@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -20,6 +20,7 @@ import { isAdminUser } from "@/lib/admin";
 import EmailsPanel from "./EmailsPanel";
 import { TtsCostLens } from "@/components/admin/TtsCostLens";
 import { SupportPanel } from "@/components/admin/SupportPanel";
+import { ReviewsPanel } from "@/components/admin/ReviewsPanel";
 import { MemoryPanel } from "@/components/admin/MemoryPanel";
 
 const PHASE_PATHS: Record<number, string> = {
@@ -4393,11 +4394,11 @@ export default function AdminPage() {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [hoveredRevIdx, setHoveredRevIdx] = useState<number | null>(null);
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "activity" | "users" | "projects" | "revenue" | "logs" | "emails" | "support" | "memory" | "setup"
+    "stats" | "activity" | "users" | "projects" | "revenue" | "logs" | "emails" | "support" | "reviews" | "memory" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "activity", "users", "projects", "revenue", "logs", "emails", "support", "memory", "setup"],
+    ["stats", "activity", "users", "projects", "revenue", "logs", "emails", "support", "reviews", "memory", "setup"],
   );
 
   // Per-project cost rollups for the Videos → Cost sub-tab. Only
@@ -4701,7 +4702,8 @@ export default function AdminPage() {
             { id: "revenue",  label: "Revenue",  icon: DollarSign },
             { id: "logs",     label: "Logs",     icon: FileText },
             { id: "emails",   label: "Emails",   icon: Mail },
-            { id: "support",  label: "Support tickets",  icon: LifeBuoy },
+            { id: "support",  label: "Support",  icon: LifeBuoy },
+            { id: "reviews",  label: "Reviews",  icon: Star },
             { id: "memory",   label: "Memory",   icon: MemoryStick },
             { id: "setup",    label: "Config",   icon: Settings },
           ] as const;
@@ -6190,6 +6192,22 @@ export default function AdminPage() {
             }}
           >
             <SupportPanel />
+          </section>
+        )}
+
+        {activeTab === "reviews" && (
+          <section
+            id="reviews"
+            className="rounded-2xl max-w-full min-w-0"
+            style={{
+              background: "white",
+              border: "1px solid oklch(0 0 0 / 0.07)",
+              padding: "16px",
+              scrollMarginTop: "80px",
+              boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)",
+            }}
+          >
+            <ReviewsPanel />
           </section>
         )}
 

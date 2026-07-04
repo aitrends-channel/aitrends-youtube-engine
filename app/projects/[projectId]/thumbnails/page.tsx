@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { ModelPicker } from "@/components/ModelPicker";
 import type { ThumbnailConcept, KieModel } from "@/lib/types";
 import { presignedUpload } from "@/lib/upload-client";
+import { ReviewModal } from "@/components/ReviewModal";
 
 interface PageProps {
   params: { projectId: string };
@@ -700,12 +701,41 @@ export default function ThumbnailsPage({ params }: PageProps) {
   const closePreview = useCallback(() => setPreviewIndex(null), []);
   const [navigating, setNavigating] = useState(false);
 
+  // One-time review prompt: opens the moment thumbnails hit 100%
+  // (allImagesGenerated flips true), as long as this user hasn't
+  // already responded. hasRespondedReview stays null until the fetch
+  // lands so we never flash the modal before we know the answer. The
+  // dashboard has an identical trigger for back-fill — whichever page
+  // the user is on when the check clears wins.
+  const [hasRespondedReview, setHasRespondedReview] = useState<boolean | null>(null);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/reviews", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : { hasResponded: true })
+      .then((d: { hasResponded?: boolean }) => {
+        if (cancelled) return;
+        setHasRespondedReview(d?.hasResponded === true);
+      })
+      .catch(() => { if (!cancelled) setHasRespondedReview(true); });
+    return () => { cancelled = true; };
+  }, []);
+
   const thumbnails: ThumbnailConcept[] = project?.thumbnails ?? [];
   const hasConcepts = thumbnails.length > 0;
   const hasImages = thumbnails.some((t) => t.imageUrl);
   const allImagesGenerated = hasConcepts && thumbnails.every((t) => !!t.imageUrl);
   const isConceptRunning = conceptStep.status === "running";
   const isImageRunning = imageStep.status === "running";
+
+  // Open the review modal the first time allImagesGenerated flips to
+  // true, gated on the review-status fetch having landed with a false.
+  useEffect(() => {
+    if (!allImagesGenerated) return;
+    if (hasRespondedReview !== false) return;
+    if (showReviewModal) return;
+    setShowReviewModal(true);
+  }, [allImagesGenerated, hasRespondedReview, showReviewModal]);
 
   const effectiveConcept: StepState =
     conceptStep.status !== "idle" ? conceptStep :
@@ -1483,6 +1513,15 @@ export default function ThumbnailsPage({ params }: PageProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {showReviewModal && (
+        <ReviewModal
+          onDone={() => {
+            setShowReviewModal(false);
+            setHasRespondedReview(true);
+          }}
+        />
+      )}
     </div>
   );
 }
