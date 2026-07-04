@@ -823,15 +823,17 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
     // better to save those beats than discard them and force the
     // user to regenerate (and re-pay) on the next run. Mirrors the
     // image step's policy at the persist boundary.
-    await Promise.all(
-      chunkBeats.map((b) =>
-        supabase
-          .from("project_beats")
-          .update({ video_prompt: b.videoPrompt })
-          .eq("project_id", projectId)
-          .eq("beat_number", b.beatNumber)
-      )
-    );
+    // Batched UPDATE via RPC — each beat has its own video_prompt so
+    // we can't collapse with .in(). The helper runs one
+    // UPDATE ... FROM (VALUES ...) statement server-side; migration 082.
+    const { error: batchErr } = await supabase.rpc("batch_update_beat_video_prompts", {
+      p_project_id: projectId,
+      p_updates: chunkBeats.map((b) => ({
+        beat_number: b.beatNumber,
+        video_prompt: b.videoPrompt,
+      })),
+    });
+    if (batchErr) throw new Error(`Failed to persist video prompts for batch ${i + 1}: ${batchErr.message}`);
   }
 
   // Strict sequential processing — one chunk in flight at a time.
