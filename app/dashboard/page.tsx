@@ -13,6 +13,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
 import { ApiKeysRequiredModal } from "@/components/ApiKeysRequiredModal";
+import { ReviewModal } from "@/components/ReviewModal";
 import type { ApiKeysStatus } from "@/app/api/me/api-keys-status/route";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -529,6 +530,11 @@ export default function HomePage() {
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [showNicheLimitModal, setShowNicheLimitModal] = useState(false);
   const [showApiKeysModal, setShowApiKeysModal] = useState(false);
+  // One-time review prompt. null = review status not yet fetched (so we
+  // don't flash the modal on a cold-cache render); true = user already
+  // responded (either submitted or dismissed); false = still eligible.
+  const [hasRespondedReview, setHasRespondedReview] = useState<boolean | null>(null);
+  const [showReviewModal, setShowReviewModal] = useState(false);
   const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
 
   // Prefetch the most common destinations so navigation is near-instant once
@@ -634,6 +640,36 @@ export default function HomePage() {
     router.push("/login");
   }
   const { data: projects, mutate: mutateProjects } = useSWR<Project[]>("/api/projects", fetcher);
+
+  // Fetch review status once on mount. hasRespondedReview stays null
+  // until the fetch lands so the eligibility effect below never opens
+  // the modal on stale (or missing) data.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/reviews", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : { hasResponded: true })
+      .then((d: { hasResponded?: boolean }) => {
+        if (cancelled) return;
+        setHasRespondedReview(d?.hasResponded === true);
+      })
+      .catch(() => { if (!cancelled) setHasRespondedReview(true); });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Open the review modal once both signals are ready and positive:
+  // — status fetch says the user hasn't responded, AND
+  // — at least one project has assembly_status = 'done' (they've
+  //   completed a full pipeline at some point).
+  // Runs on every projects/state change but guarded by the flag flip so
+  // it only opens once per session; the POST inside the modal flips
+  // hasRespondedReview to true so re-renders can't re-open it.
+  useEffect(() => {
+    if (hasRespondedReview !== false) return;
+    if (showReviewModal) return;
+    if (!projects || projects.length === 0) return;
+    const anyCompleted = projects.some((p) => p.assembly_status === "done");
+    if (anyCompleted) setShowReviewModal(true);
+  }, [hasRespondedReview, projects, showReviewModal]);
 
   type DeleteTarget =
     | { type: "video"; id: string; label: string }
@@ -1827,6 +1863,18 @@ export default function HomePage() {
 
       {showApiKeysModal && (
         <ApiKeysRequiredModal onClose={() => setShowApiKeysModal(false)} />
+      )}
+
+      {showReviewModal && (
+        <ReviewModal
+          variant="returning"
+          onDone={() => {
+            setShowReviewModal(false);
+            // Flip local flag so the eligibility effect above can't
+            // re-open the modal on the next projects mutate/re-render.
+            setHasRespondedReview(true);
+          }}
+        />
       )}
 
     </div>
