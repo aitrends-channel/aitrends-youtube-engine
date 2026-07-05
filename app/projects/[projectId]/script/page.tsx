@@ -70,6 +70,23 @@ function ScriptRunningCaption({ size = "md", emphasis = false }: { size?: "sm" |
   );
 }
 
+// Swallows pointer events for a moment after the Continue bar mounts.
+// The bar only appears once the script is non-empty, so a bulk paste
+// makes it materialize UNDER the user's cursor mid-interaction — the
+// very next click (positioning the caret, dismissing the context
+// menu) landed on "Continue →" and silently advanced to the Visuals
+// step. A short pointer-events dead zone absorbs exactly that class
+// of layout-shift misclick without delaying deliberate clicks
+// noticeably.
+function ContinueBarGuard({ children }: { children: React.ReactNode }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setArmed(true), 500);
+    return () => clearTimeout(t);
+  }, []);
+  return <div style={armed ? undefined : { pointerEvents: "none", opacity: 0.85 }}>{children}</div>;
+}
+
 export default function ScriptPage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
@@ -540,6 +557,7 @@ export default function ScriptPage({ params }: PageProps) {
 
       {/* Fixed Continue bar */}
       {!isStreaming && script && (
+        <ContinueBarGuard>
         <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
           <div className="sm:px-8 flex gap-3">
@@ -567,6 +585,7 @@ export default function ScriptPage({ params }: PageProps) {
             </button>
           </div>
         </div>
+        </ContinueBarGuard>
       )}
 
       {/* Regenerate confirm dialog */}
