@@ -70,6 +70,23 @@ function ScriptRunningCaption({ size = "md", emphasis = false }: { size?: "sm" |
   );
 }
 
+// Swallows pointer events for a moment after the Continue bar mounts.
+// The bar only appears once the script is non-empty, so a bulk paste
+// makes it materialize UNDER the user's cursor mid-interaction — the
+// very next click (positioning the caret, dismissing the context
+// menu) landed on "Continue →" and silently advanced to the Visuals
+// step. A short pointer-events dead zone absorbs exactly that class
+// of layout-shift misclick without delaying deliberate clicks
+// noticeably.
+function ContinueBarGuard({ children }: { children: React.ReactNode }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setArmed(true), 500);
+    return () => clearTimeout(t);
+  }, []);
+  return <div style={armed ? undefined : { pointerEvents: "none", opacity: 0.85 }}>{children}</div>;
+}
+
 export default function ScriptPage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
@@ -78,6 +95,12 @@ export default function ScriptPage({ params }: PageProps) {
     useStreamingScript();
 
   const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+  // Manual-writing mode: opens the editor with an empty textarea
+  // instead of streaming. Persisted as projects.script_source so a
+  // reload doesn't misread the manual draft as a paused AI generation
+  // (both look like "script present, current_state < 7").
+  const [manualMode, setManualMode] = useState(false);
+  const scriptIsManual = manualMode || project?.script_source === "manual";
   const [saving, setSaving] = useState(false);
   const [navigating, setNavigating] = useState(false);
   const [confirmRegen, setConfirmRegen] = useState(false);
@@ -108,6 +131,7 @@ export default function ScriptPage({ params }: PageProps) {
   const isPausedDraft =
     !!script &&
     !isStreaming &&
+    !scriptIsManual &&
     !project?.script_active_run_id &&
     (project?.current_state ?? 0) < 7;
   const deviation = Math.abs(wordCount - targetWordCount) / targetWordCount;
@@ -131,7 +155,28 @@ export default function ScriptPage({ params }: PageProps) {
 
   async function generateScript(topic: string) {
     setSelectedTopic(topic);
+    setManualMode(false);
+    // Mark the source before streaming so a mid-stream reload doesn't
+    // leave a stale 'manual' marker suppressing the paused-draft UI.
+    await fetch(`/api/projects/${projectId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ script_source: "generated" }),
+    }).catch(() => { /* best-effort — NULL is treated as generated */ });
     await startStreaming(projectId, project?.channel_analysis, topic);
+  }
+
+  async function chooseManual() {
+    setManualMode(true);
+    // Persist immediately: the paused-draft heuristic must never see a
+    // manual draft, even after refresh with zero words typed.
+    await fetch(`/api/projects/${projectId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ script_source: "manual" }),
+    }).catch(() => { /* local manualMode still gates this session */ });
+    mutate();
+    textareaRef.current?.focus();
   }
 
   async function saveScript() {
@@ -244,7 +289,7 @@ export default function ScriptPage({ params }: PageProps) {
   }
 
   async function handleContinue() {
-    if (!script.trim()) { toast.error("Generate a script first"); return; }
+    if (!script.trim()) { toast.error("Write or generate a script first"); return; }
     setNavigating(true);
     await saveScript();
     if ((project?.current_state ?? 0) < 7) {
@@ -316,8 +361,11 @@ export default function ScriptPage({ params }: PageProps) {
             </div>
           )}
 
-          {/* No-script state */}
-          {!script && !isStreaming && !project?.script_active_run_id && (
+          {/* No-script state — the user chooses how the script gets
+              written: AI generation (streams into the editor) or
+              manual (opens an empty editor). Nothing starts on its
+              own. */}
+          {!script && !isStreaming && !manualMode && !project?.script_active_run_id && (
             <div className="max-w-xl mx-auto">
               {project?.selected_topic ? (
                 <div className="text-center space-y-5 p-10 rounded-2xl"
@@ -326,13 +374,25 @@ export default function ScriptPage({ params }: PageProps) {
                     <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Topic</p>
                     <p className="text-base font-medium text-foreground">{project.selected_topic}</p>
                   </div>
-                  <button
-                    onClick={() => generateScript(project.selected_topic!)}
-                    className="px-8 py-3 rounded-xl text-sm font-semibold"
-                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-                  >
-                    Generate Script
-                  </button>
+                  <div className="flex flex-col sm:flex-row items-stretch justify-center gap-3">
+                    <button
+                      onClick={() => generateScript(project.selected_topic!)}
+                      className="px-8 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                      style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                    >
+                      Generate with AI
+                    </button>
+                    <button
+                      onClick={chooseManual}
+                      className="px-8 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                      style={{ background: "transparent", border: "1px solid var(--bd-8)", color: "var(--c-60)" }}
+                    >
+                      Write manually
+                    </button>
+                  </div>
+                  <p className="text-xs" style={{ color: "var(--c-40)" }}>
+                    AI matches your channel&apos;s style and length · manual gives you full control
+                  </p>
                 </div>
               ) : (
                 <div className="text-center p-10 space-y-4">
@@ -349,8 +409,9 @@ export default function ScriptPage({ params }: PageProps) {
             </div>
           )}
 
-          {/* Script display / editor */}
-          {(script || isStreaming) && (
+          {/* Script display / editor — also opens (empty) in manual
+              mode so the user can start typing right away. */}
+          {(script || isStreaming || manualMode) && (
             <div className="">
               <div className="rounded-2xl overflow-hidden"
                 style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
@@ -468,7 +529,7 @@ export default function ScriptPage({ params }: PageProps) {
                     // rotating caption overlay below stands in for it
                     // and is a stronger "we're working" signal than
                     // "Script will appear here…" which never changes.
-                    placeholder={isStreaming ? "" : "Script will appear here..."}
+                    placeholder={isStreaming ? "" : scriptIsManual ? "Write your script here..." : "Script will appear here..."}
                     style={{ caretColor: "oklch(0.72 0.25 285)" }}
                   />
                   {isStreaming && !script && (
@@ -496,6 +557,7 @@ export default function ScriptPage({ params }: PageProps) {
 
       {/* Fixed Continue bar */}
       {!isStreaming && script && (
+        <ContinueBarGuard>
         <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
           <div className="sm:px-8 flex gap-3">
@@ -506,7 +568,7 @@ export default function ScriptPage({ params }: PageProps) {
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
             >
               <RefreshCw size={14} strokeWidth={2.5} />
-              Regenerate
+              {scriptIsManual ? "Generate with AI" : "Regenerate"}
             </button>
             <button
               onClick={handleContinue}
@@ -523,15 +585,18 @@ export default function ScriptPage({ params }: PageProps) {
             </button>
           </div>
         </div>
+        </ContinueBarGuard>
       )}
 
       {/* Regenerate confirm dialog */}
       <Dialog open={confirmRegen} onOpenChange={(o) => { if (!regenSubmitting && !o) setConfirmRegen(false); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Regenerate Script?</DialogTitle>
+            <DialogTitle>{scriptIsManual ? "Generate with AI?" : "Regenerate Script?"}</DialogTitle>
             <DialogDescription>
-              This will discard your current script and generate a fresh one. Any manual edits will be lost.
+              {scriptIsManual
+                ? "This will discard your manually written script and generate one with AI. This cannot be undone."
+                : "This will discard your current script and generate a fresh one. Any manual edits will be lost."}
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-center justify-end gap-3 mt-2">
@@ -554,7 +619,7 @@ export default function ScriptPage({ params }: PageProps) {
                     <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                     Clearing previous run…
                   </span>
-                ) : "Regenerate"}
+                ) : scriptIsManual ? "Generate with AI" : "Regenerate"}
               </button>
             </div>
           </div>

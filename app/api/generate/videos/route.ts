@@ -61,7 +61,17 @@ export async function POST(req: Request) {
     for (const beat of beats) {
       const { data, error } = await supabase
         .from("project_beats")
-        .update({ video_status: "queued", video_job_id: null, video_error: null })
+        .update({
+          video_status: "queued",
+          video_job_id: null,
+          video_error: null,
+          // Persist the prompt from the payload — the worker generates
+          // from the DB row, so without this an edited prompt (preview
+          // dialog's Save & regenerate) was silently ignored. Normal
+          // regens pass the unchanged current prompt, so this is a
+          // value no-op for them.
+          ...(beat.videoPrompt?.trim() ? { video_prompt: beat.videoPrompt.trim() } : {}),
+        })
         .eq("project_id", projectId)
         .eq("beat_number", beat.beatNumber)
         .select("beat_number");

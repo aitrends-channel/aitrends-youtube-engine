@@ -82,8 +82,11 @@ export async function POST(req: Request) {
 
     // 3. Mark in-flight. A page refresh between submit and complete
     //    would show the spinner (gated on image_status=generating).
+    //    image_prompt persists here too (not just on the "done" write)
+    //    so an edited prompt survives a failed generation instead of
+    //    being silently lost.
     await supabase.from("project_beats")
-      .update({ image_status: "generating", image_task_id: taskId, image_model_id: modelId })
+      .update({ image_status: "generating", image_task_id: taskId, image_model_id: modelId, image_prompt: imagePrompt })
       .eq("project_id", projectId)
       .eq("beat_number", beatNumber);
 
