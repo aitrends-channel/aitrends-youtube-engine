@@ -4393,10 +4393,12 @@ export default function AdminPage() {
   );
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [hoveredRevIdx, setHoveredRevIdx] = useState<number | null>(null);
-  // Revenue tab: optional date-range filter for the payments table.
-  // yyyy-mm-dd strings straight from <input type="date">; empty = off.
+  // Revenue tab: optional date-range + plan filters for the payments
+  // table. Dates are yyyy-mm-dd strings straight from
+  // <input type="date">; empty = off. Plan "" = all plans.
   const [revDateFrom, setRevDateFrom] = useState("");
   const [revDateTo, setRevDateTo] = useState("");
+  const [revPlanFilter, setRevPlanFilter] = useState("");
   const [activeTab, setActiveTab] = usePersistentTab<
     "stats" | "activity" | "users" | "projects" | "revenue" | "logs" | "emails" | "support" | "reviews" | "memory" | "setup"
   >(
@@ -5964,13 +5966,26 @@ export default function AdminPage() {
           const fromMs = revDateFrom ? new Date(`${revDateFrom}T00:00:00`).getTime() : null;
           const toMs = revDateTo ? new Date(`${revDateTo}T23:59:59.999`).getTime() : null;
           const dateFilterActive = fromMs !== null || toMs !== null;
-          const paidUsers = users
+          // Post-launch paid users, before the date/plan filters — this
+          // is also the source for the plan dropdown's option list, so
+          // options never disappear because the current filter excludes
+          // them.
+          const basePaidUsers = users
             .filter((u) => u.status === "Paid")
             .filter((u) => {
               if (launchedAtMs === null) return true;
               if (!u.paidAt) return false;
               return new Date(u.paidAt).getTime() >= launchedAtMs;
-            })
+            });
+          // All known plans always listed (even with zero payments), plus
+          // any unexpected slug found on a paid user (e.g. legacy or
+          // test plans) so no payment is ever unfilterable.
+          const planOptions = [...new Set([
+            ...Object.keys(PLAN_LABEL),
+            ...basePaidUsers.map((u) => u.plan).filter((p): p is string => !!p),
+          ])].sort();
+          const filtersActive = dateFilterActive || revPlanFilter !== "";
+          const paidUsers = basePaidUsers
             .filter((u) => {
               if (!dateFilterActive) return true;
               if (!u.paidAt) return false;
@@ -5979,6 +5994,7 @@ export default function AdminPage() {
               if (toMs !== null && t > toMs) return false;
               return true;
             })
+            .filter((u) => revPlanFilter === "" || u.plan === revPlanFilter)
             .sort((a, b) => {
               const ta = a.paidAt ? new Date(a.paidAt).getTime() : -Infinity;
               const tb = b.paidAt ? new Date(b.paidAt).getTime() : -Infinity;
@@ -6167,6 +6183,23 @@ export default function AdminPage() {
                     style={{ border: "1px solid oklch(0 0 0 / 0.12)" }}
                   />
                 </div>
+                <div className="space-y-1">
+                  <label htmlFor="rev-plan-filter" className="block text-[11px] font-medium uppercase tracking-wider" style={{ color: "oklch(0.5 0 0)" }}>Plan</label>
+                  <select
+                    id="rev-plan-filter"
+                    value={revPlanFilter}
+                    onChange={(e) => setRevPlanFilter(e.target.value)}
+                    className="px-3 py-2 rounded-lg text-sm bg-white text-zinc-900 outline-none transition-all cursor-pointer"
+                    style={{ border: "1px solid oklch(0 0 0 / 0.12)" }}
+                  >
+                    <option value="">All plans</option>
+                    {planOptions.map((p) => (
+                      <option key={p} value={p} className="capitalize">
+                        {PLAN_LABEL[p] ?? p}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <button
                   onClick={() => {
                     // Local date, not toISOString() — UTC would point at
@@ -6181,26 +6214,24 @@ export default function AdminPage() {
                 >
                   Today
                 </button>
-                {dateFilterActive && (
+                {filtersActive && (
                   <button
-                    onClick={() => { setRevDateFrom(""); setRevDateTo(""); }}
+                    onClick={() => { setRevDateFrom(""); setRevDateTo(""); setRevPlanFilter(""); }}
                     className="px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer hover:bg-zinc-100"
                     style={{ color: "oklch(0.5 0 0)", border: "1px solid oklch(0 0 0 / 0.12)" }}
                   >
                     Clear
                   </button>
                 )}
-                {dateFilterActive && (
-                  <span className="text-xs pb-2.5" style={{ color: "oklch(0.5 0 0)" }}>
-                    {paidUsers.length} payment{paidUsers.length === 1 ? "" : "s"} in range
-                  </span>
-                )}
+                <span className="ml-auto text-xs font-semibold pb-2.5" style={{ color: "oklch(0.72 0.18 65)" }}>
+                  {paidUsers.length} payment{paidUsers.length === 1 ? "" : "s"}{filtersActive ? " matching" : ""}
+                </span>
               </div>
 
               {/* Paid users table */}
               {paidUsers.length === 0 ? (
                 <p className="text-sm italic py-2" style={{ color: "var(--c-35)" }}>
-                  {dateFilterActive ? "No payments in the selected date range." : "No paid users yet."}
+                  {filtersActive ? "No payments match the selected filters." : "No paid users yet."}
                 </p>
               ) : (
                 <div className="rounded-2xl overflow-x-auto"

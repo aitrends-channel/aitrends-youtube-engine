@@ -1,5 +1,7 @@
-import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand, GetObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { createWriteStream } from "fs";
+import { pipeline } from "stream/promises";
 
 const r2 = new S3Client({
   region: "auto",
@@ -100,6 +102,32 @@ export async function deleteObject(key: string): Promise<void> {
     Bucket: BUCKET,
     Delete: { Objects: [{ Key: key }], Quiet: true },
   }));
+}
+
+// True when the object exists. Goes through the S3 API, NOT the public
+// r2.dev URL — the r2.dev development subdomain is rate-limited by
+// Cloudflare and HEAD requests against it burn that budget (and can
+// themselves 429, forcing needless rebuilds).
+export async function objectExists(key: string): Promise<boolean> {
+  if (!BUCKET) return false;
+  try {
+    await r2.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Download an object to a local file via the S3 API. Streams the body
+// to disk. Exists so server-side consumers (voiceover concat) don't
+// fetch through the rate-limited r2.dev public URL — the S3 endpoint
+// has no such throttle and the client already retries with backoff
+// (maxAttempts: 6 above).
+export async function getObjectToFile(key: string, destPath: string): Promise<void> {
+  if (!BUCKET) throw new Error("R2 storage is not configured — R2_BUCKET_NAME environment variable is missing");
+  const res = await r2.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }));
+  if (!res.Body) throw new Error(`Empty body for R2 key ${key}`);
+  await pipeline(res.Body as NodeJS.ReadableStream, createWriteStream(destPath));
 }
 
 // Convert a R2 public URL back to its bucket key. Returns null when the
