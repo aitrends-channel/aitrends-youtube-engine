@@ -9,7 +9,7 @@ import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
-import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPreview";
+import { SequentialVoiceoverPreview } from "@/components/voiceover/SequentialVoiceoverPreview";
 import { RotateCw, ChevronUp, ChevronDown } from "lucide-react";
 
 // Per-beat voiceover step. Each beat shows its own row with status,
@@ -1240,10 +1240,13 @@ export default function VoiceoverPage({ params }: PageProps) {
               user reviews each beat individually first, then hears the
               whole narration end-to-end. Renders as soon as ANY beat
               has audio (live overlay or persisted) so the user can
-              start listening before the full run finishes. */}
+              start listening before the full run finishes. Plays the
+              per-beat mp3s in order client-side — no server concat
+              (that stays on the assemble page where the trim-silence
+              A/B compare genuinely needs ffmpeg). */}
           {(beats.some((b) => !!b.voiceoverUrl)
             || Array.from(liveBeats.values()).some((s) => s.status === "done" && !!s.url)) && (
-            <FullVoiceoverPreview projectId={projectId} beats={beats} liveBeats={liveBeats} />
+            <SequentialVoiceoverPreview beats={beats} liveBeats={liveBeats} />
           )}
           </>
           )}
