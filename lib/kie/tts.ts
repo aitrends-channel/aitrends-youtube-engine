@@ -240,8 +240,76 @@ async function generateChunkWithRetry(
   throw lastErr;
 }
 
-export async function listTTSVoices(): Promise<KieModel[]> {
-  return VOICES;
+// Dynamic catalog: the user's actual ElevenLabs voices (premade +
+// anything they added from the Voice Library + their own clones)
+// fetched from /v1/voices, merged with the static KIE-era list above.
+// Account voices come FIRST — they're the ones guaranteed to
+// synthesize — and dedupe wins over the static entry so a voice the
+// user added shows their account's preview/name. Falls back to the
+// static list alone when there's no key or the fetch fails, so the
+// picker never comes up empty.
+export async function listTTSVoices(userId?: string): Promise<KieModel[]> {
+  let accountVoices: KieModel[] = [];
+  try {
+    const apiKey = userId
+      ? (await getSettings(userId)).elevenlabs_api_key
+      : (process.env.ELEVENLABS_API_KEY ?? "");
+    if (apiKey) {
+      const res = await fetch(`${EL_BASE}/v1/voices`, {
+        headers: { "xi-api-key": apiKey },
+        // Voice lists change rarely; avoid hammering ElevenLabs on
+        // every picker render across tabs.
+        next: { revalidate: 300 },
+      });
+      if (res.ok) {
+        const data = await res.json() as {
+          voices?: Array<{
+            voice_id: string;
+            name: string;
+            preview_url?: string;
+            category?: string;
+            labels?: Record<string, string | undefined>;
+          }>;
+        };
+        accountVoices = (data.voices ?? []).map((vc) => {
+          const labels = vc.labels ?? {};
+          const gender = (labels.gender ?? "").toLowerCase();
+          const genderTag = gender === "female" ? "Female" : gender === "male" ? "Male" : "Neutral";
+          const description = [labels.descriptive ?? labels.description, labels.accent, labels.use_case]
+            .filter(Boolean)
+            .map((s) => String(s).replace(/_/g, " "))
+            .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+            .join(", ");
+          // Anything the user added/cloned themselves (category !==
+          // "premade") carries a "Custom" tag — the voice picker
+          // groups these under their own tab — and leads its
+          // description with the category (Cloned / Generated /
+          // Professional) so the user can tell them apart.
+          const isCustom = !!vc.category && vc.category !== "premade";
+          const categoryLabel = isCustom
+            ? vc.category!.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())
+            : null;
+          return {
+            id: vc.voice_id,
+            name: vc.name,
+            type: "tts" as const,
+            tags: [
+              genderTag,
+              [categoryLabel, description].filter(Boolean).join(", ") || "Your ElevenLabs voice",
+              ...(isCustom ? ["Custom"] : []),
+            ],
+            previewUrl: vc.preview_url,
+          };
+        });
+      } else {
+        console.warn(`[tts] /v1/voices failed (${res.status}) — falling back to static catalog`);
+      }
+    }
+  } catch (e) {
+    console.warn("[tts] voice list fetch failed — falling back to static catalog:", e instanceof Error ? e.message : e);
+  }
+  const seen = new Set(accountVoices.map((m) => m.id));
+  return [...accountVoices, ...VOICES.filter((m) => !seen.has(m.id))];
 }
 
 export async function generateTTS(

@@ -175,7 +175,7 @@ export default function VoiceoverPage({ params }: PageProps) {
   // the voice that was actually used to generate any existing beats),
   // else first model of the active gender tab.
   const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
-  const [voiceTab, setVoiceTab] = useState<"female" | "male">("female");
+  const [voiceTab, setVoiceTab] = useState<"female" | "male" | "custom">("female");
   const [previewingId, setPreviewingId] = useState<string | null>(null);
   // Sticky bit so a subsequent project SWR update doesn't overwrite an
   // explicit user pick. Only the very first resolution honors
@@ -755,9 +755,35 @@ export default function VoiceoverPage({ params }: PageProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [confirm]);
 
+  const hasCustomVoices = useMemo(
+    () => (ttsModels ?? []).some((m) => m.tags?.includes("Custom")),
+    [ttsModels],
+  );
+  // Search within the active tab — matches voice name and tag text.
+  // Cleared on tab switch so a leftover query never makes a fresh tab
+  // look mysteriously empty.
+  const [voiceSearch, setVoiceSearch] = useState("");
   const filteredVoices = useMemo(
-    () => (ttsModels ?? []).filter((m) => m.tags?.[0]?.toLowerCase() === voiceTab),
-    [ttsModels, voiceTab],
+    // Custom tab: everything the user added/cloned to their
+    // ElevenLabs account (tagged by listTTSVoices), regardless of
+    // gender. Gender tabs: non-custom voices matching the tab —
+    // Neutral-tagged catalog voices show under BOTH gender tabs so
+    // they're never invisible.
+    () => {
+      const inTab = (ttsModels ?? []).filter((m) => {
+        const isCustom = m.tags?.includes("Custom");
+        if (voiceTab === "custom") return isCustom;
+        if (isCustom) return false;
+        const tag = m.tags?.[0]?.toLowerCase();
+        return tag === voiceTab || tag === "neutral";
+      });
+      const q = voiceSearch.trim().toLowerCase();
+      if (!q) return inTab;
+      return inTab.filter((m) =>
+        m.name.toLowerCase().includes(q) || (m.tags ?? []).some((t) => t.toLowerCase().includes(q)),
+      );
+    },
+    [ttsModels, voiceTab, voiceSearch],
   );
 
   return (
@@ -785,28 +811,69 @@ export default function VoiceoverPage({ params }: PageProps) {
 
           {/* Voice picker */}
           <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-            <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
-              Voice
-            </p>
-            <div className="flex gap-1 mb-3">
-              {(["female", "male"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setVoiceTab(tab)}
-                  disabled={effectivelyGenerating}
-                  className="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium capitalize transition-all disabled:opacity-40"
-                  style={voiceTab === tab ? {
-                    background: "oklch(0.72 0.25 285 / 0.15)",
-                    border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                    color: "oklch(0.88 0.12 285)",
-                  } : {
-                    background: "var(--bg-input)",
-                    border: "1px solid var(--bd-7)",
-                    color: "var(--c-50)",
-                  }}
-                >{tab}</button>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
+                Voice
+              </p>
+              {!!ttsModels?.length && (
+                <span className="text-[11px] font-mono tabular-nums" style={{ color: "var(--c-45)" }}>
+                  {ttsModels.length} voices · {filteredVoices.length} {voiceTab}
+                </span>
+              )}
+            </div>
+            <div className="flex gap-1 mb-3 items-start">
+              {/* Custom tab only renders when the user's ElevenLabs
+                  account actually has added/cloned voices. Each tab is
+                  a column so the search input can sit DIRECTLY under
+                  the active tab button. */}
+              {([...(["female", "male"] as const), ...(hasCustomVoices ? (["custom"] as const) : [])]).map((tab) => (
+                <div key={tab} className="flex-1 flex flex-col gap-1">
+                  <button
+                    onClick={() => { setVoiceTab(tab); setVoiceSearch(""); }}
+                    disabled={effectivelyGenerating}
+                    className="w-full px-2 py-1.5 rounded-lg text-xs font-medium capitalize transition-all disabled:opacity-40"
+                    style={voiceTab === tab ? {
+                      background: "oklch(0.72 0.25 285 / 0.15)",
+                      border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                      color: "oklch(0.88 0.12 285)",
+                    } : {
+                      background: "var(--bg-input)",
+                      border: "1px solid var(--bd-7)",
+                      color: "var(--c-50)",
+                    }}
+                  >{tab === "custom" ? (
+                    <span className="flex flex-col items-center leading-tight">
+                      <span>Custom</span>
+                      <span className="text-[9px] font-normal normal-case" style={{ opacity: 0.7 }}>
+                        cloned · generated · professional
+                      </span>
+                    </span>
+                  ) : tab}</button>
+                  {/* Search — anchored under the active tab only;
+                      filters that tab's voices by name or tag. */}
+                  {voiceTab === tab && (
+                    <input
+                      type="search"
+                      value={voiceSearch}
+                      onChange={(e) => setVoiceSearch(e.target.value)}
+                      placeholder="Search…"
+                      aria-label={`Search ${tab} voices`}
+                      className="w-full px-2 py-1 rounded-lg text-xs outline-none transition-colors"
+                      style={{
+                        background: "var(--bg-input)",
+                        border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+                        color: "var(--c-80)",
+                      }}
+                    />
+                  )}
+                </div>
               ))}
             </div>
+            {voiceSearch.trim() && filteredVoices.length === 0 && (
+              <p className="text-xs text-center py-4" style={{ color: "var(--c-40)" }}>
+                No voices match &ldquo;{voiceSearch.trim()}&rdquo;
+              </p>
+            )}
             <div className="scroll-themed grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1">
               {(!ttsModels || project === undefined) ? (
                 // Single page-load indicator — keeps the rest of the

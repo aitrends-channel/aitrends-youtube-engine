@@ -63,14 +63,13 @@ function promote(models: KieModel[], defaultId: string | null): KieModel[] {
 export async function GET(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
-  void user;
 
   const { searchParams } = new URL(req.url);
   const type = searchParams.get("type");
 
   try {
     if (type === "tts") {
-      const models = await listTTSVoices();
+      const models = await listTTSVoices(user.id);
       return NextResponse.json(models);
     }
     if (type === "image") {
@@ -94,7 +93,7 @@ export async function GET(req: Request) {
 
     // Return all
     const [tts, images, videos, defaults, imageMins, videoMins, imageSpeeds, videoSpeeds] = await Promise.all([
-      listTTSVoices(),
+      listTTSVoices(user.id),
       listImageModels(),
       listVideoModels(),
       getAdminDefaults(),
