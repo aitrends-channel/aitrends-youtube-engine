@@ -62,6 +62,16 @@ export async function GET(
       imageUrl: t.image_url,
       imageStatus: t.image_status,
     })),
+  }, {
+    // Polling clients (SWR every 5s on the assemble page) need fresh
+    // data to see the worker's column writes — without no-store the
+    // browser/CDN HTTP cache could serve a stale response and the
+    // UI wouldn't pick up new fields (e.g. assembly_preview_url
+    // landing mid-assembly) until a hard refresh.
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      "Pragma": "no-cache",
+    },
   });
 }
 
@@ -264,6 +274,45 @@ export async function PATCH(
     return NextResponse.json({ success: true });
   }
 
+  // Commit the in-progress preview as the final assembled video.
+  // Called when the user clicks Continue on the stopped panel that
+  // shows up after they clicked "Use this version" during assembly.
+  // No worker round-trip needed — mixed.mp4 is already in R2 (its
+  // URL lives in assembly_preview_url) so we just promote it to
+  // assembled_url and mark the assembly done. The checkpoint folder
+  // is left intact; it's small and gets overwritten on the next
+  // assembly run if the user reassembles.
+  if (body.commit_preview) {
+    const { data: proj, error: readErr } = await supabase
+      .from("projects")
+      .select("assembly_preview_url, assembly_status")
+      .eq("id", projectId)
+      .eq("user_id", user.id)
+      .single();
+    if (readErr) return NextResponse.json({ error: readErr.message }, { status: 404 });
+    const previewUrl = (proj?.assembly_preview_url as string | null) ?? null;
+    if (!previewUrl) {
+      return NextResponse.json({ error: "No preview available to commit" }, { status: 400 });
+    }
+    const { error: updErr } = await supabase
+      .from("projects")
+      .update({
+        assembly_status: "done",
+        assembled_url: previewUrl,
+        assembly_preview_url: null,
+        assembly_finalize_preview_requested: false,
+        assembly_stop_requested: false,
+        assembly_checkpoint: null,
+        assembly_progress: null,
+        assembly_error: null,
+        current_state: 15,
+      })
+      .eq("id", projectId)
+      .eq("user_id", user.id);
+    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+    return NextResponse.json({ success: true, assembled_url: previewUrl });
+  }
+
   // Abort an in-progress (or stopped) assembly: wipe the assembly
   // checkpoint, the _assembly/ R2 folder, and every assembly_* field
   // on the project — but leave assembled_url alone. The point is to
@@ -289,6 +338,11 @@ export async function PATCH(
         assembly_error: null,
         assembly_checkpoint: null,
         assembly_stop_requested: false,
+        // Same defensive clears as the rest of the assembly state —
+        // a stale preview URL or finalize flag would survive an
+        // otherwise-fresh start otherwise.
+        assembly_preview_url: null,
+        assembly_finalize_preview_requested: false,
       })
       .eq("id", projectId)
       .eq("user_id", user.id);

@@ -11,6 +11,7 @@ interface PlanPayload {
   slug?: unknown;
   name?: unknown;
   price_display?: unknown;
+  price_cents?: unknown;
   period_display?: unknown;
   limit_display?: unknown;
   features?: unknown;
@@ -78,11 +79,16 @@ export async function POST(req: Request) {
   if (nichesPerMonth === undefined) {
     return NextResponse.json({ error: "niches_per_month must be integer or null" }, { status: 400 });
   }
+  const priceCents = body.price_cents === undefined ? null : asNullableInt(body.price_cents);
+  if (priceCents === undefined) {
+    return NextResponse.json({ error: "price_cents must be integer or null" }, { status: 400 });
+  }
 
   const insert = {
     slug,
     name,
     price_display: priceDisplay,
+    price_cents: priceCents,
     period_display: asString(body.period_display) ?? "",
     limit_display: asString(body.limit_display) ?? "",
     features,

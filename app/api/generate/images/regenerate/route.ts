@@ -174,8 +174,28 @@ export async function POST(req: Request) {
     if (err instanceof KieUpstreamError) {
       const headers: Record<string, string> = {};
       if (err.upstreamStatus === 429 && err.retryAfter != null) headers["Retry-After"] = String(err.retryAfter);
-      const status = err.upstreamStatus === 429 ? 429 : 502;
-      return NextResponse.json({ error: err.message, upstreamStatus: err.upstreamStatus }, { status, headers });
+      // See app/api/generate/images/submit/route.ts for the mapping
+      // rationale — 402 for out-of-credit so Vercel doesn't alert.
+      let status: number;
+      let code: string | undefined;
+      if (err.insufficientCredits) {
+        status = 402;
+        code = "insufficient_credits";
+      } else if (err.upstreamStatus === 429) {
+        status = 429;
+      } else {
+        status = 502;
+      }
+      return NextResponse.json(
+        {
+          error: err.insufficientCredits
+            ? "Your KIE account is out of credits. Add credits at kie.ai and try again."
+            : err.message,
+          code,
+          upstreamStatus: err.upstreamStatus,
+        },
+        { status, headers },
+      );
     }
     const message = err instanceof Error ? err.message : "Regenerate failed";
     console.error("[images/regenerate] error:", message);

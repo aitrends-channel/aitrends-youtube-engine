@@ -8,10 +8,17 @@ export async function POST(request: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   const body = await request.json().catch(() => ({}));
-  const { payment_id, plan } = body as { payment_id?: string; plan?: string };
+  const { payment_id, subscription_id, plan } = body as {
+    payment_id?: string;
+    subscription_id?: string;
+    plan?: string;
+  };
 
-  if (!payment_id) {
-    return NextResponse.json({ error: "Missing payment_id" }, { status: 400 });
+  // Subscription products come back with subscription_id (no payment_id
+  // until the first invoice). One-time products come back with payment_id.
+  // Either is enough to look the record up on Dodo and confirm the sale.
+  if (!payment_id && !subscription_id) {
+    return NextResponse.json({ error: "Missing payment_id or subscription_id" }, { status: 400 });
   }
 
   // Pick the Dodo environment for this payment:
@@ -67,6 +74,14 @@ export async function POST(request: Request) {
   const secretKey = keyPick.value;
   const dodoBase = basePick.value;
 
+  // Which endpoint on Dodo we hit depends on which id we received.
+  // Subscription products yield subscription_id + status=active|on_trial;
+  // one-time products yield payment_id + status=succeeded. Both are
+  // legitimate purchases — we accept either and route accordingly.
+  const usePath = payment_id ? `payments/${payment_id}` : `subscriptions/${subscription_id}`;
+  const idLabel = payment_id ? `payment_id=${payment_id}` : `subscription_id=${subscription_id}`;
+  const acceptableStatuses = payment_id ? ["succeeded"] : ["active", "on_trial"];
+
   // Surface where each value came from so a 404 from Dodo or a
   // wrong-env mismatch can be diagnosed in one log line. Key prefix
   // only — never the full secret.
@@ -74,12 +89,12 @@ export async function POST(request: Request) {
     `[dodo-verify] plan=${plan} env=${env} ` +
     `base=${dodoBase} base_src=${basePick.source} ` +
     `key=${secretKey.slice(0, 8)}… key_src=${keyPick.source} ` +
-    `payment_id=${payment_id}`,
+    `${idLabel} path=${usePath}`,
   );
 
   let dodoRes: Response;
   try {
-    dodoRes = await fetch(`${dodoBase}/payments/${payment_id}`, {
+    dodoRes = await fetch(`${dodoBase}/${usePath}`, {
       headers: { Authorization: `Bearer ${secretKey}` },
     });
   } catch (e) {
@@ -93,8 +108,11 @@ export async function POST(request: Request) {
 
   const result = await dodoRes.json();
 
-  if (result.status !== "succeeded") {
-    return NextResponse.json({ error: `Payment not successful (status: ${result.status})` }, { status: 400 });
+  if (!acceptableStatuses.includes(result.status)) {
+    return NextResponse.json(
+      { error: `${payment_id ? "Payment" : "Subscription"} not active (status: ${result.status})` },
+      { status: 400 },
+    );
   }
 
   // Log the full Dodo response on success so we can inspect available
@@ -105,42 +123,25 @@ export async function POST(request: Request) {
     `DODO RESPONSE: plan=${plan} payment_id=${payment_id} body=${JSON.stringify(result)}`,
   );
 
-  // Cross-check the paid amount against the claimed plan's price.
-  // Dodo reports amounts in the smallest currency unit (cents).
-  // Configurable via env so prices can change without redeploy.
-  //
-  // Skip the guard entirely in test mode: Dodo's test SKUs use
-  // arbitrary low amounts (often $0.50 or $1) intentionally so QA
-  // doesn't have to spend $40 to verify the founder flow. The price
-  // guard exists to catch fraud against the LIVE prices in
-  // production — applying it to test charges blocks every legitimate
-  // test purchase without protecting any real revenue.
-  const paidCents = Number(result.total_amount ?? result.amount ?? 0);
-  const PLAN_PRICES_CENTS: Record<string, number> = {
-    starter: Number(process.env.DODO_STARTER_PRICE_CENTS ?? 2100),  // $21
-    founder: Number(process.env.DODO_FOUNDER_PRICE_CENTS ?? 4000),  // $40
-    pro:     Number(process.env.DODO_PRO_PRICE_CENTS ?? 3900),      // $39
-  };
-  const claimedPlanPrice = PLAN_PRICES_CENTS[plan ?? ""];
-
-  if (env === "production" && paidCents > 0 && claimedPlanPrice > 0 && paidCents < claimedPlanPrice) {
-    // Try to identify which plan the amount actually matches — helps support
-    // figure out the right correction without spelunking through Dodo logs.
-    const actualPlan = Object.entries(PLAN_PRICES_CENTS).find(([, cents]) => paidCents === cents)?.[0];
-    return NextResponse.json({
-      error: actualPlan
-        ? `Plan mismatch: paid amount ($${paidCents / 100}) matches '${actualPlan}', not '${plan}'. Contact support to correct.`
-        : `Paid amount ($${paidCents / 100}) is below the '${plan}' price ($${claimedPlanPrice / 100}). Contact support.`,
-      paidCents,
-      claimedPlan: plan,
-      actualPlan: actualPlan ?? null,
-    }, { status: 400 });
-  }
+  // Price guard temporarily disabled: FX-converted charges (Dodo
+  // returns total_amount in the buyer's local currency) were tripping
+  // it for legitimate non-USD payments. For now we trust any Dodo-
+  // acknowledged charge with an acceptable status regardless of
+  // amount; Dodo already enforces the correct converted price at
+  // checkout on its side.
 
   const isFounder = plan === "founder";
 
   if (isFounder) {
-
+    // Founder is one-time — we should always have payment_id here. If
+    // someone claims founder via a subscription redirect, reject up-
+    // front instead of feeding NULL into the RPC.
+    if (!payment_id) {
+      return NextResponse.json(
+        { error: "Founder plan requires a one-time payment; got a subscription redirect. Contact support." },
+        { status: 400 },
+      );
+    }
     // Atomically claim a Founder spot, keyed on payment_id for
     // idempotency. First call for a given payment_id consumes a slot;
     // duplicate calls (React StrictMode, user reload, network retry,
@@ -170,6 +171,14 @@ export async function POST(request: Request) {
   const subscriptionIdFromResult =
     (result.subscription_id as string | undefined) ??
     ((result.subscription as Record<string, unknown> | undefined)?.subscription_id as string | undefined) ??
+    subscription_id ??
+    null;
+  // Dodo returns customer_id both on top-level and nested under customer
+  // depending on the payload shape. Persisting it lets us substitute
+  // {customer_id} into the admin-configured portal URL later.
+  const customerIdFromResult =
+    (result.customer_id as string | undefined) ??
+    ((result.customer as Record<string, unknown> | undefined)?.customer_id as string | undefined) ??
     null;
   const periodEndFromResult =
     (result.current_period_end as string | undefined) ??
@@ -188,8 +197,10 @@ export async function POST(request: Request) {
     status: result.status,
     updated_at: new Date().toISOString(),
     ...(subscriptionIdFromResult ? { subscription_id: subscriptionIdFromResult } : {}),
+    ...(customerIdFromResult ? { customer_id: customerIdFromResult } : {}),
     ...(periodEndFromResult ? { current_period_end: periodEndFromResult } : {}),
     ...(!subscriptionIdFromResult && baseDodo.subscription_id ? { subscription_id: baseDodo.subscription_id } : {}),
+    ...(!customerIdFromResult && baseDodo.customer_id ? { customer_id: baseDodo.customer_id } : {}),
   };
 
   try {
@@ -205,6 +216,37 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     return NextResponse.json({ error: `Failed to update user: ${(e as Error).message}` }, { status: 500 });
+  }
+
+  // Immutable revenue ledger — mirrors the insert in the Dodo webhook
+  // so a payment is recorded by whichever path lands first. Unique on
+  // dodo_payment_id: when both paths run (the normal case) the second
+  // insert dedupes as 23505. This closed a real gap where Dodo webhook
+  // delivery stopped and payments granted access via this verify path
+  // but never appeared in revenue stats. Fail-soft: the customer is
+  // paid regardless; ledger logging is best-effort.
+  const ledgerPaymentId =
+    payment_id ??
+    (result.payment_id as string | undefined) ??
+    ((result.latest_payment as Record<string, unknown> | undefined)?.payment_id as string | undefined);
+  const ledgerAmountCents = Number(result.total_amount ?? result.amount ?? 0);
+  if (ledgerPaymentId && ledgerAmountCents > 0) {
+    const { error: revErr } = await supabase
+      .from("revenue_events")
+      .insert({
+        user_id: user.id,
+        user_email: (user.email ?? "").toLowerCase() || null,
+        event_type: "payment_succeeded",
+        amount_cents: ledgerAmountCents,
+        currency: ((result.currency as string | undefined) ?? "usd").toLowerCase(),
+        plan: plan ?? null,
+        dodo_payment_id: ledgerPaymentId,
+        dodo_raw: result,
+        occurred_at: (result.created_at as string | undefined) ?? new Date().toISOString(),
+      });
+    if (revErr && revErr.code !== "23505") {
+      console.warn("[dodo-verify] revenue_events insert failed:", revErr.message);
+    }
   }
 
   return NextResponse.json({ success: true });

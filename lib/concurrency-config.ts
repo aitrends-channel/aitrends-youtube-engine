@@ -23,7 +23,45 @@ export type ConcurrencyConfig = {
   assembly_projects: number;
   /** Parallel per-beat clip-normalize jobs inside a single assembly (Stage B). */
   assembly_beats: number;
+  /**
+   * Rule-based per-scenario overrides for Stage B concurrency. Each rule
+   * matches against the in-flight project's resolution / beat count /
+   * source type / captions flag; the first matching rule's value wins.
+   * The global `assembly_beats` knob remains the hard ceiling — a rule
+   * cannot exceed it, and unmatched runs fall back to it.
+   */
+  assembly_beats_rules: AssemblyBeatRule[];
 };
+
+export const ASSEMBLY_RESOLUTIONS = ["720p", "1080p", "1440p", "2160p"] as const;
+export type AssemblyResolution = (typeof ASSEMBLY_RESOLUTIONS)[number];
+
+export type AssemblyBeatRule = {
+  /** Human-friendly label for the admin UI. */
+  name: string;
+  /** All set conditions must match. Unset conditions are wildcards. */
+  when: {
+    resolution?: AssemblyResolution;
+    /** Matches when project beat count is <= this. */
+    maxBeats?: number;
+    /** Matches when project beat count is >= this. */
+    minBeats?: number;
+    /** Matches when every beat is image-based (no video sources). */
+    allImages?: boolean;
+    /** Matches the project's captions toggle. */
+    captionsEnabled?: boolean;
+  };
+  /** Concurrency to apply when this rule matches. Bounded 1..ASSEMBLY_BEATS_MAX at validate-time. */
+  value: number;
+};
+
+export const ASSEMBLY_BEATS_MIN = 1;
+export const ASSEMBLY_BEATS_MAX = 10;
+
+/** Keys of ConcurrencyConfig whose values are a single integer. Excludes
+ * the rules array so it doesn't get fed into the per-knob render/save
+ * paths that expect a numeric editor. */
+export type ConcurrencyNumericKey = Exclude<keyof ConcurrencyConfig, "assembly_beats_rules">;
 
 export const CONCURRENCY_DEFAULTS: ConcurrencyConfig = {
   video_worker: 3,
@@ -35,13 +73,14 @@ export const CONCURRENCY_DEFAULTS: ConcurrencyConfig = {
   tts_beat_batch: 5,
   assembly_projects: 1,
   assembly_beats: 1,
+  assembly_beats_rules: [],
 };
 
 // Human-readable labels + per-knob bounds for the admin UI and the
 // PUT validator. Keep these together so a new knob lights up in
 // both places with a single edit.
 export const CONCURRENCY_FIELDS: {
-  key: keyof ConcurrencyConfig;
+  key: ConcurrencyNumericKey;
   label: string;
   description: string;
   min: number;
@@ -114,7 +153,7 @@ let cached: { at: number; value: ConcurrencyConfig } | null = null;
  * config.
  */
 export function coerceConcurrencyConfig(raw: unknown): ConcurrencyConfig {
-  const out = { ...CONCURRENCY_DEFAULTS };
+  const out: ConcurrencyConfig = { ...CONCURRENCY_DEFAULTS, assembly_beats_rules: [] };
   if (raw && typeof raw === "object") {
     for (const f of CONCURRENCY_FIELDS) {
       const v = (raw as Record<string, unknown>)[f.key];
@@ -123,8 +162,34 @@ export function coerceConcurrencyConfig(raw: unknown): ConcurrencyConfig {
         out[f.key] = n;
       }
     }
+    const rulesRaw = (raw as Record<string, unknown>).assembly_beats_rules;
+    if (Array.isArray(rulesRaw)) {
+      out.assembly_beats_rules = rulesRaw
+        .map((r) => coerceAssemblyBeatRule(r))
+        .filter((r): r is AssemblyBeatRule => r !== null);
+    }
   }
   return out;
+}
+
+function coerceAssemblyBeatRule(raw: unknown): AssemblyBeatRule | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const value = typeof r.value === "number" ? r.value : Number(r.value);
+  if (!Number.isInteger(value) || value < ASSEMBLY_BEATS_MIN || value > ASSEMBLY_BEATS_MAX) return null;
+  const name = typeof r.name === "string" && r.name.trim() ? r.name.trim().slice(0, 80) : "Unnamed rule";
+  const whenRaw = (r.when && typeof r.when === "object") ? r.when as Record<string, unknown> : {};
+  const when: AssemblyBeatRule["when"] = {};
+  if (typeof whenRaw.resolution === "string" && (ASSEMBLY_RESOLUTIONS as readonly string[]).includes(whenRaw.resolution)) {
+    when.resolution = whenRaw.resolution as AssemblyResolution;
+  }
+  const maxBeats = typeof whenRaw.maxBeats === "number" ? whenRaw.maxBeats : Number(whenRaw.maxBeats);
+  if (Number.isInteger(maxBeats) && maxBeats > 0) when.maxBeats = maxBeats;
+  const minBeats = typeof whenRaw.minBeats === "number" ? whenRaw.minBeats : Number(whenRaw.minBeats);
+  if (Number.isInteger(minBeats) && minBeats > 0) when.minBeats = minBeats;
+  if (typeof whenRaw.allImages === "boolean") when.allImages = whenRaw.allImages;
+  if (typeof whenRaw.captionsEnabled === "boolean") when.captionsEnabled = whenRaw.captionsEnabled;
+  return { name, when, value };
 }
 
 /**
@@ -159,7 +224,7 @@ export function invalidateConcurrencyConfigCache(): void {
 /** Validate + normalize an arbitrary input into a complete ConcurrencyConfig. Returns null with an error message on bad input. */
 export function validateConcurrencyInput(input: unknown): { ok: true; value: ConcurrencyConfig } | { ok: false; error: string } {
   if (!input || typeof input !== "object") return { ok: false, error: "Body must be an object" };
-  const out = { ...CONCURRENCY_DEFAULTS };
+  const out: ConcurrencyConfig = { ...CONCURRENCY_DEFAULTS, assembly_beats_rules: [] };
   for (const f of CONCURRENCY_FIELDS) {
     const v = (input as Record<string, unknown>)[f.key];
     if (v === undefined) continue;
@@ -168,6 +233,18 @@ export function validateConcurrencyInput(input: unknown): { ok: true; value: Con
       return { ok: false, error: `${f.key} must be an integer between ${f.min} and ${f.max}` };
     }
     out[f.key] = n;
+  }
+  const rulesRaw = (input as Record<string, unknown>).assembly_beats_rules;
+  if (rulesRaw !== undefined) {
+    if (!Array.isArray(rulesRaw)) return { ok: false, error: "assembly_beats_rules must be an array" };
+    if (rulesRaw.length > 32) return { ok: false, error: "assembly_beats_rules may contain at most 32 rules" };
+    const cleaned: AssemblyBeatRule[] = [];
+    for (let i = 0; i < rulesRaw.length; i++) {
+      const r = coerceAssemblyBeatRule(rulesRaw[i]);
+      if (!r) return { ok: false, error: `assembly_beats_rules[${i}] is invalid (need name, when, and value 1..${ASSEMBLY_BEATS_MAX})` };
+      cleaned.push(r);
+    }
+    out.assembly_beats_rules = cleaned;
   }
   return { ok: true, value: out };
 }

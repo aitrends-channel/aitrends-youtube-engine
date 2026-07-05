@@ -184,7 +184,7 @@ export default function DemoGeneratePage() {
       <DemoNav currentStep={6} />
       <div className="flex-1 flex flex-col min-h-0">
         <DemoBanner />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto lg:px-[15px]">
           {/* Header */}
           <div className="py-4 sm:py-5"
             style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
@@ -240,6 +240,16 @@ export default function DemoGeneratePage() {
                   Aspect Ratio
                 </p>
                 <RatioButtons ratios={FAKE_IMAGE_RATIOS} selected={selectedImageRatio} onSelect={(r) => update({ selectedImageRatio: r })} />
+
+                {/* Invisible spacer — mirrors the Duration section in the
+                    Video Clips column so both card headers end up the
+                    same height and their beat grids line up horizontally. */}
+                <div aria-hidden className="invisible">
+                  <p className="text-xs font-semibold uppercase tracking-wider mt-3 mb-2">Duration</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button className="px-2.5 py-1 rounded-lg text-xs font-medium">placeholder</button>
+                  </div>
+                </div>
               </div>
 
               {/* Image beat grid */}
@@ -247,25 +257,33 @@ export default function DemoGeneratePage() {
                 <div className="px-5 pt-4">
                   <ProgressBar value={imagesPhase === "done" ? totalBeats : imagesProgress} total={totalBeats} />
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-72 overflow-y-auto">
-                    {DEMO_DATA.promptBeats.map((beat, i) => {
-                    const revealed = imagesPhase === "done" || i < imagesProgress;
-                    return (
+                    {DEMO_DATA.promptBeats.map((beat) => (
                       <div key={beat.beat}
                         className="relative aspect-video rounded-lg overflow-hidden flex items-center justify-center"
                         style={{ background: "var(--bg-progress)" }}>
-                        {revealed ? (
+                        {imagesPhase === "done" ? (
                           <ImageTile src={beat.imageUrl} alt={`Beat ${beat.beat}`} />
                         ) : (
-                          <span className="text-[9px] relative z-10" style={{ color: "var(--c-35)" }}>{beat.beat}</span>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded relative z-10"
+                            style={{
+                              background: "oklch(0.72 0.25 285 / 0.1)",
+                              color: "oklch(0.72 0.25 285)",
+                            }}>
+                            generating
+                          </span>
                         )}
                       </div>
-                    );
-                  })}
+                    ))}
                   </div>
                 </div>
               )}
 
-              <div className="p-5 mt-auto">
+              <div className="p-5 mt-auto space-y-3">
+                {/* Invisible mirror of the videos column's status line so
+                    the two Generate buttons sit at the same Y. */}
+                <p aria-hidden className="invisible text-xs">
+                  Runs in background — clips appear as each job completes.
+                </p>
                 <button
                   onClick={generateImages}
                   disabled={imagesPhase === "generating"}

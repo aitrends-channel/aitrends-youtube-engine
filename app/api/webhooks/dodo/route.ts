@@ -79,6 +79,13 @@ export async function POST(request: Request) {
     (data.subscription_id as string | undefined) ??
     ((data.subscription as Record<string, unknown> | undefined)?.subscription_id as string | undefined) ??
     null;
+  // customer_id feeds the "Manage billing" portal URL substitution on
+  // the /plan page. Dodo puts it either at the top level or nested
+  // under customer depending on the event, so check both.
+  const customerId =
+    (data.customer_id as string | undefined) ??
+    (customer?.customer_id as string | undefined) ??
+    null;
   const currentPeriodEnd =
     (data.current_period_end as string | undefined) ??
     (data.next_billing_date as string | undefined) ??
@@ -90,10 +97,18 @@ export async function POST(request: Request) {
     status: data.status,
     updated_at: updatedAt,
     ...(subscriptionId ? { subscription_id: subscriptionId } : {}),
+    ...(customerId ? { customer_id: customerId } : {}),
     ...(currentPeriodEnd ? { current_period_end: currentPeriodEnd } : {}),
   };
 
-  const { data: { users }, error: listError } = await supabase.auth.admin.listUsers();
+  // perPage default is 50 — matches the rest of the codebase, which
+  // uses 1000 for email lookups. Without this, once the auth table
+  // has >50 users, new paying customers fall off the first page,
+  // aren't found here, get routed to the invite branch (which fails
+  // because they already exist), and the webhook returns 500. Net
+  // effect: metadata never flips to paid, revenue_events row is
+  // never written, user shows "paid on Dodo" but not on our side.
+  const { data: { users }, error: listError } = await supabase.auth.admin.listUsers({ perPage: 1000 });
   if (listError) {
     return NextResponse.json({ error: listError.message }, { status: 500 });
   }
@@ -109,6 +124,7 @@ export async function POST(request: Request) {
     ...baseDodo,
     ...dodoMeta,
     ...(!subscriptionId && baseDodo.subscription_id ? { subscription_id: baseDodo.subscription_id } : {}),
+    ...(!customerId && baseDodo.customer_id ? { customer_id: baseDodo.customer_id } : {}),
   };
 
   if (event === "payment.succeeded") {

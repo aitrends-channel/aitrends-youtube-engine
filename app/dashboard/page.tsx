@@ -26,7 +26,7 @@ const DEMO_STEP_HREFS  = [
   "/demo/channel", "/demo/topic", "/demo/script", "/demo/visuals",
   "/demo/prompts", "/demo/generate", "/demo/assemble", "/demo/thumbnails",
 ];
-const DEMO_DEFAULT_TOPIC = "5 Money Habits That Are Making You Poorer";
+const DEMO_DEFAULT_TOPIC = "How Did Ancient Humans Name Their Children?";
 
 interface DemoProgress {
   topic: string;
@@ -159,7 +159,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
   const plotH = H - PAD_T - PAD_B;
   const barW = 52, rx = 5;
   const bars = [
-    { label: "FinanceFuel", count: 1 },
+    { label: "AncientHeclus", count: 1 },
   ];
   const maxCount = 1;
   const plotW = W - PAD_X * 2;
@@ -308,7 +308,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
         </div>
       ) : (
       <>
-      {/* FinanceFuel channel group */}
+      {/* AncientHeclus channel group */}
       <div>
         <div className="rounded-2xl px-4 sm:px-6 py-6 sm:py-8" style={cardStyle}>
           <div className="flex items-center justify-between gap-3 mb-5">
@@ -453,6 +453,70 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
 }
 
 // ── Real dashboard ────────────────────────────────────────────────────────────
+
+// Module-level cache so navigating away and back doesn't re-fetch
+// metadata for the same video URL. Keyed by URL; value is duration in
+// seconds (or null when the metadata load failed).
+const videoDurationCache = new Map<string, number | null>();
+
+function formatVideoDuration(sec: number): string {
+  const total = Math.floor(sec);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const two = (n: number) => n.toString().padStart(2, "0");
+  return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
+}
+
+function VideoDurationBadge({ src }: { src: string }) {
+  const [duration, setDuration] = useState<number | null>(() =>
+    videoDurationCache.has(src) ? videoDurationCache.get(src) ?? null : null,
+  );
+  const already = videoDurationCache.has(src);
+  useEffect(() => {
+    if (already) return;
+    const v = document.createElement("video");
+    v.preload = "metadata";
+    v.muted = true;
+    let cancelled = false;
+    const onLoaded = () => {
+      if (cancelled) return;
+      const d = isFinite(v.duration) ? v.duration : null;
+      videoDurationCache.set(src, d);
+      setDuration(d);
+    };
+    const onError = () => {
+      if (cancelled) return;
+      videoDurationCache.set(src, null);
+      setDuration(null);
+    };
+    v.addEventListener("loadedmetadata", onLoaded);
+    v.addEventListener("error", onError);
+    v.src = src;
+    return () => {
+      cancelled = true;
+      v.removeEventListener("loadedmetadata", onLoaded);
+      v.removeEventListener("error", onError);
+      v.removeAttribute("src");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (v as any).load?.();
+    };
+  }, [src, already]);
+  if (duration == null) return null;
+  return (
+    <span
+      className="text-xs px-2 py-0.5 rounded-full font-medium tabular-nums"
+      style={{
+        background: "oklch(0 0 0 / 0.4)",
+        color: "var(--c-88)",
+        border: "1px solid oklch(1 0 0 / 0.08)",
+      }}
+      title="Assembled video length"
+    >
+      {formatVideoDuration(duration)}
+    </span>
+  );
+}
 
 export default function HomePage() {
   const router = useRouter();
@@ -1312,6 +1376,7 @@ export default function HomePage() {
               {/* API Keys Status */}
               {(() => {
                 const kie = apiStatus?.kie as { configured: boolean; valid: boolean | null; credits?: number } | undefined;
+                const elevenlabs = apiStatus?.elevenlabs as { configured: boolean; valid: boolean | null; remaining?: number; limit?: number } | undefined;
 
                 function StatusBadge({ data, color }: { data: { configured: boolean; valid: boolean | null } | undefined; color: string }) {
                   void color;
@@ -1379,7 +1444,7 @@ export default function HomePage() {
                 return (
                   <div style={{ marginTop: "40px" }}>
                     <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Key Status</h3>
-                    <div className="grid grid-cols-1 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
                       {/* KIE */}
                       <div className="rounded-xl px-5 py-4" style={cardStyle}>
@@ -1404,6 +1469,34 @@ export default function HomePage() {
                         )}
                         {kie?.configured && kie.valid && kie.credits === undefined && (
                           <p className="text-[10px]" style={{ color: "var(--c-30)" }}>Check balance in KIE dashboard</p>
+                        )}
+                      </div>
+
+                      {/* ElevenLabs. Uses UsageBar (used/limit) instead of
+                          CreditsBar because ElevenLabs quota is bounded per
+                          plan — we have both numerator and denominator. */}
+                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>ElevenLabs</p>
+                            {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mt-0.5" style={{ color: "#f0a855" }}>Pending setup</p>}
+                            <p className="text-[10px] mt-0.5" style={{ color: "var(--c-38)" }}>Voiceover generation & transcription</p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 shrink-0">
+                            <StatusBadge data={elevenlabs} color="#c084fc" />
+                            {elevenlabs?.configured && elevenlabs.valid && typeof elevenlabs.remaining === "number" && (
+                              <span className="text-[10px] font-medium tabular-nums"
+                                style={{ color: elevenlabs.remaining <= 0 ? "#f87171" : "var(--c-50)" }}>
+                                {elevenlabs.remaining.toLocaleString()} chars left
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {elevenlabs?.configured && elevenlabs.valid && typeof elevenlabs.remaining === "number" && typeof elevenlabs.limit === "number" && (
+                          <UsageBar used={elevenlabs.limit - elevenlabs.remaining} limit={elevenlabs.limit} color="#c084fc" />
+                        )}
+                        {elevenlabs?.configured && elevenlabs.valid && elevenlabs.remaining === undefined && (
+                          <p className="text-[10px]" style={{ color: "var(--c-30)" }}>Enable user_read scope on your key to see character balance</p>
                         )}
                       </div>
 
@@ -1506,18 +1599,23 @@ export default function HomePage() {
                           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)"; }}
                         >
                           <div className="flex items-start justify-between mb-3">
-                            <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
-                              style={isComplete ? {
-                                background: "oklch(0.55 0.15 145 / 0.15)",
-                                color: "oklch(0.65 0.15 145)",
-                                border: "1px solid oklch(0.55 0.15 145 / 0.3)",
-                              } : {
-                                background: "oklch(0.72 0.25 285 / 0.1)",
-                                color: "oklch(0.72 0.25 285)",
-                                border: "1px solid oklch(0.72 0.25 285 / 0.2)",
-                              }}>
-                              {stateLabel}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
+                                style={isComplete ? {
+                                  background: "oklch(0.55 0.15 145 / 0.15)",
+                                  color: "oklch(0.65 0.15 145)",
+                                  border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                                } : {
+                                  background: "oklch(0.72 0.25 285 / 0.1)",
+                                  color: "oklch(0.72 0.25 285)",
+                                  border: "1px solid oklch(0.72 0.25 285 / 0.2)",
+                                }}>
+                                {stateLabel}
+                              </span>
+                              {isComplete && p.assembled_url && (
+                                <VideoDurationBadge src={p.assembled_url} />
+                              )}
+                            </div>
 
                             <div className="flex items-center gap-1.5">
                               <span className="text-xs" style={{ color: "var(--c-38)" }}>{timeAgo(p.created_at)}</span>

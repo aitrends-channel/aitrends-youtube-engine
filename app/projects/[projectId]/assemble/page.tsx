@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { StepCostCard } from "@/components/StepCostCard";
+import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -13,6 +14,7 @@ import { presignedUpload } from "@/lib/upload-client";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { PRO_RESOLUTIONS, PRO_TIER_PLANS } from "@/lib/plans-gating";
+import { isAdminUser } from "@/lib/admin";
 
 interface PageProps {
   params: { projectId: string };
@@ -92,6 +94,7 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }, [project?.current_state, projectId, mutate]);
 
+
   // Hydrate BGM, logo, trim-silence, and the five caption knobs from
   // the project row on first load. Migrations 047 (BGM + logo) and 051
   // (trim + captions) backed these columns; /api/generate/assemble
@@ -155,8 +158,12 @@ export default function AssemblePage({ params }: PageProps) {
     const client = createSupabaseBrowserClient();
     client.auth.getUser().then(({ data }) => {
       if (cancelled) return;
-      const meta = (data.user?.app_metadata ?? {}) as { plan?: unknown; is_admin?: unknown };
-      if (meta.is_admin === true) {
+      const meta = (data.user?.app_metadata ?? {}) as { plan?: unknown };
+      // isAdminUser folds in both the app_metadata.is_admin flag AND
+      // the legacy hardcoded ADMIN_EMAILS backstop — otherwise the
+      // founder admin (recognised by email) would fail canUsePro and
+      // get locked out of 4K assemble.
+      if (isAdminUser(data.user)) {
         setUserPlan("admin");
       } else if (typeof meta.plan === "string" && meta.plan.trim()) {
         setUserPlan(meta.plan.trim().toLowerCase());
@@ -285,6 +292,7 @@ export default function AssemblePage({ params }: PageProps) {
   // instantly while the worker finishes its current ffmpeg stage and
   // persists the checkpoint.
   const stopRequested = !!project?.assembly_stop_requested;
+  const finalizeRequested = !!project?.assembly_finalize_preview_requested;
   // Confirm dialog for Reassemble. Reassemble doesn't start the run
   // directly anymore — it asks first, then on confirm flips the page
   // into reassembleMode, which hides the current assembled video and
@@ -316,6 +324,18 @@ export default function AssemblePage({ params }: PageProps) {
   const dbAssembledUrl = (project?.assembled_url as string | undefined) ?? null;
   const previewUrl: string | null = (reassembleMode || assembling) ? null : dbAssembledUrl;
   const showPreview = !!previewUrl;
+
+  // In-progress preview — the worker uploads mixed.mp4 (full audio +
+  // visuals at intermediate resolution, no captions/logo yet) as soon
+  // as the mix step lands, BEFORE the multi-minute final-burn pass.
+  // On the >80-beat path that burn can take 10-25 min; this gives
+  // the user something watchable while they wait. Only shown while
+  // assembly is still in progress; cleared by the worker on every
+  // terminal transition.
+  const inProgressPreviewUrl: string | null =
+    assembling && !reassembleMode
+      ? ((project?.assembly_preview_url as string | undefined) ?? null)
+      : null;
 
   // Inline preview-load error. The <video> element fires onError
   // when the src URL is unreachable (worker temp file vanished, R2
@@ -459,6 +479,54 @@ export default function AssemblePage({ params }: PageProps) {
     }
   }
 
+  // Step 1 of the two-step "ship the preview" flow.
+  // PATCHes the finalize-preview flag; the worker watches it
+  // alongside assembly_stop_requested and aborts to a stopped state
+  // with the flag preserved. The UI then shows a Continue button
+  // (in place of Resume) which calls commitPreview() to actually
+  // promote the preview to assembled_url.
+  async function finalizeWithPreview() {
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assembly_finalize_preview_requested: true }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to request finalize");
+      }
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Finalize failed");
+    }
+  }
+
+  // Step 2 of the two-step flow. Called from the Continue button on
+  // the stopped panel. Promotes assembly_preview_url to assembled_url
+  // and flips the project to done — no worker round-trip needed
+  // since mixed.mp4 is already in R2.
+  const [committingPreview, setCommittingPreview] = useState(false);
+  async function commitPreview() {
+    setCommittingPreview(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commit_preview: true }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Failed to commit preview");
+      }
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not use this preview");
+    } finally {
+      setCommittingPreview(false);
+    }
+  }
+
   // Confirm-Cancel action paired with Resume when assembly_status is
   // "stopped". Hits the cancel_assembly PATCH which wipes the
   // checkpoint folder + every assembly_* field on the project (but
@@ -531,36 +599,49 @@ export default function AssemblePage({ params }: PageProps) {
   // Upload the picked BGM file once and cache its URL on this page
   // for the lifetime of the file selection. Re-uploads only when the
   // user picks a different file. Returns null on no-file or failure.
+  // Shared upload helper. Uploads `file` to R2 via the presigned-URL
+  // flow, mirrors the URL into the project row immediately, and
+  // returns the public URL. Used by both the file-picker onChange
+  // (upload on select) and the Assemble click path (retry if state
+  // somehow has a file but no URL). The DB persist is fire-and-forget
+  // — UI already reflects the upload, a transient persist failure
+  // shouldn't block the user.
+  async function uploadAndPersist(
+    file: File,
+    kind: "bgm" | "logo",
+  ): Promise<string | null> {
+    const folder = kind === "bgm" ? "background-music" : "channel-logo";
+    const column = kind === "bgm" ? "background_music_url" : "logo_url";
+    const setUploading = kind === "bgm" ? setBgmUploading : setLogoUploading;
+    const setUrl = kind === "bgm" ? setBgmUploadedUrl : setLogoUploadedUrl;
+    setUploading(true);
+    try {
+      const url = await presignedUpload(file, projectId, folder);
+      setUrl(url);
+      fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [column]: url }),
+      }).catch(() => { /* non-blocking */ });
+      return url;
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : `${kind === "bgm" ? "Music" : "Logo"} upload failed`);
+      return null;
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function ensureBgmUploaded(): Promise<string | null> {
     if (!bgmFile) return null;
     if (bgmUploadedUrl) return bgmUploadedUrl;
-    setBgmUploading(true);
-    try {
-      const url = await presignedUpload(bgmFile, projectId, "background-music");
-      setBgmUploadedUrl(url);
-      return url;
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Music upload failed");
-      return null;
-    } finally {
-      setBgmUploading(false);
-    }
+    return uploadAndPersist(bgmFile, "bgm");
   }
 
   async function ensureLogoUploaded(): Promise<string | null> {
     if (!logoFile) return null;
     if (logoUploadedUrl) return logoUploadedUrl;
-    setLogoUploading(true);
-    try {
-      const url = await presignedUpload(logoFile, projectId, "channel-logo");
-      setLogoUploadedUrl(url);
-      return url;
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Logo upload failed");
-      return null;
-    } finally {
-      setLogoUploading(false);
-    }
+    return uploadAndPersist(logoFile, "logo");
   }
 
   // Clear local state AND the persisted URL on the project row so
@@ -694,7 +775,7 @@ export default function AssemblePage({ params }: PageProps) {
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={15} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
+      <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
         <div className="sm:px-8 lg:px-[60px] py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
@@ -703,8 +784,9 @@ export default function AssemblePage({ params }: PageProps) {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               Transcribes your voiceover to align each clip to the exact narration timing
             </p>
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
               <StepCostCard projectId={projectId} column="assemble" />
+              <StepBalanceCard />
             </div>
           </div>
         </div>
@@ -892,7 +974,12 @@ export default function AssemblePage({ params }: PageProps) {
                   if (!f) return;
                   setBgmFile(f);
                   // New file → invalidate any previously-uploaded URL
+                  // and immediately upload + persist so a refresh
+                  // doesn't lose the selection. Fire-and-forget
+                  // since the user may continue tweaking other
+                  // settings while the upload runs in the background.
                   setBgmUploadedUrl(null);
+                  void uploadAndPersist(f, "bgm");
                 }}
               />
             </div>
@@ -973,6 +1060,8 @@ export default function AssemblePage({ params }: PageProps) {
                     if (!f) return;
                     setLogoFile(f);
                     setLogoUploadedUrl(null);
+                    // Immediately upload + persist (same reasoning as bgm above).
+                    void uploadAndPersist(f, "logo");
                   }}
                 />
               </div>
@@ -1312,6 +1401,26 @@ export default function AssemblePage({ params }: PageProps) {
                 </div>
               )}
 
+              {/* In-progress preview — visible while assembling, only
+                  after the worker has uploaded mixed.mp4. The video is
+                  watchable but is missing the final-burn pass (captions
+                  + logo bake + upscale), so we label it clearly so the
+                  user knows the cosmetic touch-ups are still rendering. */}
+              {assembling && inProgressPreviewUrl && (
+                <div className="space-y-2">
+                  <video
+                    key={inProgressPreviewUrl}
+                    src={inProgressPreviewUrl}
+                    controls
+                    className="w-full rounded-xl"
+                    style={{ background: "var(--bg-page-2)" }}
+                  />
+                  <p className="text-sm text-center font-medium leading-snug" style={{ color: "oklch(0.72 0.18 60)" }}>
+                    Preview — finishing up
+                  </p>
+                </div>
+              )}
+
               {assembling && (() => {
                 /* Stage-aware progress: the worker emits short status strings
                    for each phase via setProgress(); we match the current one
@@ -1323,9 +1432,10 @@ export default function AssemblePage({ params }: PageProps) {
                    stripe keep moving while we wait the few seconds for the
                    worker to acknowledge — visually indistinguishable from
                    normal progress, which makes the Stop click feel ignored.
-                   Active when EITHER stopRequested (user just clicked) or
+                   Active when stopRequested (user clicked Stop),
+                   finalizeRequested (user clicked Use this version), or
                    the worker has already transitioned to "stopped". */
-                const paused = stopRequested || project?.assembly_status === "stopped";
+                const paused = stopRequested || finalizeRequested || project?.assembly_status === "stopped";
                 const stopped = project?.assembly_status === "stopped";
                 // Matchers are tightened so each one only catches its own
                 // worker progress string. The old "Downloading" prefix
@@ -1347,18 +1457,45 @@ export default function AssemblePage({ params }: PageProps) {
                 //     own stage when captions translation is needed.
                 //   - join only matches the final visuals concat now;
                 //     "Joining per-beat audio…" lands in voiceover.
-                const hasBgm = !!bgmUploadedUrl;
-                const needsTranslate = captionsEnabled && captionsLanguage !== "source";
+                // Five high-level stages. The previous 9-step layout
+                // exposed pipeline internals (transcribe, translate,
+                // download bgm, restore-from-checkpoint) that the
+                // user can't act on and that change run-to-run based
+                // on whether captions/translation/BGM are configured.
+                // Collapsing into Prepare / Build clips / Mix audio /
+                // Burn captions / Upload keeps the count stable and
+                // the labels meaningful regardless of options.
                 const stages = [
-                  { key: "load",       label: "Load project",        match: (s: string) => s.startsWith("Loading") || s === "Queued…" || s === "Starting…" },
-                  { key: "voiceover",  label: "Prepare voiceover",   match: (s: string) => s.startsWith("Preparing") || s.startsWith("Prepared") || s.startsWith("Downloading voiceover") || s === "Joining per-beat audio…" },
-                  ...(captionsEnabled ? [{ key: "transcribe", label: "Transcribe voiceover", match: (s: string) => s.startsWith("Transcribing") }] : []),
-                  ...(needsTranslate ? [{ key: "translate",  label: "Translate captions",   match: (s: string) => s.startsWith("Translating") }] : []),
-                  { key: "clips",      label: "Process video clips", match: (s: string) => s.startsWith("Processing") || s.startsWith("Downloading channel logo") || s.startsWith("Finalizing") },
-                  { key: "join",       label: "Join clips",          match: (s: string) => s === "Joining clips…" },
-                  ...(hasBgm ? [{ key: "bgm", label: "Download background music", match: (s: string) => s.startsWith("Downloading background music") }] : []),
-                  { key: "mix",        label: hasBgm ? "Mix voiceover + music" : "Mix voiceover", match: (s: string) => s.startsWith("Mixing") },
-                  { key: "upload",     label: "Upload to cloud",     match: (s: string) => s.startsWith("Uploading") },
+                  // Prepare: queue claim, voiceover ready, transcribe,
+                  // translate, channel-logo download (the latter is
+                  // an early-stage prereq, not part of clip encoding).
+                  { key: "prepare",    label: "Prepare",         match: (s: string) => (
+                    s.startsWith("Loading") || s === "Queued…" || s === "Starting…"
+                    || s.startsWith("Preparing") || s.startsWith("Prepared") || s.startsWith("Downloading voiceover") || s === "Joining per-beat audio…"
+                    || s.startsWith("Transcribing") || s.startsWith("Translating")
+                  ) },
+                  // Build clips: per-beat encode pass + the post-encode
+                  // "Finalizing…" debounce the worker emits when a
+                  // worker pool finishes its last beat.
+                  { key: "clips",      label: "Build clips",     match: (s: string) => s.startsWith("Processing") || s.startsWith("Finalizing") },
+                  // Mix audio: join clips, freeze-pad, BGM + logo
+                  // download, and the actual mix pass. Logo download
+                  // lives here now (used to be a Stage B prereq) so
+                  // both BGM and logo prep land in one user-visible
+                  // step. The freeze-pad only fires in legacy mode
+                  // with trailing silence; folding it in keeps step
+                  // counts run-stable.
+                  { key: "mix",        label: "Mix audio",       match: (s: string) => (
+                    s === "Joining clips…" || s.startsWith("Padding video") || s.startsWith("Restoring joined") || s.startsWith("Restoring padded")
+                    || s.startsWith("Downloading background music") || s.startsWith("Downloading channel logo")
+                    || s.startsWith("Mixing") || s.startsWith("Restoring mixed")
+                  ) },
+                  // Stage F removed in the post-Coconut refactor.
+                  // Captions are baked per-beat during Build clips;
+                  // logo composites at Mix audio; there's no final-
+                  // burn pass anymore. mixed.mp4 IS the final video,
+                  // which uploads directly from Stage D's output.
+                  { key: "upload",     label: "Upload",          match: (s: string) => s.startsWith("Uploading") },
                 ];
                 // Monotonic stage index: once we've seen progress to
                 // a later stage, don't ever fall back to an earlier
@@ -1391,6 +1528,15 @@ export default function AssemblePage({ params }: PageProps) {
                       {stages.map((s, i) => {
                         const done = i < currentIdx;
                         const doing = i === currentIdx;
+                        // While the in-progress preview is showing,
+                        // the user already knows the early stages
+                        // completed — they're watching the video.
+                        // Collapse the list to only the still-active
+                        // and pending steps so the panel focuses on
+                        // what they're waiting for (Finalize, Upload).
+                        // The overall % bar + "Step X of N" header
+                        // above keep showing total progress.
+                        if (inProgressPreviewUrl && done) return null;
                         /* Per-stage progress: parse "X of N" out of the status
                            when possible (clips stage). Otherwise we show an
                            indeterminate animated stripe so the user still sees
@@ -1469,30 +1615,79 @@ export default function AssemblePage({ params }: PageProps) {
                     </ul>
 
                     <p className="text-[11px] text-center leading-snug" style={{ color: paused ? "oklch(0.7 0.15 60)" : "var(--c-45)" }}>
-                      {/* When the user has clicked Stop but the worker
-                          hasn't acknowledged yet (status still
-                          "processing"), the last assembleStatus would
-                          read like normal progress and make Stop feel
-                          ignored. Surface "Stopping…" instead. Once the
-                          worker transitions to "stopped", the useEffect
-                          above sets assembleStatus to the stopped line
-                          so we fall through to the default branch. */}
-                      {paused && !stopped ? "Stopping…" : (assembleStatus || "Working…")}
+                      {/* While the worker is acknowledging an
+                          interrupt, surface the right "…" line so
+                          the click doesn't feel ignored. Once the
+                          worker transitions to stopped/done, the
+                          useEffect above sets assembleStatus to a
+                          terminal line and we fall through. */}
+                      {finalizeRequested && !stopped
+                        ? "Stopping to confirm preview…"
+                        : stopRequested && !stopped
+                        ? "Stopping…"
+                        : (assembleStatus || "Working…")}
                     </p>
 
                     {project?.assembly_status === "stopped" ? (
+                      // Two stopped flavors:
+                      //   - Stopped via "Use this version":
+                      //     assembly_finalize_preview_requested stays
+                      //     true after the worker's stop, signaling
+                      //     the user wants to ship the preview. Show
+                      //     Continue instead of Resume — clicking it
+                      //     promotes the preview to assembled_url and
+                      //     marks the assembly done without running
+                      //     any remaining work.
+                      //   - Stopped via Stop: the usual Resume path.
+                      finalizeRequested ? (
+                        <div className="flex gap-2">
+                          <button onClick={() => setCancelAssemblyConfirmOpen(true)}
+                            disabled={cancellingAssembly || committingPreview}
+                            className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
+                            style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
+                            Cancel
+                          </button>
+                          <button onClick={commitPreview}
+                            disabled={cancellingAssembly || committingPreview}
+                            className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+                            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                            {committingPreview ? "Continuing…" : "Continue"}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button onClick={() => setCancelAssemblyConfirmOpen(true)}
+                            disabled={cancellingAssembly}
+                            className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
+                            style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
+                            Cancel
+                          </button>
+                          <button onClick={resumeAssembly}
+                            disabled={cancellingAssembly}
+                            className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+                            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                            Resume
+                          </button>
+                        </div>
+                      )
+                    ) : inProgressPreviewUrl ? (
+                      // Two-button row whenever the in-progress preview
+                      // is available: "Use this version" promotes the
+                      // preview to the final assembled video and skips
+                      // the remaining final-burn re-encode (saves 5-25
+                      // min on long projects); Stop preserves the
+                      // checkpoint for later Resume. Disabled-state
+                      // labels reflect whichever click is in flight.
                       <div className="flex gap-2">
-                        <button onClick={() => setCancelAssemblyConfirmOpen(true)}
-                          disabled={cancellingAssembly}
+                        <button onClick={stopAssembly} disabled={stopRequested || finalizeRequested}
                           className="flex-1 py-2 rounded-xl text-xs font-medium transition-all hover:opacity-90 disabled:opacity-40"
                           style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}>
-                          Cancel
+                          {stopRequested ? "Stopping…" : "Stop"}
                         </button>
-                        <button onClick={resumeAssembly}
-                          disabled={cancellingAssembly}
+                        <button onClick={finalizeWithPreview} disabled={finalizeRequested || stopRequested}
                           className="flex-1 py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
                           style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-                          Resume
+                          {finalizeRequested ? "Finalizing…" : "Export anyway"}
                         </button>
                       </div>
                     ) : (

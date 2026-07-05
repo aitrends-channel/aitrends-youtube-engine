@@ -72,11 +72,32 @@ export async function POST(req: Request) {
       if (err.upstreamStatus === 429 && err.retryAfter != null) {
         headers["Retry-After"] = String(err.retryAfter);
       }
-      // 429 stays 429 so the alerting layer and any client retry logic
-      // can tell rate limits from real failures. Other upstream errors
-      // become 502 (bad gateway): the request was valid, KIE failed.
-      const status = err.upstreamStatus === 429 ? 429 : 502;
-      return NextResponse.json({ error: err.message, upstreamStatus: err.upstreamStatus }, { status, headers });
+      // Insufficient credits is a customer configuration issue, not a
+      // server failure — surface as 402 so Vercel doesn't page on it
+      // and the client can render "top up your KIE balance" instead of
+      // a generic error. 429 stays 429 for rate-limit retry logic.
+      // Everything else becomes 502 (bad gateway): valid request, KIE
+      // failed.
+      let status: number;
+      let code: string | undefined;
+      if (err.insufficientCredits) {
+        status = 402;
+        code = "insufficient_credits";
+      } else if (err.upstreamStatus === 429) {
+        status = 429;
+      } else {
+        status = 502;
+      }
+      return NextResponse.json(
+        {
+          error: err.insufficientCredits
+            ? "Your KIE account is out of credits. Add credits at kie.ai and try again."
+            : err.message,
+          code,
+          upstreamStatus: err.upstreamStatus,
+        },
+        { status, headers },
+      );
     }
 
     const message = err instanceof Error ? err.message : "Failed to submit image task";

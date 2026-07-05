@@ -4,11 +4,12 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { StepCostCard } from "@/components/StepCostCard";
+import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
-import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPreview";
+import { SequentialVoiceoverPreview } from "@/components/voiceover/SequentialVoiceoverPreview";
 import { RotateCw, ChevronUp, ChevronDown } from "lucide-react";
 
 // Per-beat voiceover step. Each beat shows its own row with status,
@@ -763,7 +764,7 @@ export default function VoiceoverPage({ params }: PageProps) {
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={9} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
+      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
         <div className="shrink-0 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
@@ -772,8 +773,9 @@ export default function VoiceoverPage({ params }: PageProps) {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               One narration clip per beat. Each beat&apos;s clip is the timing source for its visual — no matcher, no drift.
             </p>
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
               <StepCostCard projectId={projectId} column="voiceover" />
+              <StepBalanceCard />
             </div>
           </div>
         </div>
@@ -1238,10 +1240,13 @@ export default function VoiceoverPage({ params }: PageProps) {
               user reviews each beat individually first, then hears the
               whole narration end-to-end. Renders as soon as ANY beat
               has audio (live overlay or persisted) so the user can
-              start listening before the full run finishes. */}
+              start listening before the full run finishes. Plays the
+              per-beat mp3s in order client-side — no server concat
+              (that stays on the assemble page where the trim-silence
+              A/B compare genuinely needs ffmpeg). */}
           {(beats.some((b) => !!b.voiceoverUrl)
             || Array.from(liveBeats.values()).some((s) => s.status === "done" && !!s.url)) && (
-            <FullVoiceoverPreview projectId={projectId} beats={beats} liveBeats={liveBeats} />
+            <SequentialVoiceoverPreview beats={beats} liveBeats={liveBeats} />
           )}
           </>
           )}

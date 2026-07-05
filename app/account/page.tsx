@@ -5,9 +5,193 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Eye, EyeOff, KeyRound, LogOut, Save } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, KeyRound, LogOut, Save, Star } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+
+/** "Your feedback" card. Rendered only when the user has already
+ *  responded to the one-time feedback prompt (row exists) — lets them
+ *  revise the rating/text, and lets users who skipped add one later. */
+function FeedbackCard() {
+  const [loaded, setLoaded] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/feedback", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d: { hasResponded?: boolean; rating?: number | null; feedbackText?: string | null; firstName?: string | null; lastName?: string | null } | null) => {
+        if (cancelled || !d) return;
+        setVisible(d.hasResponded === true);
+        if (typeof d.rating === "number") setRating(d.rating);
+        if (typeof d.feedbackText === "string") setFeedbackText(d.feedbackText);
+        if (typeof d.firstName === "string") setFirstName(d.firstName);
+        if (typeof d.lastName === "string") setLastName(d.lastName);
+        setLoaded(true);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!loaded || !visible) return null;
+
+  async function handleSave() {
+    if (rating < 1) {
+      toast.error("Please select a rating first");
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rating,
+          feedbackText: feedbackText.trim() || undefined,
+          firstName: firstName.trim() || undefined,
+          lastName: lastName.trim() || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error ?? "Failed to save feedback");
+      }
+      toast.success("Feedback saved.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save feedback");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const activeRating = hoverRating || rating;
+
+  return (
+    <div className="space-y-5 pt-8">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: "oklch(0.75 0.15 85 / 0.12)", border: "1px solid oklch(0.75 0.15 85 / 0.25)" }}>
+          <Star size={18} style={{ color: "oklch(0.75 0.15 85)" }} />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Your feedback</h2>
+          <p className="text-xs" style={{ color: "var(--c-45)" }}>
+            {rating > 0 ? "Update your rating or feedback anytime." : "You skipped the rating earlier — you can add one here."}
+          </p>
+        </div>
+      </div>
+
+      <div className="p-5 rounded-2xl space-y-4"
+        style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+        <div className="flex items-center gap-1.5">
+          {[1, 2, 3, 4, 5].map((n) => {
+            const filled = n <= activeRating;
+            return (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setRating(n)}
+                onMouseEnter={() => setHoverRating(n)}
+                onMouseLeave={() => setHoverRating(0)}
+                disabled={saving}
+                aria-label={`Rate ${n} of 5`}
+                className="p-0.5 transition-transform hover:scale-110 disabled:cursor-not-allowed"
+              >
+                <Star
+                  size={26}
+                  strokeWidth={1.5}
+                  className={filled ? "fill-amber-400 stroke-amber-400" : "fill-transparent stroke-current"}
+                  style={filled ? undefined : { color: "var(--c-30)" }}
+                />
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <label htmlFor="account-feedback-first-name" className="text-xs font-medium" style={{ color: "var(--c-50)" }}>First name</label>
+            <input
+              id="account-feedback-first-name"
+              type="text"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              disabled={saving}
+              maxLength={100}
+              placeholder="First name"
+              className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all disabled:opacity-60"
+              style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="account-feedback-last-name" className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Last name</label>
+            <input
+              id="account-feedback-last-name"
+              type="text"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              disabled={saving}
+              maxLength={100}
+              placeholder="Last name"
+              className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all disabled:opacity-60"
+              style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label htmlFor="account-feedback-text" className="text-xs font-medium" style={{ color: "var(--c-50)" }}>
+            Feedback <span style={{ color: "var(--c-35)" }}>(optional)</span>
+          </label>
+          <textarea
+            id="account-feedback-text"
+            value={feedbackText}
+            onChange={(e) => setFeedbackText(e.target.value)}
+            disabled={saving}
+            rows={3}
+            maxLength={1000}
+            placeholder="What went well, what would you improve…"
+            className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all resize-none disabled:opacity-60"
+            style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
+          />
+        </div>
+
+        <div className="flex justify-end pt-1">
+          <button
+            onClick={handleSave}
+            disabled={saving || rating < 1}
+            className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center gap-2"
+            style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+          >
+            {saving ? (
+              <>
+                <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Saving…
+              </>
+            ) : (
+              <>
+                <Save size={14} />
+                Save feedback
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 /**
  * Standalone /account page. Used to be a tab on /setup; lifted to its
@@ -104,6 +288,12 @@ export default function AccountPage() {
       // a second submit without refresh asks for the password we just
       // set rather than skipping reauth.
       setHasPassword(true);
+      // Push updated session cookies + identity list to any server
+      // components that already rendered against the pre-password
+      // user object. Without this, RSC-driven surfaces (nav, header
+      // avatar, etc.) show the stale identity set until the user
+      // manually reloads the page.
+      router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update password.");
     } finally {
@@ -288,6 +478,8 @@ export default function AccountPage() {
               </div>
             </form>
           )}
+
+          <FeedbackCard />
         </div>
       </main>
     </div>

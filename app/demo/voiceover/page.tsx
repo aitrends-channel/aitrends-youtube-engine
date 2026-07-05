@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
@@ -47,6 +47,20 @@ export default function DemoVoiceoverPage() {
   const { state, update } = useDemoState();
   const { selectedVoice, ttsPhase } = state;
   const [navigating, setNavigating] = useState(false);
+  // Force the <audio> element to re-fetch its source when the phase
+  // flips into "done" after Generate/Regen. Chrome renders the controls
+  // but leaves the media unloaded — timer stuck at --:-- and pressing
+  // play does nothing — unless we (a) mount the element fresh via a
+  // changing key, and (b) call .load() from a callback ref the moment
+  // the element attaches to the DOM. The earlier useEffect-only fix
+  // raced with mount and sometimes ran with a null ref.
+  const [audioReloadTick, setAudioReloadTick] = useState(0);
+  useEffect(() => {
+    if (ttsPhase === "done") setAudioReloadTick((t) => t + 1);
+  }, [ttsPhase]);
+  const attachAudio = (el: HTMLAudioElement | null) => {
+    if (el) el.load();
+  };
   // Voices have gender as their first tag ("Male" or "Female"). The
   // tab state lives locally — picking a gender just filters the visible
   // grid, it doesn't alter selectedVoice, so a user can pick Liam under
@@ -163,10 +177,17 @@ export default function DemoVoiceoverPage() {
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Original</span>
-                      <a href="/demo/voiceover/demo-voiceover_short.mp3" download="voiceover.mp3"
+                      <a href="/demo/voiceover/voiceover.mp3" download="voiceover.mp3"
                         className="text-xs" style={{ color: "var(--c-45)" }}>↓ Download</a>
                     </div>
-                    <audio controls src="/demo/voiceover/demo-voiceover_short.mp3" className="w-full h-8" />
+                    <audio
+                      key={audioReloadTick}
+                      ref={attachAudio}
+                      controls
+                      src="/demo/voiceover/voiceover.mp3"
+                      preload="auto"
+                      className="w-full h-8"
+                    />
                   </div>
                   <div className="flex gap-2">
                     <button disabled

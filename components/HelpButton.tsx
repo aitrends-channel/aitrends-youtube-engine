@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { HelpCircle, Send, X, CheckCircle2, ChevronDown } from "lucide-react";
+import { HelpCircle, Send, X, CheckCircle2, ChevronDown, LifeBuoy, Star } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { FeedbackDialog } from "@/components/FeedbackDialog";
 
 // Floating help bubble, bottom-right on every page. Opens a small
 // white dialog with a fixed-list FAQ and a contact form that files
@@ -53,6 +54,21 @@ const FAQS: Faq[] = [
 
 export function HelpButton() {
   const [open, setOpen] = useState(false);
+  // Chooser menu (Support / Feedback) shown above the bubble. The
+  // bubble no longer opens the support dialog directly.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // Feedback requires auth (rows are keyed to user_id) — hide the
+  // option for anonymous visitors. getSession reads local storage, so
+  // this costs nothing on page load.
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    createSupabaseBrowserClient().auth.getSession().then(({ data }) => {
+      if (!cancelled && data.session) setSignedIn(true);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
   const [authEmail, setAuthEmail] = useState<string | null>(null);
   const [emailInput, setEmailInput] = useState("");
   const [subject, setSubject] = useState("");
@@ -124,14 +140,46 @@ export function HelpButton() {
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
-        aria-label="Open help"
+        onClick={() => setMenuOpen((v) => !v)}
+        aria-label="Open help menu"
         title="Help"
         className="fixed bottom-5 right-5 z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-105 active:scale-95 cursor-pointer"
         style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 6px 18px oklch(0.72 0.25 285 / 0.45)" }}
       >
-        <HelpCircle size={22} />
+        {menuOpen ? <X size={20} /> : <HelpCircle size={22} />}
       </button>
+
+      {/* Support / Feedback chooser — small white card above the bubble. */}
+      {menuOpen && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+          <div
+            className="fixed bottom-[4.75rem] right-5 z-50 w-48 rounded-xl bg-white shadow-2xl p-1.5 space-y-0.5"
+            style={{ border: "1px solid oklch(0 0 0 / 0.08)" }}
+          >
+            <button
+              type="button"
+              onClick={() => { setMenuOpen(false); setOpen(true); }}
+              className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer text-left"
+            >
+              <LifeBuoy size={16} style={{ color: "oklch(0.72 0.25 285)" }} />
+              Support
+            </button>
+            {signedIn && (
+              <button
+                type="button"
+                onClick={() => { setMenuOpen(false); setFeedbackOpen(true); }}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer text-left"
+              >
+                <Star size={16} style={{ color: "oklch(0.75 0.15 85)" }} />
+                Feedback
+              </button>
+            )}
+          </div>
+        </>
+      )}
+
+      <FeedbackDialog open={feedbackOpen} onClose={() => setFeedbackOpen(false)} />
 
       <Dialog open={open} onOpenChange={(v) => (v ? setOpen(true) : closeAndReset())}>
         <DialogContent
@@ -220,6 +268,40 @@ export function HelpButton() {
                 );
               })}
             </div>
+
+            {/* Community CTA — Discord. Sits above the ticket form so
+                users see the peer channel before filing a ticket; kept
+                calm (single line, brand-tinted) so it doesn't drown
+                out the primary Contact action. Renders in both the
+                form and the post-submit "sent" states. */}
+            <a
+              href="https://discord.gg/N53RuARnwn"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-[color:oklch(0.55_0.22_270/0.06)]"
+              style={{ border: "1px solid oklch(0.55 0.22 270 / 0.25)", background: "oklch(0.55 0.22 270 / 0.04)" }}
+            >
+              <span className="flex items-center gap-2.5">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  aria-hidden="true"
+                  className="shrink-0"
+                >
+                  <path
+                    d="M19.27 5.33A17.5 17.5 0 0 0 14.9 4l-.22.4a15.9 15.9 0 0 0-5.36 0L9.1 4a17.5 17.5 0 0 0-4.37 1.33C1.94 9.5 1.2 13.55 1.57 17.55a17.7 17.7 0 0 0 5.4 2.73l.44-.6a12.7 12.7 0 0 1-2-1c.17-.13.34-.26.5-.4a12.6 12.6 0 0 0 12.18 0l.5.4c-.62.38-1.3.72-2 1l.44.6a17.7 17.7 0 0 0 5.4-2.73c.46-4.63-.75-8.65-3.16-12.22ZM8.52 15.33c-1.06 0-1.94-1-1.94-2.22 0-1.23.85-2.22 1.94-2.22 1.09 0 1.96 1 1.94 2.22 0 1.23-.85 2.22-1.94 2.22Zm6.96 0c-1.06 0-1.93-1-1.93-2.22 0-1.23.85-2.22 1.93-2.22 1.09 0 1.96 1 1.94 2.22 0 1.23-.85 2.22-1.94 2.22Z"
+                    fill="oklch(0.55 0.22 270)"
+                  />
+                </svg>
+                <span className="flex flex-col leading-tight">
+                  <span className="text-sm font-semibold text-zinc-900">Join our Discord community</span>
+                  <span className="text-xs text-zinc-500">Ask other creators, share workflows, get faster answers.</span>
+                </span>
+              </span>
+              <span className="text-xs font-semibold shrink-0" style={{ color: "oklch(0.55 0.22 270)" }}>Open →</span>
+            </a>
 
             <div className="mt-5 pt-4 border-t border-zinc-200">
             {sent ? (

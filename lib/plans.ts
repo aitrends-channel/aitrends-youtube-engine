@@ -18,6 +18,11 @@ export interface Plan {
   slug: string;
   name: string;
   priceDisplay: string;
+  /** Actual chargeable amount in the smallest currency unit (cents).
+   * Read by /api/dodo/verify's price guard and /api/plan's post-webhook
+   * plan backfill. Null when the plan has no strict price (custom,
+   * gifted, etc.) — guard skips those. */
+  priceCents: number | null;
   periodDisplay: string;
   limitDisplay: string;
   features: string[];
@@ -35,6 +40,7 @@ interface PlanRow {
   slug: string;
   name: string;
   price_display: string;
+  price_cents: number | null;
   period_display: string;
   limit_display: string;
   features: unknown;
@@ -53,6 +59,7 @@ function rowToPlan(r: PlanRow, mode: PaymentMode): Plan {
     slug: r.slug,
     name: r.name,
     priceDisplay: r.price_display,
+    priceCents: typeof r.price_cents === "number" ? r.price_cents : null,
     periodDisplay: r.period_display,
     limitDisplay: r.limit_display,
     features: Array.isArray(r.features) ? (r.features as string[]) : [],
@@ -95,11 +102,13 @@ export async function getPaymentSettings(): Promise<{
   baseUrlProduction: string | null;
   webhookSecretTest: string | null;
   webhookSecretProduction: string | null;
+  customerPortalUrlTest: string | null;
+  customerPortalUrlProduction: string | null;
 }> {
   const mode = getEffectivePaymentMode();
   const { data, error } = await supabase
     .from("product_config")
-    .select("dodo_production_test_link, dodo_secret_key_test, dodo_secret_key_production, dodo_base_url_test, dodo_base_url_production, dodo_webhook_secret_test, dodo_webhook_secret_production")
+    .select("dodo_production_test_link, dodo_secret_key_test, dodo_secret_key_production, dodo_base_url_test, dodo_base_url_production, dodo_webhook_secret_test, dodo_webhook_secret_production, dodo_customer_portal_url_test, dodo_customer_portal_url_production")
     .eq("service", "_global")
     .maybeSingle();
   if (error) {
@@ -113,6 +122,8 @@ export async function getPaymentSettings(): Promise<{
       baseUrlProduction: null,
       webhookSecretTest: null,
       webhookSecretProduction: null,
+      customerPortalUrlTest: null,
+      customerPortalUrlProduction: null,
     };
   }
   const row = data as {
@@ -123,6 +134,8 @@ export async function getPaymentSettings(): Promise<{
     dodo_base_url_production: string | null;
     dodo_webhook_secret_test: string | null;
     dodo_webhook_secret_production: string | null;
+    dodo_customer_portal_url_test: string | null;
+    dodo_customer_portal_url_production: string | null;
   } | null;
   const trimOrNull = (v: string | null | undefined) => v?.trim() || null;
   return {
@@ -134,6 +147,8 @@ export async function getPaymentSettings(): Promise<{
     baseUrlProduction: trimOrNull(row?.dodo_base_url_production),
     webhookSecretTest: trimOrNull(row?.dodo_webhook_secret_test),
     webhookSecretProduction: trimOrNull(row?.dodo_webhook_secret_production),
+    customerPortalUrlTest: trimOrNull(row?.dodo_customer_portal_url_test),
+    customerPortalUrlProduction: trimOrNull(row?.dodo_customer_portal_url_production),
   };
 }
 

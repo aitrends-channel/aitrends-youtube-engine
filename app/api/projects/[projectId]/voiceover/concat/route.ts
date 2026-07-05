@@ -7,7 +7,7 @@ import { Readable } from "stream";
 import { ReadableStream as NodeReadableStream } from "stream/web";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
-import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
+import { uploadBuffer, userFolderFor, objectExists, getObjectToFile, r2KeyFromUrl } from "@/lib/supabase/storage";
 import type { User } from "@supabase/supabase-js";
 
 // fluent-ffmpeg + ffmpeg-static loaded via createRequire so the ESM
@@ -38,15 +38,6 @@ function hashUrls(urls: string[]): string {
   return createHash("sha1").update(urls.join("\n")).digest("hex").slice(0, 16);
 }
 
-async function r2HeadExists(publicUrl: string): Promise<boolean> {
-  try {
-    const res = await fetch(publicUrl, { method: "HEAD", cache: "no-store" });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
 async function downloadToFile(url: string, dest: string): Promise<void> {
   const res = await fetch(url);
   if (!res.ok || !res.body) throw new Error(`Failed to fetch ${url}: HTTP ${res.status}`);
@@ -57,30 +48,50 @@ async function downloadToFile(url: string, dest: string): Promise<void> {
   });
 }
 
-// Retry wrapper — undici's "fetch failed" (transport-layer error) is
-// almost always transient: DNS hiccup, socket reset, connection-pool
-// exhaustion when many parallel downloads burst. Two quick retries
-// clear the vast majority of cases. HTTP-status failures
-// (`HTTP 4xx/5xx`) are not retried — those won't change on retry.
+// Retry wrapper — retries on:
+//   • transport-layer errors (undici "fetch failed", ECONNRESET, ...) —
+//     usually a DNS hiccup or connection-pool exhaustion under burst
+//   • HTTP 429 (rate limit) and 5xx (R2 SlowDown / transient 500-503)
+//     — the concat route bursts 6 R2 downloads at once for a big script
+//     and R2 will throttle under load; a couple of backed-off retries
+//     clear it. Non-retryable HTTP 4xx (404, 403, ...) fail fast.
+// Backoff grows exponentially with jitter so parallel workers don't
+// re-collide on the same tick after being throttled.
 async function downloadToFileWithRetry(url: string, dest: string): Promise<void> {
-  const delays = [500, 1500];
-  for (let attempt = 0; attempt <= delays.length; attempt++) {
+  // Prefer the S3 API when the URL is one of our bucket's public URLs.
+  // The pub-*.r2.dev development subdomain is rate-limited by
+  // Cloudflare — a page full of beat players plus this route's
+  // parallel downloads reliably trips sustained 429s that outlast any
+  // retry budget (the 2026-07-05 preview failure). The S3 endpoint has
+  // no r2.dev throttle and the client retries internally (maxAttempts 6).
+  const key = r2KeyFromUrl(url);
+  if (key) {
+    await getObjectToFile(key, dest);
+    return;
+  }
+  const baseDelays = [500, 1500, 4000, 9000];
+  for (let attempt = 0; attempt <= baseDelays.length; attempt++) {
     try {
       await downloadToFile(url, dest);
       return;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      const transient = /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i.test(msg);
-      if (!transient || attempt === delays.length) throw e;
-      console.warn(`[voiceover-concat] download attempt ${attempt + 1} failed (${msg}); retrying in ${delays[attempt]}ms`);
-      await new Promise((r) => setTimeout(r, delays[attempt]));
+      const transportError = /fetch failed|ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up/i.test(msg);
+      const rateLimit = /HTTP 429|HTTP 5\d\d/.test(msg);
+      const retryable = transportError || rateLimit;
+      if (!retryable || attempt === baseDelays.length) throw e;
+      const jitter = Math.floor(Math.random() * 400);
+      const delay = baseDelays[attempt] + jitter;
+      console.warn(`[voiceover-concat] download attempt ${attempt + 1} failed (${msg}); retrying in ${delay}ms`);
+      await new Promise((r) => setTimeout(r, delay));
     }
   }
 }
 
-// Bounded parallelism — run `tasks` with at most `limit` in flight.
-// Avoids the burst-of-30-parallel-fetches pattern that exhausts
-// undici's connection pool and surfaces as "fetch failed".
+// Bounded parallelism — run `items` through `fn` with at most `limit`
+// in flight. Caps ffmpeg/fetch fan-out on long projects where
+// Promise.all would otherwise blow past the lambda fd limit (EMFILE)
+// or undici's connection pool ("fetch failed").
 async function runWithLimit<T>(items: T[], limit: number, fn: (item: T, idx: number) => Promise<void>): Promise<void> {
   let next = 0;
   const worker = async () => {
@@ -173,8 +184,10 @@ export async function POST(req: Request, { params }: { params: { projectId: stri
   const storagePath = `${userFolderFor(user)}/${projectId}/voiceover-preview-${hash}-${variant}.mp3`;
   const cachedUrl = `${process.env.R2_PUBLIC_URL?.replace(/\/$/, "")}/${storagePath}`;
 
-  // Cache hit: same beat URLs + variant → same hash → file already in R2.
-  if (await r2HeadExists(cachedUrl)) {
+  // Cache hit: same beat URLs + variant → same hash → file already in
+  // R2. Checked via the S3 API — a HEAD against the public r2.dev URL
+  // both burned and was subject to the r2.dev rate limit.
+  if (await objectExists(storagePath)) {
     console.log(`[voiceover-concat] project=${projectId} cache hit hash=${hash} variant=${variant} (${urls.length} beats)`);
     return NextResponse.json({ url: cachedUrl, cached: true, beats: urls.length, trimSilence });
   }
@@ -182,29 +195,41 @@ export async function POST(req: Request, { params }: { params: { projectId: stri
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), `vo-concat-${projectId}-`));
   const audioPaths: string[] = [];
   try {
-    // Download all beats in parallel, capped at 6 concurrent. Order is
+    // Download all beats in parallel, capped at 4 concurrent. Order is
     // preserved by writing to audioPaths[i] (index, not completion).
     // Unbounded Promise.all here used to open one socket per beat at
     // once — 30+ simultaneous HTTPS fetches reliably tripped undici's
-    // "fetch failed" under any network blip. 6 stays well under the
-    // pool limit while keeping wall-clock essentially the same on
-    // typical script sizes.
-    await runWithLimit(withAudio, 6, async (b, i) => {
+    // "fetch failed" under any network blip. Dropped from 6 → 4 after
+    // R2 started returning 429/5xx under sustained burst on long
+    // scripts; the retry loop above catches occasional throttles but
+    // narrower concurrency keeps the request rate below R2's
+    // per-prefix throttle window.
+    await runWithLimit(withAudio, 4, async (b, i) => {
       const dest = path.join(tmpDir, `b${String(i).padStart(4, "0")}.mp3`);
       await downloadToFileWithRetry(b.voiceover_url!, dest);
       audioPaths[i] = dest;
     });
 
-    // Optional silence-trim pass per beat. Runs in parallel for speed;
-    // every output uses the same codec/sample rate (mp3 128k 44.1kHz)
-    // so the downstream concat -c copy is still valid.
-    const concatPaths = trimSilence
-      ? await Promise.all(audioPaths.map(async (src, i) => {
-          const dest = path.join(tmpDir, `t${String(i).padStart(4, "0")}.mp3`);
-          await trimSilenceOne(src, dest);
-          return dest;
-        }))
-      : audioPaths;
+    // Optional silence-trim pass per beat. Bounded at 4 concurrent
+    // ffmpeg spawns — Promise.all over hundreds of beats blew past
+    // the Vercel lambda's file-descriptor limit with EMFILE on big
+    // projects. Each ffmpeg spawn holds 3 descriptors (stdio) + the
+    // two file handles it opens, and the default ulimit is 1024.
+    // Cap at 4 leaves comfortable headroom for the lambda's own
+    // sockets and any other concurrent work. Every output still uses
+    // mp3 128k 44.1kHz so the downstream concat -c copy is valid.
+    let concatPaths: string[];
+    if (trimSilence) {
+      const trimmed: string[] = new Array(audioPaths.length);
+      await runWithLimit(audioPaths, 4, async (src, i) => {
+        const dest = path.join(tmpDir, `t${String(i).padStart(4, "0")}.mp3`);
+        await trimSilenceOne(src, dest);
+        trimmed[i] = dest;
+      });
+      concatPaths = trimmed;
+    } else {
+      concatPaths = audioPaths;
+    }
 
     const listPath = path.join(tmpDir, "concat.txt");
     await fs.writeFile(

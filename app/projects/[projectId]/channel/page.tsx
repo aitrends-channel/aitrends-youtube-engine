@@ -6,6 +6,7 @@ import { AlertCircle, ArrowUpRight } from "lucide-react";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
 import { StepCostCard } from "@/components/StepCostCard";
+import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { isAdminUser } from "@/lib/admin";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -690,7 +691,7 @@ export default function ChannelPage({ params }: PageProps) {
     <div className="flex h-screen overflow-x-hidden">
       <WizardNav projectId={projectId} currentState={1} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 min-w-0 overflow-y-auto pt-[105px] md:pt-0">
+      <main className="flex-1 min-w-0 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
         <div className="sm:px-8 pt-6 sm:pt-10 pb-24 space-y-8">
 
           {/* Header */}
@@ -699,12 +700,13 @@ export default function ChannelPage({ params }: PageProps) {
             <p className="text-sm mt-1" style={{ color: "var(--c-50)" }}>
               Enter a YouTube channel URL to automatically extract style DNA and generate content.
             </p>
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
               <StepCostCard
                 projectId={projectId}
                 column="channel_analysis"
                 hideUnitKinds={isAdmin ? undefined : ["supadata_transcripts"]}
               />
+              <StepBalanceCard />
             </div>
           </div>
 

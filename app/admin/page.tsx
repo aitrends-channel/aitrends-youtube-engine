@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -20,6 +20,7 @@ import { isAdminUser } from "@/lib/admin";
 import EmailsPanel from "./EmailsPanel";
 import { TtsCostLens } from "@/components/admin/TtsCostLens";
 import { SupportPanel } from "@/components/admin/SupportPanel";
+import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
 import { MemoryPanel } from "@/components/admin/MemoryPanel";
 
 const PHASE_PATHS: Record<number, string> = {
@@ -1407,6 +1408,20 @@ function ModelDefaultsPanel() {
   );
 }
 
+const ASSEMBLY_RESOLUTIONS = ["720p", "1080p", "1440p", "2160p"] as const;
+type AssemblyResolution = (typeof ASSEMBLY_RESOLUTIONS)[number];
+type AssemblyBeatRule = {
+  name: string;
+  when: {
+    resolution?: AssemblyResolution;
+    maxBeats?: number;
+    minBeats?: number;
+    allImages?: boolean;
+    captionsEnabled?: boolean;
+  };
+  value: number;
+};
+
 type ConcurrencyConfig = {
   video_worker: number;
   image_prompts_chunks: number;
@@ -1417,13 +1432,16 @@ type ConcurrencyConfig = {
   tts_beat_batch: number;
   assembly_projects: number;
   assembly_beats: number;
+  assembly_beats_rules: AssemblyBeatRule[];
 };
+
+type ConcurrencyNumericKey = Exclude<keyof ConcurrencyConfig, "assembly_beats_rules">;
 
 // Mirrors lib/concurrency-config.ts CONCURRENCY_FIELDS + CONCURRENCY_DEFAULTS —
 // kept in sync by hand. Defaults live here too so the UI can seed the
 // inputs and the "Reset to defaults" button without an extra round-trip.
 const CONCURRENCY_FIELDS: {
-  key: keyof ConcurrencyConfig;
+  key: ConcurrencyNumericKey;
   label: string;
   description: string;
   default: number;
@@ -1439,7 +1457,7 @@ const CONCURRENCY_FIELDS: {
   { key: "image_generation_batch", label: "AI image generation",  description: "How many images generated at once.",   default: 3, min: 1, max: 20, group: "Media" },
   { key: "assembly_projects",      label: "Projects",            description: "How many videos assembled at once.",   default: 1, min: 1, max: 5,  group: "Assemble" },
   { key: "assembly_beats",         label: "Beats",               description: "Beats processed at once per video.",   default: 1, min: 1, max: 10, group: "Assemble" },
-  { key: "finish_images_poll",     label: "Image finishers",     description: "Workers finalizing completed images.", default: 5, min: 1, max: 50, disabled: true, group: "Others" },
+  { key: "finish_images_poll",     label: "Image finishers",     description: "Workers finalizing completed images.", default: 5, min: 1, max: 50, group: "Others" },
   { key: "thumbnail_batch",        label: "Thumbnail batch",     description: "Thumbnails generated per batch.",      default: 2, min: 1, max: 20, group: "Others" },
 ];
 
@@ -1450,12 +1468,12 @@ function ConcurrencyPanel() {
     { revalidateOnFocus: false },
   );
 
-  const [draft, setDraft] = useState<Record<keyof ConcurrencyConfig, string>>(() => {
-    const seed = {} as Record<keyof ConcurrencyConfig, string>;
+  const [draft, setDraft] = useState<Record<ConcurrencyNumericKey, string>>(() => {
+    const seed = {} as Record<ConcurrencyNumericKey, string>;
     for (const f of CONCURRENCY_FIELDS) seed[f.key] = String(f.default);
     return seed;
   });
-  const [savingKey, setSavingKey] = useState<keyof ConcurrencyConfig | null>(null);
+  const [savingKey, setSavingKey] = useState<ConcurrencyNumericKey | null>(null);
   const hydratedRef = useRef(false);
 
   useEffect(() => {
@@ -1476,7 +1494,7 @@ function ConcurrencyPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
 
-  function parsedField(key: keyof ConcurrencyConfig) {
+  function parsedField(key: ConcurrencyNumericKey) {
     const raw = draft[key].trim();
     if (raw === "") return { value: null as number | null, valid: false };
     const n = Number(raw);
@@ -1485,13 +1503,13 @@ function ConcurrencyPanel() {
     return { value: n, valid };
   }
 
-  function isDirty(key: keyof ConcurrencyConfig): boolean {
+  function isDirty(key: ConcurrencyNumericKey): boolean {
     if (!data) return false;
     const { value } = parsedField(key);
     return value !== data[key];
   }
 
-  async function saveField(key: keyof ConcurrencyConfig) {
+  async function saveField(key: ConcurrencyNumericKey) {
     const { value, valid } = parsedField(key);
     if (!valid || value == null) {
       toast.error("Fix the value before saving");
@@ -1522,6 +1540,7 @@ function ConcurrencyPanel() {
     for (const f of CONCURRENCY_FIELDS) next[f.key] = String(f.default);
     setDraft(next);
   }
+
 
   return (
     <div className="space-y-4">
@@ -1630,6 +1649,7 @@ function ConcurrencyPanel() {
                   {b.group}
                 </h3>
                 {b.fields.map((f) => renderRow(f, true))}
+                {b.group === "Assemble" && <AssemblyBeatRulesPanel />}
               </div>
             );
           });
@@ -1645,6 +1665,213 @@ function ConcurrencyPanel() {
         >
           <RotateCcw size={14} />
           Reset to defaults
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AssemblyBeatRulesPanel() {
+  // Same endpoint as ConcurrencyPanel — SWR dedupes the request.
+  const { data, mutate, isLoading } = useSWR<ConcurrencyConfig>(
+    "/api/admin/concurrency",
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+
+  const [draft, setDraft] = useState<AssemblyBeatRule[]>([]);
+  const [saving, setSaving] = useState(false);
+  const hydratedRef = useRef(false);
+
+  useEffect(() => {
+    if (!data || hydratedRef.current) return;
+    if (!Array.isArray((data as Record<string, unknown>).assembly_beats_rules)) return;
+    hydratedRef.current = true;
+    setDraft(JSON.parse(JSON.stringify(data.assembly_beats_rules)) as AssemblyBeatRule[]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
+
+  const serverSerialized = JSON.stringify(data?.assembly_beats_rules ?? []);
+  const draftSerialized = JSON.stringify(draft);
+  const dirty = serverSerialized !== draftSerialized;
+
+  function updateRule(idx: number, patch: Partial<AssemblyBeatRule>) {
+    setDraft((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  }
+  function updateRuleWhen(idx: number, patch: Partial<AssemblyBeatRule["when"]>) {
+    setDraft((prev) => prev.map((r, i) => (i === idx ? { ...r, when: { ...r.when, ...patch } } : r)));
+  }
+  function removeRule(idx: number) {
+    setDraft((prev) => prev.filter((_, i) => i !== idx));
+  }
+  function addRule() {
+    setDraft((prev) => [...prev, { name: `Rule ${prev.length + 1}`, when: {}, value: 1 }]);
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/concurrency", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ assembly_beats_rules: draft }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? "Failed to save");
+      toast.success("Rules saved");
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputStyle = {
+    background: "var(--bg-input)",
+    border: "1px solid var(--bd-10)",
+    color: "var(--c-90)",
+  } as const;
+
+  return (
+    <div className="space-y-3 mt-3 pt-3" style={{ borderTop: "1px dashed oklch(0.55 0.15 220 / 0.3)" }}>
+      <div className="px-1">
+        <h4 className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>
+          Beats rules (per scenario)
+        </h4>
+        <p className="text-xs mt-0.5" style={{ color: "var(--c-50)" }}>
+          Override the Beats value above when the project matches the conditions. First matching rule wins. The Beats slider is still the absolute ceiling.
+        </p>
+      </div>
+
+      {isLoading && !data && <p className="text-xs px-1" style={{ color: "var(--c-42)" }}>Loading…</p>}
+
+      <div className="space-y-2">
+        {draft.map((rule, idx) => (
+          <div key={idx} className="p-3 rounded-lg space-y-2"
+            style={{ background: "white", marginTop: 15, marginBottom: 4 }}>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={rule.name}
+                onChange={(e) => updateRule(idx, { name: e.target.value })}
+                placeholder="Rule name"
+                className="flex-1 px-2 py-1.5 rounded text-sm font-medium"
+                style={inputStyle}
+              />
+              <button
+                onClick={() => removeRule(idx)}
+                className="px-2 py-1.5 rounded text-xs hover:opacity-90 cursor-pointer"
+                style={{ background: "transparent", color: "oklch(0.55 0.18 25)", border: "1px solid oklch(0.55 0.18 25 / 0.4)" }}
+                title="Remove rule"
+              >
+                Remove
+              </button>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              <label className="text-xs" style={{ color: "var(--c-50)" }}>
+                Resolution
+                <select
+                  value={rule.when.resolution ?? ""}
+                  onChange={(e) => updateRuleWhen(idx, { resolution: (e.target.value || undefined) as AssemblyResolution | undefined })}
+                  className="mt-1 w-full px-2 py-1.5 rounded text-sm"
+                  style={inputStyle}
+                >
+                  <option value="">Any</option>
+                  {ASSEMBLY_RESOLUTIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </label>
+              <label className="text-xs" style={{ color: "var(--c-50)" }}>
+                All images?
+                <select
+                  value={rule.when.allImages === undefined ? "" : rule.when.allImages ? "yes" : "no"}
+                  onChange={(e) => updateRuleWhen(idx, { allImages: e.target.value === "" ? undefined : e.target.value === "yes" })}
+                  className="mt-1 w-full px-2 py-1.5 rounded text-sm"
+                  style={inputStyle}
+                >
+                  <option value="">Any</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </label>
+              <label className="text-xs" style={{ color: "var(--c-50)" }}>
+                Captions on?
+                <select
+                  value={rule.when.captionsEnabled === undefined ? "" : rule.when.captionsEnabled ? "yes" : "no"}
+                  onChange={(e) => updateRuleWhen(idx, { captionsEnabled: e.target.value === "" ? undefined : e.target.value === "yes" })}
+                  className="mt-1 w-full px-2 py-1.5 rounded text-sm"
+                  style={inputStyle}
+                >
+                  <option value="">Any</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </label>
+              <label className="text-xs" style={{ color: "var(--c-50)" }}>
+                Beats ≥
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={rule.when.minBeats ?? ""}
+                  onChange={(e) => updateRuleWhen(idx, { minBeats: e.target.value === "" ? undefined : Number(e.target.value) })}
+                  className="mt-1 w-full px-2 py-1.5 rounded text-sm"
+                  style={inputStyle}
+                  placeholder="Any"
+                />
+              </label>
+              <label className="text-xs" style={{ color: "var(--c-50)" }}>
+                Beats ≤
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={rule.when.maxBeats ?? ""}
+                  onChange={(e) => updateRuleWhen(idx, { maxBeats: e.target.value === "" ? undefined : Number(e.target.value) })}
+                  className="mt-1 w-full px-2 py-1.5 rounded text-sm"
+                  style={inputStyle}
+                  placeholder="Any"
+                />
+              </label>
+              <label className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>
+                Concurrency
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={10}
+                  value={rule.value}
+                  onChange={(e) => updateRule(idx, { value: Number(e.target.value) || 1 })}
+                  className="mt-1 w-full px-2 py-1.5 rounded text-sm font-semibold"
+                  style={inputStyle}
+                />
+              </label>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-2 pt-1">
+        <button
+          onClick={addRule}
+          disabled={saving || draft.length >= 32}
+          className="px-3 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
+          style={{ background: "transparent", color: "var(--c-50)", border: "1px solid var(--bd-10)" }}
+        >
+          + Add rule
+        </button>
+        <button
+          onClick={save}
+          disabled={!dirty || saving}
+          className="px-3 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+          style={{ background: "oklch(0.62 0.15 220)", color: "white", border: "1px solid oklch(0.55 0.15 220)" }}
+        >
+          {saving ? (
+            <>
+              <Spinner size={14} />
+              Saving…
+            </>
+          ) : (
+            "Save rules"
+          )}
         </button>
       </div>
     </div>
@@ -2124,6 +2351,7 @@ interface AdminPlanDTO {
   slug: string;
   name: string;
   priceDisplay: string;
+  priceCents: number | null;
   periodDisplay: string;
   limitDisplay: string;
   features: string[];
@@ -2163,6 +2391,8 @@ function PlansPanel() {
     baseUrlProduction: string | null;
     webhookSecretTest: string | null;
     webhookSecretProduction: string | null;
+    customerPortalUrlTest: string | null;
+    customerPortalUrlProduction: string | null;
   }>("/api/admin/payment-mode", fetcher, { revalidateOnFocus: false });
   const [editingProdTest, setEditingProdTest] = useState(false);
   const [deletingProdTest, setDeletingProdTest] = useState(false);
@@ -2550,6 +2780,9 @@ function PlanEditModal({
   const [slug, setSlug] = useState(plan?.slug ?? "");
   const [name, setName] = useState(plan?.name ?? "");
   const [priceDisplay, setPriceDisplay] = useState(plan?.priceDisplay ?? "");
+  const [priceCents, setPriceCents] = useState<string>(
+    plan?.priceCents == null ? "" : String(plan.priceCents),
+  );
   const [periodDisplay, setPeriodDisplay] = useState(plan?.periodDisplay ?? "/mo");
   // Display strings shown next to the price ("$49" + period). The
   // select offers the four standard cadences; the stored column stays
@@ -2599,10 +2832,28 @@ function PlanEditModal({
 
     const features = featuresText.split("\n").map((s) => s.trim()).filter(Boolean);
 
+    // price_cents is the guarded chargeable amount (integer or null).
+    // Empty input maps to null → price guard skips this plan (helpful
+    // for custom-priced tiers). Any other non-integer input is a bug
+    // in the form, surface it up-front.
+    const priceCentsTrimmed = priceCents.trim();
+    let priceCentsValue: number | null;
+    if (priceCentsTrimmed === "") {
+      priceCentsValue = null;
+    } else {
+      const parsed = Number(priceCentsTrimmed);
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        toast.error("Price (cents) must be a non-negative integer or blank");
+        return;
+      }
+      priceCentsValue = parsed;
+    }
+
     const payload = {
       ...(mode === "create" ? { slug } : {}),
       name: name.trim(),
       price_display: priceDisplay.trim(),
+      price_cents: priceCentsValue,
       period_display: periodDisplay,
       limit_display: limitDisplay,
       features,
@@ -2678,23 +2929,37 @@ function PlanEditModal({
             <div className="space-y-1">
               <label className="text-xs font-semibold text-zinc-600">Price display</label>
               <input value={priceDisplay} onChange={(e) => setPriceDisplay(e.target.value)} disabled={saving} placeholder="$49" className={inputCls} />
+              <p className="text-[10px] text-zinc-500">Shown to users on the checkout modal.</p>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-zinc-600">Billing period</label>
-              <select
-                value={periodDisplay}
-                onChange={(e) => setPeriodDisplay(e.target.value)}
+              <label className="text-xs font-semibold text-zinc-600">Price (cents)</label>
+              <input
+                value={priceCents}
+                onChange={(e) => setPriceCents(e.target.value)}
                 disabled={saving}
-                className={inputCls}
-              >
-                {PERIOD_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-                {!periodIsStandard && (
-                  <option value={periodDisplay}>Custom: {periodDisplay || "(empty)"}</option>
-                )}
-              </select>
+                placeholder="4900"
+                inputMode="numeric"
+                className={inputCls + " tabular-nums"}
+              />
+              <p className="text-[10px] text-zinc-500">Charged amount in cents (e.g. 4900 for $49). Guards against underpayment. Blank disables the guard for this plan.</p>
             </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-zinc-600">Billing period</label>
+            <select
+              value={periodDisplay}
+              onChange={(e) => setPeriodDisplay(e.target.value)}
+              disabled={saving}
+              className={inputCls}
+            >
+              {PERIOD_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+              {!periodIsStandard && (
+                <option value={periodDisplay}>Custom: {periodDisplay || "(empty)"}</option>
+              )}
+            </select>
           </div>
 
           <div className="space-y-1">
@@ -2902,7 +3167,7 @@ function LaunchModal({ onClose }: { onClose: () => void }) {
             <div className="space-y-1">
               <p className="text-sm font-semibold text-zinc-800">Users</p>
               <p className="text-xs text-zinc-500">
-                Enter one email at a time and click Add. Listed emails are kept; everyone else gets deleted when launch fires.
+                Enter one email at a time and click Add. Listed accounts (and everything they own — niches, videos, files) are preserved. Everyone else gets fully deleted when launch fires.
               </p>
             </div>
 
@@ -3331,6 +3596,8 @@ interface DodoApiKeysCardProps {
     baseUrlProduction: string | null;
     webhookSecretTest: string | null;
     webhookSecretProduction: string | null;
+    customerPortalUrlTest: string | null;
+    customerPortalUrlProduction: string | null;
   } | null;
   // Deployment env (HECLUS_ENV). When "production", the Test tab is
   // hidden so the admin can't edit test credentials on a live
@@ -3437,24 +3704,28 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
   const [prodUrl, setProdUrl] = useState("");
   const [testWebhook, setTestWebhook] = useState("");
   const [prodWebhook, setProdWebhook] = useState("");
+  const [testPortal, setTestPortal] = useState("");
+  const [prodPortal, setProdPortal] = useState("");
   const [saving, setSaving] = useState(false);
 
   const keyValue = activeEnv === "test" ? testKey : prodKey;
   const urlValue = activeEnv === "test" ? testUrl : prodUrl;
   const webhookValue = activeEnv === "test" ? testWebhook : prodWebhook;
+  const portalValue = activeEnv === "test" ? testPortal : prodPortal;
   const savedKey = (activeEnv === "test" ? settings?.secretKeyTest : settings?.secretKeyProduction) ?? "";
   const savedUrl = (activeEnv === "test" ? settings?.baseUrlTest : settings?.baseUrlProduction) ?? "";
   const savedWebhook = (activeEnv === "test" ? settings?.webhookSecretTest : settings?.webhookSecretProduction) ?? "";
-  // Dirty when the admin has typed something into any of the three
-  // inputs for the active env. Empty inputs are a no-op — clearing
-  // a saved value isn't supported through this card on purpose.
-  const dirty = !!keyValue.trim() || !!urlValue.trim() || !!webhookValue.trim();
+  const savedPortal = (activeEnv === "test" ? settings?.customerPortalUrlTest : settings?.customerPortalUrlProduction) ?? "";
+  // Dirty when the admin has typed something into any of the inputs
+  // for the active env. Empty inputs are a no-op — clearing a saved
+  // value isn't supported through this card on purpose.
+  const dirty = !!keyValue.trim() || !!urlValue.trim() || !!webhookValue.trim() || !!portalValue.trim();
 
   function clearActiveEnvBuffers() {
     if (activeEnv === "test") {
-      setTestKey(""); setTestUrl(""); setTestWebhook("");
+      setTestKey(""); setTestUrl(""); setTestWebhook(""); setTestPortal("");
     } else {
-      setProdKey(""); setProdUrl(""); setProdWebhook("");
+      setProdKey(""); setProdUrl(""); setProdWebhook(""); setProdPortal("");
     }
   }
 
@@ -3470,6 +3741,9 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
       }
       if (webhookValue.trim()) {
         patch[activeEnv === "test" ? "webhookSecretTest" : "webhookSecretProduction"] = webhookValue.trim();
+      }
+      if (portalValue.trim()) {
+        patch[activeEnv === "test" ? "customerPortalUrlTest" : "customerPortalUrlProduction"] = portalValue.trim();
       }
       const res = await fetch("/api/admin/payment-mode", {
         method: "PATCH",
@@ -3547,6 +3821,16 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
           placeholder="whsec_…"
           disabled={saving}
           hint="Per-environment Dodo webhook signing secret. The handler tries every configured secret on each request, so test + production can both target the same /api/webhooks/dodo URL."
+        />
+
+        <DodoVarField
+          label={`Customer portal URL (${activeEnv})`}
+          saved={savedPortal}
+          value={portalValue}
+          onChange={(v) => (activeEnv === "test" ? setTestPortal(v) : setProdPortal(v))}
+          placeholder="https://…/portal/{customer_id}"
+          disabled={saving}
+          hint="Where the /plan page's 'Manage' billing button sends users. Optional: use {customer_id} as a placeholder to have it substituted per user. Leave blank to hide the button."
         />
       </div>
 
@@ -4109,12 +4393,18 @@ export default function AdminPage() {
   );
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [hoveredRevIdx, setHoveredRevIdx] = useState<number | null>(null);
+  // Revenue tab: optional date-range + plan filters for the payments
+  // table. Dates are yyyy-mm-dd strings straight from
+  // <input type="date">; empty = off. Plan "" = all plans.
+  const [revDateFrom, setRevDateFrom] = useState("");
+  const [revDateTo, setRevDateTo] = useState("");
+  const [revPlanFilter, setRevPlanFilter] = useState("");
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "activity" | "users" | "projects" | "revenue" | "logs" | "emails" | "support" | "memory" | "setup"
+    "stats" | "activity" | "users" | "projects" | "revenue" | "logs" | "emails" | "support" | "reviews" | "memory" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "activity", "users", "projects", "revenue", "logs", "emails", "support", "memory", "setup"],
+    ["stats", "activity", "users", "projects", "revenue", "logs", "emails", "support", "reviews", "memory", "setup"],
   );
 
   // Per-project cost rollups for the Videos → Cost sub-tab. Only
@@ -4418,7 +4708,8 @@ export default function AdminPage() {
             { id: "revenue",  label: "Revenue",  icon: DollarSign },
             { id: "logs",     label: "Logs",     icon: FileText },
             { id: "emails",   label: "Emails",   icon: Mail },
-            { id: "support",  label: "Support tickets",  icon: LifeBuoy },
+            { id: "support",  label: "Support",  icon: LifeBuoy },
+            { id: "reviews",  label: "Feedback", icon: Star },
             { id: "memory",   label: "Memory",   icon: MemoryStick },
             { id: "setup",    label: "Config",   icon: Settings },
           ] as const;
@@ -5667,13 +5958,43 @@ export default function AdminPage() {
           // accounts. Before launch (launchedAt = null) the filter is
           // a no-op and everyone with paid=true is shown.
           const launchedAtMs = revenue?.launchedAt ? new Date(revenue.launchedAt).getTime() : null;
-          const paidUsers = users
+          // Date-range filter for the payments table. From/To are
+          // inclusive; To covers the entire selected day (23:59:59.999)
+          // so picking the same date in both inputs shows that day's
+          // payments. Rows without a paidAt are hidden while a filter
+          // is active — an unknown date can't be proven in-range.
+          const fromMs = revDateFrom ? new Date(`${revDateFrom}T00:00:00`).getTime() : null;
+          const toMs = revDateTo ? new Date(`${revDateTo}T23:59:59.999`).getTime() : null;
+          const dateFilterActive = fromMs !== null || toMs !== null;
+          // Post-launch paid users, before the date/plan filters — this
+          // is also the source for the plan dropdown's option list, so
+          // options never disappear because the current filter excludes
+          // them.
+          const basePaidUsers = users
             .filter((u) => u.status === "Paid")
             .filter((u) => {
               if (launchedAtMs === null) return true;
               if (!u.paidAt) return false;
               return new Date(u.paidAt).getTime() >= launchedAtMs;
+            });
+          // All known plans always listed (even with zero payments), plus
+          // any unexpected slug found on a paid user (e.g. legacy or
+          // test plans) so no payment is ever unfilterable.
+          const planOptions = [...new Set([
+            ...Object.keys(PLAN_LABEL),
+            ...basePaidUsers.map((u) => u.plan).filter((p): p is string => !!p),
+          ])].sort();
+          const filtersActive = dateFilterActive || revPlanFilter !== "";
+          const paidUsers = basePaidUsers
+            .filter((u) => {
+              if (!dateFilterActive) return true;
+              if (!u.paidAt) return false;
+              const t = new Date(u.paidAt).getTime();
+              if (fromMs !== null && t < fromMs) return false;
+              if (toMs !== null && t > toMs) return false;
+              return true;
             })
+            .filter((u) => revPlanFilter === "" || u.plan === revPlanFilter)
             .sort((a, b) => {
               const ta = a.paidAt ? new Date(a.paidAt).getTime() : -Infinity;
               const tb = b.paidAt ? new Date(b.paidAt).getTime() : -Infinity;
@@ -5836,9 +6157,82 @@ export default function AdminPage() {
                 </div>
               </div>
 
+              {/* Date-range filter for the payments table */}
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-1">
+                  <label htmlFor="rev-date-from" className="block text-[11px] font-medium uppercase tracking-wider" style={{ color: "oklch(0.5 0 0)" }}>From</label>
+                  <input
+                    id="rev-date-from"
+                    type="date"
+                    value={revDateFrom}
+                    max={revDateTo || undefined}
+                    onChange={(e) => setRevDateFrom(e.target.value)}
+                    className="px-3 py-2 rounded-lg text-sm bg-white text-zinc-900 outline-none transition-all"
+                    style={{ border: "1px solid oklch(0 0 0 / 0.12)" }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label htmlFor="rev-date-to" className="block text-[11px] font-medium uppercase tracking-wider" style={{ color: "oklch(0.5 0 0)" }}>To</label>
+                  <input
+                    id="rev-date-to"
+                    type="date"
+                    value={revDateTo}
+                    min={revDateFrom || undefined}
+                    onChange={(e) => setRevDateTo(e.target.value)}
+                    className="px-3 py-2 rounded-lg text-sm bg-white text-zinc-900 outline-none transition-all"
+                    style={{ border: "1px solid oklch(0 0 0 / 0.12)" }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label htmlFor="rev-plan-filter" className="block text-[11px] font-medium uppercase tracking-wider" style={{ color: "oklch(0.5 0 0)" }}>Plan</label>
+                  <select
+                    id="rev-plan-filter"
+                    value={revPlanFilter}
+                    onChange={(e) => setRevPlanFilter(e.target.value)}
+                    className="px-3 py-2 rounded-lg text-sm bg-white text-zinc-900 outline-none transition-all cursor-pointer"
+                    style={{ border: "1px solid oklch(0 0 0 / 0.12)" }}
+                  >
+                    <option value="">All plans</option>
+                    {planOptions.map((p) => (
+                      <option key={p} value={p} className="capitalize">
+                        {PLAN_LABEL[p] ?? p}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={() => {
+                    // Local date, not toISOString() — UTC would point at
+                    // yesterday/tomorrow near midnight in non-UTC zones.
+                    const d = new Date();
+                    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+                    setRevDateFrom(today);
+                    setRevDateTo(today);
+                  }}
+                  className="px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer hover:bg-zinc-100"
+                  style={{ color: "oklch(0.72 0.18 65)", border: "1px solid oklch(0.55 0.18 65 / 0.3)" }}
+                >
+                  Today
+                </button>
+                {filtersActive && (
+                  <button
+                    onClick={() => { setRevDateFrom(""); setRevDateTo(""); setRevPlanFilter(""); }}
+                    className="px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer hover:bg-zinc-100"
+                    style={{ color: "oklch(0.5 0 0)", border: "1px solid oklch(0 0 0 / 0.12)" }}
+                  >
+                    Clear
+                  </button>
+                )}
+                <span className="ml-auto text-xs font-semibold pb-2.5" style={{ color: "oklch(0.72 0.18 65)" }}>
+                  {paidUsers.length} payment{paidUsers.length === 1 ? "" : "s"}{filtersActive ? " matching" : ""}
+                </span>
+              </div>
+
               {/* Paid users table */}
               {paidUsers.length === 0 ? (
-                <p className="text-sm italic py-2" style={{ color: "var(--c-35)" }}>No paid users yet.</p>
+                <p className="text-sm italic py-2" style={{ color: "var(--c-35)" }}>
+                  {filtersActive ? "No payments match the selected filters." : "No paid users yet."}
+                </p>
               ) : (
                 <div className="rounded-2xl overflow-x-auto"
                   style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
@@ -5907,6 +6301,22 @@ export default function AdminPage() {
             }}
           >
             <SupportPanel />
+          </section>
+        )}
+
+        {activeTab === "reviews" && (
+          <section
+            id="reviews"
+            className="rounded-2xl max-w-full min-w-0"
+            style={{
+              background: "white",
+              border: "1px solid oklch(0 0 0 / 0.07)",
+              padding: "16px",
+              scrollMarginTop: "80px",
+              boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)",
+            }}
+          >
+            <FeedbackPanel />
           </section>
         )}
 

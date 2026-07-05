@@ -115,6 +115,7 @@ function AssembledVideoPlayer({
   );
 }
 
+
 function VoiceoverPreviewCard({
   title,
   hint,
@@ -295,30 +296,6 @@ function dimsFor(aspect: AspectRatio, preset: ResolutionPreset): string {
   return `${long} × ${short}`;
 }
 
-const CAPTION_STYLES = [
-  { id: "classic", label: "Classic", hint: "White, black outline" },
-  { id: "bold",    label: "Bold",    hint: "Yellow, bold" },
-  { id: "boxed",   label: "Boxed",   hint: "White on dark box" },
-  { id: "minimal", label: "Minimal", hint: "White, thin outline" },
-];
-
-const CAPTION_SIZES     = [{ id: "small", label: "S" }, { id: "medium", label: "M" }, { id: "large", label: "L" }];
-const CAPTION_POSITIONS = [{ id: "bottom", label: "Bottom" }, { id: "top", label: "Top" }];
-
-const CAPTION_LANGUAGES = [
-  { code: "source",     label: "English" },
-  { code: "Spanish",    label: "Spanish" },
-  { code: "French",     label: "French" },
-  { code: "Portuguese", label: "Portuguese" },
-  { code: "German",     label: "German" },
-  { code: "Italian",    label: "Italian" },
-  { code: "Japanese",   label: "Japanese" },
-  { code: "Korean",     label: "Korean" },
-  { code: "Chinese",    label: "Chinese" },
-  { code: "Hindi",      label: "Hindi" },
-  { code: "Arabic",     label: "Arabic" },
-];
-
 const ASSEMBLE_STEPS = [
   "Transcribing voiceover…",
   "Aligning clips to narration timing…",
@@ -351,7 +328,6 @@ export default function DemoAssemblePage() {
 
   const {
     aspectRatio, voiceoverType,
-    captionsEnabled, captionsStyle, captionsSize, captionsPosition, captionsLanguage,
     assemblePhase,
   } = state;
 
@@ -441,7 +417,7 @@ export default function DemoAssemblePage() {
       <DemoNav currentStep={7} />
       <div className="flex-1 flex flex-col min-h-0">
         <DemoBanner />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto lg:px-[15px]">
 
           {/* Header */}
           <div className="py-4 sm:py-5"
@@ -609,8 +585,8 @@ export default function DemoAssemblePage() {
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover Source</p>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                   {([
-                    { id: "trimmed",  title: "Trimmed voiceover",  hint: "Silence between beats removed — tighter pacing",   src: "/demo/voiceover/demo-voiceover_short.mp3" },
-                    { id: "original", title: "Original voiceover", hint: "Full TTS output with natural pauses left intact", src: "/demo/voiceover/demo-voiceover_short.mp3" },
+                    { id: "trimmed",  title: "Trimmed voiceover",  hint: "Silence between beats removed — tighter pacing",   src: "/demo/voiceover/voiceover.mp3" },
+                    { id: "original", title: "Original voiceover", hint: "Full TTS output with natural pauses left intact", src: "/demo/voiceover/voiceover.mp3" },
                   ] as const).map((v) => (
                     <VoiceoverPreviewCard
                       key={v.id}
@@ -822,109 +798,36 @@ export default function DemoAssemblePage() {
                 );
               })()}
 
-              {/* Captions */}
-              <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-                <div className="flex items-center justify-between mb-4">
+              {/* Captions — surface only. Disabled in the demo; the
+                  toggle is a visual placeholder so the layout matches
+                  the real workflow and the user sees the option exists,
+                  but flipping it wouldn't do anything so it's locked. */}
+              <div className="rounded-2xl p-5 opacity-60" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-semibold">Captions</p>
-                    <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>Burned into the video — always visible</p>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>Not available in the demo</p>
                   </div>
-                  <button onClick={() => update({ captionsEnabled: !captionsEnabled })}
-                    className="relative w-11 h-6 rounded-full transition-all shrink-0"
-                    style={{ background: captionsEnabled ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}>
-                    <span className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
-                      style={{ background: "oklch(0.95 0 0)", left: captionsEnabled ? "calc(100% - 1.375rem)" : "0.125rem" }} />
+                  <button
+                    disabled
+                    aria-disabled
+                    title="Not available in the demo"
+                    className="relative w-11 h-6 rounded-full shrink-0 cursor-not-allowed"
+                    style={{ background: "var(--c-22)", border: "1px solid var(--bd-10)" }}
+                  >
+                    <span
+                      className="absolute top-0.5 w-5 h-5 rounded-full"
+                      style={{ background: "oklch(0.95 0 0)", left: "0.125rem" }}
+                    />
                   </button>
                 </div>
-
-                {captionsEnabled && (
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Style</p>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {CAPTION_STYLES.map((s) => (
-                          <button key={s.id}
-                            onClick={() => update({ captionsStyle: s.id })}
-                            disabled={assemblePhase === "assembling"}
-                            className="py-2 px-3 rounded-xl text-left transition-all disabled:opacity-40"
-                            style={captionsStyle === s.id ? {
-                              background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                            } : { background: "var(--bg-input)", border: "1px solid var(--bd-7)" }}>
-                            <p className="text-xs font-medium" style={{ color: captionsStyle === s.id ? "oklch(0.88 0.12 285)" : "var(--c-60)" }}>{s.label}</p>
-                            <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>{s.hint}</p>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex gap-4">
-                      <div className="flex-1">
-                        <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Size</p>
-                        <div className="flex gap-1.5">
-                          {CAPTION_SIZES.map((s) => (
-                            <button key={s.id}
-                              onClick={() => update({ captionsSize: s.id })}
-                              disabled={assemblePhase === "assembling"}
-                              className="flex-1 py-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
-                              style={captionsSize === s.id ? {
-                                background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "oklch(0.88 0.12 285)",
-                              } : { background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-50)" }}>
-                              {s.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Position</p>
-                        <div className="flex gap-1.5">
-                          {CAPTION_POSITIONS.map((p) => (
-                            <button key={p.id}
-                              onClick={() => update({ captionsPosition: p.id })}
-                              disabled={assemblePhase === "assembling"}
-                              className="flex-1 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
-                              style={captionsPosition === p.id ? {
-                                background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "oklch(0.88 0.12 285)",
-                              } : { background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-50)" }}>
-                              {p.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Language</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {CAPTION_LANGUAGES.map((lang) => {
-                          // Demo is locked to English (source) — the
-                          // other languages render to advertise the
-                          // option but stay unclickable so the user
-                          // can't trigger a translation pipeline that
-                          // doesn't exist in the demo.
-                          const locked = lang.code !== "source";
-                          return (
-                            <button key={lang.code}
-                              onClick={() => { if (!locked) update({ captionsLanguage: lang.code }); }}
-                              disabled={locked || assemblePhase === "assembling"}
-                              className="px-3 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                              style={captionsLanguage === lang.code ? {
-                                background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "oklch(0.88 0.12 285)",
-                              } : { background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-50)" }}>
-                              {lang.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Assembly controls */}
               <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
                 {assemblePhase === "done" && (
                   <AssembledVideoPlayer
-                    src={captionsEnabled ? "/demo/videos/with_captions.mp4" : "/demo/videos/without_captions.mp4"}
+                    src={"/demo/assemble/assemble.mp4"}
                     bgmUrl={bgmDataUrl}
                     bgmVolume={bgmVolume}
                     logoUrl={logoDataUrl}
@@ -952,13 +855,14 @@ export default function DemoAssemblePage() {
                       style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
                       Reassemble
                     </button>
-                    <a
-                      href={captionsEnabled ? "/demo/videos/with_captions.mp4" : "/demo/videos/without_captions.mp4"}
-                      download={captionsEnabled ? "heclus-demo-with-captions.mp4" : "heclus-demo-no-captions.mp4"}
-                      className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all"
-                      style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+                    <button
+                      disabled
+                      aria-disabled
+                      title="Export is disabled in the demo"
+                      className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all cursor-not-allowed"
+                      style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)", opacity: 1 }}>
                       ↓ Export
-                    </a>
+                    </button>
                   </div>
                 ) : (
                   <button onClick={assemble} disabled={assemblePhase === "assembling"}

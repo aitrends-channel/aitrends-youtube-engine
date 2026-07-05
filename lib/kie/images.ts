@@ -1,4 +1,4 @@
-import { kieRequest } from "./client";
+import { kieRequest, KieUpstreamError, looksLikeInsufficientCredits } from "./client";
 import type { KieModel } from "@/lib/types";
 import {
   IMAGE_MODELS, MODEL_CONFIGS, IMAGE_SIZE_MAP, IMAGE_SIZE_MODELS,
@@ -89,6 +89,16 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// KIE returns HTTP 200 with `{code: 402, msg: "Insufficient credit"}` for
+// out-of-balance rather than a 402 status, so kieRequest's HTTP-layer
+// detection can't catch it. Wrap the app-layer error in the same
+// KieUpstreamError type callers already handle.
+function kieCreateTaskError(code: number, msg?: string): KieUpstreamError {
+  const message = `KIE ${code}: ${msg ?? "Failed to create image task"}`;
+  const insufficient = looksLikeInsufficientCredits(code, msg ?? "", code);
+  return new KieUpstreamError(code, null, message, insufficient);
+}
+
 export async function listImageModels(): Promise<KieModel[]> {
   return IMAGE_MODELS;
 }
@@ -108,7 +118,7 @@ export async function submitImageTask(
       method: "POST",
       body: JSON.stringify(body),
     }, userId);
-    if (res.code !== 200) throw new Error(`KIE ${res.code}: ${res.msg ?? "Failed to create image task"}`);
+    if (res.code !== 200) throw kieCreateTaskError(res.code, res.msg);
     if (!res.data?.taskId) throw new Error("No task ID returned from image API");
     return res.data.taskId;
   } else if (IMAGE_SIZE_MODELS.has(modelId)) {
@@ -123,7 +133,7 @@ export async function submitImageTask(
       method: "POST",
       body: JSON.stringify(body),
     }, userId);
-    if (res.code !== 200) throw new Error(`KIE ${res.code}: ${res.msg ?? "Failed to create image task"}`);
+    if (res.code !== 200) throw kieCreateTaskError(res.code, res.msg);
     if (!res.data?.taskId) throw new Error("No task ID returned from image API");
     return res.data.taskId;
   } else {
@@ -135,7 +145,7 @@ export async function submitImageTask(
       method: "POST",
       body: JSON.stringify(body),
     }, userId);
-    if (res.code !== 200) throw new Error(`KIE ${res.code}: ${res.msg ?? "Failed to create image task"}`);
+    if (res.code !== 200) throw kieCreateTaskError(res.code, res.msg);
     if (!res.data?.taskId) throw new Error("No task ID returned from image API");
     return res.data.taskId;
   }
@@ -182,7 +192,7 @@ export async function generateImage(
       method: "POST",
       body: JSON.stringify({ prompt, model: modelId, aspectRatio, outputFormat: "jpeg" }),
     }, userId);
-    if (res.code !== 200) throw new Error(`KIE ${res.code}: ${res.msg ?? "Failed to create image task"}`);
+    if (res.code !== 200) throw kieCreateTaskError(res.code, res.msg);
     if (!res.data?.taskId) throw new Error("No task ID returned from image API");
     taskId = res.data.taskId;
   } else if (IMAGE_SIZE_MODELS.has(modelId)) {
@@ -195,7 +205,7 @@ export async function generateImage(
       method: "POST",
       body: JSON.stringify({ model: modelId, input }),
     }, userId);
-    if (res.code !== 200) throw new Error(`KIE ${res.code}: ${res.msg ?? "Failed to create image task"}`);
+    if (res.code !== 200) throw kieCreateTaskError(res.code, res.msg);
     if (!res.data?.taskId) throw new Error("No task ID returned from image API");
     taskId = res.data.taskId;
   } else {
@@ -205,7 +215,7 @@ export async function generateImage(
       method: "POST",
       body: JSON.stringify({ model: modelId, input }),
     }, userId);
-    if (res.code !== 200) throw new Error(`KIE ${res.code}: ${res.msg ?? "Failed to create image task"}`);
+    if (res.code !== 200) throw kieCreateTaskError(res.code, res.msg);
     if (!res.data?.taskId) throw new Error("No task ID returned from image API");
     taskId = res.data.taskId;
   }

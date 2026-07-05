@@ -11,9 +11,14 @@ import { DEMO_DATA } from "@/lib/demo-data";
 export type DemoCostColumn = keyof typeof DEMO_DATA.costs;
 
 export function DemoStepCostCard({ column }: { column: DemoCostColumn }) {
-  const kie = DEMO_DATA.costs[column]?.kie ?? 0;
-  const formatted = kie > 0
+  const entry = DEMO_DATA.costs[column] as { kie?: number; el?: number };
+  const kie = entry?.kie ?? 0;
+  const el = entry?.el ?? 0;
+  const kieDisplay = kie > 0
     ? kie.toLocaleString(undefined, { maximumFractionDigits: 2 })
+    : "—";
+  const elDisplay = el > 0
+    ? Math.round(el).toLocaleString()
     : "—";
 
   return (
@@ -38,12 +43,11 @@ export function DemoStepCostCard({ column }: { column: DemoCostColumn }) {
           color: "oklch(0.7 0.15 145)",
         }}
       >
-        {kie > 0 ? (
-          <>
-            <span>Kie:</span>
-            <span style={{ marginLeft: "5px" }}>{formatted}</span>
-          </>
-        ) : "—"}
+        <span>Kie:</span>
+        <span style={{ marginLeft: "5px" }}>{kieDisplay}</span>
+        <span style={{ margin: "0 6px" }}>·</span>
+        <span>El:</span>
+        <span style={{ marginLeft: "5px" }}>{elDisplay}</span>
       </span>
     </span>
   );

@@ -7,6 +7,7 @@ import { useProject } from "@/hooks/useProject";
 import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp } from "lucide-react";
 import { ImageSparkle } from "@/components/icons/ImageSparkle";
 import { StepCostCard } from "@/components/StepCostCard";
+import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
@@ -258,6 +259,40 @@ function VoiceoverTrackMenu({
       )}
     </div>
   );
+}
+
+// Auto-pause off-screen video tiles. With 100+ beats the grid used
+// to autoplay every video at once — even muted, each one keeps the
+// compositor decoding frames and scrolling becomes janky on weaker
+// machines. IntersectionObserver here pauses any tile outside the
+// viewport (with a small rootMargin so videos that are about to
+// scroll in start playing slightly early). When the tile leaves,
+// pause + currentTime=0 so it visibly resets — feels intentional,
+// not buggy.
+function LazyVideoTile(props: React.VideoHTMLAttributes<HTMLVideoElement>) {
+  const ref = useRef<HTMLVideoElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          // play() returns a promise that rejects on rapid mount/
+          // unmount cycles or autoplay-blocked browsers. Swallow.
+          el.play().catch(() => {});
+        } else {
+          try { el.pause(); el.currentTime = 0; } catch { /* ignore */ }
+        }
+      },
+      { rootMargin: "200px", threshold: 0.01 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+  // Default to NOT autoplaying — the IO toggles play() once mounted.
+  // preload="metadata" keeps the poster frame populated so the tile
+  // doesn't flash empty on first paint.
+  return <video ref={ref} {...props} autoPlay={false} preload="metadata" />;
 }
 
 function ProgressBar({ value, total }: { value: number; total: number }) {
@@ -1332,7 +1367,7 @@ export default function GeneratePage({ params }: PageProps) {
         }
       />
 
-      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
+      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
         <div className="shrink-0 sm:px-8 md:pr-44 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
@@ -1341,8 +1376,9 @@ export default function GeneratePage({ params }: PageProps) {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               Select a model for each service, then generate your final content
             </p>
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
               <StepCostCard projectId={projectId} column="generate" />
+              <StepBalanceCard />
             </div>
           </div>
         </div>
@@ -1422,7 +1458,7 @@ export default function GeneratePage({ params }: PageProps) {
                         onMouseLeave={() => { setHoveredImageBeat(null); setHoveredImageAnchor(null); }}
                       >
                         {b.imageUrl && !clearingImages ? (
-                          <img src={b.imageUrl} alt={`Beat ${b.beatNumber}`} className="w-full h-full object-cover" />
+                          <img src={b.imageUrl} alt={`Beat ${b.beatNumber}`} className="w-full h-full object-cover" loading="lazy" decoding="async" />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
                             <span className="text-[10px]" style={{ color: "var(--c-35)" }}>{b.beatNumber}</span>
@@ -1721,12 +1757,11 @@ export default function GeneratePage({ params }: PageProps) {
                             status badge otherwise. The spinner +
                             regen overlays below sit on top of either. */}
                         {b.videoUrl ? (
-                          <video
+                          <LazyVideoTile
                             src={b.videoUrl}
                             title={b.videoUrl}
                             className="w-full h-full object-cover"
                             muted
-                            autoPlay
                             loop
                             playsInline
                             disablePictureInPicture

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useTransition, Fragment } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -161,16 +161,20 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
     ? 100
     : Math.min(99, Math.max(0, Math.round(((currentPhaseIndex + 1) / PHASES.length) * 100)));
 
-  const [, startTransition] = useTransition();
+  // router.push fires urgently (no startTransition wrap) so
+  // prefetched routes swap immediately. pendingHref drives just the
+  // small sidebar step-icon spinner — cheap, localized, and instant
+  // acknowledgment of the click. No full-view overlay: it was
+  // forcing GPU compositing (backdrop-filter) and making the page
+  // feel more sluggish than the navigation actually was.
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   function navigate(href: string) {
     setDrawerOpen(false);
     setPendingHref(href);
-    startTransition(() => {
-      router.push(href);
-    });
+    router.push(href);
   }
-  // Clear the pending highlight once the URL settles on the target.
+
+  // Clear the sidebar spinner once the URL settles on the target.
   useEffect(() => {
     if (pendingHref && pathname.endsWith(pendingHref.split("/").pop() ?? "")) {
       setPendingHref(null);
@@ -198,6 +202,13 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
           <div key={phase.id}>
             <button
               onClick={() => navigable && navigate(href)}
+              // Belt-and-suspenders prefetch: the mount-time useEffect
+              // already prefetches every navigable route, but on slow
+              // networks that can lose the race with a click. Hover
+              // (desktop) and pointer-down (touch) give the router a
+              // final chance to warm the route before navigation.
+              onMouseEnter={() => { if (navigable) router.prefetch(href); }}
+              onPointerDown={() => { if (navigable) router.prefetch(href); }}
               disabled={!navigable || isPending}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all duration-200",

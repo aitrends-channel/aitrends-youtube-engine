@@ -4,6 +4,7 @@ import { useState, use, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { StepCostCard } from "@/components/StepCostCard";
+import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -1129,7 +1130,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
       )}
       <WizardNav projectId={projectId} currentState={13} highestState={project?.current_state} channelName={project?.channel_name} progressComplete={allImagesGenerated} />
 
-      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
+      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
         <div className="sm:px-8 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
@@ -1140,8 +1141,9 @@ export default function ThumbnailsPage({ params }: PageProps) {
                 {thumbnails.length} concepts · {thumbnails.filter((t) => t.imageUrl).length} images generated
               </p>
             )}
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
               <StepCostCard projectId={projectId} column="thumbnail" />
+              <StepBalanceCard />
             </div>
           </div>
         </div>

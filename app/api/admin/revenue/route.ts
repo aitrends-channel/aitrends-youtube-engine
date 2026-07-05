@@ -60,24 +60,30 @@ export async function GET() {
   const data = eventsRes.data;
   const launchedAt = (cutoffRes.data as { activity_cutoff_at: string | null } | null)?.activity_cutoff_at ?? null;
 
-  // Admin self-payments are stripped from aggregates only on the
-  // live production deployment (HECLUS_ENV=production). Dev + staging
-  // keep them so we can verify our own test purchases land correctly.
-  const filterAdmins = isProductionEnv();
+  // Admin self-payments are stripped from every aggregate in every
+  // environment so the Revenue tab is a customer-only view. Admins
+  // testing the payment flow (production-test plan, dev purchases)
+  // land in revenue_events but never inflate MRR / ARR / totals.
   const adminEmails = new Set<string>();
-  if (filterAdmins) {
-    for (const u of authUsersRes.data?.users ?? []) {
-      if (isAdminUser(u) && u.email) adminEmails.add(u.email.toLowerCase());
-    }
+  for (const u of authUsersRes.data?.users ?? []) {
+    if (isAdminUser(u) && u.email) adminEmails.add(u.email.toLowerCase());
   }
 
   const allRows = (data ?? []) as RevenueRow[];
-  // Strip admin self-payments from every aggregate. The full set is
-  // still available via allRows for debugging; everything below
-  // operates on the customer-only `rows`.
+  // Strip admin self-payments from every aggregate. Additionally on
+  // production, drop events older than launch (activity_cutoff_at) so
+  // pre-launch QA charges don't inflate day-1 revenue. Dev + staging
+  // keep the full history so we can validate historical fixtures.
+  const scopeToPostLaunch = isProductionEnv() && launchedAt !== null;
+  const launchedAtMs = launchedAt ? new Date(launchedAt).getTime() : null;
   const rows = allRows.filter((r) => {
     const email = r.user_email?.toLowerCase();
-    return !email || !adminEmails.has(email);
+    if (email && adminEmails.has(email)) return false;
+    if (scopeToPostLaunch && launchedAtMs !== null) {
+      if (!r.occurred_at) return false;
+      if (new Date(r.occurred_at).getTime() < launchedAtMs) return false;
+    }
+    return true;
   });
 
   // Total — full lifetime revenue regardless of cutoff.
