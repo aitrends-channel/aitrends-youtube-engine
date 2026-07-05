@@ -115,6 +115,18 @@ export async function PATCH(
       })
       .eq("id", projectId)
       .eq("user_id", user.id);
+    // Walk a completed prompts state back to "in progress". Leaving
+    // current_state >= 14 with zero beats made the project read as
+    // "generation done but beats missing prompts" in the prompts
+    // page's completion poll if the follow-up run's SSE died before
+    // the route's own walkback ran. Mirrors the .gte guard the
+    // prompts route uses at run start.
+    await supabase
+      .from("projects")
+      .update({ current_state: 13 })
+      .eq("id", projectId)
+      .eq("user_id", user.id)
+      .gte("current_state", 14);
     return NextResponse.json({ success: true });
   }
 
