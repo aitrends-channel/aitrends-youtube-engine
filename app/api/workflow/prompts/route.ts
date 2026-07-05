@@ -388,7 +388,13 @@ async function generateImages(
   for (let i = 0; i < allChunks.length; i++) {
     const chunkWords = allChunks[i].split(/\s+/).filter(Boolean).length;
     const chunkEnd = walkedWords + chunkWords;
-    if (chunkEnd <= coveredWords + CHUNK_SLACK_WORDS) {
+    // Slack only applies when there IS a covered prefix to undershoot.
+    // With zero covered words (fresh run), a script shorter than
+    // CHUNK_SLACK_WORDS fit entirely inside the slack window and its
+    // only chunk was skipped as "already covered" — the run completed
+    // with current_state=14 and zero beats, which the prompts page
+    // surfaced as "done but beats missing prompts".
+    if (coveredWords > 0 && chunkEnd <= coveredWords + CHUNK_SLACK_WORDS) {
       walkedWords = chunkEnd;
       continue;
     }

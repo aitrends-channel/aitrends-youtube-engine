@@ -887,7 +887,14 @@ export default function PromptsPage({ params }: PageProps) {
           if (hasVideoBeats) setVideoStep(IDLE);
           return;
         }
-        if (completedOnServer) {
+        // current_state >= 14 with missing/zero beats is only a real
+        // inconsistency once the server has RELEASED the run. While a
+        // run is still claimed, this is the transient regen window: a
+        // prior success left current_state at 14, clear_image_prompts
+        // wiped the beats, and the new run's walkback-to-13 hasn't
+        // landed yet. Hard-failing here surfaced a scary error on a
+        // perfectly healthy run — keep polling instead.
+        if (completedOnServer && !serverStillActive) {
           throw new Error("Generation reported done but some beats are missing prompts. Try again — the existing beats are preserved.");
         }
         if (!serverStillActive) {
