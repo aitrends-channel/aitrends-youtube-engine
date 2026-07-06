@@ -24,13 +24,21 @@ function CallbackContent() {
     verifyStartedRef.current = true;
     const status = searchParams.get("status");
     const paymentId = searchParams.get("payment_id");
+    // Subscription products (Pro, Starter, production-test) redirect
+    // with subscription_id + status=active instead of payment_id +
+    // status=succeeded. Accept either shape so both flows land on the
+    // same success path.
+    const subscriptionId = searchParams.get("subscription_id");
 
     if (status === "cancelled") {
       setStage("cancelled");
       return;
     }
 
-    if (!paymentId || (status && status !== "succeeded")) {
+    const goodStatuses = new Set(["succeeded", "active", "on_trial"]);
+    const hasId = !!(paymentId || subscriptionId);
+    const statusOk = !status || goodStatuses.has(status);
+    if (!hasId || !statusOk) {
       setStage("failed");
       setErrorMsg("Payment was not completed.");
       return;
@@ -38,11 +46,24 @@ function CallbackContent() {
 
     (async () => {
       // Read the plan the user selected before redirecting to Dodo.
-      // Do NOT remove it until verify succeeds — on a transient failure +
-      // page refresh, we'd lose the selection and a fallback default could
-      // mark the user on the wrong tier even though they paid for another.
-      let plan: string | null = null;
-      try { plan = sessionStorage.getItem("dodo_pending_plan"); } catch {}
+      // Do NOT remove until verify succeeds — on a transient failure +
+      // page refresh we'd lose the selection and a fallback default
+      // could mark the user on the wrong tier even though they paid.
+      //
+      // Sources, in order:
+      //   1. URL param — set by SubscriptionModal / NicheLimitModal
+      //      when they encode plan=<slug> into the redirect_url. Robust
+      //      because Dodo preserves the caller's query params.
+      //   2. localStorage — set alongside sessionStorage; survives the
+      //      new-tab checkout flow where sessionStorage is per-tab.
+      //   3. sessionStorage — legacy same-tab path, kept for safety.
+      let plan: string | null = searchParams.get("plan");
+      if (!plan) {
+        try { plan = localStorage.getItem("dodo_pending_plan"); } catch {}
+      }
+      if (!plan) {
+        try { plan = sessionStorage.getItem("dodo_pending_plan"); } catch {}
+      }
 
       if (!plan) {
         setStage("failed");
@@ -54,7 +75,7 @@ function CallbackContent() {
         const res = await fetch("/api/dodo/verify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ payment_id: paymentId, plan }),
+          body: JSON.stringify({ payment_id: paymentId, subscription_id: subscriptionId, plan }),
         });
         if (!res.ok) {
           const data = await res.json().catch(() => ({})) as { error?: string };
@@ -70,6 +91,7 @@ function CallbackContent() {
 
       // Only clear the pending plan after verification confirmed success.
       try { sessionStorage.removeItem("dodo_pending_plan"); } catch {}
+      try { localStorage.removeItem("dodo_pending_plan"); } catch {}
 
       const supabase = createSupabaseBrowserClient();
       await supabase.auth.refreshSession();

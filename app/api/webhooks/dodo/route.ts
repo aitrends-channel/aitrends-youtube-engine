@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { createHmac } from "crypto";
+import { getPaymentSettings } from "@/lib/plans";
 
 // Standard Webhooks spec: webhook-id + webhook-timestamp + webhook-signature headers
 // signed payload: "{msgId}\n{timestamp}\n{body}", secret is base64-encoded (whsec_ prefix)
@@ -19,8 +20,22 @@ function verifySignature(
 }
 
 export async function POST(request: Request) {
-  const secret = process.env.DODO_WEBHOOK_SECRET;
-  if (!secret) {
+  // Try every configured webhook secret in turn — Dodo lets you wire
+  // two webhook endpoints (one per env) at the same destination URL,
+  // and each has its own signing secret. We can't tell which env the
+  // incoming request came from until after we verify it, so we accept
+  // any secret that successfully signs the payload. Order: DB-managed
+  // values first (test + production, set via the admin "Dodo Variables"
+  // card), then the legacy single DODO_WEBHOOK_SECRET env var as a
+  // bootstrap fallback.
+  const settings = await getPaymentSettings();
+  const candidateSecrets = [
+    settings.webhookSecretTest,
+    settings.webhookSecretProduction,
+    process.env.DODO_WEBHOOK_SECRET ?? null,
+  ].filter((s): s is string => !!s);
+
+  if (candidateSecrets.length === 0) {
     return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
   }
 
@@ -30,10 +45,11 @@ export async function POST(request: Request) {
   const sigHeader = request.headers.get("webhook-signature");
 
   console.log("[dodo-webhook] msgId:", msgId, "timestamp:", msgTimestamp, "sig:", sigHeader);
-  console.log("[dodo-webhook] secret prefix:", secret.slice(0, 10));
+  console.log("[dodo-webhook] candidate secrets:", candidateSecrets.length);
   console.log("[dodo-webhook] body:", rawBody.slice(0, 200));
 
-  if (!verifySignature(rawBody, msgId, msgTimestamp, sigHeader, secret)) {
+  const verified = candidateSecrets.some((s) => verifySignature(rawBody, msgId, msgTimestamp, sigHeader, s));
+  if (!verified) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -54,9 +70,45 @@ export async function POST(request: Request) {
   }
 
   const updatedAt = new Date().toISOString();
-  const dodoMeta = { event, status: data.status, updated_at: updatedAt };
 
-  const { data: { users }, error: listError } = await supabase.auth.admin.listUsers();
+  // Subscription identifiers Dodo may include on either payment.* or
+  // subscription.* events. We persist whichever we can find so the
+  // app can later cancel via Dodo's API and proactively warn users
+  // before their period ends.
+  const subscriptionId =
+    (data.subscription_id as string | undefined) ??
+    ((data.subscription as Record<string, unknown> | undefined)?.subscription_id as string | undefined) ??
+    null;
+  // customer_id feeds the "Manage billing" portal URL substitution on
+  // the /plan page. Dodo puts it either at the top level or nested
+  // under customer depending on the event, so check both.
+  const customerId =
+    (data.customer_id as string | undefined) ??
+    (customer?.customer_id as string | undefined) ??
+    null;
+  const currentPeriodEnd =
+    (data.current_period_end as string | undefined) ??
+    (data.next_billing_date as string | undefined) ??
+    ((data.subscription as Record<string, unknown> | undefined)?.next_billing_date as string | undefined) ??
+    null;
+
+  const dodoMeta = {
+    event,
+    status: data.status,
+    updated_at: updatedAt,
+    ...(subscriptionId ? { subscription_id: subscriptionId } : {}),
+    ...(customerId ? { customer_id: customerId } : {}),
+    ...(currentPeriodEnd ? { current_period_end: currentPeriodEnd } : {}),
+  };
+
+  // perPage default is 50 — matches the rest of the codebase, which
+  // uses 1000 for email lookups. Without this, once the auth table
+  // has >50 users, new paying customers fall off the first page,
+  // aren't found here, get routed to the invite branch (which fails
+  // because they already exist), and the webhook returns 500. Net
+  // effect: metadata never flips to paid, revenue_events row is
+  // never written, user shows "paid on Dodo" but not on our side.
+  const { data: { users }, error: listError } = await supabase.auth.admin.listUsers({ perPage: 1000 });
   if (listError) {
     return NextResponse.json({ error: listError.message }, { status: 500 });
   }
@@ -64,8 +116,28 @@ export async function POST(request: Request) {
   const existing = users.find((u) => u.email?.toLowerCase() === email);
   const baseMetadata = existing?.app_metadata ?? {};
 
+  // Preserve a previously-stored subscription_id when a later event
+  // (e.g. payment.succeeded fired without the sub id) would otherwise
+  // wipe it. Same idea for period end.
+  const baseDodo = (baseMetadata as { dodo?: Record<string, unknown> }).dodo ?? {};
+  const mergedDodo = {
+    ...baseDodo,
+    ...dodoMeta,
+    ...(!subscriptionId && baseDodo.subscription_id ? { subscription_id: baseDodo.subscription_id } : {}),
+    ...(!customerId && baseDodo.customer_id ? { customer_id: baseDodo.customer_id } : {}),
+  };
+
   if (event === "payment.succeeded") {
-    const metadata = { ...baseMetadata, paid: true, paid_at: updatedAt, dodo: dodoMeta };
+    const metadata = {
+      ...baseMetadata,
+      paid: true,
+      paid_at: updatedAt,
+      dodo: mergedDodo,
+      // Renewal extends plan_expires_at when Dodo tells us the new
+      // period end. Keep the existing value if the event didn't carry
+      // one (e.g. one-time founder purchase).
+      ...(currentPeriodEnd ? { plan_expires_at: currentPeriodEnd } : {}),
+    };
     let userId: string | null = null;
     if (existing) {
       await supabase.auth.admin.updateUserById(existing.id, { app_metadata: metadata });
@@ -126,7 +198,69 @@ export async function POST(request: Request) {
   if (event === "payment.failed") {
     if (existing) {
       await supabase.auth.admin.updateUserById(existing.id, {
-        app_metadata: { ...baseMetadata, paid: false, dodo: dodoMeta },
+        app_metadata: { ...baseMetadata, paid: false, dodo: mergedDodo },
+      });
+    }
+    return NextResponse.json({ success: true, event });
+  }
+
+  // Subscription renewed — same effect as payment.succeeded for our
+  // purposes: keep paid, refresh paid_at, extend the period, reset
+  // the niches counter. Dodo also fires payment.succeeded on renewal
+  // so this branch is mostly defensive; harmless if both arrive.
+  if (event === "subscription.renewed" || event === "subscription.active") {
+    if (existing) {
+      await supabase.auth.admin.updateUserById(existing.id, {
+        app_metadata: {
+          ...baseMetadata,
+          paid: true,
+          paid_at: updatedAt,
+          dodo: mergedDodo,
+          ...(currentPeriodEnd ? { plan_expires_at: currentPeriodEnd } : {}),
+        },
+      });
+      await supabase.rpc("reset_niches_used", { uid: existing.id });
+    }
+    return NextResponse.json({ success: true, event });
+  }
+
+  // Subscription cancelled — user (or admin) asked Dodo to stop
+  // renewing. Keep paid=true so they still have access through the
+  // already-paid-for period; just set plan_expires_at to the period
+  // end Dodo reports. The app already treats expired plans as
+  // gated, so no further app-side work is needed.
+  if (event === "subscription.cancelled") {
+    if (existing) {
+      await supabase.auth.admin.updateUserById(existing.id, {
+        app_metadata: {
+          ...baseMetadata,
+          dodo: mergedDodo,
+          ...(currentPeriodEnd ? { plan_expires_at: currentPeriodEnd } : {}),
+        },
+      });
+    }
+    return NextResponse.json({ success: true, event });
+  }
+
+  // Subscription expired or fully failed — the customer-facing access
+  // window has ended (either the cancelled period ran out or all
+  // retry attempts failed). Revoke paid status.
+  if (event === "subscription.expired" || event === "subscription.failed") {
+    if (existing) {
+      await supabase.auth.admin.updateUserById(existing.id, {
+        app_metadata: { ...baseMetadata, paid: false, dodo: mergedDodo },
+      });
+    }
+    return NextResponse.json({ success: true, event });
+  }
+
+  // Subscription on hold — payment failed once but Dodo is still
+  // retrying. Don't revoke access yet; user might just need their
+  // card refreshed. Stash the state for UI surfacing later.
+  if (event === "subscription.on_hold") {
+    if (existing) {
+      await supabase.auth.admin.updateUserById(existing.id, {
+        app_metadata: { ...baseMetadata, dodo: mergedDodo },
       });
     }
     return NextResponse.json({ success: true, event });

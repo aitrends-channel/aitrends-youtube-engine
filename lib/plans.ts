@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { getEffectivePaymentMode } from "@/lib/env";
 
 export type PaymentMode = "test" | "production";
 
@@ -17,6 +18,11 @@ export interface Plan {
   slug: string;
   name: string;
   priceDisplay: string;
+  /** Actual chargeable amount in the smallest currency unit (cents).
+   * Read by /api/dodo/verify's price guard and /api/plan's post-webhook
+   * plan backfill. Null when the plan has no strict price (custom,
+   * gifted, etc.) — guard skips those. */
+  priceCents: number | null;
   periodDisplay: string;
   limitDisplay: string;
   features: string[];
@@ -34,6 +40,7 @@ interface PlanRow {
   slug: string;
   name: string;
   price_display: string;
+  price_cents: number | null;
   period_display: string;
   limit_display: string;
   features: unknown;
@@ -52,6 +59,7 @@ function rowToPlan(r: PlanRow, mode: PaymentMode): Plan {
     slug: r.slug,
     name: r.name,
     priceDisplay: r.price_display,
+    priceCents: typeof r.price_cents === "number" ? r.price_cents : null,
     periodDisplay: r.period_display,
     limitDisplay: r.limit_display,
     features: Array.isArray(r.features) ? (r.features as string[]) : [],
@@ -67,39 +75,81 @@ function rowToPlan(r: PlanRow, mode: PaymentMode): Plan {
 }
 
 /**
- * Read the global Dodo payment mode from product_config._global.
- * Falls back to 'test' on any error / missing row so a misconfigured
- * environment never silently switches checkout to production.
+ * The Dodo environment that should be used right now. Hard-coded by
+ * the deployment env (HECLUS_ENV via lib/env.ts) — local + staging
+ * always return 'test', the live production deployment returns
+ * 'production'. The DB column dodo_payment_mode is no longer read at
+ * runtime; the admin panel shows the effective mode as an
+ * informational indicator only.
  */
 export async function getPaymentMode(): Promise<PaymentMode> {
-  const settings = await getPaymentSettings();
-  return settings.mode;
+  return getEffectivePaymentMode();
 }
 
 /**
- * Read the global payment settings (mode + admin-only production
- * test URL). One query so callers don't pay for two round-trips.
+ * Read the per-env Dodo settings from product_config._global. The
+ * `mode` field is the deployment-env-derived effective mode (NOT the
+ * stored DB value), so every consumer automatically resolves to the
+ * right test or production credentials without needing to special-
+ * case the deployment env themselves.
  */
 export async function getPaymentSettings(): Promise<{
   mode: PaymentMode;
   productionTestLink: string | null;
+  secretKeyTest: string | null;
+  secretKeyProduction: string | null;
+  baseUrlTest: string | null;
+  baseUrlProduction: string | null;
+  webhookSecretTest: string | null;
+  webhookSecretProduction: string | null;
+  customerPortalUrlTest: string | null;
+  customerPortalUrlProduction: string | null;
 }> {
+  const mode = getEffectivePaymentMode();
   const { data, error } = await supabase
     .from("product_config")
-    .select("dodo_payment_mode, dodo_production_test_link")
+    .select("dodo_production_test_link, dodo_secret_key_test, dodo_secret_key_production, dodo_base_url_test, dodo_base_url_production, dodo_webhook_secret_test, dodo_webhook_secret_production, dodo_customer_portal_url_test, dodo_customer_portal_url_production")
     .eq("service", "_global")
     .maybeSingle();
   if (error) {
     console.warn("[plans] payment settings read failed:", error.message);
-    return { mode: "test", productionTestLink: null };
+    return {
+      mode,
+      productionTestLink: null,
+      secretKeyTest: null,
+      secretKeyProduction: null,
+      baseUrlTest: null,
+      baseUrlProduction: null,
+      webhookSecretTest: null,
+      webhookSecretProduction: null,
+      customerPortalUrlTest: null,
+      customerPortalUrlProduction: null,
+    };
   }
   const row = data as {
-    dodo_payment_mode: string | null;
     dodo_production_test_link: string | null;
+    dodo_secret_key_test: string | null;
+    dodo_secret_key_production: string | null;
+    dodo_base_url_test: string | null;
+    dodo_base_url_production: string | null;
+    dodo_webhook_secret_test: string | null;
+    dodo_webhook_secret_production: string | null;
+    dodo_customer_portal_url_test: string | null;
+    dodo_customer_portal_url_production: string | null;
   } | null;
-  const mode: PaymentMode = row?.dodo_payment_mode === "production" ? "production" : "test";
-  const link = row?.dodo_production_test_link?.trim();
-  return { mode, productionTestLink: link || null };
+  const trimOrNull = (v: string | null | undefined) => v?.trim() || null;
+  return {
+    mode,
+    productionTestLink: trimOrNull(row?.dodo_production_test_link),
+    secretKeyTest: trimOrNull(row?.dodo_secret_key_test),
+    secretKeyProduction: trimOrNull(row?.dodo_secret_key_production),
+    baseUrlTest: trimOrNull(row?.dodo_base_url_test),
+    baseUrlProduction: trimOrNull(row?.dodo_base_url_production),
+    webhookSecretTest: trimOrNull(row?.dodo_webhook_secret_test),
+    webhookSecretProduction: trimOrNull(row?.dodo_webhook_secret_production),
+    customerPortalUrlTest: trimOrNull(row?.dodo_customer_portal_url_test),
+    customerPortalUrlProduction: trimOrNull(row?.dodo_customer_portal_url_production),
+  };
 }
 
 /**

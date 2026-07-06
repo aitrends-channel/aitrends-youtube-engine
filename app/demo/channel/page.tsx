@@ -8,6 +8,7 @@ import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DemoStepCostCard } from "@/components/demo/DemoStepCostCard";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
 // Mirror the actual channel page's helpers so the demo table renders
 // identical duration/avg formatting. Kept inline rather than shared
@@ -120,6 +121,10 @@ export default function DemoChannelPage() {
   const [steps, setSteps] = useState<AnalysisStep[]>(
     channelPhase === "done" ? doneSteps() : initialSteps()
   );
+  // Fires when the user clicks the (read-only) channel URL input to
+  // edit it. The demo is locked to a canned niche/channel so we can't
+  // let them substitute their own URL — the modal explains why.
+  const [showLockedInfo, setShowLockedInfo] = useState(false);
   // Anchored to the "Analysis Progress" panel below so clicking Analyse
   // pulls the steps section into view — otherwise it lives further down
   // the page and the user can miss the running animation entirely on a
@@ -201,7 +206,7 @@ export default function DemoChannelPage() {
       <DemoNav currentStep={0} />
       <div className="flex-1 min-w-0 flex flex-col min-h-0">
         <DemoBanner />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto lg:px-[15px]">
           <div className="px-4 sm:px-8 pt-6 sm:pt-8 pb-24 space-y-8">
 
             <div>
@@ -280,7 +285,8 @@ export default function DemoChannelPage() {
                     readOnly
                     disabled={isLoading || !channelContentType}
                     placeholder={!channelContentType ? "Pick a content type above first" : undefined}
-                    className="flex-1 min-w-0 px-4 py-2.5 rounded-xl text-sm outline-none"
+                    onClick={() => { if (!isLoading && channelContentType) setShowLockedInfo(true); }}
+                    className="flex-1 min-w-0 px-4 py-2.5 rounded-xl text-sm outline-none cursor-pointer"
                     style={{
                       background: "var(--bg-progress)",
                       border: "1px solid var(--bd-8)",
@@ -504,6 +510,26 @@ export default function DemoChannelPage() {
           </div>
         </main>
       </div>
+
+      <Dialog open={showLockedInfo} onOpenChange={setShowLockedInfo}>
+        <DialogContent className="sm:max-w-md bg-white text-zinc-900" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle className="text-zinc-900">Channel URL is locked</DialogTitle>
+            <DialogDescription className="text-zinc-600">
+              The demo runs against a fixed niche and channel so you can experience the full workflow end-to-end. You can&apos;t enter a different URL here — sign up to run the analysis on your own channel.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setShowLockedInfo(false)}
+              className="px-4 py-2 rounded-lg text-sm font-semibold text-white"
+              style={{ background: "oklch(0.72 0.25 285)" }}
+            >
+              Got it
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

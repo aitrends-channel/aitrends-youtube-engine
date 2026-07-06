@@ -1,16 +1,30 @@
-import { kieRequest } from "./client";
+import { getSettings } from "@/lib/settings";
 import type { KieModel } from "@/lib/types";
 
-export const TTS_MODEL = "elevenlabs/text-to-speech-turbo-2-5";
+// Direct ElevenLabs TTS. Used to go through KIE's proxy (commit b5b38ac)
+// for a bigger voice catalog at lower cost on long chunks, but per-beat
+// splitting flipped the per-task economics — KIE's flat per-call fee
+// got paid hundreds of times on tiny segments where ElevenLabs' per-
+// char billing is cheaper. The file lives under lib/kie/ for path
+// stability across the many call sites; the implementation no longer
+// touches KIE.
+
+const EL_BASE = "https://api.elevenlabs.io";
+export const TTS_MODEL = "eleven_turbo_v2_5";
 const MAX_CHARS = 5000;
-const POLL_INTERVAL_MS = 1000;
-const POLL_DEADLINE_MS = 5 * 60 * 1000; // 5 minutes per chunk
 const CHUNK_RETRY_ATTEMPTS = 3;
 
 function v(id: string, name: string, tags: string[]): KieModel {
   return { id, name, type: "tts", tags, previewUrl: `https://static.aiquickdraw.com/elevenlabs/voice/${id}.mp3` };
 }
 
+// Voice catalog kept at the full 82 entries from the KIE era. About 28
+// of these are ElevenLabs "Premade" voices (Brian, Laura, Liam, etc.)
+// that work for every account out of the box. The other ~54 are
+// Voice Library entries that each user must explicitly add to their
+// ElevenLabs account before they can synthesize with them — we
+// surface a clear error directing them to the library if they hit
+// one they haven't added.
 const VOICES: KieModel[] = [
   v("eR40ATw9ArzDf9h3v7t7", "Addison 2.0",                          ["Female","Australian Audiobook & Podcast"]),
   v("5l5f8iK3YPeGga21rQIX", "Adeline",                              ["Female","Feminine and Conversational"]),
@@ -119,147 +133,105 @@ function splitIntoChunks(text: string): string[] {
   return chunks;
 }
 
-interface KieTaskResponse {
-  code: number;
-  msg: string;
-  data: { taskId: string };
-}
-
-interface KieRecordResponse {
-  code: number;
-  data: {
-    state?: string;
-    status?: string;
-    resultJson?: string;
-    output?: string | string[];
-    // KIE actually returns failMsg/failCode; failReason/error are
-    // kept for forward-compat in case they ever add them.
-    failMsg?: string;
-    failCode?: string;
-    failReason?: string;
-    error?: string;
-    // KIE bills per task; recordInfo returns the credit count
-    // for the completed task. Used by the project_costs ledger.
-    creditsConsumed?: number;
-  };
-}
-
 function sleep(ms: number) {
   return new Promise<void>((r) => setTimeout(r, ms));
 }
 
-function extractAudioUrl(d: KieRecordResponse["data"] | undefined): string | undefined {
-  if (!d) return undefined;
-  if (typeof d.resultJson === "string") {
-    try {
-      const parsed = JSON.parse(d.resultJson) as { resultUrls?: string[]; url?: string; audioUrl?: string };
-      const url = parsed.resultUrls?.[0] ?? parsed.url ?? parsed.audioUrl;
-      if (url) return url;
-    } catch {
-      if (d.resultJson.startsWith("http")) return d.resultJson;
+// Parse ElevenLabs' error body — they nest the actual message under
+// `detail.message` or `detail` (string) or `message`. We surface the
+// inner string so the UI shows "voice_not_found: ..." rather than
+// "ElevenLabs error 400".
+function extractElError(body: string, status: number): { message: string; status: number; code?: string } {
+  let message = `ElevenLabs error ${status}`;
+  let code: string | undefined;
+  try {
+    const parsed = JSON.parse(body) as { detail?: { message?: string; status?: string } | string; message?: string };
+    if (typeof parsed.detail === "object" && parsed.detail) {
+      if (typeof parsed.detail.message === "string") message = parsed.detail.message;
+      if (typeof parsed.detail.status === "string") code = parsed.detail.status;
+    } else if (typeof parsed.detail === "string") {
+      message = parsed.detail;
+    } else if (typeof parsed.message === "string") {
+      message = parsed.message;
     }
-  }
-  if (Array.isArray(d.output)) return d.output[0];
-  if (typeof d.output === "string") return d.output;
-  return undefined;
+  } catch { /* fall through with default */ }
+  return { message, status, code };
 }
 
 async function generateChunk(
   text: string,
   voiceId: string,
-  userId: string | undefined,
+  apiKey: string,
   onStatus?: (msg: string) => void,
-): Promise<{ audio: ArrayBuffer; creditsConsumed?: number }> {
-  onStatus?.("Submitting…");
-  console.log(`[TTS] KIE submit | model: ${TTS_MODEL} | voice: ${voiceId} | chars: ${text.length}`);
+): Promise<{ audio: ArrayBuffer; charsConsumed: number }> {
+  onStatus?.("Generating audio…");
+  const tStart = Date.now();
+  console.log(`[TTS] EL direct | model: ${TTS_MODEL} | voice: ${voiceId} | chars: ${text.length}`);
 
-  const submit = await kieRequest<KieTaskResponse>("/api/v1/jobs/createTask", {
+  const res = await fetch(`${EL_BASE}/v1/text-to-speech/${voiceId}`, {
     method: "POST",
+    headers: {
+      "xi-api-key": apiKey,
+      "Content-Type": "application/json",
+      Accept: "audio/mpeg",
+    },
     body: JSON.stringify({
-      model: TTS_MODEL,
-      input: {
-        text,
-        voice: voiceId,
-        stability: 0.5,
-        similarity_boost: 0.75,
-        speed: 1,
-      },
+      text,
+      model_id: TTS_MODEL,
+      voice_settings: { stability: 0.5, similarity_boost: 0.75 },
     }),
-  }, userId);
+  });
 
-  if (submit.code !== 200 || !submit.data?.taskId) {
-    throw new Error(submit.msg || `TTS submit failed (${submit.code})`);
-  }
-  const taskId = submit.data.taskId;
-
-  const DONE = ["succeed", "success", "completed", "done", "finish", "finished", "complete"];
-  const FAIL = ["failed", "error", "fail"];
-  const deadline = Date.now() + POLL_DEADLINE_MS;
-
-  while (Date.now() < deadline) {
-    await sleep(POLL_INTERVAL_MS);
-    onStatus?.("Generating…");
-
-    const status = await kieRequest<KieRecordResponse>(
-      `/api/v1/jobs/recordInfo?taskId=${taskId}`,
-      {},
-      userId,
-    );
-    const d = status.data;
-    const state = (d?.state ?? d?.status ?? "").toLowerCase();
-    const creditsConsumed = typeof d?.creditsConsumed === "number" ? d.creditsConsumed : undefined;
-
-    if (DONE.includes(state)) {
-      const url = extractAudioUrl(d);
-      if (!url) throw new Error("TTS finished but no audio URL was returned");
-      onStatus?.("Downloading…");
-      const audioRes = await fetch(url);
-      if (!audioRes.ok) throw new Error(`Failed to download audio: ${audioRes.status}`);
-      const audio = await audioRes.arrayBuffer();
-      return { audio, creditsConsumed };
+  if (!res.ok) {
+    const body = await res.text();
+    const err = extractElError(body, res.status);
+    // Voice-not-found is the specific failure mode for Voice Library
+    // entries the user hasn't added to their account yet. Surface
+    // actionable guidance so they know exactly where to fix it
+    // rather than seeing a generic 400. KIE didn't gate on this so
+    // every voice "just worked" — direct EL does, and the per-voice
+    // failure is the cost of going direct (Option A in the migration
+    // tradeoff).
+    if (res.status === 400 && /voice.*not.*found|voice_not_found/i.test(err.message)) {
+      throw new Error(
+        `Voice ${voiceId} is not in your ElevenLabs library. Add it from ` +
+        `https://elevenlabs.io/app/voice-library and try again.`,
+      );
     }
-    if (FAIL.includes(state)) {
-      console.error(`[TTS] chunk failed | taskId=${taskId} | full data:`, JSON.stringify(d));
-      // KIE returns failMsg + failCode (not failReason/error). Use
-      // failMsg as the primary user-facing message; include failCode
-      // for context. ElevenLabs' transient "internal error, please
-      // try again later" lands here and is genuinely retryable.
-      const detail = d?.failMsg ?? d?.failReason ?? d?.error ?? "no detail";
-      const code = d?.failCode ? ` (${d.failCode})` : "";
-      throw new Error(`TTS chunk failed${code}: ${detail}`);
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(`ElevenLabs auth failed (${res.status}). Check your API key in Settings.`);
     }
+    throw new Error(err.message);
   }
 
-  throw new Error("TTS generation timed out after 5 minutes");
+  const audio = await res.arrayBuffer();
+  console.log(`[TTS-timing] voice=${voiceId} chars=${text.length} total=${Date.now() - tStart}ms`);
+  return { audio, charsConsumed: text.length };
 }
 
-// Retry wrapper around generateChunk — KIE TTS occasionally returns
-// state=failed for transient reasons that clear within seconds.
-// Exponential backoff (2s/4s/8s), 3 attempts. Fails fast on non-
-// transient errors (auth, voice-not-found, etc.) since retrying
-// won't help.
+// Retry wrapper — direct EL clears most transients in 1-2 attempts.
+// Tighter backoff than the KIE version (2/5/10s vs 5/15/30s) because
+// EL's "internal_error" / rate-limit windows are much shorter. Bails
+// fast on auth, voice-not-found, and unsupported-voice errors since
+// those won't change with retry.
 async function generateChunkWithRetry(
   text: string,
   voiceId: string,
-  userId: string | undefined,
+  apiKey: string,
   onStatus?: (msg: string) => void,
-): Promise<{ audio: ArrayBuffer; creditsConsumed?: number }> {
+): Promise<{ audio: ArrayBuffer; charsConsumed: number }> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < CHUNK_RETRY_ATTEMPTS; attempt++) {
     try {
-      return await generateChunk(text, voiceId, userId, onStatus);
+      return await generateChunk(text, voiceId, apiKey, onStatus);
     } catch (err) {
       lastErr = err;
       const msg = err instanceof Error ? err.message : String(err);
-      // Non-transient errors — abort early.
-      if (/voice|api key|unauthorized|forbidden|invalid/i.test(msg)) {
+      if (/not in your ElevenLabs library|auth failed|api key|unauthorized|forbidden|invalid_voice/i.test(msg)) {
         throw err;
       }
       if (attempt === CHUNK_RETRY_ATTEMPTS - 1) break;
-      // 5s / 15s / 30s — bigger gaps than the Claude retry path
-      // because KIE TTS' "internal error, please try again later"
-      // tends to need ~10-30s to clear, not 1-2s.
-      const delay = attempt === 0 ? 5000 : attempt === 1 ? 15000 : 30000;
+      const delay = attempt === 0 ? 2000 : attempt === 1 ? 5000 : 10000;
       console.warn(`[TTS] chunk attempt ${attempt + 1}/${CHUNK_RETRY_ATTEMPTS} failed: ${msg}; retrying in ${delay}ms`);
       onStatus?.(`Retrying (${attempt + 2}/${CHUNK_RETRY_ATTEMPTS})…`);
       await sleep(delay);
@@ -268,8 +240,76 @@ async function generateChunkWithRetry(
   throw lastErr;
 }
 
-export async function listTTSVoices(): Promise<KieModel[]> {
-  return VOICES;
+// Dynamic catalog: the user's actual ElevenLabs voices (premade +
+// anything they added from the Voice Library + their own clones)
+// fetched from /v1/voices, merged with the static KIE-era list above.
+// Account voices come FIRST — they're the ones guaranteed to
+// synthesize — and dedupe wins over the static entry so a voice the
+// user added shows their account's preview/name. Falls back to the
+// static list alone when there's no key or the fetch fails, so the
+// picker never comes up empty.
+export async function listTTSVoices(userId?: string): Promise<KieModel[]> {
+  let accountVoices: KieModel[] = [];
+  try {
+    const apiKey = userId
+      ? (await getSettings(userId)).elevenlabs_api_key
+      : (process.env.ELEVENLABS_API_KEY ?? "");
+    if (apiKey) {
+      const res = await fetch(`${EL_BASE}/v1/voices`, {
+        headers: { "xi-api-key": apiKey },
+        // Voice lists change rarely; avoid hammering ElevenLabs on
+        // every picker render across tabs.
+        next: { revalidate: 300 },
+      });
+      if (res.ok) {
+        const data = await res.json() as {
+          voices?: Array<{
+            voice_id: string;
+            name: string;
+            preview_url?: string;
+            category?: string;
+            labels?: Record<string, string | undefined>;
+          }>;
+        };
+        accountVoices = (data.voices ?? []).map((vc) => {
+          const labels = vc.labels ?? {};
+          const gender = (labels.gender ?? "").toLowerCase();
+          const genderTag = gender === "female" ? "Female" : gender === "male" ? "Male" : "Neutral";
+          const description = [labels.descriptive ?? labels.description, labels.accent, labels.use_case]
+            .filter(Boolean)
+            .map((s) => String(s).replace(/_/g, " "))
+            .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+            .join(", ");
+          // Anything the user added/cloned themselves (category !==
+          // "premade") carries a "Custom" tag — the voice picker
+          // groups these under their own tab — and leads its
+          // description with the category (Cloned / Generated /
+          // Professional) so the user can tell them apart.
+          const isCustom = !!vc.category && vc.category !== "premade";
+          const categoryLabel = isCustom
+            ? vc.category!.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase())
+            : null;
+          return {
+            id: vc.voice_id,
+            name: vc.name,
+            type: "tts" as const,
+            tags: [
+              genderTag,
+              [categoryLabel, description].filter(Boolean).join(", ") || "Your ElevenLabs voice",
+              ...(isCustom ? ["Custom"] : []),
+            ],
+            previewUrl: vc.preview_url,
+          };
+        });
+      } else {
+        console.warn(`[tts] /v1/voices failed (${res.status}) — falling back to static catalog`);
+      }
+    }
+  } catch (e) {
+    console.warn("[tts] voice list fetch failed — falling back to static catalog:", e instanceof Error ? e.message : e);
+  }
+  const seen = new Set(accountVoices.map((m) => m.id));
+  return [...accountVoices, ...VOICES.filter((m) => !seen.has(m.id))];
 }
 
 export async function generateTTS(
@@ -277,27 +317,32 @@ export async function generateTTS(
   voiceId: string,
   onProgress?: (current: number, total: number) => void,
   onStatus?: (msg: string) => void,
-  userId?: string
-): Promise<{ audio: ArrayBuffer; creditsConsumed?: number }> {
+  userId?: string,
+): Promise<{ audio: ArrayBuffer; charsConsumed: number }> {
+  const apiKey = userId
+    ? (await getSettings(userId)).elevenlabs_api_key
+    : (process.env.ELEVENLABS_API_KEY ?? "");
+  if (!apiKey) throw new Error("ElevenLabs API key not configured. Add it in Settings.");
+
   const normalized = normalizeText(text);
   const chunks = splitIntoChunks(normalized);
   console.log(`[TTS] ${chunks.length} chunk(s) | chars: ${normalized.length} | voice: ${voiceId}`);
 
   if (chunks.length === 1) {
     onProgress?.(0, 1);
-    const result = await generateChunkWithRetry(chunks[0], voiceId, userId, onStatus);
+    const result = await generateChunkWithRetry(chunks[0], voiceId, apiKey, onStatus);
     onProgress?.(1, 1);
     return result;
   }
 
   const buffers: ArrayBuffer[] = [];
-  let totalCredits = 0;
+  let totalChars = 0;
   for (let i = 0; i < chunks.length; i++) {
     onProgress?.(i, chunks.length);
     onStatus?.(`Chunk ${i + 1} of ${chunks.length}…`);
-    const result = await generateChunkWithRetry(chunks[i], voiceId, userId, onStatus);
+    const result = await generateChunkWithRetry(chunks[i], voiceId, apiKey, onStatus);
     buffers.push(result.audio);
-    totalCredits += result.creditsConsumed ?? 0;
+    totalChars += result.charsConsumed;
   }
   onProgress?.(chunks.length, chunks.length);
 
@@ -308,5 +353,5 @@ export async function generateTTS(
     merged.set(new Uint8Array(b), offset);
     offset += b.byteLength;
   }
-  return { audio: merged.buffer, creditsConsumed: totalCredits > 0 ? totalCredits : undefined };
+  return { audio: merged.buffer, charsConsumed: totalChars };
 }

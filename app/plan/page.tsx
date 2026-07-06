@@ -4,45 +4,31 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Check, LogOut, Zap, CalendarDays, RefreshCw, Settings, KeyRound } from "lucide-react";
+import { ArrowLeft, Check, LogOut, Zap, CalendarDays, RefreshCw, KeyRound, CreditCard, ExternalLink } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { PageLoader } from "@/components/PageLoader";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { Spinner } from "@/components/ui/spinner";
 
-interface PlanDTO {
+interface PlanDetails {
   slug: string;
   name: string;
   priceDisplay: string;
   periodDisplay: string;
+  limitDisplay: string;
   features: string[];
 }
-
-interface PlanDisplay {
-  name: string;
-  price: string;
-  period: string;
-  features: string[];
-}
-
-// Synthetic display for users with the admin role. Admin isn't a SKU
-// in the plans table — it's promoted via the dashboard's Make admin
-// action and has no price/expiry, so it lives here as a hardcoded
-// tile instead of polluting the DB.
-const ADMIN_DISPLAY: PlanDisplay = {
-  name: "Admin",
-  price: "—",
-  period: "",
-  features: ["Unlimited niches", "Full admin dashboard access", "Full AI pipeline", "All features included", "No expiry"],
-};
 
 interface PlanData {
   email: string;
   paid: boolean;
   paid_at: string | null;
   plan: string | null;
+  plan_details: PlanDetails | null;
   plan_expires_at: string | null;
+  can_cancel_subscription?: boolean;
+  subscription_cancelled?: boolean;
+  manage_billing_available?: boolean;
 }
 
 function formatDate(iso: string) {
@@ -56,12 +42,53 @@ function daysUntil(iso: string) {
 export default function PlanPage() {
   const router = useRouter();
   const [planData, setPlanData] = useState<PlanData | null>(null);
-  const [plansBySlug, setPlansBySlug] = useState<Record<string, PlanDisplay>>({ admin: ADMIN_DISPLAY });
   const [loading, setLoading] = useState(true);
   const [userEmail, setUserEmail] = useState("");
   const [showModal, setShowModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const [openingPortal, setOpeningPortal] = useState(false);
+
+  async function handleManageBilling() {
+    setOpeningPortal(true);
+    try {
+      const res = await fetch("/api/dodo/portal-session", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok || !body?.url) {
+        alert(body?.error ?? "Could not open the billing portal. Try again in a moment.");
+        return;
+      }
+      // New tab so the /plan page state (checkpoints, modals) survives
+      // if the user comes back to it.
+      window.open(body.url, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      alert((e as Error).message || "Could not open the billing portal.");
+    } finally {
+      setOpeningPortal(false);
+    }
+  }
+
+  async function handleCancelSubscription() {
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      const res = await fetch("/api/dodo/cancel-subscription", { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setCancelError(body?.error ?? "Could not cancel subscription. Please try again.");
+        return;
+      }
+      setShowCancelModal(false);
+      window.location.reload();
+    } catch (e) {
+      setCancelError((e as Error).message || "Could not cancel subscription.");
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   async function handleSignOut() {
     const supabase = createSupabaseBrowserClient();
@@ -80,37 +107,19 @@ export default function PlanPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    // Fetched separately from /api/plan so the user's own subscription
-    // state and the plan catalog are independent loads — the catalog
-    // is admin-editable and changes shouldn't be coupled to per-user
-    // state. Admin entry is kept synthetic since it isn't in the DB.
-    fetch("/api/plans", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((d) => {
-        const list = (d?.plans as PlanDTO[] | undefined) ?? [];
-        const map: Record<string, PlanDisplay> = { admin: ADMIN_DISPLAY };
-        for (const p of list) {
-          map[p.slug] = {
-            name: p.name,
-            price: p.priceDisplay,
-            period: p.periodDisplay,
-            features: p.features,
-          };
-        }
-        setPlansBySlug(map);
-      })
-      .catch(() => {});
-  }, []);
-
   if (loading) return <PageLoader />;
 
-  const plan = planData?.plan ? plansBySlug[planData.plan] ?? null : null;
+  const plan = planData?.plan_details ?? null;
   const expiresAt = planData?.plan_expires_at;
   const paidAt = planData?.paid_at;
   const daysLeft = expiresAt ? daysUntil(expiresAt) : null;
   const isExpired = daysLeft !== null && daysLeft <= 0;
   const expiringSOon = daysLeft !== null && daysLeft > 0 && daysLeft <= 30;
+  // "Cancelled" = user asked Dodo to stop renewing but the current
+  // period hasn't run out yet. Distinct from `isExpired` (period ran
+  // out) — cancelled users still have access and see a "Resubscribe"
+  // primary CTA instead of "Renew".
+  const isCancelled = !!planData?.subscription_cancelled && !isExpired;
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: "var(--bg-page)" }}>
@@ -182,7 +191,7 @@ export default function PlanPage() {
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-xl mx-auto px-8 py-14 space-y-6">
+      <main className="flex-1 w-full max-w-5xl mx-auto px-8 py-14 space-y-8">
 
         {/* Heading */}
         <div className="space-y-3">
@@ -200,7 +209,7 @@ export default function PlanPage() {
 
         {!planData?.paid ? (
           /* No active plan */
-          <div className="p-6 rounded-2xl text-center space-y-4"
+          <div className="p-10 rounded-2xl text-center space-y-4"
             style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
             <p className="text-sm font-medium" style={{ color: "var(--c-60)" }}>You don&apos;t have an active plan.</p>
             <button
@@ -211,136 +220,268 @@ export default function PlanPage() {
             </button>
           </div>
         ) : (
-          <>
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
             {/* Current plan card */}
-            <div className="p-5 rounded-2xl space-y-5"
+            <div className="lg:col-span-3 p-6 rounded-2xl space-y-6"
               style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-              <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between gap-4">
                 <div>
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full capitalize mb-2"
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full capitalize mb-3"
                     style={{
                       background: "oklch(0.72 0.25 285 / 0.15)",
                       color: "oklch(0.72 0.25 285)",
                       border: "1px solid oklch(0.72 0.25 285 / 0.3)",
                     }}>
                     <Zap size={10} />
-                    {plan?.name ?? planData.plan} plan
+                    {plan?.name ?? planData.plan ?? "Active"} plan
                   </span>
-                  <p className="text-2xl font-bold text-foreground">
-                    {plan?.price ?? "—"}
-                    <span className="text-sm font-normal ml-1" style={{ color: "var(--c-45)" }}>{plan?.period}</span>
+                  <p className="text-3xl font-bold text-foreground">
+                    {plan?.priceDisplay ?? "—"}
+                    <span className="text-sm font-normal ml-1" style={{ color: "var(--c-45)" }}>{plan?.periodDisplay}</span>
                   </p>
+                  {plan?.limitDisplay && (
+                    <p className="text-xs mt-1.5" style={{ color: "var(--c-50)" }}>{plan.limitDisplay}</p>
+                  )}
                 </div>
 
                 {isExpired && (
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full"
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full shrink-0"
                     style={{ background: "oklch(0.6 0.22 25 / 0.12)", color: "oklch(0.7 0.2 25)", border: "1px solid oklch(0.6 0.22 25 / 0.25)" }}>
                     Expired
                   </span>
                 )}
-                {expiringSOon && !isExpired && (
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full"
+                {isCancelled && (
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full shrink-0"
+                    style={{ background: "oklch(0.6 0.22 25 / 0.10)", color: "oklch(0.65 0.20 25)", border: "1px solid oklch(0.6 0.22 25 / 0.22)" }}>
+                    Cancelled
+                  </span>
+                )}
+                {expiringSOon && !isExpired && !isCancelled && (
+                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full shrink-0"
                     style={{ background: "oklch(0.75 0.18 70 / 0.12)", color: "oklch(0.75 0.18 70)", border: "1px solid oklch(0.75 0.18 70 / 0.25)" }}>
                     Expiring soon
                   </span>
                 )}
               </div>
 
-              {plan && (
-                <ul className="space-y-2">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-center gap-2.5 text-sm" style={{ color: "var(--c-65)" }}>
-                      <span className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
-                        style={{ background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)" }}>
-                        <Check size={9} strokeWidth={3} />
-                      </span>
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* Billing details */}
-            <div className="p-5 rounded-2xl space-y-3"
-              style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-              <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--c-40)" }}>Billing Details</p>
-
-              {paidAt && (
-                <div className="flex items-center gap-3">
-                  <CalendarDays size={14} style={{ color: "var(--c-40)" }} />
-                  <div>
-                    <p className="text-xs" style={{ color: "var(--c-40)" }}>Started</p>
-                    <p className="text-sm font-medium text-foreground">{formatDate(paidAt)}</p>
+              {isCancelled && (
+                <div className="p-3 rounded-xl flex items-start gap-3"
+                  style={{ background: "oklch(0.6 0.22 25 / 0.06)", border: "1px solid oklch(0.6 0.22 25 / 0.20)" }}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+                    style={{ background: "oklch(0.6 0.22 25 / 0.10)", border: "1px solid oklch(0.6 0.22 25 / 0.20)" }}>
+                    <CalendarDays size={14} style={{ color: "oklch(0.65 0.20 25)" }} />
+                  </div>
+                  <div className="text-sm">
+                    <p className="font-semibold" style={{ color: "var(--c-88)" }}>Subscription cancelled</p>
+                    <p className="mt-0.5" style={{ color: "var(--c-55)" }}>
+                      You&apos;ll keep access
+                      {expiresAt ? <> until <span className="font-semibold" style={{ color: "var(--c-88)" }}>{formatDate(expiresAt)}</span></> : <> until the end of your current billing period</>}
+                      . Resubscribe any time to keep going.
+                    </p>
                   </div>
                 </div>
               )}
 
-              {expiresAt && (
-                <div className="flex items-center gap-3">
-                  <CalendarDays size={14} style={{ color: isExpired ? "oklch(0.7 0.2 25)" : expiringSOon ? "oklch(0.75 0.18 70)" : "var(--c-40)" }} />
-                  <div>
-                    <p className="text-xs" style={{ color: "var(--c-40)" }}>
-                      {isExpired ? "Expired on" : "Expires on"}
-                    </p>
-                    <p className="text-sm font-medium" style={{ color: isExpired ? "oklch(0.7 0.2 25)" : "var(--c-88)" }}>
-                      {formatDate(expiresAt)}
-                      {!isExpired && daysLeft !== null && (
-                        <span className="ml-2 text-xs font-normal" style={{ color: expiringSOon ? "oklch(0.75 0.18 70)" : "var(--c-40)" }}>
-                          ({daysLeft} day{daysLeft !== 1 ? "s" : ""} left)
+              <div className="pt-4" style={{ borderTop: "1px solid oklch(1 0 0 / 0.07)" }}>
+                <p className="text-xs font-semibold uppercase tracking-widest mb-3" style={{ color: "var(--c-40)" }}>
+                  What&apos;s included
+                </p>
+                {plan && plan.features.length > 0 ? (
+                  <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2.5">
+                    {plan.features.map((f) => (
+                      <li key={f} className="flex items-start gap-2.5 text-sm" style={{ color: "var(--c-65)" }}>
+                        <span className="w-4 h-4 mt-0.5 rounded-full flex items-center justify-center shrink-0"
+                          style={{ background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)" }}>
+                          <Check size={9} strokeWidth={3} />
                         </span>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm" style={{ color: "var(--c-50)" }}>
+                    Your plan is active but its details aren&apos;t available. Contact support if this persists.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Right column: Billing + actions */}
+            <div className="lg:col-span-2 space-y-6">
+              <div className="p-6 rounded-2xl space-y-4"
+                style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+                <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "var(--c-40)" }}>Billing Details</p>
+
+                {paidAt && (
+                  <div className="flex items-center gap-3">
+                    <CalendarDays size={14} style={{ color: "var(--c-40)" }} />
+                    <div>
+                      <p className="text-xs" style={{ color: "var(--c-40)" }}>Started</p>
+                      <p className="text-sm font-medium text-foreground">{formatDate(paidAt)}</p>
+                    </div>
+                  </div>
+                )}
+
+                {expiresAt && (
+                  <div className="flex items-center gap-3">
+                    <CalendarDays size={14} style={{ color: isExpired ? "oklch(0.7 0.2 25)" : isCancelled ? "oklch(0.65 0.20 25)" : expiringSOon ? "oklch(0.75 0.18 70)" : "var(--c-40)" }} />
+                    <div>
+                      <p className="text-xs" style={{ color: "var(--c-40)" }}>
+                        {isExpired ? "Expired on" : isCancelled ? "Access ends on" : "Expires on"}
+                      </p>
+                      <p className="text-sm font-medium" style={{ color: isExpired ? "oklch(0.7 0.2 25)" : "var(--c-88)" }}>
+                        {formatDate(expiresAt)}
+                        {!isExpired && daysLeft !== null && (
+                          <span className="ml-2 text-xs font-normal" style={{ color: isCancelled ? "oklch(0.65 0.20 25)" : expiringSOon ? "oklch(0.75 0.18 70)" : "var(--c-40)" }}>
+                            ({daysLeft} day{daysLeft !== 1 ? "s" : ""} left)
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {!expiresAt && (
+                  <div className="flex items-center gap-3">
+                    <RefreshCw size={14} style={{ color: "oklch(0.65 0.15 145)" }} />
+                    <div>
+                      <p className="text-xs" style={{ color: "var(--c-40)" }}>Billing cycle</p>
+                      <p className="text-sm font-medium text-foreground">
+                        {plan?.periodDisplay === "/mo" ? "Monthly" : "Annual"}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {planData?.manage_billing_available && (
+                  <div className="flex items-center gap-3 pt-3" style={{ borderTop: "1px solid oklch(1 0 0 / 0.07)" }}>
+                    <CreditCard size={14} style={{ color: "var(--c-40)" }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs" style={{ color: "var(--c-40)" }}>Payment method</p>
+                      <p className="text-sm font-medium text-foreground">Card on file</p>
+                    </div>
+                    <button
+                      onClick={handleManageBilling}
+                      disabled={openingPortal}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-60 cursor-pointer"
+                      style={{ background: "transparent", color: "var(--c-70)", border: "1px solid var(--bd-8)" }}
+                    >
+                      {openingPortal ? (
+                        <>
+                          <span className="inline-block w-3 h-3 rounded-full border-2 border-current/40 border-t-current animate-spin" />
+                          Opening…
+                        </>
+                      ) : (
+                        <>
+                          Manage
+                          <ExternalLink size={11} />
+                        </>
                       )}
-                    </p>
+                    </button>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
 
-              {!expiresAt && (
-                <div className="flex items-center gap-3">
-                  <RefreshCw size={14} style={{ color: "oklch(0.65 0.15 145)" }} />
-                  <div>
-                    <p className="text-xs" style={{ color: "var(--c-40)" }}>Billing cycle</p>
-                    <p className="text-sm font-medium text-foreground">
-                      {plan?.period === "/mo" ? "Monthly" : "Annual"}
-                    </p>
-                  </div>
-                </div>
-              )}
+              {/* Renew / Resubscribe / Change Plan */}
+              <div className="space-y-3">
+                {isCancelled ? (
+                  <button
+                    onClick={() => setShowModal(true)}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                    style={{
+                      background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+                      color: "var(--c-98)",
+                      boxShadow: "0 0 24px oklch(0.72 0.25 285 / 0.2)",
+                    }}>
+                    <RefreshCw size={15} />
+                    Resubscribe
+                  </button>
+                ) : (
+                  <>
+                    {(isExpired || expiresAt) && (
+                      <button
+                        onClick={() => setShowModal(true)}
+                        className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                        style={{
+                          background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+                          color: "var(--c-98)",
+                          boxShadow: "0 0 24px oklch(0.72 0.25 285 / 0.2)",
+                        }}>
+                        <RefreshCw size={15} />
+                        {isExpired ? "Renew Plan" : "Renew Early"}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setShowModal(true)}
+                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                      style={{
+                        background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+                        color: "var(--c-98)",
+                        boxShadow: "0 0 24px oklch(0.72 0.25 285 / 0.2)",
+                      }}>
+                      Change Plan
+                    </button>
+                  </>
+                )}
+                {planData?.can_cancel_subscription && (
+                  <button
+                    onClick={() => { setCancelError(null); setShowCancelModal(true); }}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                    style={{
+                      background: "oklch(0.6 0.22 25)",
+                      color: "white",
+                      boxShadow: "0 0 24px oklch(0.6 0.22 25 / 0.2)",
+                    }}>
+                    Cancel Subscription
+                  </button>
+                )}
+              </div>
             </div>
-
-            {/* Renew / Change Plan */}
-            <div className="space-y-3">
-              {(isExpired || expiresAt) && (
-                <button
-                  onClick={() => setShowModal(true)}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
-                  style={{
-                    background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-                    color: "var(--c-98)",
-                    boxShadow: "0 0 24px oklch(0.72 0.25 285 / 0.2)",
-                  }}>
-                  <RefreshCw size={15} />
-                  {isExpired ? "Renew Plan" : "Renew Early"}
-                </button>
-              )}
-              <button
-                onClick={() => setShowModal(true)}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
-                style={{
-                  background: "oklch(1 0 0 / 0.06)",
-                  color: "var(--c-60)",
-                  border: "1px solid oklch(1 0 0 / 0.08)",
-                }}>
-                Change Plan
-              </button>
-            </div>
-          </>
+          </div>
         )}
       </main>
+
+      {showCancelModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }} onClick={() => !cancelling && setShowCancelModal(false)}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-bold text-zinc-900">Cancel your subscription?</h2>
+            <p className="mt-2 text-sm text-zinc-600">
+              You&apos;ll keep access to your current plan until
+              {expiresAt ? <> <span className="font-semibold text-zinc-900">{formatDate(expiresAt)}</span></> : <> the end of your current billing period</>}.
+              After that, your plan will end and you can re-subscribe any time.
+            </p>
+            {cancelError && (
+              <p className="mt-3 text-sm font-medium" style={{ color: "oklch(0.6 0.22 25)" }}>{cancelError}</p>
+            )}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setShowCancelModal(false)}
+                disabled={cancelling}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+              >
+                Keep Plan
+              </button>
+              <button
+                onClick={handleCancelSubscription}
+                disabled={cancelling}
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-60 flex items-center gap-2"
+                style={{ background: "oklch(0.6 0.22 25)" }}
+              >
+                {cancelling && (
+                  <span className="inline-block w-3.5 h-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                )}
+                {cancelling ? "Cancelling…" : "Cancel Subscription"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModal && (
         <SubscriptionModal
           email={userEmail}
+          defaultPlan={planData?.plan === "starter" ? "pro" : undefined}
+          hideProductionTest
           onClose={() => setShowModal(false)}
           onSuccess={() => {
             setShowModal(false);

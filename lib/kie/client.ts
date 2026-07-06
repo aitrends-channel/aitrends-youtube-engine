@@ -5,11 +5,27 @@ const KIE_BASE_URL = "https://api.kie.ai";
 // Carries the upstream HTTP status so route handlers can map it onto
 // an accurate response code (e.g. 429 from KIE → 429 from us, not 500).
 // Without this, every transient upstream blip alerts as a server bug.
+// `insufficientCredits` distinguishes "the customer's KIE balance is
+// zero" (user-config problem, HTTP 402 for us) from real KIE failures
+// (bad gateway) so Vercel stops paging on the former.
 export class KieUpstreamError extends Error {
-  constructor(public upstreamStatus: number, public retryAfter: number | null, message: string) {
+  constructor(
+    public upstreamStatus: number,
+    public retryAfter: number | null,
+    message: string,
+    public insufficientCredits: boolean = false,
+  ) {
     super(message);
     this.name = "KieUpstreamError";
   }
+}
+
+// KIE surfaces "wallet empty" a few different ways depending on route
+// and layer. Keep the matcher permissive — false positives here just
+// nudge the user to top up, which is still the right action.
+export function looksLikeInsufficientCredits(status: number, body: string, code?: number): boolean {
+  if (status === 402 || code === 402) return true;
+  return /insufficient\s+(credit|balance|fund|quota)|out\s+of\s+credit|no\s+credit/i.test(body);
 }
 
 async function getKieKey(userId?: string): Promise<string> {
@@ -43,7 +59,13 @@ export async function kieRequest<T>(
     const body = await res.text();
     const retryAfterHeader = res.headers.get("retry-after");
     const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : null;
-    throw new KieUpstreamError(res.status, Number.isFinite(retryAfter) ? retryAfter : null, `kie.ai error ${res.status}: ${body}`);
+    const insufficient = looksLikeInsufficientCredits(res.status, body);
+    throw new KieUpstreamError(
+      res.status,
+      Number.isFinite(retryAfter) ? retryAfter : null,
+      `kie.ai error ${res.status}: ${body}`,
+      insufficient,
+    );
   }
 
   return res.json() as Promise<T>;
@@ -69,7 +91,13 @@ export async function kieRequestBinary(
     const text = await res.text();
     const retryAfterHeader = res.headers.get("retry-after");
     const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : null;
-    throw new KieUpstreamError(res.status, Number.isFinite(retryAfter) ? retryAfter : null, `kie.ai error ${res.status}: ${text}`);
+    const insufficient = looksLikeInsufficientCredits(res.status, text);
+    throw new KieUpstreamError(
+      res.status,
+      Number.isFinite(retryAfter) ? retryAfter : null,
+      `kie.ai error ${res.status}: ${text}`,
+      insufficient,
+    );
   }
 
   return res.arrayBuffer();

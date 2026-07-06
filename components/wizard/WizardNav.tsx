@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useTransition, Fragment } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -69,14 +69,29 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerHighlightPhase, setDrawerHighlightPhase] = useState(-1);
   const [userEmail, setUserEmail] = useState("");
+  // Plan + paid status drive the plan pill in the profile menu so
+  // it matches DashboardHeader's behavior across every workflow view.
+  // Defaults to free/starter until the auth fetch lands.
+  const [userPlan, setUserPlan] = useState<string>("starter");
+  const [isPaid, setIsPaid] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
     supabase.auth.getUser().then(({ data }) => {
       if (data.user?.email) setUserEmail(data.user.email);
+      const meta = (data.user?.app_metadata ?? {}) as { plan?: unknown; paid?: unknown; is_admin?: unknown };
+      if (typeof meta.plan === "string" && meta.plan.trim()) setUserPlan(meta.plan.trim());
+      if (meta.paid === true) setIsPaid(true);
+      if (meta.is_admin === true) setIsAdmin(true);
     });
   }, []);
+
+  // Hide the plan pill on the /plan page itself — the user is
+  // already looking at plan options there, surfacing it again in
+  // the menu is just noise.
+  const showPlanPill = !pathname?.startsWith("/plan");
 
   // Apply zoom only on desktop — never touch document.documentElement.style.zoom on touch
   // devices as it disrupts iOS Safari's viewport scale calculation.
@@ -146,16 +161,20 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
     ? 100
     : Math.min(99, Math.max(0, Math.round(((currentPhaseIndex + 1) / PHASES.length) * 100)));
 
-  const [, startTransition] = useTransition();
+  // router.push fires urgently (no startTransition wrap) so
+  // prefetched routes swap immediately. pendingHref drives just the
+  // small sidebar step-icon spinner — cheap, localized, and instant
+  // acknowledgment of the click. No full-view overlay: it was
+  // forcing GPU compositing (backdrop-filter) and making the page
+  // feel more sluggish than the navigation actually was.
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   function navigate(href: string) {
     setDrawerOpen(false);
     setPendingHref(href);
-    startTransition(() => {
-      router.push(href);
-    });
+    router.push(href);
   }
-  // Clear the pending highlight once the URL settles on the target.
+
+  // Clear the sidebar spinner once the URL settles on the target.
   useEffect(() => {
     if (pendingHref && pathname.endsWith(pendingHref.split("/").pop() ?? "")) {
       setPendingHref(null);
@@ -183,6 +202,13 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
           <div key={phase.id}>
             <button
               onClick={() => navigable && navigate(href)}
+              // Belt-and-suspenders prefetch: the mount-time useEffect
+              // already prefetches every navigable route, but on slow
+              // networks that can lose the race with a click. Hover
+              // (desktop) and pointer-down (touch) give the router a
+              // final chance to warm the route before navigation.
+              onMouseEnter={() => { if (navigable) router.prefetch(href); }}
+              onPointerDown={() => { if (navigable) router.prefetch(href); }}
               disabled={!navigable || isPending}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-3 rounded-xl text-left transition-all duration-200",
@@ -352,10 +378,26 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                 className="absolute right-0 top-10 z-50 w-60 rounded-2xl py-3 shadow-2xl"
                 style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
               >
-                <div className="px-4 pb-3" style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
+                <div className="px-4 pb-3 space-y-2" style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
                   <p className="text-xs font-semibold truncate" style={{ color: "var(--c-88)" }}>
                     {userEmail || "Loading…"}
                   </p>
+                  {showPlanPill && (
+                    isAdmin ? (
+                      <span className="inline-block text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize"
+                        style={{ background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "1px solid oklch(0.55 0.15 145 / 0.25)" }}>
+                        Admin
+                      </span>
+                    ) : (
+                      <Link
+                        href="/plan"
+                        onClick={() => setShowProfileMenu(false)}
+                        className="inline-block text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize transition-opacity hover:opacity-75"
+                        style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+                        {isPaid ? userPlan : "Free"} plan →
+                      </Link>
+                    )
+                  )}
                 </div>
                 <KieBalanceRow />
                 <ElevenLabsBalanceRow />
@@ -447,10 +489,26 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                     className="absolute right-0 top-10 z-50 w-60 rounded-2xl py-3 shadow-2xl"
                     style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
                   >
-                    <div className="px-4 pb-3" style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
+                    <div className="px-4 pb-3 space-y-2" style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
                       <p className="text-xs font-semibold truncate" style={{ color: "var(--c-88)" }}>
                         {userEmail || "Loading…"}
                       </p>
+                      {showPlanPill && (
+                        isAdmin ? (
+                          <span className="inline-block text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize"
+                            style={{ background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "1px solid oklch(0.55 0.15 145 / 0.25)" }}>
+                            Admin
+                          </span>
+                        ) : (
+                          <Link
+                            href="/plan"
+                            onClick={() => setShowProfileMenu(false)}
+                            className="inline-block text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize transition-opacity hover:opacity-75"
+                            style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+                            {isPaid ? userPlan : "Free"} plan →
+                          </Link>
+                        )
+                      )}
                     </div>
                     <KieBalanceRow />
                     <ElevenLabsBalanceRow />

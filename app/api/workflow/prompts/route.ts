@@ -388,7 +388,13 @@ async function generateImages(
   for (let i = 0; i < allChunks.length; i++) {
     const chunkWords = allChunks[i].split(/\s+/).filter(Boolean).length;
     const chunkEnd = walkedWords + chunkWords;
-    if (chunkEnd <= coveredWords + CHUNK_SLACK_WORDS) {
+    // Slack only applies when there IS a covered prefix to undershoot.
+    // With zero covered words (fresh run), a script shorter than
+    // CHUNK_SLACK_WORDS fit entirely inside the slack window and its
+    // only chunk was skipped as "already covered" — the run completed
+    // with current_state=14 and zero beats, which the prompts page
+    // surfaced as "done but beats missing prompts".
+    if (coveredWords > 0 && chunkEnd <= coveredWords + CHUNK_SLACK_WORDS) {
       walkedWords = chunkEnd;
       continue;
     }
@@ -823,15 +829,17 @@ async function generateVideos(projectId: string, userId: string, send: (data: ob
     // better to save those beats than discard them and force the
     // user to regenerate (and re-pay) on the next run. Mirrors the
     // image step's policy at the persist boundary.
-    await Promise.all(
-      chunkBeats.map((b) =>
-        supabase
-          .from("project_beats")
-          .update({ video_prompt: b.videoPrompt })
-          .eq("project_id", projectId)
-          .eq("beat_number", b.beatNumber)
-      )
-    );
+    // Batched UPDATE via RPC — each beat has its own video_prompt so
+    // we can't collapse with .in(). The helper runs one
+    // UPDATE ... FROM (VALUES ...) statement server-side; migration 082.
+    const { error: batchErr } = await supabase.rpc("batch_update_beat_video_prompts", {
+      p_project_id: projectId,
+      p_updates: chunkBeats.map((b) => ({
+        beat_number: b.beatNumber,
+        video_prompt: b.videoPrompt,
+      })),
+    });
+    if (batchErr) throw new Error(`Failed to persist video prompts for batch ${i + 1}: ${batchErr.message}`);
   }
 
   // Strict sequential processing — one chunk in flight at a time.

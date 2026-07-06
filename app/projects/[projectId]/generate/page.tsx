@@ -4,9 +4,10 @@ import { useState, use, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
-import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil } from "lucide-react";
+import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp, Eye, X } from "lucide-react";
 import { ImageSparkle } from "@/components/icons/ImageSparkle";
 import { StepCostCard } from "@/components/StepCostCard";
+import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
@@ -169,7 +170,7 @@ function VoiceOption({ model, selected, onSelect, isPlaying, onPlayToggle }: {
   );
 }
 
-function SectionHeader({ icon, title, subtitle }: { icon: string; title: string; subtitle: string }) {
+function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle: string }) {
   return (
     <div className="flex items-center gap-3 mb-4">
       <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base"
@@ -361,6 +362,11 @@ export default function GeneratePage({ params }: PageProps) {
   // the user actually sees the failure summary instead of having to
   // scan the page for it.
   const imageErrorBannerRef = useRef<HTMLDivElement | null>(null);
+  // Image + video grid scroll containers — used by the scroll-to-bottom
+  // affordance so users jump straight to whatever just queued / finished
+  // without having to drag the thumb through a long list of beats.
+  const imageGridRef = useRef<HTMLDivElement | null>(null);
+  const videoGridRef = useRef<HTMLDivElement | null>(null);
   const videoErrorBannerRef = useRef<HTMLDivElement | null>(null);
   // Latch the "was visible" state so we only scroll-into-view once per
   // banner appearance (not on every re-render while it's open).
@@ -442,7 +448,6 @@ export default function GeneratePage({ params }: PageProps) {
   // the modal closes, but the brief in-modal feedback confirms the
   // click before dismissing. Matches the project's modal-loading rule.
   const [regenerateAllSubmitting, setRegenerateAllSubmitting] = useState(false);
-  const [editPromptSubmitting, setEditPromptSubmitting] = useState(false);
   const [deletingVoiceover, setDeletingVoiceover] = useState(false);
 
   // Per-beat video regenerate flow. The icon overlay on each generated
@@ -456,7 +461,7 @@ export default function GeneratePage({ params }: PageProps) {
   // Single-beat video regen — fires immediately from the per-tile
   // overlay button. The previous version routed through a confirm
   // modal; we dropped the modal so the overlay click is the action.
-  async function regenerateVideoBeat(beatNumber: number) {
+  async function regenerateVideoBeat(beatNumber: number, promptOverride?: string) {
     // SINGLE-BEAT path: clear ONLY the React banner state. Do not
     // touch the DB sweep — other failed beats should keep their
     // error context until the user explicitly retries them too.
@@ -477,7 +482,7 @@ export default function GeneratePage({ params }: PageProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
-          beats: [{ beatNumber: beat.beatNumber, videoPrompt: beat.videoPrompt, imageUrl: beat.imageUrl }],
+          beats: [{ beatNumber: beat.beatNumber, videoPrompt: promptOverride?.trim() || beat.videoPrompt, imageUrl: beat.imageUrl }],
           modelId: selectedVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
@@ -529,30 +534,18 @@ export default function GeneratePage({ params }: PageProps) {
   // alone because it disappears in 4s — the user can miss it on a
   // long-running job.
   const [outOfCredits, setOutOfCredits] = useState(false);
-  const [hoveredImageBeat, setHoveredImageBeat] = useState<Beat | null>(null);
-  // Edit-prompt modal: when set, opens a dialog letting the user
-  // tweak the beat's image prompt before kicking off a regen. The
-  // new prompt is persisted by the regenerate route so Prompt
-  // Studio reflects the change.
-  const [editPromptBeat, setEditPromptBeat] = useState<Beat | null>(null);
-  const [editedPrompt, setEditedPrompt] = useState("");
-  // Mobile-only tap-to-preview: replaces the desktop hover preview on
-  // touch devices. Tile tap opens a centered modal showing the asset
-  // + beat number + prompt; backdrop tap dismisses.
+  // Full closable preview: tile click or the eye button opens a
+  // centered modal showing the asset. Prompt text stays hidden until
+  // the user enters edit mode (pencil in the dialog), which shrinks
+  // the media and reveals an editable prompt + Save & regenerate.
+  // (Replaced the old desktop floating hover preview.)
   const [previewBeat, setPreviewBeat] = useState<{ beat: Beat; type: "image" | "video" } | null>(null);
-  // Where the hover preview should appear, computed from the
-  // thumbnail's bounding rect on hover. We anchor in viewport
-  // coordinates (position: fixed) so scrolling the page or the
-  // grid doesn't drag the preview around. The mouseleave that
-  // would fire on scroll also clears the anchor, so this is safe.
-  const [hoveredImageAnchor, setHoveredImageAnchor] = useState<{ top: number; left: number } | null>(null);
-  const [hoveredVideoBeat, setHoveredVideoBeat] = useState<Beat | null>(null);
-  // Same anchoring model the image preview uses — computed from the
-  // hovered thumbnail's bounding rect on enter so the preview floats
-  // next to the actual tile instead of fixed at the bottom-right
-  // corner of the viewport.
-  const [hoveredVideoAnchor, setHoveredVideoAnchor] = useState<{ top: number; left: number } | null>(null);
-  const videoHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [previewEditing, setPreviewEditing] = useState(false);
+  const [previewEditedPrompt, setPreviewEditedPrompt] = useState("");
+  const [previewSubmitting, setPreviewSubmitting] = useState(false);
+  // Read-only prompt visibility toggle ("Show prompt") — independent
+  // of edit mode, which has its own editable textarea.
+  const [previewShowPrompt, setPreviewShowPrompt] = useState(false);
 
   const beats: Beat[] = project?.beats ?? [];
   const script: string = project?.script ?? "";
@@ -1361,7 +1354,7 @@ export default function GeneratePage({ params }: PageProps) {
         }
       />
 
-      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
+      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
         <div className="shrink-0 sm:px-8 md:pr-44 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
@@ -1370,8 +1363,9 @@ export default function GeneratePage({ params }: PageProps) {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               Select a model for each service, then generate your final content
             </p>
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
               <StepCostCard projectId={projectId} column="generate" />
+              <StepBalanceCard />
             </div>
           </div>
         </div>
@@ -1382,7 +1376,7 @@ export default function GeneratePage({ params }: PageProps) {
           <div className="rounded-2xl flex flex-col overflow-hidden h-full"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
-              <SectionHeader icon="◈" title="AI Images" subtitle={`${totalBeats} images from script beats`} />
+              <SectionHeader icon={<ImageIcon size={18} />} title="AI Images" subtitle={`${totalBeats} images from script beats`} />
               <ModelPicker
                 type="image"
                 models={imageModels}
@@ -1411,7 +1405,8 @@ export default function GeneratePage({ params }: PageProps) {
             {(beats.some((b) => b.imageUrl || b.imageStatus) || regenBeats.size > 0) && (
               <div className="px-5 pt-4">
                 <ProgressBar value={clearingImages ? 0 : generatedImages} total={totalBeats} />
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 mt-3 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
+                <div className="relative mt-3">
+                <div ref={imageGridRef} className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
                   {beats.map((b) => {
                     const isRegening = regenBeats.has(b.beatNumber);
                     return (
@@ -1421,33 +1416,8 @@ export default function GeneratePage({ params }: PageProps) {
                         style={{ background: "var(--bg-progress)" }}
                         onClick={() => {
                           if (!b.imageUrl || clearingImages) return;
-                          // Touch-only: desktop already has the hover preview.
-                          if (!window.matchMedia("(hover: none) and (pointer: coarse)").matches) return;
                           setPreviewBeat({ beat: b, type: "image" });
                         }}
-                        onMouseEnter={(e) => {
-                          if (!b.imageUrl || clearingImages) return;
-                          // Same hover gate as the video tile — keeps mobile
-                          // taps from sticky-opening the floating preview.
-                          if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
-                          setHoveredImageBeat(b);
-                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                          const PREVIEW_WIDTH = 280;
-                          const GAP = 8;
-                          // Prefer right side of the thumbnail; flip
-                          // left if the preview would overflow the
-                          // viewport on the right (rightmost grid
-                          // column). Clamp top to keep the preview
-                          // on screen when the thumbnail is near
-                          // the bottom edge.
-                          let left = rect.right + GAP;
-                          if (left + PREVIEW_WIDTH > window.innerWidth - 8) {
-                            left = rect.left - PREVIEW_WIDTH - GAP;
-                          }
-                          const top = Math.max(8, Math.min(window.innerHeight - 280, rect.top));
-                          setHoveredImageAnchor({ top, left });
-                        }}
-                        onMouseLeave={() => { setHoveredImageBeat(null); setHoveredImageAnchor(null); }}
                       >
                         {b.imageUrl && !clearingImages ? (
                           <img src={b.imageUrl} alt={`Beat ${b.beatNumber}`} className="w-full h-full object-cover" loading="lazy" decoding="async" />
@@ -1457,29 +1427,25 @@ export default function GeneratePage({ params }: PageProps) {
                           </div>
                         )}
 
-                        {/* Edit-prompt affordance — top-right pill that
-                            opens the prompt-edit modal. Only shown
-                            for tiles with an existing image; the
-                            empty-tile state already has its own
-                            "Generate" CTA in the center. */}
+                        {/* View affordance — opens the full closable
+                            preview dialog. Replaces the old floating
+                            hover preview. */}
                         {b.imageUrl && !clearingImages && !isRegening && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setEditedPrompt(b.imagePrompt ?? "");
-                              setEditPromptBeat(b);
+                              setPreviewBeat({ beat: b, type: "image" });
                             }}
-                            disabled={!selectedImageModel || generatingImages || generatingTts}
-                            title="Edit prompt & regenerate"
-                            aria-label={`Edit prompt for beat ${b.beatNumber}`}
-                            className="absolute top-1.5 right-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 disabled:opacity-30 disabled:cursor-not-allowed hover:scale-110"
+                            title="View image"
+                            aria-label={`View image for beat ${b.beatNumber}`}
+                            className="absolute top-1.5 left-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:scale-110"
                             style={{
                               background: "oklch(0 0 0 / 0.6)",
                               color: "white",
                               border: "1px solid oklch(1 0 0 / 0.15)",
                             }}
                           >
-                            <Pencil size={12} strokeWidth={2.4} />
+                            <Eye size={12} strokeWidth={2.4} />
                           </button>
                         )}
 
@@ -1550,6 +1516,27 @@ export default function GeneratePage({ params }: PageProps) {
                       </div>
                     );
                   })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => imageGridRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+                  title="Jump to the first image"
+                  aria-label="Scroll to top"
+                  className="absolute top-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+                >
+                  <ChevronUp size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => imageGridRef.current?.scrollTo({ top: imageGridRef.current.scrollHeight, behavior: "smooth" })}
+                  title="Jump to the most recently generated image"
+                  aria-label="Scroll to bottom"
+                  className="absolute bottom-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+                >
+                  <ChevronDown size={14} />
+                </button>
                 </div>
               </div>
             )}
@@ -1648,7 +1635,7 @@ export default function GeneratePage({ params }: PageProps) {
           <div className="rounded-2xl flex flex-col overflow-hidden h-full"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
-              <SectionHeader icon="⚡" title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
+              <SectionHeader icon={<Video size={18} />} title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
               <ModelPicker
                 type="video"
                 models={videoModels}
@@ -1673,13 +1660,14 @@ export default function GeneratePage({ params }: PageProps) {
               </div>
             )}
 
-            {/* Video clip grid — mirrors image panel structure: progress + grid in one block,
-                shown whenever there's any video activity OR a queue has been submitted. */}
-            {(beats.some((b) => b.videoUrl || b.videoStatus) || videosSubmitted) && (
+            {/* Video clip grid — mirrors image panel structure: progress + grid in one block.
+                Renders placeholder cells (status "—") for every beat with a videoPrompt
+                so the user sees the workflow scaffold before queuing any clips. */}
+            {beats.some((b) => b.videoPrompt) && (
               <div className="px-5 pt-4">
                 <ProgressBar value={generatedVideos} total={videoBeats} />
-                {beats.some((b) => b.videoUrl || b.videoStatus) && (
-                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 mt-3 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
+                <div className="relative mt-3">
+                <div ref={videoGridRef} className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
                     {beats.filter((b) => b.videoPrompt).map((b) => (
                       <div
                         key={b.beatNumber}
@@ -1687,40 +1675,7 @@ export default function GeneratePage({ params }: PageProps) {
                         style={{ background: "var(--bg-progress)" }}
                         onClick={() => {
                           if (!b.videoUrl) return;
-                          if (!window.matchMedia("(hover: none) and (pointer: coarse)").matches) return;
                           setPreviewBeat({ beat: b, type: "video" });
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!b.videoUrl) return;
-                          // Touch devices fire mouseenter on tap but never
-                          // mouseleave — the preview would open and stick
-                          // until the user tapped something else. Gate the
-                          // hover preview to genuine hover-capable pointers.
-                          if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
-                          if (videoHideTimer.current) clearTimeout(videoHideTimer.current);
-                          setHoveredVideoBeat(b);
-                          // Always anchor the preview to the LEFT of
-                          // the thumbnail so the position is
-                          // consistent across the grid — no flip,
-                          // no surprise. Top is clamped so the
-                          // preview stays on screen near the grid's
-                          // bottom edge. If the leftmost column would
-                          // push the preview off the left side of
-                          // the viewport, we clamp to a small inset
-                          // so the user still sees it.
-                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                          const PREVIEW_WIDTH = 320;
-                          const PREVIEW_HEIGHT = 280;
-                          const GAP = 8;
-                          const left = Math.max(8, rect.left - PREVIEW_WIDTH - GAP);
-                          const top = Math.max(8, Math.min(window.innerHeight - PREVIEW_HEIGHT - 8, rect.top));
-                          setHoveredVideoAnchor({ top, left });
-                        }}
-                        onMouseLeave={() => {
-                          videoHideTimer.current = setTimeout(() => {
-                            setHoveredVideoBeat(null);
-                            setHoveredVideoAnchor(null);
-                          }, 200);
                         }}
                       >
                         {/* Background layer: video if we have one,
@@ -1737,6 +1692,12 @@ export default function GeneratePage({ params }: PageProps) {
                             disablePictureInPicture
                             controlsList="nodownload nofullscreen noplaybackrate noremoteplayback"
                           />
+                        ) : !b.videoStatus ? (
+                          // Pre-queue placeholder — the beat has a prompt
+                          // but hasn't been submitted yet. A video icon
+                          // signals "this slot will hold a clip" more
+                          // clearly than a bare "—" badge.
+                          <Video size={20} style={{ color: "var(--c-30)" }} aria-label="No clip yet" />
                         ) : (
                           <span className="text-[10px] px-1.5 py-0.5 rounded"
                             title={b.videoStatus === "failed" && b.videoError ? b.videoError : undefined}
@@ -1753,7 +1714,7 @@ export default function GeneratePage({ params }: PageProps) {
                                 gets to them. The transition the user
                                 sees per beat is:
                                 queued → submitting → rendering → done. */}
-                            {b.videoStatus ?? "—"}
+                            {b.videoStatus}
                           </span>
                         )}
 
@@ -1838,10 +1799,52 @@ export default function GeneratePage({ params }: PageProps) {
                             </div>
                           );
                         })()}
+
+                        {/* View affordance — opens the full closable
+                            preview dialog. Replaces the old floating
+                            hover preview. */}
+                        {b.videoUrl && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPreviewBeat({ beat: b, type: "video" });
+                            }}
+                            title="View clip"
+                            aria-label={`View clip for beat ${b.beatNumber}`}
+                            className="absolute top-1.5 left-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:scale-110"
+                            style={{
+                              background: "oklch(0 0 0 / 0.6)",
+                              color: "white",
+                              border: "1px solid oklch(1 0 0 / 0.15)",
+                            }}
+                          >
+                            <Eye size={12} strokeWidth={2.4} />
+                          </button>
+                        )}
                       </div>
                     ))}
-                  </div>
-                )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => videoGridRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+                  title="Jump to the first clip"
+                  aria-label="Scroll to top"
+                  className="absolute top-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+                >
+                  <ChevronUp size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => videoGridRef.current?.scrollTo({ top: videoGridRef.current.scrollHeight, behavior: "smooth" })}
+                  title="Jump to the most recently queued clip"
+                  aria-label="Scroll to bottom"
+                  className="absolute bottom-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+                >
+                  <ChevronDown size={14} />
+                </button>
+                </div>
               </div>
             )}
 
@@ -2030,82 +2033,6 @@ export default function GeneratePage({ params }: PageProps) {
         );
       })()}
 
-      {/* Video hover preview — anchored next to the hovered tile via
-          hoveredVideoAnchor, matching the image preview's positioning
-          rather than fixing in the bottom-right corner. */}
-      {hoveredVideoBeat?.videoUrl && hoveredVideoAnchor && (
-        <div
-          className="fixed z-50 rounded-xl overflow-hidden shadow-2xl"
-          style={{
-            top: hoveredVideoAnchor.top,
-            left: hoveredVideoAnchor.left,
-            width: "320px",
-            border: "1px solid var(--bd-10)",
-            background: "var(--bg-page-2)",
-          }}
-          onMouseEnter={() => {
-            if (videoHideTimer.current) clearTimeout(videoHideTimer.current);
-          }}
-          onMouseLeave={() => {
-            videoHideTimer.current = setTimeout(() => {
-              setHoveredVideoBeat(null);
-              setHoveredVideoAnchor(null);
-            }, 200);
-          }}
-        >
-          <video
-            key={hoveredVideoBeat.videoUrl}
-            src={hoveredVideoBeat.videoUrl}
-            className="w-full"
-            style={{ aspectRatio: "16/9", display: "block" }}
-            autoPlay
-            loop
-            playsInline
-            controls
-          />
-          <div className="px-3 py-2">
-            <p className="text-xs font-semibold mb-0.5" style={{ color: "var(--c-55)" }}>
-              Beat {hoveredVideoBeat.beatNumber}
-            </p>
-            <p className="text-xs leading-relaxed line-clamp-3" style={{ color: "var(--c-45)" }}>
-              {hoveredVideoBeat.videoPrompt}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Image hover preview — anchored next to the hovered
-          thumbnail via hoveredImageAnchor (computed onMouseEnter).
-          Flips to the left side automatically when the thumbnail
-          is in the rightmost grid column. */}
-      {hoveredImageBeat?.imageUrl && hoveredImageAnchor && (
-        <div
-          className="fixed z-50 pointer-events-none rounded-xl overflow-hidden shadow-2xl"
-          style={{
-            top: hoveredImageAnchor.top,
-            left: hoveredImageAnchor.left,
-            width: "280px",
-            border: "1px solid var(--bd-10)",
-            background: "var(--bg-panel)",
-          }}
-        >
-          <img
-            src={hoveredImageBeat.imageUrl}
-            alt={`Beat ${hoveredImageBeat.beatNumber}`}
-            className="w-full object-cover"
-            style={{ aspectRatio: "16/9" }}
-          />
-          <div className="px-3 py-2">
-            <p className="text-xs font-semibold mb-0.5" style={{ color: "var(--c-55)" }}>
-              Beat {hoveredImageBeat.beatNumber}
-            </p>
-            <p className="text-xs leading-relaxed line-clamp-3" style={{ color: "var(--c-45)" }}>
-              {hoveredImageBeat.imagePrompt}
-            </p>
-          </div>
-        </div>
-      )}
-
       <Dialog open={regenerateAllConfirmOpen} onOpenChange={(open) => { if (!generatingImages && !regenerateAllSubmitting) setRegenerateAllConfirmOpen(open); }}>
         <DialogContent showCloseButton={false}>
           <DialogHeader>
@@ -2149,8 +2076,59 @@ export default function GeneratePage({ params }: PageProps) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!previewBeat} onOpenChange={(open) => { if (!open) setPreviewBeat(null); }}>
-        <DialogContent className="sm:max-w-lg p-0 overflow-hidden" showCloseButton={false}>
+      <Dialog open={!!previewBeat} onOpenChange={(open) => { if (!open && !previewSubmitting) { setPreviewBeat(null); setPreviewEditing(false); setPreviewShowPrompt(false); } }}>
+        {/* View mode: media only (prompt hidden). Edit mode: dialog
+            shrinks and an editable prompt + Save & regenerate appears
+            under the media. */}
+        <DialogContent
+          className={`${previewEditing ? "sm:max-w-xl" : "sm:max-w-3xl"} p-0 overflow-hidden`}
+          showCloseButton={false}
+          style={{ background: "white" }}
+        >
+          {/* Action cluster — edit before close, both high-contrast
+              over full-bleed media. */}
+          <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+            {!previewEditing && (
+              <>
+                <button
+                  onClick={() => setPreviewShowPrompt((v) => !v)}
+                  title={previewShowPrompt ? "Hide prompt" : "Show prompt"}
+                  aria-label={previewShowPrompt ? "Hide prompt" : "Show prompt"}
+                  aria-pressed={previewShowPrompt}
+                  className="h-9 px-3 rounded-full flex items-center justify-center text-xs font-medium transition-all hover:scale-105"
+                  style={{
+                    background: previewShowPrompt ? "oklch(0.72 0.25 285 / 0.85)" : "oklch(0 0 0 / 0.65)",
+                    color: "white",
+                    border: "1px solid oklch(1 0 0 / 0.2)",
+                  }}
+                >
+                  {previewShowPrompt ? "Hide prompt" : "Show prompt"}
+                </button>
+                <button
+                  onClick={() => {
+                    if (!previewBeat) return;
+                    setPreviewEditedPrompt((previewBeat.type === "image" ? previewBeat.beat.imagePrompt : previewBeat.beat.videoPrompt) ?? "");
+                    setPreviewEditing(true);
+                  }}
+                  title="Edit prompt"
+                  aria-label="Edit prompt"
+                  className="w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110"
+                  style={{ background: "oklch(0 0 0 / 0.65)", color: "white", border: "1px solid oklch(1 0 0 / 0.2)" }}
+                >
+                  <Pencil size={16} strokeWidth={2.4} />
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => { if (!previewSubmitting) { setPreviewBeat(null); setPreviewEditing(false); setPreviewShowPrompt(false); } }}
+              title="Close preview"
+              aria-label="Close preview"
+              className="w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110"
+              style={{ background: "oklch(0 0 0 / 0.65)", color: "white", border: "1px solid oklch(1 0 0 / 0.2)" }}
+            >
+              <X size={18} strokeWidth={2.4} />
+            </button>
+          </div>
           {previewBeat?.type === "image" && previewBeat.beat.imageUrl && (
             <img
               src={previewBeat.beat.imageUrl}
@@ -2171,98 +2149,74 @@ export default function GeneratePage({ params }: PageProps) {
               controls
             />
           )}
-          <div className="px-4 py-3">
-            <p className="text-xs font-semibold mb-1" style={{ color: "var(--c-55)" }}>
-              Beat {previewBeat?.beat.beatNumber}
-            </p>
-            <p className="text-xs leading-relaxed" style={{ color: "var(--c-45)" }}>
-              {previewBeat?.type === "image" ? previewBeat?.beat.imagePrompt : previewBeat?.beat.videoPrompt}
-            </p>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!editPromptBeat} onOpenChange={(open) => { if (!open && !editPromptSubmitting) setEditPromptBeat(null); }}>
-        <DialogContent
-          className="sm:max-w-lg"
-          style={{ background: "white", color: "oklch(0.15 0 0)" }}
-        >
-          <DialogHeader>
-            <DialogTitle style={{ color: "oklch(0.15 0 0)" }}>
-              Edit prompt for beat {editPromptBeat?.beatNumber}
-            </DialogTitle>
-            <div className="flex flex-col-reverse sm:flex-row sm:items-center gap-3">
-              <DialogDescription className="flex-1 m-0" style={{ color: "oklch(0.4 0 0)" }}>
-                Tweak the image prompt below. Saving will regenerate the image with the new prompt and update Prompt Studio to match.
-              </DialogDescription>
-              {editPromptBeat?.imageUrl && (
-                <img
-                  src={editPromptBeat.imageUrl}
-                  alt={`Beat ${editPromptBeat.beatNumber}`}
-                  className="w-full sm:w-32 rounded-md object-cover shrink-0"
-                  style={{ aspectRatio: "16/9", border: "1px solid oklch(0.9 0 0)" }}
-                />
-              )}
+          {/* Read-only prompt — toggled by the "Show prompt" pill. */}
+          {previewShowPrompt && !previewEditing && previewBeat && (
+            <div className="px-4 py-3">
+              <p className="text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>
+                {previewBeat.type === "image" ? "Image prompt" : "Video prompt"} — beat {previewBeat.beat.beatNumber}
+              </p>
+              <p className="text-xs leading-relaxed" style={{ color: "oklch(0.45 0 0)" }}>
+                {(previewBeat.type === "image" ? previewBeat.beat.imagePrompt : previewBeat.beat.videoPrompt) || "—"}
+              </p>
             </div>
-          </DialogHeader>
-          <textarea
-            value={editedPrompt}
-            onChange={(e) => setEditedPrompt(e.target.value)}
-            rows={6}
-            className="w-full px-3 py-2 rounded-lg text-sm outline-none resize-y sm:min-h-[180px]"
-            style={{ background: "white", border: "1px solid oklch(0.85 0 0)", color: "oklch(0.15 0 0)" }}
-            placeholder="Image prompt…"
-          />
-          <DialogFooter style={{ background: "white", borderTop: "1px solid oklch(0.9 0 0)" }}>
-            <button
-              onClick={() => setEditPromptBeat(null)}
-              disabled={editPromptSubmitting}
-              className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
-              style={{ background: "white", border: "1px solid oklch(0.85 0 0)", color: "oklch(0.3 0 0)" }}
-            >
-              Cancel
-            </button>
-            {(() => {
-              const trimmed = editedPrompt.trim();
-              const unchanged = trimmed === (editPromptBeat?.imagePrompt ?? "").trim();
-              const canSave = !!trimmed && !!selectedImageModel && !unchanged && !editPromptSubmitting;
-              return (
+          )}
+          {previewEditing && previewBeat && (
+            <div className="px-4 py-3 space-y-3">
+              <p className="text-xs font-semibold" style={{ color: "oklch(0.35 0 0)" }}>
+                {previewBeat.type === "image" ? "Image prompt" : "Video prompt"} — beat {previewBeat.beat.beatNumber}
+              </p>
+              <textarea
+                value={previewEditedPrompt}
+                onChange={(e) => setPreviewEditedPrompt(e.target.value)}
+                rows={5}
+                className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs leading-relaxed p-3 outline-none focus:border-zinc-400 resize-y"
+                placeholder="Describe what this beat should look like…"
+              />
+              <div className="flex items-center justify-end gap-3">
                 <button
-                  type="button"
-                  onClick={async () => {
-                    if (!canSave || !editPromptBeat) return;
-                    const beat = editPromptBeat;
-                    setEditPromptSubmitting(true);
-                    // Fire-and-forget the regen; the beat card flips
-                    // to its own "regenerating" state in the page UI.
-                    // Brief await before closing so the click registers
-                    // visibly in the modal.
-                    void regenerateImage(beat, trimmed);
-                    await new Promise((r) => setTimeout(r, 400));
-                    setEditPromptSubmitting(false);
-                    setEditPromptBeat(null);
-                  }}
-                  disabled={!canSave}
-                  aria-disabled={!canSave}
-                  className="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
-                  style={{
-                    background: canSave || editPromptSubmitting ? "oklch(0.72 0.25 285)" : "oklch(0.90 0 0)",
-                    color: canSave || editPromptSubmitting ? "white" : "oklch(0.65 0 0)",
-                    cursor: canSave ? "pointer" : "not-allowed",
-                    pointerEvents: canSave ? "auto" : "none",
-                    opacity: canSave || editPromptSubmitting ? 1 : 0.7,
-                  }}
+                  onClick={() => setPreviewEditing(false)}
+                  disabled={previewSubmitting}
+                  className="px-4 py-2 rounded-lg text-sm font-medium border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
                 >
-                  {editPromptSubmitting ? (
-                    <span className="flex items-center gap-2">
-                      <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      Starting…
-                    </span>
-                  ) : "Save & regenerate"}
+                  Cancel
                 </button>
-              );
-            })()}
-          </DialogFooter>
+                {(() => {
+                  const trimmed = previewEditedPrompt.trim();
+                  const original = ((previewBeat.type === "image" ? previewBeat.beat.imagePrompt : previewBeat.beat.videoPrompt) ?? "").trim();
+                  const modelPicked = previewBeat.type === "image" ? !!selectedImageModel : !!selectedVideoModel;
+                  const canSave = !!trimmed && trimmed !== original && modelPicked && !previewSubmitting;
+                  return (
+                    <button
+                      onClick={async () => {
+                        if (!canSave) return;
+                        const { beat, type } = previewBeat;
+                        setPreviewSubmitting(true);
+                        // Fire-and-forget like the standalone edit
+                        // modal — the tile flips to its own
+                        // regenerating state in the grid.
+                        if (type === "image") void regenerateImage(beat, trimmed);
+                        else void regenerateVideoBeat(beat.beatNumber, trimmed);
+                        await new Promise((r) => setTimeout(r, 400));
+                        setPreviewSubmitting(false);
+                        setPreviewEditing(false);
+                        setPreviewBeat(null);
+                      }}
+                      disabled={!canSave}
+                      className="px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all disabled:opacity-60"
+                      style={{ background: "oklch(0.72 0.25 285)" }}
+                    >
+                      {previewSubmitting ? (
+                        <span className="flex items-center gap-2">
+                          <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          Starting…
+                        </span>
+                      ) : "Save & regenerate"}
+                    </button>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

@@ -8,11 +8,54 @@ const fetcher = (url: string) =>
     return r.json().catch(() => ({}));
   });
 
+// Idle poll rate. Slow enough to keep Supabase's disk-IO budget happy;
+// user-initiated actions (save, generate, continue) already call mutate()
+// explicitly so this interval is only the safety net for worker- or
+// other-tab-driven changes.
+const IDLE_MS = 10_000;
+// Active poll rate — used while the project has a server-side "in flight"
+// run id set. Keeps worker completion (script finish, assembly finalize,
+// video job status) feeling responsive without hammering the DB the rest
+// of the time.
+const ACTIVE_MS = 4_000;
+
+// Any of these being non-null means a background job is running that the
+// UI needs to see finish. Keep this list in sync with the *_active_run_id
+// columns on projects. Video-beat rendering has its own 4s poller in
+// generate/page.tsx so we don't duplicate that signal here.
+const ACTIVE_RUN_ID_KEYS = [
+  "script_active_run_id",
+  "prompts_active_run_id",
+  "voiceover_active_run_id",
+] as const;
+
+type ProjectFields = Partial<Record<(typeof ACTIVE_RUN_ID_KEYS)[number], unknown>> & {
+  assembly_status?: string | null;
+  assembly_finalize_preview_requested?: boolean | null;
+};
+
+function hasActiveRun(project: ProjectFields | undefined): boolean {
+  if (!project) return false;
+  if (ACTIVE_RUN_ID_KEYS.some((k) => project[k] != null)) return true;
+  // assembly_status is set for the entire duration of assembly and cleared
+  // (or set to "done" / "stopped") when the worker settles.
+  const status = project.assembly_status;
+  if (status && status !== "done" && status !== "stopped") return true;
+  if (project.assembly_finalize_preview_requested) return true;
+  return false;
+}
+
 export function useProject(projectId: string | null) {
   const { data, error, isLoading, mutate } = useSWR(
     projectId ? `/api/projects/${projectId}` : null,
     fetcher,
-    { refreshInterval: 5000 }
+    {
+      // Hidden tabs stop polling entirely — SWR's default revalidateOnFocus
+      // catches them up when the user returns.
+      refreshWhenHidden: false,
+      refreshInterval: (latest: ProjectFields | undefined) =>
+        hasActiveRun(latest) ? ACTIVE_MS : IDLE_MS,
+    }
   );
 
   return {

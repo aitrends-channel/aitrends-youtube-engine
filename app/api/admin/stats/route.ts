@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
-import { isAdminUser } from "@/lib/admin";
+import { isAdminUser, isProductionTestUser } from "@/lib/admin";
 import { requireAdmin } from "@/lib/admin-server";
 import { getPlans } from "@/lib/plans";
 import { isProductionEnv } from "@/lib/env";
@@ -90,28 +90,31 @@ export async function GET() {
   const userIdToEmail = new Map(authUsers.map((u) => [u.id, u.email ?? "Unknown"]));
   const allowedEmailSet = new Set(allowedEmails.map((e) => e.toLowerCase()));
 
-  // Admin self-activity is stripped from aggregates only on the
-  // live production deployment (HECLUS_ENV=production). Dev + staging
-  // keep admins in the counts so we can verify our own test traffic
-  // shows up correctly. Detection happens via lib/env.ts so the
-  // env-var name lives in one place.
-  const filterAdmins = isProductionEnv();
+  // Strip admins from the customer-facing aggregates in every env.
+  // Admin traffic (test purchases, dev projects, seed data) should
+  // never inflate top-line stats — mixing them in was misleading in
+  // dev/staging and easy to forget about in production.
   const adminUserIds = new Set<string>();
   const adminEmails = new Set<string>();
-  if (filterAdmins) {
-    for (const u of authUsers) {
-      if (isAdminUser(u)) {
-        adminUserIds.add(u.id);
-        if (u.email) adminEmails.add(u.email.toLowerCase());
-      }
+  for (const u of authUsers) {
+    if (isAdminUser(u)) {
+      adminUserIds.add(u.id);
+      if (u.email) adminEmails.add(u.email.toLowerCase());
     }
   }
-  const nonAdminUsers = filterAdmins
-    ? authUsers.filter((u) => !adminUserIds.has(u.id))
-    : authUsers;
-  const nonAdminProjects = filterAdmins
-    ? projects.filter((p) => !p.user_id || !adminUserIds.has(p.user_id))
-    : projects;
+
+  // On production, additionally scope every aggregate to post-launch
+  // activity (activity_cutoff_at). Pre-launch users/projects/logs
+  // count against day-1 metrics otherwise — they're QA + test data
+  // from before the switch was flipped. Dev/staging show all history
+  // so we can validate seed data + fixtures normally.
+  const scopeToPostLaunch = isProductionEnv() && activityCutoffMs !== null;
+  const nonAdminUsers = authUsers
+    .filter((u) => !adminUserIds.has(u.id))
+    .filter((u) => !scopeToPostLaunch || afterCutoff(u.created_at));
+  const nonAdminProjects = projects
+    .filter((p) => !p.user_id || !adminUserIds.has(p.user_id))
+    .filter((p) => !scopeToPostLaunch || afterCutoff(p.created_at));
 
   // Per-user project counts
   const projectCountByUserId = new Map<string, number>();
@@ -159,6 +162,10 @@ export async function GET() {
         // "Make admin" / "Remove" actions without re-deriving it
         // client-side from a hardcoded email list.
         isAdmin,
+        // Surface the production-test flag so the users table can
+        // mark flagged accounts with a "- PT" suffix on the plan
+        // badge.
+        isProductionTest: isProductionTestUser(authUser),
       };
     }),
     // Emails in allowed_emails that haven't signed up yet
@@ -177,6 +184,7 @@ export async function GET() {
         nicheLimitOverride: null,
         effectiveNicheLimit: null,
         isAdmin: false,
+        isProductionTest: false,
       })),
   ];
 

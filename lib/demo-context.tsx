@@ -81,7 +81,7 @@ export interface DemoState {
 const DEFAULTS: DemoState = {
   highestStep: 0,
   channelPhase: "idle",
-  channelContentType: null,
+  channelContentType: "long",
   channelTopicMode: "generate",
   channelTopicHint: "",
   selectedTopic: "",

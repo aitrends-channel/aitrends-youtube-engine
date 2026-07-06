@@ -291,16 +291,16 @@ export async function POST(req: Request) {
                 .update({ voiceover_status: "generating" })
                 .eq("project_id", projectId)
                 .eq("beat_number", beat.beat_number);
-              const { audio: audioBuf, creditsConsumed } = await generateTTS(ttsText, voiceId, undefined, undefined, user.id);
-              if (creditsConsumed) {
+              const { audio: audioBuf, charsConsumed } = await generateTTS(ttsText, voiceId, undefined, undefined, user.id);
+              if (charsConsumed) {
                 void logProjectCost({
                   projectId,
                   userId: user.id,
                   step: "tts",
-                  provider: "kie",
+                  provider: "elevenlabs",
                   model: TTS_MODEL,
-                  units: creditsConsumed,
-                  unitKind: "kie_credits",
+                  units: charsConsumed,
+                  unitKind: "elevenlabs_chars",
                 });
               }
               // Hash the RAW segment (matches what selectStaleBeats
@@ -355,15 +355,14 @@ export async function POST(req: Request) {
           // pill, hiding what was coming next. Whole-list queueing
           // is honest about scope and lets the user see total work
           // remaining at a glance.
-          await Promise.all(
-            toGenerate.map((b) =>
-              supabase
-                .from("project_beats")
-                .update({ voiceover_status: "queued", voiceover_error: null })
-                .eq("project_id", projectId)
-                .eq("beat_number", b.beat_number),
-            ),
-          );
+          // Single UPDATE with an IN() list — all rows get identical
+          // column values so we don't need an RPC to vary per row. Cuts
+          // 700 round-trips to 1 on a full voiceover run.
+          await supabase
+            .from("project_beats")
+            .update({ voiceover_status: "queued", voiceover_error: null })
+            .eq("project_id", projectId)
+            .in("beat_number", toGenerate.map((b) => b.beat_number));
           for (const b of toGenerate) {
             send({ type: "beat", beatNumber: b.beat_number, status: "queued" });
           }

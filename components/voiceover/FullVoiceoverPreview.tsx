@@ -157,17 +157,25 @@ export function FullVoiceoverPreview({
     function onMeta() {
       if (a && isFinite(a.duration)) setDuration(a.duration);
     }
+    // Without this, a failed audio load (r2.dev 429, expired URL,
+    // network drop) left duration at 0 forever and the card stuck on
+    // "Loading audio…" with no way to tell anything went wrong.
+    function onError() {
+      setError("Audio failed to load — try again in a moment");
+    }
     setDuration(0);
     if (isFinite(a.duration) && a.duration > 0) setDuration(a.duration);
     a.addEventListener("ended", onEnded);
     a.addEventListener("timeupdate", onTime);
     a.addEventListener("loadedmetadata", onMeta);
     a.addEventListener("durationchange", onMeta);
+    a.addEventListener("error", onError);
     return () => {
       a.removeEventListener("ended", onEnded);
       a.removeEventListener("timeupdate", onTime);
       a.removeEventListener("loadedmetadata", onMeta);
       a.removeEventListener("durationchange", onMeta);
+      a.removeEventListener("error", onError);
     };
   }, [previewUrl]);
 

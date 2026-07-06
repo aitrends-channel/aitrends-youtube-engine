@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
-import { isAdminUser } from "@/lib/admin";
+import { isAdminUser, isProductionTestUser } from "@/lib/admin";
 import { getPlanBySlug } from "@/lib/plans";
 import type { User } from "@supabase/supabase-js";
 
@@ -14,6 +14,7 @@ export async function GET() {
   // user promoted via the dashboard. Without this, promoted admins
   // would still be subject to their original plan's niche cap.
   const isAdmin = isAdminUser(user);
+  const isProductionTest = isProductionTestUser(user);
   const plan = (user.app_metadata?.plan as string) ?? "demo";
   const isPaid = user.app_metadata?.paid === true;
   // Resolved against the plans table. Paid users with an unrecognised
@@ -59,6 +60,26 @@ export async function GET() {
   // writing plan="admin" into app_metadata.
   const effectivePlan = isAdmin ? "admin" : plan;
 
+  // Active subscription = paid AND the user hasn't cancelled AND their
+  // paid-through period hasn't ended. Mirrors the /api/plan cancelled
+  // check so the SubscriptionModal can hide the production-test card
+  // whenever it also wouldn't render the Renew/Change plan flow as
+  // an initial purchase.
+  const dodo = (user.app_metadata?.dodo ?? {}) as Record<string, unknown>;
+  const dodoStatus = (dodo.status as string | undefined) ?? null;
+  const dodoEvent = (dodo.event as string | undefined) ?? null;
+  const cancelledOrExpired =
+    dodoStatus === "cancelled" || dodoStatus === "expired" || dodoStatus === "failed" ||
+    dodoEvent === "subscription.cancelled" || dodoEvent === "subscription.expired" || dodoEvent === "subscription.failed";
+  const planExpiresAt = user.app_metadata?.plan_expires_at as string | undefined;
+  const periodEnded = planExpiresAt ? new Date(planExpiresAt).getTime() <= Date.now() : false;
+  const hasActiveSubscription = isPaid && !cancelledOrExpired && !periodEnded;
+  // Broader flag for surfaces (like the "Try end-to-end" card) that
+  // should stay hidden as long as the user still has access, whether
+  // that access is active OR cancelled-but-in-grace-period. Falls back
+  // to false the moment the paid period has actually ended.
+  const hasCurrentAccess = isPaid && !periodEnded;
+
   return NextResponse.json({
     niches_used,
     niche_limit,
@@ -67,6 +88,9 @@ export async function GET() {
     at_limit,
     plan: effectivePlan,
     is_admin: isAdmin,
+    is_production_test: isProductionTest,
+    has_active_subscription: hasActiveSubscription,
+    has_current_access: hasCurrentAccess,
     email: user.email ?? null,
   });
 }

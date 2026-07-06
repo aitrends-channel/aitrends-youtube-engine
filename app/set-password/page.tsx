@@ -74,8 +74,21 @@ function SetPasswordForm() {
         data: { must_change_password: false },
       });
       if (updateError) throw updateError;
-      router.push("/");
-      router.refresh();
+
+      // Reset link sessions are short-lived — if Supabase dropped the
+      // session between the recovery-token exchange and updateUser (or
+      // the browser never actually stored it) we'd land on / signed
+      // out and get bounced by middleware to a confusing loop. Verify
+      // a live session before pushing home; otherwise route the user
+      // to /login where they can sign in with the password they just
+      // set.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        router.push("/");
+        router.refresh();
+      } else {
+        router.push("/login");
+      }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : "Failed to set password");
     } finally {

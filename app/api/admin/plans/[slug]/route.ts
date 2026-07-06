@@ -7,6 +7,7 @@ export const dynamic = "force-dynamic";
 interface PlanPatch {
   name?: unknown;
   price_display?: unknown;
+  price_cents?: unknown;
   period_display?: unknown;
   limit_display?: unknown;
   features?: unknown;
@@ -25,6 +26,7 @@ interface PlanPatch {
 type UpdatableCol =
   | "name"
   | "price_display"
+  | "price_cents"
   | "period_display"
   | "limit_display"
   | "features"
@@ -53,6 +55,12 @@ function coerce(col: UpdatableCol, raw: unknown): { ok: true; value: unknown } |
       if (raw === null) return { ok: true, value: null };
       if (typeof raw !== "number" || !Number.isInteger(raw)) {
         return { ok: false, error: "niches_per_month must be integer or null" };
+      }
+      return { ok: true, value: raw };
+    case "price_cents":
+      if (raw === null) return { ok: true, value: null };
+      if (typeof raw !== "number" || !Number.isInteger(raw) || raw < 0) {
+        return { ok: false, error: "price_cents must be non-negative integer or null" };
       }
       return { ok: true, value: raw };
     case "payment_link_test":
@@ -87,7 +95,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ slug: string 
 
   const update: Record<string, unknown> = {};
   const cols: UpdatableCol[] = [
-    "name", "price_display", "period_display", "limit_display",
+    "name", "price_display", "price_cents", "period_display", "limit_display",
     "features", "niches_per_month",
     "payment_link_test", "payment_link_production",
     "highlighted", "disabled", "is_founder", "sort_order",

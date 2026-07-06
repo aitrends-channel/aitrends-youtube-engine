@@ -38,7 +38,7 @@ export default function DemoPromptsPage() {
       <DemoNav currentStep={4} />
       <div className="flex-1 min-w-0 flex flex-col min-h-0">
         <DemoBanner />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto lg:px-[15px]">
           {/* Header */}
           <div
             className="py-4 sticky top-0 z-10"
@@ -46,7 +46,7 @@ export default function DemoPromptsPage() {
           >
             <h1 className="font-bold text-lg">Prompt Studio</h1>
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-              {DEMO_DATA.promptBeats.length} beats · image & video prompts
+              {DEMO_DATA.promptStepBeats.length} beats · image & video prompts
             </p>
             <div className="mt-3">
               <DemoStepCostCard column="prompts" />
@@ -58,8 +58,8 @@ export default function DemoPromptsPage() {
               done (green) alongside the Generate button below. */}
           <div className="py-4 space-y-2" style={{ borderBottom: "1px solid var(--bd-6)" }}>
             {[
-              { num: 1, title: "Image Prompts", desc: "One AI image prompt per script beat, matched to your channel's visual style", beats: DEMO_DATA.promptBeats.length },
-              { num: 2, title: "Video Prompts", desc: "Camera movement and motion instructions layered on top of each image beat", beats: DEMO_DATA.promptBeats.length },
+              { num: 1, title: "Image Prompts", desc: "One AI image prompt per script beat, matched to your channel's visual style", beats: DEMO_DATA.promptStepBeats.length },
+              { num: 2, title: "Video Prompts", desc: "Camera movement and motion instructions layered on top of each image beat", beats: DEMO_DATA.promptStepBeats.length },
             ].map(({ num, title, desc, beats }) => {
               const styleByPhase = isDone
                 ? { border: "1px solid oklch(0.55 0.15 145 / 0.25)", badgeBg: "oklch(0.55 0.15 145 / 0.2)", badgeColor: "oklch(0.65 0.15 145)", badgeBorder: "oklch(0.55 0.15 145 / 0.4)", icon: "✓" }
@@ -139,7 +139,7 @@ export default function DemoPromptsPage() {
 
               {/* Beat list */}
               <div className="pt-5 pb-24 space-y-3">
-                {DEMO_DATA.promptBeats.map((beat) => (
+                {DEMO_DATA.promptStepBeats.map((beat) => (
                   <div
                     key={beat.beat}
                     className="rounded-xl p-4 space-y-2 min-w-0"

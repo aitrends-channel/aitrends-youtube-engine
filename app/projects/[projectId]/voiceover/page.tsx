@@ -4,12 +4,13 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { StepCostCard } from "@/components/StepCostCard";
+import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
-import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPreview";
-import { RotateCw } from "lucide-react";
+import { SequentialVoiceoverPreview } from "@/components/voiceover/SequentialVoiceoverPreview";
+import { RotateCw, ChevronUp, ChevronDown } from "lucide-react";
 
 // Per-beat voiceover step. Each beat shows its own row with status,
 // playback, and per-beat retry. A bulk Generate button kicks off all
@@ -160,11 +161,21 @@ export default function VoiceoverPage({ params }: PageProps) {
   const beats: Beat[] = useMemo(() => (project?.beats ?? []) as Beat[], [project]);
   const projectVoiceId = (project?.tts_voice_id as string | null | undefined) ?? null;
 
+  // Main scroll container for the per-beat content. Used by the
+  // floating jump-to buttons below so users can hop to the first or
+  // last beat without having to drag through a long script.
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  // Anchor for "jump to top": stops at the bulk action panel rather
+  // than the absolute top of the page (which would scroll past the
+  // counts + Generate button into the voice picker — the user wants
+  // to land at the actionable controls, not the picker).
+  const bulkPanelRef = useRef<HTMLDivElement | null>(null);
+
   // Voice picker state — defaults to the project's saved voice (i.e.
   // the voice that was actually used to generate any existing beats),
   // else first model of the active gender tab.
   const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
-  const [voiceTab, setVoiceTab] = useState<"female" | "male">("female");
+  const [voiceTab, setVoiceTab] = useState<"female" | "male" | "custom">("female");
   const [previewingId, setPreviewingId] = useState<string | null>(null);
   // Sticky bit so a subsequent project SWR update doesn't overwrite an
   // explicit user pick. Only the very first resolution honors
@@ -744,8 +755,23 @@ export default function VoiceoverPage({ params }: PageProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [confirm]);
 
+  const hasCustomVoices = useMemo(
+    () => (ttsModels ?? []).some((m) => m.tags?.includes("Custom")),
+    [ttsModels],
+  );
   const filteredVoices = useMemo(
-    () => (ttsModels ?? []).filter((m) => m.tags?.[0]?.toLowerCase() === voiceTab),
+    // Custom tab: everything the user added/cloned to their
+    // ElevenLabs account (tagged by listTTSVoices), regardless of
+    // gender. Gender tabs: non-custom voices matching the tab —
+    // Neutral-tagged catalog voices show under BOTH gender tabs so
+    // they're never invisible.
+    () => (ttsModels ?? []).filter((m) => {
+      const isCustom = m.tags?.includes("Custom");
+      if (voiceTab === "custom") return isCustom;
+      if (isCustom) return false;
+      const tag = m.tags?.[0]?.toLowerCase();
+      return tag === voiceTab || tag === "neutral";
+    }),
     [ttsModels, voiceTab],
   );
 
@@ -753,7 +779,7 @@ export default function VoiceoverPage({ params }: PageProps) {
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={9} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0">
+      <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
         <div className="shrink-0 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
@@ -762,22 +788,32 @@ export default function VoiceoverPage({ params }: PageProps) {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               One narration clip per beat. Each beat&apos;s clip is the timing source for its visual — no matcher, no drift.
             </p>
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
               <StepCostCard projectId={projectId} column="voiceover" />
+              <StepBalanceCard />
             </div>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto pb-[70px]">
+        <div ref={scrollContainerRef} className="flex-1 overflow-y-auto pb-[70px] relative">
         <div className="py-4 sm:p-8 pb-24 space-y-6">
 
           {/* Voice picker */}
           <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-            <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
-              Voice
-            </p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
+                Voice
+              </p>
+              {!!ttsModels?.length && (
+                <span className="text-[11px] font-mono tabular-nums" style={{ color: "var(--c-45)" }}>
+                  {ttsModels.length} voices · {filteredVoices.length} {voiceTab}
+                </span>
+              )}
+            </div>
             <div className="flex gap-1 mb-3">
-              {(["female", "male"] as const).map((tab) => (
+              {/* Custom tab only renders when the user's ElevenLabs
+                  account actually has added/cloned voices. */}
+              {([...(["female", "male"] as const), ...(hasCustomVoices ? (["custom"] as const) : [])]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setVoiceTab(tab)}
@@ -792,45 +828,50 @@ export default function VoiceoverPage({ params }: PageProps) {
                     border: "1px solid var(--bd-7)",
                     color: "var(--c-50)",
                   }}
-                >{tab}</button>
+                >{tab === "custom" ? (
+                  <span className="flex flex-col items-center leading-tight">
+                    <span>Custom</span>
+                    <span className="text-[9px] font-normal normal-case" style={{ opacity: 0.7 }}>
+                      cloned · generated · professional
+                    </span>
+                  </span>
+                ) : tab}</button>
               ))}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1">
-              {!ttsModels && <p className="text-xs px-1" style={{ color: "var(--c-40)" }}>Loading voices…</p>}
-              {ttsModels && filteredVoices.length === 0 && (
-                <p className="text-xs px-1" style={{ color: "var(--c-40)" }}>No {voiceTab} voices available</p>
+            <div className="scroll-themed grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1">
+              {(!ttsModels || project === undefined) ? (
+                // Single page-load indicator — keeps the rest of the
+                // page calm while voices + project data are fetched.
+                // The grid below replaces this once both land.
+                <div className="col-span-full flex flex-col items-center justify-center py-10 gap-2">
+                  <span className="block w-6 h-6 border-2 rounded-full animate-spin"
+                    style={{ borderColor: "oklch(0.72 0.25 285 / 0.3)", borderTopColor: "oklch(0.72 0.25 285)" }} />
+                  <p className="text-xs" style={{ color: "var(--c-40)" }}>Loading…</p>
+                </div>
+              ) : (
+                <>
+                  {filteredVoices.length === 0 && (
+                    <p className="text-xs px-1" style={{ color: "var(--c-40)" }}>No {voiceTab} voices available</p>
+                  )}
+                  {filteredVoices.map((m) => (
+                    <VoiceOption
+                      key={m.id}
+                      model={m}
+                      selected={selectedVoice === m.id}
+                      onSelect={() => setSelectedVoice(m.id)}
+                      isPlaying={previewingId === m.id}
+                      onPlayToggle={setPreviewingId}
+                    />
+                  ))}
+                </>
               )}
-              {filteredVoices.map((m) => (
-                <VoiceOption
-                  key={m.id}
-                  model={m}
-                  selected={selectedVoice === m.id}
-                  onSelect={() => setSelectedVoice(m.id)}
-                  isPlaying={previewingId === m.id}
-                  onPlayToggle={setPreviewingId}
-                />
-              ))}
             </div>
           </div>
 
-          {project === undefined ? (
-            // Project still loading — only the beats list / bulk panel
-            // depends on it. Voice picker above renders independently
-            // from its own SWR call, so we scope the loading state to
-            // this section instead of taking over the whole page.
-            <div className="rounded-2xl p-10 flex flex-col items-center gap-3"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-              <span className="block w-7 h-7 border-2 rounded-full animate-spin"
-                style={{ borderColor: "oklch(0.72 0.25 285 / 0.3)", borderTopColor: "oklch(0.72 0.25 285)" }} />
-              <p className="text-sm font-medium" style={{ color: "var(--c-60)" }}>Loading voiceover beats…</p>
-              <p className="text-xs" style={{ color: "var(--c-40)" }}>
-                Fetching beats and checking what&apos;s already on file.
-              </p>
-            </div>
-          ) : (
+          {project === undefined ? null : (
           <>
           {/* Bulk action panel */}
-          <div className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+          <div ref={bulkPanelRef} className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
             {/* Selected-voice banner — sits above the count/action row
                 so the user always sees which voice the next batch will
                 use, right next to the beats list (the most relevant
@@ -1091,7 +1132,24 @@ export default function VoiceoverPage({ params }: PageProps) {
                         <StatusPill status={status} />
                       </div>
                       {status === "done" && url && (
-                        <audio controls src={url} className="h-7 w-full" preload="none" />
+                        // preload="metadata" loads just the audio
+                        // header (duration etc.) so the player UI
+                        // populates the moment the beat flips to
+                        // "done", without waiting for the user to
+                        // click play. preload="none" left the
+                        // player blank until interaction, which
+                        // looked broken during a live SSE run.
+                        // key={url} re-mounts the element if R2
+                        // ever hands back a new URL for the same
+                        // beat (e.g. regen), so the audio src
+                        // never stays stale on the old file.
+                        <audio
+                          key={url}
+                          controls
+                          src={url}
+                          className="h-7 w-full"
+                          preload="metadata"
+                        />
                       )}
                       {status === "failed" && err && (
                         <span
@@ -1213,16 +1271,50 @@ export default function VoiceoverPage({ params }: PageProps) {
               user reviews each beat individually first, then hears the
               whole narration end-to-end. Renders as soon as ANY beat
               has audio (live overlay or persisted) so the user can
-              start listening before the full run finishes. */}
+              start listening before the full run finishes. Plays the
+              per-beat mp3s in order client-side — no server concat
+              (that stays on the assemble page where the trim-silence
+              A/B compare genuinely needs ffmpeg). */}
           {(beats.some((b) => !!b.voiceoverUrl)
             || Array.from(liveBeats.values()).some((s) => s.status === "done" && !!s.url)) && (
-            <FullVoiceoverPreview projectId={projectId} beats={beats} liveBeats={liveBeats} />
+            <SequentialVoiceoverPreview beats={beats} liveBeats={liveBeats} />
           )}
           </>
           )}
         </div>
         </div>
       </main>
+
+      {/* Jump-to-top / jump-to-bottom — floating purple chevrons in
+          the right-edge corners of the page area. Mirrors the same
+          affordance on the Generate step. Only renders when there's
+          at least one beat (otherwise the buttons would scroll an
+          empty container). Up sits clear of the page header; Down
+          sits above the Help bubble and the Continue bar. */}
+      {beats.length > 0 && (
+        <>
+          <button
+            type="button"
+            onClick={() => bulkPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            title="Jump to the bulk action panel"
+            aria-label="Scroll to bulk action panel"
+            className="fixed top-24 right-5 z-30 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+            style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+          >
+            <ChevronUp size={14} />
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: "smooth" })}
+            title="Jump to the last beat"
+            aria-label="Scroll to bottom"
+            className="fixed bottom-24 right-5 z-30 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+            style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+          >
+            <ChevronDown size={14} />
+          </button>
+        </>
+      )}
 
       {/* Continue bar — shows as soon as at least one beat has audio
           so the user can advance without waiting for the whole batch.

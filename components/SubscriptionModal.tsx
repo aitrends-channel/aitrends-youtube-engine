@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import useSWR from "swr";
 import { X, Check, PlayCircle } from "lucide-react";
 
 interface PlanDTO {
@@ -19,58 +20,90 @@ interface PlanDTO {
   sortOrder: number;
 }
 
+const PRODUCTION_TEST_SLUG = "production-test";
+
 interface Props {
   email: string;
   onClose: () => void;
   onSuccess: () => void;
   defaultPlan?: string;
   hideTryDemo?: boolean;
+  /** Force-hide the production-test card regardless of the QA flag or
+   * has_current_access. Set from surfaces (like /plan) that already
+   * know the user is subscribed — even if /api/usage's cache is stale,
+   * the card stays hidden. */
+  hideProductionTest?: boolean;
 }
 
 
-export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: Props) {
+export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hideProductionTest }: Props) {
   const router = useRouter();
-  const [plans, setPlans] = useState<PlanDTO[] | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string>(defaultPlan ?? "");
-  const [spotsLeft, setSpotsLeft] = useState<number | null>(null);
-  const [founderActive, setFounderActive] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [subscribing, setSubscribing] = useState(false);
 
-  useEffect(() => {
-    fetch("/api/plans", { cache: "no-store" })
-      .then(r => r.json())
-      .then(d => {
-        const list = (d?.plans as PlanDTO[] | undefined) ?? [];
-        setPlans(list);
-        if (!defaultPlan && list.length > 0) {
-          const founder = list.find(p => p.isFounder && !p.disabled);
-          setSelectedPlan((founder ?? list.find(p => !p.disabled) ?? list[0]).slug);
-        }
-      })
-      .catch(() => setPlans([]));
-  }, [defaultPlan]);
+  // SWR caches the response in-memory across modal opens for instant
+  // re-render, but each fetch bypasses the browser + edge cache so
+  // admin-edited features show up immediately. The founder-spots
+  // query is also live since the slot counter ticks down on every
+  // claim — staleness there is visible to the user.
+  const swrFetcher = async (url: string) => {
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  };
+  const { data: plansData } = useSWR<{ plans?: PlanDTO[] }>("/api/plans", swrFetcher, {
+    revalidateOnMount: true,
+    revalidateOnFocus: true,
+    dedupingInterval: 2_000,
+  });
+  const { data: founderData } = useSWR<{ active?: boolean; spots_left?: number }>(
+    "/api/founder-spots",
+    swrFetcher,
+    { revalidateOnFocus: true, refreshInterval: 30_000 },
+  );
+  // Used solely to read is_production_test for the current user — the
+  // production-test plan card is otherwise hidden so customers never
+  // see it. is_admin is also returned here but we don't need it.
+  const { data: usageData } = useSWR<{ is_production_test?: boolean; has_active_subscription?: boolean; has_current_access?: boolean }>(
+    "/api/usage",
+    swrFetcher,
+    { revalidateOnFocus: true },
+  );
+  const plans: PlanDTO[] | null = plansData?.plans ?? null;
+  const founderActive: boolean | null = typeof founderData?.active === "boolean" ? founderData.active : null;
+  const spotsLeft: number | null = typeof founderData?.spots_left === "number" ? founderData.spots_left : null;
+  const isProductionTest = usageData?.is_production_test === true;
+  // Hide the production-test card while the user still has access —
+  // either an active sub OR a cancelled-but-in-grace-period sub.
+  const hasCurrentAccess = usageData?.has_current_access === true;
 
+  // Seed the selectedPlan once plans land. SWR may resolve before
+  // this effect runs (cache hit), so we guard on a non-empty plans
+  // list rather than a "just loaded" trigger.
   useEffect(() => {
-    // cache: "no-store" so admin edits to the founder cap or slot
-    // count reflect immediately on the next modal open instead of
-    // sitting behind whatever the browser cached from a prior fetch.
-    fetch("/api/founder-spots", { cache: "no-store" })
-      .then(r => r.json())
-      .then(d => {
-        if (typeof d.active === "boolean") setFounderActive(d.active);
-        if (typeof d.spots_left === "number") setSpotsLeft(d.spots_left);
-      })
-      .catch(() => {});
-  }, []);
+    if (defaultPlan || !plans || plans.length === 0 || selectedPlan) return;
+    const founder = plans.find(p => p.isFounder && !p.disabled);
+    setSelectedPlan(
+      (founder ?? plans.find(p => !p.disabled && p.slug !== PRODUCTION_TEST_SLUG) ?? plans[0]).slug,
+    );
+  }, [plans, defaultPlan, selectedPlan]);
 
   // Founder visibility gated by the single 'active' flag from the server.
   const founderAvailable = founderActive === null || founderActive === true;
 
   const visiblePlans = useMemo(() => {
     if (!plans) return [];
-    return plans.filter((p) => !p.isFounder || founderAvailable);
-  }, [plans, founderAvailable]);
+    return plans
+      // production-test is the live-Dodo verification harness — only
+      // accounts flagged with app_metadata.is_production_test see it,
+      // AND only when the user has no current access (unpaid or fully
+      // expired). Once someone is paid — even if they've cancelled and
+      // are riding out the paid period — the "Try end-to-end" card is
+      // noise.
+      .filter((p) => p.slug !== PRODUCTION_TEST_SLUG || (isProductionTest && !hasCurrentAccess && !hideProductionTest))
+      .filter((p) => !p.isFounder || founderAvailable);
+  }, [plans, founderAvailable, isProductionTest, hasCurrentAccess, hideProductionTest]);
 
   // If the currently-selected slug is a founder plan and founder is no
   // longer available, fall back to the first non-founder, non-disabled
@@ -97,16 +130,46 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
       return;
     }
     setSubscribing(true);
+    // Save the pending plan in TWO places:
+    //   - sessionStorage on this tab (unchanged, so a same-tab flow
+    //     still works if a browser ever blocks the new-tab open)
+    //   - localStorage so the checkout tab (a new window/tab) can read
+    //     it — sessionStorage is per-tab and doesn't cross windows.
+    // Also encode the plan in the callback URL as a third fallback in
+    // case both storages are blocked (private/incognito profiles).
     try { sessionStorage.setItem("dodo_pending_plan", selectedPlan); } catch {}
-    const callbackUrl = `${window.location.origin}/payment/callback`;
+    try { localStorage.setItem("dodo_pending_plan", selectedPlan); } catch {}
+    const callbackUrl = new URL("/payment/callback", window.location.origin);
+    callbackUrl.searchParams.set("plan", selectedPlan);
     const url = new URL(base);
-    url.searchParams.set("redirect_url", callbackUrl);
+    url.searchParams.set("redirect_url", callbackUrl.toString());
     if (email) url.searchParams.set("customer[email]", email);
-    window.location.href = url.toString();
+    // Open Dodo checkout in a new tab via a synthetic anchor click.
+    // window.open with "noopener" returns null even on success in most
+    // browsers, so relying on its return value for a same-tab fallback
+    // caused BOTH tabs to navigate (double-open). The anchor approach
+    // never lies: the tab opens, the current tab stays put.
+    const a = document.createElement("a");
+    a.href = url.toString();
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setSubscribing(false);
   }
 
   const selected = plans?.find(p => p.slug === selectedPlan) ?? null;
-  const gridCols = visiblePlans.length >= 3 ? "grid-cols-3" : visiblePlans.length === 2 ? "grid-cols-2" : "grid-cols-1";
+  // 4 plans wrap to 2x2 on mobile, single row on sm+ so the admin
+  // production-test card stays alongside the customer plans rather
+  // than overflowing the modal width.
+  const gridCols = visiblePlans.length >= 4
+    ? "grid-cols-2 sm:grid-cols-4"
+    : visiblePlans.length === 3
+      ? "grid-cols-3"
+      : visiblePlans.length === 2
+        ? "grid-cols-2"
+        : "grid-cols-1";
 
   return (
     <div
@@ -115,8 +178,8 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="relative w-full max-w-2xl rounded-2xl overflow-hidden"
-        style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)", maxHeight: "90vh" }}
+        className="relative w-full max-w-4xl rounded-2xl overflow-hidden"
+        style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
       >
         <button
           onClick={onClose}
@@ -142,7 +205,7 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
           <X size={14} />
           Close
         </button>
-        <div className="overflow-y-auto p-8" style={{ maxHeight: "90vh" }}>
+        <div className="p-8">
 
 
         <div className="text-center mb-6">
@@ -150,8 +213,12 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
           <p className="text-sm" style={{ color: "var(--c-45)" }}>Pick the plan that fits your workflow.</p>
         </div>
 
-        {/* Try Demo */}
-        {!hideTryDemo && <button
+        {/* Try Demo — hidden when the caller explicitly opts out
+            (hideTryDemo) OR when the user already has current access.
+            Both signals mean the "explore Heclus free" pitch is either
+            noise (they've already committed) or actively confusing
+            (they're a paying user reading a "free" card). */}
+        {!hideTryDemo && !hasCurrentAccess && <button
           onClick={() => { onClose(); router.push("/demo/channel"); }}
           className="w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all hover:opacity-90 cursor-pointer"
           style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.08)", marginBottom: "30px" }}
@@ -220,6 +287,14 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo }: 
                       style={{ background: "oklch(0.35 0 0)", color: "oklch(0.60 0 0)" }}
                     >
                       Soon
+                    </span>
+                  )}
+                  {plan.slug === PRODUCTION_TEST_SLUG && (
+                    <span
+                      className="absolute -top-2.5 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+                      style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
+                    >
+                      Test
                     </span>
                   )}
                   <p className="text-xs font-semibold mb-1" style={{ color: selectedPlan === plan.slug ? "oklch(0.82 0.18 285)" : "var(--c-60)" }}>

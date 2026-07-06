@@ -82,8 +82,11 @@ export async function POST(req: Request) {
 
     // 3. Mark in-flight. A page refresh between submit and complete
     //    would show the spinner (gated on image_status=generating).
+    //    image_prompt persists here too (not just on the "done" write)
+    //    so an edited prompt survives a failed generation instead of
+    //    being silently lost.
     await supabase.from("project_beats")
-      .update({ image_status: "generating", image_task_id: taskId, image_model_id: modelId })
+      .update({ image_status: "generating", image_task_id: taskId, image_model_id: modelId, image_prompt: imagePrompt })
       .eq("project_id", projectId)
       .eq("beat_number", beatNumber);
 
@@ -174,8 +177,28 @@ export async function POST(req: Request) {
     if (err instanceof KieUpstreamError) {
       const headers: Record<string, string> = {};
       if (err.upstreamStatus === 429 && err.retryAfter != null) headers["Retry-After"] = String(err.retryAfter);
-      const status = err.upstreamStatus === 429 ? 429 : 502;
-      return NextResponse.json({ error: err.message, upstreamStatus: err.upstreamStatus }, { status, headers });
+      // See app/api/generate/images/submit/route.ts for the mapping
+      // rationale — 402 for out-of-credit so Vercel doesn't alert.
+      let status: number;
+      let code: string | undefined;
+      if (err.insufficientCredits) {
+        status = 402;
+        code = "insufficient_credits";
+      } else if (err.upstreamStatus === 429) {
+        status = 429;
+      } else {
+        status = 502;
+      }
+      return NextResponse.json(
+        {
+          error: err.insufficientCredits
+            ? "Your KIE account is out of credits. Add credits at kie.ai and try again."
+            : err.message,
+          code,
+          upstreamStatus: err.upstreamStatus,
+        },
+        { status, headers },
+      );
     }
     const message = err instanceof Error ? err.message : "Regenerate failed";
     console.error("[images/regenerate] error:", message);

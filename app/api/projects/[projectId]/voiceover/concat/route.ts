@@ -7,7 +7,7 @@ import { Readable } from "stream";
 import { ReadableStream as NodeReadableStream } from "stream/web";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
-import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
+import { uploadBuffer, userFolderFor, objectExists, getObjectToFile, r2KeyFromUrl } from "@/lib/supabase/storage";
 import type { User } from "@supabase/supabase-js";
 
 // fluent-ffmpeg + ffmpeg-static loaded via createRequire so the ESM
@@ -38,15 +38,6 @@ function hashUrls(urls: string[]): string {
   return createHash("sha1").update(urls.join("\n")).digest("hex").slice(0, 16);
 }
 
-async function r2HeadExists(publicUrl: string): Promise<boolean> {
-  try {
-    const res = await fetch(publicUrl, { method: "HEAD", cache: "no-store" });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
 async function downloadToFile(url: string, dest: string): Promise<void> {
   const res = await fetch(url);
   if (!res.ok || !res.body) throw new Error(`Failed to fetch ${url}: HTTP ${res.status}`);
@@ -67,6 +58,17 @@ async function downloadToFile(url: string, dest: string): Promise<void> {
 // Backoff grows exponentially with jitter so parallel workers don't
 // re-collide on the same tick after being throttled.
 async function downloadToFileWithRetry(url: string, dest: string): Promise<void> {
+  // Prefer the S3 API when the URL is one of our bucket's public URLs.
+  // The pub-*.r2.dev development subdomain is rate-limited by
+  // Cloudflare — a page full of beat players plus this route's
+  // parallel downloads reliably trips sustained 429s that outlast any
+  // retry budget (the 2026-07-05 preview failure). The S3 endpoint has
+  // no r2.dev throttle and the client retries internally (maxAttempts 6).
+  const key = r2KeyFromUrl(url);
+  if (key) {
+    await getObjectToFile(key, dest);
+    return;
+  }
   const baseDelays = [500, 1500, 4000, 9000];
   for (let attempt = 0; attempt <= baseDelays.length; attempt++) {
     try {
@@ -182,8 +184,10 @@ export async function POST(req: Request, { params }: { params: { projectId: stri
   const storagePath = `${userFolderFor(user)}/${projectId}/voiceover-preview-${hash}-${variant}.mp3`;
   const cachedUrl = `${process.env.R2_PUBLIC_URL?.replace(/\/$/, "")}/${storagePath}`;
 
-  // Cache hit: same beat URLs + variant → same hash → file already in R2.
-  if (await r2HeadExists(cachedUrl)) {
+  // Cache hit: same beat URLs + variant → same hash → file already in
+  // R2. Checked via the S3 API — a HEAD against the public r2.dev URL
+  // both burned and was subject to the r2.dev rate limit.
+  if (await objectExists(storagePath)) {
     console.log(`[voiceover-concat] project=${projectId} cache hit hash=${hash} variant=${variant} (${urls.length} beats)`);
     return NextResponse.json({ url: cachedUrl, cached: true, beats: urls.length, trimSilence });
   }

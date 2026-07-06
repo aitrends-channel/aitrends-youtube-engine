@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, use, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { StepCostCard } from "@/components/StepCostCard";
+import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -886,7 +887,14 @@ export default function PromptsPage({ params }: PageProps) {
           if (hasVideoBeats) setVideoStep(IDLE);
           return;
         }
-        if (completedOnServer) {
+        // current_state >= 14 with missing/zero beats is only a real
+        // inconsistency once the server has RELEASED the run. While a
+        // run is still claimed, this is the transient regen window: a
+        // prior success left current_state at 14, clear_image_prompts
+        // wiped the beats, and the new run's walkback-to-13 hasn't
+        // landed yet. Hard-failing here surfaced a scary error on a
+        // perfectly healthy run — keep polling instead.
+        if (completedOnServer && !serverStillActive) {
           throw new Error("Generation reported done but some beats are missing prompts. Try again — the existing beats are preserved.");
         }
         if (!serverStillActive) {
@@ -1163,7 +1171,7 @@ export default function PromptsPage({ params }: PageProps) {
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={9} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0">
+      <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
         <div className="shrink-0 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
@@ -1172,8 +1180,9 @@ export default function PromptsPage({ params }: PageProps) {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               Image and video prompts generated from your script beats
             </p>
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
               <StepCostCard projectId={projectId} column="prompts" />
+              <StepBalanceCard />
             </div>
           </div>
         </div>
