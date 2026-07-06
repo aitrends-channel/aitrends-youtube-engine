@@ -15,7 +15,7 @@ export const IMAGE_MODELS: KieModel[] = [
   m("bytedance/seedream-v4-text-to-image", "Seedream 4.0",           ["ByteDance", "Latest"]),
   m("grok-imagine/text-to-image",          "Grok Imagine",           ["xAI"]),
   m("z-image",                             "Z-Image",                ["Stylized"]),
-  m("gpt-image-2",                         "GPT Image 2",            ["OpenAI"]),
+  m("gpt-image-2-text-to-image",           "GPT Image 2",            ["OpenAI"]),
 ];
 
 export interface ModelConfig {
@@ -34,7 +34,12 @@ export const MODEL_CONFIGS: Record<string, ModelConfig> = {
   "bytedance/seedream-v4-text-to-image": { aspectRatios: ["16:9", "3:2", "4:3", "1:1 HD", "1:1", "2:3", "3:4", "9:16", "21:9"], resolutions: ["1K", "2K", "4K"] },
   "grok-imagine/text-to-image":          { aspectRatios: ["16:9", "3:2", "1:1", "2:3", "9:16"] },
   "z-image":                             { aspectRatios: ["16:9", "4:3", "1:1", "3:4", "9:16"] },
-  "gpt-image-2":                         { aspectRatios: ["16:9", "4:3", "1:1", "3:4", "9:16"] },
+  // KIE lists this model with three billing tiers (1K / 2K / 4K) — the
+  // resolution is a single "input.resolution" field, not part of the
+  // model id. Ratios below are the intersection of KIE's supported set
+  // and what stays valid at 2K/4K (5:4, 4:5, 3:1, 1:3, 9:21 are 1K-only
+  // and dropped; 1:1 4K is rejected by KIE but 1:1 stays for 1K/2K).
+  "gpt-image-2-text-to-image":           { aspectRatios: ["16:9", "21:9", "3:2", "4:3", "1:1", "3:4", "2:3", "9:16", "2:1", "1:2"], resolutions: ["1K", "2K", "4K"] },
 };
 
 export function getModelConfig(modelId: string): ModelConfig {
