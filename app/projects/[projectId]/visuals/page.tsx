@@ -265,12 +265,12 @@ function VisualProfileCard({
             <div key={key}>
               <p className="text-xs mb-1" style={{ color: "var(--c-45)" }}>{label}</p>
               {editing ? (
-                <input
-                  type="text"
+                <textarea
                   value={value}
                   onChange={(e) => setField(key, e.target.value)}
                   placeholder={placeholder}
-                  className="w-full px-3 py-1.5 rounded-lg text-sm outline-none"
+                  rows={3}
+                  className="w-full p-3 rounded-lg text-sm outline-none resize-y min-h-[70px]"
                   style={{ background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-85)" }}
                 />
               ) : (
