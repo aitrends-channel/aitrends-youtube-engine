@@ -15,6 +15,7 @@ export const IMAGE_MODELS: KieModel[] = [
   m("bytedance/seedream-v4-text-to-image", "Seedream 4.0",           ["ByteDance", "Latest"]),
   m("grok-imagine/text-to-image",          "Grok Imagine",           ["xAI"]),
   m("z-image",                             "Z-Image",                ["Stylized"]),
+  m("gpt-image-2",                         "GPT Image 2",            ["OpenAI"]),
 ];
 
 export interface ModelConfig {
@@ -33,6 +34,7 @@ export const MODEL_CONFIGS: Record<string, ModelConfig> = {
   "bytedance/seedream-v4-text-to-image": { aspectRatios: ["16:9", "3:2", "4:3", "1:1 HD", "1:1", "2:3", "3:4", "9:16", "21:9"], resolutions: ["1K", "2K", "4K"] },
   "grok-imagine/text-to-image":          { aspectRatios: ["16:9", "3:2", "1:1", "2:3", "9:16"] },
   "z-image":                             { aspectRatios: ["16:9", "4:3", "1:1", "3:4", "9:16"] },
+  "gpt-image-2":                         { aspectRatios: ["16:9", "4:3", "1:1", "3:4", "9:16"] },
 };
 
 export function getModelConfig(modelId: string): ModelConfig {
