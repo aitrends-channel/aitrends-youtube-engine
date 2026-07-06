@@ -14,9 +14,7 @@ function CallbackContent() {
   const router = useRouter();
   const [stage, setStage] = useState<Stage>("verifying");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  // Guard against React StrictMode firing this effect twice in dev (and
-  // any other accidental remount). Server idempotency is the real fix,
-  // but this avoids two network roundtrips per legitimate verification.
+
   const verifyStartedRef = useRef(false);
 
   useEffect(() => {
