@@ -92,6 +92,34 @@ export async function POST(request: Request) {
       await supabase.rpc("reset_niches_used", { uid: userId });
     }
 
+    // Immutable revenue ledger — survives user deletion so historical
+    // revenue stats stay intact. Unique on dodo_payment_id, so Dodo's
+    // retry-on-non-2xx replays don't double-count. Fail-soft: a write
+    // error here doesn't roll back the user update above — the
+    // customer is paid; logging is best-effort.
+    const dodoPaymentId = (data.payment_id ?? data.id) as string | undefined;
+    const amountCents = Number(data.total_amount ?? data.amount ?? 0);
+    const currency = ((data.currency as string | undefined) ?? "usd").toLowerCase();
+    if (dodoPaymentId && amountCents > 0) {
+      const { error: revErr } = await supabase
+        .from("revenue_events")
+        .insert({
+          user_id: userId,
+          user_email: email,
+          event_type: "payment_succeeded",
+          amount_cents: amountCents,
+          currency,
+          plan: (baseMetadata as { plan?: string }).plan ?? null,
+          dodo_payment_id: dodoPaymentId,
+          dodo_raw: data,
+          occurred_at: updatedAt,
+        });
+      // Duplicate (23505) is the expected idempotent-replay case.
+      if (revErr && revErr.code !== "23505") {
+        console.warn("[dodo-webhook] revenue_events insert failed:", revErr.message);
+      }
+    }
+
     return NextResponse.json({ success: true, event });
   }
 
