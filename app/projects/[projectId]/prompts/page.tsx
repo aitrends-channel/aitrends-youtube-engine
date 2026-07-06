@@ -512,6 +512,39 @@ export default function PromptsPage({ params }: PageProps) {
   const [videoStopState, setVideoStopState] = useState<{ stoppedAt: number; snapshot: number } | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("beats");
   const [navigating, setNavigating] = useState(false);
+  // Image prompt style — General is the current behaviour; Cinematic
+  // adds filmic cues on top of the visual profile at generation time.
+  // Initialised from the persisted column, and any user click through
+  // the tab bar PATCHes it back so a reload keeps the choice.
+  const [promptStyle, setPromptStyleLocal] = useState<"general" | "cinematic">(
+    (project?.prompt_style as "general" | "cinematic" | undefined) ?? "general",
+  );
+  // Sync when the project row lands (first fetch on mount, or a
+  // background refresh). Never override an active user change: the
+  // click handler always runs the PATCH before the SWR re-hydration
+  // arrives, so we only trust the row when the local state matches
+  // its old value (i.e. we haven't set anything different yet).
+  useEffect(() => {
+    const remote = (project?.prompt_style as "general" | "cinematic" | undefined) ?? "general";
+    setPromptStyleLocal((prev) => (prev === remote ? prev : prev === "general" && remote !== "general" ? remote : prev));
+    // Only when the local state is still the default and the row has
+    // a value do we adopt it — this prevents a "server said general"
+    // response from bouncing a fresh Cinematic click back to General.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.prompt_style]);
+
+  async function setPromptStyle(next: "general" | "cinematic") {
+    if (next === promptStyle) return;
+    setPromptStyleLocal(next);
+    try {
+      await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt_style: next }),
+      });
+      mutate();
+    } catch { /* best-effort — the next generate click still sends the current selection */ }
+  }
   // Per-step AbortControllers so the user's Stop click can kill the
   // local SSE fetch alongside the server-side run-id PATCH. Without
   // the abort the fetch keeps the connection open until the server
@@ -851,6 +884,9 @@ export default function PromptsPage({ params }: PageProps) {
         projectId,
         script: project.script,
         visualProfile: project.visual_profile,
+        // Send the currently-active tab so an in-session switch is
+        // honoured even before the PATCH that persists it settles.
+        promptStyle,
       }, setImageStep, imageAbortRef.current.signal);
 
       // The SSE channel is unreliable — Vercel edge / intermediate
@@ -1201,6 +1237,51 @@ export default function PromptsPage({ params }: PageProps) {
               <span aria-hidden>⚠</span>
               <span>
                 Script was edited after these beats were generated. The image prompts below no longer match your current script — click <strong>Regenerate</strong> to update them.
+              </span>
+            </div>
+          )}
+          {/* Style tabs — General is the default, Cinematic layers
+              filmic cues (letterbox, grain, dramatic lighting) into
+              the prompt at generation time. Switching after beats
+              exist requires a regenerate to actually take effect;
+              the note under the tabs makes that explicit. */}
+          <div className="rounded-xl p-1 flex gap-1 self-start w-fit"
+            style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)" }}>
+            {([
+              { id: "general" as const, label: "General" },
+              { id: "cinematic" as const, label: "Cinematic" },
+            ]).map((t) => {
+              const active = promptStyle === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setPromptStyle(t.id)}
+                  disabled={anyRunning || remoteRunInProgress}
+                  className="px-3 py-1 rounded-lg text-xs font-medium transition-all disabled:opacity-40"
+                  style={active ? {
+                    background: "oklch(0.72 0.25 285 / 0.15)",
+                    border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                    color: "oklch(0.88 0.12 285)",
+                  } : {
+                    background: "transparent",
+                    border: "1px solid transparent",
+                    color: "var(--c-55)",
+                  }}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+          {hasImageBeats
+            && !anyRunning
+            && !remoteRunInProgress
+            && (project?.prompt_style ?? "general") !== promptStyle && (
+            <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
+              style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "oklch(0.85 0.12 70)" }}>
+              <span aria-hidden>⚠</span>
+              <span>
+                Style changed to <strong>{promptStyle === "cinematic" ? "Cinematic" : "General"}</strong>. Existing prompts still use the previous style — click <strong>Regenerate</strong> to apply.
               </span>
             </div>
           )}

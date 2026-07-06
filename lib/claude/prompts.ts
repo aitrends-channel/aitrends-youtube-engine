@@ -252,6 +252,88 @@ Return these fields inside a "thumbnailAnalysis" object.` : "";
 Call the save_visual_analysis tool with the structured profile. Be specific — these descriptions will be used as direct instructions for AI image generation. Do not write any text outside the tool call.`;
 }
 
+// Optional prompt-style variant driver. The Prompts step lets the user
+// pick between "general" (default) and "cinematic". Cinematic uses a
+// completely different beat-splitting rubric that produces fewer,
+// longer-held shots (~1 beat every 6–10s vs the general ~1 per 3–6s)
+// and adds a validation pass targeting pacing. The extracted visual
+// profile is still substituted into VISUAL STYLE — only the beat-
+// definition rules and per-beat guidance change. Unknown values are
+// treated as "general" so old rows and future values stay safe.
+export type PromptStyle = "general" | "cinematic";
+
+function renderVisualStyleBlock(visualProfile: VisualProfileOutput): string {
+  return `Art Style: ${visualProfile.artStyle}
+Colors: ${visualProfile.colorPalette.join(", ")}
+Lighting: ${visualProfile.lightingStyle}
+Camera: ${visualProfile.cameraStyle}
+Composition: ${visualProfile.composition}
+Mood: ${visualProfile.mood}
+Detail: ${visualProfile.detailLevel}`;
+}
+
+// Cinematic mode: fewer, longer-held shots; the model is instructed
+// to prefer sustained camera moves over cuts. See the general variant
+// in buildImagePromptsCached for the standard "1 beat per sentence"
+// rubric.
+function buildImagePromptsCachedCinematic(visualProfile: VisualProfileOutput): string {
+  return `Identify every VISUAL BEAT in the SCRIPT CHUNK that follows this message and generate one image prompt for each.
+
+WHAT COUNTS AS A VISUAL BEAT
+A visual beat is ONE CONTINUOUS SHOT the viewer watches — not one fact or one sentence. Split by what the CAMERA sees, not by grammar. A new beat begins ONLY when the shot must change:
+- A new subject, character, or location enters the frame
+- The action or setting changes in a way one shot cannot contain
+- A new camera perspective is required (cutting from wide to close-up for a reveal or emotional moment)
+- A distinct fact, statistic, date, or historical event requires its own dedicated visual
+- A deliberate dramatic cut (reveal, shock, punchline)
+
+WHAT DOES NOT START A NEW BEAT
+- A sentence that continues the same subject, location, and action
+- Elaboration, restatement, or rhetorical repetition of the current idea
+- Emotional build within a single moment — sustain the shot and note the shift in the "action" field instead of cutting
+- Descriptive detail about something already on screen
+
+RULES (NON-NEGOTIABLE)
+1. Every beat receives exactly ONE image prompt. No narration may be left without visual coverage.
+2. One shot MAY span multiple sentences when they describe the same continuous moment (same subject, same location, same action arc). Merging such sentences into a single beat is correct, not lazy.
+3. Prefer FEWER, longer-held shots. Let images breathe — use camera direction (slow push-in, lingering wide, slow pan, hold on face) to sustain a moment rather than cutting.
+4. Each distinct fact, statistic, date, location, study, or historical example still gets its OWN dedicated beat.
+5. Punch cuts (very short beats under ~10 words) are allowed ONLY for deliberate reveals, jokes, or shocks — use sparingly.
+6. Do NOT chop a single dramatic moment into multiple beats. Fast cutting destroys cinematic pacing.
+7. Do NOT leave any narration uncovered. Complete visual coverage is still required — beats are longer, not fewer in coverage.
+
+DENSITY
+- Target: ~1 beat every 6–10 seconds of narration (≈20–35 words of script per beat).
+- Minimum beat length: ~10 words (unless a deliberate punch cut per Rule 5).
+- Maximum beat length: ~35 words (≈10 seconds) — if a passage exceeds this, split at the most natural visual change.
+- A cinematic chunk should produce noticeably FEWER beats than an educational chunk of the same length.
+
+VISUAL STYLE
+${renderVisualStyleBlock(visualProfile)}
+
+PER-BEAT FIELDS
+- scriptSegment: the exact words from the script for this beat (typically 20–35 words; may be shorter only for deliberate punch cuts). Must be a verbatim substring of the chunk AND must NOT overlap with adjacent beats — each beat picks up exactly where the previous beat's last word ended. Concatenating every scriptSegment in order, separated by single spaces, must reproduce the chunk verbatim. Do not repeat phrases at beat boundaries.
+- imagePrompt: 1–2 cinematic sentences. Visualize the emotional core of the moment — the single strongest image that can hold the screen for the full duration of the segment. For abstract concepts, use concrete visual metaphors. Apply the visual style above as direct AI-image-generator instructions. Be specific (subject, action, environment, framing).
+- camera: single short phrase, favoring sustained moves for held shots (e.g. "slow push-in on face", "lingering static wide", "slow lateral pan", "gradual pull-back reveal")
+- lighting: single short phrase (e.g. "warm golden rim light", "cold blue moonlight")
+- mood: single short phrase (e.g. "tense, urgent", "quiet, reverent")
+- action: single short phrase describing what unfolds WITHIN the held shot, including emotional shifts (e.g. "subject slowly lowers their head", "fire dims as the group falls silent")
+
+QUALITY
+- Maintain continuity between neighboring beats — characters, locations, lighting, and props carry forward unless the narration introduces a change.
+- Historical sections: historically accurate environments, clothing, tools, architecture, lighting — no anachronisms.
+- Every image must be strong enough to hold the screen for 6–10 seconds. Prioritize composition, emotion, and atmosphere over informational density.
+
+VALIDATION (DO THIS BEFORE RETURNING)
+Step 1: Walk the script chunk and identify every visual beat using the SHOT definition above.
+Step 2: Confirm concatenating every scriptSegment in order reproduces the chunk verbatim with no gaps or overlaps.
+Step 3: Estimate each beat's duration (word count ÷ 2.5 ≈ seconds). If 3 or more consecutive beats fall under ~5 seconds and none are deliberate punch cuts, MERGE them until pacing targets are met.
+Step 4: Confirm no beat exceeds ~35 words; split any that do at the most natural visual change.
+Step 5: Confirm your "beats" array has exactly one entry per beat.
+
+Number beats sequentially starting from 1, with no gaps. Call the save_image_prompts tool with a "beats" array. Do not write any text outside the tool call.`;
+}
+
 // Split build for prompt caching. Static block (instructions + visual
 // style + per-beat fields + validation + tool call instruction) is
 // identical across every chunk of a single generation run and hits
@@ -259,7 +341,13 @@ Call the save_visual_analysis tool with the structured profile. Be specific — 
 // just the script chunk content. Beats are always numbered from 1
 // locally; the route renumbers them to absolute beat_number values at
 // persistence time so chunks can run in parallel without coordination.
-export function buildImagePromptsCached(visualProfile: VisualProfileOutput): string {
+//
+// promptStyle: appending the cinematic block still hits the same
+// ephemeral cache within a run (all chunks share the same style),
+// but a style change between runs is a cache miss by design — the
+// prefix genuinely differs.
+export function buildImagePromptsCached(visualProfile: VisualProfileOutput, promptStyle: PromptStyle = "general"): string {
+  if (promptStyle === "cinematic") return buildImagePromptsCachedCinematic(visualProfile);
   return `Identify every VISUAL BEAT in the SCRIPT CHUNK that follows this message and generate one image prompt for each.
 
 WHAT COUNTS AS A VISUAL BEAT
@@ -284,13 +372,7 @@ DENSITY
 - This chunk may produce many beats; long-form scripts commonly total 50–150+ across all chunks.
 
 VISUAL STYLE
-Art Style: ${visualProfile.artStyle}
-Colors: ${visualProfile.colorPalette.join(", ")}
-Lighting: ${visualProfile.lightingStyle}
-Camera: ${visualProfile.cameraStyle}
-Composition: ${visualProfile.composition}
-Mood: ${visualProfile.mood}
-Detail: ${visualProfile.detailLevel}
+${renderVisualStyleBlock(visualProfile)}
 
 PER-BEAT FIELDS
 - scriptSegment: the exact words from the script for this beat (typically 8–20 words). Must be a verbatim substring of the chunk AND must NOT overlap with adjacent beats — each beat picks up exactly where the previous beat's last word ended. Concatenating every scriptSegment in order, separated by single spaces, must reproduce the chunk verbatim. Do not repeat phrases at beat boundaries.
@@ -321,7 +403,8 @@ export function buildImagePromptsDynamic(script: string): string {
 export function buildImagePromptsPrompt(
   script: string,
   visualProfile: VisualProfileOutput,
-  startBeat: number = 1
+  startBeat: number = 1,
+  promptStyle: PromptStyle = "general",
 ): string {
   return `Identify every VISUAL BEAT in this script chunk and generate one image prompt for each.
 
@@ -350,14 +433,8 @@ SCRIPT (THIS CHUNK):
 ${script}
 
 VISUAL STYLE
-Art Style: ${visualProfile.artStyle}
-Colors: ${visualProfile.colorPalette.join(", ")}
-Lighting: ${visualProfile.lightingStyle}
-Camera: ${visualProfile.cameraStyle}
-Composition: ${visualProfile.composition}
-Mood: ${visualProfile.mood}
-Detail: ${visualProfile.detailLevel}
-
+${renderVisualStyleBlock(visualProfile)}
+${promptStyle === "cinematic" ? "\n(See cinematic beat-splitting rules used by buildImagePromptsCached — this synchronous variant is dead code kept for signature parity.)\n" : ""}
 PER-BEAT FIELDS
 - scriptSegment: the exact words from the script for this beat (typically 8–20 words). Must be a verbatim substring of the chunk above AND must NOT overlap with adjacent beats — each beat picks up exactly where the previous beat's last word ended. Concatenating every scriptSegment in order, separated by single spaces, must reproduce the chunk verbatim. Do not repeat phrases at beat boundaries.
 - imagePrompt: 1–2 cinematic sentences. Visualize the narration LITERALLY whenever possible. For abstract concepts, use concrete visual metaphors. Apply the visual style above as direct AI-image-generator instructions. Be specific (subject, action, environment, framing).
