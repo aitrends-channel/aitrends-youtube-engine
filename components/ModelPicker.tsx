@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Search } from "lucide-react";
 import type { KieModel } from "@/lib/types";
 import { getModelConfig } from "@/lib/kie/imageModels";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
@@ -37,6 +38,8 @@ interface VideoModelPickerProps extends CommonProps {
   type: "video";
   selectedDuration: string | number;
   onSelectDuration: (d: string | number) => void;
+  selectedResolution: string | null;
+  onSelectResolution: (r: string | null) => void;
 }
 
 export type ModelPickerProps = ImageModelPickerProps | VideoModelPickerProps;
@@ -125,6 +128,14 @@ function VariantPill<T>({
 export function ModelPicker(props: ModelPickerProps) {
   const { type, models, selectedModelId, onSelectModel, disabled = false } = props;
   const [tab, setTab] = useState<ModelTab>("all");
+  const [query, setQuery] = useState("");
+
+  const searchQ = query.trim().toLowerCase();
+  const matchesSearch = (m: KieModel) =>
+    !searchQ ||
+    m.name.toLowerCase().includes(searchQ) ||
+    m.id.toLowerCase().includes(searchQ) ||
+    (m.tags ?? []).some((t) => t.toLowerCase().includes(searchQ));
 
   // Sort the model list according to the active tab. Fastest/Cheapest
   // are ledger-driven and hide models without observed data so the tab
@@ -134,15 +145,15 @@ export function ModelPicker(props: ModelPickerProps) {
     const base = models.slice();
     if (tab === "fastest") {
       return base
-        .filter((m) => typeof m.avgSpeedMs === "number" && m.avgSpeedMs > 0)
+        .filter((m) => typeof m.avgSpeedMs === "number" && m.avgSpeedMs > 0 && matchesSearch(m))
         .sort((a, b) => (a.avgSpeedMs ?? Infinity) - (b.avgSpeedMs ?? Infinity));
     }
     if (tab === "cheapest") {
       return base
-        .filter((m) => m.costPerUnit !== undefined && m.costPerUnit !== null)
+        .filter((m) => m.costPerUnit !== undefined && m.costPerUnit !== null && matchesSearch(m))
         .sort((a, b) => Number(a.costPerUnit) - Number(b.costPerUnit));
     }
-    return base;
+    return base.filter(matchesSearch);
   })();
 
   const empty = models && (
@@ -152,12 +163,15 @@ export function ModelPicker(props: ModelPickerProps) {
         ? !models.some((m) => m.costPerUnit !== undefined && m.costPerUnit !== null)
         : models.length === 0
   );
+  const noSearchResults = !!models && !empty && searchQ.length > 0 && (list?.length ?? 0) === 0;
 
-  const config = selectedModelId
-    ? type === "image"
-      ? getModelConfig(selectedModelId)
-      : getVideoModelConfig(selectedModelId)
-    : null;
+  // Discriminated per-type helpers so downstream JSX doesn't have to
+  // re-narrow off `props.type`. A single unioned `config` variable
+  // trips TS's "in" narrowing when both ModelConfig and VideoModelConfig
+  // share an optional `resolutions` field.
+  const imageConfig = type === "image" && selectedModelId ? getModelConfig(selectedModelId) : null;
+  const videoConfig = type === "video" && selectedModelId ? getVideoModelConfig(selectedModelId) : null;
+  const config = imageConfig ?? videoConfig;
 
   const tipText = props.tip
     ?? (type === "image"
@@ -189,6 +203,23 @@ export function ModelPicker(props: ModelPickerProps) {
         ))}
       </div>
 
+      <div className="relative mb-2">
+        <Search
+          size={13}
+          className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
+          style={{ color: "var(--c-40)" }}
+        />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={`Search ${type} models…`}
+          disabled={disabled}
+          className="w-full pl-7 pr-2.5 py-1.5 rounded-lg text-xs outline-none disabled:opacity-40 focus:ring-1"
+          style={{ background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-70)" }}
+        />
+      </div>
+
       <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
         {list?.map((m) => (
           <ModelOption
@@ -199,6 +230,11 @@ export function ModelPicker(props: ModelPickerProps) {
             onSelect={() => onSelectModel(m.id)}
           />
         ))}
+        {noSearchResults && (
+          <p className="text-xs px-1 py-2" style={{ color: "var(--c-40)" }}>
+            No {type} models match “{query.trim()}”.
+          </p>
+        )}
         {empty && tab === "fastest" && (
           <div className="text-xs px-1 py-2 space-y-1" style={{ color: "var(--c-40)" }}>
             <p className="font-medium" style={{ color: "var(--c-55)" }}>No speed data yet!</p>
@@ -244,13 +280,13 @@ export function ModelPicker(props: ModelPickerProps) {
         </>
       )}
 
-      {props.type === "image" && config && "resolutions" in config && config.resolutions && config.resolutions.length > 0 && (
+      {props.type === "image" && imageConfig?.resolutions && imageConfig.resolutions.length > 0 && (
         <>
           <p className="text-xs font-semibold uppercase tracking-wider mt-3 mb-2" style={{ color: "var(--c-40)" }}>
             Resolution
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {config.resolutions.map((res) => (
+            {imageConfig.resolutions.map((res) => (
               <VariantPill
                 key={res}
                 label={res}
@@ -263,23 +299,54 @@ export function ModelPicker(props: ModelPickerProps) {
         </>
       )}
 
-      {props.type === "video" && config && "durations" in config && config.durations.length > 0 && (
-        <>
-          <p className="text-xs font-semibold uppercase tracking-wider mt-3 mb-2" style={{ color: "var(--c-40)" }}>
-            Duration
-          </p>
-          <div className="flex gap-1">
-            {config.durations.map((d) => (
-              <VariantPill
-                key={String(d.value)}
-                label={d.label}
-                selected={props.selectedDuration === d.value}
-                disabled={disabled}
-                onClick={() => props.onSelectDuration(d.value)}
-              />
-            ))}
-          </div>
-        </>
+      {/* Video variant knobs — resolution/mode/quality on the left,
+          duration on the right, in a single flex row so the two short
+          pill lists sit side-by-side instead of stacking. When only
+          one of the two is available, it takes the full row width.
+          The KIE field name for the resolution knob varies (kling uses
+          "mode", runway uses "quality", most use "resolution") but the
+          picker treats them uniformly; submit code reads resolutionKey
+          off the config to send under the right field. */}
+      {props.type === "video" && videoConfig
+        && ((videoConfig.resolutions && videoConfig.resolutions.length > 0) || videoConfig.durations.length > 0) && (
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-3">
+          {videoConfig.resolutions && videoConfig.resolutions.length > 0 && (
+            <div className="flex-1 min-w-[140px]">
+              <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
+                Resolution
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {videoConfig.resolutions.map((res) => (
+                  <VariantPill
+                    key={res}
+                    label={res}
+                    selected={props.selectedResolution === res}
+                    disabled={disabled}
+                    onClick={() => props.onSelectResolution(res === props.selectedResolution ? null : res)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+          {videoConfig.durations.length > 0 && (
+            <div className="flex-1 min-w-[140px]">
+              <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
+                Duration
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {videoConfig.durations.map((d) => (
+                  <VariantPill
+                    key={String(d.value)}
+                    label={d.label}
+                    selected={props.selectedDuration === d.value}
+                    disabled={disabled}
+                    onClick={() => props.onSelectDuration(d.value)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

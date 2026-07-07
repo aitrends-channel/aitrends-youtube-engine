@@ -16,19 +16,23 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   try {
-    const { projectId, beats, modelId, duration, aspectRatio = "16:9" } = await req.json() as {
-      projectId: string; beats: Beat[]; modelId: string; duration?: string | number; aspectRatio?: string;
+    const { projectId, beats, modelId, duration, aspectRatio = "16:9", resolution } = await req.json() as {
+      projectId: string; beats: Beat[]; modelId: string; duration?: string | number; aspectRatio?: string; resolution?: string;
     };
 
     if (!projectId || !beats?.length || !modelId) {
       return NextResponse.json({ error: "projectId, beats, and modelId are required" }, { status: 400 });
     }
 
-    // Store job config on the project so the worker can read it
+    // Store job config on the project so the worker can read it.
+    // video_resolution is nullable — omit the key when the model has
+    // no resolution knob so we don't wipe a previously-set value with
+    // null for models that DO use it.
     await supabase.from("projects").update({
       video_model_id: modelId,
       video_duration: duration ?? null,
       video_aspect_ratio: aspectRatio,
+      ...(resolution ? { video_resolution: resolution } : {}),
     }).eq("id", projectId).eq("user_id", user.id);
 
     // Mark each beat as queued. We deliberately do NOT null
