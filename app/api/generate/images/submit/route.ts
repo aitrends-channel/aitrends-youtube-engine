@@ -55,13 +55,17 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ taskId, beatNumber });
   } catch (err) {
-    // Clear the "generating" marker we set above so the beat doesn't get
-    // stuck spinning forever after a submission failure. Without this,
-    // the UI shows a permanent in-flight state for any 429/5xx — the
-    // client never learned about a taskId so it never polls.
+    // Mark the beat as failed so the tile renders the Regenerate icon
+    // instead of the first-time Generate sparkle. Previously this
+    // cleared image_status to NULL to avoid a stuck "generating"
+    // spinner, but NULL falls through to the "no attempt made" branch
+    // in the tile UI and the beat looks brand new despite the error.
+    // "failed" is safe because a successful re-submit will overwrite
+    // it back to "generating" and finishImageTask will overwrite to
+    // "done" on completion.
     if (projectId !== undefined && beatNumber !== undefined) {
       await supabase.from("project_beats")
-        .update({ image_status: null })
+        .update({ image_status: "failed" })
         .eq("project_id", projectId)
         .eq("beat_number", beatNumber);
     }

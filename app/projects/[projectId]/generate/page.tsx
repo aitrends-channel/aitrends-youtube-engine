@@ -1462,7 +1462,7 @@ export default function GeneratePage({ params }: PageProps) {
                             }}
                             title="View image"
                             aria-label={`View image for beat ${b.beatNumber}`}
-                            className="absolute top-1.5 left-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:scale-110"
+                            className="absolute top-1.5 right-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:scale-110"
                             style={{
                               background: "oklch(0 0 0 / 0.6)",
                               color: "white",
@@ -1487,19 +1487,14 @@ export default function GeneratePage({ params }: PageProps) {
                         ) : (
                           <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${b.imageUrl ? "opacity-0 group-hover:opacity-100" : "opacity-100"}`}
                             style={{ background: b.imageUrl ? "oklch(0 0 0 / 0.55)" : "transparent" }}>
-                            {/* Status-specific affordance — matches the
-                                video side's icon system:
-                                  - no image, status=failed → RefreshCw (Retry)
-                                  - no image (any other status) → Wand2 (Generate)
+                            {/* Status-specific affordance:
+                                  - no image, status=failed → RotateCcw (Regenerate)
+                                  - no image (any other status) → ImageSparkle (Generate)
                                   - has image → RotateCcw (Regenerate)
-                                Previously we only used Wand2 when BOTH
-                                imageUrl AND imageStatus were nullish,
-                                so a tile carrying e.g. imageStatus
-                                "pending" fell through to RotateCcw
-                                even though no image had ever been
-                                produced — which read as a regenerate
-                                affordance for content that didn't
-                                exist yet. */}
+                                Failed uses the regenerate icon rather
+                                than a distinct retry glyph — the intent
+                                is the same as a normal regen and one
+                                affordance keeps the tile UX consistent. */}
                             {(() => {
                               // Icon ref typed as the loose
                               // component shape ({ size, strokeWidth,
@@ -1509,14 +1504,9 @@ export default function GeneratePage({ params }: PageProps) {
                               // component) can be assigned.
                               let Icon: React.ComponentType<{ size?: number; strokeWidth?: number; className?: string }> = RotateCcw;
                               let label = "Regenerate";
-                              if (!b.imageUrl) {
-                                if (b.imageStatus === "failed") {
-                                  Icon = RefreshCw;
-                                  label = "Retry";
-                                } else {
-                                  Icon = ImageSparkle;
-                                  label = "Generate";
-                                }
+                              if (!b.imageUrl && b.imageStatus !== "failed") {
+                                Icon = ImageSparkle;
+                                label = "Generate";
                               }
                               return (
                                 <button
@@ -1863,7 +1853,7 @@ export default function GeneratePage({ params }: PageProps) {
                             }}
                             title="View clip"
                             aria-label={`View clip for beat ${b.beatNumber}`}
-                            className="absolute top-1.5 left-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:scale-110"
+                            className="absolute top-1.5 right-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:scale-110"
                             style={{
                               background: "oklch(0 0 0 / 0.6)",
                               color: "white",
@@ -2182,6 +2172,47 @@ export default function GeneratePage({ params }: PageProps) {
               <X size={18} strokeWidth={2.4} />
             </button>
           </div>
+
+          {/* Vertical tags below the close cluster — resolution + duration
+              (video) or resolution alone (image). For video we use the
+              beat's stored snapshot (migration 091) so the tags reflect
+              what THIS clip was generated with. For image we don't have a
+              per-beat resolution snapshot yet, so we fall back to the
+              current picker selection as a best-effort indicator. Tags
+              only render when a value is available so an empty column
+              never sits under the close button. */}
+          {previewBeat && !previewEditing && (() => {
+            const tags: string[] = [];
+            if (previewBeat.type === "video") {
+              if (previewBeat.beat.videoResolution) tags.push(previewBeat.beat.videoResolution);
+              if (previewBeat.beat.videoDuration != null && previewBeat.beat.videoDuration !== "") {
+                const d = previewBeat.beat.videoDuration;
+                // n_frames-style values (Sora) stay as-is; sec values
+                // get a friendly "s" suffix.
+                tags.push(typeof d === "number" || /^\d+$/.test(String(d)) ? `${d}s` : String(d));
+              }
+            } else if (previewBeat.type === "image") {
+              if (selectedResolution) tags.push(selectedResolution);
+            }
+            if (tags.length === 0) return null;
+            return (
+              <div className="absolute top-14 right-3 z-20 flex flex-col items-end gap-1.5">
+                {tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-wide"
+                    style={{
+                      background: "oklch(0 0 0 / 0.65)",
+                      color: "white",
+                      border: "1px solid oklch(1 0 0 / 0.2)",
+                    }}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
           {previewBeat?.type === "image" && previewBeat.beat.imageUrl && (
             <img
               src={previewBeat.beat.imageUrl}
