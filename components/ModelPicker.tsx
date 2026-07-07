@@ -322,7 +322,13 @@ export function ModelPicker(props: ModelPickerProps) {
                     label={res}
                     selected={props.selectedResolution === res}
                     disabled={disabled}
-                    onClick={() => props.onSelectResolution(res === props.selectedResolution ? null : res)}
+                    // Set-only, not toggle. Video models expect exactly
+                    // one resolution — clicking the already-selected pill
+                    // used to unset it and silently fall back to KIE's
+                    // model default (e.g. Runway's 720p, Kling 3.0's
+                    // "std"), which surfaced as "I picked 4K but got
+                    // 720p" bugs. Duration pills already work this way.
+                    onClick={() => props.onSelectResolution(res)}
                   />
                 ))}
               </div>
