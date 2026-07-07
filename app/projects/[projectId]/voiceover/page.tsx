@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
+import { FreeResourcesButton } from "@/components/wizard/FreeResourcesButton";
+import { useKieActivityStore } from "@/store/kieActivityStore";
 import { StepCostCard } from "@/components/StepCostCard";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
@@ -507,6 +509,23 @@ export default function VoiceoverPage({ params }: PageProps) {
   // server-side and SWR will surface the new state.
   const effectivelyGenerating = generating || serverGenerationActive;
 
+  // Register / release the balance-poll gate. Active while a bulk
+  // run is in flight OR any beat is currently mid-generation on the
+  // TTS worker (which also covers per-beat regens — those flip the
+  // beat row to voiceover_status="generating"). The KieBalanceRow /
+  // StepBalanceCard / ElevenLabsBalanceRow subscribe to this signal
+  // and pause their /api/api-status polling while the store is
+  // empty, so idle-project viewing costs zero KIE and ElevenLabs
+  // API calls.
+  const markActive = useKieActivityStore((s) => s.markActive);
+  const markIdle = useKieActivityStore((s) => s.markIdle);
+  useEffect(() => {
+    const active = effectivelyGenerating || inProgressBeatsCount > 0;
+    if (active) markActive("voiceover");
+    else markIdle("voiceover");
+    return () => markIdle("voiceover");
+  }, [effectivelyGenerating, inProgressBeatsCount, markActive, markIdle]);
+
   // Per-beat regen is intentionally decoupled from the bulk-run state.
   // It hits the same TTS beats endpoint with skipRunClaim:true so the
   // route doesn't touch voiceover_active_run_id and the page's
@@ -802,6 +821,7 @@ export default function VoiceoverPage({ params }: PageProps) {
             <div className="mt-3 flex items-center gap-2 flex-wrap">
               <StepCostCard projectId={projectId} column="voiceover" />
               <StepBalanceCard />
+              <FreeResourcesButton step="voiceover" />
             </div>
           </div>
         </div>

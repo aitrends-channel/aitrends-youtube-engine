@@ -3,6 +3,8 @@
 import { useState, use, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
+import { FreeResourcesButton } from "@/components/wizard/FreeResourcesButton";
+import { useKieActivityStore } from "@/store/kieActivityStore";
 import { useProject } from "@/hooks/useProject";
 import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp, Eye, X } from "lucide-react";
 import { ImageSparkle } from "@/components/icons/ImageSparkle";
@@ -68,7 +70,7 @@ function friendlyError(raw: string | undefined | null): string {
   if (msg.includes("this field is required"))
     return "Video model rejected the request — try a different video model";
   if (msg.includes("timed out") || msg.includes("timeout"))
-    return "Generation timed out — try a different model";
+    return "Still generating — this can take longer than usual on some models. Refresh the page to check status; the job will finish on KIE in the background.";
   if (msg.includes("no task id") || msg.includes("no taskid"))
     return "Failed to queue task — the model may be unavailable, try another";
   if (msg.includes("no url") || msg.includes("no image url") || msg.includes("completed but no url"))
@@ -655,7 +657,11 @@ export default function GeneratePage({ params }: PageProps) {
         taskId: b.imageTaskId as string,
         modelId: b.imageModelId ?? selectedImageModel ?? "",
       }));
-      const MAX_POLLS = 50;
+      // Ceiling matches the active-generation loop (~6 min). Long
+      // enough for GPT Image 2 and other slow models to legitimately
+      // finish before we stop polling; short enough that a genuinely
+      // stuck task doesn't burn worker/poll budget indefinitely.
+      const MAX_POLLS = 120;
       for (let attempt = 0; attempt < MAX_POLLS && remaining.length > 0; attempt++) {
         await new Promise((r) => setTimeout(r, 3000));
         const results = await Promise.allSettled(
@@ -806,10 +812,27 @@ export default function GeneratePage({ params }: PageProps) {
 
   const hasActiveVideos = beats.some((b) =>
     b.videoStatus === "queued" || b.videoStatus === "submitting" || b.videoStatus === "rendering");
+  const hasActiveImages = generatingImages
+    || beats.some((b) => b.imageStatus === "generating" && !b.imageUrl);
 
   useEffect(() => {
     if (hasActiveVideos && !videosSubmitted) setVideosSubmitted(true);
   }, [hasActiveVideos]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Register / release the balance-poll gate. hasActivity across the
+  // app stays true as long as any of: the user's current image run,
+  // a beat still marked "generating" from a resume, or any video beat
+  // in an active DB state (queued/submitting/rendering). Balance
+  // components subscribe to the store and pause their /api/api-status
+  // polling — which hits KIE and ElevenLabs — while the store is empty.
+  const markActive = useKieActivityStore((s) => s.markActive);
+  const markIdle = useKieActivityStore((s) => s.markIdle);
+  useEffect(() => {
+    const active = hasActiveVideos || hasActiveImages;
+    if (active) markActive("generate");
+    else markIdle("generate");
+    return () => markIdle("generate");
+  }, [hasActiveVideos, hasActiveImages, markActive, markIdle]);
 
   useEffect(() => {
     if (!videosSubmitted) return;
@@ -1110,7 +1133,13 @@ export default function GeneratePage({ params }: PageProps) {
       // Poll all pending tasks in parallel every 3s until all complete
       const remaining = [...pending];
       let firstPollError: string | null = null;
-      const MAX_POLLS = 50; // ~2.5 min max
+      // ~6 min max. GPT Image 2 and other slow models can legitimately
+      // take 3–5 min per image on KIE. The old ~2.5 min ceiling was
+      // firing "timed out" while KIE was still producing the image,
+      // which then landed successfully on the next page mount via the
+      // resume-effect above — confusing for the user. Higher ceiling
+      // keeps the poll going until KIE actually completes.
+      const MAX_POLLS = 120;
       for (let attempt = 0; attempt < MAX_POLLS && remaining.length > 0; attempt++) {
         // Stop also exits the poll loop — the in-flight KIE jobs are
         // already paid for and the cron / webhook / page-resume effect
@@ -1379,6 +1408,7 @@ export default function GeneratePage({ params }: PageProps) {
             <div className="mt-3 flex items-center gap-2 flex-wrap">
               <StepCostCard projectId={projectId} column="generate" />
               <StepBalanceCard />
+              <FreeResourcesButton step="generate" />
             </div>
           </div>
         </div>
