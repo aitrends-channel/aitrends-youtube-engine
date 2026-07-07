@@ -348,6 +348,18 @@ export default function GeneratePage({ params }: PageProps) {
   const [selectedVideoAspectRatio, setSelectedVideoAspectRatio] = useState("16:9");
   const [selectedDuration, setSelectedDuration] = useState<string | number | null>(null);
   const [selectedVideoResolution, setSelectedVideoResolution] = useState<string | null>(null);
+  // Guarded resolution value to send with any video POST. Drops the
+  // picker's selection if it isn't in the CURRENT model's resolutions
+  // list — closes the race where a user rapid-clicks Regen between
+  // switching models and the resolution-reset effect firing, which
+  // would otherwise ship the old model's tier to the new model and
+  // KIE would silently default to the cheapest supported value.
+  const safeVideoResolution = (() => {
+    if (!selectedVideoModel || !selectedVideoResolution) return null;
+    const cfg = getVideoModelConfig(selectedVideoModel);
+    if (!cfg.resolutions?.includes(selectedVideoResolution)) return null;
+    return selectedVideoResolution;
+  })();
   const [voiceTab, setVoiceTab] = useState<"female" | "male">("female");
 
   const initialTtsSelected = useRef(false);
@@ -511,7 +523,7 @@ export default function GeneratePage({ params }: PageProps) {
           modelId: selectedVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
-          ...(selectedVideoResolution ? { resolution: selectedVideoResolution } : {}),
+          ...(safeVideoResolution ? { resolution: safeVideoResolution } : {}),
         }),
       });
       const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
@@ -1354,7 +1366,7 @@ export default function GeneratePage({ params }: PageProps) {
           modelId: selectedVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
-          ...(selectedVideoResolution ? { resolution: selectedVideoResolution } : {}),
+          ...(safeVideoResolution ? { resolution: safeVideoResolution } : {}),
         }),
       });
       const data = await res.json().catch(() => ({})) as { resumed?: number; error?: string };
@@ -1398,7 +1410,7 @@ export default function GeneratePage({ params }: PageProps) {
           modelId: selectedVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
-          ...(selectedVideoResolution ? { resolution: selectedVideoResolution } : {}),
+          ...(safeVideoResolution ? { resolution: safeVideoResolution } : {}),
         }),
       });
       const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
