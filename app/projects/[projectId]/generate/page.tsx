@@ -29,11 +29,15 @@ const fetcher = (url: string) =>
 
 function isCreditError(raw: string | undefined | null): boolean {
   const msg = (raw ?? "").toLowerCase();
+  // Keep the matcher tight — "quota exceeded" was catching KIE's
+  // rate-limit errors (per-minute / per-day model caps) and telling
+  // users their wallet was empty when it wasn't. Balance issues are
+  // "insufficient credits/balance/fund", "out of credit", "no credit",
+  // or the server route surfacing an HTTP 402 (translated to a 402
+  // response the client detects separately).
   return msg.includes("credits insufficient")
     || msg.includes("insufficient credits")
-    || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit")))
-    || msg.includes("quota_exceeded")
-    || msg.includes("quota exceeded")
+    || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit") || msg.includes("fund")))
     || msg.includes("credits remaining")
     || msg.includes("credit balance");
 }
@@ -55,10 +59,12 @@ function isModelTerminalError(raw: string | undefined | null): boolean {
 
 function friendlyError(raw: string | undefined | null): string {
   const msg = (raw ?? "").toLowerCase();
-  if (msg.includes("credits insufficient") || msg.includes("insufficient credits") || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit"))))
+  if (msg.includes("credits insufficient") || msg.includes("insufficient credits") || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit") || msg.includes("fund"))))
     return "Insufficient KIE credits — top up your account at kie.ai";
-  if (msg.includes("quota_exceeded") || msg.includes("quota exceeded") || msg.includes("credits remaining") || msg.includes("credit balance"))
+  if (msg.includes("credits remaining") || msg.includes("credit balance"))
     return "Insufficient KIE credits — top up your account at kie.ai";
+  if (msg.includes("quota_exceeded") || msg.includes("quota exceeded"))
+    return "KIE rate limit reached — wait a minute and try again, or switch to a different model";
   if (msg.includes("invalid_api_key") || msg.includes("invalid api key") || msg.includes("unauthorized") || (msg.includes("api key") && msg.includes("invalid")))
     return "API key is invalid — go to Settings to update it";
   if (msg.includes("api key") && (msg.includes("missing") || msg.includes("not set") || msg.includes("required")))
