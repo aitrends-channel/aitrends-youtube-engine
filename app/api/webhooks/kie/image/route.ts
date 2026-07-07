@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { finishImageTask } from "@/lib/kie/finishImageTask";
 import { KieUpstreamError } from "@/lib/kie/client";
 import { supabase } from "@/lib/supabase/client";
+import { verifyKieWebhookSignature, getKieWebhookSecret } from "@/lib/kie/webhook";
 
 // KIE webhook receiver for image task completions. KIE POSTs here the
 // moment a submitted image finishes (success or failure). We don't
@@ -46,17 +47,37 @@ interface KieCallbackPayload {
 }
 
 export async function POST(req: Request) {
+  // Read the body once as text so we can hand it to the signature
+  // verifier (which parses it) and still re-JSON-parse below without
+  // consuming the request stream twice.
+  const bodyText = await req.text();
+
+  // Verify HMAC-SHA256 signature against `${taskId}.${timestamp}` per
+  // docs.kie.ai/common-api/webhook-verification. Returns 401 on
+  // mismatch — KIE may retry, which is fine if a secret rotation is
+  // in progress. If KIE_WEBHOOK_HMAC_KEY isn't set the verifier
+  // returns false and everything is rejected: that's the intentional
+  // fail-closed behavior so a misconfigured env can't accept forged
+  // webhooks and poison beat state.
+  const verify = verifyKieWebhookSignature(req.headers, bodyText, getKieWebhookSecret());
+  if (!verify.ok) {
+    console.warn(`[webhooks/kie/image] rejected: ${verify.reason}`);
+    return NextResponse.json({ error: verify.reason }, { status: 401 });
+  }
+
   let body: KieCallbackPayload;
   try {
-    body = await req.json() as KieCallbackPayload;
+    body = JSON.parse(bodyText) as KieCallbackPayload;
   } catch {
     console.warn("[webhooks/kie/image] non-JSON body");
     return NextResponse.json({ ok: true });
   }
 
-  // KIE callback uses snake_case task_id; tolerate camelCase too in case
-  // the shape differs across model families.
-  const taskId = body.data?.task_id ?? body.data?.taskId;
+  // Prefer the verifier's parsed taskId (it already validated the
+  // signature against this value). Fall back to the body's data for
+  // any edge case where the top-level taskId is absent but data.task_id
+  // is set.
+  const taskId = verify.taskId ?? body.data?.task_id ?? body.data?.taskId;
   if (!taskId) {
     console.warn(`[webhooks/kie/image] no task_id in payload: code=${body.code} msg=${body.msg}`);
     return NextResponse.json({ ok: true });
