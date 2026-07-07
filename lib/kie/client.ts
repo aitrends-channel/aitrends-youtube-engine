@@ -21,11 +21,19 @@ export class KieUpstreamError extends Error {
 }
 
 // KIE surfaces "wallet empty" a few different ways depending on route
-// and layer. Keep the matcher permissive — false positives here just
-// nudge the user to top up, which is still the right action.
+// and layer. HTTP 402 (Payment Required) is the definitive signal;
+// message-based matching is a fallback for older endpoints that return
+// 200/400 with the error inside the JSON body.
+//
+// "quota" is deliberately excluded from the fallback pattern because
+// KIE also uses "insufficient quota" / "quota exceeded" for per-minute
+// and per-day rate limits, which are NOT the same as an empty wallet —
+// translating them to "top up your account" sent users to add credits
+// they already had. Rate-limit surfacing lives with the retry-after
+// handling above.
 export function looksLikeInsufficientCredits(status: number, body: string, code?: number): boolean {
   if (status === 402 || code === 402) return true;
-  return /insufficient\s+(credit|balance|fund|quota)|out\s+of\s+credit|no\s+credit/i.test(body);
+  return /insufficient\s+(credit|balance|fund)|out\s+of\s+credit|no\s+credit/i.test(body);
 }
 
 async function getKieKey(userId?: string): Promise<string> {
