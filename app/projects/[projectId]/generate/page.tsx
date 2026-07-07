@@ -336,6 +336,7 @@ export default function GeneratePage({ params }: PageProps) {
   const [selectedVideoModel, setSelectedVideoModel] = useState<string | null>(null);
   const [selectedVideoAspectRatio, setSelectedVideoAspectRatio] = useState("16:9");
   const [selectedDuration, setSelectedDuration] = useState<string | number | null>(null);
+  const [selectedVideoResolution, setSelectedVideoResolution] = useState<string | null>(null);
   const [voiceTab, setVoiceTab] = useState<"female" | "male">("female");
 
   const initialTtsSelected = useRef(false);
@@ -486,6 +487,7 @@ export default function GeneratePage({ params }: PageProps) {
           modelId: selectedVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
+          ...(selectedVideoResolution ? { resolution: selectedVideoResolution } : {}),
         }),
       });
       const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
@@ -790,6 +792,15 @@ export default function GeneratePage({ params }: PageProps) {
     }
     if (!config.aspectRatios.includes(selectedVideoAspectRatio)) {
       setSelectedVideoAspectRatio(config.aspectRatios[0]);
+    }
+    // Reset resolution when the new model doesn't offer it, or the
+    // previously-picked value isn't valid for this model. Otherwise
+    // default to the first supported value so the user always ships
+    // with a resolution rather than KIE's silent default.
+    if (!config.resolutions || config.resolutions.length === 0) {
+      setSelectedVideoResolution(null);
+    } else if (!selectedVideoResolution || !config.resolutions.includes(selectedVideoResolution)) {
+      setSelectedVideoResolution(config.resolutions[0]);
     }
   }, [selectedVideoModel]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1256,6 +1267,7 @@ export default function GeneratePage({ params }: PageProps) {
           modelId: selectedVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
+          ...(selectedVideoResolution ? { resolution: selectedVideoResolution } : {}),
         }),
       });
       const data = await res.json().catch(() => ({})) as { resumed?: number; error?: string };
@@ -1299,6 +1311,7 @@ export default function GeneratePage({ params }: PageProps) {
           modelId: selectedVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
+          ...(selectedVideoResolution ? { resolution: selectedVideoResolution } : {}),
         }),
       });
       const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
@@ -1371,9 +1384,15 @@ export default function GeneratePage({ params }: PageProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto pb-[70px]">
-        <div className="py-4 sm:p-8 grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+        {/* 3-row subgrid keeps the image and video panels perfectly
+            row-aligned: model-picker headers share row 1, gallery /
+            empty-state areas share row 2, action clusters share row 3.
+            Without subgrid, extra content on one side (e.g. a taller
+            aspect list, or a resolution section that only one panel
+            has) would push the sections below it out of alignment. */}
+        <div className="py-4 sm:p-8 grid grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto] gap-6">
           {/* Image Gen Panel */}
-          <div className="rounded-2xl flex flex-col overflow-hidden h-full"
+          <div className="rounded-2xl overflow-hidden flex flex-col lg:grid lg:grid-rows-subgrid lg:row-span-3"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon={<ImageIcon size={18} />} title="AI Images" subtitle={`${totalBeats} images from script beats`} />
@@ -1389,6 +1408,11 @@ export default function GeneratePage({ params }: PageProps) {
               />
             </div>
 
+            {/* Middle subgrid row: stale banner + gallery live here so
+                the image panel has exactly three direct children (header
+                / middle / actions) and subgrid row alignment holds even
+                when both inner blocks are empty. */}
+            <div className="flex flex-col">
             {beatsStale && (
               <div className="px-5 pt-4">
                 <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
@@ -1438,7 +1462,7 @@ export default function GeneratePage({ params }: PageProps) {
                             }}
                             title="View image"
                             aria-label={`View image for beat ${b.beatNumber}`}
-                            className="absolute top-1.5 left-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:scale-110"
+                            className="absolute top-1.5 right-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:scale-110"
                             style={{
                               background: "oklch(0 0 0 / 0.6)",
                               color: "white",
@@ -1463,19 +1487,14 @@ export default function GeneratePage({ params }: PageProps) {
                         ) : (
                           <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${b.imageUrl ? "opacity-0 group-hover:opacity-100" : "opacity-100"}`}
                             style={{ background: b.imageUrl ? "oklch(0 0 0 / 0.55)" : "transparent" }}>
-                            {/* Status-specific affordance — matches the
-                                video side's icon system:
-                                  - no image, status=failed → RefreshCw (Retry)
-                                  - no image (any other status) → Wand2 (Generate)
+                            {/* Status-specific affordance:
+                                  - no image, status=failed → RotateCcw (Regenerate)
+                                  - no image (any other status) → ImageSparkle (Generate)
                                   - has image → RotateCcw (Regenerate)
-                                Previously we only used Wand2 when BOTH
-                                imageUrl AND imageStatus were nullish,
-                                so a tile carrying e.g. imageStatus
-                                "pending" fell through to RotateCcw
-                                even though no image had ever been
-                                produced — which read as a regenerate
-                                affordance for content that didn't
-                                exist yet. */}
+                                Failed uses the regenerate icon rather
+                                than a distinct retry glyph — the intent
+                                is the same as a normal regen and one
+                                affordance keeps the tile UX consistent. */}
                             {(() => {
                               // Icon ref typed as the loose
                               // component shape ({ size, strokeWidth,
@@ -1485,14 +1504,9 @@ export default function GeneratePage({ params }: PageProps) {
                               // component) can be assigned.
                               let Icon: React.ComponentType<{ size?: number; strokeWidth?: number; className?: string }> = RotateCcw;
                               let label = "Regenerate";
-                              if (!b.imageUrl) {
-                                if (b.imageStatus === "failed") {
-                                  Icon = RefreshCw;
-                                  label = "Retry";
-                                } else {
-                                  Icon = ImageSparkle;
-                                  label = "Generate";
-                                }
+                              if (!b.imageUrl && b.imageStatus !== "failed") {
+                                Icon = ImageSparkle;
+                                label = "Generate";
                               }
                               return (
                                 <button
@@ -1540,8 +1554,9 @@ export default function GeneratePage({ params }: PageProps) {
                 </div>
               </div>
             )}
+            </div>
 
-            <div className="p-5 mt-auto space-y-2">
+            <div className="p-5 space-y-2">
               {(() => {
                 // Three button states keyed off pendingCount:
                 //   • pendingCount === totalBeats → first-time run: "Generate N Images"
@@ -1632,7 +1647,7 @@ export default function GeneratePage({ params }: PageProps) {
           </div>
 
           {/* Video Gen Panel */}
-          <div className="rounded-2xl flex flex-col overflow-hidden h-full"
+          <div className="rounded-2xl overflow-hidden flex flex-col lg:grid lg:grid-rows-subgrid lg:row-span-3"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon={<Video size={18} />} title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
@@ -1645,9 +1660,15 @@ export default function GeneratePage({ params }: PageProps) {
                 onSelectAspectRatio={setSelectedVideoAspectRatio}
                 selectedDuration={selectedDuration ?? ""}
                 onSelectDuration={setSelectedDuration}
+                selectedResolution={selectedVideoResolution}
+                onSelectResolution={setSelectedVideoResolution}
               />
             </div>
 
+            {/* Middle subgrid row: stale banner + empty state + gallery.
+                Always renders so the video panel has exactly three
+                direct children matching the image panel's subgrid. */}
+            <div className="flex flex-col">
             {beatsStale && (
               <div className="px-5 pt-4">
                 <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
@@ -1663,6 +1684,27 @@ export default function GeneratePage({ params }: PageProps) {
             {/* Video clip grid — mirrors image panel structure: progress + grid in one block.
                 Renders placeholder cells (status "—") for every beat with a videoPrompt
                 so the user sees the workflow scaffold before queuing any clips. */}
+            {totalBeats > 0 && !beats.some((b) => b.videoPrompt) && (
+              <div className="px-5 pt-4">
+                <div className="rounded-xl p-6 flex flex-col items-center gap-3 text-center"
+                  style={{ background: "var(--bg-progress)", border: "1px dashed var(--bd-8)" }}>
+                  <Video size={22} style={{ color: "var(--c-35)" }} />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium" style={{ color: "var(--c-70)" }}>No video prompts yet</p>
+                    <p className="text-xs leading-relaxed" style={{ color: "var(--c-45)" }}>
+                      Generate video motion prompts in Prompt Studio to start queuing clips.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => router.push(`/projects/${projectId}/prompts`)}
+                    className="mt-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                  >
+                    Open Prompt Studio
+                  </button>
+                </div>
+              </div>
+            )}
             {beats.some((b) => b.videoPrompt) && (
               <div className="px-5 pt-4">
                 <ProgressBar value={generatedVideos} total={videoBeats} />
@@ -1811,7 +1853,7 @@ export default function GeneratePage({ params }: PageProps) {
                             }}
                             title="View clip"
                             aria-label={`View clip for beat ${b.beatNumber}`}
-                            className="absolute top-1.5 left-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:scale-110"
+                            className="absolute top-1.5 right-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:scale-110"
                             style={{
                               background: "oklch(0 0 0 / 0.6)",
                               color: "white",
@@ -1847,8 +1889,9 @@ export default function GeneratePage({ params }: PageProps) {
                 </div>
               </div>
             )}
+            </div>
 
-            <div className="p-5 mt-auto space-y-2">
+            <div className="p-5 space-y-2">
               {((failedVideos > 0 && !hasActiveVideos) || videoRunError) && (() => {
                 const workingId = project?.video_model_id as string | undefined;
                 const workingName = videoModels?.find((m) => m.id === workingId)?.name ?? "the selected model";
@@ -1940,7 +1983,7 @@ export default function GeneratePage({ params }: PageProps) {
               ) : (
                 <button
                   onClick={() => queueVideos("all")}
-                  disabled={!selectedVideoModel || !pendingVideosWithImages || hasActiveVideos || videosBlockedByImages}
+                  disabled={!selectedVideoModel || !pendingVideosWithImages || videosBlockedByImages}
                   title={videoBlockReason}
                   className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                   style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
@@ -2129,6 +2172,47 @@ export default function GeneratePage({ params }: PageProps) {
               <X size={18} strokeWidth={2.4} />
             </button>
           </div>
+
+          {/* Vertical tags below the close cluster — resolution + duration
+              (video) or resolution alone (image). For video we use the
+              beat's stored snapshot (migration 091) so the tags reflect
+              what THIS clip was generated with. For image we don't have a
+              per-beat resolution snapshot yet, so we fall back to the
+              current picker selection as a best-effort indicator. Tags
+              only render when a value is available so an empty column
+              never sits under the close button. */}
+          {previewBeat && !previewEditing && (() => {
+            const tags: string[] = [];
+            if (previewBeat.type === "video") {
+              if (previewBeat.beat.videoResolution) tags.push(previewBeat.beat.videoResolution);
+              if (previewBeat.beat.videoDuration != null && previewBeat.beat.videoDuration !== "") {
+                const d = previewBeat.beat.videoDuration;
+                // n_frames-style values (Sora) stay as-is; sec values
+                // get a friendly "s" suffix.
+                tags.push(typeof d === "number" || /^\d+$/.test(String(d)) ? `${d}s` : String(d));
+              }
+            } else if (previewBeat.type === "image") {
+              if (selectedResolution) tags.push(selectedResolution);
+            }
+            if (tags.length === 0) return null;
+            return (
+              <div className="absolute top-14 right-3 z-20 flex flex-col items-end gap-1.5">
+                {tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-wide"
+                    style={{
+                      background: "oklch(0 0 0 / 0.65)",
+                      color: "white",
+                      border: "1px solid oklch(1 0 0 / 0.2)",
+                    }}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
           {previewBeat?.type === "image" && previewBeat.beat.imageUrl && (
             <img
               src={previewBeat.beat.imageUrl}
