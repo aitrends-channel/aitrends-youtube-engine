@@ -469,7 +469,13 @@ export default function GeneratePage({ params }: PageProps) {
   // a new submission, so we don't need a separate clear pass first — the
   // old R2 file becomes an orphan (next regen overwrites its key with a
   // fresh upload, so disk usage stays bounded).
-  const [regeneratingVideo, setRegeneratingVideo] = useState(false);
+  // Per-beat regen tracker instead of a single boolean mutex — lets
+  // the user click Regenerate on multiple beats without waiting for
+  // any one to finish. Each entry is a beat number currently mid-POST;
+  // the tile spinner and disabled state derive from set membership so
+  // only the beats being regenerated show the busy state, not the
+  // whole grid.
+  const [regeneratingBeats, setRegeneratingBeats] = useState<Set<number>>(new Set());
   // Single-beat video regen — fires immediately from the per-tile
   // overlay button. The previous version routed through a confirm
   // modal; we dropped the modal so the overlay click is the action.
@@ -487,7 +493,14 @@ export default function GeneratePage({ params }: PageProps) {
       setVideoRunError("Pick a video model first.");
       return;
     }
-    setRegeneratingVideo(true);
+    // Add this beat's number to the in-flight set so only its own
+    // tile disables/spins during the POST — leaves every other tile
+    // clickable so the user can fire off more beats in parallel.
+    setRegeneratingBeats((prev) => {
+      const next = new Set(prev);
+      next.add(beat.beatNumber);
+      return next;
+    });
     try {
       const res = await fetch("/api/generate/videos", {
         method: "POST",
@@ -512,9 +525,45 @@ export default function GeneratePage({ params }: PageProps) {
     } catch (err) {
       setVideoRunError(friendlyError(err instanceof Error ? err.message : null));
     } finally {
-      setRegeneratingVideo(false);
+      setRegeneratingBeats((prev) => {
+        const next = new Set(prev);
+        next.delete(beat.beatNumber);
+        return next;
+      });
     }
   }
+
+  // Track which beat is in the middle of a cancel request so the tile
+  // can disable its Stop button between click and DB commit — prevents
+  // a double-tap from firing two POSTs.
+  const [stoppingBeat, setStoppingBeat] = useState<number | null>(null);
+  async function stopVideoBeat(beatNumber: number) {
+    if (stoppingBeat !== null) return;
+    setStoppingBeat(beatNumber);
+    try {
+      const res = await fetch("/api/generate/videos/cancel-beat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, beatNumber }),
+      });
+      const data = await res.json().catch(() => ({})) as { cancelled?: number; error?: string };
+      if (!res.ok) throw new Error(data.error ?? `Cancel failed (HTTP ${res.status})`);
+      if ((data.cancelled ?? 0) === 0) {
+        // Beat already landed in a terminal state between the tile
+        // render and this click. Treat as success — the user got the
+        // outcome they wanted, just via a different path.
+        toast.info(`Beat ${beatNumber} already finished before it could be stopped`);
+      } else {
+        toast.success(`Beat ${beatNumber} stopped`);
+      }
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to stop beat");
+    } finally {
+      setStoppingBeat(null);
+    }
+  }
+
   async function deleteVoiceover() {
     setDeletingVoiceover(true);
     try {
@@ -1830,7 +1879,46 @@ export default function GeneratePage({ params }: PageProps) {
                             and during global active-video ops. */}
                         {(() => {
                           const inFlight = b.videoStatus === "queued" || b.videoStatus === "submitting" || b.videoStatus === "rendering";
-                          const disabled = inFlight || regeneratingVideo || queuingVideos || hasActiveVideos;
+                          // In-flight beats get a Stop affordance so the
+                          // user can cancel a single beat without waiting
+                          // for the whole batch. Once cancelled the beat
+                          // flips to "failed" with a "Cancelled by user"
+                          // reason, matching the visual language for any
+                          // other stopped beat.
+                          if (inFlight) {
+                            const stopping = stoppingBeat === b.beatNumber;
+                            return (
+                              <div className="absolute inset-0 flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100"
+                                style={{ background: "oklch(0 0 0 / 0.55)" }}>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void stopVideoBeat(b.beatNumber);
+                                  }}
+                                  disabled={stopping}
+                                  title={stopping ? "Stopping…" : `Stop beat ${b.beatNumber}`}
+                                  aria-label={`Stop beat ${b.beatNumber}`}
+                                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 cursor-pointer"
+                                  style={{
+                                    background: "oklch(0.7 0.2 25)",
+                                    color: "white",
+                                    boxShadow: "0 3px 12px oklch(0.7 0.2 25 / 0.5), 0 0 0 1.5px oklch(1 0 0 / 0.15)",
+                                  }}
+                                >
+                                  {stopping
+                                    ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                    : <X size={14} strokeWidth={2.6} />}
+                                </button>
+                              </div>
+                            );
+                          }
+                          // Per-beat disable so parallel manual regens are
+                          // allowed — the tile only greys out while ITS
+                          // own request is mid-flight. Bulk queue in
+                          // progress still blocks single-beat regens so
+                          // the two paths don't stomp each other during
+                          // that specific window.
+                          const disabled = queuingVideos || regeneratingBeats.has(b.beatNumber);
                           // Status-specific affordance so the icon
                           // matches the intent at a glance:
                           //   - no clip yet (no videoUrl + no status)
@@ -1868,7 +1956,7 @@ export default function GeneratePage({ params }: PageProps) {
                                   void regenerateVideoBeat(b.beatNumber);
                                 }}
                                 disabled={disabled}
-                                title={inFlight ? `Beat ${b.beatNumber} is ${b.videoStatus} — wait for it to finish` : `${label} beat ${b.beatNumber}`}
+                                title={`${label} beat ${b.beatNumber}`}
                                 aria-label={`${label} beat ${b.beatNumber}`}
                                 className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 cursor-pointer"
                                 style={{
