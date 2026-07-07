@@ -3,7 +3,10 @@
 import { useState, use, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
-import { FreeResourcesButton } from "@/components/wizard/FreeResourcesButton";
+// FreeResourcesButton is temporarily hidden — see comment near
+// StepBalanceCard below. Keep the import commented so ESLint's
+// no-unused-imports rule stays happy while the JSX usage is out.
+// import { FreeResourcesButton } from "@/components/wizard/FreeResourcesButton";
 import { useKieActivityStore } from "@/store/kieActivityStore";
 import { useProject } from "@/hooks/useProject";
 import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp, Eye, X } from "lucide-react";
@@ -1414,7 +1417,9 @@ export default function GeneratePage({ params }: PageProps) {
             <div className="mt-3 flex items-center gap-2 flex-wrap">
               <StepCostCard projectId={projectId} column="generate" />
               <StepBalanceCard />
-              <FreeResourcesButton step="generate" />
+              {/* Free resources button hidden until the /free-resources
+                  page is built. Drop this back in when ready:
+                  <FreeResourcesButton step="generate" /> */}
             </div>
           </div>
         </div>
