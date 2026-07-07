@@ -25,14 +25,18 @@ export async function POST(req: Request) {
     }
 
     // Store job config on the project so the worker can read it.
-    // video_resolution is nullable — omit the key when the model has
-    // no resolution knob so we don't wipe a previously-set value with
-    // null for models that DO use it.
+    // video_resolution is always written — NULL when the client omitted
+    // resolution (either the picker chose null for a no-resolution
+    // model, or the field was left untouched). Previously we skipped
+    // the key when resolution was falsy, which meant a submit against
+    // a no-resolution model kept the previous submit's video_resolution
+    // in the DB and the worker forwarded that stale value as an extra
+    // KIE input the new model didn't accept.
     await supabase.from("projects").update({
       video_model_id: modelId,
       video_duration: duration ?? null,
       video_aspect_ratio: aspectRatio,
-      ...(resolution ? { video_resolution: resolution } : {}),
+      video_resolution: resolution ?? null,
     }).eq("id", projectId).eq("user_id", user.id);
 
     // Mark each beat as queued. We deliberately do NOT null
@@ -69,6 +73,16 @@ export async function POST(req: Request) {
           video_status: "queued",
           video_job_id: null,
           video_error: null,
+          // Snapshot the config on the beat itself so a later settings
+          // change on the project row can't rewrite an already-queued
+          // beat. Worker reads beat-level values first and only falls
+          // back to projects.* when these are NULL (legacy rows). All
+          // four write unconditionally — a NULL from the client (e.g.
+          // no-resolution model) is the correct value to persist.
+          video_model_id: modelId,
+          video_aspect_ratio: aspectRatio,
+          video_duration: duration != null ? String(duration) : null,
+          video_resolution: resolution ?? null,
           // Persist the prompt from the payload — the worker generates
           // from the DB row, so without this an edited prompt (preview
           // dialog's Save & regenerate) was silently ignored. Normal

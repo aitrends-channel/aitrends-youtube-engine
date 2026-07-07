@@ -128,6 +128,13 @@ export interface Beat {
   imageModelId?: string;
   videoJobId?: string;
   videoError?: string;
+  /** Snapshot of the video-generation config used when this beat was
+   *  queued (migration 091). Populated only on beats queued after
+   *  that migration; older beats surface as undefined. */
+  videoModelId?: string;
+  videoDuration?: string | number;
+  videoAspectRatio?: string;
+  videoResolution?: string;
   audioUrl?: string;
   /** Per-beat voiceover fields (migration 045). Each beat gets its
    *  own TTS mp3 generated from its scriptSegment; the assembler
