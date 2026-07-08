@@ -42,6 +42,20 @@ function classifyVideoWebhook(payload: KieWebhookPayload): {
   const DONE = ["succeed", "success", "completed", "done", "finish", "finished", "complete", "task_completed"];
   const FAIL = ["failed", "error", "fail"];
 
+  // Top-level KIE envelope check FIRST. KIE fires webhooks for failed
+  // submits (safety filter blocks, invalid input, insufficient credits,
+  // etc.) as {code: non-200, msg: "...", data: {taskId}} — none of the
+  // nested state/status/successFlag fields we look at below are set.
+  // Without this branch the classifier fell through to "pending", the
+  // handler ACKed 200, and the beat sat rendering until the sweeper
+  // eventually reclaimed it — the failure was silently dropped.
+  if (typeof payload.code === "number" && payload.code !== 200) {
+    const reason = (payload.msg ?? "").trim()
+      || extractFailureReason(d)
+      || `KIE returned code ${payload.code}`;
+    return { kind: "failed", error: reason };
+  }
+
   // Veo path: success/failure encoded in successFlag (1 = success,
   // 2/3 = failure). Video URL lives at data.videoUrl / video_url.
   if (typeof d.successFlag === "number") {

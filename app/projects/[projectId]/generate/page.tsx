@@ -82,6 +82,18 @@ function friendlyError(raw: string | undefined | null): string {
     return "Still generating — this can take longer than usual on some models. Refresh the page to check status; the job will finish on KIE in the background.";
   if (msg.includes("no task id") || msg.includes("no taskid"))
     return "Failed to queue task — the model may be unavailable, try another";
+  // KIE / Veo safety filters flag anything the model interprets as a
+  // reference to a real person, brand, copyrighted character, or
+  // sensitive content. It's a per-beat problem — the same model with
+  // a different prompt usually works — so we route the user to
+  // rephrasing rather than to changing the model.
+  if (msg.includes("safety filter") || msg.includes("safety_filter")
+    || msg.includes("prominent public figure")
+    || msg.includes("content policy") || msg.includes("policy violation")
+    || msg.includes("blocked by moderation") || msg.includes("moderated"))
+    return "Content policy block — the prompt references something the model refuses to render (real person, brand, or restricted topic). Rephrase this beat's prompt in Prompt Studio, then retry.";
+  if (msg.includes("nsfw") || msg.includes("unsafe content") || msg.includes("adult content"))
+    return "Content policy block — the prompt was flagged as unsafe. Rephrase this beat's prompt in Prompt Studio, then retry.";
   if (msg.includes("no url") || msg.includes("no image url") || msg.includes("completed but no url"))
     return "Image was generated but could not be retrieved — try again";
   if (msg.includes("rate limit") || msg.includes("too many requests"))
