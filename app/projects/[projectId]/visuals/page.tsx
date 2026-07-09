@@ -109,6 +109,252 @@ function SelectableImage({
   );
 }
 
+// Extracted visual style profile — display + inline edit. The profile
+// gets baked into every image/video prompt (see lib/claude/prompts.ts:
+// artStyle/colorPalette/lightingStyle/cameraStyle/composition/mood/
+// detailLevel), so once the user regenerates prompts these edits flow
+// through to every beat's render.
+type VisualProfileFields = {
+  artStyle: string;
+  lightingStyle: string;
+  cameraStyle: string;
+  composition: string;
+  detailLevel: string;
+  mood: string;
+  colorPalette: string[];
+};
+
+const PROFILE_STRING_FIELDS: Array<{ key: keyof Omit<VisualProfileFields, "colorPalette">; label: string; placeholder: string }> = [
+  { key: "artStyle",       label: "Art Style",  placeholder: "e.g. Cinematic realism" },
+  { key: "lightingStyle",  label: "Lighting",   placeholder: "e.g. Warm golden hour" },
+  { key: "cameraStyle",    label: "Camera",     placeholder: "e.g. Handheld medium shots" },
+  { key: "composition",    label: "Composition", placeholder: "e.g. Rule of thirds, centered subject" },
+  { key: "detailLevel",    label: "Detail Level", placeholder: "e.g. High fidelity, sharp textures" },
+  { key: "mood",           label: "Mood",       placeholder: "e.g. Introspective and warm" },
+];
+
+function VisualProfileCard({
+  projectId,
+  profile,
+  onSave,
+}: {
+  projectId: string;
+  profile: Record<string, unknown>;
+  onSave: (next: Record<string, unknown>) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState<VisualProfileFields>(() => normalizeProfile(profile));
+  // New-color chip input state — separate from the palette itself so
+  // the user can type freely without every keystroke re-rendering the
+  // palette row below.
+  const [newColor, setNewColor] = useState("");
+
+  // Reset local draft whenever the server profile changes underneath
+  // us (e.g. re-extract while not editing). Skipped during edit to
+  // avoid clobbering in-flight user changes.
+  useEffect(() => {
+    if (!editing) setDraft(normalizeProfile(profile));
+  }, [profile, editing]);
+
+  function setField<K extends keyof VisualProfileFields>(key: K, val: VisualProfileFields[K]) {
+    setDraft((d) => ({ ...d, [key]: val }));
+  }
+  function addColor() {
+    const v = newColor.trim();
+    if (!v) return;
+    if (draft.colorPalette.includes(v)) { setNewColor(""); return; }
+    setDraft((d) => ({ ...d, colorPalette: [...d.colorPalette, v] }));
+    setNewColor("");
+  }
+  function updateColor(i: number, val: string) {
+    setDraft((d) => {
+      const next = [...d.colorPalette];
+      next[i] = val;
+      return { ...d, colorPalette: next };
+    });
+  }
+  // Commit an in-place edit: drop empties (user cleared the chip),
+  // and dedupe against other entries so two identical chips can't
+  // linger after a rename.
+  function commitColor(i: number) {
+    setDraft((d) => {
+      const cleaned = d.colorPalette
+        .map((c, idx) => (idx === i ? c.trim() : c))
+        .filter((c, idx, arr) => c.length > 0 && arr.indexOf(c) === idx);
+      return { ...d, colorPalette: cleaned };
+    });
+  }
+  function removeColor(i: number) {
+    setDraft((d) => ({ ...d, colorPalette: d.colorPalette.filter((_, idx) => idx !== i) }));
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      // Persist the entire merged object so downstream prompt code
+      // (which reads visualProfile.* directly) sees a consistent shape
+      // even if the DB row carries legacy extra keys we don't edit.
+      const next = { ...profile, ...draft };
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ visual_profile: next }),
+      });
+      if (!res.ok) throw new Error(`Failed to save (${res.status})`);
+      onSave(next);
+      toast.success("Visual style updated");
+      setEditing(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl overflow-hidden"
+      style={{ background: "var(--bg-panel)", border: "1px solid oklch(0.55 0.15 145 / 0.25)", marginBottom: "60px" }}>
+      <div className="px-5 py-4 flex items-center justify-between gap-2"
+        style={{ borderBottom: "1px solid var(--bd-6)", background: "oklch(0.55 0.15 145 / 0.06)" }}>
+        <div className="flex items-center gap-2">
+          <span style={{ color: "oklch(0.7 0.15 145)" }}>✓</span>
+          <p className="font-semibold text-sm" style={{ color: "oklch(0.7 0.15 145)" }}>
+            Visual Style Profile Extracted
+          </p>
+        </div>
+        {!editing ? (
+          <button
+            onClick={() => { setDraft(normalizeProfile(profile)); setEditing(true); }}
+            className="text-xs px-3 py-1 rounded-lg transition-all hover:opacity-90"
+            style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+          >
+            Edit
+          </button>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              onClick={() => { setDraft(normalizeProfile(profile)); setEditing(false); }}
+              disabled={saving}
+              className="text-xs px-3 py-1 rounded-lg transition-all disabled:opacity-40"
+              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={save}
+              disabled={saving}
+              className="text-xs px-3 py-1 rounded-lg font-semibold transition-all disabled:opacity-60"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              {saving ? (
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Saving…
+                </span>
+              ) : "Save"}
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="p-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {PROFILE_STRING_FIELDS.map(({ key, label, placeholder }) => {
+          const value = draft[key];
+          if (!editing && !value) return null;
+          return (
+            <div key={key}>
+              <p className="text-xs mb-1" style={{ color: "var(--c-45)" }}>{label}</p>
+              {editing ? (
+                <textarea
+                  value={value}
+                  onChange={(e) => setField(key, e.target.value)}
+                  placeholder={placeholder}
+                  rows={3}
+                  className="w-full p-3 rounded-lg text-sm outline-none resize-y min-h-[70px]"
+                  style={{ background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-85)" }}
+                />
+              ) : (
+                <p className="text-sm" style={{ color: "oklch(0.8 0 0)" }}>{value}</p>
+              )}
+            </div>
+          );
+        })}
+        <div className="sm:col-span-2">
+          <p className="text-xs mb-2" style={{ color: "var(--c-45)" }}>Color Palette</p>
+          <div className="flex gap-2 flex-wrap">
+            {draft.colorPalette.map((c, i) => (
+              <span key={i} className="px-2.5 py-1 rounded-lg text-xs flex items-center gap-1.5"
+                style={{ background: "var(--bg-progress)", color: "var(--c-70)", border: "1px solid var(--bd-8)" }}>
+                {editing ? (
+                  <input
+                    type="text"
+                    value={c}
+                    onChange={(e) => updateColor(i, e.target.value)}
+                    onBlur={() => commitColor(i)}
+                    onKeyDown={(e) => {
+                      // Enter commits (and unfocuses so the trim/dedupe fires);
+                      // Escape re-triggers commit with a blur too — the user
+                      // has no undo, but cleaning up empties matches the
+                      // add-flow's semantics.
+                      if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
+                    }}
+                    aria-label={`Color ${i + 1}`}
+                    className="bg-transparent outline-none min-w-[3ch]"
+                    style={{ width: `${Math.max(3, c.length + 1)}ch`, color: "var(--c-85)" }}
+                  />
+                ) : c}
+                {editing && (
+                  <button
+                    onClick={() => removeColor(i)}
+                    aria-label={`Remove ${c}`}
+                    className="w-3.5 h-3.5 rounded-full flex items-center justify-center transition-all hover:scale-110"
+                    style={{ background: "oklch(0.6 0.22 25 / 0.15)", color: "oklch(0.7 0.22 25)" }}
+                  >
+                    ×
+                  </button>
+                )}
+              </span>
+            ))}
+            {editing && (
+              <input
+                type="text"
+                value={newColor}
+                onChange={(e) => setNewColor(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === ",") { e.preventDefault(); addColor(); }
+                }}
+                onBlur={addColor}
+                placeholder="+ add color"
+                className="px-2.5 py-1 rounded-lg text-xs outline-none w-28"
+                style={{ background: "var(--bg-input)", border: "1px dashed var(--bd-7)", color: "var(--c-70)" }}
+              />
+            )}
+          </div>
+          {editing && (
+            <p className="text-[10px] mt-2" style={{ color: "var(--c-40)" }}>
+              Press Enter or comma to add · Edits apply to newly-generated prompts. Existing beats keep their prompts until you regenerate them.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function normalizeProfile(profile: Record<string, unknown>): VisualProfileFields {
+  const asStr = (v: unknown) => (typeof v === "string" ? v : "");
+  const palette = profile.colorPalette;
+  return {
+    artStyle:      asStr(profile.artStyle),
+    lightingStyle: asStr(profile.lightingStyle),
+    cameraStyle:   asStr(profile.cameraStyle),
+    composition:   asStr(profile.composition),
+    detailLevel:   asStr(profile.detailLevel),
+    mood:          asStr(profile.mood),
+    colorPalette:  Array.isArray(palette) ? palette.filter((c): c is string => typeof c === "string") : [],
+  };
+}
+
 export default function VisualsPage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
@@ -647,42 +893,11 @@ export default function VisualsPage({ params }: PageProps) {
 
           {/* Visual profile result */}
           {visualProfile && (
-            <div className="rounded-2xl overflow-hidden"
-              style={{ background: "var(--bg-panel)", border: "1px solid oklch(0.55 0.15 145 / 0.25)", marginBottom: "60px" }}>
-              <div className="px-5 py-4 flex items-center gap-2"
-                style={{ borderBottom: "1px solid var(--bd-6)", background: "oklch(0.55 0.15 145 / 0.06)" }}>
-                <span style={{ color: "oklch(0.7 0.15 145)" }}>✓</span>
-                <p className="font-semibold text-sm" style={{ color: "oklch(0.7 0.15 145)" }}>
-                  Visual Style Profile Extracted
-                </p>
-              </div>
-              <div className="p-5 grid grid-cols-2 gap-4">
-                {[
-                  { label: "Art Style", value: (visualProfile as Record<string, string>).artStyle },
-                  { label: "Lighting", value: (visualProfile as Record<string, string>).lightingStyle },
-                  { label: "Camera", value: (visualProfile as Record<string, string>).cameraStyle },
-                  { label: "Mood", value: (visualProfile as Record<string, string>).mood },
-                ].map(({ label, value }) => value ? (
-                  <div key={label}>
-                    <p className="text-xs mb-1" style={{ color: "var(--c-45)" }}>{label}</p>
-                    <p className="text-sm" style={{ color: "oklch(0.8 0 0)" }}>{value}</p>
-                  </div>
-                ) : null)}
-                {Array.isArray((visualProfile as Record<string, unknown>).colorPalette) && (
-                  <div className="col-span-2">
-                    <p className="text-xs mb-2" style={{ color: "var(--c-45)" }}>Color Palette</p>
-                    <div className="flex gap-2 flex-wrap">
-                      {((visualProfile as Record<string, unknown>).colorPalette as string[]).map((c, i) => (
-                        <span key={i} className="px-2.5 py-1 rounded-lg text-xs"
-                          style={{ background: "var(--bg-progress)", color: "var(--c-70)", border: "1px solid var(--bd-8)" }}>
-                          {c}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
+            <VisualProfileCard
+              projectId={projectId}
+              profile={visualProfile}
+              onSave={(next) => setVisualProfile(next)}
+            />
           )}
         </div>
         </div>

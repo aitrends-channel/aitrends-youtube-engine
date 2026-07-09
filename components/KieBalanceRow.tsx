@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { ExternalLink } from "lucide-react";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
+import { useKieActivityStore } from "@/store/kieActivityStore";
 
 const fetcher = (url: string) =>
   fetch(url).then((r) => r.ok ? r.json() : Promise.reject(r.status));
@@ -12,10 +13,14 @@ const fetcher = (url: string) =>
 // across mounted components so showing it in multiple places costs one
 // request per refresh interval, not one per consumer.
 export function KieBalanceRow() {
+  // Balance polling hits KIE's /chat/credit endpoint. Skip the
+  // scheduled refresh entirely when no step is doing KIE work —
+  // the last-fetched value stays displayed until a job starts.
+  const hasActivity = useKieActivityStore((s) => s.hasActivity);
   const { data, isLoading } = useSWR<ApiStatusResult>(
     "/api/api-status",
     fetcher,
-    { revalidateOnFocus: false, refreshInterval: 30_000 }
+    { revalidateOnFocus: false, refreshInterval: hasActivity ? 30_000 : 0 }
   );
   const credits = data?.kie?.credits;
   const hasNumber = typeof credits === "number";

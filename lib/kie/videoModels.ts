@@ -30,25 +30,40 @@ export interface VideoModelConfig {
   aspectRatios: string[];
   durationKey?: string;
   endpoint?: string;
+  /** Supported values for the resolution / quality / mode enum on KIE.
+   *  UI renders these as pills the same way image resolutions do. */
+  resolutions?: string[];
+  /** The KIE input field this model expects the resolution under.
+   *  Defaults to "resolution" when omitted. kling-3.0 uses "mode",
+   *  runway uses "quality". */
+  resolutionKey?: string;
 }
 
 const sec = (n: number): DurationOption => ({ label: `${n}s`, value: n });
 const secStr = (n: number): DurationOption => ({ label: `${n}s`, value: String(n) });
 
 export const VIDEO_MODEL_CONFIGS: Record<string, VideoModelConfig> = {
-  "kling-3.0/video":                  { durations: [3, 5, 8, 10, 12, 15].map(secStr), aspectRatios: ["16:9", "9:16", "1:1"] },
+  // Kling 3.0 uses "mode" (std / pro / 4K) instead of a "resolution"
+  // enum — the three modes map to 720p / 1080p / 4K under the hood.
+  "kling-3.0/video":                  { durations: [3, 5, 8, 10, 12, 15].map(secStr), aspectRatios: ["16:9", "9:16", "1:1"], resolutions: ["std", "pro", "4K"], resolutionKey: "mode" },
   "kling-2.6/image-to-video":         { durations: [5, 10].map(secStr),               aspectRatios: [] },
-  "wan/2-7-image-to-video":           { durations: [3, 5, 8, 10, 15].map(sec),        aspectRatios: [] },
-  "wan/2-6-flash-image-to-video":     { durations: [5, 10, 15].map(secStr),           aspectRatios: [] },
+  "wan/2-7-image-to-video":           { durations: [3, 5, 8, 10, 15].map(sec),        aspectRatios: [], resolutions: ["720p", "1080p"] },
+  "wan/2-6-flash-image-to-video":     { durations: [5, 10, 15].map(secStr),           aspectRatios: [], resolutions: ["720p", "1080p"] },
   "hailuo/02-image-to-video-pro":     { durations: [],                                aspectRatios: [] },
-  "grok-imagine/image-to-video":      { durations: [6, 8, 10, 15, 20, 30].map(sec),   aspectRatios: [] },
+  "grok-imagine/image-to-video":      { durations: [6, 8, 10, 15, 20, 30].map(sec),   aspectRatios: [], resolutions: ["480p", "720p"] },
   "sora-2-image-to-video":            { durations: [{ label: "10 frames", value: "10" }, { label: "15 frames", value: "15" }], durationKey: "n_frames", aspectRatios: [] },
-  "veo3":                             { durations: [], endpoint: "/api/v1/veo/generate",    aspectRatios: ["16:9", "9:16", "1:1"] },
-  "veo3_fast":                        { durations: [], endpoint: "/api/v1/veo/generate",    aspectRatios: ["16:9", "9:16", "1:1"] },
-  "runway":                           { durations: [5, 10].map(sec), endpoint: "/api/v1/runway/generate", aspectRatios: ["16:9", "9:16"] },
-  "bytedance/seedance-2":             { durations: [4, 5, 6, 8, 10, 12, 15].map(sec), aspectRatios: ["16:9", "9:16", "1:1"] },
-  "bytedance/seedance-2-fast":        { durations: [4, 5, 6, 8, 10, 12, 15].map(sec), aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"] },
-  "bytedance/seedance-1.5-pro":       { durations: [{ label: "4s", value: "4" }, { label: "8s", value: "8" }, { label: "12s", value: "12" }], aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"] },
+  // Veo3's aspect enum is 16:9 / 9:16 / Auto — 1:1 is NOT supported;
+  // Auto stays out of the UI to keep beat output size predictable.
+  "veo3":                             { durations: [{ label: "4s", value: "4" }, { label: "6s", value: "6" }, { label: "8s", value: "8" }], endpoint: "/api/v1/veo/generate",    aspectRatios: ["16:9", "9:16"], resolutions: ["720p", "1080p", "4k"] },
+  "veo3_fast":                        { durations: [{ label: "4s", value: "4" }, { label: "6s", value: "6" }, { label: "8s", value: "8" }], endpoint: "/api/v1/veo/generate",    aspectRatios: ["16:9", "9:16"], resolutions: ["720p", "1080p", "4k"] },
+  // Runway's resolution enum is "quality" (720p / 1080p). KIE also
+  // rejects 1080p when duration = 10s; we don't enforce that cross-
+  // constraint in the picker — a 10s + 1080p submit will surface as
+  // a KIE 400 in the beat error banner.
+  "runway":                           { durations: [5, 10].map(sec), endpoint: "/api/v1/runway/generate", aspectRatios: ["16:9", "9:16"], resolutions: ["720p", "1080p"], resolutionKey: "quality" },
+  "bytedance/seedance-2":             { durations: [4, 5, 6, 8, 10, 12, 15].map(sec), aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], resolutions: ["480p", "720p", "1080p", "4k"] },
+  "bytedance/seedance-2-fast":        { durations: [4, 5, 6, 8, 10, 12, 15].map(sec), aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], resolutions: ["480p", "720p"] },
+  "bytedance/seedance-1.5-pro":       { durations: [{ label: "4s", value: "4" }, { label: "8s", value: "8" }, { label: "12s", value: "12" }], aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], resolutions: ["480p", "720p", "1080p"] },
 };
 
 export function getVideoModelConfig(modelId: string): VideoModelConfig {

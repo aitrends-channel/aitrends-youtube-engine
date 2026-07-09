@@ -24,10 +24,7 @@ function CallbackContent() {
     verifyStartedRef.current = true;
     const status = searchParams.get("status");
     const paymentId = searchParams.get("payment_id");
-    // Subscription products (Pro, Starter, production-test) redirect
-    // with subscription_id + status=active instead of payment_id +
-    // status=succeeded. Accept either shape so both flows land on the
-    // same success path.
+   
     const subscriptionId = searchParams.get("subscription_id");
 
     if (status === "cancelled") {

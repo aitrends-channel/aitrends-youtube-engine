@@ -2,6 +2,7 @@
 
 import useSWR from "swr";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
+import { useKieActivityStore } from "@/store/kieActivityStore";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<ApiStatusResult>);
 
@@ -17,10 +18,14 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<ApiS
  *  Same refresh cadence as the profile-dropdown balance rows so mounting
  *  another consumer costs zero extra requests — SWR dedupes the fetch. */
 export function StepBalanceCard() {
+  // Same gating as KieBalanceRow — pause the poll when no step is
+  // doing KIE work so idle-project viewing costs zero /chat/credit
+  // and ElevenLabs /user hits.
+  const hasActivity = useKieActivityStore((s) => s.hasActivity);
   const { data } = useSWR<ApiStatusResult>(
     "/api/api-status",
     fetcher,
-    { refreshInterval: 30_000, revalidateOnFocus: false },
+    { refreshInterval: hasActivity ? 30_000 : 0, revalidateOnFocus: false },
   );
 
   const kie = data?.kie?.credits;

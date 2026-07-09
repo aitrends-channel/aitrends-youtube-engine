@@ -3,6 +3,7 @@
 import useSWR from "swr";
 import { ExternalLink } from "lucide-react";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
+import { useKieActivityStore } from "@/store/kieActivityStore";
 
 const fetcher = (url: string) =>
   fetch(url).then((r) => r.ok ? r.json() : Promise.reject(r.status));
@@ -18,10 +19,14 @@ function formatChars(n: number): string {
 }
 
 export function ElevenLabsBalanceRow() {
+  // The api-status endpoint checks both KIE credit AND ElevenLabs
+  // quota in one call, so we share the same gating signal — polls
+  // pause when no step is actively doing generation work.
+  const hasActivity = useKieActivityStore((s) => s.hasActivity);
   const { data, isLoading } = useSWR<ApiStatusResult>(
     "/api/api-status",
     fetcher,
-    { revalidateOnFocus: false, refreshInterval: 30_000 },
+    { revalidateOnFocus: false, refreshInterval: hasActivity ? 30_000 : 0 },
   );
   const el = data?.elevenlabs;
   const remaining = el?.remaining;
