@@ -19,7 +19,9 @@ import { getConcurrencyConfig } from "@/lib/concurrency-config";
 // browser is still open.
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// Backstop sweep of in-flight image tasks — needs room to download +
+// re-upload large (4K) assets for several beats in one run.
+export const maxDuration = 120;
 
 // Stay well clear of KIE's per-key rate limit while still draining
 // quickly — 5 concurrent polls + uploads is plenty for ~30 done beats
