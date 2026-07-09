@@ -23,6 +23,11 @@ interface CommonProps {
   selectedAspectRatio: string;
   onSelectAspectRatio: (r: string) => void;
   disabled?: boolean;
+  /** Render the aspect ratio as a read-only value instead of selectable
+   *  pills. Used by the video panel, where the clip must inherit the
+   *  aspect ratio the source image was generated with rather than let
+   *  the user pick a mismatching one. */
+  lockAspectRatio?: boolean;
   /** Override the "Tip: if a model keeps failing…" hint, or pass an
    *  empty string to hide it entirely. */
   tip?: string;
@@ -261,7 +266,26 @@ export function ModelPicker(props: ModelPickerProps) {
         </p>
       )}
 
-      {config && config.aspectRatios.length > 0 && (
+      {props.lockAspectRatio ? (
+        <>
+          <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
+            Aspect Ratio{" "}
+            <span className="normal-case font-normal" style={{ color: "var(--c-35)" }}>· matches the image</span>
+          </p>
+          {/* Read-only: the clip inherits the source image's ratio, so the
+              value is shown but not selectable. */}
+          <span
+            className="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium"
+            style={{
+              background: "oklch(0.72 0.25 285 / 0.15)",
+              border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+              color: "oklch(0.88 0.12 285)",
+            }}
+          >
+            {props.selectedAspectRatio || "—"}
+          </span>
+        </>
+      ) : config && config.aspectRatios.length > 0 && (
         <>
           <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
             Aspect Ratio

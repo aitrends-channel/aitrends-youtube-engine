@@ -852,9 +852,9 @@ export default function GeneratePage({ params }: PageProps) {
     } else {
       setSelectedDuration(config.durations[0].value);
     }
-    if (!config.aspectRatios.includes(selectedVideoAspectRatio)) {
-      setSelectedVideoAspectRatio(config.aspectRatios[0]);
-    }
+    // Aspect ratio is NOT model-driven for video — the clip inherits the
+    // source image's ratio (kept in sync below), so we don't reset it to
+    // the model's first supported value here.
     // Reset resolution when the new model doesn't offer it, or the
     // previously-picked value isn't valid for this model. Otherwise
     // default to the first supported value so the user always ships
@@ -865,6 +865,13 @@ export default function GeneratePage({ params }: PageProps) {
       setSelectedVideoResolution(config.resolutions[0]);
     }
   }, [selectedVideoModel]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the video aspect ratio locked to the image aspect ratio — a clip
+  // animates the beat's image, so it must ship the same ratio the image
+  // was generated with. The video ModelPicker shows this read-only.
+  useEffect(() => {
+    setSelectedVideoAspectRatio(selectedAspectRatio);
+  }, [selectedAspectRatio]);
 
   const hasActiveVideos = beats.some((b) =>
     b.videoStatus === "queued" || b.videoStatus === "submitting" || b.videoStatus === "rendering");
@@ -1765,6 +1772,7 @@ export default function GeneratePage({ params }: PageProps) {
                 onSelectModel={setSelectedVideoModel}
                 selectedAspectRatio={selectedVideoAspectRatio}
                 onSelectAspectRatio={setSelectedVideoAspectRatio}
+                lockAspectRatio
                 selectedDuration={selectedDuration ?? ""}
                 onSelectDuration={setSelectedDuration}
                 selectedResolution={selectedVideoResolution}
