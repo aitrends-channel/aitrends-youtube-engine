@@ -11,6 +11,12 @@ import { Sparkles } from "lucide-react";
 // doesn't accidentally advertise one.
 export function FreeResourcesButton({ step }: { step: string }) {
   const router = useRouter();
+  // Temporarily hidden on all workflow steps. The step pages still
+  // render <FreeResourcesButton /> in WizardNav's topRightExtra slot, so
+  // re-enabling is just removing this early return.
+  return null;
+
+  // eslint-disable-next-line no-unreachable
   return (
     <button
       onClick={() => router.push(`/free-resources?step=${encodeURIComponent(step)}`)}
