@@ -584,6 +584,25 @@ export default function GeneratePage({ params }: PageProps) {
     // viewportTick forces recompute on resize.
   }, [previewAspect, previewEditing, previewShowPrompt, viewportTick]);
 
+  // Open the preview, seeding the media aspect ratio SYNCHRONOUSLY from
+  // the grid-cached source image. Because the grid already loaded these
+  // images, `new Image()` on the same URL reports `complete` with real
+  // dimensions immediately — so previewMediaSize is non-null on the very
+  // first render and there's no null-aspect frame to flash. For video we
+  // seed from the same source image (the clip follows its ratio); the
+  // <video> then refines to the exact ratio via onLoadedMetadata.
+  function openPreview(beat: Beat, type: "image" | "video") {
+    const src = beat.imageUrl;
+    if (src) {
+      const probe = new Image();
+      probe.src = src;
+      if (probe.complete && probe.naturalWidth) {
+        setPreviewAspect(probe.naturalWidth / probe.naturalHeight);
+      }
+    }
+    setPreviewBeat({ beat, type });
+  }
+
   const beats: Beat[] = project?.beats ?? [];
   const script: string = project?.script ?? "";
   const totalBeats = beats.length;
@@ -1453,7 +1472,7 @@ export default function GeneratePage({ params }: PageProps) {
                         style={{ background: "var(--bg-progress)" }}
                         onClick={() => {
                           if (!b.imageUrl || clearingImages) return;
-                          setPreviewBeat({ beat: b, type: "image" });
+                          openPreview(b, "image");
                         }}
                       >
                         {/* Beat number badge — top-left corner of every
@@ -1480,7 +1499,7 @@ export default function GeneratePage({ params }: PageProps) {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setPreviewBeat({ beat: b, type: "image" });
+                              openPreview(b, "image");
                             }}
                             title="View image"
                             aria-label={`View image for beat ${b.beatNumber}`}
@@ -1721,7 +1740,7 @@ export default function GeneratePage({ params }: PageProps) {
                         style={{ background: "var(--bg-progress)" }}
                         onClick={() => {
                           if (!b.videoUrl) return;
-                          setPreviewBeat({ beat: b, type: "video" });
+                          openPreview(b, "video");
                         }}
                       >
                         {/* Beat number badge — top-left corner of every
@@ -1862,7 +1881,7 @@ export default function GeneratePage({ params }: PageProps) {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setPreviewBeat({ beat: b, type: "video" });
+                              openPreview(b, "video");
                             }}
                             title="View clip"
                             aria-label={`View clip for beat ${b.beatNumber}`}
@@ -2156,7 +2175,15 @@ export default function GeneratePage({ params }: PageProps) {
             // read-only prompt is a long <p> whose max-content width would
             // blow the box out to 95vw. Pinning the width makes the prompt
             // wrap to the media instead of dictating the dialog size.
-            width: previewMediaSize?.w,
+            //
+            // In edit and show-prompt modes enforce a 400px minimum
+            // (regardless of aspect) so the prompt/editor stays readable
+            // for tall/portrait media — the media then centers within the
+            // wider box. maxWidth: 95vw clamps the min on very narrow
+            // viewports. Plain view still hugs the media exactly.
+            width: previewMediaSize
+              ? (previewEditing || previewShowPrompt ? Math.max(previewMediaSize.w, 400) : previewMediaSize.w)
+              : undefined,
             maxWidth: "95vw",
             // Safety net: if the media + panel still slightly exceed the
             // viewport, scroll inside the dialog rather than clipping the
@@ -2225,8 +2252,19 @@ export default function GeneratePage({ params }: PageProps) {
             <img
               src={previewBeat.beat.imageUrl}
               alt={`Beat ${previewBeat.beat.beatNumber}`}
+              // ref reads dimensions synchronously (before paint) for
+              // already-cached images — the grid preloaded them, so this
+              // sizes the box on the first frame with no flash. onLoad
+              // covers the rare uncached case. Functional update avoids a
+              // loop from the inline ref re-running each render.
+              ref={(el) => {
+                if (el && el.complete && el.naturalWidth) {
+                  const a = el.naturalWidth / el.naturalHeight;
+                  setPreviewAspect((prev) => prev ?? a);
+                }
+              }}
               onLoad={(e) => setPreviewAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)}
-              className="block"
+              className="block mx-auto"
               style={{ width: previewMediaSize?.w, height: previewMediaSize?.h, maxWidth: "95vw", maxHeight: "85vh" }}
             />
           )}
@@ -2234,8 +2272,17 @@ export default function GeneratePage({ params }: PageProps) {
             <video
               key={previewBeat.beat.videoUrl}
               src={previewBeat.beat.videoUrl}
+              // Same as the image: read cached metadata synchronously via
+              // the ref when it's already available, falling back to the
+              // metadata event.
+              ref={(el) => {
+                if (el && el.readyState >= 1 && el.videoWidth) {
+                  const a = el.videoWidth / el.videoHeight;
+                  setPreviewAspect((prev) => prev ?? a);
+                }
+              }}
               onLoadedMetadata={(e) => setPreviewAspect(e.currentTarget.videoWidth / e.currentTarget.videoHeight)}
-              className="block"
+              className="block mx-auto"
               style={{ width: previewMediaSize?.w, height: previewMediaSize?.h, maxWidth: "95vw", maxHeight: "85vh" }}
               autoPlay
               loop
