@@ -2366,17 +2366,9 @@ export default function GeneratePage({ params }: PageProps) {
             <img
               src={previewBeat.beat.imageUrl}
               alt={`Beat ${previewBeat.beat.beatNumber}`}
-              // ref reads dimensions synchronously (before paint) for
-              // already-cached images — the grid preloaded them, so this
-              // sizes the box on the first frame with no flash. onLoad
-              // covers the rare uncached case. Functional update avoids a
-              // loop from the inline ref re-running each render.
-              ref={(el) => {
-                if (el && el.complete && el.naturalWidth) {
-                  const a = el.naturalWidth / el.naturalHeight;
-                  setPreviewAspect((prev) => prev ?? a);
-                }
-              }}
+              // Aspect is already seeded synchronously by openPreview (from
+              // the cached grid image), so the box is sized on the first
+              // render. onLoad just refines it to the exact ratio.
               onLoad={(e) => setPreviewAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)}
               className="block mx-auto"
               style={{ width: previewMediaSize?.w, height: previewMediaSize?.h, maxWidth: "95vw", maxHeight: "85vh" }}
@@ -2386,15 +2378,8 @@ export default function GeneratePage({ params }: PageProps) {
             <video
               key={previewBeat.beat.videoUrl}
               src={previewBeat.beat.videoUrl}
-              // Same as the image: read cached metadata synchronously via
-              // the ref when it's already available, falling back to the
-              // metadata event.
-              ref={(el) => {
-                if (el && el.readyState >= 1 && el.videoWidth) {
-                  const a = el.videoWidth / el.videoHeight;
-                  setPreviewAspect((prev) => prev ?? a);
-                }
-              }}
+              // Seeded from the source image by openPreview; refine to the
+              // exact clip ratio once metadata loads.
               onLoadedMetadata={(e) => setPreviewAspect(e.currentTarget.videoWidth / e.currentTarget.videoHeight)}
               className="block mx-auto"
               style={{ width: previewMediaSize?.w, height: previewMediaSize?.h, maxWidth: "95vw", maxHeight: "85vh" }}
