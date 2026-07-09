@@ -273,7 +273,8 @@ async function generateImages(
   script: string,
   visualProfile: VisualProfileOutput,
   send: (data: object) => void,
-  model: string
+  model: string,
+  promptStyle: "general" | "cinematic" = "general",
 ) {
   console.log(`[image-prompts] start project=${projectId} scriptWords=${script.trim().split(/\s+/).filter(Boolean).length}`);
   const runId = await claimPromptsRun(projectId, userId, "images");
@@ -444,7 +445,7 @@ async function generateImages(
   // Cache the static portion (instructions + visual style + rules)
   // once per run. After the first chunk's call lands, every subsequent
   // chunk hits Anthropic's ephemeral cache for this prefix.
-  const cachedUserBlock = buildImagePromptsCached(visualProfile);
+  const cachedUserBlock = buildImagePromptsCached(visualProfile, promptStyle);
 
   // Per-chunk persist gates: chunk i's persist step waits on chunk
   // i-1's gate so beat_number assignment stays monotonic in script
@@ -990,8 +991,24 @@ export async function POST(req: Request) {
     if (!body.script || !body.visualProfile) {
       return NextResponse.json({ error: "script and visualProfile are required" }, { status: 400 });
     }
+    // Prefer the request body — the client sends the currently-active
+    // tab so an in-session switch is honoured even before the PATCH
+    // that persists it settles. Fall back to the project row so a
+    // reload before generation still uses the persisted style.
+    const bodyStyle = (body as { promptStyle?: unknown }).promptStyle;
+    let promptStyle: "general" | "cinematic" =
+      bodyStyle === "cinematic" ? "cinematic" : bodyStyle === "general" ? "general" : "general";
+    if (bodyStyle === undefined) {
+      const { data: proj } = await supabase
+        .from("projects")
+        .select("prompt_style")
+        .eq("id", projectId)
+        .eq("user_id", user.id)
+        .single();
+      if ((proj?.prompt_style as string | null) === "cinematic") promptStyle = "cinematic";
+    }
     return sseStream((send) =>
-      generateImages(projectId, user.id, body.script!, body.visualProfile!, send, model)
+      generateImages(projectId, user.id, body.script!, body.visualProfile!, send, model, promptStyle)
     );
   }
 
