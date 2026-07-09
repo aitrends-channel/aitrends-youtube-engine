@@ -608,6 +608,16 @@ export default function GeneratePage({ params }: PageProps) {
   }
 
   const beats: Beat[] = project?.beats ?? [];
+  // Latest beats, readable inside interval callbacks without making the
+  // beats array a dependency (which would re-subscribe the interval on
+  // every poll/mutate).
+  const beatsRef = useRef<Beat[]>(beats);
+  beatsRef.current = beats;
+  // True while any image beat is still being produced by KIE (submitted,
+  // no URL yet). Drives the continuous reconciliation poller below.
+  const hasInflightImages = beats.some(
+    (b) => b.imageStatus === "generating" && b.imageTaskId && !b.imageUrl
+  );
   const script: string = project?.script ?? "";
   const totalBeats = beats.length;
   const generatedImages = beats.filter((b) => b.imageUrl).length;
@@ -690,59 +700,49 @@ export default function GeneratePage({ params }: PageProps) {
     if (outOfCredits && typeof c === "number" && c > 0) setOutOfCredits(false);
   }, [apiStatus?.kie?.credits, outOfCredits]);
 
-  // Resume polling for any image tasks that were in flight when the
-  // page was last closed. Without this, taskIds only lived in the
-  // generateImages() local state — a refresh / tab close / network
-  // glitch left the beat marked "generating" with no way to map the
-  // KIE result back to it. resumedRef gates the effect so we don't
-  // re-fire when beats reload after each poll.
-  const resumedRef = useRef(false);
+  // Continuous reconciliation poller for in-flight image beats. Runs
+  // whenever ANY beat is still being produced by KIE (imageStatus
+  // "generating", has a taskId, no URL yet) and the active generateImages()
+  // loop isn't already polling. Mirrors the video poller (setInterval) —
+  // it keeps hitting the image poll endpoint (which pulls the KIE result
+  // into the DB) and mutate()s until every beat resolves.
+  //
+  // This replaces the old one-shot resume effect, which polled at most once
+  // per page mount for ~6 min. That left a bug where a slow KIE image
+  // (finishing after the window) never got reconciled: the client had
+  // stopped polling, so the beat stayed "generating" in the UI forever even
+  // though KIE had succeeded. Gating on the boolean (not the beats array)
+  // keeps the interval stable across mutate()s — it only tears down when the
+  // last in-flight beat resolves.
   useEffect(() => {
-    if (resumedRef.current) return;
-    if (generatingImages) return; // active local poller already running
-    if (!project?.beats) return;
-    const inflight = (project.beats as Beat[]).filter(
-      (b) => b.imageStatus === "generating" && b.imageTaskId && !b.imageUrl
-    );
-    if (inflight.length === 0) return;
-    resumedRef.current = true;
-
-    void (async () => {
-      const remaining = inflight.map((b) => ({
-        beatNumber: b.beatNumber,
-        taskId: b.imageTaskId as string,
-        modelId: b.imageModelId ?? selectedImageModel ?? "",
-      }));
-      // Ceiling matches the active-generation loop (~6 min). Long
-      // enough for GPT Image 2 and other slow models to legitimately
-      // finish before we stop polling; short enough that a genuinely
-      // stuck task doesn't burn worker/poll budget indefinitely.
-      const MAX_POLLS = 120;
-      for (let attempt = 0; attempt < MAX_POLLS && remaining.length > 0; attempt++) {
-        await new Promise((r) => setTimeout(r, 3000));
-        const results = await Promise.allSettled(
-          remaining.map(async ({ beatNumber, taskId, modelId }) => {
-            const res = await fetch("/api/generate/images/poll", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ projectId, beatNumber, taskId, modelId }),
-            });
-            const data = await res.json().catch(() => ({})) as { status?: string };
-            return { beatNumber, status: !res.ok ? "error" : (data.status ?? "pending") };
-          })
-        );
-        const toRemove: number[] = [];
-        for (let i = 0; i < results.length; i++) {
-          if (results[i].status === "fulfilled") {
-            const { status } = (results[i] as PromiseFulfilledResult<{ beatNumber: number; status: string }>).value;
-            if (status === "done" || status === "failed" || status === "error") toRemove.push(i);
-          }
-        }
-        for (let i = toRemove.length - 1; i >= 0; i--) remaining.splice(toRemove[i], 1);
-        await mutate();
-      }
-    })();
-  }, [project?.beats, projectId, mutate, generatingImages, selectedImageModel]);
+    if (!hasInflightImages) return;
+    if (generatingImages) return; // active loop is already polling these
+    let cancelled = false;
+    const poll = async () => {
+      const targets = beatsRef.current.filter(
+        (b) => b.imageStatus === "generating" && b.imageTaskId && !b.imageUrl
+      );
+      if (targets.length === 0) return;
+      await Promise.allSettled(
+        targets.map((b) =>
+          fetch("/api/generate/images/poll", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              projectId,
+              beatNumber: b.beatNumber,
+              taskId: b.imageTaskId,
+              modelId: b.imageModelId ?? selectedImageModel ?? "",
+            }),
+          }).catch(() => {})
+        )
+      );
+      if (!cancelled) await mutate();
+    };
+    void poll();
+    const id = setInterval(poll, 4000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [hasInflightImages, generatingImages, projectId, mutate, selectedImageModel]);
 
   useEffect(() => {
     if (ttsModels?.length && !initialTtsSelected.current) {
@@ -1243,12 +1243,24 @@ export default function GeneratePage({ params }: PageProps) {
           toast.info(`Stopped — ${successCount}/${pending.length} done`);
         }
       } else if (successCount === 0) {
-        // No per-task error was captured (rare) — fall back to a
-        // single derived error so the banner has something to say.
-        const reason = firstPollError ?? firstSubmitError ?? "timed out";
-        setImageRunError((prev) => prev ?? friendlyError(reason));
+        // Distinguish a genuine failure from "the client poll window
+        // elapsed while KIE was still producing the image". Only show an
+        // error banner when a task actually reported one. If beats are
+        // merely still in flight (remaining > 0, no captured error), this
+        // is NOT a failure — the continuous reconciliation poller above
+        // keeps polling and mutate()s the results in when KIE finishes.
+        // Firing a "timed out" banner here was the false alarm users saw
+        // while generation actually succeeded on KIE moments later.
+        const realError = firstPollError ?? firstSubmitError;
+        if (realError) {
+          setImageRunError((prev) => prev ?? friendlyError(realError));
+        } else if (remaining.length > 0) {
+          toast.info(`Still generating ${remaining.length} image${remaining.length === 1 ? "" : "s"} — they'll appear here when ready`);
+        }
       } else if (successCount < targetBeats.length) {
-        // Partial success — banner already shows the latest error.
+        // Partial success — if a task errored, its banner is already set
+        // above; any remaining in-flight beats are finished silently by
+        // the reconciliation poller.
       } else {
         toast.success(`${successCount}/${targetBeats.length} images generated`);
       }
