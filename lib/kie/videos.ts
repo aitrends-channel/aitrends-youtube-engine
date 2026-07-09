@@ -32,6 +32,28 @@ function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Pull a playable video URL out of a KIE record-info payload, tolerating
+// the several shapes different model families use: a direct videoUrl, a
+// resultJson blob (JSON with resultUrls/url/videoUrl, or a bare http
+// string), or an output array/string. Returns undefined when no usable
+// URL is present yet — callers must treat that as "not ready", NOT done.
+function extractVideoUrl(d: KieRecordResponse["data"] | undefined): string | undefined {
+  if (!d) return undefined;
+  if (typeof d.videoUrl === "string" && d.videoUrl.startsWith("http")) return d.videoUrl;
+  if (typeof d.resultJson === "string") {
+    try {
+      const parsed = JSON.parse(d.resultJson) as { resultUrls?: string[]; url?: string; videoUrl?: string };
+      const u = parsed.resultUrls?.[0] ?? parsed.url ?? parsed.videoUrl;
+      if (typeof u === "string" && u.startsWith("http")) return u;
+    } catch {
+      if (d.resultJson.startsWith("http")) return d.resultJson;
+    }
+  }
+  if (Array.isArray(d.output) && typeof d.output[0] === "string") return d.output[0];
+  if (typeof d.output === "string" && d.output.startsWith("http")) return d.output;
+  return undefined;
+}
+
 export async function listVideoModels(): Promise<KieModel[]> {
   return VIDEO_MODELS;
 }
@@ -114,8 +136,14 @@ export async function pollVideoJob(taskId: string, modelId?: string, userId?: st
     );
     const flag = data.data?.successFlag;
     if (flag === 1) {
-      const url = data.data?.videoUrl ?? data.data?.resultJson;
-      return { status: "done", videoUrl: typeof url === "string" ? url : undefined };
+      const url = extractVideoUrl(data.data);
+      // Veo reports success (flag 1) for the base render, then kicks off a
+      // separate upscale pass (e.g. 720p → 1080p) before the final URL is
+      // populated. Report "done" ONLY once a URL is actually present;
+      // otherwise stay "processing" and keep polling — returning done with
+      // no URL is what made the caller fail with "completed but no url".
+      if (url) return { status: "done", videoUrl: url };
+      return { status: "processing" };
     }
     if (flag === 2 || flag === 3) return { status: "failed", error: "Veo generation failed" };
     return { status: "processing" };
@@ -158,16 +186,11 @@ export async function pollVideoJob(taskId: string, modelId?: string, userId?: st
 
   let videoUrl: string | undefined;
   if (status === "done") {
-    if (typeof d?.resultJson === "string") {
-      try {
-        const parsed = JSON.parse(d.resultJson) as { resultUrls?: string[]; url?: string };
-        videoUrl = parsed.resultUrls?.[0] ?? parsed.url;
-      } catch {
-        if (d.resultJson.startsWith("http")) videoUrl = d.resultJson;
-      }
-    }
-    if (!videoUrl && Array.isArray(d?.output)) videoUrl = d.output[0];
-    if (!videoUrl && typeof d?.output === "string") videoUrl = d.output;
+    videoUrl = extractVideoUrl(d);
+    // A terminal "done" state with no URL yet (some providers flip state
+    // before the asset is written) is treated as still-processing so we
+    // keep polling rather than reporting a completion with nothing to show.
+    if (!videoUrl) status = "processing";
   }
 
   return {
