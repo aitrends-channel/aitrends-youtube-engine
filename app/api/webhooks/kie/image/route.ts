@@ -34,7 +34,10 @@ import { supabase } from "@/lib/supabase/client";
 // anything we drop. Real failures are logged.
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+// Higher ceiling so finishing a large asset (e.g. nano-banana-pro at 4K,
+// downloaded in full and re-uploaded to R2) completes rather than timing
+// out mid-transfer and dropping the completion to the slower cron.
+export const maxDuration = 120;
 
 interface KieCallbackPayload {
   code?: number;
