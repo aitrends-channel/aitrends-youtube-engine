@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, use, useEffect, useRef } from "react";
+import { useState, use, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 // FreeResourcesButton is temporarily hidden — see comment near
@@ -632,8 +632,74 @@ export default function GeneratePage({ params }: PageProps) {
   // Read-only prompt visibility toggle ("Show prompt") — independent
   // of edit mode, which has its own editable textarea.
   const [previewShowPrompt, setPreviewShowPrompt] = useState(false);
+  // Intrinsic aspect ratio (w/h) of the previewed media, read from the
+  // element on load. The dialog can't hug the media off CSS alone: a
+  // `fit-content` box measures the media's *intrinsic* width, not its
+  // height-constrained display width, so tall/oversized assets leave
+  // white side gaps. Instead we detect the real ratio and compute an
+  // explicit pixel box that fits the viewport at that exact ratio.
+  const [previewAspect, setPreviewAspect] = useState<number | null>(null);
+  // Re-render trigger for viewport resizes so the memoized size below
+  // recomputes against the new window dimensions.
+  const [viewportTick, setViewportTick] = useState(0);
+  useEffect(() => {
+    const onResize = () => setViewportTick((t) => t + 1);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  // Computed synchronously during render (not in an effect) so switching
+  // modes — e.g. entering edit — sizes the media in the SAME frame the
+  // editor appears. An effect would paint one frame with the old (larger)
+  // size beside the new editor before correcting, which read as a flash.
+  const previewMediaSize = useMemo<{ w: number; h: number } | null>(() => {
+    if (!previewAspect || typeof window === "undefined") return null;
+    // Reserve for the panel below the media. In edit mode the media is
+    // kept large (only a small reserve) and the taller editor simply
+    // scrolls into view below it. Show-prompt keeps a light reserve;
+    // plain view uses none.
+    const chrome = previewEditing ? 120 : previewShowPrompt ? 170 : 0;
+    // These caps MUST match the media element's own style caps
+    // (maxWidth 95vw / maxHeight 85vh). If they diverge, a height-bound
+    // box gets a width sized for one height but clamped to another — the
+    // element ends up wider than the media's aspect ratio, and a <video>
+    // letterboxes to fit, showing white bars beside the frame.
+    const maxW = window.innerWidth * 0.95;
+    const maxH = Math.max(window.innerHeight * 0.85 - chrome, 240);
+    const w = Math.round(Math.min(maxW, maxH * previewAspect));
+    return { w, h: Math.round(w / previewAspect) };
+    // viewportTick forces recompute on resize.
+  }, [previewAspect, previewEditing, previewShowPrompt, viewportTick]);
+
+  // Open the preview, seeding the media aspect ratio SYNCHRONOUSLY from
+  // the grid-cached source image. Because the grid already loaded these
+  // images, `new Image()` on the same URL reports `complete` with real
+  // dimensions immediately — so previewMediaSize is non-null on the very
+  // first render and there's no null-aspect frame to flash. For video we
+  // seed from the same source image (the clip follows its ratio); the
+  // <video> then refines to the exact ratio via onLoadedMetadata.
+  function openPreview(beat: Beat, type: "image" | "video") {
+    const src = beat.imageUrl;
+    if (src) {
+      const probe = new Image();
+      probe.src = src;
+      if (probe.complete && probe.naturalWidth) {
+        setPreviewAspect(probe.naturalWidth / probe.naturalHeight);
+      }
+    }
+    setPreviewBeat({ beat, type });
+  }
 
   const beats: Beat[] = project?.beats ?? [];
+  // Latest beats, readable inside interval callbacks without making the
+  // beats array a dependency (which would re-subscribe the interval on
+  // every poll/mutate).
+  const beatsRef = useRef<Beat[]>(beats);
+  beatsRef.current = beats;
+  // True while any image beat is still being produced by KIE (submitted,
+  // no URL yet). Drives the continuous reconciliation poller below.
+  const hasInflightImages = beats.some(
+    (b) => b.imageStatus === "generating" && b.imageTaskId && !b.imageUrl
+  );
   const script: string = project?.script ?? "";
   const totalBeats = beats.length;
   const generatedImages = beats.filter((b) => b.imageUrl).length;
@@ -716,59 +782,49 @@ export default function GeneratePage({ params }: PageProps) {
     if (outOfCredits && typeof c === "number" && c > 0) setOutOfCredits(false);
   }, [apiStatus?.kie?.credits, outOfCredits]);
 
-  // Resume polling for any image tasks that were in flight when the
-  // page was last closed. Without this, taskIds only lived in the
-  // generateImages() local state — a refresh / tab close / network
-  // glitch left the beat marked "generating" with no way to map the
-  // KIE result back to it. resumedRef gates the effect so we don't
-  // re-fire when beats reload after each poll.
-  const resumedRef = useRef(false);
+  // Continuous reconciliation poller for in-flight image beats. Runs
+  // whenever ANY beat is still being produced by KIE (imageStatus
+  // "generating", has a taskId, no URL yet) and the active generateImages()
+  // loop isn't already polling. Mirrors the video poller (setInterval) —
+  // it keeps hitting the image poll endpoint (which pulls the KIE result
+  // into the DB) and mutate()s until every beat resolves.
+  //
+  // This replaces the old one-shot resume effect, which polled at most once
+  // per page mount for ~6 min. That left a bug where a slow KIE image
+  // (finishing after the window) never got reconciled: the client had
+  // stopped polling, so the beat stayed "generating" in the UI forever even
+  // though KIE had succeeded. Gating on the boolean (not the beats array)
+  // keeps the interval stable across mutate()s — it only tears down when the
+  // last in-flight beat resolves.
   useEffect(() => {
-    if (resumedRef.current) return;
-    if (generatingImages) return; // active local poller already running
-    if (!project?.beats) return;
-    const inflight = (project.beats as Beat[]).filter(
-      (b) => b.imageStatus === "generating" && b.imageTaskId && !b.imageUrl
-    );
-    if (inflight.length === 0) return;
-    resumedRef.current = true;
-
-    void (async () => {
-      const remaining = inflight.map((b) => ({
-        beatNumber: b.beatNumber,
-        taskId: b.imageTaskId as string,
-        modelId: b.imageModelId ?? selectedImageModel ?? "",
-      }));
-      // Ceiling matches the active-generation loop (~6 min). Long
-      // enough for GPT Image 2 and other slow models to legitimately
-      // finish before we stop polling; short enough that a genuinely
-      // stuck task doesn't burn worker/poll budget indefinitely.
-      const MAX_POLLS = 120;
-      for (let attempt = 0; attempt < MAX_POLLS && remaining.length > 0; attempt++) {
-        await new Promise((r) => setTimeout(r, 3000));
-        const results = await Promise.allSettled(
-          remaining.map(async ({ beatNumber, taskId, modelId }) => {
-            const res = await fetch("/api/generate/images/poll", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ projectId, beatNumber, taskId, modelId }),
-            });
-            const data = await res.json().catch(() => ({})) as { status?: string };
-            return { beatNumber, status: !res.ok ? "error" : (data.status ?? "pending") };
-          })
-        );
-        const toRemove: number[] = [];
-        for (let i = 0; i < results.length; i++) {
-          if (results[i].status === "fulfilled") {
-            const { status } = (results[i] as PromiseFulfilledResult<{ beatNumber: number; status: string }>).value;
-            if (status === "done" || status === "failed" || status === "error") toRemove.push(i);
-          }
-        }
-        for (let i = toRemove.length - 1; i >= 0; i--) remaining.splice(toRemove[i], 1);
-        await mutate();
-      }
-    })();
-  }, [project?.beats, projectId, mutate, generatingImages, selectedImageModel]);
+    if (!hasInflightImages) return;
+    if (generatingImages) return; // active loop is already polling these
+    let cancelled = false;
+    const poll = async () => {
+      const targets = beatsRef.current.filter(
+        (b) => b.imageStatus === "generating" && b.imageTaskId && !b.imageUrl
+      );
+      if (targets.length === 0) return;
+      await Promise.allSettled(
+        targets.map((b) =>
+          fetch("/api/generate/images/poll", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              projectId,
+              beatNumber: b.beatNumber,
+              taskId: b.imageTaskId,
+              modelId: b.imageModelId ?? selectedImageModel ?? "",
+            }),
+          }).catch(() => {})
+        )
+      );
+      if (!cancelled) await mutate();
+    };
+    void poll();
+    const id = setInterval(poll, 4000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [hasInflightImages, generatingImages, projectId, mutate, selectedImageModel]);
 
   useEffect(() => {
     if (ttsModels?.length && !initialTtsSelected.current) {
@@ -878,9 +934,9 @@ export default function GeneratePage({ params }: PageProps) {
     } else {
       setSelectedDuration(config.durations[0].value);
     }
-    if (!config.aspectRatios.includes(selectedVideoAspectRatio)) {
-      setSelectedVideoAspectRatio(config.aspectRatios[0]);
-    }
+    // Aspect ratio is NOT model-driven for video — the clip inherits the
+    // source image's ratio (kept in sync below), so we don't reset it to
+    // the model's first supported value here.
     // Reset resolution when the new model doesn't offer it, or the
     // previously-picked value isn't valid for this model. Otherwise
     // default to the first supported value so the user always ships
@@ -891,6 +947,13 @@ export default function GeneratePage({ params }: PageProps) {
       setSelectedVideoResolution(config.resolutions[0]);
     }
   }, [selectedVideoModel]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the video aspect ratio locked to the image aspect ratio — a clip
+  // animates the beat's image, so it must ship the same ratio the image
+  // was generated with. The video ModelPicker shows this read-only.
+  useEffect(() => {
+    setSelectedVideoAspectRatio(selectedAspectRatio);
+  }, [selectedAspectRatio]);
 
   const hasActiveVideos = beats.some((b) =>
     b.videoStatus === "queued" || b.videoStatus === "submitting" || b.videoStatus === "rendering");
@@ -1269,12 +1332,24 @@ export default function GeneratePage({ params }: PageProps) {
           toast.info(`Stopped — ${successCount}/${pending.length} done`);
         }
       } else if (successCount === 0) {
-        // No per-task error was captured (rare) — fall back to a
-        // single derived error so the banner has something to say.
-        const reason = firstPollError ?? firstSubmitError ?? "timed out";
-        setImageRunError((prev) => prev ?? friendlyError(reason));
+        // Distinguish a genuine failure from "the client poll window
+        // elapsed while KIE was still producing the image". Only show an
+        // error banner when a task actually reported one. If beats are
+        // merely still in flight (remaining > 0, no captured error), this
+        // is NOT a failure — the continuous reconciliation poller above
+        // keeps polling and mutate()s the results in when KIE finishes.
+        // Firing a "timed out" banner here was the false alarm users saw
+        // while generation actually succeeded on KIE moments later.
+        const realError = firstPollError ?? firstSubmitError;
+        if (realError) {
+          setImageRunError((prev) => prev ?? friendlyError(realError));
+        } else if (remaining.length > 0) {
+          toast.info(`Still generating ${remaining.length} image${remaining.length === 1 ? "" : "s"} — they'll appear here when ready`);
+        }
       } else if (successCount < targetBeats.length) {
-        // Partial success — banner already shows the latest error.
+        // Partial success — if a task errored, its banner is already set
+        // above; any remaining in-flight beats are finished silently by
+        // the reconciliation poller.
       } else {
         toast.success(`${successCount}/${targetBeats.length} images generated`);
       }
@@ -1554,9 +1629,18 @@ export default function GeneratePage({ params }: PageProps) {
                         style={{ background: "var(--bg-progress)" }}
                         onClick={() => {
                           if (!b.imageUrl || clearingImages) return;
-                          setPreviewBeat({ beat: b, type: "image" });
+                          openPreview(b, "image");
                         }}
                       >
+                        {/* Beat number badge — top-left corner of every
+                            tile so the beat is identifiable at a glance
+                            regardless of image/status state. */}
+                        <span
+                          className="absolute top-1.5 left-1.5 z-10 min-w-7 h-7 px-1.5 rounded-full flex items-center justify-center text-xs font-semibold tabular-nums pointer-events-none"
+                          style={{ background: "oklch(0 0 0 / 0.6)", color: "white", border: "1px solid oklch(1 0 0 / 0.15)" }}
+                        >
+                          {b.beatNumber}
+                        </span>
                         {b.imageUrl && !clearingImages ? (
                           <img src={b.imageUrl} alt={`Beat ${b.beatNumber}`} className="w-full h-full object-cover" loading="lazy" decoding="async" />
                         ) : (
@@ -1572,7 +1656,7 @@ export default function GeneratePage({ params }: PageProps) {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setPreviewBeat({ beat: b, type: "image" });
+                              openPreview(b, "image");
                             }}
                             title="View image"
                             aria-label={`View image for beat ${b.beatNumber}`}
@@ -1772,6 +1856,7 @@ export default function GeneratePage({ params }: PageProps) {
                 onSelectModel={setSelectedVideoModel}
                 selectedAspectRatio={selectedVideoAspectRatio}
                 onSelectAspectRatio={setSelectedVideoAspectRatio}
+                lockAspectRatio
                 selectedDuration={selectedDuration ?? ""}
                 onSelectDuration={setSelectedDuration}
                 selectedResolution={selectedVideoResolution}
@@ -1831,9 +1916,18 @@ export default function GeneratePage({ params }: PageProps) {
                         style={{ background: "var(--bg-progress)" }}
                         onClick={() => {
                           if (!b.videoUrl) return;
-                          setPreviewBeat({ beat: b, type: "video" });
+                          openPreview(b, "video");
                         }}
                       >
+                        {/* Beat number badge — top-left corner of every
+                            tile so the beat is identifiable at a glance
+                            regardless of clip/status state. */}
+                        <span
+                          className="absolute top-1.5 left-1.5 z-10 min-w-7 h-7 px-1.5 rounded-full flex items-center justify-center text-xs font-semibold tabular-nums pointer-events-none"
+                          style={{ background: "oklch(0 0 0 / 0.6)", color: "white", border: "1px solid oklch(1 0 0 / 0.15)" }}
+                        >
+                          {b.beatNumber}
+                        </span>
                         {/* Background layer: video if we have one,
                             status badge otherwise. The spinner +
                             regen overlays below sit on top of either. */}
@@ -2002,7 +2096,7 @@ export default function GeneratePage({ params }: PageProps) {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setPreviewBeat({ beat: b, type: "video" });
+                              openPreview(b, "video");
                             }}
                             title="View clip"
                             aria-label={`View clip for beat ${b.beatNumber}`}
@@ -2272,14 +2366,46 @@ export default function GeneratePage({ params }: PageProps) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!previewBeat} onOpenChange={(open) => { if (!open && !previewSubmitting) { setPreviewBeat(null); setPreviewEditing(false); setPreviewShowPrompt(false); } }}>
+      <Dialog open={!!previewBeat} onOpenChange={(open) => { if (!open && !previewSubmitting) { setPreviewBeat(null); setPreviewEditing(false); setPreviewShowPrompt(false); setPreviewAspect(null); } }}>
         {/* View mode: media only (prompt hidden). Edit mode: dialog
             shrinks and an editable prompt + Save & regenerate appears
             under the media. */}
         <DialogContent
-          className={`${previewEditing ? "sm:max-w-xl" : "sm:max-w-3xl"} p-0 overflow-hidden`}
+          className={`${previewEditing ? "sm:max-w-xl" : "sm:max-w-3xl"} p-0 overflow-x-hidden overflow-y-auto`}
           showCloseButton={false}
-          style={{ background: "white" }}
+          style={{
+            background: "white",
+            // The dialog always shrink-wraps the media so its own aspect
+            // ratio is honored with no white letterbox borders — in view,
+            // show-prompt, and edit modes alike. The prompt panel/editor
+            // below inherits the media's width.
+            //
+            // Override the base DialogContent `grid`+`gap-4` with a plain
+            // flex column: grid auto-track sizing fought the media's
+            // max-width (leaving a top strip + a gap above the prompt).
+            // Flex-col keeps the media flush to the top.
+            display: "flex",
+            flexDirection: "column",
+            // Width is pinned to the media's computed pixel width so the
+            // dialog hugs it exactly. `fit-content` can't be used here: the
+            // read-only prompt is a long <p> whose max-content width would
+            // blow the box out to 95vw. Pinning the width makes the prompt
+            // wrap to the media instead of dictating the dialog size.
+            //
+            // In edit and show-prompt modes enforce a 400px minimum
+            // (regardless of aspect) so the prompt/editor stays readable
+            // for tall/portrait media — the media then centers within the
+            // wider box. maxWidth: 95vw clamps the min on very narrow
+            // viewports. Plain view still hugs the media exactly.
+            width: previewMediaSize
+              ? (previewEditing || previewShowPrompt ? Math.max(previewMediaSize.w, 400) : previewMediaSize.w)
+              : undefined,
+            maxWidth: "95vw",
+            // Safety net: if the media + panel still slightly exceed the
+            // viewport, scroll inside the dialog rather than clipping the
+            // top/bottom (badge, close button, Save action).
+            maxHeight: "95vh",
+          }}
         >
           {/* Action cluster — edit before close, both high-contrast
               over full-bleed media. */}
@@ -2316,7 +2442,7 @@ export default function GeneratePage({ params }: PageProps) {
               </>
             )}
             <button
-              onClick={() => { if (!previewSubmitting) { setPreviewBeat(null); setPreviewEditing(false); setPreviewShowPrompt(false); } }}
+              onClick={() => { if (!previewSubmitting) { setPreviewBeat(null); setPreviewEditing(false); setPreviewShowPrompt(false); setPreviewAspect(null); } }}
               title="Close preview"
               aria-label="Close preview"
               className="w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110"
@@ -2325,6 +2451,16 @@ export default function GeneratePage({ params }: PageProps) {
               <X size={18} strokeWidth={2.4} />
             </button>
           </div>
+          {/* Beat number — top-left corner, over the media, mirroring
+              the corner badge on the grid tiles. */}
+          {previewBeat && (
+            <span
+              className="absolute top-3 left-3 z-20 min-w-[28px] h-7 px-2 rounded-full flex items-center justify-center text-xs font-semibold tabular-nums pointer-events-none"
+              style={{ background: "oklch(0 0 0 / 0.65)", color: "white", border: "1px solid oklch(1 0 0 / 0.2)" }}
+            >
+              {previewBeat.beat.beatNumber}
+            </span>
+          )}
 
           {/* Vertical tags below the close cluster — resolution + duration
               (video) or resolution alone (image). For video we use the
@@ -2366,20 +2502,30 @@ export default function GeneratePage({ params }: PageProps) {
               </div>
             );
           })()}
+          {/* Media renders at its own intrinsic aspect ratio — capped to
+              the dialog width and the viewport height so portrait and
+              landscape both fit without cropping. */}
           {previewBeat?.type === "image" && previewBeat.beat.imageUrl && (
             <img
               src={previewBeat.beat.imageUrl}
               alt={`Beat ${previewBeat.beat.beatNumber}`}
-              className="w-full"
-              style={{ aspectRatio: "16/9", objectFit: "cover", display: "block" }}
+              // Aspect is already seeded synchronously by openPreview (from
+              // the cached grid image), so the box is sized on the first
+              // render. onLoad just refines it to the exact ratio.
+              onLoad={(e) => setPreviewAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)}
+              className="block mx-auto"
+              style={{ width: previewMediaSize?.w, height: previewMediaSize?.h, maxWidth: "95vw", maxHeight: "85vh" }}
             />
           )}
           {previewBeat?.type === "video" && previewBeat.beat.videoUrl && (
             <video
               key={previewBeat.beat.videoUrl}
               src={previewBeat.beat.videoUrl}
-              className="w-full"
-              style={{ aspectRatio: "16/9", objectFit: "cover", display: "block" }}
+              // Seeded from the source image by openPreview; refine to the
+              // exact clip ratio once metadata loads.
+              onLoadedMetadata={(e) => setPreviewAspect(e.currentTarget.videoWidth / e.currentTarget.videoHeight)}
+              className="block mx-auto"
+              style={{ width: previewMediaSize?.w, height: previewMediaSize?.h, maxWidth: "95vw", maxHeight: "85vh" }}
               autoPlay
               loop
               playsInline
@@ -2409,6 +2555,81 @@ export default function GeneratePage({ params }: PageProps) {
                 className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs leading-relaxed p-3 outline-none focus:border-zinc-400 resize-y"
                 placeholder="Describe what this beat should look like…"
               />
+              {/* Model + variant selectors, side by side. The second
+                  control is resolution for images and duration for videos
+                  — both driven off the selected model's config, mirroring
+                  the panel's ModelPicker choices (shared selected* state).
+                  Native selects styled with zinc utilities for the white
+                  modal. */}
+              <div className="flex gap-3">
+                <div className="flex-1 min-w-0">
+                  <label className="block text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>
+                    Model
+                  </label>
+                  <select
+                    value={(previewBeat.type === "image" ? selectedImageModel : selectedVideoModel) ?? ""}
+                    onChange={(e) => {
+                      if (previewBeat.type === "image") setSelectedImageModel(e.target.value);
+                      else setSelectedVideoModel(e.target.value);
+                    }}
+                    disabled={previewSubmitting}
+                    className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs p-2.5 outline-none focus:border-zinc-400 disabled:opacity-40"
+                  >
+                    <option value="" disabled>Select a model…</option>
+                    {(previewBeat.type === "image" ? imageModels : videoModels)?.map((m) => (
+                      <option key={m.id} value={m.id}>{m.name}</option>
+                    ))}
+                  </select>
+                </div>
+                {previewBeat.type === "image" ? (
+                  (() => {
+                    const resolutions = selectedImageModel ? getModelConfig(selectedImageModel).resolutions ?? [] : [];
+                    return (
+                      <div className="flex-1 min-w-0">
+                        <label className="block text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>
+                          Resolution
+                        </label>
+                        <select
+                          value={selectedResolution ?? ""}
+                          onChange={(e) => setSelectedResolution(e.target.value || null)}
+                          disabled={previewSubmitting || resolutions.length === 0}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs p-2.5 outline-none focus:border-zinc-400 disabled:opacity-40"
+                        >
+                          {resolutions.length === 0
+                            ? <option value="">Default</option>
+                            : resolutions.map((r) => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                      </div>
+                    );
+                  })()
+                ) : (
+                  (() => {
+                    const durations = selectedVideoModel ? getVideoModelConfig(selectedVideoModel).durations : [];
+                    return (
+                      <div className="flex-1 min-w-0">
+                        <label className="block text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>
+                          Duration
+                        </label>
+                        <select
+                          value={selectedDuration != null ? String(selectedDuration) : ""}
+                          onChange={(e) => {
+                            // Preserve the config's original value type
+                            // (number vs string) — the API distinguishes.
+                            const opt = durations.find((d) => String(d.value) === e.target.value);
+                            setSelectedDuration(opt ? opt.value : null);
+                          }}
+                          disabled={previewSubmitting || durations.length === 0}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs p-2.5 outline-none focus:border-zinc-400 disabled:opacity-40"
+                        >
+                          {durations.length === 0
+                            ? <option value="">Default</option>
+                            : durations.map((d) => <option key={String(d.value)} value={String(d.value)}>{d.label}</option>)}
+                        </select>
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
               <div className="flex items-center justify-end gap-3">
                 <button
                   onClick={() => setPreviewEditing(false)}

@@ -4,7 +4,11 @@ import { KieUpstreamError } from "@/lib/kie/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 
-export const maxDuration = 30;
+// Higher ceiling so finishing a large asset (e.g. nano-banana-pro at 4K,
+// which finishImageTask downloads in full and re-uploads to R2) doesn't
+// time out mid-transfer and leave the beat stuck "generating" with the
+// URL never persisted. 30s was too tight for big images.
+export const maxDuration = 120;
 
 export async function POST(req: Request) {
   let user: User;

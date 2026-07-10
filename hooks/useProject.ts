@@ -29,9 +29,22 @@ const ACTIVE_RUN_ID_KEYS = [
   "voiceover_active_run_id",
 ] as const;
 
+// Fast poll rate used while image/video beats are actively being produced
+// by KIE. The completion path is push-based (KIE → our webhook → DB), so
+// the DB row flips to done/failed the instant KIE settles; this cadence is
+// purely the DB→UI hop — it keeps the UI no more than ~2s behind that write
+// without polling KIE from the browser. Kept under 2s deliberately.
+const GEN_MS = 1_500;
+
+type BeatStatusFields = {
+  imageStatus?: string | null;
+  videoStatus?: string | null;
+};
+
 type ProjectFields = Partial<Record<(typeof ACTIVE_RUN_ID_KEYS)[number], unknown>> & {
   assembly_status?: string | null;
   assembly_finalize_preview_requested?: boolean | null;
+  beats?: BeatStatusFields[] | null;
 };
 
 function hasActiveRun(project: ProjectFields | undefined): boolean {
@@ -45,6 +58,23 @@ function hasActiveRun(project: ProjectFields | undefined): boolean {
   return false;
 }
 
+// True while any beat is still being produced (image generating, or video
+// queued/submitting/rendering). Drives the fast GEN_MS poll so KIE
+// completions — written to the DB by the webhook/worker — surface in the UI
+// within ~2s. Terminal states (done/failed) are excluded so polling backs
+// off the moment everything settles.
+function hasActiveGeneration(project: ProjectFields | undefined): boolean {
+  const beats = project?.beats;
+  if (!Array.isArray(beats)) return false;
+  return beats.some(
+    (b) =>
+      b.imageStatus === "generating" ||
+      b.videoStatus === "queued" ||
+      b.videoStatus === "submitting" ||
+      b.videoStatus === "rendering"
+  );
+}
+
 export function useProject(projectId: string | null) {
   const { data, error, isLoading, mutate } = useSWR(
     projectId ? `/api/projects/${projectId}` : null,
@@ -53,8 +83,14 @@ export function useProject(projectId: string | null) {
       // Hidden tabs stop polling entirely — SWR's default revalidateOnFocus
       // catches them up when the user returns.
       refreshWhenHidden: false,
-      refreshInterval: (latest: ProjectFields | undefined) =>
-        hasActiveRun(latest) ? ACTIVE_MS : IDLE_MS,
+      refreshInterval: (latest: ProjectFields | undefined) => {
+        // Generation in flight → fast DB→UI reflect (~2s). Other
+        // server-side runs (script/prompts/voiceover/assembly) → 4s.
+        // Otherwise idle safety-net poll at 10s.
+        if (hasActiveGeneration(latest)) return GEN_MS;
+        if (hasActiveRun(latest)) return ACTIVE_MS;
+        return IDLE_MS;
+      },
     }
   );
 

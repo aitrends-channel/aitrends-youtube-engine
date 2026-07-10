@@ -15,7 +15,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
 import { SequentialVoiceoverPreview } from "@/components/voiceover/SequentialVoiceoverPreview";
-import { RotateCw, ChevronUp, ChevronDown } from "lucide-react";
+import { RotateCw, ChevronUp, ChevronDown, Download } from "lucide-react";
 
 // Per-beat voiceover step. Each beat shows its own row with status,
 // playback, and per-beat retry. A bulk Generate button kicks off all
@@ -214,6 +214,7 @@ export default function VoiceoverPage({ params }: PageProps) {
   // stream ends and SWR catches up.
   const [liveBeats, setLiveBeats] = useState<Map<number, LiveBeatState>>(new Map());
   const [generating, setGenerating] = useState(false);
+  const [exportingVoiceover, setExportingVoiceover] = useState(false);
   const [stopped, setStopped] = useState(false);
   // Mirror `stopped` into a ref so the SSE handler (a long-lived async
   // closure) reads the latest value when deciding whether to auto-
@@ -292,6 +293,42 @@ export default function VoiceoverPage({ params }: PageProps) {
   // server-side), so the client doesn't need to fire follow-up
   // calls between batches anymore. Browser refresh during a run no
   // longer halts the queue.
+  // Export the full narration as one MP3. The server ffmpeg-concats every
+  // beat's voiceover (cached by ordered-URL hash), then we fetch the
+  // returned file as a blob and trigger a download — fetching as a blob
+  // is what forces a save instead of the browser navigating to the
+  // cross-origin R2 URL and playing it inline.
+  async function exportVoiceover() {
+    if (exportingVoiceover) return;
+    setExportingVoiceover(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/voiceover/concat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => ({})) as { url?: string; error?: string };
+      if (!res.ok || !data.url) throw new Error(data.error ?? "Export failed");
+
+      const audioRes = await fetch(data.url);
+      if (!audioRes.ok) throw new Error("Could not fetch the exported file");
+      const blob = await audioRes.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objUrl;
+      a.download = "voiceover.mp3";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objUrl);
+      toast.success("Voiceover exported");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to export voiceover");
+    } finally {
+      setExportingVoiceover(false);
+    }
+  }
+
   async function runGeneration(opts: { beatNumbers?: number[] } = {}) {
     if (!selectedVoice) { toast.error("Pick a voice first"); return; }
     if (!totalBeats) { toast.error("No beats — run Prompts step first"); return; }
@@ -1338,7 +1375,37 @@ export default function VoiceoverPage({ params }: PageProps) {
               A/B compare genuinely needs ffmpeg). */}
           {(beats.some((b) => !!b.voiceoverUrl)
             || Array.from(liveBeats.values()).some((s) => s.status === "done" && !!s.url)) && (
-            <SequentialVoiceoverPreview beats={beats} liveBeats={liveBeats} />
+            <>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
+                  Full voiceover
+                </span>
+                {/* Export the whole narration as a single MP3. Server
+                    ffmpeg-concats every beat's voiceover (cached by hash),
+                    then we download the returned file. */}
+                <button
+                  type="button"
+                  onClick={exportVoiceover}
+                  disabled={exportingVoiceover}
+                  title="Download the full voiceover as one MP3 file"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+                >
+                  {exportingVoiceover ? (
+                    <>
+                      <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      Exporting…
+                    </>
+                  ) : (
+                    <>
+                      <Download size={13} />
+                      Export audio
+                    </>
+                  )}
+                </button>
+              </div>
+              <SequentialVoiceoverPreview beats={beats} liveBeats={liveBeats} />
+            </>
           )}
           </>
           )}
