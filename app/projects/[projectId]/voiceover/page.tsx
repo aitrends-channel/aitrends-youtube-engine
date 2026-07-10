@@ -291,10 +291,11 @@ export default function VoiceoverPage({ params }: PageProps) {
   // calls between batches anymore. Browser refresh during a run no
   // longer halts the queue.
   // Export the full narration as one MP3. The server ffmpeg-concats every
-  // beat's voiceover (cached by ordered-URL hash), then we fetch the
-  // returned file as a blob and trigger a download — fetching as a blob
-  // is what forces a save instead of the browser navigating to the
-  // cross-origin R2 URL and playing it inline.
+  // beat's voiceover (cached by ordered-URL hash) and returns its R2 URL.
+  // We can't fetch that URL from the browser (cross-origin, no CORS — the
+  // "Failed to fetch" the first version hit), so we hand it to our
+  // same-origin /download proxy which streams it back with a
+  // Content-Disposition attachment header, forcing a real file download.
   async function exportVoiceover() {
     if (exportingVoiceover) return;
     setExportingVoiceover(true);
@@ -307,17 +308,13 @@ export default function VoiceoverPage({ params }: PageProps) {
       const data = await res.json().catch(() => ({})) as { url?: string; error?: string };
       if (!res.ok || !data.url) throw new Error(data.error ?? "Export failed");
 
-      const audioRes = await fetch(data.url);
-      if (!audioRes.ok) throw new Error("Could not fetch the exported file");
-      const blob = await audioRes.blob();
-      const objUrl = URL.createObjectURL(blob);
+      const downloadUrl = `/api/projects/${projectId}/voiceover/download?url=${encodeURIComponent(data.url)}`;
       const a = document.createElement("a");
-      a.href = objUrl;
+      a.href = downloadUrl;
       a.download = "voiceover.mp3";
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(objUrl);
       toast.success("Voiceover exported");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to export voiceover");
