@@ -3,7 +3,10 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
-import { FreeResourcesButton } from "@/components/wizard/FreeResourcesButton";
+// FreeResourcesButton is temporarily hidden — see comment near
+// StepBalanceCard below. Keep the import commented so ESLint's
+// no-unused-imports rule stays happy while the JSX usage is out.
+// import { FreeResourcesButton } from "@/components/wizard/FreeResourcesButton";
 import { useKieActivityStore } from "@/store/kieActivityStore";
 import { StepCostCard } from "@/components/StepCostCard";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
@@ -855,7 +858,9 @@ export default function VoiceoverPage({ params }: PageProps) {
             <div className="mt-3 flex items-center gap-2 flex-wrap">
               <StepCostCard projectId={projectId} column="voiceover" />
               <StepBalanceCard />
-              <FreeResourcesButton step="voiceover" />
+              {/* Free resources button hidden until the /free-resources
+                  page is built. Drop this back in when ready:
+                  <FreeResourcesButton step="voiceover" /> */}
             </div>
           </div>
         </div>

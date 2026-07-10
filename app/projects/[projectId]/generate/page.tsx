@@ -3,7 +3,10 @@
 import { useState, use, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
-import { FreeResourcesButton } from "@/components/wizard/FreeResourcesButton";
+// FreeResourcesButton is temporarily hidden — see comment near
+// StepBalanceCard below. Keep the import commented so ESLint's
+// no-unused-imports rule stays happy while the JSX usage is out.
+// import { FreeResourcesButton } from "@/components/wizard/FreeResourcesButton";
 import { useKieActivityStore } from "@/store/kieActivityStore";
 import { useProject } from "@/hooks/useProject";
 import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp, Eye, X } from "lucide-react";
@@ -29,11 +32,15 @@ const fetcher = (url: string) =>
 
 function isCreditError(raw: string | undefined | null): boolean {
   const msg = (raw ?? "").toLowerCase();
+  // Keep the matcher tight — "quota exceeded" was catching KIE's
+  // rate-limit errors (per-minute / per-day model caps) and telling
+  // users their wallet was empty when it wasn't. Balance issues are
+  // "insufficient credits/balance/fund", "out of credit", "no credit",
+  // or the server route surfacing an HTTP 402 (translated to a 402
+  // response the client detects separately).
   return msg.includes("credits insufficient")
     || msg.includes("insufficient credits")
-    || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit")))
-    || msg.includes("quota_exceeded")
-    || msg.includes("quota exceeded")
+    || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit") || msg.includes("fund")))
     || msg.includes("credits remaining")
     || msg.includes("credit balance");
 }
@@ -55,10 +62,12 @@ function isModelTerminalError(raw: string | undefined | null): boolean {
 
 function friendlyError(raw: string | undefined | null): string {
   const msg = (raw ?? "").toLowerCase();
-  if (msg.includes("credits insufficient") || msg.includes("insufficient credits") || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit"))))
+  if (msg.includes("credits insufficient") || msg.includes("insufficient credits") || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit") || msg.includes("fund"))))
     return "Insufficient KIE credits — top up your account at kie.ai";
-  if (msg.includes("quota_exceeded") || msg.includes("quota exceeded") || msg.includes("credits remaining") || msg.includes("credit balance"))
+  if (msg.includes("credits remaining") || msg.includes("credit balance"))
     return "Insufficient KIE credits — top up your account at kie.ai";
+  if (msg.includes("quota_exceeded") || msg.includes("quota exceeded"))
+    return "KIE rate limit reached — wait a minute and try again, or switch to a different model";
   if (msg.includes("invalid_api_key") || msg.includes("invalid api key") || msg.includes("unauthorized") || (msg.includes("api key") && msg.includes("invalid")))
     return "API key is invalid — go to Settings to update it";
   if (msg.includes("api key") && (msg.includes("missing") || msg.includes("not set") || msg.includes("required")))
@@ -73,6 +82,18 @@ function friendlyError(raw: string | undefined | null): string {
     return "Still generating — this can take longer than usual on some models. Refresh the page to check status; the job will finish on KIE in the background.";
   if (msg.includes("no task id") || msg.includes("no taskid"))
     return "Failed to queue task — the model may be unavailable, try another";
+  // KIE / Veo safety filters flag anything the model interprets as a
+  // reference to a real person, brand, copyrighted character, or
+  // sensitive content. It's a per-beat problem — the same model with
+  // a different prompt usually works — so we route the user to
+  // rephrasing rather than to changing the model.
+  if (msg.includes("safety filter") || msg.includes("safety_filter")
+    || msg.includes("prominent public figure")
+    || msg.includes("content policy") || msg.includes("policy violation")
+    || msg.includes("blocked by moderation") || msg.includes("moderated"))
+    return "Content policy block — the prompt references something the model refuses to render (real person, brand, or restricted topic). Rephrase this beat's prompt in Prompt Studio, then retry.";
+  if (msg.includes("nsfw") || msg.includes("unsafe content") || msg.includes("adult content"))
+    return "Content policy block — the prompt was flagged as unsafe. Rephrase this beat's prompt in Prompt Studio, then retry.";
   if (msg.includes("no url") || msg.includes("no image url") || msg.includes("completed but no url"))
     return "Image was generated but could not be retrieved — try again";
   if (msg.includes("rate limit") || msg.includes("too many requests"))
@@ -339,6 +360,18 @@ export default function GeneratePage({ params }: PageProps) {
   const [selectedVideoAspectRatio, setSelectedVideoAspectRatio] = useState("16:9");
   const [selectedDuration, setSelectedDuration] = useState<string | number | null>(null);
   const [selectedVideoResolution, setSelectedVideoResolution] = useState<string | null>(null);
+  // Guarded resolution value to send with any video POST. Drops the
+  // picker's selection if it isn't in the CURRENT model's resolutions
+  // list — closes the race where a user rapid-clicks Regen between
+  // switching models and the resolution-reset effect firing, which
+  // would otherwise ship the old model's tier to the new model and
+  // KIE would silently default to the cheapest supported value.
+  const safeVideoResolution = (() => {
+    if (!selectedVideoModel || !selectedVideoResolution) return null;
+    const cfg = getVideoModelConfig(selectedVideoModel);
+    if (!cfg.resolutions?.includes(selectedVideoResolution)) return null;
+    return selectedVideoResolution;
+  })();
   const [voiceTab, setVoiceTab] = useState<"female" | "male">("female");
 
   const initialTtsSelected = useRef(false);
@@ -460,7 +493,13 @@ export default function GeneratePage({ params }: PageProps) {
   // a new submission, so we don't need a separate clear pass first — the
   // old R2 file becomes an orphan (next regen overwrites its key with a
   // fresh upload, so disk usage stays bounded).
-  const [regeneratingVideo, setRegeneratingVideo] = useState(false);
+  // Per-beat regen tracker instead of a single boolean mutex — lets
+  // the user click Regenerate on multiple beats without waiting for
+  // any one to finish. Each entry is a beat number currently mid-POST;
+  // the tile spinner and disabled state derive from set membership so
+  // only the beats being regenerated show the busy state, not the
+  // whole grid.
+  const [regeneratingBeats, setRegeneratingBeats] = useState<Set<number>>(new Set());
   // Single-beat video regen — fires immediately from the per-tile
   // overlay button. The previous version routed through a confirm
   // modal; we dropped the modal so the overlay click is the action.
@@ -478,7 +517,14 @@ export default function GeneratePage({ params }: PageProps) {
       setVideoRunError("Pick a video model first.");
       return;
     }
-    setRegeneratingVideo(true);
+    // Add this beat's number to the in-flight set so only its own
+    // tile disables/spins during the POST — leaves every other tile
+    // clickable so the user can fire off more beats in parallel.
+    setRegeneratingBeats((prev) => {
+      const next = new Set(prev);
+      next.add(beat.beatNumber);
+      return next;
+    });
     try {
       const res = await fetch("/api/generate/videos", {
         method: "POST",
@@ -489,7 +535,7 @@ export default function GeneratePage({ params }: PageProps) {
           modelId: selectedVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
-          ...(selectedVideoResolution ? { resolution: selectedVideoResolution } : {}),
+          ...(safeVideoResolution ? { resolution: safeVideoResolution } : {}),
         }),
       });
       const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
@@ -503,9 +549,45 @@ export default function GeneratePage({ params }: PageProps) {
     } catch (err) {
       setVideoRunError(friendlyError(err instanceof Error ? err.message : null));
     } finally {
-      setRegeneratingVideo(false);
+      setRegeneratingBeats((prev) => {
+        const next = new Set(prev);
+        next.delete(beat.beatNumber);
+        return next;
+      });
     }
   }
+
+  // Track which beat is in the middle of a cancel request so the tile
+  // can disable its Stop button between click and DB commit — prevents
+  // a double-tap from firing two POSTs.
+  const [stoppingBeat, setStoppingBeat] = useState<number | null>(null);
+  async function stopVideoBeat(beatNumber: number) {
+    if (stoppingBeat !== null) return;
+    setStoppingBeat(beatNumber);
+    try {
+      const res = await fetch("/api/generate/videos/cancel-beat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, beatNumber }),
+      });
+      const data = await res.json().catch(() => ({})) as { cancelled?: number; error?: string };
+      if (!res.ok) throw new Error(data.error ?? `Cancel failed (HTTP ${res.status})`);
+      if ((data.cancelled ?? 0) === 0) {
+        // Beat already landed in a terminal state between the tile
+        // render and this click. Treat as success — the user got the
+        // outcome they wanted, just via a different path.
+        toast.info(`Beat ${beatNumber} already finished before it could be stopped`);
+      } else {
+        toast.success(`Beat ${beatNumber} stopped`);
+      }
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to stop beat");
+    } finally {
+      setStoppingBeat(null);
+    }
+  }
+
   async function deleteVoiceover() {
     setDeletingVoiceover(true);
     try {
@@ -1371,7 +1453,7 @@ export default function GeneratePage({ params }: PageProps) {
           modelId: selectedVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
-          ...(selectedVideoResolution ? { resolution: selectedVideoResolution } : {}),
+          ...(safeVideoResolution ? { resolution: safeVideoResolution } : {}),
         }),
       });
       const data = await res.json().catch(() => ({})) as { resumed?: number; error?: string };
@@ -1415,7 +1497,7 @@ export default function GeneratePage({ params }: PageProps) {
           modelId: selectedVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
-          ...(selectedVideoResolution ? { resolution: selectedVideoResolution } : {}),
+          ...(safeVideoResolution ? { resolution: safeVideoResolution } : {}),
         }),
       });
       const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
@@ -1483,7 +1565,9 @@ export default function GeneratePage({ params }: PageProps) {
             <div className="mt-3 flex items-center gap-2 flex-wrap">
               <StepCostCard projectId={projectId} column="generate" />
               <StepBalanceCard />
-              <FreeResourcesButton step="generate" />
+              {/* Free resources button hidden until the /free-resources
+                  page is built. Drop this back in when ready:
+                  <FreeResourcesButton step="generate" /> */}
             </div>
           </div>
         </div>
@@ -1913,7 +1997,46 @@ export default function GeneratePage({ params }: PageProps) {
                             and during global active-video ops. */}
                         {(() => {
                           const inFlight = b.videoStatus === "queued" || b.videoStatus === "submitting" || b.videoStatus === "rendering";
-                          const disabled = inFlight || regeneratingVideo || queuingVideos || hasActiveVideos;
+                          // In-flight beats get a Stop affordance so the
+                          // user can cancel a single beat without waiting
+                          // for the whole batch. Once cancelled the beat
+                          // flips to "failed" with a "Cancelled by user"
+                          // reason, matching the visual language for any
+                          // other stopped beat.
+                          if (inFlight) {
+                            const stopping = stoppingBeat === b.beatNumber;
+                            return (
+                              <div className="absolute inset-0 flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100"
+                                style={{ background: "oklch(0 0 0 / 0.55)" }}>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void stopVideoBeat(b.beatNumber);
+                                  }}
+                                  disabled={stopping}
+                                  title={stopping ? "Stopping…" : `Stop beat ${b.beatNumber}`}
+                                  aria-label={`Stop beat ${b.beatNumber}`}
+                                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 cursor-pointer"
+                                  style={{
+                                    background: "oklch(0.7 0.2 25)",
+                                    color: "white",
+                                    boxShadow: "0 3px 12px oklch(0.7 0.2 25 / 0.5), 0 0 0 1.5px oklch(1 0 0 / 0.15)",
+                                  }}
+                                >
+                                  {stopping
+                                    ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                    : <X size={14} strokeWidth={2.6} />}
+                                </button>
+                              </div>
+                            );
+                          }
+                          // Per-beat disable so parallel manual regens are
+                          // allowed — the tile only greys out while ITS
+                          // own request is mid-flight. Bulk queue in
+                          // progress still blocks single-beat regens so
+                          // the two paths don't stomp each other during
+                          // that specific window.
+                          const disabled = queuingVideos || regeneratingBeats.has(b.beatNumber);
                           // Status-specific affordance so the icon
                           // matches the intent at a glance:
                           //   - no clip yet (no videoUrl + no status)
@@ -1951,7 +2074,7 @@ export default function GeneratePage({ params }: PageProps) {
                                   void regenerateVideoBeat(b.beatNumber);
                                 }}
                                 disabled={disabled}
-                                title={inFlight ? `Beat ${b.beatNumber} is ${b.videoStatus} — wait for it to finish` : `${label} beat ${b.beatNumber}`}
+                                title={`${label} beat ${b.beatNumber}`}
                                 aria-label={`${label} beat ${b.beatNumber}`}
                                 className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 cursor-pointer"
                                 style={{
