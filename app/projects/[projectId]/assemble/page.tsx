@@ -777,7 +777,7 @@ export default function AssemblePage({ params }: PageProps) {
 
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
-        <div className="sm:px-8 lg:px-[60px] py-4 sm:py-5"
+        <div className="px-5 sm:px-8 lg:px-[60px] py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div>
             <h1 className="font-bold text-base sm:text-lg">Assemble Final Video</h1>
@@ -791,7 +791,7 @@ export default function AssemblePage({ params }: PageProps) {
           </div>
         </div>
 
-        <div className="sm:px-8 lg:px-[60px] py-4 sm:py-8 pb-24">
+        <div className="px-5 sm:px-8 lg:px-[60px] py-4 sm:py-8 pb-24">
           <div className="w-full space-y-6">
 
             {/* Status cards */}

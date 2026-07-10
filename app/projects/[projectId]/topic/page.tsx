@@ -122,7 +122,7 @@ export default function TopicPage({ params }: PageProps) {
       <WizardNav projectId={isFork ? "new-fork" : projectId} currentState={6} highestState={isFork ? 6 : project?.current_state} channelName={project?.channel_name} />
 
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
-        <div className="sm:px-8 py-5"
+        <div className="px-5 sm:px-8 py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div>
             <h1 className="font-bold text-lg">Choose Your Topic</h1>
@@ -136,7 +136,7 @@ export default function TopicPage({ params }: PageProps) {
           </div>
         </div>
 
-        <div className="sm:px-8 pt-6 sm:pt-8 pb-24 space-y-5">
+        <div className="px-5 sm:px-8 pt-6 sm:pt-8 pb-24 space-y-5">
 
           {isTopicLocked ? (
             <>

@@ -308,7 +308,7 @@ export default function ScriptPage({ params }: PageProps) {
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-2 sm:px-8 md:pr-44 py-3 sm:py-4 shrink-0"
+        <div className="flex flex-wrap items-center gap-2 px-5 sm:px-8 md:pr-44 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div className="flex-1 min-w-0 mr-2">
             <h1 className="font-bold text-base sm:text-lg text-foreground">Script Editor</h1>
@@ -325,7 +325,7 @@ export default function ScriptPage({ params }: PageProps) {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto pb-[70px] py-4 sm:p-8">
+        <div className="flex-1 overflow-y-auto pb-[70px] px-5 py-4 sm:p-8">
           {/* Background-generation state — user refreshed mid-stream
               or has another tab generating. project.script_active_run_id
               is the server-side "in flight" flag; useProject's 5s SWR

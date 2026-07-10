@@ -692,7 +692,7 @@ export default function ChannelPage({ params }: PageProps) {
       <WizardNav projectId={projectId} currentState={1} highestState={project?.current_state} channelName={project?.channel_name} />
 
       <main className="flex-1 min-w-0 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
-        <div className="sm:px-8 pt-6 sm:pt-10 pb-24 space-y-8">
+        <div className="px-5 sm:px-8 pt-6 sm:pt-10 pb-24 space-y-8">
 
           {/* Header */}
           <div>
