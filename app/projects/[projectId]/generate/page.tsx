@@ -720,12 +720,22 @@ export default function GeneratePage({ params }: PageProps) {
 
       await mutate();
       toast.success(`Beat ${beatNumber} ${type} uploaded`);
+      // If this upload was launched from the open preview, close it so the
+      // freshly-uploaded asset (mutate has landed) is what the tile shows.
+      if (previewBeat && previewBeat.beat.beatNumber === beatNumber) {
+        setPreviewEditing(false);
+        setPreviewBeat(null);
+        setPreviewAspect(null);
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploadingBeat(null);
     }
   }
+  // True while the currently-previewed beat is uploading — used to blank
+  // the preview body and show an "Uploading…" state instead.
+  const isUploadingPreview = previewBeat != null && uploadingBeat === previewBeat.beat.beatNumber;
   // Intrinsic aspect ratio (w/h) of the previewed media, read from the
   // element on load. The dialog can't hug the media off CSS alone: a
   // `fit-content` box measures the media's *intrinsic* width, not its
@@ -2623,6 +2633,21 @@ export default function GeneratePage({ params }: PageProps) {
                 </button>
               </>
             )}
+            {/* Upload (edit mode only) — replace this beat's asset with a
+                file from the user's device. Sits just before Close. */}
+            {previewEditing && previewBeat && (
+              <button
+                type="button"
+                onClick={() => triggerBeatUpload(previewBeat.beat.beatNumber, previewBeat.type)}
+                disabled={previewSubmitting || uploadingBeat === previewBeat.beat.beatNumber}
+                title="Upload a file for this beat"
+                aria-label="Upload"
+                className="w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 disabled:opacity-50"
+                style={{ background: "oklch(0 0 0 / 0.65)", color: "white", border: "1px solid oklch(1 0 0 / 0.2)" }}
+              >
+                <Upload size={16} strokeWidth={2.4} />
+              </button>
+            )}
             <button
               onClick={() => { if (!previewSubmitting) { setPreviewBeat(null); setPreviewEditing(false); setPreviewShowPrompt(false); setPreviewAspect(null); } }}
               title="Close preview"
@@ -2684,10 +2709,17 @@ export default function GeneratePage({ params }: PageProps) {
               </div>
             );
           })()}
+          {/* While uploading, blank the body and show a single status. */}
+          {isUploadingPreview && (
+            <div className="flex flex-col items-center justify-center gap-3" style={{ minHeight: 280, padding: 32 }}>
+              <Spinner size={28} className="text-zinc-500" />
+              <span className="text-sm font-medium text-zinc-600">Uploading…</span>
+            </div>
+          )}
           {/* Media renders at its own intrinsic aspect ratio — capped to
               the dialog width and the viewport height so portrait and
               landscape both fit without cropping. */}
-          {previewBeat?.type === "image" && previewBeat.beat.imageUrl && (
+          {!isUploadingPreview && previewBeat?.type === "image" && previewBeat.beat.imageUrl && (
             <img
               src={previewBeat.beat.imageUrl}
               alt={`Beat ${previewBeat.beat.beatNumber}`}
@@ -2699,7 +2731,7 @@ export default function GeneratePage({ params }: PageProps) {
               style={{ width: previewMediaSize?.w, height: previewMediaSize?.h, maxWidth: "95vw", maxHeight: "85vh" }}
             />
           )}
-          {previewBeat?.type === "video" && previewBeat.beat.videoUrl && (
+          {!isUploadingPreview && previewBeat?.type === "video" && previewBeat.beat.videoUrl && (
             <video
               key={previewBeat.beat.videoUrl}
               src={previewBeat.beat.videoUrl}
@@ -2715,7 +2747,7 @@ export default function GeneratePage({ params }: PageProps) {
             />
           )}
           {/* Read-only prompt — toggled by the "Show prompt" pill. */}
-          {previewShowPrompt && !previewEditing && previewBeat && (
+          {!isUploadingPreview && previewShowPrompt && !previewEditing && previewBeat && (
             <div className="px-4 py-3">
               <p className="text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>
                 {previewBeat.type === "image" ? "Image prompt" : "Video prompt"} — beat {previewBeat.beat.beatNumber}
@@ -2725,7 +2757,7 @@ export default function GeneratePage({ params }: PageProps) {
               </p>
             </div>
           )}
-          {previewEditing && previewBeat && (
+          {!isUploadingPreview && previewEditing && previewBeat && (
             <div className="px-4 py-3 space-y-3">
               <p className="text-xs font-semibold" style={{ color: "oklch(0.35 0 0)" }}>
                 {previewBeat.type === "image" ? "Image prompt" : "Video prompt"} — beat {previewBeat.beat.beatNumber}
