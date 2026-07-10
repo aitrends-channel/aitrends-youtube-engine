@@ -1473,7 +1473,7 @@ export default function GeneratePage({ params }: PageProps) {
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
-        <div className="shrink-0 sm:px-8 md:pr-44 py-4 sm:py-5"
+        <div className="shrink-0 px-5 sm:px-8 md:pr-44 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div>
             <h1 className="font-bold text-base sm:text-lg">Generate Assets</h1>
@@ -1495,7 +1495,7 @@ export default function GeneratePage({ params }: PageProps) {
             Without subgrid, extra content on one side (e.g. a taller
             aspect list, or a resolution section that only one panel
             has) would push the sections below it out of alignment. */}
-        <div className="py-4 sm:p-8 grid grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto] gap-6">
+        <div className="px-5 py-4 sm:p-8 grid grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto] gap-6">
           {/* Image Gen Panel */}
           <div className="rounded-2xl overflow-hidden flex flex-col lg:grid lg:grid-rows-subgrid lg:row-span-3"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>

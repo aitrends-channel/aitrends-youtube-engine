@@ -1132,7 +1132,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
-        <div className="sm:px-8 py-3 sm:py-4 shrink-0"
+        <div className="px-5 sm:px-8 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div>
             <h1 className="font-bold text-lg">Thumbnails</h1>
@@ -1149,7 +1149,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="sm:px-8 pt-4 sm:pt-6 pb-24 space-y-4 ">
+          <div className="px-5 sm:px-8 pt-4 sm:pt-6 pb-24 space-y-4 ">
 
             {/* Reference source — pick between auto (niche videos)
                 and manual (upload your own thumbnails). Same toggle

@@ -593,7 +593,7 @@ export default function VisualsPage({ params }: PageProps) {
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
-        <div className="shrink-0 sm:px-8 py-4 sm:py-5"
+        <div className="shrink-0 px-5 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div>
             <h1 className="font-bold text-base sm:text-lg">Visual Style Extraction</h1>
@@ -608,7 +608,7 @@ export default function VisualsPage({ params }: PageProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto pb-[70px]">
-        <div className="py-4 sm:p-8 pb-24 space-y-6">
+        <div className="px-5 py-4 sm:p-8 pb-24 space-y-6">
           {/* Mode toggle */}
           <div className="flex gap-2 p-1 rounded-xl"
             style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-7)" }}>
