@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
 import { SequentialVoiceoverPreview } from "@/components/voiceover/SequentialVoiceoverPreview";
+import { BeatAudioPlayer } from "@/components/voiceover/BeatAudioPlayer";
 import { RotateCw, ChevronUp, ChevronDown, Download } from "lucide-react";
 
 // Per-beat voiceover step. Each beat shows its own row with status,
@@ -684,26 +685,6 @@ export default function VoiceoverPage({ params }: PageProps) {
     });
   }
 
-  const [dedupingOverlap, setDedupingOverlap] = useState(false);
-  async function fixOverlappingText() {
-    if (generating || dedupingOverlap) return;
-    setDedupingOverlap(true);
-    try {
-      const res = await fetch(`/api/projects/${projectId}/beats/dedupe-overlap`, { method: "POST" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Fix failed");
-      if (data.fixed === 0) {
-        toast.success("No overlapping text found — beats are already clean.");
-      } else {
-        toast.success(`Cleaned ${data.fixed} beat${data.fixed === 1 ? "" : "s"} of overlapping text. Regenerate to update audio.`);
-        await mutate();
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Fix failed");
-    } finally {
-      setDedupingOverlap(false);
-    }
-  }
 
   const [clearing, setClearing] = useState(false);
 
@@ -882,54 +863,48 @@ export default function VoiceoverPage({ params }: PageProps) {
                 </span>
               )}
             </div>
-            <div className="flex gap-1 mb-3 items-start">
-              {/* Custom tab only renders when the user's ElevenLabs
-                  account actually has added/cloned voices. Each tab is
-                  a column so the search input can sit DIRECTLY under
-                  the active tab button. */}
+            {/* Gender / custom tabs. Custom only renders when the user's
+                ElevenLabs account has added/cloned voices. */}
+            <div className="flex gap-1 mb-2">
               {([...(["female", "male"] as const), ...(hasCustomVoices ? (["custom"] as const) : [])]).map((tab) => (
-                <div key={tab} className="flex-1 flex flex-col gap-1">
-                  <button
-                    onClick={() => { setVoiceTab(tab); setVoiceSearch(""); }}
-                    disabled={effectivelyGenerating}
-                    className="w-full px-2 py-1.5 rounded-lg text-xs font-medium capitalize transition-all disabled:opacity-40"
-                    style={voiceTab === tab ? {
-                      background: "oklch(0.72 0.25 285 / 0.15)",
-                      border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                      color: "oklch(0.88 0.12 285)",
-                    } : {
-                      background: "var(--bg-input)",
-                      border: "1px solid var(--bd-card)",
-                      color: "var(--c-50)",
-                    }}
-                  >{tab === "custom" ? (
-                    <span className="flex flex-col items-center leading-tight">
-                      <span>Custom</span>
-                      <span className="text-[9px] font-normal normal-case" style={{ opacity: 0.7 }}>
-                        cloned · generated · professional
-                      </span>
+                <button
+                  key={tab}
+                  onClick={() => { setVoiceTab(tab); setVoiceSearch(""); }}
+                  disabled={effectivelyGenerating}
+                  className="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium capitalize transition-all disabled:opacity-40"
+                  style={voiceTab === tab ? {
+                    background: "oklch(0.72 0.25 285 / 0.15)",
+                    border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                    color: "oklch(0.88 0.12 285)",
+                  } : {
+                    background: "var(--bg-input)",
+                    border: "1px solid var(--bd-card)",
+                    color: "var(--c-50)",
+                  }}
+                >{tab === "custom" ? (
+                  <span className="flex flex-col items-center leading-tight">
+                    <span>Custom</span>
+                    <span className="text-[9px] font-normal normal-case" style={{ opacity: 0.7 }}>
+                      cloned · generated · professional
                     </span>
-                  ) : tab}</button>
-                  {/* Search — anchored under the active tab only;
-                      filters that tab's voices by name or tag. */}
-                  {voiceTab === tab && (
-                    <input
-                      type="search"
-                      value={voiceSearch}
-                      onChange={(e) => setVoiceSearch(e.target.value)}
-                      placeholder="Search…"
-                      aria-label={`Search ${tab} voices`}
-                      className="w-full px-2 py-1 rounded-lg text-xs outline-none transition-colors"
-                      style={{
-                        background: "var(--bg-input)",
-                        border: "1px solid oklch(0.72 0.25 285 / 0.3)",
-                        color: "var(--c-80)",
-                      }}
-                    />
-                  )}
-                </div>
+                  </span>
+                ) : tab}</button>
               ))}
             </div>
+            {/* Search — spans the full width across all tabs; filters the
+                active tab's voices by name or tag. */}
+            <input
+              type="search"
+              value={voiceSearch}
+              onChange={(e) => setVoiceSearch(e.target.value)}
+              placeholder={`Search ${voiceTab} voices…`}
+              aria-label="Search voices"
+              className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none transition-colors mb-3 text-zinc-900 placeholder:text-black"
+              style={{
+                background: "#ecf0f1",
+                border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+              }}
+            />
             {voiceSearch.trim() && filteredVoices.length === 0 && (
               <p className="text-xs text-center py-4" style={{ color: "var(--c-40)" }}>
                 No voices match &ldquo;{voiceSearch.trim()}&rdquo;
@@ -968,7 +943,7 @@ export default function VoiceoverPage({ params }: PageProps) {
           {project === undefined ? null : (
           <>
           {/* Bulk action panel */}
-          <div ref={bulkPanelRef} className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+          <div ref={bulkPanelRef} className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", marginTop: "10px" }}>
             {/* Selected-voice banner — sits above the count/action row
                 so the user always sees which voice the next batch will
                 use, right next to the beats list (the most relevant
@@ -1030,28 +1005,6 @@ export default function VoiceoverPage({ params }: PageProps) {
                 </p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
-                {/* Fix overlap: walks every beat and trims any leading
-                    text that duplicates the previous beat's tail. Safe
-                    to run multiple times — does nothing when there's
-                    no overlap left. Doesn't touch audio files.
-                    Hidden entirely while a server-side run is still
-                    finishing (post-refresh state) so the in-progress
-                    pill stands alone with no competing controls. */}
-                {!serverGenerationActive && (
-                <button
-                  onClick={fixOverlappingText}
-                  disabled={effectivelyGenerating || dedupingOverlap || totalBeats === 0}
-                  title="Scan every beat and trim text that duplicates the previous beat's ending. Does not touch existing audio — regenerate to apply the cleaned text."
-                  className="px-3 py-2 rounded-lg text-sm font-medium disabled:opacity-40 transition-all"
-                  style={{
-                    background: "transparent",
-                    color: "var(--c-60)",
-                    border: "1px solid var(--bd-card)",
-                  }}
-                >
-                  {dedupingOverlap ? "Fixing…" : "Fix overlap"}
-                </button>
-                )}
                 {/* Clear: wipes every beat's voiceover from R2 + DB.
                     Disabled while a run is in flight (would race with
                     in-flight writes) or when there's nothing to delete. */}
@@ -1187,11 +1140,11 @@ export default function VoiceoverPage({ params }: PageProps) {
                 </div>
               </div>
             )}
-          </div>
 
-          {/* Per-beat cards — 2-column grid on sm+ screens */}
-          {beats.length > 0 && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Per-beat cards — 2-column grid, kept inside the same
+                bordered section as the voice summary + actions above. */}
+            {beats.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4" style={{ borderTop: "1px solid var(--bd-6)" }}>
               {beats.map((b) => {
                 const status = effectiveStatus(b);
                 const url = effectiveUrl(b);
@@ -1240,13 +1193,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                         // ever hands back a new URL for the same
                         // beat (e.g. regen), so the audio src
                         // never stays stale on the old file.
-                        <audio
-                          key={url}
-                          controls
-                          src={url}
-                          className="h-7 w-full"
-                          preload="metadata"
-                        />
+                        <BeatAudioPlayer key={url} src={url} beatNumber={b.beatNumber} />
                       )}
                       {status === "failed" && err && (
                         <span
@@ -1363,6 +1310,7 @@ export default function VoiceoverPage({ params }: PageProps) {
               })}
             </div>
           )}
+          </div>
 
           {/* Full voiceover preview — sits below the beat grid so the
               user reviews each beat individually first, then hears the
