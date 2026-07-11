@@ -2683,9 +2683,11 @@ export default function GeneratePage({ params }: PageProps) {
                 </button>
               </>
             )}
-            {/* Upload (edit mode only) — replace this beat's asset with a
-                file from the user's device. Sits just before Close. */}
-            {previewEditing && previewBeat && (
+            {/* Upload (edit mode, images only) — replace this beat's
+                image with a file from the user's device. Not offered for
+                video: clips should come through the generation pipeline.
+                Sits just before Close. */}
+            {previewEditing && previewBeat && previewBeat.type === "image" && (
               <button
                 type="button"
                 onClick={() => triggerBeatUpload(previewBeat.beat.beatNumber, previewBeat.type)}
@@ -2867,31 +2869,53 @@ export default function GeneratePage({ params }: PageProps) {
                     );
                   })()
                 ) : (
-                  (() => {
-                    const durations = selectedVideoModel ? getVideoModelConfig(selectedVideoModel).durations : [];
-                    return (
-                      <div className="flex-1 min-w-0">
-                        <label className="block text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>
-                          Duration
-                        </label>
-                        <select
-                          value={selectedDuration != null ? String(selectedDuration) : ""}
-                          onChange={(e) => {
-                            // Preserve the config's original value type
-                            // (number vs string) — the API distinguishes.
-                            const opt = durations.find((d) => String(d.value) === e.target.value);
-                            setSelectedDuration(opt ? opt.value : null);
-                          }}
-                          disabled={previewSubmitting || durations.length === 0}
-                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs p-2.5 outline-none focus:border-zinc-400 disabled:opacity-40"
-                        >
-                          {durations.length === 0
-                            ? <option value="">Default</option>
-                            : durations.map((d) => <option key={String(d.value)} value={String(d.value)}>{d.label}</option>)}
-                        </select>
-                      </div>
-                    );
-                  })()
+                  <>
+                    {(() => {
+                      const durations = selectedVideoModel ? getVideoModelConfig(selectedVideoModel).durations : [];
+                      return (
+                        <div className="flex-1 min-w-0">
+                          <label className="block text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>
+                            Duration
+                          </label>
+                          <select
+                            value={selectedDuration != null ? String(selectedDuration) : ""}
+                            onChange={(e) => {
+                              // Preserve the config's original value type
+                              // (number vs string) — the API distinguishes.
+                              const opt = durations.find((d) => String(d.value) === e.target.value);
+                              setSelectedDuration(opt ? opt.value : null);
+                            }}
+                            disabled={previewSubmitting || durations.length === 0}
+                            className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs p-2.5 outline-none focus:border-zinc-400 disabled:opacity-40"
+                          >
+                            {durations.length === 0
+                              ? <option value="">Default</option>
+                              : durations.map((d) => <option key={String(d.value)} value={String(d.value)}>{d.label}</option>)}
+                          </select>
+                        </div>
+                      );
+                    })()}
+                    {(() => {
+                      const vres = selectedVideoModel ? getVideoModelConfig(selectedVideoModel).resolutions ?? [] : [];
+                      return (
+                        <div className="flex-1 min-w-0">
+                          <label className="block text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>
+                            Resolution
+                          </label>
+                          <select
+                            value={selectedVideoResolution ?? ""}
+                            onChange={(e) => setSelectedVideoResolution(e.target.value || null)}
+                            disabled={previewSubmitting || vres.length === 0}
+                            className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs p-2.5 outline-none focus:border-zinc-400 disabled:opacity-40"
+                          >
+                            {vres.length === 0
+                              ? <option value="">Default</option>
+                              : vres.map((r) => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                        </div>
+                      );
+                    })()}
+                  </>
                 )}
               </div>
               <div className="flex items-center justify-end gap-3">
