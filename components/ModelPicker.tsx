@@ -28,6 +28,10 @@ interface CommonProps {
    *  aspect ratio the source image was generated with rather than let
    *  the user pick a mismatching one. */
   lockAspectRatio?: boolean;
+  /** Hide the aspect-ratio section entirely (no selector, no read-only
+   *  value). Used by the video panel: the clip inherits the source
+   *  image's ratio, so there's nothing for the user to see or set. */
+  hideAspectRatio?: boolean;
   /** Override the "Tip: if a model keeps failing…" hint, or pass an
    *  empty string to hide it entirely. */
   tip?: string;
@@ -266,7 +270,7 @@ export function ModelPicker(props: ModelPickerProps) {
         </p>
       )}
 
-      {props.lockAspectRatio ? (
+      {props.hideAspectRatio ? null : props.lockAspectRatio ? (
         <>
           <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
             Aspect Ratio{" "}
