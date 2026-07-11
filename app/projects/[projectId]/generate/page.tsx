@@ -408,6 +408,9 @@ export default function GeneratePage({ params }: PageProps) {
   // so the section banner above the Queue button is the single home
   // for video-failure context — no more toasts that scroll off-screen.
   const [videoRunError, setVideoRunError] = useState<string | null>(null);
+  // When set, a modal alerts the user that a video can't be made because
+  // the beat(s) have no source image. Holds the message body.
+  const [noImageAlert, setNoImageAlert] = useState<string | null>(null);
   // Refs to scroll the error banners into view once they appear so
   // the user actually sees the failure summary instead of having to
   // scan the page for it.
@@ -547,8 +550,14 @@ export default function GeneratePage({ params }: PageProps) {
     // error context until the user explicitly retries them too.
     resetVideoErrorBannerLocal();
     const beat = beats.find((b) => b.beatNumber === beatNumber);
-    if (!beat || !beat.videoPrompt || !beat.imageUrl) {
-      setVideoRunError("Cannot regenerate — beat is missing its prompt or source image.");
+    if (!beat || !beat.videoPrompt) {
+      setVideoRunError("Cannot generate — this beat has no video prompt yet.");
+      return;
+    }
+    // Every video model is image-to-video: no source image, nothing to
+    // animate. Block the action and alert the user to make the image first.
+    if (!beat.imageUrl) {
+      setNoImageAlert(`Beat ${beatNumber} doesn't have an image yet. Every video is generated from a beat's image, so you'll need to generate this beat's image first — then you can create its video.`);
       return;
     }
     if (!selectedVideoModel) {
@@ -1644,19 +1653,32 @@ export default function GeneratePage({ params }: PageProps) {
       // without a source frame. Beats whose images are still rendering
       // are skipped now and become eligible the next time the user
       // clicks Queue.
-      const eligible = beats.filter((b) => {
+      // Beats this action targets (has a prompt, and either failed [retry]
+      // or has no clip yet [all]). Retry-failed must include beats that
+      // failed but still carry a stale video_url from a prior run.
+      const targets = beats.filter((b) => {
         if (!b.videoPrompt) return false;
-        if (!b.imageUrl) return false;
-        // Retry-failed must include beats that failed but still carry a
-        // stale video_url from a prior run (e.g. a regen that timed out
-        // and kept its old clip) — the videoUrl check below would wrongly
-        // skip those and the retry would submit nothing. "all" still
-        // skips beats that already have a clip so we don't wipe a good url.
         if (mode === "failed") return b.videoStatus === "failed";
         if (b.videoUrl) return false;
         return true;
       });
-      if (eligible.length === 0) return;
+      // Every video model is image-to-video, so a beat with no source
+      // image can't be generated. Split those out and tell the user to
+      // make the images first instead of silently dropping them.
+      const missingImage = targets.filter((b) => !b.imageUrl);
+      const eligible = targets.filter((b) => b.imageUrl);
+      if (eligible.length === 0) {
+        if (missingImage.length > 0) {
+          const nums = missingImage.map((b) => b.beatNumber).join(", ");
+          setNoImageAlert(
+            `${missingImage.length} beat${missingImage.length === 1 ? "" : "s"} (${nums}) ${missingImage.length === 1 ? "has" : "have"} no image yet. Every video is generated from a beat's image — generate the missing beat image${missingImage.length === 1 ? "" : "s"} first, then try again.`,
+          );
+        }
+        return;
+      }
+      if (missingImage.length > 0) {
+        toast.error(`Skipped ${missingImage.length} beat${missingImage.length === 1 ? "" : "s"} with no image — generate their images first.`);
+      }
       // Instant UI feedback — flip all eligible beats to "queued" before
       // the POST so the badges + fast poll kick in immediately.
       optimisticQueueVideos(new Set(eligible.map((b) => b.beatNumber)));
@@ -2041,7 +2063,7 @@ export default function GeneratePage({ params }: PageProps) {
                 onSelectModel={setSelectedVideoModel}
                 selectedAspectRatio={selectedVideoAspectRatio}
                 onSelectAspectRatio={setSelectedVideoAspectRatio}
-                lockAspectRatio
+                hideAspectRatio
                 selectedDuration={selectedDuration ?? ""}
                 onSelectDuration={setSelectedDuration}
                 selectedResolution={selectedVideoResolution}
@@ -2628,6 +2650,26 @@ export default function GeneratePage({ params }: PageProps) {
           </p>
         </div>
       )}
+
+      {/* No-image alert — every video model is image-to-video, so a beat
+          with no image can't be generated. Explains the fix. */}
+      <Dialog open={!!noImageAlert} onOpenChange={(open) => { if (!open) setNoImageAlert(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Generate the image first</DialogTitle>
+            <DialogDescription>{noImageAlert}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setNoImageAlert(null)}
+              className="px-4 py-2 rounded-lg text-sm font-semibold text-white"
+              style={{ background: "oklch(0.72 0.25 285)" }}
+            >
+              Got it
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!previewBeat} onOpenChange={(open) => { if (!open && !previewSubmitting) { setPreviewBeat(null); setPreviewEditing(false); setPreviewShowPrompt(false); setPreviewAspect(null); } }}>
         {/* View mode: media only (prompt hidden). Edit mode: dialog
