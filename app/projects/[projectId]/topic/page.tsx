@@ -186,7 +186,7 @@ export default function TopicPage({ params }: PageProps) {
                           border: "1px solid oklch(0.72 0.25 285 / 0.35)",
                         } : {
                           background: "var(--bg-panel)",
-                          border: "1px solid var(--bd-7)",
+                          border: "1px solid var(--bd-card)",
                         }}
                         onMouseEnter={(e) => {
                           if (!selected)
@@ -234,7 +234,7 @@ export default function TopicPage({ params }: PageProps) {
                     onClick={generateMoreIdeas}
                     disabled={generatingIdeas}
                     className="w-full py-2.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
-                    style={{ background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}
+                    style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-55)" }}
                   >
                     {generatingIdeas ? (
                       <span className="flex items-center justify-center gap-2">
@@ -247,7 +247,7 @@ export default function TopicPage({ params }: PageProps) {
               )}
 
               {/* Custom topic input */}
-              <div className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <div className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
                   {allIdeas.length > 0 ? "Or enter a custom topic" : "Your topic"}
                 </p>

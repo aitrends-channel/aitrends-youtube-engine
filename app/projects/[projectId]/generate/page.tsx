@@ -149,7 +149,7 @@ function VoiceOption({ model, selected, onSelect, isPlaying, onPlayToggle }: {
         color: "var(--c-90)",
       } : {
         background: "var(--bg-input)",
-        border: "1px solid var(--bd-7)",
+        border: "1px solid var(--bd-card)",
         color: "var(--c-60)",
       }}
     >
@@ -249,7 +249,7 @@ function VoiceoverTrackMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         className="w-7 h-7 rounded-lg flex items-center justify-center text-base leading-none hover:opacity-90 transition-opacity"
-        style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+        style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
       >
         ⋯
       </button>
@@ -257,7 +257,7 @@ function VoiceoverTrackMenu({
         <div
           role="menu"
           className="absolute right-0 top-[calc(100%+4px)] z-20 min-w-[160px] rounded-xl p-1 shadow-lg"
-          style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}
+          style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}
         >
           <a
             href={url}
@@ -1686,7 +1686,7 @@ export default function GeneratePage({ params }: PageProps) {
         <div className="px-5 py-4 sm:p-8 grid grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto] gap-6">
           {/* Image Gen Panel */}
           <div className="rounded-2xl overflow-hidden flex flex-col lg:grid lg:grid-rows-subgrid lg:row-span-3"
-            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon={<ImageIcon size={18} />} title="AI Images" subtitle={`${totalBeats} images from script beats`} />
               <ModelPicker
@@ -1960,7 +1960,7 @@ export default function GeneratePage({ params }: PageProps) {
 
           {/* Video Gen Panel */}
           <div className="rounded-2xl overflow-hidden flex flex-col lg:grid lg:grid-rows-subgrid lg:row-span-3"
-            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon={<Video size={18} />} title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
               <ModelPicker
@@ -2905,7 +2905,7 @@ export default function GeneratePage({ params }: PageProps) {
               onClick={() => setDeleteVoiceoverConfirmOpen(false)}
               disabled={deletingVoiceover}
               className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
-              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+              style={{ background: "transparent", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
             >
               Cancel
             </button>

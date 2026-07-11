@@ -83,6 +83,8 @@ function VoiceOption({
         color: "var(--c-90)",
       } : {
         background: "var(--bg-input)",
+        // Voice picker items keep the subtle default border — the white
+        // card border is only for the step's content panels.
         border: "1px solid var(--bd-7)",
         color: "var(--c-60)",
       }}
@@ -869,7 +871,7 @@ export default function VoiceoverPage({ params }: PageProps) {
         <div className="px-5 py-4 sm:p-8 pb-24 space-y-6">
 
           {/* Voice picker */}
-          <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+          <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
                 Voice
@@ -897,7 +899,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                       color: "oklch(0.88 0.12 285)",
                     } : {
                       background: "var(--bg-input)",
-                      border: "1px solid var(--bd-7)",
+                      border: "1px solid var(--bd-card)",
                       color: "var(--c-50)",
                     }}
                   >{tab === "custom" ? (
@@ -966,7 +968,7 @@ export default function VoiceoverPage({ params }: PageProps) {
           {project === undefined ? null : (
           <>
           {/* Bulk action panel */}
-          <div ref={bulkPanelRef} className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+          <div ref={bulkPanelRef} className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
             {/* Selected-voice banner — sits above the count/action row
                 so the user always sees which voice the next batch will
                 use, right next to the beats list (the most relevant
@@ -1044,7 +1046,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                   style={{
                     background: "transparent",
                     color: "var(--c-60)",
-                    border: "1px solid var(--bd-7)",
+                    border: "1px solid var(--bd-card)",
                   }}
                 >
                   {dedupingOverlap ? "Fixing…" : "Fix overlap"}
@@ -1203,7 +1205,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                     ? { background: "oklch(0.55 0.15 145 / 0.06)", border: "1px solid oklch(0.55 0.15 145 / 0.25)" }
                     : status === "failed"
                       ? { background: "oklch(0.6 0.22 25 / 0.06)", border: "1px solid oklch(0.6 0.22 25 / 0.3)" }
-                      : { background: "var(--bg-panel)", border: "1px solid var(--bd-7)" };
+                      : { background: "var(--bg-panel)", border: "1px solid var(--bd-card)" };
                 return (
                   <div
                     key={b.beatNumber}
@@ -1301,7 +1303,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                               aria-label="Dismiss"
                               title="Dismiss"
                               className="w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-medium transition-opacity hover:opacity-90"
-                              style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}
+                              style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)", color: "var(--c-55)" }}
                             >
                               ×
                             </button>
@@ -1348,7 +1350,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                             aria-label={status === "failed" ? "Retry beat" : "Regenerate beat"}
                             title={status === "failed" ? "Retry" : "Regenerate"}
                             className={`${status === "failed" ? "px-2.5" : "px-1.5"} py-1 rounded-lg text-[11px] font-medium flex items-center justify-center transition-opacity hover:opacity-90 shrink-0`}
-                            style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}
+                            style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)", color: "var(--c-55)" }}
                           >
                             {status === "failed" ? "Retry" : <RotateCw className="w-3.5 h-3.5" />}
                           </button>
@@ -1473,7 +1475,7 @@ export default function VoiceoverPage({ params }: PageProps) {
         >
           <div
             className="w-full max-w-md rounded-2xl p-6 space-y-4"
-            style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}
+            style={{ background: "var(--bg-card)", border: "1px solid var(--bd-card)" }}
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -1504,7 +1506,7 @@ export default function VoiceoverPage({ params }: PageProps) {
               <button
                 onClick={() => setConfirm(null)}
                 className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80"
-                style={{ background: "transparent", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}
+                style={{ background: "transparent", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
               >
                 Cancel
               </button>
