@@ -57,12 +57,23 @@ function classifyVideoWebhook(payload: KieWebhookPayload): {
   }
 
   // Veo path: success/failure encoded in successFlag (1 = success,
-  // 2/3 = failure). Video URL lives at data.videoUrl / video_url.
+  // 2/3 = failure). The video URL lives at data.response.resultUrls[0]
+  // (Veo's real shape), with flat videoUrl/video_url as fallbacks.
   if (typeof d.successFlag === "number") {
     if (d.successFlag === 1) {
-      const url = (d.videoUrl as string | undefined) ?? (d.video_url as string | undefined);
+      const url =
+        d.response?.resultUrls?.[0]
+        ?? d.response?.fullResultUrls?.[0]
+        ?? d.response?.full_result_urls?.[0]
+        ?? (d.videoUrl as string | undefined)
+        ?? (d.video_url as string | undefined);
       if (url) return { kind: "done", url };
-      return { kind: "failed", error: "Video task completed but no URL in payload" };
+      // successFlag=1 but no URL yet: Veo reports the base render "done"
+      // then runs a separate upscale pass before the URL is populated.
+      // Treat as pending (NOT failed) so we ACK and let the worker's
+      // record-info poll finalize the beat once the URL lands — marking
+      // it failed here nukes an in-flight job that's about to succeed.
+      return { kind: "pending" };
     }
     if (d.successFlag === 0) return { kind: "pending" };
     const reason = extractFailureReason(d);

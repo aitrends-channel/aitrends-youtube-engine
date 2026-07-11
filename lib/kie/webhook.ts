@@ -17,7 +17,16 @@ export interface KieWebhookPayload {
     videoUrl?: string;
     video_url?: string;
     successFlag?: number;
-    response?: { resultImageUrl?: string; originImageUrl?: string } | null;
+    // `response` carries the result for both image and Veo video tasks:
+    //   images → resultImageUrl / originImageUrl
+    //   Veo    → resultUrls[0] / fullResultUrls[0] / full_result_urls[0]
+    response?: {
+      resultImageUrl?: string;
+      originImageUrl?: string;
+      resultUrls?: string[] | null;
+      fullResultUrls?: string[] | null;
+      full_result_urls?: string[] | null;
+    } | null;
     creditsConsumed?: number;
     // Extraction-friendly bag for the various failure fields KIE
     // uses. Matches the ones we already read in the poll path so a
