@@ -408,6 +408,9 @@ export default function GeneratePage({ params }: PageProps) {
   // so the section banner above the Queue button is the single home
   // for video-failure context — no more toasts that scroll off-screen.
   const [videoRunError, setVideoRunError] = useState<string | null>(null);
+  // When set, a modal alerts the user that a video can't be made because
+  // the beat(s) have no source image. Holds the message body.
+  const [noImageAlert, setNoImageAlert] = useState<string | null>(null);
   // Refs to scroll the error banners into view once they appear so
   // the user actually sees the failure summary instead of having to
   // scan the page for it.
@@ -547,8 +550,14 @@ export default function GeneratePage({ params }: PageProps) {
     // error context until the user explicitly retries them too.
     resetVideoErrorBannerLocal();
     const beat = beats.find((b) => b.beatNumber === beatNumber);
-    if (!beat || !beat.videoPrompt || !beat.imageUrl) {
-      setVideoRunError("Cannot regenerate — beat is missing its prompt or source image.");
+    if (!beat || !beat.videoPrompt) {
+      setVideoRunError("Cannot generate — this beat has no video prompt yet.");
+      return;
+    }
+    // Every video model is image-to-video: no source image, nothing to
+    // animate. Block the action and alert the user to make the image first.
+    if (!beat.imageUrl) {
+      setNoImageAlert(`Beat ${beatNumber} doesn't have an image yet. Every video is generated from a beat's image, so you'll need to generate this beat's image first — then you can create its video.`);
       return;
     }
     if (!selectedVideoModel) {
@@ -735,41 +744,79 @@ export default function GeneratePage({ params }: PageProps) {
     const { beatNumber, type } = pending;
     setUploadingBeat(beatNumber);
     try {
-      // 1) Presigned PUT straight to R2 (bypasses the route body limit —
-      //    important for video files).
-      const presignRes = await fetch(`/api/upload/presign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId,
-          folder: type === "image" ? "beat-uploads/images" : "beat-uploads/videos",
-          filename: file.name,
-          contentType: file.type,
-        }),
-      });
-      const pd = await presignRes.json().catch(() => ({})) as { uploadUrl?: string; publicUrl?: string; error?: string };
-      if (!presignRes.ok || !pd.uploadUrl || !pd.publicUrl) throw new Error(pd.error ?? "Could not prepare the upload");
+      let publicUrl: string;
+      if (type === "image") {
+        // Images go through a same-origin server upload (no browser→R2
+        // PUT), so a missing R2 CORS policy can't break it with "Failed
+        // to fetch". Images are small enough for the platform body cap.
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("projectId", projectId);
+        fd.append("folder", "beat-uploads/images");
+        const upRes = await fetch(`/api/upload/direct`, { method: "POST", body: fd });
+        const ud = await upRes.json().catch(() => ({})) as { url?: string; error?: string };
+        if (!upRes.ok || !ud.url) throw new Error(ud.error ?? "Could not upload the image");
+        publicUrl = ud.url;
+      } else {
+        // Large video files use a presigned direct-PUT to R2 to bypass
+        // the platform request-body cap (requires bucket CORS).
+        const presignRes = await fetch(`/api/upload/presign`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId,
+            folder: "beat-uploads/videos",
+            filename: file.name,
+            contentType: file.type,
+          }),
+        });
+        const pd = await presignRes.json().catch(() => ({})) as { uploadUrl?: string; publicUrl?: string; error?: string };
+        if (!presignRes.ok || !pd.uploadUrl || !pd.publicUrl) throw new Error(pd.error ?? "Could not prepare the upload");
 
-      const putRes = await fetch(pd.uploadUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
-      if (!putRes.ok) throw new Error(`Upload to storage failed (HTTP ${putRes.status})`);
+        const putRes = await fetch(pd.uploadUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
+        if (!putRes.ok) throw new Error(`Upload to storage failed (HTTP ${putRes.status})`);
+        publicUrl = pd.publicUrl;
+      }
 
-      // 2) Point the beat row at the uploaded asset.
+      // Point the beat row at the uploaded asset.
       const setRes = await fetch(`/api/projects/${projectId}/beats/set-asset`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ beatNumber, type, url: pd.publicUrl }),
+        body: JSON.stringify({ beatNumber, type, url: publicUrl }),
       });
       const sd = await setRes.json().catch(() => ({})) as { ok?: boolean; error?: string };
       if (!setRes.ok) throw new Error(sd.error ?? "Failed to save the uploaded asset");
 
       await mutate();
-      toast.success(`Beat ${beatNumber} ${type} uploaded`);
       // If this upload was launched from the open preview, close it so the
       // freshly-uploaded asset (mutate has landed) is what the tile shows.
       if (previewBeat && previewBeat.beat.beatNumber === beatNumber) {
         setPreviewEditing(false);
         setPreviewBeat(null);
         setPreviewAspect(null);
+      }
+      if (type === "image") {
+        // Derive this beat's image + video prompts FROM the uploaded
+        // image (Claude vision) so the prompts match the picture instead
+        // of the stale script-derived text. Best-effort — the upload
+        // already succeeded; a prompt-gen failure just leaves the old
+        // prompts in place.
+        const genToastId = toast.loading(`Analyzing beat ${beatNumber}'s image…`);
+        try {
+          const pr = await fetch(`/api/generate/prompts-from-image`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId, beatNumber, imageUrl: publicUrl }),
+          });
+          const pd = await pr.json().catch(() => ({})) as { ok?: boolean; error?: string };
+          if (!pr.ok) throw new Error(pd.error ?? "Prompt generation failed");
+          await mutate();
+          toast.success(`Beat ${beatNumber} image uploaded — prompts updated`, { id: genToastId });
+        } catch (e) {
+          toast.error(`Beat ${beatNumber} image uploaded, but prompt generation failed — ${e instanceof Error ? e.message : "try again"}.`, { id: genToastId });
+        }
+      } else {
+        toast.success(`Beat ${beatNumber} ${type} uploaded`);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
@@ -1637,14 +1684,32 @@ export default function GeneratePage({ params }: PageProps) {
       // without a source frame. Beats whose images are still rendering
       // are skipped now and become eligible the next time the user
       // clicks Queue.
-      const eligible = beats.filter((b) => {
+      // Beats this action targets (has a prompt, and either failed [retry]
+      // or has no clip yet [all]). Retry-failed must include beats that
+      // failed but still carry a stale video_url from a prior run.
+      const targets = beats.filter((b) => {
         if (!b.videoPrompt) return false;
-        if (!b.imageUrl) return false;
-        if (b.videoUrl) return false;
         if (mode === "failed") return b.videoStatus === "failed";
+        if (b.videoUrl) return false;
         return true;
       });
-      if (eligible.length === 0) return;
+      // Every video model is image-to-video, so a beat with no source
+      // image can't be generated. Split those out and tell the user to
+      // make the images first instead of silently dropping them.
+      const missingImage = targets.filter((b) => !b.imageUrl);
+      const eligible = targets.filter((b) => b.imageUrl);
+      if (eligible.length === 0) {
+        if (missingImage.length > 0) {
+          const nums = missingImage.map((b) => b.beatNumber).join(", ");
+          setNoImageAlert(
+            `${missingImage.length} beat${missingImage.length === 1 ? "" : "s"} (${nums}) ${missingImage.length === 1 ? "has" : "have"} no image yet. Every video is generated from a beat's image — generate the missing beat image${missingImage.length === 1 ? "" : "s"} first, then try again.`,
+          );
+        }
+        return;
+      }
+      if (missingImage.length > 0) {
+        toast.error(`Skipped ${missingImage.length} beat${missingImage.length === 1 ? "" : "s"} with no image — generate their images first.`);
+      }
       // Instant UI feedback — flip all eligible beats to "queued" before
       // the POST so the badges + fast poll kick in immediately.
       optimisticQueueVideos(new Set(eligible.map((b) => b.beatNumber)));
@@ -1742,7 +1807,7 @@ export default function GeneratePage({ params }: PageProps) {
             Without subgrid, extra content on one side (e.g. a taller
             aspect list, or a resolution section that only one panel
             has) would push the sections below it out of alignment. */}
-        <div className="px-5 py-4 sm:p-8 grid grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto] gap-6">
+        <div className="px-5 py-4 sm:p-8 mb-[84px] grid grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto] gap-6">
           {/* Image Gen Panel */}
           <div className="rounded-2xl overflow-hidden flex flex-col lg:grid lg:grid-rows-subgrid lg:row-span-3"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
@@ -2029,7 +2094,7 @@ export default function GeneratePage({ params }: PageProps) {
                 onSelectModel={setSelectedVideoModel}
                 selectedAspectRatio={selectedVideoAspectRatio}
                 onSelectAspectRatio={setSelectedVideoAspectRatio}
-                lockAspectRatio
+                hideAspectRatio
                 selectedDuration={selectedDuration ?? ""}
                 onSelectDuration={setSelectedDuration}
                 selectedResolution={selectedVideoResolution}
@@ -2617,6 +2682,26 @@ export default function GeneratePage({ params }: PageProps) {
         </div>
       )}
 
+      {/* No-image alert — every video model is image-to-video, so a beat
+          with no image can't be generated. Explains the fix. */}
+      <Dialog open={!!noImageAlert} onOpenChange={(open) => { if (!open) setNoImageAlert(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Generate the image first</DialogTitle>
+            <DialogDescription>{noImageAlert}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setNoImageAlert(null)}
+              className="px-4 py-2 rounded-lg text-sm font-semibold text-white"
+              style={{ background: "oklch(0.72 0.25 285)" }}
+            >
+              Got it
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!previewBeat} onOpenChange={(open) => { if (!open && !previewSubmitting) { setPreviewBeat(null); setPreviewEditing(false); setPreviewShowPrompt(false); setPreviewAspect(null); } }}>
         {/* View mode: media only (prompt hidden). Edit mode: dialog
             shrinks and an editable prompt + Save & regenerate appears
@@ -2692,9 +2777,11 @@ export default function GeneratePage({ params }: PageProps) {
                 </button>
               </>
             )}
-            {/* Upload (edit mode only) — replace this beat's asset with a
-                file from the user's device. Sits just before Close. */}
-            {previewEditing && previewBeat && (
+            {/* Upload (edit mode, images only) — replace this beat's
+                image with a file from the user's device. Not offered for
+                video: clips should come through the generation pipeline.
+                Sits just before Close. */}
+            {previewEditing && previewBeat && previewBeat.type === "image" && (
               <button
                 type="button"
                 onClick={() => triggerBeatUpload(previewBeat.beat.beatNumber, previewBeat.type)}
@@ -2876,31 +2963,53 @@ export default function GeneratePage({ params }: PageProps) {
                     );
                   })()
                 ) : (
-                  (() => {
-                    const durations = selectedVideoModel ? getVideoModelConfig(selectedVideoModel).durations : [];
-                    return (
-                      <div className="flex-1 min-w-0">
-                        <label className="block text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>
-                          Duration
-                        </label>
-                        <select
-                          value={selectedDuration != null ? String(selectedDuration) : ""}
-                          onChange={(e) => {
-                            // Preserve the config's original value type
-                            // (number vs string) — the API distinguishes.
-                            const opt = durations.find((d) => String(d.value) === e.target.value);
-                            setSelectedDuration(opt ? opt.value : null);
-                          }}
-                          disabled={previewSubmitting || durations.length === 0}
-                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs p-2.5 outline-none focus:border-zinc-400 disabled:opacity-40"
-                        >
-                          {durations.length === 0
-                            ? <option value="">Default</option>
-                            : durations.map((d) => <option key={String(d.value)} value={String(d.value)}>{d.label}</option>)}
-                        </select>
-                      </div>
-                    );
-                  })()
+                  <>
+                    {(() => {
+                      const durations = selectedVideoModel ? getVideoModelConfig(selectedVideoModel).durations : [];
+                      return (
+                        <div className="flex-1 min-w-0">
+                          <label className="block text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>
+                            Duration
+                          </label>
+                          <select
+                            value={selectedDuration != null ? String(selectedDuration) : ""}
+                            onChange={(e) => {
+                              // Preserve the config's original value type
+                              // (number vs string) — the API distinguishes.
+                              const opt = durations.find((d) => String(d.value) === e.target.value);
+                              setSelectedDuration(opt ? opt.value : null);
+                            }}
+                            disabled={previewSubmitting || durations.length === 0}
+                            className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs p-2.5 outline-none focus:border-zinc-400 disabled:opacity-40"
+                          >
+                            {durations.length === 0
+                              ? <option value="">Default</option>
+                              : durations.map((d) => <option key={String(d.value)} value={String(d.value)}>{d.label}</option>)}
+                          </select>
+                        </div>
+                      );
+                    })()}
+                    {(() => {
+                      const vres = selectedVideoModel ? getVideoModelConfig(selectedVideoModel).resolutions ?? [] : [];
+                      return (
+                        <div className="flex-1 min-w-0">
+                          <label className="block text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>
+                            Resolution
+                          </label>
+                          <select
+                            value={selectedVideoResolution ?? ""}
+                            onChange={(e) => setSelectedVideoResolution(e.target.value || null)}
+                            disabled={previewSubmitting || vres.length === 0}
+                            className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs p-2.5 outline-none focus:border-zinc-400 disabled:opacity-40"
+                          >
+                            {vres.length === 0
+                              ? <option value="">Default</option>
+                              : vres.map((r) => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                        </div>
+                      );
+                    })()}
+                  </>
                 )}
               </div>
               <div className="flex items-center justify-end gap-3">

@@ -20,7 +20,7 @@ interface PageProps {
   params: { projectId: string };
 }
 
-const ASPECT_RATIOS = ["16:9", "9:16", "1:1"] as const;
+const ASPECT_RATIOS = ["16:9", "9:16", "1:1", "4:5", "4:3", "3:4", "21:9"] as const;
 type AspectRatio = typeof ASPECT_RATIOS[number];
 
 // Pro-tier resolution gate constants live in lib/plans-gating so the
@@ -39,11 +39,21 @@ const RESOLUTION_EDGES: Record<ResolutionPreset, { long: number; short: number }
   "2160p": { long: 3840, short: 2160 },
 };
 
+// Generic aspect-ratio → pixel dims. The resolution preset's `short`
+// edge is held constant (so "1080p" is 1080 on the short side for any
+// ratio — 1920×1080 landscape, 1080×1920 portrait, 1080×1080 square,
+// matching platform conventions); the long edge is derived from the
+// ratio and rounded to even (ffmpeg requires even dimensions).
 function dimsFor(aspect: AspectRatio, preset: ResolutionPreset): { w: number; h: number; label: string } {
   const { long, short } = RESOLUTION_EDGES[preset];
-  if (aspect === "9:16") return { w: short, h: long, label: `${short} × ${long}` };
-  if (aspect === "1:1")  return { w: short, h: short, label: `${short} × ${short}` };
-  return { w: long, h: short, label: `${long} × ${short}` };
+  const [wr, hr] = aspect.split(":").map(Number);
+  const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+  let w: number, h: number;
+  if (!wr || !hr) { w = long; h = short; }                 // malformed → 16:9
+  else if (wr === hr) { w = short; h = short; }            // square
+  else if (wr > hr) { h = short; w = even((short * wr) / hr); }  // landscape
+  else { w = short; h = even((short * hr) / wr); }         // portrait
+  return { w, h, label: `${w} × ${h}` };
 }
 
 const CAPTION_LANGUAGES = [
@@ -120,6 +130,14 @@ export default function AssemblePage({ params }: PageProps) {
       if (typeof x === "number") setLogoX(x);
       if (typeof y === "number") setLogoY(y);
       if (typeof s === "number") setLogoSize(s);
+    }
+    // Default the output aspect ratio to the project's actual video
+    // ratio so the logo-placement preview (and the render) match the
+    // clips instead of always assuming 16:9. The user can still override
+    // it with the selector.
+    const projAspect = (project as { video_aspect_ratio?: string | null }).video_aspect_ratio;
+    if (typeof projAspect === "string" && (ASPECT_RATIOS as readonly string[]).includes(projAspect)) {
+      setAspectRatio(projAspect as AspectRatio);
     }
     const trim = (project as { trim_silence_enabled?: boolean | null }).trim_silence_enabled;
     if (typeof trim === "boolean") setTrimSilence(trim);
@@ -198,6 +216,9 @@ export default function AssemblePage({ params }: PageProps) {
   const [bgmFile, setBgmFile] = useState<File | null>(null);
   const [bgmUploadedUrl, setBgmUploadedUrl] = useState<string | null>(null);
   const [bgmVolume, setBgmVolume] = useState<number>(0.15);
+  // Inline preview playback for the uploaded/selected background music.
+  const bgmAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [bgmPlaying, setBgmPlaying] = useState(false);
   const [bgmUploading, setBgmUploading] = useState(false);
   const bgmInputRef = useRef<HTMLInputElement>(null);
   // Channel logo overlay. logoX/logoY are top-left position as a
@@ -324,6 +345,13 @@ export default function AssemblePage({ params }: PageProps) {
   const dbAssembledUrl = (project?.assembled_url as string | undefined) ?? null;
   const previewUrl: string | null = (reassembleMode || assembling) ? null : dbAssembledUrl;
   const showPreview = !!previewUrl;
+
+  // Width the preview <video> actually renders at: min(panel width,
+  // 70vh × ratio) — the same bound its max-h-[70vh] + max-w-full impose.
+  // The action buttons use this so they line up with the video's width
+  // instead of spilling full-width under a narrow portrait preview.
+  const [arW, arH] = aspectRatio.split(":").map(Number);
+  const previewMaxW = arW && arH ? `min(100%, calc(70vh * ${arW} / ${arH}))` : "100%";
 
   // In-progress preview — the worker uploads mixed.mp4 (full audio +
   // visuals at intermediate resolution, no captions/logo yet) as soon
@@ -872,24 +900,18 @@ export default function AssemblePage({ params }: PageProps) {
 
             {/* Aspect ratio */}
             <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--c-40)" }}>Output Aspect Ratio</p>
-              <div className="flex gap-2">
-                {ASPECT_RATIOS.map((r) => (
-                  <button key={r} onClick={() => setAspectRatio(r)} disabled={assembling}
-                    className="px-4 py-2 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
-                    style={aspectRatio === r ? {
-                      background: "oklch(0.72 0.25 285 / 0.15)",
-                      border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                      color: "oklch(0.88 0.12 285)",
-                    } : {
-                      background: "var(--bg-input)",
-                      border: "1px solid var(--bd-card)",
-                      color: "var(--c-50)",
-                    }}>
-                    {r}
-                  </button>
-                ))}
-              </div>
+              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--c-40)" }}>
+                Output Aspect Ratio{" "}
+                <span className="normal-case font-normal" style={{ color: "var(--c-35)" }}>· matches your generated images</span>
+              </p>
+              {/* Read-only: the output must match the ratio the images (and
+                  therefore the clips) were generated at — changing it here
+                  would letterbox/crop every beat. Locked to the project's
+                  generation aspect ratio. */}
+              <span className="inline-flex px-4 py-2 rounded-xl text-xs font-medium"
+                style={{ background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "oklch(0.88 0.12 285)" }}>
+                {aspectRatio}
+              </span>
             </div>
 
             {/* Background music — compact single-bar picker. Pre-pick
@@ -915,6 +937,55 @@ export default function AssemblePage({ params }: PageProps) {
                 </>
               ) : (
                 <>
+                  {/* Play/pause preview — appears once a track is
+                      selected/uploaded so the user can hear it before
+                      assembling. Uses the local blob when available,
+                      else the saved R2 URL. */}
+                  {(() => {
+                    const bgmPreviewSrc = bgmObjectUrl ?? bgmUploadedUrl;
+                    if (!bgmPreviewSrc) return null;
+                    return (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const a = bgmAudioRef.current;
+                            if (!a) return;
+                            if (a.paused) {
+                              a.volume = Math.max(0, Math.min(1, bgmVolume));
+                              a.play().catch(() => {});
+                            } else {
+                              a.pause();
+                            }
+                          }}
+                          title={bgmPlaying ? "Pause preview" : "Play preview"}
+                          aria-label={bgmPlaying ? "Pause background music" : "Play background music"}
+                          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-transform hover:scale-105"
+                          style={{ background: "oklch(0.72 0.25 285)", color: "#fff" }}
+                        >
+                          {bgmPlaying ? (
+                            <span className="flex gap-[2px]">
+                              <span className="block w-[3px] h-3 rounded-sm" style={{ background: "currentColor" }} />
+                              <span className="block w-[3px] h-3 rounded-sm" style={{ background: "currentColor" }} />
+                            </span>
+                          ) : (
+                            <span
+                              className="block w-0 h-0 ml-[2px]"
+                              style={{ borderLeft: "8px solid currentColor", borderTop: "5px solid transparent", borderBottom: "5px solid transparent" }}
+                            />
+                          )}
+                        </button>
+                        <audio
+                          ref={bgmAudioRef}
+                          src={bgmPreviewSrc}
+                          preload="none"
+                          onPlay={() => setBgmPlaying(true)}
+                          onPause={() => setBgmPlaying(false)}
+                          onEnded={() => setBgmPlaying(false)}
+                        />
+                      </>
+                    );
+                  })()}
                   <div className="min-w-0 flex-1">
                     <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
                       Background music
@@ -1075,7 +1146,7 @@ export default function AssemblePage({ params }: PageProps) {
                 // Source: blob URL for a freshly-picked File, otherwise
                 // the persisted R2 URL hydrated from the project row.
                 const logoSrc = logoObjectUrl ?? logoUploadedUrl!;
-                const aspect = aspectRatio === "9:16" ? "9 / 16" : aspectRatio === "1:1" ? "1 / 1" : "16 / 9";
+                const aspect = aspectRatio.replace(":", " / ");
                 function onDragLogo(e: React.PointerEvent<HTMLImageElement>) {
                   e.preventDefault();
                   e.stopPropagation();
@@ -1155,6 +1226,7 @@ export default function AssemblePage({ params }: PageProps) {
                       className="relative w-full rounded-lg overflow-hidden select-none"
                       style={{
                         aspectRatio: aspect,
+                        maxWidth: "320px",
                         background: "linear-gradient(135deg, oklch(0.16 0 0), oklch(0.22 0 0))",
                         border: "1px solid var(--bd-card)",
                       }}
@@ -1381,8 +1453,12 @@ export default function AssemblePage({ params }: PageProps) {
                   key={previewUrl}
                   src={previewUrl}
                   controls
-                  className="w-full rounded-xl"
-                  style={{ background: "var(--bg-page-2)" }}
+                  // Size to the clip's own aspect ratio: width fills up to
+                  // the panel, height is capped so a 9:16 portrait render
+                  // doesn't blow up — the video keeps its true shape and
+                  // centers instead of stretching.
+                  className="mx-auto block max-h-[70vh] rounded-xl"
+                  style={{ background: "var(--bg-page-2)", maxWidth: "100%" }}
                   onError={() => setPreviewLoadError(true)}
                   onLoadedMetadata={() => setPreviewLoadError(false)}
                 />
@@ -1412,8 +1488,8 @@ export default function AssemblePage({ params }: PageProps) {
                     key={inProgressPreviewUrl}
                     src={inProgressPreviewUrl}
                     controls
-                    className="w-full rounded-xl"
-                    style={{ background: "var(--bg-page-2)" }}
+                    className="mx-auto block max-h-[70vh] rounded-xl"
+                    style={{ background: "var(--bg-page-2)", maxWidth: "100%" }}
                   />
                   <p className="text-sm text-center font-medium leading-snug" style={{ color: "oklch(0.72 0.18 60)" }}>
                     Preview — finishing up
@@ -1703,7 +1779,7 @@ export default function AssemblePage({ params }: PageProps) {
               })()}
 
               {showPreview && previewUrl && (
-                <div>
+                <div className="mx-auto" style={{ maxWidth: previewMaxW }}>
                   <div className="flex gap-2">
                     <button onClick={() => setReassembleConfirmOpen(true)}
                       className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all"

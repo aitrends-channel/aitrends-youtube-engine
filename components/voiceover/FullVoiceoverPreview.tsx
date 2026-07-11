@@ -91,6 +91,7 @@ export function FullVoiceoverPreview({
   // the effect re-sets it, which the parent indicator also misses.
   const [building, setBuilding] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [tickFlag, setTickFlag] = useState(0);
   void tickFlag;
@@ -109,6 +110,9 @@ export function FullVoiceoverPreview({
   // bedding; sub-100ms is inaudible against narration.
   const bgmAudioRef = useRef<HTMLAudioElement | null>(null);
   const [bgmPlayWithPreview, setBgmPlayWithPreview] = useState<boolean>(true);
+  // Tracks whether the bgm element is currently sounding — drives the
+  // standalone "play music only" button's icon.
+  const [bgmPlaying, setBgmPlaying] = useState(false);
   // When the toggle flips OFF mid-playback, pause the bgm immediately
   // even if the voiceover keeps going. Also keep volume in sync if the
   // parent changes it via the slider.
@@ -216,6 +220,36 @@ export function FullVoiceoverPreview({
     setTickFlag((t) => t + 1);
   }
 
+  // Export the built concat MP3. Fetch to a blob so the browser saves
+  // it (cross-origin `download` attrs are ignored); fall back to opening
+  // the URL if R2 CORS blocks the GET. Filename derives from the card
+  // title so "Trimmed voiceover" and "Original voiceover" export
+  // distinctly.
+  async function download(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!previewUrl) return;
+    const slug = (title || "voiceover").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    const name = `${slug || "voiceover"}.mp3`;
+    try {
+      setDownloading(true);
+      const res = await fetch(previewUrl);
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objUrl;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objUrl);
+    } catch {
+      window.open(previewUrl, "_blank", "noopener");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   const elapsedSec = audioRef.current?.currentTime ?? 0;
   const totalSec = duration;
   const pct = totalSec > 0 ? Math.min(100, (elapsedSec / totalSec) * 100) : 0;
@@ -273,9 +307,26 @@ export function FullVoiceoverPreview({
             </p>
           )}
         </div>
-        <span className="text-[11px] font-mono tabular-nums shrink-0" style={{ color: "oklch(0.45 0 0)" }}>
-          {isLoading ? (building ? "Building preview…" : "Loading audio…") : error ? "Failed" : `${orderedCount} beats joined`}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[11px] font-mono tabular-nums" style={{ color: "oklch(0.45 0 0)" }}>
+            {isLoading ? (building ? "Building preview…" : "Loading audio…") : error ? "Failed" : `${orderedCount} beats joined`}
+          </span>
+          {/* Export the built MP3 — one button per card so the user can
+              save the trimmed and original voiceovers separately. */}
+          <button
+            onClick={download}
+            disabled={!canPlay || downloading}
+            title={`Export ${title}`}
+            aria-label={`Export ${title}`}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-opacity hover:opacity-90 disabled:opacity-40"
+            style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+          >
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="none" aria-hidden>
+              <path d="M7 1v8m0 0L4 6m3 3l3-3M2 12h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {downloading ? "Exporting…" : "Export"}
+          </button>
+        </div>
       </div>
       <div className="flex items-center gap-3">
         <button
@@ -358,14 +409,54 @@ export function FullVoiceoverPreview({
               voiceover duration instead of ending mid-narration.
               The voiceover's `ended` event still gates the bgm pause
               so it never plays past the end. */}
-          <audio ref={bgmAudioRef} src={bgmUrl} preload="auto" loop={true} />
+          <audio
+            ref={bgmAudioRef}
+            src={bgmUrl}
+            preload="auto"
+            loop={true}
+            onPlay={() => setBgmPlaying(true)}
+            onPause={() => setBgmPlaying(false)}
+          />
           <div
             className="flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5"
             onClick={(e) => e.stopPropagation()}
             style={{ background: "oklch(0.96 0 0)", border: "1px solid oklch(0.85 0 0)" }}
           >
             <div className="flex items-center gap-2 min-w-0">
-              <span aria-hidden="true" style={{ color: "oklch(0.55 0.15 145)" }}>♫</span>
+              {/* Play ONLY the background music — pauses the voiceover so
+                  the user can audition the track by itself. */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const bgm = bgmAudioRef.current;
+                  if (!bgm) return;
+                  if (bgm.paused) {
+                    const a = audioRef.current;
+                    if (a && !a.paused) { a.pause(); setPlaying(false); }
+                    bgm.volume = Math.max(0, Math.min(1, bgmVolume));
+                    void bgm.play().catch(() => {});
+                  } else {
+                    bgm.pause();
+                  }
+                }}
+                aria-label={bgmPlaying ? "Pause music" : "Play music only"}
+                title={bgmPlaying ? "Pause music" : "Play music only"}
+                className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 transition-transform hover:scale-105"
+                style={{ background: "oklch(0.72 0.25 285)", color: "#fff" }}
+              >
+                {bgmPlaying ? (
+                  <span className="flex gap-[2px]">
+                    <span className="block w-[2px] h-2 rounded-sm" style={{ background: "currentColor" }} />
+                    <span className="block w-[2px] h-2 rounded-sm" style={{ background: "currentColor" }} />
+                  </span>
+                ) : (
+                  <span
+                    className="block w-0 h-0 ml-[1px]"
+                    style={{ borderLeft: "6px solid currentColor", borderTop: "4px solid transparent", borderBottom: "4px solid transparent" }}
+                  />
+                )}
+              </button>
               <span className="text-[11px] truncate" style={{ color: "oklch(0.4 0 0)" }}
                 title={bgmName ?? "Background music"}>
                 {bgmName ?? "Background music"}

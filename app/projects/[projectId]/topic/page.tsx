@@ -142,7 +142,7 @@ export default function TopicPage({ params }: PageProps) {
             <>
               {/* Locked topic display */}
               <div className="rounded-2xl p-5 space-y-3"
-                style={{ background: "var(--bg-panel)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
                     Selected Topic

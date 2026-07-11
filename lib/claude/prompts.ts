@@ -272,12 +272,101 @@ Mood: ${visualProfile.mood}
 Detail: ${visualProfile.detailLevel}`;
 }
 
+// Each generated image prompt is sent to the image generator ALONE —
+// with no memory of the other prompts, the script, or the style guide.
+// So any reliance on shared context makes character appearance and art
+// style drift between shots. These shared blocks force every prompt to
+// be fully self-contained: the model locks canonical descriptions once
+// (Step 0) and repeats them VERBATIM in every prompt they appear in.
+const CONSISTENCY_SHEET_BLOCK = `STEP 0 — BUILD A LOCKED CONSISTENCY SHEET (DO THIS FIRST, BEFORE ANY BEATS)
+Before writing a single image prompt, build a consistency sheet you will reuse VERBATIM:
+- RECURRING CHARACTERS: for every character who appears more than once, write ONE fixed ~25–40 word description covering age, gender, ethnicity/skin tone, build/height, hair (color, length, style), eyes, distinguishing features (scars, glasses, tattoos), and their exact default outfit (garments, colors, materials). This exact wording is that character's lock.
+- LOCATIONS: for every recurring location, write ONE fixed ~15–25 word description (architecture, era, materials, defining features).
+- STYLE TAG: write ONE locked style-tag string for the rendering mode — art style, medium, full color palette WITH hex codes where a specific color matters, and the base lighting treatment.
+Paste each locked description WORD-FOR-WORD into every prompt where that character, location, or mode appears. Paraphrasing changes the rendered face — never reword, shorten, or vary a locked description between beats.`;
+
+const SELF_CONTAINED_IMAGE_PROMPT_FIELD = `- imagePrompt: 1–2 sentences forming a COMPLETE, SELF-CONTAINED image-generation prompt — the single strongest image for this moment. The image model receives this ONE prompt with NO memory of other beats, the script, or any style guide, so everything needed must be inside it:
+    • Embed the full STYLE TAG from your consistency sheet (art style, medium, color palette with hex codes, lighting) — never assume a shared style guide.
+    • For EVERY character in frame, paste their FULL locked physical description VERBATIM (age, gender, ethnicity/skin tone, build, hair, eyes, distinguishing features, exact outfit) — every single time they appear, even if they were in the previous beat.
+    • State the full location/environment plus the specific action and framing for this shot.
+  Visualize the narration literally where possible; for abstract ideas use a concrete visual metaphor.`;
+
+const SELF_CONTAINED_QUALITY_RULES = `- SELF-CONTAINED ONLY — never reference other beats or prior context. BAN "the same man/woman", "as before", "as previously described", "continuing from", "the aforementioned", "returns/reappears", and any pronoun (he/she/they/it) whose subject isn't fully described earlier in THIS prompt. If a character or place recurs, RE-STATE its full locked description.
+- Consistency comes from REPEATING the locked descriptions verbatim, not from carrying context forward — identical inputs must yield identical renders.`;
+
+// When a whole-script consistency sheet has been generated up front, we
+// inject it verbatim so every chunk reuses identical descriptions (true
+// cross-chunk consistency). Without one, fall back to having the model
+// build its own — still self-contained, but that sheet only spans the
+// current chunk.
+function consistencyBlock(sheet?: string): string {
+  const trimmed = sheet?.trim();
+  if (!trimmed) return CONSISTENCY_SHEET_BLOCK;
+  return `LOCKED CONSISTENCY SHEET — reuse these descriptions VERBATIM (built once for the WHOLE script)
+${trimmed}
+
+When any listed character or location appears in a beat, paste its description WORD-FOR-WORD into that prompt, and apply the STYLE TAG to every prompt. Never reword, shorten, or vary a locked description — paraphrasing changes the rendered face. If something isn't listed, describe it fully and keep it consistent yourself.`;
+}
+
+// One-shot prompt that produces the whole-script consistency sheet. The
+// route runs this once (full script + visual style) BEFORE chunking, so
+// every chunk reuses identical character/location/style wording instead
+// of each chunk inventing its own.
+export function buildConsistencySheetPrompt(script: string, visualProfile: VisualProfileOutput): string {
+  return `Build a LOCKED CONSISTENCY SHEET for an AI image pipeline. Every shot of the video below is drawn by an image model with NO memory of the other shots, so one canonical description of each recurring character, location, and the rendering style must be written ONCE here and reused verbatim in every prompt.
+
+Read the FULL script and the visual style, then output plain text with exactly these sections:
+
+RECURRING CHARACTERS
+For every character who appears more than once, one entry: "<name or label>: <~25–40 word description>" covering age, gender, ethnicity/skin tone, build/height, hair (color, length, style), eyes, distinguishing features (scars, glasses, tattoos), and exact default outfit (garments, colors, materials).
+
+RECURRING LOCATIONS
+For every recurring location, one entry: "<name>: <~15–25 word description>" (architecture, era, materials, defining features).
+
+STYLE TAG
+One entry: the locked rendering style — art style, medium, full color palette WITH hex codes where a specific color matters, and base lighting.
+
+RULES
+- Base everything on the script and the visual style below; invent specifics only where the script is silent, keeping them plausible and internally consistent.
+- Include only characters/locations that RECUR; skip one-off background figures.
+- Be concrete so the identical words always render the identical subject.
+- Output ONLY the sheet text — no preamble, no commentary, no markdown beyond the three section labels above.
+
+VISUAL STYLE
+${renderVisualStyleBlock(visualProfile)}
+
+FULL SCRIPT
+${script}`;
+}
+
+// Vision prompt: given a user-uploaded image for a beat, derive both an
+// image prompt (that would recreate it) and a video motion prompt (to
+// animate it). Used when a user manually uploads a beat image so the
+// beat's prompts match the actual picture instead of the stale
+// script-derived text. The image itself is attached as a separate
+// content block by the caller.
+export function buildPromptsFromImagePrompt(visualProfile: VisualProfileOutput | null): string {
+  return `The attached image is the source frame for ONE beat of a video. Study it, then produce TWO prompts describing THIS image.
+
+1) imagePrompt — a COMPLETE, SELF-CONTAINED text-to-image prompt that would recreate this exact image. Include:
+   - Every subject in frame. For people: age, gender, ethnicity/skin tone, build, hair (color/length/style), eyes, distinguishing features, and exact outfit (garments, colors).
+   - The setting/environment and the composition/framing.
+   - The art style, medium, lighting, and color palette (with hex codes where a specific color matters).
+   The image model has NO other context, so everything must be inside this one prompt — never say "the same", "as before", or use pronouns without an in-prompt antecedent.
+
+2) videoPrompt — 1–2 sentences of camera movement + action to animate THIS image for a short image-to-video clip (e.g. "slow push-in as dust drifts across the frame"). Stay true to the image's subject, environment, and lighting; describe motion only, not a new scene.
+${visualProfile ? `\nMatch this channel's visual style where the image is consistent with it:\nVISUAL STYLE\n${renderVisualStyleBlock(visualProfile)}\n` : ""}
+Call the save_prompts tool with imagePrompt and videoPrompt. Do not write anything outside the tool call.`;
+}
+
 // Cinematic mode: fewer, longer-held shots; the model is instructed
 // to prefer sustained camera moves over cuts. See the general variant
 // in buildImagePromptsCached for the standard "1 beat per sentence"
 // rubric.
-function buildImagePromptsCachedCinematic(visualProfile: VisualProfileOutput): string {
+function buildImagePromptsCachedCinematic(visualProfile: VisualProfileOutput, consistencySheet?: string): string {
   return `Identify every VISUAL BEAT in the SCRIPT CHUNK that follows this message and generate one image prompt for each.
+
+${consistencyBlock(consistencySheet)}
 
 WHAT COUNTS AS A VISUAL BEAT
 A visual beat is ONE CONTINUOUS SHOT the viewer watches — not one fact or one sentence. Split by what the CAMERA sees, not by grammar. A new beat begins ONLY when the shot must change:
@@ -313,14 +402,14 @@ ${renderVisualStyleBlock(visualProfile)}
 
 PER-BEAT FIELDS
 - scriptSegment: the exact words from the script for this beat (typically 20–35 words; may be shorter only for deliberate punch cuts). Must be a verbatim substring of the chunk AND must NOT overlap with adjacent beats — each beat picks up exactly where the previous beat's last word ended. Concatenating every scriptSegment in order, separated by single spaces, must reproduce the chunk verbatim. Do not repeat phrases at beat boundaries.
-- imagePrompt: 1–2 cinematic sentences. Visualize the emotional core of the moment — the single strongest image that can hold the screen for the full duration of the segment. For abstract concepts, use concrete visual metaphors. Apply the visual style above as direct AI-image-generator instructions. Be specific (subject, action, environment, framing).
+${SELF_CONTAINED_IMAGE_PROMPT_FIELD}
 - camera: single short phrase, favoring sustained moves for held shots (e.g. "slow push-in on face", "lingering static wide", "slow lateral pan", "gradual pull-back reveal")
 - lighting: single short phrase (e.g. "warm golden rim light", "cold blue moonlight")
 - mood: single short phrase (e.g. "tense, urgent", "quiet, reverent")
 - action: single short phrase describing what unfolds WITHIN the held shot, including emotional shifts (e.g. "subject slowly lowers their head", "fire dims as the group falls silent")
 
 QUALITY
-- Maintain continuity between neighboring beats — characters, locations, lighting, and props carry forward unless the narration introduces a change.
+${SELF_CONTAINED_QUALITY_RULES}
 - Historical sections: historically accurate environments, clothing, tools, architecture, lighting — no anachronisms.
 - Every image must be strong enough to hold the screen for 6–10 seconds. Prioritize composition, emotion, and atmosphere over informational density.
 
@@ -346,9 +435,11 @@ Number beats sequentially starting from 1, with no gaps. Call the save_image_pro
 // ephemeral cache within a run (all chunks share the same style),
 // but a style change between runs is a cache miss by design — the
 // prefix genuinely differs.
-export function buildImagePromptsCached(visualProfile: VisualProfileOutput, promptStyle: PromptStyle = "general"): string {
-  if (promptStyle === "cinematic") return buildImagePromptsCachedCinematic(visualProfile);
+export function buildImagePromptsCached(visualProfile: VisualProfileOutput, promptStyle: PromptStyle = "general", consistencySheet?: string): string {
+  if (promptStyle === "cinematic") return buildImagePromptsCachedCinematic(visualProfile, consistencySheet);
   return `Identify every VISUAL BEAT in the SCRIPT CHUNK that follows this message and generate one image prompt for each.
+
+${consistencyBlock(consistencySheet)}
 
 WHAT COUNTS AS A VISUAL BEAT
 A visual beat is any individual narration unit that introduces a NEW:
@@ -376,14 +467,14 @@ ${renderVisualStyleBlock(visualProfile)}
 
 PER-BEAT FIELDS
 - scriptSegment: the exact words from the script for this beat (typically 8–20 words). Must be a verbatim substring of the chunk AND must NOT overlap with adjacent beats — each beat picks up exactly where the previous beat's last word ended. Concatenating every scriptSegment in order, separated by single spaces, must reproduce the chunk verbatim. Do not repeat phrases at beat boundaries.
-- imagePrompt: 1–2 cinematic sentences. Visualize the narration LITERALLY whenever possible. For abstract concepts, use concrete visual metaphors. Apply the visual style above as direct AI-image-generator instructions. Be specific (subject, action, environment, framing).
+${SELF_CONTAINED_IMAGE_PROMPT_FIELD}
 - camera: single short phrase (e.g. "tight close-up", "low-angle wide", "overhead aerial")
 - lighting: single short phrase (e.g. "warm golden rim light", "cold blue moonlight")
 - mood: single short phrase (e.g. "tense, urgent", "quiet, reverent")
 - action: single short phrase (e.g. "subject leans forward", "dust settles after the strike")
 
 QUALITY
-- Maintain continuity between neighboring beats — characters, locations, lighting, and props carry forward unless the narration introduces a change.
+${SELF_CONTAINED_QUALITY_RULES}
 - Historical sections: historically accurate environments, clothing, tools, architecture, lighting — no anachronisms.
 - Educational sections: visuals must help the viewer UNDERSTAND the narration, not just decorate it.
 
@@ -405,8 +496,11 @@ export function buildImagePromptsPrompt(
   visualProfile: VisualProfileOutput,
   startBeat: number = 1,
   promptStyle: PromptStyle = "general",
+  consistencySheet?: string,
 ): string {
   return `Identify every VISUAL BEAT in this script chunk and generate one image prompt for each.
+
+${consistencyBlock(consistencySheet)}
 
 WHAT COUNTS AS A VISUAL BEAT
 A visual beat is any individual narration unit that introduces a NEW:
@@ -437,14 +531,14 @@ ${renderVisualStyleBlock(visualProfile)}
 ${promptStyle === "cinematic" ? "\n(See cinematic beat-splitting rules used by buildImagePromptsCached — this synchronous variant is dead code kept for signature parity.)\n" : ""}
 PER-BEAT FIELDS
 - scriptSegment: the exact words from the script for this beat (typically 8–20 words). Must be a verbatim substring of the chunk above AND must NOT overlap with adjacent beats — each beat picks up exactly where the previous beat's last word ended. Concatenating every scriptSegment in order, separated by single spaces, must reproduce the chunk verbatim. Do not repeat phrases at beat boundaries.
-- imagePrompt: 1–2 cinematic sentences. Visualize the narration LITERALLY whenever possible. For abstract concepts, use concrete visual metaphors. Apply the visual style above as direct AI-image-generator instructions. Be specific (subject, action, environment, framing).
+${SELF_CONTAINED_IMAGE_PROMPT_FIELD}
 - camera: single short phrase (e.g. "tight close-up", "low-angle wide", "overhead aerial")
 - lighting: single short phrase (e.g. "warm golden rim light", "cold blue moonlight")
 - mood: single short phrase (e.g. "tense, urgent", "quiet, reverent")
 - action: single short phrase (e.g. "subject leans forward", "dust settles after the strike")
 
 QUALITY
-- Maintain continuity between neighboring beats — characters, locations, lighting, and props carry forward unless the narration introduces a change.
+${SELF_CONTAINED_QUALITY_RULES}
 - Historical sections: historically accurate environments, clothing, tools, architecture, lighting — no anachronisms.
 - Educational sections: visuals must help the viewer UNDERSTAND the narration, not just decorate it.
 
