@@ -947,7 +947,7 @@ export default function ChannelPage({ params }: PageProps) {
           {/* Channel info card (after fetch) */}
           {channelInfo && (
             <div className="rounded-2xl p-6 space-y-4"
-              style={{ background: "var(--bg-panel)", border: "1px solid oklch(0.72 0.25 285 / 0.15)" }}>
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <h2 className="font-semibold truncate">{channelInfo.channelName}</h2>
