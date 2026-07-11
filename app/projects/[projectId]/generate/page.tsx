@@ -1631,8 +1631,13 @@ export default function GeneratePage({ params }: PageProps) {
       const eligible = beats.filter((b) => {
         if (!b.videoPrompt) return false;
         if (!b.imageUrl) return false;
-        if (b.videoUrl) return false;
+        // Retry-failed must include beats that failed but still carry a
+        // stale video_url from a prior run (e.g. a regen that timed out
+        // and kept its old clip) — the videoUrl check below would wrongly
+        // skip those and the retry would submit nothing. "all" still
+        // skips beats that already have a clip so we don't wipe a good url.
         if (mode === "failed") return b.videoStatus === "failed";
+        if (b.videoUrl) return false;
         return true;
       });
       if (eligible.length === 0) return;
@@ -1733,7 +1738,7 @@ export default function GeneratePage({ params }: PageProps) {
             Without subgrid, extra content on one side (e.g. a taller
             aspect list, or a resolution section that only one panel
             has) would push the sections below it out of alignment. */}
-        <div className="px-5 py-4 sm:p-8 grid grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto] gap-6">
+        <div className="px-5 py-4 sm:p-8 mb-[84px] grid grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto] gap-6">
           {/* Image Gen Panel */}
           <div className="rounded-2xl overflow-hidden flex flex-col lg:grid lg:grid-rows-subgrid lg:row-span-3"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>

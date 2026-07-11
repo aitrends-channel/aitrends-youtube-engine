@@ -214,7 +214,7 @@ function VisualProfileCard({
 
   return (
     <div className="rounded-2xl overflow-hidden"
-      style={{ background: "var(--bg-panel)", border: "1px solid oklch(0.55 0.15 145 / 0.25)", marginBottom: "60px" }}>
+      style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", marginBottom: "60px" }}>
       <div className="px-5 py-4 flex items-center justify-between gap-2"
         style={{ borderBottom: "1px solid var(--bd-6)", background: "oklch(0.55 0.15 145 / 0.06)" }}>
         <div className="flex items-center gap-2">
@@ -635,7 +635,7 @@ export default function VisualsPage({ params }: PageProps) {
             <div className="space-y-5">
               {/* Fetch button */}
               <div className="rounded-2xl p-5"
-                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+                style={{ background: "var(--bg-panel)" }}>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div>
                     <p className="font-semibold text-sm">Auto-capture from Channel Videos</p>

@@ -1365,8 +1365,9 @@ export default function PromptsPage({ params }: PageProps) {
             Back + ThemeToggle + Profile cluster in WizardNav. md:pt-16
             drops the first card below that cluster's vertical band so
             they don't visually collide near the top edge. */}
-        <div className="sm:px-8 md:pr-44 py-4 sm:py-5 space-y-3"
-          style={{ borderBottom: hasImageBeats ? "1px solid var(--bd-6)" : "none" }}>
+        <div className="mb-4">
+        <div className="rounded-2xl px-5 sm:px-8 py-4 sm:py-5 space-y-3"
+          style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
           {beatsStale && (
             <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
               style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "oklch(0.85 0.12 70)" }}>
@@ -1450,41 +1451,48 @@ export default function PromptsPage({ params }: PageProps) {
             onGenerate={requestRunVideoStep}
           />
         </div>
+        </div>
 
         {/* Tabs + content */}
         {hasImageBeats && (
-          <>
-            <div className="sm:px-8 pt-4 flex gap-1"
-              style={{ borderBottom: "1px solid var(--bd-6)" }}>
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className="px-4 py-2 text-xs font-medium rounded-t-lg transition-all"
-                  style={activeTab === tab.id ? {
-                    background: "oklch(0.72 0.25 285 / 0.08)",
-                    color: "oklch(0.72 0.25 285)",
-                    borderBottom: "2px solid oklch(0.72 0.25 285)",
-                  } : {
-                    color: "var(--c-45)",
-                    borderBottom: "2px solid transparent",
-                  }}
-                >
-                  {tab.label}
-                  {tab.count > 0 && (
-                    <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-xs"
-                      style={{
-                        background: activeTab === tab.id ? "oklch(0.72 0.25 285 / 0.15)" : "var(--bg-progress)",
-                        color: activeTab === tab.id ? "oklch(0.72 0.25 285)" : "var(--c-45)",
-                      }}>
-                      {tab.count}
-                    </span>
-                  )}
-                </button>
-              ))}
+          <div className="pb-24">
+          <div className="rounded-2xl overflow-hidden"
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+            <div className="mx-5 sm:mx-8 mt-4 rounded-xl p-1 flex gap-1 self-start w-fit"
+              style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
+              {tabs.map((tab) => {
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className="px-3 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5"
+                    style={active ? {
+                      background: "oklch(0.72 0.25 285 / 0.15)",
+                      border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                      color: "oklch(0.88 0.12 285)",
+                    } : {
+                      background: "transparent",
+                      border: "1px solid transparent",
+                      color: "var(--c-55)",
+                    }}
+                  >
+                    {tab.label}
+                    {tab.count > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] tabular-nums"
+                        style={{
+                          background: active ? "oklch(0.72 0.25 285 / 0.2)" : "var(--bg-panel)",
+                          color: active ? "oklch(0.88 0.12 285)" : "var(--c-45)",
+                        }}>
+                        {tab.count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="sm:px-8 pt-6 pb-24 space-y-3">
+            <div className="px-5 sm:px-8 pt-6 pb-6 space-y-3">
               {activeTab === "beats" && beats.map((beat) => (
                 <BeatCard key={beat.beatNumber} beat={beat} projectId={projectId} onSaved={mutate} />
               ))}
@@ -1518,7 +1526,8 @@ export default function PromptsPage({ params }: PageProps) {
                 )
               )}
             </div>
-          </>
+          </div>
+          </div>
         )}
 
         {/* Empty state when nothing generated yet */}
