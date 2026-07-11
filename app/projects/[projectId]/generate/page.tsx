@@ -788,13 +788,35 @@ export default function GeneratePage({ params }: PageProps) {
       if (!setRes.ok) throw new Error(sd.error ?? "Failed to save the uploaded asset");
 
       await mutate();
-      toast.success(`Beat ${beatNumber} ${type} uploaded`);
       // If this upload was launched from the open preview, close it so the
       // freshly-uploaded asset (mutate has landed) is what the tile shows.
       if (previewBeat && previewBeat.beat.beatNumber === beatNumber) {
         setPreviewEditing(false);
         setPreviewBeat(null);
         setPreviewAspect(null);
+      }
+      if (type === "image") {
+        // Derive this beat's image + video prompts FROM the uploaded
+        // image (Claude vision) so the prompts match the picture instead
+        // of the stale script-derived text. Best-effort — the upload
+        // already succeeded; a prompt-gen failure just leaves the old
+        // prompts in place.
+        const genToastId = toast.loading(`Analyzing beat ${beatNumber}'s image…`);
+        try {
+          const pr = await fetch(`/api/generate/prompts-from-image`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId, beatNumber, imageUrl: publicUrl }),
+          });
+          const pd = await pr.json().catch(() => ({})) as { ok?: boolean; error?: string };
+          if (!pr.ok) throw new Error(pd.error ?? "Prompt generation failed");
+          await mutate();
+          toast.success(`Beat ${beatNumber} image uploaded — prompts updated`, { id: genToastId });
+        } catch (e) {
+          toast.error(`Beat ${beatNumber} image uploaded, but prompt generation failed — ${e instanceof Error ? e.message : "try again"}.`, { id: genToastId });
+        }
+      } else {
+        toast.success(`Beat ${beatNumber} ${type} uploaded`);
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Upload failed");
