@@ -735,29 +735,45 @@ export default function GeneratePage({ params }: PageProps) {
     const { beatNumber, type } = pending;
     setUploadingBeat(beatNumber);
     try {
-      // 1) Presigned PUT straight to R2 (bypasses the route body limit —
-      //    important for video files).
-      const presignRes = await fetch(`/api/upload/presign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectId,
-          folder: type === "image" ? "beat-uploads/images" : "beat-uploads/videos",
-          filename: file.name,
-          contentType: file.type,
-        }),
-      });
-      const pd = await presignRes.json().catch(() => ({})) as { uploadUrl?: string; publicUrl?: string; error?: string };
-      if (!presignRes.ok || !pd.uploadUrl || !pd.publicUrl) throw new Error(pd.error ?? "Could not prepare the upload");
+      let publicUrl: string;
+      if (type === "image") {
+        // Images go through a same-origin server upload (no browser→R2
+        // PUT), so a missing R2 CORS policy can't break it with "Failed
+        // to fetch". Images are small enough for the platform body cap.
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("projectId", projectId);
+        fd.append("folder", "beat-uploads/images");
+        const upRes = await fetch(`/api/upload/direct`, { method: "POST", body: fd });
+        const ud = await upRes.json().catch(() => ({})) as { url?: string; error?: string };
+        if (!upRes.ok || !ud.url) throw new Error(ud.error ?? "Could not upload the image");
+        publicUrl = ud.url;
+      } else {
+        // Large video files use a presigned direct-PUT to R2 to bypass
+        // the platform request-body cap (requires bucket CORS).
+        const presignRes = await fetch(`/api/upload/presign`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId,
+            folder: "beat-uploads/videos",
+            filename: file.name,
+            contentType: file.type,
+          }),
+        });
+        const pd = await presignRes.json().catch(() => ({})) as { uploadUrl?: string; publicUrl?: string; error?: string };
+        if (!presignRes.ok || !pd.uploadUrl || !pd.publicUrl) throw new Error(pd.error ?? "Could not prepare the upload");
 
-      const putRes = await fetch(pd.uploadUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
-      if (!putRes.ok) throw new Error(`Upload to storage failed (HTTP ${putRes.status})`);
+        const putRes = await fetch(pd.uploadUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
+        if (!putRes.ok) throw new Error(`Upload to storage failed (HTTP ${putRes.status})`);
+        publicUrl = pd.publicUrl;
+      }
 
-      // 2) Point the beat row at the uploaded asset.
+      // Point the beat row at the uploaded asset.
       const setRes = await fetch(`/api/projects/${projectId}/beats/set-asset`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ beatNumber, type, url: pd.publicUrl }),
+        body: JSON.stringify({ beatNumber, type, url: publicUrl }),
       });
       const sd = await setRes.json().catch(() => ({})) as { ok?: boolean; error?: string };
       if (!setRes.ok) throw new Error(sd.error ?? "Failed to save the uploaded asset");
