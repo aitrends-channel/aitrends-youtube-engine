@@ -339,6 +339,26 @@ FULL SCRIPT
 ${script}`;
 }
 
+// Vision prompt: given a user-uploaded image for a beat, derive both an
+// image prompt (that would recreate it) and a video motion prompt (to
+// animate it). Used when a user manually uploads a beat image so the
+// beat's prompts match the actual picture instead of the stale
+// script-derived text. The image itself is attached as a separate
+// content block by the caller.
+export function buildPromptsFromImagePrompt(visualProfile: VisualProfileOutput | null): string {
+  return `The attached image is the source frame for ONE beat of a video. Study it, then produce TWO prompts describing THIS image.
+
+1) imagePrompt — a COMPLETE, SELF-CONTAINED text-to-image prompt that would recreate this exact image. Include:
+   - Every subject in frame. For people: age, gender, ethnicity/skin tone, build, hair (color/length/style), eyes, distinguishing features, and exact outfit (garments, colors).
+   - The setting/environment and the composition/framing.
+   - The art style, medium, lighting, and color palette (with hex codes where a specific color matters).
+   The image model has NO other context, so everything must be inside this one prompt — never say "the same", "as before", or use pronouns without an in-prompt antecedent.
+
+2) videoPrompt — 1–2 sentences of camera movement + action to animate THIS image for a short image-to-video clip (e.g. "slow push-in as dust drifts across the frame"). Stay true to the image's subject, environment, and lighting; describe motion only, not a new scene.
+${visualProfile ? `\nMatch this channel's visual style where the image is consistent with it:\nVISUAL STYLE\n${renderVisualStyleBlock(visualProfile)}\n` : ""}
+Call the save_prompts tool with imagePrompt and videoPrompt. Do not write anything outside the tool call.`;
+}
+
 // Cinematic mode: fewer, longer-held shots; the model is instructed
 // to prefer sustained camera moves over cuts. See the general variant
 // in buildImagePromptsCached for the standard "1 beat per sentence"
