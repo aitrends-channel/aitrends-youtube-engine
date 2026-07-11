@@ -294,14 +294,59 @@ const SELF_CONTAINED_IMAGE_PROMPT_FIELD = `- imagePrompt: 1–2 sentences formin
 const SELF_CONTAINED_QUALITY_RULES = `- SELF-CONTAINED ONLY — never reference other beats or prior context. BAN "the same man/woman", "as before", "as previously described", "continuing from", "the aforementioned", "returns/reappears", and any pronoun (he/she/they/it) whose subject isn't fully described earlier in THIS prompt. If a character or place recurs, RE-STATE its full locked description.
 - Consistency comes from REPEATING the locked descriptions verbatim, not from carrying context forward — identical inputs must yield identical renders.`;
 
+// When a whole-script consistency sheet has been generated up front, we
+// inject it verbatim so every chunk reuses identical descriptions (true
+// cross-chunk consistency). Without one, fall back to having the model
+// build its own — still self-contained, but that sheet only spans the
+// current chunk.
+function consistencyBlock(sheet?: string): string {
+  const trimmed = sheet?.trim();
+  if (!trimmed) return CONSISTENCY_SHEET_BLOCK;
+  return `LOCKED CONSISTENCY SHEET — reuse these descriptions VERBATIM (built once for the WHOLE script)
+${trimmed}
+
+When any listed character or location appears in a beat, paste its description WORD-FOR-WORD into that prompt, and apply the STYLE TAG to every prompt. Never reword, shorten, or vary a locked description — paraphrasing changes the rendered face. If something isn't listed, describe it fully and keep it consistent yourself.`;
+}
+
+// One-shot prompt that produces the whole-script consistency sheet. The
+// route runs this once (full script + visual style) BEFORE chunking, so
+// every chunk reuses identical character/location/style wording instead
+// of each chunk inventing its own.
+export function buildConsistencySheetPrompt(script: string, visualProfile: VisualProfileOutput): string {
+  return `Build a LOCKED CONSISTENCY SHEET for an AI image pipeline. Every shot of the video below is drawn by an image model with NO memory of the other shots, so one canonical description of each recurring character, location, and the rendering style must be written ONCE here and reused verbatim in every prompt.
+
+Read the FULL script and the visual style, then output plain text with exactly these sections:
+
+RECURRING CHARACTERS
+For every character who appears more than once, one entry: "<name or label>: <~25–40 word description>" covering age, gender, ethnicity/skin tone, build/height, hair (color, length, style), eyes, distinguishing features (scars, glasses, tattoos), and exact default outfit (garments, colors, materials).
+
+RECURRING LOCATIONS
+For every recurring location, one entry: "<name>: <~15–25 word description>" (architecture, era, materials, defining features).
+
+STYLE TAG
+One entry: the locked rendering style — art style, medium, full color palette WITH hex codes where a specific color matters, and base lighting.
+
+RULES
+- Base everything on the script and the visual style below; invent specifics only where the script is silent, keeping them plausible and internally consistent.
+- Include only characters/locations that RECUR; skip one-off background figures.
+- Be concrete so the identical words always render the identical subject.
+- Output ONLY the sheet text — no preamble, no commentary, no markdown beyond the three section labels above.
+
+VISUAL STYLE
+${renderVisualStyleBlock(visualProfile)}
+
+FULL SCRIPT
+${script}`;
+}
+
 // Cinematic mode: fewer, longer-held shots; the model is instructed
 // to prefer sustained camera moves over cuts. See the general variant
 // in buildImagePromptsCached for the standard "1 beat per sentence"
 // rubric.
-function buildImagePromptsCachedCinematic(visualProfile: VisualProfileOutput): string {
+function buildImagePromptsCachedCinematic(visualProfile: VisualProfileOutput, consistencySheet?: string): string {
   return `Identify every VISUAL BEAT in the SCRIPT CHUNK that follows this message and generate one image prompt for each.
 
-${CONSISTENCY_SHEET_BLOCK}
+${consistencyBlock(consistencySheet)}
 
 WHAT COUNTS AS A VISUAL BEAT
 A visual beat is ONE CONTINUOUS SHOT the viewer watches — not one fact or one sentence. Split by what the CAMERA sees, not by grammar. A new beat begins ONLY when the shot must change:
@@ -370,11 +415,11 @@ Number beats sequentially starting from 1, with no gaps. Call the save_image_pro
 // ephemeral cache within a run (all chunks share the same style),
 // but a style change between runs is a cache miss by design — the
 // prefix genuinely differs.
-export function buildImagePromptsCached(visualProfile: VisualProfileOutput, promptStyle: PromptStyle = "general"): string {
-  if (promptStyle === "cinematic") return buildImagePromptsCachedCinematic(visualProfile);
+export function buildImagePromptsCached(visualProfile: VisualProfileOutput, promptStyle: PromptStyle = "general", consistencySheet?: string): string {
+  if (promptStyle === "cinematic") return buildImagePromptsCachedCinematic(visualProfile, consistencySheet);
   return `Identify every VISUAL BEAT in the SCRIPT CHUNK that follows this message and generate one image prompt for each.
 
-${CONSISTENCY_SHEET_BLOCK}
+${consistencyBlock(consistencySheet)}
 
 WHAT COUNTS AS A VISUAL BEAT
 A visual beat is any individual narration unit that introduces a NEW:
@@ -431,10 +476,11 @@ export function buildImagePromptsPrompt(
   visualProfile: VisualProfileOutput,
   startBeat: number = 1,
   promptStyle: PromptStyle = "general",
+  consistencySheet?: string,
 ): string {
   return `Identify every VISUAL BEAT in this script chunk and generate one image prompt for each.
 
-${CONSISTENCY_SHEET_BLOCK}
+${consistencyBlock(consistencySheet)}
 
 WHAT COUNTS AS A VISUAL BEAT
 A visual beat is any individual narration unit that introduces a NEW:
