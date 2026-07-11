@@ -3,10 +3,13 @@
 import { useState, use, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
-import { FreeResourcesButton } from "@/components/wizard/FreeResourcesButton";
+// FreeResourcesButton is temporarily hidden — see comment near
+// StepBalanceCard below. Keep the import commented so ESLint's
+// no-unused-imports rule stays happy while the JSX usage is out.
+// import { FreeResourcesButton } from "@/components/wizard/FreeResourcesButton";
 import { useKieActivityStore } from "@/store/kieActivityStore";
 import { useProject } from "@/hooks/useProject";
-import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp, Eye, X } from "lucide-react";
+import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp, Eye, X, Upload } from "lucide-react";
 import { ImageSparkle } from "@/components/icons/ImageSparkle";
 import { StepCostCard } from "@/components/StepCostCard";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
@@ -29,11 +32,15 @@ const fetcher = (url: string) =>
 
 function isCreditError(raw: string | undefined | null): boolean {
   const msg = (raw ?? "").toLowerCase();
+  // Keep the matcher tight — "quota exceeded" was catching KIE's
+  // rate-limit errors (per-minute / per-day model caps) and telling
+  // users their wallet was empty when it wasn't. Balance issues are
+  // "insufficient credits/balance/fund", "out of credit", "no credit",
+  // or the server route surfacing an HTTP 402 (translated to a 402
+  // response the client detects separately).
   return msg.includes("credits insufficient")
     || msg.includes("insufficient credits")
-    || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit")))
-    || msg.includes("quota_exceeded")
-    || msg.includes("quota exceeded")
+    || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit") || msg.includes("fund")))
     || msg.includes("credits remaining")
     || msg.includes("credit balance");
 }
@@ -55,10 +62,12 @@ function isModelTerminalError(raw: string | undefined | null): boolean {
 
 function friendlyError(raw: string | undefined | null): string {
   const msg = (raw ?? "").toLowerCase();
-  if (msg.includes("credits insufficient") || msg.includes("insufficient credits") || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit"))))
+  if (msg.includes("credits insufficient") || msg.includes("insufficient credits") || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit") || msg.includes("fund"))))
     return "Insufficient KIE credits — top up your account at kie.ai";
-  if (msg.includes("quota_exceeded") || msg.includes("quota exceeded") || msg.includes("credits remaining") || msg.includes("credit balance"))
+  if (msg.includes("credits remaining") || msg.includes("credit balance"))
     return "Insufficient KIE credits — top up your account at kie.ai";
+  if (msg.includes("quota_exceeded") || msg.includes("quota exceeded"))
+    return "KIE rate limit reached — wait a minute and try again, or switch to a different model";
   if (msg.includes("invalid_api_key") || msg.includes("invalid api key") || msg.includes("unauthorized") || (msg.includes("api key") && msg.includes("invalid")))
     return "API key is invalid — go to Settings to update it";
   if (msg.includes("api key") && (msg.includes("missing") || msg.includes("not set") || msg.includes("required")))
@@ -73,6 +82,18 @@ function friendlyError(raw: string | undefined | null): string {
     return "Still generating — this can take longer than usual on some models. Refresh the page to check status; the job will finish on KIE in the background.";
   if (msg.includes("no task id") || msg.includes("no taskid"))
     return "Failed to queue task — the model may be unavailable, try another";
+  // KIE / Veo safety filters flag anything the model interprets as a
+  // reference to a real person, brand, copyrighted character, or
+  // sensitive content. It's a per-beat problem — the same model with
+  // a different prompt usually works — so we route the user to
+  // rephrasing rather than to changing the model.
+  if (msg.includes("safety filter") || msg.includes("safety_filter")
+    || msg.includes("prominent public figure")
+    || msg.includes("content policy") || msg.includes("policy violation")
+    || msg.includes("blocked by moderation") || msg.includes("moderated"))
+    return "Content policy block — the prompt references something the model refuses to render (real person, brand, or restricted topic). Rephrase this beat's prompt in Prompt Studio, then retry.";
+  if (msg.includes("nsfw") || msg.includes("unsafe content") || msg.includes("adult content"))
+    return "Content policy block — the prompt was flagged as unsafe. Rephrase this beat's prompt in Prompt Studio, then retry.";
   if (msg.includes("no url") || msg.includes("no image url") || msg.includes("completed but no url"))
     return "Image was generated but could not be retrieved — try again";
   if (msg.includes("rate limit") || msg.includes("too many requests"))
@@ -128,7 +149,7 @@ function VoiceOption({ model, selected, onSelect, isPlaying, onPlayToggle }: {
         color: "var(--c-90)",
       } : {
         background: "var(--bg-input)",
-        border: "1px solid var(--bd-7)",
+        border: "1px solid var(--bd-card)",
         color: "var(--c-60)",
       }}
     >
@@ -228,7 +249,7 @@ function VoiceoverTrackMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         className="w-7 h-7 rounded-lg flex items-center justify-center text-base leading-none hover:opacity-90 transition-opacity"
-        style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+        style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
       >
         ⋯
       </button>
@@ -236,7 +257,7 @@ function VoiceoverTrackMenu({
         <div
           role="menu"
           className="absolute right-0 top-[calc(100%+4px)] z-20 min-w-[160px] rounded-xl p-1 shadow-lg"
-          style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}
+          style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}
         >
           <a
             href={url}
@@ -273,11 +294,13 @@ function VoiceoverTrackMenu({
 // not buggy.
 function LazyVideoTile(props: React.VideoHTMLAttributes<HTMLVideoElement>) {
   const ref = useRef<HTMLVideoElement | null>(null);
+  const visibleRef = useRef(false);
   useEffect(() => {
     const el = ref.current;
     if (!el || typeof IntersectionObserver === "undefined") return;
     const io = new IntersectionObserver(
       ([entry]) => {
+        visibleRef.current = entry.isIntersecting;
         if (entry.isIntersecting) {
           // play() returns a promise that rejects on rapid mount/
           // unmount cycles or autoplay-blocked browsers. Swallow.
@@ -291,6 +314,18 @@ function LazyVideoTile(props: React.VideoHTMLAttributes<HTMLVideoElement>) {
     io.observe(el);
     return () => io.disconnect();
   }, []);
+  // Changing a <video>'s src attribute does NOT reload the media on its
+  // own — the HTML spec requires an explicit load(). Without this, a
+  // regenerated clip keeps showing the previous video because React
+  // only swaps the attribute on the already-mounted element (the DB has
+  // the new URL, but the tile never re-fetches). Reload whenever src
+  // changes, then resume playback if the tile is currently in view.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.load();
+    if (visibleRef.current) el.play().catch(() => {});
+  }, [props.src]);
   // Default to NOT autoplaying — the IO toggles play() once mounted.
   // preload="metadata" keeps the poster frame populated so the tile
   // doesn't flash empty on first paint.
@@ -339,6 +374,18 @@ export default function GeneratePage({ params }: PageProps) {
   const [selectedVideoAspectRatio, setSelectedVideoAspectRatio] = useState("16:9");
   const [selectedDuration, setSelectedDuration] = useState<string | number | null>(null);
   const [selectedVideoResolution, setSelectedVideoResolution] = useState<string | null>(null);
+  // Guarded resolution value to send with any video POST. Drops the
+  // picker's selection if it isn't in the CURRENT model's resolutions
+  // list — closes the race where a user rapid-clicks Regen between
+  // switching models and the resolution-reset effect firing, which
+  // would otherwise ship the old model's tier to the new model and
+  // KIE would silently default to the cheapest supported value.
+  const safeVideoResolution = (() => {
+    if (!selectedVideoModel || !selectedVideoResolution) return null;
+    const cfg = getVideoModelConfig(selectedVideoModel);
+    if (!cfg.resolutions?.includes(selectedVideoResolution)) return null;
+    return selectedVideoResolution;
+  })();
   const [voiceTab, setVoiceTab] = useState<"female" | "male">("female");
 
   const initialTtsSelected = useRef(false);
@@ -460,7 +507,37 @@ export default function GeneratePage({ params }: PageProps) {
   // a new submission, so we don't need a separate clear pass first — the
   // old R2 file becomes an orphan (next regen overwrites its key with a
   // fresh upload, so disk usage stays bounded).
-  const [regeneratingVideo, setRegeneratingVideo] = useState(false);
+  // Per-beat regen tracker instead of a single boolean mutex — lets
+  // the user click Regenerate on multiple beats without waiting for
+  // any one to finish. Each entry is a beat number currently mid-POST;
+  // the tile spinner and disabled state derive from set membership so
+  // only the beats being regenerated show the busy state, not the
+  // whole grid.
+  const [regeneratingBeats, setRegeneratingBeats] = useState<Set<number>>(new Set());
+  // Optimistically flip the given beats to "queued" in the SWR cache so
+  // a generate / regenerate / retry click reflects in the UI instantly,
+  // instead of waiting for the POST round-trip and the next poll tick.
+  // It also makes hasActiveGeneration() true immediately, so useProject
+  // switches to the fast GEN_MS poll right away. The subsequent mutate()
+  // (on success or failure) reconciles the cache with server truth —
+  // which reverts this if the request failed.
+  function optimisticQueueVideos(beatNumbers: Set<number>) {
+    void mutate(
+      (current?: { beats?: Beat[] } & Record<string, unknown>) => {
+        if (!current?.beats) return current;
+        return {
+          ...current,
+          beats: current.beats.map((b) =>
+            beatNumbers.has(b.beatNumber)
+              ? { ...b, videoStatus: "queued" as const, videoError: undefined }
+              : b,
+          ),
+        };
+      },
+      { revalidate: false },
+    );
+  }
+
   // Single-beat video regen — fires immediately from the per-tile
   // overlay button. The previous version routed through a confirm
   // modal; we dropped the modal so the overlay click is the action.
@@ -478,7 +555,16 @@ export default function GeneratePage({ params }: PageProps) {
       setVideoRunError("Pick a video model first.");
       return;
     }
-    setRegeneratingVideo(true);
+    // Add this beat's number to the in-flight set so only its own
+    // tile disables/spins during the POST — leaves every other tile
+    // clickable so the user can fire off more beats in parallel.
+    setRegeneratingBeats((prev) => {
+      const next = new Set(prev);
+      next.add(beat.beatNumber);
+      return next;
+    });
+    // Instant UI feedback — flip this beat to "queued" before the POST.
+    optimisticQueueVideos(new Set([beat.beatNumber]));
     try {
       const res = await fetch("/api/generate/videos", {
         method: "POST",
@@ -489,7 +575,7 @@ export default function GeneratePage({ params }: PageProps) {
           modelId: selectedVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
-          ...(selectedVideoResolution ? { resolution: selectedVideoResolution } : {}),
+          ...(safeVideoResolution ? { resolution: safeVideoResolution } : {}),
         }),
       });
       const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
@@ -500,12 +586,52 @@ export default function GeneratePage({ params }: PageProps) {
         toast.success(`Beat ${beat.beatNumber} re-queued`);
         setVideosSubmitted(true);
       }
+      // Reconcile with server truth (queued/submitting, or reverts the
+      // optimistic flip if the submit was rejected per-beat).
+      await mutate();
     } catch (err) {
       setVideoRunError(friendlyError(err instanceof Error ? err.message : null));
+      await mutate(); // revert the optimistic flip on failure
     } finally {
-      setRegeneratingVideo(false);
+      setRegeneratingBeats((prev) => {
+        const next = new Set(prev);
+        next.delete(beat.beatNumber);
+        return next;
+      });
     }
   }
+
+  // Track which beat is in the middle of a cancel request so the tile
+  // can disable its Stop button between click and DB commit — prevents
+  // a double-tap from firing two POSTs.
+  const [stoppingBeat, setStoppingBeat] = useState<number | null>(null);
+  async function stopVideoBeat(beatNumber: number) {
+    if (stoppingBeat !== null) return;
+    setStoppingBeat(beatNumber);
+    try {
+      const res = await fetch("/api/generate/videos/cancel-beat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, beatNumber }),
+      });
+      const data = await res.json().catch(() => ({})) as { cancelled?: number; error?: string };
+      if (!res.ok) throw new Error(data.error ?? `Cancel failed (HTTP ${res.status})`);
+      if ((data.cancelled ?? 0) === 0) {
+        // Beat already landed in a terminal state between the tile
+        // render and this click. Treat as success — the user got the
+        // outcome they wanted, just via a different path.
+        toast.info(`Beat ${beatNumber} already finished before it could be stopped`);
+      } else {
+        toast.success(`Beat ${beatNumber} stopped`);
+      }
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to stop beat");
+    } finally {
+      setStoppingBeat(null);
+    }
+  }
+
   async function deleteVoiceover() {
     setDeletingVoiceover(true);
     try {
@@ -550,6 +676,110 @@ export default function GeneratePage({ params }: PageProps) {
   // Read-only prompt visibility toggle ("Show prompt") — independent
   // of edit mode, which has its own editable textarea.
   const [previewShowPrompt, setPreviewShowPrompt] = useState(false);
+  // Hover prompt popup — a single, GLOBAL fixed-position card (rendered
+  // once at the page root) rather than a per-tile element, so it escapes
+  // the beat grids' overflow-y-auto clipping. Positioned from the hovered
+  // tile's viewport rect; flips above the tile when it's low in the
+  // viewport so it never runs off the bottom edge.
+  const [promptPopup, setPromptPopup] = useState<
+    { beatNumber: number; text: string; left: number; top: number; width: number; above: boolean } | null
+  >(null);
+  function showBeatPrompt(e: React.MouseEvent, beatNumber: number, text?: string | null) {
+    if (!text) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const width = Math.min(360, window.innerWidth - 16);
+    const left = Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8));
+    const above = r.bottom > window.innerHeight * 0.62;
+    setPromptPopup({ beatNumber, text, left, width, top: above ? r.top - 6 : r.bottom + 6, above });
+  }
+
+  // Generate/Upload menu for a beat that has no asset yet. Rendered as a
+  // single global fixed element (like the prompt popup) positioned over
+  // the clicked tile, so it isn't clipped by the grids' overflow.
+  const [assetMenu, setAssetMenu] = useState<{ beatNumber: number; type: "image" | "video"; actionLabel: string; left: number; top: number } | null>(null);
+  const [uploadingBeat, setUploadingBeat] = useState<number | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingUploadRef = useRef<{ beatNumber: number; type: "image" | "video" } | null>(null);
+
+  // The first menu option adapts to the beat's state: fresh → Generate,
+  // already has an asset → Regenerate, failed → Retry (paused video →
+  // Resume). Upload is always the second option.
+  function beatActionLabel(b: Beat, type: "image" | "video"): string {
+    if (type === "image") return b.imageUrl ? "Regenerate" : b.imageStatus === "failed" ? "Retry" : "Generate";
+    return b.videoUrl ? "Regenerate" : b.videoStatus === "failed" ? "Retry" : b.videoStatus === "paused" ? "Resume" : "Generate";
+  }
+  function openAssetMenu(e: React.MouseEvent, beat: Beat, type: "image" | "video") {
+    const r = e.currentTarget.getBoundingClientRect();
+    setPromptPopup(null);
+    setAssetMenu({ beatNumber: beat.beatNumber, type, actionLabel: beatActionLabel(beat, type), left: r.left + r.width / 2, top: r.top + r.height / 2 });
+  }
+
+  // Kick off a device file picker for the beat; the actual upload runs in
+  // onUploadFileChange once a file is chosen.
+  function triggerBeatUpload(beatNumber: number, type: "image" | "video") {
+    pendingUploadRef.current = { beatNumber, type };
+    setAssetMenu(null);
+    const input = uploadInputRef.current;
+    if (input) {
+      input.accept = type === "image" ? "image/*" : "video/*";
+      input.value = "";
+      input.click();
+    }
+  }
+
+  async function onUploadFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    const pending = pendingUploadRef.current;
+    pendingUploadRef.current = null;
+    if (!file || !pending) return;
+    const { beatNumber, type } = pending;
+    setUploadingBeat(beatNumber);
+    try {
+      // 1) Presigned PUT straight to R2 (bypasses the route body limit —
+      //    important for video files).
+      const presignRes = await fetch(`/api/upload/presign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          folder: type === "image" ? "beat-uploads/images" : "beat-uploads/videos",
+          filename: file.name,
+          contentType: file.type,
+        }),
+      });
+      const pd = await presignRes.json().catch(() => ({})) as { uploadUrl?: string; publicUrl?: string; error?: string };
+      if (!presignRes.ok || !pd.uploadUrl || !pd.publicUrl) throw new Error(pd.error ?? "Could not prepare the upload");
+
+      const putRes = await fetch(pd.uploadUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
+      if (!putRes.ok) throw new Error(`Upload to storage failed (HTTP ${putRes.status})`);
+
+      // 2) Point the beat row at the uploaded asset.
+      const setRes = await fetch(`/api/projects/${projectId}/beats/set-asset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ beatNumber, type, url: pd.publicUrl }),
+      });
+      const sd = await setRes.json().catch(() => ({})) as { ok?: boolean; error?: string };
+      if (!setRes.ok) throw new Error(sd.error ?? "Failed to save the uploaded asset");
+
+      await mutate();
+      toast.success(`Beat ${beatNumber} ${type} uploaded`);
+      // If this upload was launched from the open preview, close it so the
+      // freshly-uploaded asset (mutate has landed) is what the tile shows.
+      if (previewBeat && previewBeat.beat.beatNumber === beatNumber) {
+        setPreviewEditing(false);
+        setPreviewBeat(null);
+        setPreviewAspect(null);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploadingBeat(null);
+    }
+  }
+  // True while the currently-previewed beat is uploading — used to blank
+  // the preview body and show an "Uploading…" state instead.
+  const isUploadingPreview = previewBeat != null && uploadingBeat === previewBeat.beat.beatNumber;
   // Intrinsic aspect ratio (w/h) of the previewed media, read from the
   // element on load. The dialog can't hug the media off CSS alone: a
   // `fit-content` box measures the media's *intrinsic* width, not its
@@ -1380,7 +1610,7 @@ export default function GeneratePage({ params }: PageProps) {
           modelId: selectedVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
-          ...(selectedVideoResolution ? { resolution: selectedVideoResolution } : {}),
+          ...(safeVideoResolution ? { resolution: safeVideoResolution } : {}),
         }),
       });
       const data = await res.json().catch(() => ({})) as { resumed?: number; error?: string };
@@ -1415,6 +1645,9 @@ export default function GeneratePage({ params }: PageProps) {
         return true;
       });
       if (eligible.length === 0) return;
+      // Instant UI feedback — flip all eligible beats to "queued" before
+      // the POST so the badges + fast poll kick in immediately.
+      optimisticQueueVideos(new Set(eligible.map((b) => b.beatNumber)));
       const res = await fetch("/api/generate/videos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1424,7 +1657,7 @@ export default function GeneratePage({ params }: PageProps) {
           modelId: selectedVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
-          ...(selectedVideoResolution ? { resolution: selectedVideoResolution } : {}),
+          ...(safeVideoResolution ? { resolution: safeVideoResolution } : {}),
         }),
       });
       const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
@@ -1435,8 +1668,11 @@ export default function GeneratePage({ params }: PageProps) {
       if (data.failures?.length) {
         setVideoRunError(friendlyError(data.failures[0].error));
       }
+      // Reconcile the optimistic flip with server truth.
+      await mutate();
     } catch (err) {
       setVideoRunError(friendlyError(err instanceof Error ? err.message : null));
+      await mutate(); // revert the optimistic flip on failure
     } finally {
       setQueuingVideos(false);
     }
@@ -1482,7 +1718,7 @@ export default function GeneratePage({ params }: PageProps) {
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
-        <div className="shrink-0 sm:px-8 md:pr-44 py-4 sm:py-5"
+        <div className="shrink-0 px-5 sm:px-8 md:pr-44 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div>
             <h1 className="font-bold text-base sm:text-lg">Generate Assets</h1>
@@ -1492,7 +1728,9 @@ export default function GeneratePage({ params }: PageProps) {
             <div className="mt-3 flex items-center gap-2 flex-wrap">
               <StepCostCard projectId={projectId} column="generate" />
               <StepBalanceCard />
-              <FreeResourcesButton step="generate" />
+              {/* Free resources button hidden until the /free-resources
+                  page is built. Drop this back in when ready:
+                  <FreeResourcesButton step="generate" /> */}
             </div>
           </div>
         </div>
@@ -1504,10 +1742,10 @@ export default function GeneratePage({ params }: PageProps) {
             Without subgrid, extra content on one side (e.g. a taller
             aspect list, or a resolution section that only one panel
             has) would push the sections below it out of alignment. */}
-        <div className="py-4 sm:p-8 grid grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto] gap-6">
+        <div className="px-5 py-4 sm:p-8 grid grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto] gap-6">
           {/* Image Gen Panel */}
           <div className="rounded-2xl overflow-hidden flex flex-col lg:grid lg:grid-rows-subgrid lg:row-span-3"
-            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon={<ImageIcon size={18} />} title="AI Images" subtitle={`${totalBeats} images from script beats`} />
               <ModelPicker
@@ -1552,16 +1790,26 @@ export default function GeneratePage({ params }: PageProps) {
                         key={b.beatNumber}
                         className="relative aspect-video rounded-lg overflow-hidden group"
                         style={{ background: "var(--bg-progress)" }}
-                        onClick={() => {
-                          if (!b.imageUrl || clearingImages) return;
-                          openPreview(b, "image");
+                        onMouseEnter={(e) => showBeatPrompt(e, b.beatNumber, b.imagePrompt)}
+                        onMouseLeave={() => setPromptPopup(null)}
+                        onClick={(e) => {
+                          if (clearingImages || uploadingBeat === b.beatNumber) return;
+                          // Generated → open preview. Empty → Generate/Upload menu.
+                          if (b.imageUrl) openPreview(b, "image");
+                          else openAssetMenu(e, b, "image");
                         }}
                       >
+                        {uploadingBeat === b.beatNumber && (
+                          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-1" style={{ background: "oklch(0 0 0 / 0.7)" }}>
+                            <Spinner size={20} className="text-white" />
+                            <span className="text-[10px] font-medium" style={{ color: "oklch(0.95 0 0)" }}>Uploading…</span>
+                          </div>
+                        )}
                         {/* Beat number badge — top-left corner of every
                             tile so the beat is identifiable at a glance
                             regardless of image/status state. */}
                         <span
-                          className="absolute top-1.5 left-1.5 z-10 min-w-7 h-7 px-1.5 rounded-full flex items-center justify-center text-xs font-semibold tabular-nums pointer-events-none"
+                          className="absolute top-1.5 left-1.5 z-10 min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center text-[9px] font-semibold tabular-nums pointer-events-none"
                           style={{ background: "oklch(0 0 0 / 0.6)", color: "white", border: "1px solid oklch(1 0 0 / 0.15)" }}
                         >
                           {b.beatNumber}
@@ -1633,9 +1881,9 @@ export default function GeneratePage({ params }: PageProps) {
                               }
                               return (
                                 <button
-                                  onClick={(e) => { e.stopPropagation(); regenerateImage(b); }}
+                                  onClick={(e) => { e.stopPropagation(); openAssetMenu(e, b, "image"); }}
                                   disabled={!selectedImageModel || generatingImages || generatingTts}
-                                  title={generatingTts ? "Voiceover is generating — wait for it to finish" : `${label} beat ${b.beatNumber}`}
+                                  title={generatingTts ? "Voiceover is generating — wait for it to finish" : undefined}
                                   aria-label={`${label} beat ${b.beatNumber}`}
                                   className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 cursor-pointer"
                                   style={{
@@ -1771,7 +2019,7 @@ export default function GeneratePage({ params }: PageProps) {
 
           {/* Video Gen Panel */}
           <div className="rounded-2xl overflow-hidden flex flex-col lg:grid lg:grid-rows-subgrid lg:row-span-3"
-            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon={<Video size={18} />} title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
               <ModelPicker
@@ -1839,16 +2087,26 @@ export default function GeneratePage({ params }: PageProps) {
                         key={b.beatNumber}
                         className="aspect-video rounded-lg overflow-hidden flex items-center justify-center relative group"
                         style={{ background: "var(--bg-progress)" }}
-                        onClick={() => {
-                          if (!b.videoUrl) return;
-                          openPreview(b, "video");
+                        onMouseEnter={(e) => showBeatPrompt(e, b.beatNumber, b.videoPrompt)}
+                        onMouseLeave={() => setPromptPopup(null)}
+                        onClick={(e) => {
+                          if (uploadingBeat === b.beatNumber) return;
+                          // Generated → open preview. Empty → Generate/Upload menu.
+                          if (b.videoUrl) openPreview(b, "video");
+                          else openAssetMenu(e, b, "video");
                         }}
                       >
+                        {uploadingBeat === b.beatNumber && (
+                          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-1" style={{ background: "oklch(0 0 0 / 0.7)" }}>
+                            <Spinner size={20} className="text-white" />
+                            <span className="text-[10px] font-medium" style={{ color: "oklch(0.95 0 0)" }}>Uploading…</span>
+                          </div>
+                        )}
                         {/* Beat number badge — top-left corner of every
                             tile so the beat is identifiable at a glance
                             regardless of clip/status state. */}
                         <span
-                          className="absolute top-1.5 left-1.5 z-10 min-w-7 h-7 px-1.5 rounded-full flex items-center justify-center text-xs font-semibold tabular-nums pointer-events-none"
+                          className="absolute top-1.5 left-1.5 z-10 min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center text-[9px] font-semibold tabular-nums pointer-events-none"
                           style={{ background: "oklch(0 0 0 / 0.6)", color: "white", border: "1px solid oklch(1 0 0 / 0.15)" }}
                         >
                           {b.beatNumber}
@@ -1922,7 +2180,46 @@ export default function GeneratePage({ params }: PageProps) {
                             and during global active-video ops. */}
                         {(() => {
                           const inFlight = b.videoStatus === "queued" || b.videoStatus === "submitting" || b.videoStatus === "rendering";
-                          const disabled = inFlight || regeneratingVideo || queuingVideos || hasActiveVideos;
+                          // In-flight beats get a Stop affordance so the
+                          // user can cancel a single beat without waiting
+                          // for the whole batch. Once cancelled the beat
+                          // flips to "failed" with a "Cancelled by user"
+                          // reason, matching the visual language for any
+                          // other stopped beat.
+                          if (inFlight) {
+                            const stopping = stoppingBeat === b.beatNumber;
+                            return (
+                              <div className="absolute inset-0 flex items-center justify-center transition-opacity opacity-0 group-hover:opacity-100"
+                                style={{ background: "oklch(0 0 0 / 0.55)" }}>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void stopVideoBeat(b.beatNumber);
+                                  }}
+                                  disabled={stopping}
+                                  title={stopping ? "Stopping…" : `Stop beat ${b.beatNumber}`}
+                                  aria-label={`Stop beat ${b.beatNumber}`}
+                                  className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 cursor-pointer"
+                                  style={{
+                                    background: "oklch(0.7 0.2 25)",
+                                    color: "white",
+                                    boxShadow: "0 3px 12px oklch(0.7 0.2 25 / 0.5), 0 0 0 1.5px oklch(1 0 0 / 0.15)",
+                                  }}
+                                >
+                                  {stopping
+                                    ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                    : <X size={14} strokeWidth={2.6} />}
+                                </button>
+                              </div>
+                            );
+                          }
+                          // Per-beat disable so parallel manual regens are
+                          // allowed — the tile only greys out while ITS
+                          // own request is mid-flight. Bulk queue in
+                          // progress still blocks single-beat regens so
+                          // the two paths don't stomp each other during
+                          // that specific window.
+                          const disabled = queuingVideos || regeneratingBeats.has(b.beatNumber);
                           // Status-specific affordance so the icon
                           // matches the intent at a glance:
                           //   - no clip yet (no videoUrl + no status)
@@ -1957,10 +2254,13 @@ export default function GeneratePage({ params }: PageProps) {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  void regenerateVideoBeat(b.beatNumber);
+                                  // All states open the menu; its first
+                                  // option adapts (Generate/Regenerate/
+                                  // Retry/Resume) + Upload.
+                                  openAssetMenu(e, b, "video");
                                 }}
                                 disabled={disabled}
-                                title={inFlight ? `Beat ${b.beatNumber} is ${b.videoStatus} — wait for it to finish` : `${label} beat ${b.beatNumber}`}
+                                title={`${label} beat ${b.beatNumber}`}
                                 aria-label={`${label} beat ${b.beatNumber}`}
                                 className="w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 hover:scale-110 cursor-pointer"
                                 style={{
@@ -2252,6 +2552,71 @@ export default function GeneratePage({ params }: PageProps) {
         </DialogContent>
       </Dialog>
 
+      {/* Hidden file input driving beat uploads (image or video). */}
+      <input ref={uploadInputRef} type="file" className="hidden" onChange={onUploadFileChange} />
+
+      {/* Generate / Upload menu for a beat with no asset yet. Global fixed
+          element (with a click-away backdrop) so it's never clipped by the
+          grids' overflow. */}
+      {assetMenu && (() => {
+        const beat = beats.find((x) => x.beatNumber === assetMenu.beatNumber);
+        if (!beat) return null;
+        const ActionIcon = assetMenu.actionLabel === "Generate" ? Wand2
+          : assetMenu.actionLabel === "Retry" ? RefreshCw
+          : assetMenu.actionLabel === "Resume" ? ChevronsRight
+          : RotateCcw;
+        return (
+          <>
+            <div className="fixed inset-0 z-[490]" onClick={() => setAssetMenu(null)} />
+            <div
+              className="fixed z-[500] flex flex-col gap-0.5 rounded-lg shadow-xl p-1"
+              style={{ left: assetMenu.left, top: assetMenu.top, transform: "translate(-50%, -50%)", background: "white", border: "1px solid oklch(0 0 0 / 0.1)" }}
+            >
+              <button
+                onClick={() => { setAssetMenu(null); if (assetMenu.type === "image") regenerateImage(beat); else void regenerateVideoBeat(beat.beatNumber); }}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium text-zinc-800 hover:bg-zinc-100 transition-colors"
+              >
+                <ActionIcon size={13} /> {assetMenu.actionLabel}
+              </button>
+              <button
+                onClick={() => triggerBeatUpload(assetMenu.beatNumber, assetMenu.type)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium text-zinc-800 hover:bg-zinc-100 transition-colors"
+              >
+                <Upload size={13} /> Upload
+              </button>
+            </div>
+          </>
+        );
+      })()}
+
+      {/* Global hover-prompt popup. Fixed-position + rendered once at the
+          page root so it never gets clipped by the beat grids' overflow.
+          White card, 7px padding, wider than a tile. */}
+      {promptPopup && (
+        <div
+          className="fixed z-[400] rounded-lg shadow-xl pointer-events-none"
+          style={{
+            left: promptPopup.left,
+            top: promptPopup.top,
+            width: promptPopup.width,
+            transform: promptPopup.above ? "translateY(-100%)" : undefined,
+            background: "white",
+            padding: "7px",
+            border: "1px solid oklch(0 0 0 / 0.08)",
+          }}
+        >
+          <p className="text-[10px] font-semibold uppercase tracking-wider mb-1 text-zinc-500">
+            Beat {promptPopup.beatNumber}
+          </p>
+          <p
+            className="text-xs leading-snug text-zinc-800"
+            style={{ display: "-webkit-box", WebkitLineClamp: 6, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+          >
+            {promptPopup.text}
+          </p>
+        </div>
+      )}
+
       <Dialog open={!!previewBeat} onOpenChange={(open) => { if (!open && !previewSubmitting) { setPreviewBeat(null); setPreviewEditing(false); setPreviewShowPrompt(false); setPreviewAspect(null); } }}>
         {/* View mode: media only (prompt hidden). Edit mode: dialog
             shrinks and an editable prompt + Save & regenerate appears
@@ -2327,6 +2692,21 @@ export default function GeneratePage({ params }: PageProps) {
                 </button>
               </>
             )}
+            {/* Upload (edit mode only) — replace this beat's asset with a
+                file from the user's device. Sits just before Close. */}
+            {previewEditing && previewBeat && (
+              <button
+                type="button"
+                onClick={() => triggerBeatUpload(previewBeat.beat.beatNumber, previewBeat.type)}
+                disabled={previewSubmitting || uploadingBeat === previewBeat.beat.beatNumber}
+                title="Upload a file for this beat"
+                aria-label="Upload"
+                className="w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 disabled:opacity-50"
+                style={{ background: "oklch(0 0 0 / 0.65)", color: "white", border: "1px solid oklch(1 0 0 / 0.2)" }}
+              >
+                <Upload size={16} strokeWidth={2.4} />
+              </button>
+            )}
             <button
               onClick={() => { if (!previewSubmitting) { setPreviewBeat(null); setPreviewEditing(false); setPreviewShowPrompt(false); setPreviewAspect(null); } }}
               title="Close preview"
@@ -2388,10 +2768,17 @@ export default function GeneratePage({ params }: PageProps) {
               </div>
             );
           })()}
+          {/* While uploading, blank the body and show a single status. */}
+          {isUploadingPreview && (
+            <div className="flex flex-col items-center justify-center gap-3" style={{ minHeight: 280, padding: 32 }}>
+              <Spinner size={28} className="text-zinc-500" />
+              <span className="text-sm font-medium text-zinc-600">Uploading…</span>
+            </div>
+          )}
           {/* Media renders at its own intrinsic aspect ratio — capped to
               the dialog width and the viewport height so portrait and
               landscape both fit without cropping. */}
-          {previewBeat?.type === "image" && previewBeat.beat.imageUrl && (
+          {!isUploadingPreview && previewBeat?.type === "image" && previewBeat.beat.imageUrl && (
             <img
               src={previewBeat.beat.imageUrl}
               alt={`Beat ${previewBeat.beat.beatNumber}`}
@@ -2403,7 +2790,7 @@ export default function GeneratePage({ params }: PageProps) {
               style={{ width: previewMediaSize?.w, height: previewMediaSize?.h, maxWidth: "95vw", maxHeight: "85vh" }}
             />
           )}
-          {previewBeat?.type === "video" && previewBeat.beat.videoUrl && (
+          {!isUploadingPreview && previewBeat?.type === "video" && previewBeat.beat.videoUrl && (
             <video
               key={previewBeat.beat.videoUrl}
               src={previewBeat.beat.videoUrl}
@@ -2419,7 +2806,7 @@ export default function GeneratePage({ params }: PageProps) {
             />
           )}
           {/* Read-only prompt — toggled by the "Show prompt" pill. */}
-          {previewShowPrompt && !previewEditing && previewBeat && (
+          {!isUploadingPreview && previewShowPrompt && !previewEditing && previewBeat && (
             <div className="px-4 py-3">
               <p className="text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>
                 {previewBeat.type === "image" ? "Image prompt" : "Video prompt"} — beat {previewBeat.beat.beatNumber}
@@ -2429,7 +2816,7 @@ export default function GeneratePage({ params }: PageProps) {
               </p>
             </div>
           )}
-          {previewEditing && previewBeat && (
+          {!isUploadingPreview && previewEditing && previewBeat && (
             <div className="px-4 py-3 space-y-3">
               <p className="text-xs font-semibold" style={{ color: "oklch(0.35 0 0)" }}>
                 {previewBeat.type === "image" ? "Image prompt" : "Video prompt"} — beat {previewBeat.beat.beatNumber}
@@ -2577,7 +2964,7 @@ export default function GeneratePage({ params }: PageProps) {
               onClick={() => setDeleteVoiceoverConfirmOpen(false)}
               disabled={deletingVoiceover}
               className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
-              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+              style={{ background: "transparent", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
             >
               Cancel
             </button>

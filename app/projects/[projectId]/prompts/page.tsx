@@ -45,7 +45,127 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-function BeatCard({ beat }: { beat: Beat }) {
+// Inline prompt editor used on the prompts step. Renders the prompt as
+// read-only text with an "Edit" affordance; toggling shows a textarea +
+// Save/Cancel. Save PATCHes the single beat's prompt text (no media
+// regeneration) then refreshes the project cache. Mirrors the app's
+// dark token palette and the primary-purple action button used
+// elsewhere on this page.
+function EditablePrompt({
+  value,
+  field,
+  beatNumber,
+  projectId,
+  onSaved,
+  accent,
+  textColor,
+}: {
+  value: string | null | undefined;
+  field: "image" | "video";
+  beatNumber: number;
+  projectId: string;
+  onSaved: () => Promise<unknown> | void;
+  accent: string;
+  textColor: string;
+}) {
+  // Coerce to a string up front — a beat may not have this prompt yet
+  // (null/undefined), and draft.trim() would throw during render.
+  const safeValue = value ?? "";
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(safeValue);
+  const [saving, setSaving] = useState(false);
+
+  // Keep the draft in step with the underlying prompt if it changes
+  // upstream (e.g. a regenerate on another step) while we're not
+  // actively editing this field.
+  useEffect(() => {
+    if (!editing) setDraft(safeValue);
+  }, [safeValue, editing]);
+
+  const trimmed = draft.trim();
+  const canSave = !saving && trimmed.length > 0 && trimmed !== safeValue.trim();
+
+  async function save() {
+    if (!canSave) return;
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/beats/prompt`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ beatNumber, field, value: trimmed }),
+      });
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? `Request failed (HTTP ${res.status})`);
+      await onSaved();
+      setEditing(false);
+      toast.success(`Beat ${beatNumber} ${field} prompt saved`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save prompt");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div>
+        {safeValue
+          ? <p className="text-sm leading-relaxed" style={{ color: textColor }}>{safeValue}</p>
+          : <p className="text-xs italic" style={{ color: "var(--c-35)" }}>No {field} prompt yet.</p>}
+        <button
+          onClick={(e) => { e.stopPropagation(); setDraft(safeValue); setEditing(true); }}
+          className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium transition-opacity hover:opacity-80"
+          style={{ color: accent }}
+        >
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+            <path d="M8.5 1.5l2 2L4 10l-2.5.5L2 8l6.5-6.5z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+          </svg>
+          Edit
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        rows={5}
+        autoFocus
+        disabled={saving}
+        className="w-full rounded-lg text-sm leading-relaxed p-3 outline-none resize-y disabled:opacity-60"
+        style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)", color: "var(--c-80)" }}
+      />
+      <div className="flex items-center gap-2">
+        <button
+          onClick={save}
+          disabled={!canSave}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold inline-flex items-center gap-1.5 transition-opacity disabled:opacity-40"
+          style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+        >
+          {saving && (
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="animate-spin">
+              <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.5" strokeOpacity="0.25" />
+              <path d="M6 1.5a4.5 4.5 0 0 1 4.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          )}
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <button
+          onClick={() => { setEditing(false); setDraft(safeValue); }}
+          disabled={saving}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-40"
+          style={{ border: "1px solid var(--bd-card)", color: "var(--c-55)" }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BeatCard({ beat, projectId, onSaved }: { beat: Beat; projectId: string; onSaved: () => Promise<unknown> | void }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -84,7 +204,15 @@ function BeatCard({ beat }: { beat: Beat }) {
               </p>
               <CopyButton text={beat.imagePrompt} />
             </div>
-            <p className="text-sm leading-relaxed" style={{ color: "var(--c-75)" }}>{beat.imagePrompt}</p>
+            <EditablePrompt
+              value={beat.imagePrompt}
+              field="image"
+              beatNumber={beat.beatNumber}
+              projectId={projectId}
+              onSaved={onSaved}
+              accent="oklch(0.72 0.25 285)"
+              textColor="var(--c-75)"
+            />
           </div>
 
           <div className="flex gap-2 flex-wrap">
@@ -95,7 +223,7 @@ function BeatCard({ beat }: { beat: Beat }) {
               { icon: "▷", label: beat.action, key: "action" },
             ].filter((t) => t.label).map((tag) => (
               <span key={tag.key} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs"
-                style={{ background: "var(--bg-progress)", color: "var(--c-55)", border: "1px solid var(--bd-7)" }}>
+                style={{ background: "var(--bg-progress)", color: "var(--c-55)", border: "1px solid var(--bd-card)" }}>
                 <span style={{ color: "var(--c-50)" }}>{tag.icon}</span>
                 {tag.label}
               </span>
@@ -110,7 +238,15 @@ function BeatCard({ beat }: { beat: Beat }) {
                 </p>
                 <CopyButton text={beat.videoPrompt} />
               </div>
-              <p className="text-sm leading-relaxed" style={{ color: "var(--c-70)" }}>{beat.videoPrompt}</p>
+              <EditablePrompt
+                value={beat.videoPrompt}
+                field="video"
+                beatNumber={beat.beatNumber}
+                projectId={projectId}
+                onSaved={onSaved}
+                accent="oklch(0.55 0.12 200)"
+                textColor="var(--c-70)"
+              />
             </div>
           ) : (
             <p className="text-xs italic" style={{ color: "var(--c-35)" }}>No video prompt yet — run Step 2 to generate.</p>
@@ -1209,7 +1345,7 @@ export default function PromptsPage({ params }: PageProps) {
 
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
-        <div className="shrink-0 sm:px-8 py-4 sm:py-5"
+        <div className="shrink-0 px-5 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div>
             <h1 className="font-bold text-base sm:text-lg">Prompts</h1>
@@ -1246,7 +1382,7 @@ export default function PromptsPage({ params }: PageProps) {
               exist requires a regenerate to actually take effect;
               the note under the tabs makes that explicit. */}
           <div className="rounded-xl p-1 flex gap-1 self-start w-fit"
-            style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)" }}>
+            style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
             {([
               { id: "general" as const, label: "General" },
               { id: "cinematic" as const, label: "Cinematic" },
@@ -1350,12 +1486,12 @@ export default function PromptsPage({ params }: PageProps) {
 
             <div className="sm:px-8 pt-6 pb-24 space-y-3">
               {activeTab === "beats" && beats.map((beat) => (
-                <BeatCard key={beat.beatNumber} beat={beat} />
+                <BeatCard key={beat.beatNumber} beat={beat} projectId={projectId} onSaved={mutate} />
               ))}
               {activeTab === "video" && (
                 videoBeats.length > 0 ? videoBeats.map((beat) => (
                   <div key={beat.beatNumber} className="rounded-xl p-4 space-y-3"
-                    style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                    style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                     <div className="flex items-center gap-3">
                       <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
                         style={{ background: "oklch(0.6 0.15 200 / 0.12)", color: "oklch(0.6 0.15 200)" }}>
@@ -1363,7 +1499,15 @@ export default function PromptsPage({ params }: PageProps) {
                       </span>
                       <p className="text-xs line-clamp-1" style={{ color: "var(--c-50)" }}>{beat.scriptSegment}</p>
                     </div>
-                    <p className="text-sm leading-relaxed" style={{ color: "var(--c-70)" }}>{beat.videoPrompt}</p>
+                    <EditablePrompt
+                      value={beat.videoPrompt ?? ""}
+                      field="video"
+                      beatNumber={beat.beatNumber}
+                      projectId={projectId}
+                      onSaved={mutate}
+                      accent="oklch(0.55 0.12 200)"
+                      textColor="var(--c-70)"
+                    />
                   </div>
                 )) : (
                   <div className="text-center py-12">

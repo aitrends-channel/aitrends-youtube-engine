@@ -246,7 +246,7 @@ function ThumbnailCard({
 
   return (
     <div className="rounded-xl overflow-hidden"
-      style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+      style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
 
       {/* Image area */}
       <div
@@ -1132,7 +1132,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
-        <div className="sm:px-8 py-3 sm:py-4 shrink-0"
+        <div className="px-5 sm:px-8 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div>
             <h1 className="font-bold text-lg">Thumbnails</h1>
@@ -1149,13 +1149,13 @@ export default function ThumbnailsPage({ params }: PageProps) {
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="sm:px-8 pt-4 sm:pt-6 pb-24 space-y-4 ">
+          <div className="px-5 sm:px-8 pt-4 sm:pt-6 pb-24 space-y-4 ">
 
             {/* Reference source — pick between auto (niche videos)
                 and manual (upload your own thumbnails). Same toggle
                 pattern as the visuals step. */}
             <div className="rounded-xl p-4"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
@@ -1168,7 +1168,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
                   </p>
                 </div>
                 <div className="flex gap-1 p-1 rounded-lg"
-                  style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-7)" }}>
+                  style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-card)" }}>
                   {(["auto", "manual"] as ThumbRefMode[]).map((m) => (
                     <button
                       key={m}
@@ -1254,7 +1254,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
                 actual images that fed buildThumbnailsPrompt. */}
             {nicheThumbs.length > 0 && (
               <div className="rounded-xl p-4"
-                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <div className="flex items-center justify-between mb-3">
                   <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
                     Niche references
@@ -1272,7 +1272,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
                       rel="noreferrer"
                       title={t.title}
                       className="relative aspect-video rounded-lg overflow-hidden transition-transform hover:scale-[1.02]"
-                      style={{ border: "1px solid var(--bd-7)" }}
+                      style={{ border: "1px solid var(--bd-card)" }}
                     >
                       <img src={t.thumbnailUrl} alt={t.title}
                         className="w-full h-full object-cover" />

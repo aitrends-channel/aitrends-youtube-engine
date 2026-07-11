@@ -777,7 +777,7 @@ export default function AssemblePage({ params }: PageProps) {
 
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
-        <div className="sm:px-8 lg:px-[60px] py-4 sm:py-5"
+        <div className="px-5 sm:px-8 lg:px-[60px] py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div>
             <h1 className="font-bold text-base sm:text-lg">Assemble Final Video</h1>
@@ -791,19 +791,19 @@ export default function AssemblePage({ params }: PageProps) {
           </div>
         </div>
 
-        <div className="sm:px-8 lg:px-[60px] py-4 sm:py-8 pb-24">
+        <div className="px-5 sm:px-8 lg:px-[60px] py-4 sm:py-8 pb-24">
           <div className="w-full space-y-6">
 
             {/* Status cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-              <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover</p>
                 <p className="mt-2 text-sm font-medium"
                   style={{ color: !hasVoiceover ? "var(--c-45)" : trimSilence ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)" }}>
                   {!hasVoiceover ? "Missing" : trimSilence ? "Trimmed ✓" : "Original"}
                 </p>
               </div>
-              <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Video Clips</p>
                 <p className="mt-2 text-sm font-medium"
                   style={{ color: generatedVideos > 0 ? "oklch(0.72 0.25 285)" : "var(--c-45)" }}>
@@ -815,7 +815,7 @@ export default function AssemblePage({ params }: PageProps) {
                   </p>
                 )}
               </div>
-              <div className="p-4 rounded-2xl space-y-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <div className="p-4 rounded-2xl space-y-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Output</p>
                 <p className="text-sm font-medium" style={{ color: "var(--c-65)" }}>{dimsFor(aspectRatio, selectedResolution).label}</p>
                 <div className="flex gap-1 flex-wrap">
@@ -847,7 +847,7 @@ export default function AssemblePage({ params }: PageProps) {
                           color: "oklch(0.88 0.12 285)",
                         } : {
                           background: "var(--bg-input)",
-                          border: "1px solid var(--bd-7)",
+                          border: "1px solid var(--bd-card)",
                           color: "var(--c-50)",
                         }}
                       >
@@ -871,7 +871,7 @@ export default function AssemblePage({ params }: PageProps) {
             </div>
 
             {/* Aspect ratio */}
-            <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+            <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--c-40)" }}>Output Aspect Ratio</p>
               <div className="flex gap-2">
                 {ASPECT_RATIOS.map((r) => (
@@ -883,7 +883,7 @@ export default function AssemblePage({ params }: PageProps) {
                       color: "oklch(0.88 0.12 285)",
                     } : {
                       background: "var(--bg-input)",
-                      border: "1px solid var(--bd-7)",
+                      border: "1px solid var(--bd-card)",
                       color: "var(--c-50)",
                     }}>
                     {r}
@@ -899,7 +899,7 @@ export default function AssemblePage({ params }: PageProps) {
                 page dense. The chip + play-with-preview toggle still
                 renders inside each preview card. */}
             <div className="flex items-center gap-3 rounded-2xl px-4 py-2.5 flex-wrap"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               <span aria-hidden="true" className="text-base shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>♫</span>
               {!bgmFile && !bgmUploadedUrl ? (
                 <>
@@ -992,7 +992,7 @@ export default function AssemblePage({ params }: PageProps) {
                 are stored as 0–1 fractions of video dimensions so
                 they're resolution-agnostic. */}
             <div className="rounded-2xl px-4 py-2.5 space-y-3"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               <div className="flex items-center gap-3 flex-wrap">
                 <span aria-hidden="true" className="text-base shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>◈</span>
                 {!logoFile && !logoUploadedUrl ? (
@@ -1156,7 +1156,7 @@ export default function AssemblePage({ params }: PageProps) {
                       style={{
                         aspectRatio: aspect,
                         background: "linear-gradient(135deg, oklch(0.16 0 0), oklch(0.22 0 0))",
-                        border: "1px solid var(--bd-7)",
+                        border: "1px solid var(--bd-card)",
                       }}
                     >
                       <div
@@ -1270,7 +1270,7 @@ export default function AssemblePage({ params }: PageProps) {
             </div>
 
             {/* Captions */}
-            <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+            <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <p className="text-sm font-semibold">Captions</p>
@@ -1297,7 +1297,7 @@ export default function AssemblePage({ params }: PageProps) {
                             border: "1px solid oklch(0.72 0.25 285 / 0.4)",
                           } : {
                             background: "var(--bg-input)",
-                            border: "1px solid var(--bd-7)",
+                            border: "1px solid var(--bd-card)",
                           }}>
                           <p className="text-xs font-medium" style={{ color: captionsStyle === s.id ? "oklch(0.88 0.12 285)" : "var(--c-60)" }}>{s.label}</p>
                           <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>{s.hint}</p>
@@ -1319,7 +1319,7 @@ export default function AssemblePage({ params }: PageProps) {
                               color: "oklch(0.88 0.12 285)",
                             } : {
                               background: "var(--bg-input)",
-                              border: "1px solid var(--bd-7)",
+                              border: "1px solid var(--bd-card)",
                               color: "var(--c-50)",
                             }}>
                             {s.label}
@@ -1340,7 +1340,7 @@ export default function AssemblePage({ params }: PageProps) {
                               color: "oklch(0.88 0.12 285)",
                             } : {
                               background: "var(--bg-input)",
-                              border: "1px solid var(--bd-7)",
+                              border: "1px solid var(--bd-card)",
                               color: "var(--c-50)",
                             }}>
                             {p.label}
@@ -1362,7 +1362,7 @@ export default function AssemblePage({ params }: PageProps) {
                             color: "oklch(0.88 0.12 285)",
                           } : {
                             background: "var(--bg-input)",
-                            border: "1px solid var(--bd-7)",
+                            border: "1px solid var(--bd-card)",
                             color: "var(--c-50)",
                           }}>
                           {lang.label}
@@ -1375,7 +1375,7 @@ export default function AssemblePage({ params }: PageProps) {
             </div>
 
             {/* Assembly controls */}
-            <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+            <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               {showPreview && previewUrl && !previewLoadError && (
                 <video
                   key={previewUrl}
@@ -1390,7 +1390,7 @@ export default function AssemblePage({ params }: PageProps) {
               {showPreview && previewLoadError && (
                 <div
                   className="w-full rounded-xl p-5 text-center space-y-1"
-                  style={{ background: "var(--bg-page-2)", border: "1px solid var(--bd-7)" }}
+                  style={{ background: "var(--bg-page-2)", border: "1px solid var(--bd-card)" }}
                 >
                   <p className="text-sm font-medium" style={{ color: "var(--c-78)" }}>
                     Preview unavailable
@@ -1712,7 +1712,7 @@ export default function AssemblePage({ params }: PageProps) {
                         // only path forward — promote it to the theme
                         // purple so it reads as the primary CTA.
                         ? { background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }
-                        : { background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
+                        : { background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}>
                       Reassemble
                     </button>
                     {/* Hide Export when the preview can't load — its
@@ -1766,7 +1766,7 @@ export default function AssemblePage({ params }: PageProps) {
                   </button>
                   <button onClick={() => assembleVideo()} disabled={assembling}
                     className="w-full py-2 rounded-xl text-xs font-medium disabled:opacity-60 transition-all"
-                    style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}>
+                    style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)", color: "var(--c-55)" }}>
                     {assembling ? "Queuing…" : "Or reassemble from scratch"}
                   </button>
                 </div>
@@ -1788,7 +1788,7 @@ export default function AssemblePage({ params }: PageProps) {
                     {reassembleMode && (
                       <button onClick={() => setReassembleMode(false)} disabled={assembling}
                         className="flex-1 py-2.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
-                        style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}>
+                        style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)", color: "var(--c-55)" }}>
                         Cancel
                       </button>
                     )}
@@ -1825,7 +1825,7 @@ export default function AssemblePage({ params }: PageProps) {
               onClick={() => setReassembleConfirmOpen(false)}
               disabled={clearingAssembled}
               className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
-              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+              style={{ background: "transparent", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
             >
               Cancel
             </button>
@@ -1879,7 +1879,7 @@ export default function AssemblePage({ params }: PageProps) {
               onClick={() => setCancelAssemblyConfirmOpen(false)}
               disabled={cancellingAssembly}
               className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
-              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+              style={{ background: "transparent", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
             >
               Keep
             </button>

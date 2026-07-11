@@ -308,7 +308,7 @@ export default function ScriptPage({ params }: PageProps) {
 
       <main className="flex-1 flex flex-col overflow-hidden pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center gap-2 sm:px-8 md:pr-44 py-3 sm:py-4 shrink-0"
+        <div className="flex flex-wrap items-center gap-2 px-5 sm:px-8 md:pr-44 py-3 sm:py-4 shrink-0"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
           <div className="flex-1 min-w-0 mr-2">
             <h1 className="font-bold text-base sm:text-lg text-foreground">Script Editor</h1>
@@ -325,7 +325,7 @@ export default function ScriptPage({ params }: PageProps) {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto pb-[70px] py-4 sm:p-8">
+        <div className="flex-1 overflow-y-auto pb-[70px] px-5 py-4 sm:p-8">
           {/* Background-generation state — user refreshed mid-stream
               or has another tab generating. project.script_active_run_id
               is the server-side "in flight" flag; useProject's 5s SWR
@@ -334,7 +334,7 @@ export default function ScriptPage({ params }: PageProps) {
           {!script && !isStreaming && project?.script_active_run_id && (
             <div className="max-w-xl mx-auto">
               <div className="text-center space-y-5 p-10 rounded-2xl"
-                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <div className="flex justify-center">
                   <div className="w-10 h-10 border-2 rounded-full animate-spin"
                     style={{ borderColor: "oklch(0.72 0.25 285 / 0.3)", borderTopColor: "oklch(0.72 0.25 285)" }} />
@@ -369,7 +369,7 @@ export default function ScriptPage({ params }: PageProps) {
             <div className="max-w-xl mx-auto">
               {project?.selected_topic ? (
                 <div className="text-center space-y-5 p-10 rounded-2xl"
-                  style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                  style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Topic</p>
                     <p className="text-base font-medium text-foreground">{project.selected_topic}</p>
@@ -414,7 +414,7 @@ export default function ScriptPage({ params }: PageProps) {
           {(script || isStreaming || manualMode) && (
             <div className="">
               <div className="rounded-2xl overflow-hidden"
-                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 {/* Script header bar */}
                 <div className="flex items-center justify-between px-5 py-3"
                   style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-card-subtle)" }}>
@@ -561,15 +561,20 @@ export default function ScriptPage({ params }: PageProps) {
         <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
           <div className="sm:px-8 flex gap-3">
-            <button
-              onClick={() => setConfirmRegen(true)}
-              disabled={navigating}
-              className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 hover:opacity-90 flex items-center justify-center gap-2"
-              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-            >
-              <RefreshCw size={14} strokeWidth={2.5} />
-              {scriptIsManual ? "Generate with AI" : "Regenerate"}
-            </button>
+            {/* Regenerate is only offered for AI-generated scripts. A
+                manually written script has no AI run to regenerate, and
+                offering it would just discard the user's own words. */}
+            {!scriptIsManual && (
+              <button
+                onClick={() => setConfirmRegen(true)}
+                disabled={navigating}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 hover:opacity-90 flex items-center justify-center gap-2"
+                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+              >
+                <RefreshCw size={14} strokeWidth={2.5} />
+                Regenerate
+              </button>
+            )}
             <button
               onClick={handleContinue}
               disabled={navigating}
@@ -592,11 +597,9 @@ export default function ScriptPage({ params }: PageProps) {
       <Dialog open={confirmRegen} onOpenChange={(o) => { if (!regenSubmitting && !o) setConfirmRegen(false); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{scriptIsManual ? "Generate with AI?" : "Regenerate Script?"}</DialogTitle>
+            <DialogTitle>Regenerate Script?</DialogTitle>
             <DialogDescription>
-              {scriptIsManual
-                ? "This will discard your manually written script and generate one with AI. This cannot be undone."
-                : "This will discard your current script and generate a fresh one. Any manual edits will be lost."}
+              This will discard your current script and generate a fresh one. Any manual edits will be lost.
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-center justify-end gap-3 mt-2">
@@ -619,7 +622,7 @@ export default function ScriptPage({ params }: PageProps) {
                     <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                     Clearing previous run…
                   </span>
-                ) : scriptIsManual ? "Generate with AI" : "Regenerate"}
+                ) : "Regenerate"}
               </button>
             </div>
           </div>

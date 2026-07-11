@@ -583,34 +583,25 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
             })}
           </div>
 
-          {/* Labels — mirror the circles row */}
-          <div className="flex items-start px-4 pt-1 pb-2">
-            {PHASES.map((phase, i) => {
-              const status = getPhaseStatus(phase);
-              const isDone = status === "done";
-              const isActive = status === "active";
+          {/* Active-step label only. Rendering all 9 labels at 7px under
+              4px dots made them overlap into an unreadable smear on
+              phones; the dots already convey done/active state, so we
+              just name the current step (with its sublabel).
+              Kept as an absolute overlay in a pt-1/pb-2 row — same zero
+              layout height as the old labels row — so the fixed mobile
+              nav keeps its ~105px height that every page's pt-[105px]
+              content offset depends on. */}
+          <div className="relative px-4 pt-1 pb-2">
+            {(() => {
+              const active = PHASES.find((p) => getPhaseStatus(p) === "active");
+              if (!active) return null;
               return (
-                <Fragment key={phase.id}>
-                  <div className="w-4 shrink-0 relative flex justify-center">
-                    <span
-                      className="absolute text-[7px] leading-none whitespace-nowrap"
-                      style={{
-                        color: isActive
-                          ? "oklch(0.72 0.25 285)"
-                          : isDone
-                          ? "oklch(0.55 0.15 145)"
-                          : "var(--c-35)",
-                        transform: "translateX(-50%)",
-                        left: "50%",
-                      }}
-                    >
-                      {phase.label}
-                    </span>
-                  </div>
-                  {i < PHASES.length - 1 && <div className="flex-1" />}
-                </Fragment>
+                <span className="absolute left-1/2 top-0 -translate-x-1/2 text-[10px] leading-none whitespace-nowrap">
+                  <span className="font-semibold" style={{ color: "oklch(0.72 0.25 285)" }}>{active.label}</span>
+                  <span className="font-normal" style={{ color: "var(--c-40)" }}> · {active.sublabel}</span>
+                </span>
               );
-            })}
+            })()}
           </div>
         </div>
         )}
