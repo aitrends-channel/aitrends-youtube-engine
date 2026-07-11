@@ -50,23 +50,40 @@ export async function POST(req: Request) {
     let submitted = 0;
     const failures: { beatNumber: number; error: string }[] = [];
 
-    // Unconditional re-queue. The previous in-flight guard
-    // (`.not("video_status", "in", ...)`) created false-positive
-    // "Beat is already in flight" errors when the UI showed an
-    // actionable icon (Retry / Generate) but the DB row had
-    // transiently moved into "submitting" / "rendering" — usually
-    // because the worker's startup re-queue or a prior sweep had
-    // changed state faster than SWR's refresh interval could
-    // observe. The user's intent in clicking is unambiguous: retry
-    // this beat. Honoring that intent matters more than preventing
-    // the rare double-KIE-call race, because the worker's commit
-    // guard (worker.processBeat:209) already discards orphan
-    // uploads from a stale in-flight job (it requires status in
-    // ["submitting", "rendering"] to commit, and the new claim
-    // gives the next worker tick a fresh job_id). Worst case is
-    // one extra KIE billing for the abandoned poll — acceptable
-    // for an explicit user retry.
+    // Re-queue EXCEPT when the beat is actively in flight. Re-queueing a
+    // beat that's already "submitting"/"rendering" nulls its video_job_id
+    // and lets the worker claim it again — while the original processBeat
+    // is STILL polling the first KIE job in memory. That's a SECOND KIE
+    // submission for the same beat → double charge, and it makes retry
+    // clicks bounce (the beat is already being worked on), so the user
+    // clicks repeatedly. A beat that's genuinely in flight doesn't need a
+    // retry, so we skip it and report it as submitted (no-op success) —
+    // the UI then reconciles to its real in-progress state.
     for (const beat of beats) {
+      // Read the current state first. Never re-queue a beat that's
+      // already in flight ("submitting"/"rendering") — that would null
+      // its video_job_id and let the worker submit a SECOND KIE job for
+      // the same beat (double charge). It's already being generated, so
+      // report it as submitted (no-op success) and let the UI reconcile.
+      const { data: existing, error: readErr } = await supabase
+        .from("project_beats")
+        .select("video_status")
+        .eq("project_id", projectId)
+        .eq("beat_number", beat.beatNumber)
+        .maybeSingle();
+      if (readErr) {
+        failures.push({ beatNumber: beat.beatNumber, error: readErr.message });
+        continue;
+      }
+      if (!existing) {
+        failures.push({ beatNumber: beat.beatNumber, error: `Beat ${beat.beatNumber} not found.` });
+        continue;
+      }
+      if (existing.video_status === "submitting" || existing.video_status === "rendering") {
+        submitted++;
+        continue;
+      }
+
       const { data, error } = await supabase
         .from("project_beats")
         .update({
@@ -97,10 +114,7 @@ export async function POST(req: Request) {
       if (error) {
         failures.push({ beatNumber: beat.beatNumber, error: error.message });
       } else if (!data || data.length === 0) {
-        failures.push({
-          beatNumber: beat.beatNumber,
-          error: `Beat ${beat.beatNumber} not found.`,
-        });
+        failures.push({ beatNumber: beat.beatNumber, error: `Beat ${beat.beatNumber} not found.` });
       } else {
         submitted++;
       }
