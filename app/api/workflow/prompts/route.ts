@@ -5,6 +5,7 @@ import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 import {
   buildImagePromptsCached,
   buildImagePromptsDynamic,
+  buildConsistencySheetPrompt,
   buildVideoPromptsCached,
   buildVideoPromptsDynamic,
   buildThumbnailsPrompt,
@@ -442,10 +443,39 @@ async function generateImages(
     send({ type: "progress", current: alreadyDoneChunks, total: allChunks.length });
   }
 
-  // Cache the static portion (instructions + visual style + rules)
-  // once per run. After the first chunk's call lands, every subsequent
-  // chunk hits Anthropic's ephemeral cache for this prefix.
-  const cachedUserBlock = buildImagePromptsCached(visualProfile, promptStyle);
+  // Whole-script consistency sheet — one call up front (full script +
+  // visual style) so every chunk reuses IDENTICAL character/location/
+  // style wording. Without this, each ~500-word chunk builds its own
+  // sheet and a recurring character drifts between chunks. Best-effort:
+  // on failure we fall back to per-chunk sheets (the builder handles an
+  // empty string). Only runs when there are chunks to process (the noop
+  // resume path already returned above).
+  let consistencySheet = "";
+  try {
+    send({ type: "status", message: "Building character & style consistency sheet…" });
+    const sheetMsg = await retryClaudeCall("consistency sheet", () =>
+      anthropic.messages.create({
+        model,
+        max_tokens: 2000,
+        system: [{ type: "text", text: SYSTEM_PROMPT }],
+        messages: [{ role: "user", content: buildConsistencySheetPrompt(script, visualProfile) }],
+      }),
+    );
+    consistencySheet = sheetMsg.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("\n")
+      .trim();
+    console.log(`[image-prompts] consistency sheet built (${consistencySheet.length} chars)`);
+  } catch (err) {
+    console.warn("[image-prompts] consistency sheet failed — falling back to per-chunk:", err instanceof Error ? err.message : err);
+  }
+
+  // Cache the static portion (instructions + consistency sheet + visual
+  // style + rules) once per run. After the first chunk's call lands,
+  // every subsequent chunk hits Anthropic's ephemeral cache for this
+  // prefix — and every chunk sees the same locked descriptions.
+  const cachedUserBlock = buildImagePromptsCached(visualProfile, promptStyle, consistencySheet);
 
   // Per-chunk persist gates: chunk i's persist step waits on chunk
   // i-1's gate so beat_number assignment stays monotonic in script

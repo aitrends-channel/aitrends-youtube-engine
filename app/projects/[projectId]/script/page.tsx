@@ -412,7 +412,7 @@ export default function ScriptPage({ params }: PageProps) {
           {/* Script display / editor — also opens (empty) in manual
               mode so the user can start typing right away. */}
           {(script || isStreaming || manualMode) && (
-            <div className="">
+            <div className="mb-[50px]">
               <div className="rounded-2xl overflow-hidden"
                 style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 {/* Script header bar */}
