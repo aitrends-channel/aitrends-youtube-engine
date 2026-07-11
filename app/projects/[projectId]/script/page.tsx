@@ -561,20 +561,19 @@ export default function ScriptPage({ params }: PageProps) {
         <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
           <div className="sm:px-8 flex gap-3">
-            {/* Regenerate is only offered for AI-generated scripts. A
-                manually written script has no AI run to regenerate, and
-                offering it would just discard the user's own words. */}
-            {!scriptIsManual && (
-              <button
-                onClick={() => setConfirmRegen(true)}
-                disabled={navigating}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 hover:opacity-90 flex items-center justify-center gap-2"
-                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-              >
-                <RefreshCw size={14} strokeWidth={2.5} />
-                Regenerate
-              </button>
-            )}
+            {/* Beside Continue: "Generate with AI" for a manual script
+                (produces an AI draft), "Regenerate" for an AI script.
+                Both open the confirm dialog before discarding the
+                current script. */}
+            <button
+              onClick={() => setConfirmRegen(true)}
+              disabled={navigating}
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 hover:opacity-90 flex items-center justify-center gap-2"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              <RefreshCw size={14} strokeWidth={2.5} />
+              {scriptIsManual ? "Generate with AI" : "Regenerate"}
+            </button>
             <button
               onClick={handleContinue}
               disabled={navigating}
@@ -597,9 +596,11 @@ export default function ScriptPage({ params }: PageProps) {
       <Dialog open={confirmRegen} onOpenChange={(o) => { if (!regenSubmitting && !o) setConfirmRegen(false); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Regenerate Script?</DialogTitle>
+            <DialogTitle>{scriptIsManual ? "Generate with AI?" : "Regenerate Script?"}</DialogTitle>
             <DialogDescription>
-              This will discard your current script and generate a fresh one. Any manual edits will be lost.
+              {scriptIsManual
+                ? "This will replace your manually written script with an AI-generated one. Your current script will be lost."
+                : "This will discard your current script and generate a fresh one. Any manual edits will be lost."}
             </DialogDescription>
           </DialogHeader>
           <div className="flex items-center justify-end gap-3 mt-2">
@@ -622,7 +623,7 @@ export default function ScriptPage({ params }: PageProps) {
                     <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                     Clearing previous run…
                   </span>
-                ) : "Regenerate"}
+                ) : scriptIsManual ? "Generate with AI" : "Regenerate"}
               </button>
             </div>
           </div>
