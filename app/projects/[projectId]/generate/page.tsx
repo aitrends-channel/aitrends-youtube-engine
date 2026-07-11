@@ -514,6 +514,30 @@ export default function GeneratePage({ params }: PageProps) {
   // only the beats being regenerated show the busy state, not the
   // whole grid.
   const [regeneratingBeats, setRegeneratingBeats] = useState<Set<number>>(new Set());
+  // Optimistically flip the given beats to "queued" in the SWR cache so
+  // a generate / regenerate / retry click reflects in the UI instantly,
+  // instead of waiting for the POST round-trip and the next poll tick.
+  // It also makes hasActiveGeneration() true immediately, so useProject
+  // switches to the fast GEN_MS poll right away. The subsequent mutate()
+  // (on success or failure) reconciles the cache with server truth —
+  // which reverts this if the request failed.
+  function optimisticQueueVideos(beatNumbers: Set<number>) {
+    void mutate(
+      (current?: { beats?: Beat[] } & Record<string, unknown>) => {
+        if (!current?.beats) return current;
+        return {
+          ...current,
+          beats: current.beats.map((b) =>
+            beatNumbers.has(b.beatNumber)
+              ? { ...b, videoStatus: "queued" as const, videoError: undefined }
+              : b,
+          ),
+        };
+      },
+      { revalidate: false },
+    );
+  }
+
   // Single-beat video regen — fires immediately from the per-tile
   // overlay button. The previous version routed through a confirm
   // modal; we dropped the modal so the overlay click is the action.
@@ -539,6 +563,8 @@ export default function GeneratePage({ params }: PageProps) {
       next.add(beat.beatNumber);
       return next;
     });
+    // Instant UI feedback — flip this beat to "queued" before the POST.
+    optimisticQueueVideos(new Set([beat.beatNumber]));
     try {
       const res = await fetch("/api/generate/videos", {
         method: "POST",
@@ -560,8 +586,12 @@ export default function GeneratePage({ params }: PageProps) {
         toast.success(`Beat ${beat.beatNumber} re-queued`);
         setVideosSubmitted(true);
       }
+      // Reconcile with server truth (queued/submitting, or reverts the
+      // optimistic flip if the submit was rejected per-beat).
+      await mutate();
     } catch (err) {
       setVideoRunError(friendlyError(err instanceof Error ? err.message : null));
+      await mutate(); // revert the optimistic flip on failure
     } finally {
       setRegeneratingBeats((prev) => {
         const next = new Set(prev);
@@ -1606,6 +1636,9 @@ export default function GeneratePage({ params }: PageProps) {
         return true;
       });
       if (eligible.length === 0) return;
+      // Instant UI feedback — flip all eligible beats to "queued" before
+      // the POST so the badges + fast poll kick in immediately.
+      optimisticQueueVideos(new Set(eligible.map((b) => b.beatNumber)));
       const res = await fetch("/api/generate/videos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1626,8 +1659,11 @@ export default function GeneratePage({ params }: PageProps) {
       if (data.failures?.length) {
         setVideoRunError(friendlyError(data.failures[0].error));
       }
+      // Reconcile the optimistic flip with server truth.
+      await mutate();
     } catch (err) {
       setVideoRunError(friendlyError(err instanceof Error ? err.message : null));
+      await mutate(); // revert the optimistic flip on failure
     } finally {
       setQueuingVideos(false);
     }
