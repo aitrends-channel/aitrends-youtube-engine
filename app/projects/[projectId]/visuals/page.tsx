@@ -227,7 +227,7 @@ function VisualProfileCard({
           <button
             onClick={() => { setDraft(normalizeProfile(profile)); setEditing(true); }}
             className="text-xs px-3 py-1 rounded-lg transition-all hover:opacity-90"
-            style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+            style={{ background: "transparent", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
           >
             Edit
           </button>
@@ -237,7 +237,7 @@ function VisualProfileCard({
               onClick={() => { setDraft(normalizeProfile(profile)); setEditing(false); }}
               disabled={saving}
               className="text-xs px-3 py-1 rounded-lg transition-all disabled:opacity-40"
-              style={{ background: "transparent", border: "1px solid var(--bd-7)", color: "var(--c-60)" }}
+              style={{ background: "transparent", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
             >
               Cancel
             </button>
@@ -269,9 +269,8 @@ function VisualProfileCard({
                   value={value}
                   onChange={(e) => setField(key, e.target.value)}
                   placeholder={placeholder}
-                  rows={3}
-                  className="w-full p-3 rounded-lg text-sm outline-none resize-y min-h-[70px]"
-                  style={{ background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-85)" }}
+                  rows={8}
+                  className="w-full p-3 rounded-lg text-sm outline-none resize-y min-h-[170px] bg-white text-zinc-900 border border-zinc-300 placeholder:text-zinc-400 focus:border-zinc-400"
                 />
               ) : (
                 <p className="text-sm" style={{ color: "oklch(0.8 0 0)" }}>{value}</p>
@@ -284,7 +283,9 @@ function VisualProfileCard({
           <div className="flex gap-2 flex-wrap">
             {draft.colorPalette.map((c, i) => (
               <span key={i} className="px-2.5 py-1 rounded-lg text-xs flex items-center gap-1.5"
-                style={{ background: "var(--bg-progress)", color: "var(--c-70)", border: "1px solid var(--bd-8)" }}>
+                style={editing
+                  ? { background: "#ffffff", color: "#18181b", border: "1px solid #d4d4d8" }
+                  : { background: "var(--bg-progress)", color: "var(--c-70)", border: "1px solid var(--bd-8)" }}>
                 {editing ? (
                   <input
                     type="text"
@@ -300,7 +301,7 @@ function VisualProfileCard({
                     }}
                     aria-label={`Color ${i + 1}`}
                     className="bg-transparent outline-none min-w-[3ch]"
-                    style={{ width: `${Math.max(3, c.length + 1)}ch`, color: "var(--c-85)" }}
+                    style={{ width: `${Math.max(3, c.length + 1)}ch`, color: "#18181b" }}
                   />
                 ) : c}
                 {editing && (
@@ -325,8 +326,8 @@ function VisualProfileCard({
                 }}
                 onBlur={addColor}
                 placeholder="+ add color"
-                className="px-2.5 py-1 rounded-lg text-xs outline-none w-28"
-                style={{ background: "var(--bg-input)", border: "1px dashed var(--bd-7)", color: "var(--c-70)" }}
+                className="px-2.5 py-1 rounded-lg text-xs outline-none w-28 placeholder:text-zinc-400"
+                style={{ background: "#ffffff", border: "1px dashed #d4d4d8", color: "#18181b" }}
               />
             )}
           </div>
@@ -611,7 +612,7 @@ export default function VisualsPage({ params }: PageProps) {
         <div className="px-5 py-4 sm:p-8 pb-24 space-y-6">
           {/* Mode toggle */}
           <div className="flex gap-2 p-1 rounded-xl"
-            style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-7)" }}>
+            style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-card)" }}>
             {(["auto", "manual"] as Mode[]).map((m) => (
               <button
                 key={m}
@@ -634,7 +635,7 @@ export default function VisualsPage({ params }: PageProps) {
             <div className="space-y-5">
               {/* Fetch button */}
               <div className="rounded-2xl p-5"
-                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div>
                     <p className="font-semibold text-sm">Auto-capture from Channel Videos</p>
@@ -695,14 +696,14 @@ export default function VisualsPage({ params }: PageProps) {
                         <button
                           onClick={() => setSelectedImages(new Set(allImages))}
                           className="text-xs px-3 py-1 rounded-lg"
-                          style={{ background: "var(--bg-progress)", color: "var(--c-55)", border: "1px solid var(--bd-7)" }}
+                          style={{ background: "var(--bg-progress)", color: "var(--c-55)", border: "1px solid var(--bd-card)" }}
                         >
                           Select all
                         </button>
                         <button
                           onClick={() => setSelectedImages(new Set())}
                           className="text-xs px-3 py-1 rounded-lg"
-                          style={{ background: "var(--bg-progress)", color: "var(--c-55)", border: "1px solid var(--bd-7)" }}
+                          style={{ background: "var(--bg-progress)", color: "var(--c-55)", border: "1px solid var(--bd-card)" }}
                         >
                           Clear all
                         </button>
@@ -710,7 +711,7 @@ export default function VisualsPage({ params }: PageProps) {
                     </div>
 
                     <div className="rounded-2xl overflow-hidden"
-                      style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                      style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                       <div className="px-5 py-3 flex items-center gap-2"
                         style={{ borderBottom: "1px solid var(--bd-6)" }}>
                         <span style={{ color: "oklch(0.72 0.25 285)" }}>◈</span>
@@ -750,7 +751,7 @@ export default function VisualsPage({ params }: PageProps) {
             <div className="space-y-5">
               {/* Video screenshots */}
               <div className="rounded-2xl overflow-hidden"
-                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <div className="px-5 py-4 flex items-center justify-between"
                   style={{ borderBottom: "1px solid var(--bd-6)" }}>
                   <div>
@@ -847,7 +848,7 @@ export default function VisualsPage({ params }: PageProps) {
           {/* Analysis progress */}
           {(analyzing || steps.analyze === "done" || steps.analyze === "error") && (
             <div ref={analysisPanelRef} className="rounded-2xl p-5 space-y-4 scroll-mt-24"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
                 Analysis Progress
               </p>

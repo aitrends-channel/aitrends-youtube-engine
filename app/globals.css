@@ -138,6 +138,10 @@
   --bd-8: oklch(1 0 0 / 0.08);
   --bd-9: oklch(1 0 0 / 0.09);
   --bd-10: oklch(1 0 0 / 0.10);
+  /* White border for workflow step content cards. Softened white so the
+     1px line reads as a subtle edge, not a harsh full-opacity outline.
+     The light-theme override below keeps it visible on light bg. */
+  --bd-card: oklch(1 0 0 / 0.4);
 }
 
 /* Light theme overrides */
@@ -209,6 +213,9 @@
   --bd-8: oklch(0 0 0 / 0.11);
   --bd-9: oklch(0 0 0 / 0.12);
   --bd-10: oklch(0 0 0 / 0.14);
+  /* Light theme: a pure-white card border would vanish on the light
+     background, so keep a subtle visible neutral instead. */
+  --bd-card: oklch(0 0 0 / 0.12);
 }
 
 @layer base {

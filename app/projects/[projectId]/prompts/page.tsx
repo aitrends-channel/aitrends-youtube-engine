@@ -135,7 +135,7 @@ function EditablePrompt({
         autoFocus
         disabled={saving}
         className="w-full rounded-lg text-sm leading-relaxed p-3 outline-none resize-y disabled:opacity-60"
-        style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)", color: "var(--c-80)" }}
+        style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)", color: "var(--c-80)" }}
       />
       <div className="flex items-center gap-2">
         <button
@@ -156,7 +156,7 @@ function EditablePrompt({
           onClick={() => { setEditing(false); setDraft(safeValue); }}
           disabled={saving}
           className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-40"
-          style={{ border: "1px solid var(--bd-7)", color: "var(--c-55)" }}
+          style={{ border: "1px solid var(--bd-card)", color: "var(--c-55)" }}
         >
           Cancel
         </button>
@@ -223,7 +223,7 @@ function BeatCard({ beat, projectId, onSaved }: { beat: Beat; projectId: string;
               { icon: "▷", label: beat.action, key: "action" },
             ].filter((t) => t.label).map((tag) => (
               <span key={tag.key} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs"
-                style={{ background: "var(--bg-progress)", color: "var(--c-55)", border: "1px solid var(--bd-7)" }}>
+                style={{ background: "var(--bg-progress)", color: "var(--c-55)", border: "1px solid var(--bd-card)" }}>
                 <span style={{ color: "var(--c-50)" }}>{tag.icon}</span>
                 {tag.label}
               </span>
@@ -1382,7 +1382,7 @@ export default function PromptsPage({ params }: PageProps) {
               exist requires a regenerate to actually take effect;
               the note under the tabs makes that explicit. */}
           <div className="rounded-xl p-1 flex gap-1 self-start w-fit"
-            style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-7)" }}>
+            style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
             {([
               { id: "general" as const, label: "General" },
               { id: "cinematic" as const, label: "Cinematic" },
@@ -1491,7 +1491,7 @@ export default function PromptsPage({ params }: PageProps) {
               {activeTab === "video" && (
                 videoBeats.length > 0 ? videoBeats.map((beat) => (
                   <div key={beat.beatNumber} className="rounded-xl p-4 space-y-3"
-                    style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                    style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                     <div className="flex items-center gap-3">
                       <span className="w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0"
                         style={{ background: "oklch(0.6 0.15 200 / 0.12)", color: "oklch(0.6 0.15 200)" }}>

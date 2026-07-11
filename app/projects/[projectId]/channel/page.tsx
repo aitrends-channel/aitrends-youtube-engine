@@ -712,7 +712,7 @@ export default function ChannelPage({ params }: PageProps) {
 
           {/* URL input card */}
           <div className="rounded-2xl p-6 space-y-5"
-            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
 
             {/* Content Type — first decision in the flow. Locked once a
                 niche has been analyzed so a downstream regen can't
@@ -897,7 +897,7 @@ export default function ChannelPage({ params }: PageProps) {
             <div
               ref={progressRef}
               className="rounded-2xl p-6 space-y-4 scroll-mt-4"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}
             >
               <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
                 Analysis Progress
