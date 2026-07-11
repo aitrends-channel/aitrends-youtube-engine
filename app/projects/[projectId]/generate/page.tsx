@@ -294,11 +294,13 @@ function VoiceoverTrackMenu({
 // not buggy.
 function LazyVideoTile(props: React.VideoHTMLAttributes<HTMLVideoElement>) {
   const ref = useRef<HTMLVideoElement | null>(null);
+  const visibleRef = useRef(false);
   useEffect(() => {
     const el = ref.current;
     if (!el || typeof IntersectionObserver === "undefined") return;
     const io = new IntersectionObserver(
       ([entry]) => {
+        visibleRef.current = entry.isIntersecting;
         if (entry.isIntersecting) {
           // play() returns a promise that rejects on rapid mount/
           // unmount cycles or autoplay-blocked browsers. Swallow.
@@ -312,6 +314,18 @@ function LazyVideoTile(props: React.VideoHTMLAttributes<HTMLVideoElement>) {
     io.observe(el);
     return () => io.disconnect();
   }, []);
+  // Changing a <video>'s src attribute does NOT reload the media on its
+  // own — the HTML spec requires an explicit load(). Without this, a
+  // regenerated clip keeps showing the previous video because React
+  // only swaps the attribute on the already-mounted element (the DB has
+  // the new URL, but the tile never re-fetches). Reload whenever src
+  // changes, then resume playback if the tile is currently in view.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.load();
+    if (visibleRef.current) el.play().catch(() => {});
+  }, [props.src]);
   // Default to NOT autoplaying — the IO toggles play() once mounted.
   // preload="metadata" keeps the poster frame populated so the tile
   // doesn't flash empty on first paint.
