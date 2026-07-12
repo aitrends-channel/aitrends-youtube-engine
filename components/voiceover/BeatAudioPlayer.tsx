@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 
@@ -46,7 +47,10 @@ export function BeatAudioPlayer({ src, beatNumber }: { src: string; beatNumber?:
 
   // A changed src attribute doesn't reload the element on its own — force
   // it so a regenerated clip plays the new audio, not the buffered old.
-  // Re-apply the chosen playback rate (load() resets it to 1).
+  // Re-apply the chosen playback rate (load() resets it to 1). Keyed on
+  // `src` ONLY: reloading on every rate change would interrupt an
+  // in-flight play() (the classic "the play() request was interrupted by
+  // a call to load()" error) and stop playback mid-clip on mobile.
   useEffect(() => {
     const a = audioRef.current;
     if (!a) return;
@@ -54,7 +58,13 @@ export function BeatAudioPlayer({ src, beatNumber }: { src: string; beatNumber?:
     a.playbackRate = rate;
     setPlaying(false);
     setCurrent(0);
-  }, [src, rate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [src]);
+
+  // Apply playback-rate changes live without reloading the element.
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.playbackRate = rate;
+  }, [rate]);
 
   // Close the ⋮ menu on any outside click.
   useEffect(() => {
@@ -69,8 +79,18 @@ export function BeatAudioPlayer({ src, beatNumber }: { src: string; beatNumber?:
   function toggle() {
     const a = audioRef.current;
     if (!a) return;
-    if (playing) a.pause();
-    else a.play().catch(() => {});
+    if (playing) {
+      a.pause();
+      return;
+    }
+    // play() is called synchronously inside the click gesture so mobile
+    // autoplay policies allow it. Surface failures instead of swallowing
+    // them — a silent catch is why a failed tap looked like "nothing
+    // happens" on mobile.
+    a.play().catch((err) => {
+      console.warn("Beat audio playback failed", err);
+      toast.error("Couldn't play this clip — tap play again.");
+    });
   }
 
   function seek(e: React.MouseEvent<HTMLDivElement>) {

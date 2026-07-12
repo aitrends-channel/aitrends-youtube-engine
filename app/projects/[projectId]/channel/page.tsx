@@ -976,8 +976,11 @@ export default function ChannelPage({ params }: PageProps) {
                 {/* Word counts come from the transcripts fetch and are joined
                     by videoId. Before transcripts run, "—" is shown so the
                     column doesn't shift width once the data arrives. */}
-                <div className="rounded-lg overflow-hidden" style={{ background: "var(--bg-progress)" }}>
-                  <table className="w-full text-sm">
+                {/* overflow-x-auto + a table min-width lets the 6-column
+                    table scroll sideways on mobile instead of crushing the
+                    Title column or getting clipped by the page. */}
+                <div className="rounded-lg overflow-x-auto" style={{ background: "var(--bg-progress)" }}>
+                  <table className="w-full text-sm min-w-[640px]">
                     <thead>
                       <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
                         <th className="text-left px-3 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>Title</th>
