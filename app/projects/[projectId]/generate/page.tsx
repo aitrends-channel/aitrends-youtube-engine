@@ -424,6 +424,20 @@ export default function GeneratePage({ params }: PageProps) {
     setColumnView(v);
     try { window.localStorage.setItem("generate:columnView", v); } catch { /* ignore */ }
   }
+  // On mobile we FORCE single-panel: rendering both panels' beat grids
+  // (hundreds of tiles each) at once froze the page and made scrolling
+  // painful. The toggle is also hidden on mobile. Desktop keeps the
+  // user's chosen view.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  const effectiveView: "single" | "double" = isMobile ? "single" : columnView;
   // Refs to scroll the error banners into view once they appear so
   // the user actually sees the failure summary instead of having to
   // scan the page for it.
@@ -1813,15 +1827,15 @@ export default function GeneratePage({ params }: PageProps) {
             has) would push the sections below it out of alignment. */}
         {/* View toggle — sits directly above the panels, aligned to their
             right edge. Single column (images → video) vs two columns. */}
-        <div className="px-5 sm:px-8 pt-4 sm:pt-6 flex justify-end">
+        <div className="px-5 sm:px-8 pt-4 sm:pt-6 hidden md:flex justify-end">
           <div className="flex items-center gap-1 rounded-lg p-0.5" style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
             <button
               onClick={() => chooseColumnView("single")}
               title="Single column — images first, then video"
               aria-label="Single column view"
-              aria-pressed={columnView === "single"}
+              aria-pressed={effectiveView === "single"}
               className="w-14 h-8 rounded-md flex items-center justify-center transition-colors"
-              style={columnView === "single" ? { background: "oklch(0.72 0.25 285 / 0.2)", color: "oklch(0.88 0.12 285)" } : { color: "var(--c-45)" }}
+              style={effectiveView === "single" ? { background: "oklch(0.72 0.25 285 / 0.2)", color: "oklch(0.88 0.12 285)" } : { color: "var(--c-45)" }}
             >
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="4.5" y="2.5" width="7" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.4" /></svg>
             </button>
@@ -1829,17 +1843,20 @@ export default function GeneratePage({ params }: PageProps) {
               onClick={() => chooseColumnView("double")}
               title="Two columns — image and video side by side"
               aria-label="Two column view"
-              aria-pressed={columnView === "double"}
+              aria-pressed={effectiveView === "double"}
               className="w-14 h-8 rounded-md flex items-center justify-center transition-colors"
-              style={columnView === "double" ? { background: "oklch(0.72 0.25 285 / 0.2)", color: "oklch(0.88 0.12 285)" } : { color: "var(--c-45)" }}
+              style={effectiveView === "double" ? { background: "oklch(0.72 0.25 285 / 0.2)", color: "oklch(0.88 0.12 285)" } : { color: "var(--c-45)" }}
             >
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="2.5" width="5" height="11" rx="1.3" stroke="currentColor" strokeWidth="1.4" /><rect x="9" y="2.5" width="5" height="11" rx="1.3" stroke="currentColor" strokeWidth="1.4" /></svg>
             </button>
           </div>
         </div>
-        <div className={`px-5 pb-4 pt-3 sm:px-8 sm:pb-8 mb-[84px] grid gap-6 ${columnView === "double" ? "grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto]" : "grid-cols-1"}`}>
-          {/* Image Gen Panel */}
-          <div className={`rounded-2xl overflow-hidden flex flex-col ${columnView === "double" ? "lg:grid lg:grid-rows-subgrid lg:row-span-3" : ""} ${columnView === "single" && singleStep !== "image" ? "hidden" : ""}`}
+        <div className={`px-5 pb-4 pt-3 sm:px-8 sm:pb-8 mb-[84px] grid gap-6 ${effectiveView === "double" ? "grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto]" : "grid-cols-1"}`}>
+          {/* Image Gen Panel — unmounted (not just hidden) when it isn't
+              the active single-view step, so its hundreds of tiles +
+              IntersectionObservers don't stay mounted and freeze mobile. */}
+          {(effectiveView === "double" || singleStep === "image") && (
+          <div className={`rounded-2xl overflow-hidden flex flex-col ${effectiveView === "double" ? "lg:grid lg:grid-rows-subgrid lg:row-span-3" : ""}`}
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon={<ImageIcon size={18} />} title="AI Images" subtitle={`${totalBeats} images from script beats`} />
@@ -1877,7 +1894,7 @@ export default function GeneratePage({ params }: PageProps) {
               <div className="px-5 pt-4">
                 <ProgressBar value={clearingImages ? 0 : generatedImages} total={totalBeats} />
                 <div className="relative mt-3">
-                <div ref={imageGridRef} className={`grid grid-cols-1 sm:grid-cols-4 gap-1.5 overflow-y-auto scroll-visible pr-1 ${columnView === "single" ? "max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
+                <div ref={imageGridRef} className={`grid grid-cols-1 sm:grid-cols-4 gap-1.5 overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
                   {beats.map((b) => {
                     const isRegening = regenBeats.has(b.beatNumber);
                     return (
@@ -2022,7 +2039,7 @@ export default function GeneratePage({ params }: PageProps) {
             )}
             </div>
 
-            <div className={columnView === "single" ? "p-5 flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-2 lg:[&>div]:basis-full lg:[&>button]:flex-1" : "p-5 space-y-2"}>
+            <div className={effectiveView === "single" ? "p-5 flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-2 lg:[&>div]:basis-full lg:[&>button]:flex-1" : "p-5 space-y-2"}>
               {(() => {
                 // Three button states keyed off pendingCount:
                 //   • pendingCount === totalBeats → first-time run: "Generate N Images"
@@ -2111,9 +2128,11 @@ export default function GeneratePage({ params }: PageProps) {
               })()}
             </div>
           </div>
+          )}
 
-          {/* Video Gen Panel */}
-          <div className={`rounded-2xl overflow-hidden flex flex-col ${columnView === "double" ? "lg:grid lg:grid-rows-subgrid lg:row-span-3" : ""} ${columnView === "single" && singleStep !== "video" ? "hidden" : ""}`}
+          {/* Video Gen Panel — same unmount-when-inactive treatment. */}
+          {(effectiveView === "double" || singleStep === "video") && (
+          <div className={`rounded-2xl overflow-hidden flex flex-col ${effectiveView === "double" ? "lg:grid lg:grid-rows-subgrid lg:row-span-3" : ""}`}
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon={<Video size={18} />} title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
@@ -2176,7 +2195,7 @@ export default function GeneratePage({ params }: PageProps) {
               <div className="px-5 pt-4">
                 <ProgressBar value={generatedVideos} total={videoBeats} />
                 <div className="relative mt-3">
-                <div ref={videoGridRef} className={`grid grid-cols-1 sm:grid-cols-4 gap-1.5 overflow-y-auto scroll-visible pr-1 ${columnView === "single" ? "max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
+                <div ref={videoGridRef} className={`grid grid-cols-1 sm:grid-cols-4 gap-1.5 overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
                     {beats.filter((b) => b.videoPrompt).map((b) => (
                       <div
                         key={b.beatNumber}
@@ -2419,7 +2438,7 @@ export default function GeneratePage({ params }: PageProps) {
             )}
             </div>
 
-            <div className={columnView === "single" ? "p-5 flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-2 lg:[&>div]:basis-full lg:[&>button]:flex-1" : "p-5 space-y-2"}>
+            <div className={effectiveView === "single" ? "p-5 flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-2 lg:[&>div]:basis-full lg:[&>button]:flex-1" : "p-5 space-y-2"}>
               {((failedVideos > 0 && !hasActiveVideos) || videoRunError) && (() => {
                 const workingId = project?.video_model_id as string | undefined;
                 const workingName = videoModels?.find((m) => m.id === workingId)?.name ?? "the selected model";
@@ -2537,9 +2556,10 @@ export default function GeneratePage({ params }: PageProps) {
               )}
             </div>
           </div>
+          )}
         </div>
         {/* Single-column step nav: images first, then Continue to video. */}
-        {columnView === "single" && (
+        {effectiveView === "single" && (
           <div className="w-full px-5 sm:px-8 pb-8 -mt-[80px] flex items-center justify-between gap-3">
             {singleStep === "video" ? (
               <button
