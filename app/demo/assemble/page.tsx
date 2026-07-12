@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DemoStepCostCard } from "@/components/demo/DemoStepCostCard";
+import { DemoStepBalanceCard } from "@/components/demo/DemoStepBalanceCard";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
 
@@ -25,6 +26,7 @@ import { useDemoState } from "@/lib/demo-context";
 // they configured.
 function AssembledVideoPlayer({
   src,
+  aspect,
   bgmUrl,
   bgmVolume,
   logoUrl,
@@ -33,6 +35,7 @@ function AssembledVideoPlayer({
   logoSize,
 }: {
   src: string;
+  aspect: string;
   bgmUrl: string | null;
   bgmVolume: number;
   logoUrl: string | null;
@@ -40,6 +43,10 @@ function AssembledVideoPlayer({
   logoY: number;
   logoSize: number;
 }) {
+  // Size the player box to the selected output aspect ratio and letterbox
+  // the (16:9) source with object-contain so it's never distorted.
+  const aspectCss = aspect === "9:16" ? "9 / 16" : aspect === "1:1" ? "1 / 1" : "16 / 9";
+  const maxW = aspect === "9:16" ? "360px" : aspect === "1:1" ? "480px" : "100%";
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const bgmRef = useRef<HTMLAudioElement | null>(null);
 
@@ -82,14 +89,13 @@ function AssembledVideoPlayer({
   }, [bgmVolume]);
 
   return (
-    <div className="relative rounded-xl overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
+    <div className="relative rounded-xl overflow-hidden mx-auto" style={{ background: "var(--bg-page-2)", aspectRatio: aspectCss, maxWidth: maxW }}>
       <video
         ref={videoRef}
         key={src}
         src={src}
         controls
-        className="w-full rounded-xl block"
-        style={{ aspectRatio: "16/9" }}
+        className="w-full h-full object-contain rounded-xl block"
       />
       {logoUrl && (
         <img
@@ -420,53 +426,54 @@ export default function DemoAssemblePage() {
         <main className="flex-1 overflow-y-auto lg:px-[15px]">
 
           {/* Header */}
-          <div className="py-4 sm:py-5"
+          <div className="px-5 sm:px-8 lg:px-[60px] py-4 sm:py-5"
             style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
             <h1 className="font-bold text-lg">Assemble Final Video</h1>
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               Transcribes your voiceover to align each clip to the exact narration timing
             </p>
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
               <DemoStepCostCard column="assemble" />
+              <DemoStepBalanceCard />
             </div>
           </div>
 
-          <div className="py-4 sm:py-8 pb-24 sm:pb-24">
+          <div className="px-5 sm:px-8 lg:px-[60px] py-4 sm:py-8 pb-24 sm:pb-24">
             <div className="flex-1 min-w-0 space-y-6">
 
               {/* Status cards */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                   <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover</p>
                   <p className="mt-2 text-sm font-medium"
                     style={{ color: voiceoverType === "trimmed" ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)" }}>
                     {voiceoverType === "trimmed" ? "Trimmed ✓" : "Original"}
                   </p>
                 </div>
-                <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                   <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Video Clips</p>
                   <p className="mt-2 text-sm font-medium" style={{ color: "oklch(0.72 0.25 285)" }}>
                     {totalBeats} / {totalBeats}
                   </p>
                 </div>
-                <div className="p-4 rounded-2xl space-y-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                <div className="p-4 rounded-2xl space-y-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                   <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Output</p>
                   <p className="text-sm font-medium" style={{ color: "var(--c-65)" }}>{dimsFor(aspectRatio, selectedResolution)}</p>
-                  <div className="flex gap-1 flex-wrap">
+                  <div className="grid grid-cols-4 gap-1.5">
                     {RESOLUTION_PRESETS.map((p) => (
                       <button
                         key={p}
                         onClick={() => setSelectedResolution(p)}
                         disabled={assemblePhase === "assembling"}
                         title={`Render at ${dimsFor(aspectRatio, p)}`}
-                        className="px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all disabled:opacity-40"
+                        className="w-full py-1 rounded-md text-[10px] font-semibold transition-all disabled:opacity-40 inline-flex items-center justify-center gap-1"
                         style={selectedResolution === p ? {
                           background: "oklch(0.72 0.25 285 / 0.18)",
                           border: "1px solid oklch(0.72 0.25 285 / 0.45)",
                           color: "oklch(0.88 0.12 285)",
                         } : {
                           background: "var(--bg-input)",
-                          border: "1px solid var(--bd-7)",
+                          border: "1px solid var(--bd-card)",
                           color: "var(--c-50)",
                         }}
                       >
@@ -482,7 +489,7 @@ export default function DemoAssemblePage() {
                   are non-interactive so users can see the option exists
                   without being able to break the demo's canned
                   assets (which were all rendered at 16:9). */}
-              <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--c-40)" }}>Output Aspect Ratio</p>
                 <div className="flex gap-2">
                   {ASPECT_RATIOS.map((r) => {
@@ -506,7 +513,7 @@ export default function DemoAssemblePage() {
                   picker is presentational (the volume slider IS live,
                   the file input is wired but doesn't actually upload). */}
               <div className="flex items-center gap-3 rounded-2xl px-4 py-2.5 flex-wrap"
-                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <span aria-hidden="true" className="text-base shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>♫</span>
                 {!bgmDataUrl ? (
                   <>
@@ -574,35 +581,6 @@ export default function DemoAssemblePage() {
                 />
               </div>
 
-              {/* Voiceover source — side-by-side preview cards mirror
-                  the main workflow's FullVoiceoverPreview pair. Each
-                  card is click-to-select; the selected variant is what
-                  gets baked into the final assembly. The demo uses the
-                  same mp3 for both since the actual silence-trim
-                  pipeline doesn't run here — the goal is the picker UX,
-                  not new audio. */}
-              <div className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover Source</p>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  {([
-                    { id: "trimmed",  title: "Trimmed voiceover",  hint: "Silence between beats removed — tighter pacing",   src: "/demo/voiceover/voiceover.mp3" },
-                    { id: "original", title: "Original voiceover", hint: "Full TTS output with natural pauses left intact", src: "/demo/voiceover/voiceover.mp3" },
-                  ] as const).map((v) => (
-                    <VoiceoverPreviewCard
-                      key={v.id}
-                      title={v.title}
-                      hint={v.hint}
-                      src={v.src}
-                      selected={voiceoverType === v.id}
-                      onSelect={() => update({ voiceoverType: v.id })}
-                      bgmUrl={bgmDataUrl}
-                      bgmName={bgmName ?? undefined}
-                      bgmVolume={bgmVolume}
-                    />
-                  ))}
-                </div>
-              </div>
-
               {/* Channel logo — compact bar (file picker + size slider
                   + × clear) mirrors the main workflow's logo control.
                   Demo skips the draggable preview surface since the
@@ -610,7 +588,7 @@ export default function DemoAssemblePage() {
                   goal here is to surface the option, not produce
                   pixel-perfect placement. */}
               <div className="flex items-center gap-3 rounded-2xl px-4 py-2.5 flex-wrap"
-                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <span aria-hidden="true" className="text-base shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>◈</span>
                 {!logoDataUrl ? (
                   <>
@@ -678,22 +656,19 @@ export default function DemoAssemblePage() {
                 />
               </div>
 
-              {/* Draggable preview surface — only renders once a logo
-                  is loaded. The surface holds the current aspectRatio
-                  (16:9 / 9:16 / 1:1) so the user previews logo
-                  positioning against the actual output canvas. Position
-                  + size are tracked as 0-1 fractions of the surface
-                  dimensions, matching how the worker interprets
-                  logoX / logoY / logoSize against the rendered video
-                  on the main workflow. */}
+              {/* Logo placement preview — mirrors the main workflow: a
+                  dark output canvas at the current aspect ratio, the logo
+                  draggable to position, and a bottom-right handle to
+                  resize. Position + size are 0-1 fractions matching how the
+                  worker interprets logoX / logoY / logoSize. */}
               {logoDataUrl && (() => {
                 const aspectCss = aspectRatio === "9:16" ? "9 / 16" : aspectRatio === "1:1" ? "1 / 1" : "16 / 9";
                 function onDragLogo(e: React.PointerEvent<HTMLImageElement>) {
                   e.preventDefault();
                   e.stopPropagation();
-                  const img = e.currentTarget;
-                  const surface = img.parentElement as HTMLElement | null;
+                  const surface = e.currentTarget.parentElement?.parentElement as HTMLElement | null;
                   if (!surface) return;
+                  const img = e.currentTarget;
                   img.setPointerCapture(e.pointerId);
                   const startBox = surface.getBoundingClientRect();
                   const offsetX = e.clientX - img.getBoundingClientRect().left;
@@ -701,14 +676,9 @@ export default function DemoAssemblePage() {
                   function move(ev: PointerEvent) {
                     const localX = ev.clientX - startBox.left - offsetX;
                     const localY = ev.clientY - startBox.top - offsetY;
-                    // Clamp so the logo can't be dragged outside the
-                    // visible video area. Approximate the rendered
-                    // height fraction from the image's current
-                    // offsetHeight against the surface — close enough
-                    // for a smooth drag.
-                    const maxX = Math.max(0, 1 - logoSize);
-                    const approxHpct = img.offsetHeight / startBox.height;
-                    const maxY = Math.max(0, 1 - approxHpct);
+                    const maxX = 1 - logoSize;
+                    const approxLogoHpct = img.offsetHeight / startBox.height;
+                    const maxY = Math.max(0, 1 - approxLogoHpct);
                     const nextX = Math.max(0, Math.min(maxX, localX / startBox.width));
                     const nextY = Math.max(0, Math.min(maxY, localY / startBox.height));
                     update({ logoX: nextX, logoY: nextY });
@@ -721,88 +691,114 @@ export default function DemoAssemblePage() {
                   window.addEventListener("pointermove", move);
                   window.addEventListener("pointerup", up);
                 }
+                function onResizeLogo(e: React.PointerEvent<HTMLSpanElement>) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const handle = e.currentTarget;
+                  const surface = handle.parentElement?.parentElement as HTMLElement | null;
+                  if (!surface) return;
+                  handle.setPointerCapture(e.pointerId);
+                  const startBox = surface.getBoundingClientRect();
+                  const logoLeftPx = startBox.left + logoX * startBox.width;
+                  function move(ev: PointerEvent) {
+                    const newWidthPx = Math.max(0, ev.clientX - logoLeftPx);
+                    const newSize = Math.max(0.03, Math.min(0.4, newWidthPx / startBox.width));
+                    const maxSize = Math.max(0.03, 1 - logoX);
+                    update({ logoSize: Math.min(newSize, maxSize) });
+                  }
+                  function up(ev: PointerEvent) {
+                    handle.releasePointerCapture(ev.pointerId);
+                    window.removeEventListener("pointermove", move);
+                    window.removeEventListener("pointerup", up);
+                  }
+                  window.addEventListener("pointermove", move);
+                  window.addEventListener("pointerup", up);
+                }
+                const dragging = assemblePhase === "assembling";
                 return (
-                  <div className="mt-3 px-3 sm:px-5 pb-2">
-                    <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-                      <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
-                        Drag to position
-                      </p>
-                      {/* Inline aspect-ratio quick-switcher — same
-                          state as the dedicated "Output Aspect Ratio"
-                          card above, just surfaced here so the user
-                          can flip aspect while watching the logo
-                          position update in real time. */}
-                      <div className="inline-flex p-0.5 rounded-lg" style={{ background: "var(--bg-track)" }}>
-                        {ASPECT_RATIOS.map((r) => {
-                          // Demo is locked to 16:9 across the page —
-                          // non-16:9 buttons render but stay
-                          // unclickable so the option is discoverable
-                          // without affecting the canned 16:9 assets.
-                          const locked = r !== "16:9";
-                          return (
-                            <button
-                              key={r}
-                              type="button"
-                              onClick={() => { if (!locked) update({ aspectRatio: r }); }}
-                              disabled={locked || assemblePhase === "assembling"}
-                              className="px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                              style={aspectRatio === r ? {
-                                background: "oklch(0.72 0.25 285 / 0.18)",
-                                color: "oklch(0.88 0.12 285)",
-                                boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.4)",
-                              } : { background: "transparent", color: "var(--c-55)" }}
-                            >
-                              {r}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
+                      Drag to position · drag corner to resize
+                    </p>
                     <div
-                      className="relative w-full rounded-xl overflow-hidden mx-auto"
+                      className="relative w-full rounded-lg overflow-hidden select-none"
                       style={{
                         aspectRatio: aspectCss,
-                        background: "var(--bg-input)",
-                        // Solid, brand-purple-tinted outline so the
-                        // canvas edges are clearly visible against the
-                        // panel background. Replaces the previous
-                        // subtle dashed border.
-                        border: "2px solid oklch(0.72 0.25 285 / 0.4)",
-                        boxShadow: "0 0 0 1px oklch(0 0 0 / 0.4), 0 4px 16px oklch(0 0 0 / 0.25)",
-                        maxWidth: aspectRatio === "16:9" ? "100%" : aspectRatio === "1:1" ? "320px" : "240px",
+                        maxWidth: "320px",
+                        background: "linear-gradient(135deg, oklch(0.16 0 0), oklch(0.22 0 0))",
+                        border: "1px solid var(--bd-card)",
                       }}
                     >
-                      <img
-                        src={logoDataUrl}
-                        alt={logoName ?? "Channel logo"}
-                        draggable={false}
-                        onPointerDown={onDragLogo}
-                        className="absolute select-none touch-none"
-                        style={{
-                          left: `${logoX * 100}%`,
-                          top: `${logoY * 100}%`,
-                          width: `${logoSize * 100}%`,
-                          cursor: assemblePhase === "assembling" ? "not-allowed" : "grab",
-                          pointerEvents: assemblePhase === "assembling" ? "none" : "auto",
-                          // Soft drop shadow so a logo on a similar-
-                          // colored corner of the canvas is still
-                          // visible during positioning.
-                          filter: "drop-shadow(0 2px 4px oklch(0 0 0 / 0.4))",
-                        }}
-                      />
+                      <div
+                        className="absolute group"
+                        style={{ left: `${logoX * 100}%`, top: `${logoY * 100}%`, width: `${logoSize * 100}%` }}
+                      >
+                        <img
+                          src={logoDataUrl}
+                          alt={logoName ?? "Channel logo"}
+                          draggable={false}
+                          onPointerDown={dragging ? undefined : onDragLogo}
+                          className="touch-none block w-full h-auto"
+                          style={{ cursor: dragging ? "default" : "grab", opacity: 0.95, filter: "drop-shadow(0 2px 8px oklch(0 0 0 / 0.5))" }}
+                        />
+                        {!dragging && (
+                          <span
+                            onPointerDown={onResizeLogo}
+                            aria-label="Resize logo"
+                            title="Drag to resize"
+                            className="absolute touch-none flex items-center justify-center"
+                            style={{
+                              right: "-6px",
+                              bottom: "-6px",
+                              width: "14px",
+                              height: "14px",
+                              borderRadius: "9999px",
+                              background: "oklch(0.72 0.25 285)",
+                              border: "2px solid #ffffff",
+                              cursor: "nwse-resize",
+                              boxShadow: "0 0 0 1px oklch(0.4 0.15 285)",
+                            }}
+                          />
+                        )}
+                      </div>
                     </div>
-                    <p className="text-[10px] mt-1.5" style={{ color: "var(--c-40)" }}>
-                      Position: {Math.round(logoX * 100)}% × {Math.round(logoY * 100)}% · Size: {Math.round(logoSize * 100)}%
+                    <p className="text-[10px] font-mono tabular-nums" style={{ color: "var(--c-40)" }}>
+                      x: {Math.round(logoX * 100)}% · y: {Math.round(logoY * 100)}% · size: {Math.round(logoSize * 100)}%
                     </p>
                   </div>
                 );
               })()}
 
+              {/* Voiceover source — side-by-side preview cards mirror
+                  the main workflow's FullVoiceoverPreview pair. Sits after
+                  the logo control to match the main workflow's order. */}
+              <div className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover Source</p>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  {([
+                    { id: "trimmed",  title: "Trimmed voiceover",  hint: "Silence between beats removed — tighter pacing",   src: "/demo/voiceover/voiceover.mp3" },
+                    { id: "original", title: "Original voiceover", hint: "Full TTS output with natural pauses left intact", src: "/demo/voiceover/voiceover.mp3" },
+                  ] as const).map((v) => (
+                    <VoiceoverPreviewCard
+                      key={v.id}
+                      title={v.title}
+                      hint={v.hint}
+                      src={v.src}
+                      selected={voiceoverType === v.id}
+                      onSelect={() => update({ voiceoverType: v.id })}
+                      bgmUrl={bgmDataUrl}
+                      bgmName={bgmName ?? undefined}
+                      bgmVolume={bgmVolume}
+                    />
+                  ))}
+                </div>
+              </div>
+
               {/* Captions — surface only. Disabled in the demo; the
                   toggle is a visual placeholder so the layout matches
                   the real workflow and the user sees the option exists,
                   but flipping it wouldn't do anything so it's locked. */}
-              <div className="rounded-2xl p-5 opacity-60" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <div className="rounded-2xl p-5 opacity-60" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-semibold">Captions</p>
@@ -824,10 +820,11 @@ export default function DemoAssemblePage() {
               </div>
 
               {/* Assembly controls */}
-              <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 {assemblePhase === "done" && (
                   <AssembledVideoPlayer
                     src={"/demo/assemble/assemble.mp4"}
+                    aspect={aspectRatio}
                     bgmUrl={bgmDataUrl}
                     bgmVolume={bgmVolume}
                     logoUrl={logoDataUrl}
@@ -886,7 +883,10 @@ export default function DemoAssemblePage() {
             className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
             style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}
           >
-            <div>
+            {/* Mirror the content insets (main's lg:px-[15px] + the body's
+                px-5 sm:px-8 lg:px-[60px]) so the button matches card width. */}
+            <div className="lg:px-[15px]">
+            <div className="px-5 sm:px-8 lg:px-[60px]">
               <button
                 onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/thumbnails"), 500); }}
                 disabled={navigating}
@@ -900,6 +900,7 @@ export default function DemoAssemblePage() {
                   </span>
                 ) : "Continue →"}
               </button>
+            </div>
             </div>
           </div>
         )}

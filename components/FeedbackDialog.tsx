@@ -89,7 +89,7 @@ export function FeedbackDialog({ open, onClose }: { open: boolean; onClose: () =
             // Same anchoring as HelpButton's dialog: centered sheet on
             // mobile, bottom-right column on desktop, flush with the
             // floating buttons' baseline.
-            "max-w-lg " +
+            "z-[350] max-w-lg " +
             "sm:top-auto sm:left-auto sm:bottom-5 sm:right-5 " +
             "sm:translate-x-0 sm:translate-y-0 " +
             "max-h-[calc(100vh-2.5rem)] " +

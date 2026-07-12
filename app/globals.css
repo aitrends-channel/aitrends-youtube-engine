@@ -343,6 +343,28 @@ body {
 .scroll-themed::-webkit-scrollbar { width: 14px; height: 14px; }
 .scroll-themed::-webkit-scrollbar-thumb { border-width: 3px; }
 
+/* Off-screen media tiles skip rendering/layout entirely. With ~700 beat
+   tiles in a project, mounting them all otherwise blocks the main thread
+   and makes the generate page unscrollable. `auto` remembers each tile's
+   real size after its first paint; 180px is just the initial placeholder
+   so the scrollbar length is roughly right before anything renders. */
+.cv-tile { content-visibility: auto; contain-intrinsic-size: auto var(--tile-h, 120px); }
+
+/* Shown only on touch devices (no hover). Used for the per-tile "view
+   prompt" button — the desktop equivalent is hovering the tile. */
+.touch-only { display: none; }
+@media (hover: none) and (pointer: coarse) { .touch-only { display: flex; } }
+
+/* On mobile, hide scrollbars entirely — the rails are visually noisy on
+   small screens and the media grids now scroll with the page rather than
+   inside their own container. */
+@media (max-width: 767px) {
+  *, .scroll-visible, .scroll-themed { scrollbar-width: none; }
+  ::-webkit-scrollbar,
+  .scroll-visible::-webkit-scrollbar,
+  .scroll-themed::-webkit-scrollbar { width: 0; height: 0; display: none; }
+}
+
 /* Light mode hover overrides for Tailwind opacity classes */
 [data-theme="light"] .hover\:bg-white\/5:hover { background-color: oklch(0 0 0 / 0.04) !important; }
 

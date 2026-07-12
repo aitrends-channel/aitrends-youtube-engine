@@ -5,12 +5,12 @@ import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DemoStepCostCard } from "@/components/demo/DemoStepCostCard";
+import { DemoStepBalanceCard } from "@/components/demo/DemoStepBalanceCard";
 import { useDemoState } from "@/lib/demo-context";
 
-// Curated voice library — same shape as the real workflow's voice
-// picker. Only "Liam" is selectable in the demo so the user has a
-// clearly-intended path through; the rest are dimmed but visible to
-// signal the breadth of choices in the real product.
+type VoiceTab = "female" | "male" | "free";
+
+// Curated voice library — same shape as the real workflow's voice picker.
 const FAKE_VOICES = [
   { id: "nPczCjzI2devNBz1zQrb", name: "Brian",     tags: ["Male",   "Deep, Resonant"] },
   { id: "FGY2WhTYpPnrIDTdsKH5", name: "Laura",     tags: ["Female", "Enthusiastic"] },
@@ -42,143 +42,238 @@ const FAKE_VOICES = [
   { id: "nzeAacJi50IvxcyDnMXa", name: "Marshal",   tags: ["Male",   "Friendly, Warm"] },
 ];
 
+type Voice = (typeof FAKE_VOICES)[number];
+
+// Voice card — mirrors the real step's VoiceOption (name + tags, subtle
+// default border, violet highlight when selected).
+function VoiceOption({ voice, selected, onSelect }: { voice: Voice; selected: boolean; onSelect: () => void }) {
+  return (
+    <div
+      role="button"
+      onClick={onSelect}
+      className="cursor-pointer p-3 rounded-xl transition-all select-none"
+      style={selected ? {
+        background: "oklch(0.72 0.25 285 / 0.1)",
+        border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+        color: "var(--c-90)",
+      } : {
+        background: "var(--bg-input)",
+        border: "1px solid var(--bd-7)",
+        color: "var(--c-60)",
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <p className="font-medium text-xs flex-1 truncate">{voice.name}</p>
+        {/* Preview play — present to mirror the real step but disabled in the
+            demo (no preview audio to stream here). */}
+        <button
+          type="button"
+          disabled
+          onClick={(e) => e.stopPropagation()}
+          title="Voice preview is available in the full app"
+          aria-label="Preview voice"
+          className="w-6 h-6 rounded flex items-center justify-center shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+          style={{ background: "oklch(0.2 0 0)", color: "var(--c-45)", border: "1px solid var(--bd-10)" }}
+        >
+          <svg width="7" height="9" viewBox="0 0 7 9" fill="currentColor">
+            <path d="M0 0.5L7 4.5L0 8.5V0.5Z" />
+          </svg>
+        </button>
+      </div>
+      <div className="flex gap-1 mt-1.5 flex-wrap">
+        {voice.tags.map((tag) => (
+          <span key={tag} className="px-1.5 py-0.5 rounded text-xs"
+            style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>
+            {tag}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function DemoVoiceoverPage() {
   const router = useRouter();
   const { state, update } = useDemoState();
   const { selectedVoice, ttsPhase } = state;
   const [navigating, setNavigating] = useState(false);
-  // Force the <audio> element to re-fetch its source when the phase
-  // flips into "done" after Generate/Regen. Chrome renders the controls
-  // but leaves the media unloaded — timer stuck at --:-- and pressing
-  // play does nothing — unless we (a) mount the element fresh via a
-  // changing key, and (b) call .load() from a callback ref the moment
-  // the element attaches to the DOM. The earlier useEffect-only fix
-  // raced with mount and sometimes ran with a null ref.
+
+  // Force the <audio> element to re-fetch its source when the phase flips
+  // into "done" after Generate/Regen (Chrome leaves the media unloaded
+  // otherwise). Mount fresh via a changing key + .load() on attach.
   const [audioReloadTick, setAudioReloadTick] = useState(0);
   useEffect(() => {
     if (ttsPhase === "done") setAudioReloadTick((t) => t + 1);
   }, [ttsPhase]);
-  const attachAudio = (el: HTMLAudioElement | null) => {
-    if (el) el.load();
-  };
-  // Voices have gender as their first tag ("Male" or "Female"). The
-  // tab state lives locally — picking a gender just filters the visible
-  // grid, it doesn't alter selectedVoice, so a user can pick Liam under
-  // Male and then peek at Female without losing their selection.
-  const [voiceTab, setVoiceTab] = useState<"male" | "female">("male");
-  const filteredVoices = FAKE_VOICES.filter((v) =>
-    voiceTab === "male" ? v.tags[0] === "Male" : v.tags[0] === "Female"
-  );
+  const attachAudio = (el: HTMLAudioElement | null) => { if (el) el.load(); };
+
+  // Gender / Free tabs — the tab is just a filter on the visible grid;
+  // selectedVoice persists across switches. Defaults to female to match
+  // the real step (the currently-selected Liam sits under Male).
+  const [voiceTab, setVoiceTab] = useState<VoiceTab>("female");
+  const [voiceSearch, setVoiceSearch] = useState("");
+
+  const filteredVoices = FAKE_VOICES.filter((v) => {
+    if (voiceTab === "free") return false;
+    const gender = v.tags[0];
+    if (voiceTab === "male" ? gender !== "Male" : gender !== "Female") return false;
+    const q = voiceSearch.trim().toLowerCase();
+    if (!q) return true;
+    return v.name.toLowerCase().includes(q) || v.tags.some((t) => t.toLowerCase().includes(q));
+  });
+
+  const selectedVoiceModel = FAKE_VOICES.find((v) => v.id === selectedVoice) ?? null;
 
   function generateVoiceover() {
+    if (!selectedVoice) return;
     update({ ttsPhase: "generating" });
     setTimeout(() => update({ ttsPhase: "done" }), 2500);
   }
 
+  const isGenerating = ttsPhase === "generating";
+  const isDone = ttsPhase === "done";
+
   return (
-    <div className="flex h-screen" style={{ background: "var(--bg-page-2)" }}>
+    <div className="flex h-screen overflow-x-hidden" style={{ background: "var(--bg-page-2)" }}>
       <DemoNav currentStep={5} />
-      <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex-1 min-w-0 flex flex-col min-h-0">
         <DemoBanner />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto lg:px-[15px]">
           {/* Header */}
           <div
-            className="py-4 sm:py-5"
+            className="px-5 sm:px-8 py-4 sm:py-5"
             style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}
           >
-            <h1 className="font-bold text-lg">Voiceover</h1>
+            <h1 className="font-bold text-base sm:text-lg">Voiceover</h1>
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               Pick a voice and generate the narration for your script
             </p>
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
               <DemoStepCostCard column="voiceover" />
+              <DemoStepBalanceCard />
             </div>
           </div>
 
-          <div className="py-4 sm:py-8 pb-24 space-y-6">
+          <div className="px-5 py-4 sm:p-8 pb-24 mb-[70px] space-y-6">
 
             {/* Voice picker */}
-            <div className="rounded-2xl p-5 space-y-4"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-              <div>
-                <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
-                    Select Voice
+            <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
+                  Voice
+                </p>
+                {voiceTab !== "free" && (
+                  <span className="text-[11px] font-mono tabular-nums" style={{ color: "var(--c-45)" }}>
+                    {FAKE_VOICES.length} voices · {filteredVoices.length} {voiceTab}
+                  </span>
+                )}
+              </div>
+
+              {/* Gender / Free tabs */}
+              <div className="flex gap-1 mb-2">
+                {(["female", "male", "free"] as VoiceTab[]).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => { setVoiceTab(tab); setVoiceSearch(""); }}
+                    disabled={isGenerating}
+                    className="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium capitalize transition-all disabled:opacity-40"
+                    style={tab === "free" ? {
+                      background: "var(--primary)",
+                      border: "1px solid var(--primary)",
+                      color: "var(--primary-foreground)",
+                    } : voiceTab === tab ? {
+                      background: "oklch(0.72 0.25 285 / 0.15)",
+                      border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                      color: "oklch(0.88 0.12 285)",
+                    } : {
+                      background: "var(--bg-input)",
+                      border: "1px solid var(--bd-card)",
+                      color: "var(--c-50)",
+                    }}
+                  >
+                    {tab === "free" ? (
+                      <span className="flex flex-col items-center leading-tight">
+                        <span>😄 Free</span>
+                        <span className="text-[9px] font-semibold normal-case">coming soon</span>
+                      </span>
+                    ) : tab}
+                  </button>
+                ))}
+              </div>
+
+              {voiceTab === "free" ? (
+                <div className="rounded-xl px-4 py-8 text-center"
+                  style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+                  <p className="text-base font-bold" style={{ color: "var(--primary)" }}>
+                    Great Good News!
                   </p>
-                  {/* Gender tabs — purely a filter on the visible grid;
-                      selectedVoice persists across switches so the user
-                      doesn't lose a pick when peeking at the other tab. */}
-                  <div className="inline-flex p-0.5 rounded-lg" style={{ background: "var(--bg-track)" }}>
-                    {(["male", "female"] as const).map((tab) => (
-                      <button
-                        key={tab}
-                        type="button"
-                        onClick={() => setVoiceTab(tab)}
-                        className="px-3 py-1 rounded-md text-xs font-medium capitalize transition-all"
-                        style={voiceTab === tab ? {
-                          background: "oklch(0.72 0.25 285 / 0.15)",
-                          color: "oklch(0.88 0.12 285)",
-                          boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.35)",
-                        } : { background: "transparent", color: "var(--c-55)" }}
-                      >
-                        {tab}
-                      </button>
+                  <p className="text-sm font-medium mt-2" style={{ color: "var(--c-70)" }}>
+                    Thank you for choosing us and for being part of our journey.
+                  </p>
+                  <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
+                    We&apos;re building free resources to help you streamline your
+                    production, reduce costs, and achieve more with less. Stay with
+                    us as we continue to grow into the one-stop solution you&apos;ve
+                    been looking for.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Search — full width, filters the active tab by name/tag. */}
+                  <input
+                    type="search"
+                    value={voiceSearch}
+                    onChange={(e) => setVoiceSearch(e.target.value)}
+                    placeholder={`Search ${voiceTab} voices…`}
+                    aria-label="Search voices"
+                    className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none transition-colors mb-3 text-zinc-900 placeholder:text-black"
+                    style={{ background: "#ecf0f1", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+                  />
+                  {voiceSearch.trim() && filteredVoices.length === 0 && (
+                    <p className="text-xs text-center py-4" style={{ color: "var(--c-40)" }}>
+                      No voices match &ldquo;{voiceSearch.trim()}&rdquo;
+                    </p>
+                  )}
+                  <div className="scroll-themed grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1">
+                    {filteredVoices.length === 0 && !voiceSearch.trim() && (
+                      <p className="text-xs px-1" style={{ color: "var(--c-40)" }}>No {voiceTab} voices available</p>
+                    )}
+                    {filteredVoices.map((v) => (
+                      <VoiceOption
+                        key={v.id}
+                        voice={v}
+                        selected={selectedVoice === v.id}
+                        onSelect={() => update({ selectedVoice: v.id })}
+                      />
                     ))}
                   </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-96 overflow-y-auto pr-1">
-                  {filteredVoices.map((v) => {
-                    // Same demo gating as the original generate-page
-                    // voiceover column — only Liam is interactive so
-                    // the demo has one clearly-intended path through.
-                    const isSelectable = v.name === "Liam";
-                    const isSelected = selectedVoice === v.id;
-                    return (
-                      <div
-                        key={v.id}
-                        role={isSelectable ? "button" : undefined}
-                        onClick={isSelectable ? () => update({ selectedVoice: v.id }) : undefined}
-                        className="p-3 rounded-xl transition-all select-none"
-                        style={{
-                          cursor: isSelectable ? "pointer" : "default",
-                          opacity: isSelectable ? 1 : 0.35,
-                          ...(isSelected ? {
-                            background: "oklch(0.72 0.25 285 / 0.1)",
-                            border: "1px solid oklch(0.72 0.25 285 / 0.3)",
-                            color: "var(--c-90)",
-                          } : {
-                            background: "var(--bg-input)",
-                            border: "1px solid var(--bd-7)",
-                            color: "var(--c-60)",
-                          }),
-                        }}
-                      >
-                        <p className="font-medium text-xs">{v.name}</p>
-                        <div className="flex gap-1 mt-1.5 flex-wrap">
-                          {v.tags.map((tag) => (
-                            <span key={tag} className="px-1.5 py-0.5 rounded text-xs"
-                              style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+                </>
+              )}
             </div>
 
-            {/* Generate / Result panel */}
-            <div className="rounded-2xl p-5 space-y-3"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
-              {ttsPhase === "done" ? (
+            {/* Generation / result panel */}
+            <div className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+              {/* Selected-voice banner — mirrors the real bulk panel so the
+                  user always sees which voice the narration will use. */}
+              <div className="rounded-xl px-3 py-2.5 flex items-center gap-2 text-xs"
+                style={{ background: "oklch(0.72 0.25 285 / 0.08)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
+                <span style={{ color: "var(--c-45)" }}>Voice:</span>
+                {selectedVoiceModel ? (
+                  <span className="font-semibold" style={{ color: "oklch(0.88 0.12 285)" }}>
+                    {selectedVoiceModel.name} · {selectedVoiceModel.tags[0].toLowerCase()}
+                  </span>
+                ) : (
+                  <span style={{ color: "var(--c-45)" }}>none selected</span>
+                )}
+              </div>
+
+              {isDone ? (
                 <div className="space-y-3">
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Original</span>
+                      <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Narration</span>
                       <a href="/demo/voiceover/voiceover.mp3" download="voiceover.mp3"
-                        className="text-xs" style={{ color: "var(--c-45)" }}>↓ Download</a>
+                        className="text-xs" style={{ color: "var(--c-45)" }}>↓ Export MP3</a>
                     </div>
                     <audio
                       key={audioReloadTick}
@@ -198,23 +293,23 @@ export default function DemoVoiceoverPage() {
                     <button onClick={generateVoiceover}
                       className="px-3 py-2 rounded-lg text-xs"
                       style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}>
-                      Regen
+                      Regenerate
                     </button>
                   </div>
                 </div>
               ) : (
                 <button
                   onClick={generateVoiceover}
-                  disabled={ttsPhase === "generating"}
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 transition-all"
+                  disabled={isGenerating || !selectedVoice}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                   style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
                 >
-                  {ttsPhase === "generating" ? (
+                  {isGenerating ? (
                     <span className="flex items-center justify-center gap-2">
                       <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                       Generating voiceover…
                     </span>
-                  ) : "Generate Voiceover"}
+                  ) : !selectedVoice ? "Select a voice first" : "Generate Voiceover"}
                 </button>
               )}
             </div>
@@ -226,7 +321,8 @@ export default function DemoVoiceoverPage() {
           className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}
         >
-          <div>
+          <div className="lg:px-[15px]">
+          <div className="px-5 sm:px-8">
             <button
               onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/generate"), 500); }}
               disabled={ttsPhase !== "done" || navigating}
@@ -240,6 +336,7 @@ export default function DemoVoiceoverPage() {
                 </span>
               ) : "Continue →"}
             </button>
+          </div>
           </div>
         </div>
       </div>

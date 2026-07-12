@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, use, useEffect, useMemo, useRef } from "react";
+import { useState, use, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 // FreeResourcesButton is temporarily hidden — see comment near
@@ -9,7 +9,7 @@ import { WizardNav } from "@/components/wizard/WizardNav";
 // import { FreeResourcesButton } from "@/components/wizard/FreeResourcesButton";
 import { useKieActivityStore } from "@/store/kieActivityStore";
 import { useProject } from "@/hooks/useProject";
-import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp, Eye, X, Upload } from "lucide-react";
+import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp, Eye, X, Upload, Info } from "lucide-react";
 import { ImageSparkle } from "@/components/icons/ImageSparkle";
 import { StepCostCard } from "@/components/StepCostCard";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
@@ -29,6 +29,113 @@ const fetcher = (url: string) =>
     if (!r.ok) return r.json().catch(() => ({})).then((e: { error?: string }) => { throw new Error(e.error ?? `Failed to load (${r.status})`); });
     return r.json().catch(() => ({}));
   });
+
+// Lightweight uniform-grid virtualizer. The generate step can hold 400-700+
+// beat tiles; mounting them all (each video tile also spins up an
+// IntersectionObserver) makes the page slow to load and janky to scroll.
+// This mounts only the rows near the viewport and reserves the rest with two
+// full-width spacer rows so the scrollbar length and scroll position stay
+// correct. Works in both scroll modes the grid uses:
+//   • >=640px: the grid itself scrolls (overflow-y-auto + max-h)
+//   • <640px:  no inner scroll — the page scrolls and the grid grows
+// Tile height comes from the grid's content width and the tiles' fixed 16:9
+// aspect, so it's exact without needing any tile on-screen to measure.
+const GRID_GAP = 6; // matches gap-1.5
+const GRID_OVERSCAN = 4; // extra rows rendered above/below the viewport
+function useGridVirtualizer(count: number, externalRef: { current: HTMLDivElement | null }) {
+  const elRef = useRef<HTMLDivElement | null>(null);
+  const roRef = useRef<ResizeObserver | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const [metrics, setMetrics] = useState({ cols: 2, rowH: 0 });
+  // Seed a small first batch so the grid isn't blank for the frame before
+  // measurement runs; recompute corrects it immediately after mount.
+  const [range, setRange] = useState({ start: 0, end: 40, topPad: 0, bottomPad: 0 });
+
+  const measure = useCallback(() => {
+    const el = elRef.current;
+    if (!el) return;
+    const cols = window.matchMedia("(min-width: 640px)").matches ? 4 : 2;
+    const contentW = el.clientWidth - 4; // pr-1
+    const tileW = (contentW - (cols - 1) * GRID_GAP) / cols;
+    const rowH = Math.max(1, Math.round((tileW * 9) / 16) + GRID_GAP);
+    // Keep content-visibility's reserved size exact for the rendered tiles.
+    el.style.setProperty("--tile-h", `${rowH - GRID_GAP}px`);
+    setMetrics((m) => (m.cols === cols && m.rowH === rowH ? m : { cols, rowH }));
+  }, []);
+
+  const recompute = useCallback(() => {
+    const el = elRef.current;
+    const { cols, rowH } = metrics;
+    if (!el || rowH <= 0) return;
+    const rows = Math.ceil(count / cols);
+    const cs = getComputedStyle(el);
+    const innerScroll =
+      (cs.overflowY === "auto" || cs.overflowY === "scroll") && el.scrollHeight > el.clientHeight + 1;
+    let viewTop: number;
+    let viewBottom: number;
+    if (innerScroll) {
+      viewTop = el.scrollTop;
+      viewBottom = el.scrollTop + el.clientHeight;
+    } else {
+      const rect = el.getBoundingClientRect();
+      viewTop = Math.max(0, -rect.top);
+      viewBottom = Math.max(0, window.innerHeight - rect.top);
+    }
+    const startRow = Math.max(0, Math.floor(viewTop / rowH) - GRID_OVERSCAN);
+    const endRow = Math.min(rows, Math.ceil(viewBottom / rowH) + GRID_OVERSCAN);
+    const start = startRow * cols;
+    const end = Math.min(count, endRow * cols);
+    const topPad = Math.max(0, startRow * rowH - GRID_GAP);
+    const bottomPad = Math.max(0, (rows - endRow) * rowH);
+    setRange((p) =>
+      p.start === start && p.end === end && p.topPad === topPad && p.bottomPad === bottomPad
+        ? p
+        : { start, end, topPad, bottomPad },
+    );
+  }, [count, metrics]);
+
+  const schedule = useCallback(() => {
+    if (rafRef.current != null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      recompute();
+    });
+  }, [recompute]);
+
+  const setRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      elRef.current = node;
+      externalRef.current = node;
+      roRef.current?.disconnect();
+      if (!node) return;
+      roRef.current = new ResizeObserver(() => {
+        measure();
+        schedule();
+      });
+      roRef.current.observe(node);
+      measure();
+      schedule();
+    },
+    [externalRef, measure, schedule],
+  );
+
+  // Recompute when metrics/count change and on any scroll (capture:true also
+  // catches scroll from the inner grid / outer wrapper, which don't bubble).
+  useEffect(() => {
+    schedule();
+  }, [schedule, metrics, count]);
+  useEffect(() => {
+    const onScroll = () => schedule();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [schedule]);
+
+  return { setRef, ...range };
+}
 
 function isCreditError(raw: string | undefined | null): boolean {
   const msg = (raw ?? "").toLowerCase();
@@ -391,6 +498,20 @@ export default function GeneratePage({ params }: PageProps) {
   const initialTtsSelected = useRef(false);
 
   const [navigating, setNavigating] = useState(false);
+  // The bottom-bar "skip warnings" drawer stays hidden until the user
+  // first clicks Continue while beats are still ungenerated. That first
+  // click slides the drawer up instead of navigating; the label then
+  // flips to "Continue anyway" so a second click actually advances.
+  const [warningsRevealed, setWarningsRevealed] = useState(false);
+  // Per-panel dismissal of the "script edited — beats are stale" banner.
+  // Reset whenever staleness clears so a fresh edit re-shows the banner.
+  const [staleImageDismissed, setStaleImageDismissed] = useState(false);
+  const [staleVideoDismissed, setStaleVideoDismissed] = useState(false);
+  // Per-panel dismissal of the generation-failure banners. Cleared by the
+  // reset helpers at the start of every new run, so a fresh failure always
+  // re-surfaces the banner even if the user dismissed the previous one.
+  const [imageErrorDismissed, setImageErrorDismissed] = useState(false);
+  const [videoErrorDismissed, setVideoErrorDismissed] = useState(false);
   const [generatingTts, setGeneratingTts] = useState(false);
   const [ttsProgress, setTtsProgress] = useState<{ current: number; total: number } | null>(null);
   const [ttsStatusMsg, setTtsStatusMsg] = useState<string>("");
@@ -411,6 +532,33 @@ export default function GeneratePage({ params }: PageProps) {
   // When set, a modal alerts the user that a video can't be made because
   // the beat(s) have no source image. Holds the message body.
   const [noImageAlert, setNoImageAlert] = useState<string | null>(null);
+
+  // Layout: "double" = image + video panels side by side (default);
+  // "single" = one panel at a time (images first → Continue → video).
+  const [columnView, setColumnView] = useState<"single" | "double">("double");
+  const [singleStep, setSingleStep] = useState<"image" | "video">("image");
+  useEffect(() => {
+    const saved = typeof window !== "undefined" ? window.localStorage.getItem("generate:columnView") : null;
+    if (saved === "single" || saved === "double") setColumnView(saved);
+  }, []);
+  function chooseColumnView(v: "single" | "double") {
+    setColumnView(v);
+    try { window.localStorage.setItem("generate:columnView", v); } catch { /* ignore */ }
+  }
+  // On mobile we FORCE single-panel: rendering both panels' beat grids
+  // (hundreds of tiles each) at once froze the page and made scrolling
+  // painful. The toggle is also hidden on mobile. Desktop keeps the
+  // user's chosen view.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  const effectiveView: "single" | "double" = isMobile ? "single" : columnView;
   // Refs to scroll the error banners into view once they appear so
   // the user actually sees the failure summary instead of having to
   // scan the page for it.
@@ -433,6 +581,7 @@ export default function GeneratePage({ params }: PageProps) {
   // making it look like the new action already failed.
   function resetImageErrorBanner() {
     setImageRunError(null);
+    setImageErrorDismissed(false);
     imageBannerShown.current = false;
   }
   function resetVideoErrorBannerLocal() {
@@ -442,11 +591,13 @@ export default function GeneratePage({ params }: PageProps) {
     // just because the user retried one of them. The acted-on beat
     // gets its own video_error cleared by the queue route's UPDATE.
     setVideoRunError(null);
+    setVideoErrorDismissed(false);
     videoBannerShown.current = false;
   }
 
   function resetVideoErrorBanner() {
     setVideoRunError(null);
+    setVideoErrorDismissed(false);
     videoBannerShown.current = false;
     // Project-wide reset: clears video_error on every beat and flips
     // failed beats' status back to null so the banner fully resets.
@@ -695,7 +846,28 @@ export default function GeneratePage({ params }: PageProps) {
   >(null);
   function showBeatPrompt(e: React.MouseEvent, beatNumber: number, text?: string | null) {
     if (!text) return;
+    // Touch devices fire mouseenter on tap, which would pop this hover
+    // tooltip over the preview dialog the same tap opens. The preview
+    // already shows the prompt, so skip the tooltip when there's no hover.
+    if (typeof window !== "undefined" && window.matchMedia?.("(hover: none)").matches) return;
     const r = e.currentTarget.getBoundingClientRect();
+    const width = Math.min(360, window.innerWidth - 16);
+    const left = Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8));
+    const above = r.bottom > window.innerHeight * 0.62;
+    setPromptPopup({ beatNumber, text, left, width, top: above ? r.top - 6 : r.bottom + 6, above });
+  }
+  // Touch equivalent of the hover tooltip: the per-tile info button taps
+  // this to show the prompt (positioned over the tile), dismissed by the
+  // backdrop tap. stopPropagation keeps the tile's own tap (preview/menu)
+  // from firing.
+  function showBeatPromptTap(e: React.MouseEvent, beatNumber: number, text?: string | null) {
+    e.stopPropagation();
+    if (!text) {
+      toast("No prompt for this beat yet.");
+      return;
+    }
+    const tile = ((e.currentTarget as HTMLElement).closest(".cv-tile") ?? e.currentTarget) as HTMLElement;
+    const r = tile.getBoundingClientRect();
     const width = Math.min(360, window.innerWidth - 16);
     const left = Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8));
     const above = r.bottom > window.innerHeight * 0.62;
@@ -885,6 +1057,11 @@ export default function GeneratePage({ params }: PageProps) {
   }
 
   const beats: Beat[] = project?.beats ?? [];
+  // Beats that have a video prompt — the video grid renders only these.
+  const videoBeatList = useMemo(() => beats.filter((b) => b.videoPrompt), [beats]);
+  // Virtualize both grids so only the tiles near the viewport are mounted.
+  const imgGrid = useGridVirtualizer(beats.length, imageGridRef);
+  const vidGrid = useGridVirtualizer(videoBeatList.length, videoGridRef);
   // Latest beats, readable inside interval callbacks without making the
   // beats array a dependency (which would re-subscribe the interval on
   // every poll/mutate).
@@ -899,7 +1076,11 @@ export default function GeneratePage({ params }: PageProps) {
   const totalBeats = beats.length;
   const generatedImages = beats.filter((b) => b.imageUrl).length;
   const generatedVideos = beats.filter((b) => b.videoUrl).length;
-  const videoBeats = beats.filter((b) => b.videoPrompt).length;
+  const videoBeats = videoBeatList.length;
+  // Re-hide the skip-warnings drawer whenever generation progress moves,
+  // so a fresh Continue click is required to reveal it again (and the
+  // label resets to "Continue" rather than staying "Continue anyway").
+  useEffect(() => { setWarningsRevealed(false); }, [generatedImages, generatedVideos, totalBeats, videoBeats]);
   // A beat that holds a videoUrl is logically done, even if a stale
   // "failed" status is still on the row from an earlier retry — the
   // worker doesn't clear video_url when writing a failure, so we have
@@ -964,6 +1145,12 @@ export default function GeneratePage({ params }: PageProps) {
     && !!project?.prompts_script_hash
     && !!currentScriptHash
     && project.prompts_script_hash !== currentScriptHash;
+
+  // Once the beats are no longer stale (user regenerated), forget any
+  // dismissal so the next edit surfaces the banner again.
+  useEffect(() => {
+    if (!beatsStale) { setStaleImageDismissed(false); setStaleVideoDismissed(false); }
+  }, [beatsStale]);
 
   useEffect(() => {
     if (!generatingImages && project?.images_progress) setImagesProgress(project.images_progress);
@@ -1791,6 +1978,59 @@ export default function GeneratePage({ params }: PageProps) {
           </div>
         </div>
 
+        {/* Images / Videos / Both switcher — a persistent tab bar above the
+            scrolling grid. Images & Videos drive the single-column view (one
+            panel at a time); Both switches to the side-by-side two-column
+            view. "Both" is desktop-only — mobile forces single-column for
+            performance. Sits outside the scroller as a shrink-0 row so it
+            stays fixed above the grid. */}
+        <div className="shrink-0 px-5 sm:px-8 pt-3 pb-3" style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)" }}>
+          <div className="flex items-center gap-1 rounded-xl p-1" style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
+            {([
+              {
+                key: "image",
+                label: "Images",
+                icon: <ImageIcon size={15} />,
+                active: effectiveView === "single" && singleStep === "image",
+                // On mobile the view is force-single, so only move the step
+                // and leave the persisted desktop columnView preference alone.
+                onClick: () => { if (!isMobile) chooseColumnView("single"); setSingleStep("image"); },
+              },
+              {
+                key: "video",
+                label: "Videos",
+                icon: <Video size={15} />,
+                active: effectiveView === "single" && singleStep === "video",
+                onClick: () => { if (!isMobile) chooseColumnView("single"); setSingleStep("video"); },
+              },
+              ...(!isMobile ? [{
+                key: "both",
+                label: "Both",
+                icon: (
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                    <rect x="2" y="2.5" width="5" height="11" rx="1.3" stroke="currentColor" strokeWidth="1.4" />
+                    <rect x="9" y="2.5" width="5" height="11" rx="1.3" stroke="currentColor" strokeWidth="1.4" />
+                  </svg>
+                ),
+                active: effectiveView === "double",
+                onClick: () => chooseColumnView("double"),
+              }] : []),
+            ]).map((t) => (
+              <button
+                key={t.key}
+                onClick={t.onClick}
+                aria-pressed={t.active}
+                className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5"
+                style={t.active
+                  ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)" }
+                  : { color: "var(--c-55)" }}
+              >
+                {t.icon} {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="flex-1 overflow-y-auto pb-[70px]">
         {/* 3-row subgrid keeps the image and video panels perfectly
             row-aligned: model-picker headers share row 1, gallery /
@@ -1798,9 +2038,12 @@ export default function GeneratePage({ params }: PageProps) {
             Without subgrid, extra content on one side (e.g. a taller
             aspect list, or a resolution section that only one panel
             has) would push the sections below it out of alignment. */}
-        <div className="px-5 py-4 sm:p-8 mb-[84px] grid grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto] gap-6">
-          {/* Image Gen Panel */}
-          <div className="rounded-2xl overflow-hidden flex flex-col lg:grid lg:grid-rows-subgrid lg:row-span-3"
+        <div className={`px-5 pb-4 pt-4 sm:px-8 sm:pb-8 sm:pt-6 mb-[84px] grid gap-6 ${effectiveView === "double" ? "grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto]" : "grid-cols-1"}`}>
+          {/* Image Gen Panel — unmounted (not just hidden) when it isn't
+              the active single-view step, so its hundreds of tiles +
+              IntersectionObservers don't stay mounted and freeze mobile. */}
+          {(effectiveView === "double" || singleStep === "image") && (
+          <div className={`rounded-2xl overflow-hidden flex flex-col ${effectiveView === "double" ? "lg:grid lg:grid-rows-subgrid lg:row-span-3" : ""}`}
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon={<ImageIcon size={18} />} title="AI Images" subtitle={`${totalBeats} images from script beats`} />
@@ -1821,14 +2064,23 @@ export default function GeneratePage({ params }: PageProps) {
                 / middle / actions) and subgrid row alignment holds even
                 when both inner blocks are empty. */}
             <div className="flex flex-col">
-            {beatsStale && (
+            {beatsStale && !staleImageDismissed && (
               <div className="px-5 pt-4">
                 <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
                   style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "oklch(0.85 0.12 70)" }}>
                   <span aria-hidden>⚠</span>
-                  <span>
+                  <span className="flex-1">
                     Script was edited after these beats were generated. Any images below were prompted from the old script — regenerate the beats in <strong>Prompt Studio</strong> before re-running images.
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => setStaleImageDismissed(true)}
+                    aria-label="Dismiss"
+                    className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-md transition-colors hover:bg-[oklch(0.72_0.16_70_/_0.18)]"
+                    style={{ color: "oklch(0.85 0.12 70)" }}
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
               </div>
             )}
@@ -1837,14 +2089,15 @@ export default function GeneratePage({ params }: PageProps) {
             {(beats.some((b) => b.imageUrl || b.imageStatus) || regenBeats.size > 0) && (
               <div className="px-5 pt-4">
                 <ProgressBar value={clearingImages ? 0 : generatedImages} total={totalBeats} />
-                <div className="relative mt-3">
-                <div ref={imageGridRef} className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
-                  {beats.map((b) => {
+                <div className="relative mt-3 mb-10">
+                <div ref={imgGrid.setRef} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
+                  {imgGrid.topPad > 0 && <div aria-hidden className="col-span-full" style={{ height: imgGrid.topPad }} />}
+                  {beats.slice(imgGrid.start, imgGrid.end).map((b) => {
                     const isRegening = regenBeats.has(b.beatNumber);
                     return (
                       <div
                         key={b.beatNumber}
-                        className="relative aspect-video rounded-lg overflow-hidden group"
+                        className="cv-tile relative w-full aspect-video rounded-lg overflow-hidden group"
                         style={{ background: "var(--bg-progress)" }}
                         onMouseEnter={(e) => showBeatPrompt(e, b.beatNumber, b.imagePrompt)}
                         onMouseLeave={() => setPromptPopup(null)}
@@ -1870,6 +2123,16 @@ export default function GeneratePage({ params }: PageProps) {
                         >
                           {b.beatNumber}
                         </span>
+                        {/* Touch-only "view prompt" — desktop uses hover. */}
+                        <button
+                          type="button"
+                          onClick={(e) => showBeatPromptTap(e, b.beatNumber, b.imagePrompt)}
+                          aria-label={`View prompt for beat ${b.beatNumber}`}
+                          className="touch-only absolute bottom-1.5 left-1.5 z-20 w-7 h-7 rounded-full items-center justify-center"
+                          style={{ background: "oklch(0 0 0 / 0.6)", color: "white", border: "1px solid oklch(1 0 0 / 0.15)" }}
+                        >
+                          <Info size={14} />
+                        </button>
                         {b.imageUrl && !clearingImages ? (
                           <img src={b.imageUrl} alt={`Beat ${b.beatNumber}`} className="w-full h-full object-cover" loading="lazy" decoding="async" />
                         ) : (
@@ -1957,23 +2220,32 @@ export default function GeneratePage({ params }: PageProps) {
                       </div>
                     );
                   })}
+                  {imgGrid.bottomPad > 0 && <div aria-hidden className="col-span-full" style={{ height: imgGrid.bottomPad }} />}
                 </div>
                 <button
                   type="button"
-                  onClick={() => imageGridRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+                  onClick={() => {
+                    // Mobile has no inner grid scroll (page scrolls as one),
+                    // so scroll the grid into view instead of scrolling it.
+                    if (isMobile) imageGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    else imageGridRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
                   title="Jump to the first image"
                   aria-label="Scroll to top"
-                  className="absolute top-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  className="fixed sm:absolute top-24 sm:top-2 right-5 sm:right-3 z-30 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
                 >
                   <ChevronUp size={14} />
                 </button>
                 <button
                   type="button"
-                  onClick={() => imageGridRef.current?.scrollTo({ top: imageGridRef.current.scrollHeight, behavior: "smooth" })}
+                  onClick={() => {
+                    if (isMobile) imageGridRef.current?.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "end" });
+                    else imageGridRef.current?.scrollTo({ top: imageGridRef.current.scrollHeight, behavior: "smooth" });
+                  }}
                   title="Jump to the most recently generated image"
                   aria-label="Scroll to bottom"
-                  className="absolute bottom-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  className="fixed sm:absolute bottom-24 sm:bottom-2 right-5 sm:right-3 z-30 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
                 >
                   <ChevronDown size={14} />
@@ -1983,7 +2255,7 @@ export default function GeneratePage({ params }: PageProps) {
             )}
             </div>
 
-            <div className="p-5 space-y-2">
+            <div className={effectiveView === "single" ? "p-5 flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-2 lg:[&>div]:basis-full lg:[&>button]:flex-1" : "p-5 space-y-2"}>
               {(() => {
                 // Three button states keyed off pendingCount:
                 //   • pendingCount === totalBeats → first-time run: "Generate N Images"
@@ -2012,15 +2284,26 @@ export default function GeneratePage({ params }: PageProps) {
                         </span>
                       </div>
                     )}
-                    {isPartial && !generatingImages && !showCreditBanner && !userStoppedImages && (
-                      <div ref={imageErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug space-y-1"
+                    {isPartial && !generatingImages && !showCreditBanner && !userStoppedImages && !imageErrorDismissed && (
+                      <div ref={imageErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug flex items-start gap-2"
                         style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "oklch(0.78 0.12 25)" }}>
-                        <p>
-                          {pendingCount} image{pendingCount === 1 ? "" : "s"} didn't generate on <span style={{ fontWeight: 600 }}>{workingImageName}</span>. Try switching to a different model above, then run again.
-                        </p>
-                        {imageRunError && (
-                          <p style={{ color: "oklch(0.85 0.08 25)" }}>{imageRunError}</p>
-                        )}
+                        <div className="flex-1 space-y-1">
+                          <p>
+                            {pendingCount} image{pendingCount === 1 ? "" : "s"} didn't generate on <span style={{ fontWeight: 600 }}>{workingImageName}</span>. Try switching to a different model above, then run again.
+                          </p>
+                          {imageRunError && (
+                            <p style={{ color: "oklch(0.85 0.08 25)" }}>{imageRunError}</p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setImageErrorDismissed(true)}
+                          aria-label="Dismiss"
+                          className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-md transition-colors hover:bg-[oklch(0.6_0.22_25_/_0.15)]"
+                          style={{ color: "oklch(0.78 0.12 25)" }}
+                        >
+                          <X size={14} />
+                        </button>
                       </div>
                     )}
                     {generatingImages && (
@@ -2072,9 +2355,11 @@ export default function GeneratePage({ params }: PageProps) {
               })()}
             </div>
           </div>
+          )}
 
-          {/* Video Gen Panel */}
-          <div className="rounded-2xl overflow-hidden flex flex-col lg:grid lg:grid-rows-subgrid lg:row-span-3"
+          {/* Video Gen Panel — same unmount-when-inactive treatment. */}
+          {(effectiveView === "double" || singleStep === "video") && (
+          <div className={`rounded-2xl overflow-hidden flex flex-col ${effectiveView === "double" ? "lg:grid lg:grid-rows-subgrid lg:row-span-3" : ""}`}
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon={<Video size={18} />} title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
@@ -2097,14 +2382,23 @@ export default function GeneratePage({ params }: PageProps) {
                 Always renders so the video panel has exactly three
                 direct children matching the image panel's subgrid. */}
             <div className="flex flex-col">
-            {beatsStale && (
+            {beatsStale && !staleVideoDismissed && (
               <div className="px-5 pt-4">
                 <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
                   style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "oklch(0.85 0.12 70)" }}>
                   <span aria-hidden>⚠</span>
-                  <span>
+                  <span className="flex-1">
                     Script was edited after these beats were generated. Any clips below were prompted from the old script — regenerate the beats in <strong>Prompt Studio</strong> before re-running videos.
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => setStaleVideoDismissed(true)}
+                    aria-label="Dismiss"
+                    className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-md transition-colors hover:bg-[oklch(0.72_0.16_70_/_0.18)]"
+                    style={{ color: "oklch(0.85 0.12 70)" }}
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
               </div>
             )}
@@ -2136,12 +2430,13 @@ export default function GeneratePage({ params }: PageProps) {
             {beats.some((b) => b.videoPrompt) && (
               <div className="px-5 pt-4">
                 <ProgressBar value={generatedVideos} total={videoBeats} />
-                <div className="relative mt-3">
-                <div ref={videoGridRef} className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
-                    {beats.filter((b) => b.videoPrompt).map((b) => (
+                <div className="relative mt-3 mb-10">
+                <div ref={vidGrid.setRef} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
+                    {vidGrid.topPad > 0 && <div aria-hidden className="col-span-full" style={{ height: vidGrid.topPad }} />}
+                    {videoBeatList.slice(vidGrid.start, vidGrid.end).map((b) => (
                       <div
                         key={b.beatNumber}
-                        className="aspect-video rounded-lg overflow-hidden flex items-center justify-center relative group"
+                        className="cv-tile w-full aspect-video rounded-lg overflow-hidden flex items-center justify-center relative group"
                         style={{ background: "var(--bg-progress)" }}
                         onMouseEnter={(e) => showBeatPrompt(e, b.beatNumber, b.videoPrompt)}
                         onMouseLeave={() => setPromptPopup(null)}
@@ -2167,6 +2462,16 @@ export default function GeneratePage({ params }: PageProps) {
                         >
                           {b.beatNumber}
                         </span>
+                        {/* Touch-only "view prompt" — desktop uses hover. */}
+                        <button
+                          type="button"
+                          onClick={(e) => showBeatPromptTap(e, b.beatNumber, b.videoPrompt)}
+                          aria-label={`View prompt for beat ${b.beatNumber}`}
+                          className="touch-only absolute bottom-1.5 left-1.5 z-20 w-7 h-7 rounded-full items-center justify-center"
+                          style={{ background: "oklch(0 0 0 / 0.6)", color: "white", border: "1px solid oklch(1 0 0 / 0.15)" }}
+                        >
+                          <Info size={14} />
+                        </button>
                         {/* Background layer: video if we have one,
                             status badge otherwise. The spinner +
                             regen overlays below sit on top of either. */}
@@ -2354,23 +2659,30 @@ export default function GeneratePage({ params }: PageProps) {
                         )}
                       </div>
                     ))}
+                  {vidGrid.bottomPad > 0 && <div aria-hidden className="col-span-full" style={{ height: vidGrid.bottomPad }} />}
                 </div>
                 <button
                   type="button"
-                  onClick={() => videoGridRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+                  onClick={() => {
+                    if (isMobile) videoGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    else videoGridRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
                   title="Jump to the first clip"
                   aria-label="Scroll to top"
-                  className="absolute top-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  className="fixed sm:absolute top-24 sm:top-2 right-5 sm:right-3 z-30 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
                 >
                   <ChevronUp size={14} />
                 </button>
                 <button
                   type="button"
-                  onClick={() => videoGridRef.current?.scrollTo({ top: videoGridRef.current.scrollHeight, behavior: "smooth" })}
+                  onClick={() => {
+                    if (isMobile) videoGridRef.current?.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "end" });
+                    else videoGridRef.current?.scrollTo({ top: videoGridRef.current.scrollHeight, behavior: "smooth" });
+                  }}
                   title="Jump to the most recently queued clip"
                   aria-label="Scroll to bottom"
-                  className="absolute bottom-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  className="fixed sm:absolute bottom-24 sm:bottom-2 right-5 sm:right-3 z-30 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
                 >
                   <ChevronDown size={14} />
@@ -2380,35 +2692,59 @@ export default function GeneratePage({ params }: PageProps) {
             )}
             </div>
 
-            <div className="p-5 space-y-2">
-              {((failedVideos > 0 && !hasActiveVideos) || videoRunError) && (() => {
+            <div className={effectiveView === "single" ? "p-5 flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-2 lg:[&>div]:basis-full lg:[&>button]:flex-1" : "p-5 space-y-2"}>
+              {((failedVideos > 0 && !hasActiveVideos) || videoRunError) && !videoErrorDismissed && (() => {
                 const workingId = project?.video_model_id as string | undefined;
                 const workingName = videoModels?.find((m) => m.id === workingId)?.name ?? "the selected model";
-                // Pick the message body: the most recent action-level
-                // error (videoRunError) wins over the per-beat error
-                // when both are present — it's almost always the more
-                // immediate failure to surface. Fall back to the
-                // latest failed beat's videoError (highest beatNumber
-                // = most recently submitted) when no action error is
-                // set.
-                const failedWithError = beats
-                  .filter((b) => b.videoStatus === "failed" && b.videoError)
-                  .sort((a, b) => b.beatNumber - a.beatNumber);
-                const beatError = failedWithError.length > 0
-                  ? friendlyError(failedWithError[0].videoError!)
-                  : null;
-                const currentError = videoRunError ?? beatError;
+                // Surface every DISTINCT failure reason across the failed
+                // beats (deduped by friendly message), not just the most
+                // recent one — otherwise the user fixes the one beat shown
+                // here and a different error surfaces on the next retry. A
+                // fresh action-level error (videoRunError) leads the list.
+                const distinctBeatErrors = Array.from(new Set(
+                  beats
+                    .filter((b) => b.videoStatus === "failed" && b.videoError)
+                    .map((b) => friendlyError(b.videoError!)),
+                ));
+                const errors = videoRunError
+                  ? [videoRunError, ...distinctBeatErrors.filter((e) => e !== videoRunError)]
+                  : distinctBeatErrors;
+                // Content-policy blocks are fixed by rephrasing the prompt,
+                // not by switching models — so drop the generic "switch
+                // model" advice when every surfaced error is a content block
+                // (the per-error message already routes them to Prompt Studio).
+                const isContentBlock = (e: string) => e.startsWith("Content policy block");
+                const allContentBlocks = errors.length > 0 && errors.every(isContentBlock);
+                const MAX_SHOWN = 3;
+                const shown = errors.slice(0, MAX_SHOWN);
+                const extra = errors.length - shown.length;
                 return (
-                  <div ref={videoErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug space-y-1"
+                  <div ref={videoErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug flex items-start gap-2"
                     style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "oklch(0.78 0.12 25)" }}>
-                    {failedVideos > 0 && (
-                      <p>
-                        {failedVideos} clip{failedVideos === 1 ? "" : "s"} failed on <span style={{ fontWeight: 600 }}>{workingName}</span>. Try switching to a different model above, then retry.
-                      </p>
-                    )}
-                    {currentError && (
-                      <p style={{ color: "oklch(0.85 0.08 25)" }}>{currentError}</p>
-                    )}
+                    <div className="flex-1 space-y-1">
+                      {failedVideos > 0 && !allContentBlocks && (
+                        <p>
+                          {failedVideos} clip{failedVideos === 1 ? "" : "s"} failed on <span style={{ fontWeight: 600 }}>{workingName}</span>. Try switching to a different model above, then retry.
+                        </p>
+                      )}
+                      {shown.map((e) => (
+                        <p key={e} style={{ color: "oklch(0.85 0.08 25)" }}>{e}</p>
+                      ))}
+                      {extra > 0 && (
+                        <p style={{ color: "oklch(0.85 0.08 25)" }}>
+                          +{extra} more failed beat{extra === 1 ? "" : "s"} with a different error.
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setVideoErrorDismissed(true)}
+                      aria-label="Dismiss"
+                      className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-md transition-colors hover:bg-[oklch(0.6_0.22_25_/_0.15)]"
+                      style={{ color: "oklch(0.78 0.12 25)" }}
+                    >
+                      <X size={14} />
+                    </button>
                   </div>
                 );
               })()}
@@ -2498,7 +2834,10 @@ export default function GeneratePage({ params }: PageProps) {
               )}
             </div>
           </div>
+          )}
         </div>
+        {/* The Images/Videos tabs above replace the old single-column
+            Continue-to-video / Back-to-images nav. */}
         </div>
       </main>
 
@@ -2517,38 +2856,72 @@ export default function GeneratePage({ params }: PageProps) {
         const pendingVideoCount = videoBeats > 0 ? videoBeats - generatedVideos : 0;
         const noVideosYet = canContinue && videoBeats > 0 && generatedVideos === 0;
         const someVideosPending = canContinue && videoBeats > 0 && pendingVideoCount > 0 && !noVideosYet;
-        // "Continue anyway" wins as soon as anything is still pending
-        // (images OR videos), since we're advancing on a partial set.
-        const continueLabel = (someImagesPending || someVideosPending || noVideosYet)
-          ? "Continue anyway"
-          : "Continue →";
+        // Whether advancing now means advancing on a partial set. When true,
+        // the first Continue click reveals the skip-warnings drawer instead
+        // of navigating; the drawer explains what gets skipped/substituted.
+        const hasPendingWarnings = someImagesPending || someVideosPending || noVideosYet;
+        const drawerOpen = warningsRevealed && hasPendingWarnings && !navigating;
+        // Label stays "Continue →" until the drawer is showing, then flips
+        // to "Continue anyway" to signal the second click advances anyway.
+        const continueLabel = drawerOpen ? "Continue anyway" : "Continue →";
+        const handleContinue = () => {
+          if (hasPendingWarnings && !warningsRevealed) { setWarningsRevealed(true); return; }
+          setNavigating(true);
+          router.push(`/projects/${projectId}/assemble`);
+        };
 
         return (
           <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
             style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
-            <div className="sm:px-8 space-y-2">
+            <div className="sm:px-8">
               {!canContinue && !navigating && (
-                <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
+                <p className="text-xs text-center mb-2" style={{ color: "var(--c-40)" }}>
                   Generate at least one image to continue.
                 </p>
               )}
-              {!navigating && someImagesPending && (
-                <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
-                  {pendingImageCount} beat{pendingImageCount === 1 ? "" : "s"} still without image — {pendingImageCount === 1 ? "it will" : "they will"} be skipped at assembly.
-                </p>
-              )}
-              {!navigating && noVideosYet && (
-                <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
-                  No video clips yet — every beat will use its image at assembly.
-                </p>
-              )}
-              {!navigating && someVideosPending && (
-                <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
-                  {pendingVideoCount} clip{pendingVideoCount === 1 ? "" : "s"} without video — the matching image{pendingVideoCount === 1 ? "" : "s"} will be used in those spots.
-                </p>
-              )}
+              {/* Skip-warnings drawer — hidden until the first Continue click.
+                  A 0fr→1fr grid row animates the height so it slides up from
+                  the bar as a drawer. Kept mounted (not conditionally
+                  rendered) so the open/close transition is smooth. */}
+              <div
+                className="grid transition-[grid-template-rows,opacity] duration-300 ease-out"
+                style={{ gridTemplateRows: drawerOpen ? "1fr" : "0fr", opacity: drawerOpen ? 1 : 0 }}
+                aria-hidden={!drawerOpen}
+              >
+                <div className="overflow-hidden">
+                  <div className="flex items-center justify-center gap-2 pb-2 pt-1">
+                    <div className="space-y-1">
+                      {someImagesPending && (
+                        <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
+                          {pendingImageCount} beat{pendingImageCount === 1 ? "" : "s"} still without image — {pendingImageCount === 1 ? "it will" : "they will"} be skipped at assembly.
+                        </p>
+                      )}
+                      {noVideosYet && (
+                        <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
+                          No video clips yet — every beat will use its image at assembly.
+                        </p>
+                      )}
+                      {someVideosPending && (
+                        <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
+                          {pendingVideoCount} clip{pendingVideoCount === 1 ? "" : "s"} without video — the matching image{pendingVideoCount === 1 ? "" : "s"} will be used in those spots.
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setWarningsRevealed(false)}
+                      aria-label="Dismiss"
+                      tabIndex={drawerOpen ? 0 : -1}
+                      className="shrink-0 p-1 rounded-md transition-colors hover:bg-[var(--bg-input)]"
+                      style={{ color: "var(--c-40)" }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
               <button
-                onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/assemble`); }}
+                onClick={handleContinue}
                 disabled={navigating || !canContinue}
                 className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                 style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
@@ -2648,6 +3021,12 @@ export default function GeneratePage({ params }: PageProps) {
       {/* Global hover-prompt popup. Fixed-position + rendered once at the
           page root so it never gets clipped by the beat grids' overflow.
           White card, 7px padding, wider than a tile. */}
+      {/* Touch-only backdrop: the tap-triggered prompt popup has no
+          mouseleave to dismiss it, so a tap anywhere closes it. Hidden on
+          hover devices where the tooltip follows the pointer. */}
+      {promptPopup && (
+        <div className="touch-only fixed inset-0 z-[399]" onClick={() => setPromptPopup(null)} aria-hidden />
+      )}
       {promptPopup && (
         <div
           className="fixed z-[400] rounded-lg shadow-xl pointer-events-none"

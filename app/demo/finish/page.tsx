@@ -35,7 +35,7 @@ export default function DemoFinishPage() {
         <div className="grid grid-cols-2 gap-4">
           <div
             className="rounded-2xl px-6 py-5 text-center"
-            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}
           >
             <p className="text-2xl font-bold" style={{ color: "oklch(0.72 0.25 285)" }}>
               ~8 minutes
@@ -44,7 +44,7 @@ export default function DemoFinishPage() {
           </div>
           <div
             className="rounded-2xl px-6 py-5 text-center"
-            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}
           >
             <p className="text-2xl font-bold" style={{ color: "oklch(0.72 0.25 285)" }}>
               0 manual edits

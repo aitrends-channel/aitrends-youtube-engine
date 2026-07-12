@@ -8,6 +8,7 @@ import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { ChevronUp, ChevronDown } from "lucide-react";
 import type { Beat } from "@/lib/types";
 
 // ── Sub-components ─────────────────────────────────────────────────────────
@@ -386,9 +387,13 @@ function StepCard({ num, title, description, state, windingDown, doneLabel, pend
   const bg = isRunning ? "oklch(0.72 0.25 285 / 0.03)" : "var(--bg-panel)";
 
   return (
-    <div className="rounded-xl p-4 flex gap-4"
+    <div className="rounded-xl p-4 flex flex-col sm:flex-row gap-3 sm:gap-4"
       style={{ background: bg, border: `1px solid ${borderColor}`, transition: "border-color 0.2s" }}>
 
+      {/* Badge + content stay a row; the action buttons drop below them on
+          mobile so the title/description (and the "optional" tag) aren't
+          squeezed against the buttons. */}
+      <div className="flex gap-4 flex-1 min-w-0">
       {/* Step badge */}
       <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm font-bold mt-0.5"
         style={
@@ -447,10 +452,12 @@ function StepCard({ num, title, description, state, windingDown, doneLabel, pend
           <p className="text-xs leading-relaxed" style={{ color: "oklch(0.65 0.15 25)" }}>{state.error}</p>
         )}
       </div>
+      </div>
 
-      {/* Right column — buttons on top, animated caption directly
-          underneath the Stop button while running. */}
-      <div className="shrink-0 flex flex-col items-end gap-2">
+      {/* Action buttons — a row beneath the content on mobile, a right
+          column on desktop. Caption sits under the Stop button while
+          running. */}
+      <div className="shrink-0 flex flex-col items-start sm:items-end gap-2">
         <div className="flex items-start gap-2">
           {onClear && !isRunning && (
             <button
@@ -688,6 +695,9 @@ export default function PromptsPage({ params }: PageProps) {
   // fires); the abort makes the UI snap to "stopped" instantly.
   const imageAbortRef = useRef<AbortController | null>(null);
   const videoAbortRef = useRef<AbortController | null>(null);
+  // Scroll container for the floating jump-to buttons — the per-beat prompt
+  // list below can run to hundreds of cards. Mirrors the voiceover step.
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const [clearTarget, setClearTarget] = useState<"image" | "video" | null>(null);
   const [clearing, setClearing] = useState(false);
   const [regenTarget, setRegenTarget] = useState<"image" | "video" | null>(null);
@@ -1343,7 +1353,7 @@ export default function PromptsPage({ params }: PageProps) {
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
       <WizardNav projectId={projectId} currentState={9} highestState={project?.current_state} channelName={project?.channel_name} />
 
-      <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
+      <main ref={scrollContainerRef} className="flex-1 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
         <div className="shrink-0 px-5 sm:px-8 py-4 sm:py-5"
           style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}>
@@ -1546,6 +1556,35 @@ export default function PromptsPage({ params }: PageProps) {
           </div>
         )}
         </div>
+
+        {/* Jump-to-top / jump-to-bottom — floating purple chevrons, same
+            affordance as the voiceover + generate steps. Only when the
+            per-beat prompt list is present (otherwise there's nothing long
+            to scroll). */}
+        {hasImageBeats && (
+          <>
+            <button
+              type="button"
+              onClick={() => scrollContainerRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+              title="Jump to the top"
+              aria-label="Scroll to top"
+              className="fixed top-24 right-5 z-30 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+            >
+              <ChevronUp size={14} />
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollContainerRef.current?.scrollTo({ top: scrollContainerRef.current.scrollHeight, behavior: "smooth" })}
+              title="Jump to the last beat"
+              aria-label="Scroll to bottom"
+              className="fixed bottom-24 right-5 z-30 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
+            >
+              <ChevronDown size={14} />
+            </button>
+          </>
+        )}
       </main>
 
       {/* Fixed bottom bar */}

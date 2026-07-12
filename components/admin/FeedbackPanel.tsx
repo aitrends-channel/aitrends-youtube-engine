@@ -240,10 +240,10 @@ export function FeedbackPanel() {
               { label: "Ratings", value: String(data?.ratedCount ?? 0) },
               { label: "Skipped", value: String(data?.dismissedCount ?? 0) },
             ].map((c) => (
-              <div key={c.label} className="rounded-xl p-4"
+              <div key={c.label} className="rounded-xl p-3 sm:p-4"
                 style={{ background: "oklch(0 0 0 / 0.03)", border: "1px solid oklch(0 0 0 / 0.07)" }}>
-                <p className="text-[11px] uppercase tracking-wide" style={{ color: "oklch(0.5 0 0)" }}>{c.label}</p>
-                <p className="text-xl font-bold mt-1 text-foreground">{c.value}</p>
+                <p className="text-[10px] sm:text-[11px] uppercase tracking-wide" style={{ color: "oklch(0.5 0 0)" }}>{c.label}</p>
+                <p className="text-lg sm:text-xl font-bold mt-1 text-foreground">{c.value}</p>
               </div>
             ))}
           </div>
