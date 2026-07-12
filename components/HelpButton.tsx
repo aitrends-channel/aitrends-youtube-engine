@@ -199,9 +199,12 @@ export function HelpButton() {
             // contact form can't visibly bleed past the bottom edge on
             // shorter viewports.
             "z-[350] max-w-lg sm:max-w-xl " +
+            // Mobile: pin 10px from the top (instead of vertically centered)
+            // so the popup clears the screen top edge / status bar.
+            "top-[10px] translate-y-0 " +
             "sm:top-5 sm:left-auto sm:bottom-5 sm:right-5 " +
             "sm:translate-x-0 sm:translate-y-0 " +
-            "max-h-[calc(100vh-2.5rem)] " +
+            "max-h-[calc(100vh-1.25rem)] sm:max-h-[calc(100vh-2.5rem)] " +
             "flex flex-col overflow-hidden"
           }
         >

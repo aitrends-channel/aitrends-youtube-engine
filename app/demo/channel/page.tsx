@@ -215,7 +215,7 @@ export default function DemoChannelPage() {
               <p className="text-sm mt-1" style={{ color: "var(--c-50)" }}>
                 Enter a YouTube channel URL to automatically extract style DNA and generate content.
               </p>
-              <div className="mt-3 flex items-center gap-2 flex-wrap">
+              <div className="mt-3 flex items-center gap-2">
                 <DemoStepCostCard column="channel_analysis" />
                 <DemoStepBalanceCard />
               </div>

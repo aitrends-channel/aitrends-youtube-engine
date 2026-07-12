@@ -383,7 +383,7 @@ export default function DemoGeneratePage() {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               Select a model for each service, then generate your final content
             </p>
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <div className="mt-3 flex items-center gap-2">
               <DemoStepCostCard column="generate" />
               <DemoStepBalanceCard />
             </div>
