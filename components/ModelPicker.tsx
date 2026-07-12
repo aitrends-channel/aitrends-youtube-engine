@@ -14,7 +14,7 @@ import { getVideoModelConfig } from "@/lib/kie/videoModels";
 // variant section knows whether to show resolutions (image) or
 // durations (video).
 
-type ModelTab = "all" | "fastest" | "cheapest";
+type ModelTab = "all" | "fastest" | "cheapest" | "free";
 
 interface CommonProps {
   models: KieModel[] | undefined;
@@ -194,24 +194,54 @@ export function ModelPicker(props: ModelPickerProps) {
       </p>
 
       <div className="flex gap-1 mb-2 p-0.5 rounded-lg" style={{ background: "var(--bg-track)" }}>
-        {(["all", "fastest", "cheapest"] as const).map((t) => (
+        {(["all", "fastest", "cheapest", "free"] as const).map((t) => (
           <button
             key={t}
             type="button"
             onClick={() => setTab(t)}
             disabled={disabled}
-            className="flex-1 px-2 py-1 rounded-md text-xs font-medium capitalize transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-            style={tab === t ? {
+            className="flex-1 flex items-center justify-center px-2 py-1 rounded-md text-xs font-medium capitalize transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+            style={t === "free" ? {
+              // Free tab always wears the solid brand color so it reads as
+              // a promo, active or not — same treatment as the voiceover
+              // step's Free tab.
+              background: "var(--primary)",
+              border: "1px solid var(--primary)",
+              color: "var(--primary-foreground)",
+            } : tab === t ? {
               background: "oklch(0.72 0.25 285 / 0.15)",
               color: "oklch(0.88 0.12 285)",
               boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.35)",
             } : { background: "transparent", color: "var(--c-55)" }}
           >
-            {t}
+            {t === "free" ? (
+              <span className="flex flex-col items-center leading-tight">
+                <span>😄 Free</span>
+                <span className="text-[9px] font-semibold normal-case">coming soon</span>
+              </span>
+            ) : t}
           </button>
         ))}
       </div>
 
+      {tab === "free" ? (
+        // Placeholder — no free models yet. Warm "coming soon" card, mirrored
+        // from the voiceover step's Free tab so the two read the same.
+        <div className="rounded-xl px-4 py-8 text-center"
+          style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+          <p className="text-base font-bold" style={{ color: "var(--primary)" }}>
+            Great Good News!
+          </p>
+          <p className="text-sm font-medium mt-2" style={{ color: "var(--c-70)" }}>
+            Thank you for choosing us and staying with us.
+          </p>
+          <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
+            We&apos;re working on free resources you can use to augment your
+            production and cut costs. Coming soon.
+          </p>
+        </div>
+      ) : (
+      <>
       <div className="relative mb-2">
         <Search
           size={13}
@@ -381,6 +411,8 @@ export function ModelPicker(props: ModelPickerProps) {
             </div>
           )}
         </div>
+      )}
+      </>
       )}
     </div>
   );

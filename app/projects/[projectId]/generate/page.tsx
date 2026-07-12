@@ -2696,31 +2696,44 @@ export default function GeneratePage({ params }: PageProps) {
               {((failedVideos > 0 && !hasActiveVideos) || videoRunError) && !videoErrorDismissed && (() => {
                 const workingId = project?.video_model_id as string | undefined;
                 const workingName = videoModels?.find((m) => m.id === workingId)?.name ?? "the selected model";
-                // Pick the message body: the most recent action-level
-                // error (videoRunError) wins over the per-beat error
-                // when both are present — it's almost always the more
-                // immediate failure to surface. Fall back to the
-                // latest failed beat's videoError (highest beatNumber
-                // = most recently submitted) when no action error is
-                // set.
-                const failedWithError = beats
-                  .filter((b) => b.videoStatus === "failed" && b.videoError)
-                  .sort((a, b) => b.beatNumber - a.beatNumber);
-                const beatError = failedWithError.length > 0
-                  ? friendlyError(failedWithError[0].videoError!)
-                  : null;
-                const currentError = videoRunError ?? beatError;
+                // Surface every DISTINCT failure reason across the failed
+                // beats (deduped by friendly message), not just the most
+                // recent one — otherwise the user fixes the one beat shown
+                // here and a different error surfaces on the next retry. A
+                // fresh action-level error (videoRunError) leads the list.
+                const distinctBeatErrors = Array.from(new Set(
+                  beats
+                    .filter((b) => b.videoStatus === "failed" && b.videoError)
+                    .map((b) => friendlyError(b.videoError!)),
+                ));
+                const errors = videoRunError
+                  ? [videoRunError, ...distinctBeatErrors.filter((e) => e !== videoRunError)]
+                  : distinctBeatErrors;
+                // Content-policy blocks are fixed by rephrasing the prompt,
+                // not by switching models — so drop the generic "switch
+                // model" advice when every surfaced error is a content block
+                // (the per-error message already routes them to Prompt Studio).
+                const isContentBlock = (e: string) => e.startsWith("Content policy block");
+                const allContentBlocks = errors.length > 0 && errors.every(isContentBlock);
+                const MAX_SHOWN = 3;
+                const shown = errors.slice(0, MAX_SHOWN);
+                const extra = errors.length - shown.length;
                 return (
                   <div ref={videoErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug flex items-start gap-2"
                     style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "oklch(0.78 0.12 25)" }}>
                     <div className="flex-1 space-y-1">
-                      {failedVideos > 0 && (
+                      {failedVideos > 0 && !allContentBlocks && (
                         <p>
                           {failedVideos} clip{failedVideos === 1 ? "" : "s"} failed on <span style={{ fontWeight: 600 }}>{workingName}</span>. Try switching to a different model above, then retry.
                         </p>
                       )}
-                      {currentError && (
-                        <p style={{ color: "oklch(0.85 0.08 25)" }}>{currentError}</p>
+                      {shown.map((e) => (
+                        <p key={e} style={{ color: "oklch(0.85 0.08 25)" }}>{e}</p>
+                      ))}
+                      {extra > 0 && (
+                        <p style={{ color: "oklch(0.85 0.08 25)" }}>
+                          +{extra} more failed beat{extra === 1 ? "" : "s"} with a different error.
+                        </p>
                       )}
                     </div>
                     <button
