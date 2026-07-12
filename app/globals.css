@@ -343,6 +343,16 @@ body {
 .scroll-themed::-webkit-scrollbar { width: 14px; height: 14px; }
 .scroll-themed::-webkit-scrollbar-thumb { border-width: 3px; }
 
+/* On mobile, hide scrollbars entirely — the rails are visually noisy on
+   small screens and the media grids now scroll with the page rather than
+   inside their own container. */
+@media (max-width: 767px) {
+  *, .scroll-visible, .scroll-themed { scrollbar-width: none; }
+  ::-webkit-scrollbar,
+  .scroll-visible::-webkit-scrollbar,
+  .scroll-themed::-webkit-scrollbar { width: 0; height: 0; display: none; }
+}
+
 /* Light mode hover overrides for Tailwind opacity classes */
 [data-theme="light"] .hover\:bg-white\/5:hover { background-color: oklch(0 0 0 / 0.04) !important; }
 
