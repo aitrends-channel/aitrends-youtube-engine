@@ -829,6 +829,10 @@ export default function GeneratePage({ params }: PageProps) {
   >(null);
   function showBeatPrompt(e: React.MouseEvent, beatNumber: number, text?: string | null) {
     if (!text) return;
+    // Touch devices fire mouseenter on tap, which would pop this hover
+    // tooltip over the preview dialog the same tap opens. The preview
+    // already shows the prompt, so skip the tooltip when there's no hover.
+    if (typeof window !== "undefined" && window.matchMedia?.("(hover: none)").matches) return;
     const r = e.currentTarget.getBoundingClientRect();
     const width = Math.min(360, window.innerWidth - 16);
     const left = Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8));
@@ -1939,6 +1943,31 @@ export default function GeneratePage({ params }: PageProps) {
           </div>
         </div>
 
+        {/* Images/Videos tabs — a persistent switcher between the two panels,
+            replacing the old Continue/Back nav. Shown for single-column view
+            (always on mobile; on desktop only when single column is picked).
+            Sits outside the scroller as a shrink-0 row so it stays fixed above
+            the scrolling grid. */}
+        {effectiveView === "single" && (
+        <div className="shrink-0 px-5 sm:px-8 pt-3 pb-3" style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)" }}>
+          <div className="flex items-center gap-1 rounded-xl p-1" style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
+            {([["image", "Images", <ImageIcon key="i" size={15} />], ["video", "Videos", <Video key="v" size={15} />]] as const).map(([step, label, icon]) => (
+              <button
+                key={step}
+                onClick={() => setSingleStep(step)}
+                aria-pressed={singleStep === step}
+                className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5"
+                style={singleStep === step
+                  ? { background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }
+                  : { color: "var(--c-55)" }}
+              >
+                {icon} {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        )}
+
         <div className="flex-1 overflow-y-auto pb-[70px]">
         {/* 3-row subgrid keeps the image and video panels perfectly
             row-aligned: model-picker headers share row 1, gallery /
@@ -2014,7 +2043,7 @@ export default function GeneratePage({ params }: PageProps) {
             {(beats.some((b) => b.imageUrl || b.imageStatus) || regenBeats.size > 0) && (
               <div className="px-5 pt-4">
                 <ProgressBar value={clearingImages ? 0 : generatedImages} total={totalBeats} />
-                <div className="relative mt-3">
+                <div className="relative mt-3 mb-10">
                 <div ref={imgGrid.setRef} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
                   {imgGrid.topPad > 0 && <div aria-hidden className="col-span-full" style={{ height: imgGrid.topPad }} />}
                   {beats.slice(imgGrid.start, imgGrid.end).map((b) => {
@@ -2325,7 +2354,7 @@ export default function GeneratePage({ params }: PageProps) {
             {beats.some((b) => b.videoPrompt) && (
               <div className="px-5 pt-4">
                 <ProgressBar value={generatedVideos} total={videoBeats} />
-                <div className="relative mt-3">
+                <div className="relative mt-3 mb-10">
                 <div ref={vidGrid.setRef} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
                     {vidGrid.topPad > 0 && <div aria-hidden className="col-span-full" style={{ height: vidGrid.topPad }} />}
                     {videoBeatList.slice(vidGrid.start, vidGrid.end).map((b) => (
@@ -2697,29 +2726,8 @@ export default function GeneratePage({ params }: PageProps) {
           </div>
           )}
         </div>
-        {/* Single-column step nav: images first, then Continue to video. */}
-        {effectiveView === "single" && (
-          <div className="w-full px-5 sm:px-8 pb-8 -mt-[80px] flex items-center justify-between gap-3">
-            {singleStep === "video" ? (
-              <button
-                onClick={() => setSingleStep("image")}
-                className="px-4 py-2 rounded-xl text-sm font-medium transition-all"
-                style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
-              >
-                ← Back to images
-              </button>
-            ) : <span />}
-            {singleStep === "image" && (
-              <button
-                onClick={() => setSingleStep("video")}
-                className="px-5 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
-                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-              >
-                Continue to video →
-              </button>
-            )}
-          </div>
-        )}
+        {/* The Images/Videos tabs above replace the old single-column
+            Continue-to-video / Back-to-images nav. */}
         </div>
       </main>
 
