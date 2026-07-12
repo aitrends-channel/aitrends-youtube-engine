@@ -1894,7 +1894,7 @@ export default function GeneratePage({ params }: PageProps) {
               <div className="px-5 pt-4">
                 <ProgressBar value={clearingImages ? 0 : generatedImages} total={totalBeats} />
                 <div className="relative mt-3">
-                <div ref={imageGridRef} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
+                <div ref={imageGridRef} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
                   {beats.map((b) => {
                     const isRegening = regenBeats.has(b.beatNumber);
                     return (
@@ -2016,20 +2016,28 @@ export default function GeneratePage({ params }: PageProps) {
                 </div>
                 <button
                   type="button"
-                  onClick={() => imageGridRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+                  onClick={() => {
+                    // Mobile has no inner grid scroll (page scrolls as one),
+                    // so scroll the grid into view instead of scrolling it.
+                    if (isMobile) imageGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    else imageGridRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
                   title="Jump to the first image"
                   aria-label="Scroll to top"
-                  className="absolute top-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  className="fixed sm:absolute bottom-28 right-4 sm:bottom-auto sm:top-2 sm:right-3 z-40 w-9 h-9 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
                 >
                   <ChevronUp size={14} />
                 </button>
                 <button
                   type="button"
-                  onClick={() => imageGridRef.current?.scrollTo({ top: imageGridRef.current.scrollHeight, behavior: "smooth" })}
+                  onClick={() => {
+                    if (isMobile) imageGridRef.current?.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "end" });
+                    else imageGridRef.current?.scrollTo({ top: imageGridRef.current.scrollHeight, behavior: "smooth" });
+                  }}
                   title="Jump to the most recently generated image"
                   aria-label="Scroll to bottom"
-                  className="absolute bottom-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  className="fixed sm:absolute bottom-16 right-4 sm:top-auto sm:bottom-2 sm:right-3 z-40 w-9 h-9 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
                 >
                   <ChevronDown size={14} />
@@ -2195,7 +2203,7 @@ export default function GeneratePage({ params }: PageProps) {
               <div className="px-5 pt-4">
                 <ProgressBar value={generatedVideos} total={videoBeats} />
                 <div className="relative mt-3">
-                <div ref={videoGridRef} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
+                <div ref={videoGridRef} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
                     {beats.filter((b) => b.videoPrompt).map((b) => (
                       <div
                         key={b.beatNumber}
@@ -2415,20 +2423,26 @@ export default function GeneratePage({ params }: PageProps) {
                 </div>
                 <button
                   type="button"
-                  onClick={() => videoGridRef.current?.scrollTo({ top: 0, behavior: "smooth" })}
+                  onClick={() => {
+                    if (isMobile) videoGridRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    else videoGridRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
                   title="Jump to the first clip"
                   aria-label="Scroll to top"
-                  className="absolute top-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  className="fixed sm:absolute bottom-28 right-4 sm:bottom-auto sm:top-2 sm:right-3 z-40 w-9 h-9 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
                 >
                   <ChevronUp size={14} />
                 </button>
                 <button
                   type="button"
-                  onClick={() => videoGridRef.current?.scrollTo({ top: videoGridRef.current.scrollHeight, behavior: "smooth" })}
+                  onClick={() => {
+                    if (isMobile) videoGridRef.current?.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "end" });
+                    else videoGridRef.current?.scrollTo({ top: videoGridRef.current.scrollHeight, behavior: "smooth" });
+                  }}
                   title="Jump to the most recently queued clip"
                   aria-label="Scroll to bottom"
-                  className="absolute bottom-2 right-3 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  className="fixed sm:absolute bottom-16 right-4 sm:top-auto sm:bottom-2 sm:right-3 z-40 w-9 h-9 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
                 >
                   <ChevronDown size={14} />
