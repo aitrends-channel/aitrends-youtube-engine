@@ -1007,7 +1007,7 @@ export default function AssemblePage({ params }: PageProps) {
                       Disclaimer
                     </button>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
                     <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>Vol</span>
                     <input
                       type="range"
@@ -1018,21 +1018,21 @@ export default function AssemblePage({ params }: PageProps) {
                       onChange={(e) => setBgmVolume(parseFloat(e.target.value))}
                       disabled={assembling}
                       aria-label="Background music volume"
-                      className="w-24 sm:w-32"
+                      className="flex-1 sm:flex-none sm:w-32"
                     />
                     <span className="text-[11px] font-mono tabular-nums w-9 text-right" style={{ color: "var(--c-60)" }}>
                       {Math.round(bgmVolume * 100)}%
                     </span>
+                    <button
+                      onClick={clearBgm}
+                      disabled={assembling || bgmUploading}
+                      title="Remove background music"
+                      className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-40 shrink-0"
+                      style={{ background: "transparent", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
+                    >
+                      ×
+                    </button>
                   </div>
-                  <button
-                    onClick={clearBgm}
-                    disabled={assembling || bgmUploading}
-                    title="Remove background music"
-                    className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-40 shrink-0"
-                    style={{ background: "transparent", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
-                  >
-                    ×
-                  </button>
                 </>
               )}
               <input
@@ -1093,7 +1093,7 @@ export default function AssemblePage({ params }: PageProps) {
                           : "Saved from a previous run"}
                       </p>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
                       <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>Size</span>
                       <input
                         type="range"
@@ -1104,21 +1104,21 @@ export default function AssemblePage({ params }: PageProps) {
                         onChange={(e) => setLogoSize(parseFloat(e.target.value))}
                         disabled={assembling}
                         aria-label="Logo size"
-                        className="w-24 sm:w-32"
+                        className="flex-1 sm:flex-none sm:w-32"
                       />
                       <span className="text-[11px] font-mono tabular-nums w-9 text-right" style={{ color: "var(--c-60)" }}>
                         {Math.round(logoSize * 100)}%
                       </span>
+                      <button
+                        onClick={clearLogo}
+                        disabled={assembling || logoUploading}
+                        title="Remove channel logo"
+                        className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-40 shrink-0"
+                        style={{ background: "transparent", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
+                      >
+                        ×
+                      </button>
                     </div>
-                    <button
-                      onClick={clearLogo}
-                      disabled={assembling || logoUploading}
-                      title="Remove channel logo"
-                      className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-40 shrink-0"
-                      style={{ background: "transparent", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
-                    >
-                      ×
-                    </button>
                   </>
                 )}
                 <input

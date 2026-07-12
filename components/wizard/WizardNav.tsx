@@ -552,7 +552,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
           style={{ borderTop: "1px solid var(--bd-6)" }}
         >
           {/* Circles + connecting lines */}
-          <div className="flex items-center px-4">
+          <div className="flex items-center px-5 sm:px-8">
             {PHASES.map((phase, i) => {
               const status = getPhaseStatus(phase);
               const isDone = status === "done";
@@ -591,7 +591,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
               layout height as the old labels row — so the fixed mobile
               nav keeps its ~105px height that every page's pt-[105px]
               content offset depends on. */}
-          <div className="relative px-4 pt-1 pb-2">
+          <div className="relative px-5 sm:px-8 pt-1 pb-2">
             {(() => {
               const active = PHASES.find((p) => getPhaseStatus(p) === "active");
               if (!active) return null;
