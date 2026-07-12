@@ -846,7 +846,7 @@ export default function AssemblePage({ params }: PageProps) {
               <div className="p-4 rounded-2xl space-y-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Output</p>
                 <p className="text-sm font-medium" style={{ color: "var(--c-65)" }}>{dimsFor(aspectRatio, selectedResolution).label}</p>
-                <div className="flex gap-1 flex-wrap">
+                <div className="grid grid-cols-4 gap-1.5">
                   {RESOLUTION_PRESETS.map((p) => {
                     const isProOnly = PRO_RESOLUTIONS.has(p);
                     const locked = isProOnly && !canUsePro;
@@ -868,7 +868,7 @@ export default function AssemblePage({ params }: PageProps) {
                         title={locked
                           ? `Pro plan unlocks ${p} (${dimsFor(aspectRatio, p).label}) — click to upgrade`
                           : `Render at ${dimsFor(aspectRatio, p).label}`}
-                        className="px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all disabled:opacity-40 inline-flex items-center gap-1"
+                        className="w-full py-1 rounded-md text-[10px] font-semibold transition-all disabled:opacity-40 inline-flex items-center justify-center gap-1"
                         style={active ? {
                           background: "oklch(0.72 0.25 285 / 0.18)",
                           border: "1px solid oklch(0.72 0.25 285 / 0.45)",
