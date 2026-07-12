@@ -30,6 +30,113 @@ const fetcher = (url: string) =>
     return r.json().catch(() => ({}));
   });
 
+// Lightweight uniform-grid virtualizer. The generate step can hold 400-700+
+// beat tiles; mounting them all (each video tile also spins up an
+// IntersectionObserver) makes the page slow to load and janky to scroll.
+// This mounts only the rows near the viewport and reserves the rest with two
+// full-width spacer rows so the scrollbar length and scroll position stay
+// correct. Works in both scroll modes the grid uses:
+//   • >=640px: the grid itself scrolls (overflow-y-auto + max-h)
+//   • <640px:  no inner scroll — the page scrolls and the grid grows
+// Tile height comes from the grid's content width and the tiles' fixed 16:9
+// aspect, so it's exact without needing any tile on-screen to measure.
+const GRID_GAP = 6; // matches gap-1.5
+const GRID_OVERSCAN = 4; // extra rows rendered above/below the viewport
+function useGridVirtualizer(count: number, externalRef: { current: HTMLDivElement | null }) {
+  const elRef = useRef<HTMLDivElement | null>(null);
+  const roRef = useRef<ResizeObserver | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const [metrics, setMetrics] = useState({ cols: 2, rowH: 0 });
+  // Seed a small first batch so the grid isn't blank for the frame before
+  // measurement runs; recompute corrects it immediately after mount.
+  const [range, setRange] = useState({ start: 0, end: 40, topPad: 0, bottomPad: 0 });
+
+  const measure = useCallback(() => {
+    const el = elRef.current;
+    if (!el) return;
+    const cols = window.matchMedia("(min-width: 640px)").matches ? 4 : 2;
+    const contentW = el.clientWidth - 4; // pr-1
+    const tileW = (contentW - (cols - 1) * GRID_GAP) / cols;
+    const rowH = Math.max(1, Math.round((tileW * 9) / 16) + GRID_GAP);
+    // Keep content-visibility's reserved size exact for the rendered tiles.
+    el.style.setProperty("--tile-h", `${rowH - GRID_GAP}px`);
+    setMetrics((m) => (m.cols === cols && m.rowH === rowH ? m : { cols, rowH }));
+  }, []);
+
+  const recompute = useCallback(() => {
+    const el = elRef.current;
+    const { cols, rowH } = metrics;
+    if (!el || rowH <= 0) return;
+    const rows = Math.ceil(count / cols);
+    const cs = getComputedStyle(el);
+    const innerScroll =
+      (cs.overflowY === "auto" || cs.overflowY === "scroll") && el.scrollHeight > el.clientHeight + 1;
+    let viewTop: number;
+    let viewBottom: number;
+    if (innerScroll) {
+      viewTop = el.scrollTop;
+      viewBottom = el.scrollTop + el.clientHeight;
+    } else {
+      const rect = el.getBoundingClientRect();
+      viewTop = Math.max(0, -rect.top);
+      viewBottom = Math.max(0, window.innerHeight - rect.top);
+    }
+    const startRow = Math.max(0, Math.floor(viewTop / rowH) - GRID_OVERSCAN);
+    const endRow = Math.min(rows, Math.ceil(viewBottom / rowH) + GRID_OVERSCAN);
+    const start = startRow * cols;
+    const end = Math.min(count, endRow * cols);
+    const topPad = Math.max(0, startRow * rowH - GRID_GAP);
+    const bottomPad = Math.max(0, (rows - endRow) * rowH);
+    setRange((p) =>
+      p.start === start && p.end === end && p.topPad === topPad && p.bottomPad === bottomPad
+        ? p
+        : { start, end, topPad, bottomPad },
+    );
+  }, [count, metrics]);
+
+  const schedule = useCallback(() => {
+    if (rafRef.current != null) return;
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      recompute();
+    });
+  }, [recompute]);
+
+  const setRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      elRef.current = node;
+      externalRef.current = node;
+      roRef.current?.disconnect();
+      if (!node) return;
+      roRef.current = new ResizeObserver(() => {
+        measure();
+        schedule();
+      });
+      roRef.current.observe(node);
+      measure();
+      schedule();
+    },
+    [externalRef, measure, schedule],
+  );
+
+  // Recompute when metrics/count change and on any scroll (capture:true also
+  // catches scroll from the inner grid / outer wrapper, which don't bubble).
+  useEffect(() => {
+    schedule();
+  }, [schedule, metrics, count]);
+  useEffect(() => {
+    const onScroll = () => schedule();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, [schedule]);
+
+  return { setRef, ...range };
+}
+
 function isCreditError(raw: string | undefined | null): boolean {
   const msg = (raw ?? "").toLowerCase();
   // Keep the matcher tight — "quota exceeded" was catching KIE's
@@ -448,33 +555,6 @@ export default function GeneratePage({ params }: PageProps) {
   const imageGridRef = useRef<HTMLDivElement | null>(null);
   const videoGridRef = useRef<HTMLDivElement | null>(null);
   const videoErrorBannerRef = useRef<HTMLDivElement | null>(null);
-  // Measure the first tile's real rendered height and publish it as a
-  // --tile-h CSS var on the grid. content-visibility reserves exactly that
-  // height for off-screen tiles, so revealing them causes zero layout shift
-  // — the stutter that showed up past ~400 beats. A ResizeObserver keeps it
-  // correct across breakpoints / orientation changes.
-  const imgRoRef = useRef<ResizeObserver | null>(null);
-  const vidRoRef = useRef<ResizeObserver | null>(null);
-  const makeGridRef = (
-    refObj: React.MutableRefObject<HTMLDivElement | null>,
-    roRef: React.MutableRefObject<ResizeObserver | null>,
-  ) =>
-    (node: HTMLDivElement | null) => {
-      refObj.current = node;
-      roRef.current?.disconnect();
-      if (!node) return;
-      const apply = () => {
-        const first = node.firstElementChild as HTMLElement | null;
-        if (first?.offsetHeight) node.style.setProperty("--tile-h", `${first.offsetHeight}px`);
-      };
-      apply();
-      roRef.current = new ResizeObserver(apply);
-      roRef.current.observe(node);
-    };
-  // useCallback keeps the ref identity stable so React only re-attaches on
-  // real mount/unmount, not every render.
-  const setImageGrid = useCallback(makeGridRef(imageGridRef, imgRoRef), []);
-  const setVideoGrid = useCallback(makeGridRef(videoGridRef, vidRoRef), []);
   // Latch the "was visible" state so we only scroll-into-view once per
   // banner appearance (not on every re-render while it's open).
   const imageBannerShown = useRef(false);
@@ -939,6 +1019,11 @@ export default function GeneratePage({ params }: PageProps) {
   }
 
   const beats: Beat[] = project?.beats ?? [];
+  // Beats that have a video prompt — the video grid renders only these.
+  const videoBeatList = useMemo(() => beats.filter((b) => b.videoPrompt), [beats]);
+  // Virtualize both grids so only the tiles near the viewport are mounted.
+  const imgGrid = useGridVirtualizer(beats.length, imageGridRef);
+  const vidGrid = useGridVirtualizer(videoBeatList.length, videoGridRef);
   // Latest beats, readable inside interval callbacks without making the
   // beats array a dependency (which would re-subscribe the interval on
   // every poll/mutate).
@@ -953,7 +1038,7 @@ export default function GeneratePage({ params }: PageProps) {
   const totalBeats = beats.length;
   const generatedImages = beats.filter((b) => b.imageUrl).length;
   const generatedVideos = beats.filter((b) => b.videoUrl).length;
-  const videoBeats = beats.filter((b) => b.videoPrompt).length;
+  const videoBeats = videoBeatList.length;
   // A beat that holds a videoUrl is logically done, even if a stale
   // "failed" status is still on the row from an earlier retry — the
   // worker doesn't clear video_url when writing a failure, so we have
@@ -1930,8 +2015,9 @@ export default function GeneratePage({ params }: PageProps) {
               <div className="px-5 pt-4">
                 <ProgressBar value={clearingImages ? 0 : generatedImages} total={totalBeats} />
                 <div className="relative mt-3">
-                <div ref={setImageGrid} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
-                  {beats.map((b) => {
+                <div ref={imgGrid.setRef} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
+                  {imgGrid.topPad > 0 && <div aria-hidden className="col-span-full" style={{ height: imgGrid.topPad }} />}
+                  {beats.slice(imgGrid.start, imgGrid.end).map((b) => {
                     const isRegening = regenBeats.has(b.beatNumber);
                     return (
                       <div
@@ -2049,6 +2135,7 @@ export default function GeneratePage({ params }: PageProps) {
                       </div>
                     );
                   })}
+                  {imgGrid.bottomPad > 0 && <div aria-hidden className="col-span-full" style={{ height: imgGrid.bottomPad }} />}
                 </div>
                 <button
                   type="button"
@@ -2239,8 +2326,9 @@ export default function GeneratePage({ params }: PageProps) {
               <div className="px-5 pt-4">
                 <ProgressBar value={generatedVideos} total={videoBeats} />
                 <div className="relative mt-3">
-                <div ref={setVideoGrid} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
-                    {beats.filter((b) => b.videoPrompt).map((b) => (
+                <div ref={vidGrid.setRef} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
+                    {vidGrid.topPad > 0 && <div aria-hidden className="col-span-full" style={{ height: vidGrid.topPad }} />}
+                    {videoBeatList.slice(vidGrid.start, vidGrid.end).map((b) => (
                       <div
                         key={b.beatNumber}
                         className="cv-tile w-full aspect-video rounded-lg overflow-hidden flex items-center justify-center relative group"
@@ -2456,6 +2544,7 @@ export default function GeneratePage({ params }: PageProps) {
                         )}
                       </div>
                     ))}
+                  {vidGrid.bottomPad > 0 && <div aria-hidden className="col-span-full" style={{ height: vidGrid.bottomPad }} />}
                 </div>
                 <button
                   type="button"
