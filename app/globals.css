@@ -348,7 +348,7 @@ body {
    and makes the generate page unscrollable. `auto` remembers each tile's
    real size after its first paint; 180px is just the initial placeholder
    so the scrollbar length is roughly right before anything renders. */
-.cv-tile { content-visibility: auto; contain-intrinsic-size: auto 120px; }
+.cv-tile { content-visibility: auto; contain-intrinsic-size: auto var(--tile-h, 120px); }
 
 /* On mobile, hide scrollbars entirely — the rails are visually noisy on
    small screens and the media grids now scroll with the page rather than
