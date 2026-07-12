@@ -1820,7 +1820,7 @@ export default function GeneratePage({ params }: PageProps) {
               title="Single column — images first, then video"
               aria-label="Single column view"
               aria-pressed={columnView === "single"}
-              className="w-8 h-8 rounded-md flex items-center justify-center transition-colors"
+              className="w-14 h-8 rounded-md flex items-center justify-center transition-colors"
               style={columnView === "single" ? { background: "oklch(0.72 0.25 285 / 0.2)", color: "oklch(0.88 0.12 285)" } : { color: "var(--c-45)" }}
             >
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="4.5" y="2.5" width="7" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.4" /></svg>
@@ -1830,7 +1830,7 @@ export default function GeneratePage({ params }: PageProps) {
               title="Two columns — image and video side by side"
               aria-label="Two column view"
               aria-pressed={columnView === "double"}
-              className="w-8 h-8 rounded-md flex items-center justify-center transition-colors"
+              className="w-14 h-8 rounded-md flex items-center justify-center transition-colors"
               style={columnView === "double" ? { background: "oklch(0.72 0.25 285 / 0.2)", color: "oklch(0.88 0.12 285)" } : { color: "var(--c-45)" }}
             >
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="2.5" width="5" height="11" rx="1.3" stroke="currentColor" strokeWidth="1.4" /><rect x="9" y="2.5" width="5" height="11" rx="1.3" stroke="currentColor" strokeWidth="1.4" /></svg>
@@ -1877,7 +1877,7 @@ export default function GeneratePage({ params }: PageProps) {
               <div className="px-5 pt-4">
                 <ProgressBar value={clearingImages ? 0 : generatedImages} total={totalBeats} />
                 <div className="relative mt-3">
-                <div ref={imageGridRef} className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
+                <div ref={imageGridRef} className={`grid grid-cols-1 sm:grid-cols-4 gap-1.5 overflow-y-auto scroll-visible pr-1 ${columnView === "single" ? "max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
                   {beats.map((b) => {
                     const isRegening = regenBeats.has(b.beatNumber);
                     return (
@@ -2176,7 +2176,7 @@ export default function GeneratePage({ params }: PageProps) {
               <div className="px-5 pt-4">
                 <ProgressBar value={generatedVideos} total={videoBeats} />
                 <div className="relative mt-3">
-                <div ref={videoGridRef} className="grid grid-cols-1 sm:grid-cols-4 gap-1.5 max-h-[440px] sm:max-h-72 overflow-y-auto scroll-visible pr-1">
+                <div ref={videoGridRef} className={`grid grid-cols-1 sm:grid-cols-4 gap-1.5 overflow-y-auto scroll-visible pr-1 ${columnView === "single" ? "max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
                     {beats.filter((b) => b.videoPrompt).map((b) => (
                       <div
                         key={b.beatNumber}
