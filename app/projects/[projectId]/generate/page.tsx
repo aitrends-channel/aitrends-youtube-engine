@@ -1883,7 +1883,7 @@ export default function GeneratePage({ params }: PageProps) {
                     return (
                       <div
                         key={b.beatNumber}
-                        className="relative aspect-video rounded-lg overflow-hidden group"
+                        className="relative w-full aspect-video rounded-lg overflow-hidden group"
                         style={{ background: "var(--bg-progress)" }}
                         onMouseEnter={(e) => showBeatPrompt(e, b.beatNumber, b.imagePrompt)}
                         onMouseLeave={() => setPromptPopup(null)}
@@ -2180,7 +2180,7 @@ export default function GeneratePage({ params }: PageProps) {
                     {beats.filter((b) => b.videoPrompt).map((b) => (
                       <div
                         key={b.beatNumber}
-                        className="aspect-video rounded-lg overflow-hidden flex items-center justify-center relative group"
+                        className="w-full aspect-video rounded-lg overflow-hidden flex items-center justify-center relative group"
                         style={{ background: "var(--bg-progress)" }}
                         onMouseEnter={(e) => showBeatPrompt(e, b.beatNumber, b.videoPrompt)}
                         onMouseLeave={() => setPromptPopup(null)}

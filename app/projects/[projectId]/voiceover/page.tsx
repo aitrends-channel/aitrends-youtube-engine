@@ -977,7 +977,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                 </div>
               );
             })()}
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="min-w-0">
                 <p className="font-semibold text-sm">
                   {totalBeats === 0 ? "No beats yet" : allDone ? "All beats ready" : `${doneCount} of ${totalBeats} beats done`}
@@ -1004,7 +1004,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                   )}
                 </p>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
                 {/* Clear: wipes every beat's voiceover from R2 + DB.
                     Disabled while a run is in flight (would race with
                     in-flight writes) or when there's nothing to delete. */}
