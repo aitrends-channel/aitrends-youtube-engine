@@ -36,6 +36,19 @@ export function looksLikeInsufficientCredits(status: number, body: string, code?
   return /insufficient\s+(credit|balance|fund)|out\s+of\s+credit|no\s+credit/i.test(body);
 }
 
+// KIE sits behind Cloudflare, so a 5xx (502/503/504) comes back as a full
+// HTML error page — kilobytes of markup. Embedding that verbatim in the
+// thrown error floods our logs and lands the whole page in the beat's
+// image_error / video_error column. Collapse an HTML body to a short
+// marker and hard-cap anything else so only the useful (usually small
+// JSON) error text survives.
+export function sanitizeKieErrorBody(body: string): string {
+  if (/^\s*<(?:!doctype|html|head|body)/i.test(body)) {
+    return "(HTML error page — likely a Cloudflare/upstream outage)";
+  }
+  return body.replace(/\s+/g, " ").trim().slice(0, 300);
+}
+
 async function getKieKey(userId?: string): Promise<string> {
   if (userId) {
     const { kie_api_key } = await getSettings(userId);
@@ -71,7 +84,7 @@ export async function kieRequest<T>(
     throw new KieUpstreamError(
       res.status,
       Number.isFinite(retryAfter) ? retryAfter : null,
-      `kie.ai error ${res.status}: ${body}`,
+      `kie.ai error ${res.status} on ${endpoint}: ${sanitizeKieErrorBody(body)}`,
       insufficient,
     );
   }
@@ -103,7 +116,7 @@ export async function kieRequestBinary(
     throw new KieUpstreamError(
       res.status,
       Number.isFinite(retryAfter) ? retryAfter : null,
-      `kie.ai error ${res.status}: ${text}`,
+      `kie.ai error ${res.status} on ${endpoint}: ${sanitizeKieErrorBody(text)}`,
       insufficient,
     );
   }
