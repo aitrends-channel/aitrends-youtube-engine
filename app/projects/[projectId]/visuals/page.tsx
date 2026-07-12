@@ -282,7 +282,7 @@ function VisualProfileCard({
           <p className="text-xs mb-2" style={{ color: "var(--c-45)" }}>Color Palette</p>
           <div className="flex gap-2 flex-wrap">
             {draft.colorPalette.map((c, i) => (
-              <span key={i} className="px-2.5 py-1 rounded-lg text-xs flex items-center gap-1.5"
+              <span key={i} className="px-2.5 py-1 rounded-lg text-xs flex items-center gap-1.5 max-w-full min-w-0"
                 style={editing
                   ? { background: "#ffffff", color: "#18181b", border: "1px solid #d4d4d8" }
                   : { background: "var(--bg-progress)", color: "var(--c-70)", border: "1px solid var(--bd-8)" }}>
@@ -300,8 +300,11 @@ function VisualProfileCard({
                       if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLInputElement).blur(); }
                     }}
                     aria-label={`Color ${i + 1}`}
-                    className="bg-transparent outline-none min-w-[3ch]"
-                    style={{ width: `${Math.max(3, c.length + 1)}ch`, color: "#18181b" }}
+                    className="bg-transparent outline-none min-w-[3ch] max-w-full"
+                    // Cap the content-derived width so a long descriptive
+                    // palette entry can't blow the chip past the viewport and
+                    // overlap its neighbours on mobile.
+                    style={{ width: `${Math.max(3, c.length + 1)}ch`, maxWidth: "min(200px, 100%)", color: "#18181b" }}
                   />
                 ) : c}
                 {editing && (

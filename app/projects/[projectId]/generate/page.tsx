@@ -9,7 +9,7 @@ import { WizardNav } from "@/components/wizard/WizardNav";
 // import { FreeResourcesButton } from "@/components/wizard/FreeResourcesButton";
 import { useKieActivityStore } from "@/store/kieActivityStore";
 import { useProject } from "@/hooks/useProject";
-import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp, Eye, X, Upload } from "lucide-react";
+import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp, Eye, X, Upload, Info } from "lucide-react";
 import { ImageSparkle } from "@/components/icons/ImageSparkle";
 import { StepCostCard } from "@/components/StepCostCard";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
@@ -834,6 +834,23 @@ export default function GeneratePage({ params }: PageProps) {
     // already shows the prompt, so skip the tooltip when there's no hover.
     if (typeof window !== "undefined" && window.matchMedia?.("(hover: none)").matches) return;
     const r = e.currentTarget.getBoundingClientRect();
+    const width = Math.min(360, window.innerWidth - 16);
+    const left = Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8));
+    const above = r.bottom > window.innerHeight * 0.62;
+    setPromptPopup({ beatNumber, text, left, width, top: above ? r.top - 6 : r.bottom + 6, above });
+  }
+  // Touch equivalent of the hover tooltip: the per-tile info button taps
+  // this to show the prompt (positioned over the tile), dismissed by the
+  // backdrop tap. stopPropagation keeps the tile's own tap (preview/menu)
+  // from firing.
+  function showBeatPromptTap(e: React.MouseEvent, beatNumber: number, text?: string | null) {
+    e.stopPropagation();
+    if (!text) {
+      toast("No prompt for this beat yet.");
+      return;
+    }
+    const tile = ((e.currentTarget as HTMLElement).closest(".cv-tile") ?? e.currentTarget) as HTMLElement;
+    const r = tile.getBoundingClientRect();
     const width = Math.min(360, window.innerWidth - 16);
     const left = Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8));
     const above = r.bottom > window.innerHeight * 0.62;
@@ -2068,6 +2085,16 @@ export default function GeneratePage({ params }: PageProps) {
                         >
                           {b.beatNumber}
                         </span>
+                        {/* Touch-only "view prompt" — desktop uses hover. */}
+                        <button
+                          type="button"
+                          onClick={(e) => showBeatPromptTap(e, b.beatNumber, b.imagePrompt)}
+                          aria-label={`View prompt for beat ${b.beatNumber}`}
+                          className="touch-only absolute bottom-1.5 left-1.5 z-20 w-7 h-7 rounded-full items-center justify-center"
+                          style={{ background: "oklch(0 0 0 / 0.6)", color: "white", border: "1px solid oklch(1 0 0 / 0.15)" }}
+                        >
+                          <Info size={14} />
+                        </button>
                         {b.imageUrl && !clearingImages ? (
                           <img src={b.imageUrl} alt={`Beat ${b.beatNumber}`} className="w-full h-full object-cover" loading="lazy" decoding="async" />
                         ) : (
@@ -2167,7 +2194,7 @@ export default function GeneratePage({ params }: PageProps) {
                   }}
                   title="Jump to the first image"
                   aria-label="Scroll to top"
-                  className="fixed sm:absolute bottom-28 right-4 sm:bottom-auto sm:top-2 sm:right-3 z-40 w-9 h-9 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  className="fixed sm:absolute top-24 sm:top-2 right-5 sm:right-3 z-30 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
                 >
                   <ChevronUp size={14} />
@@ -2180,7 +2207,7 @@ export default function GeneratePage({ params }: PageProps) {
                   }}
                   title="Jump to the most recently generated image"
                   aria-label="Scroll to bottom"
-                  className="fixed sm:absolute bottom-16 right-4 sm:top-auto sm:bottom-2 sm:right-3 z-40 w-9 h-9 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  className="fixed sm:absolute bottom-24 sm:bottom-2 right-5 sm:right-3 z-30 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
                 >
                   <ChevronDown size={14} />
@@ -2377,6 +2404,16 @@ export default function GeneratePage({ params }: PageProps) {
                         >
                           {b.beatNumber}
                         </span>
+                        {/* Touch-only "view prompt" — desktop uses hover. */}
+                        <button
+                          type="button"
+                          onClick={(e) => showBeatPromptTap(e, b.beatNumber, b.videoPrompt)}
+                          aria-label={`View prompt for beat ${b.beatNumber}`}
+                          className="touch-only absolute bottom-1.5 left-1.5 z-20 w-7 h-7 rounded-full items-center justify-center"
+                          style={{ background: "oklch(0 0 0 / 0.6)", color: "white", border: "1px solid oklch(1 0 0 / 0.15)" }}
+                        >
+                          <Info size={14} />
+                        </button>
                         {/* Background layer: video if we have one,
                             status badge otherwise. The spinner +
                             regen overlays below sit on top of either. */}
@@ -2574,7 +2611,7 @@ export default function GeneratePage({ params }: PageProps) {
                   }}
                   title="Jump to the first clip"
                   aria-label="Scroll to top"
-                  className="fixed sm:absolute bottom-28 right-4 sm:bottom-auto sm:top-2 sm:right-3 z-40 w-9 h-9 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  className="fixed sm:absolute top-24 sm:top-2 right-5 sm:right-3 z-30 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
                 >
                   <ChevronUp size={14} />
@@ -2587,7 +2624,7 @@ export default function GeneratePage({ params }: PageProps) {
                   }}
                   title="Jump to the most recently queued clip"
                   aria-label="Scroll to bottom"
-                  className="fixed sm:absolute bottom-16 right-4 sm:top-auto sm:bottom-2 sm:right-3 z-40 w-9 h-9 sm:w-7 sm:h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
+                  className="fixed sm:absolute bottom-24 sm:bottom-2 right-5 sm:right-3 z-30 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:scale-105 active:scale-95"
                   style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.45)" }}
                 >
                   <ChevronDown size={14} />
@@ -2868,6 +2905,12 @@ export default function GeneratePage({ params }: PageProps) {
       {/* Global hover-prompt popup. Fixed-position + rendered once at the
           page root so it never gets clipped by the beat grids' overflow.
           White card, 7px padding, wider than a tile. */}
+      {/* Touch-only backdrop: the tap-triggered prompt popup has no
+          mouseleave to dismiss it, so a tap anywhere closes it. Hidden on
+          hover devices where the tooltip follows the pointer. */}
+      {promptPopup && (
+        <div className="touch-only fixed inset-0 z-[399]" onClick={() => setPromptPopup(null)} aria-hidden />
+      )}
       {promptPopup && (
         <div
           className="fixed z-[400] rounded-lg shadow-xl pointer-events-none"
