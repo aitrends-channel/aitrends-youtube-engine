@@ -6,6 +6,7 @@ import { Download } from "lucide-react";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DemoStepCostCard } from "@/components/demo/DemoStepCostCard";
+import { DemoStepBalanceCard } from "@/components/demo/DemoStepBalanceCard";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
 
@@ -88,8 +89,9 @@ export default function DemoThumbnailsPage() {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               AI-powered thumbnail concepts and images matched to your channel style
             </p>
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
               <DemoStepCostCard column="thumbnail" />
+              <DemoStepBalanceCard />
             </div>
           </div>
 
@@ -225,7 +227,7 @@ export default function DemoThumbnailsPage() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {thumbs.map((t) => (
                   <div key={t.position} className="rounded-xl overflow-hidden"
-                    style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                    style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                     <div className="aspect-video w-full relative" style={{ background: "var(--bg-card-subtle)" }}>
                       {hasImages || (imagePhase === "running" && imageProgress > t.position - 1) ? (
                         // eslint-disable-next-line @next/next/no-img-element
