@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { ImageIcon, Video, Eye, Pencil, Info, X } from "lucide-react";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DemoStepCostCard } from "@/components/demo/DemoStepCostCard";
+import { DemoStepBalanceCard } from "@/components/demo/DemoStepBalanceCard";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
 
@@ -40,7 +43,6 @@ const FAKE_VIDEO_MODELS = [
   { id: "bytedance/seedance-2",        name: "Seedance 2",      description: "ByteDance I2V + T2V model",         tags: ["ByteDance", "I2V + T2V"],   cost: "6 cr/s"  },
 ];
 
-const FAKE_VIDEO_RATIOS = ["16:9", "9:16", "1:1"];
 const FAKE_DURATIONS = [{ label: "5s", value: 5 }, { label: "10s", value: 10 }];
 
 // ── Sub-components ───────────────────────────────────────────────────────────
@@ -141,6 +143,119 @@ function RatioButtons({ ratios, selected, onSelect }: { ratios: string[]; select
   );
 }
 
+// Model-picker tab row — mirrors the real ModelPicker's All / Fastest /
+// Cheapest / Free tabs. In the demo the ranking tabs all show the same
+// list (no live speed/cost data), and Free swaps in the coming-soon card.
+const MODEL_TABS = ["all", "fastest", "cheapest", "free"] as const;
+type ModelTab = (typeof MODEL_TABS)[number];
+
+function ModelTabs({ tab, onTab }: { tab: ModelTab; onTab: (t: ModelTab) => void }) {
+  return (
+    <div className="flex gap-1 mb-2 p-0.5 rounded-lg" style={{ background: "var(--bg-track)" }}>
+      {MODEL_TABS.map((t) => (
+        <button
+          key={t}
+          onClick={() => onTab(t)}
+          className="flex-1 flex items-center justify-center px-2 py-1 rounded-md text-xs font-medium capitalize transition-all"
+          style={t === "free" ? {
+            // Free tab always wears the solid brand color as a promo.
+            background: "var(--primary)",
+            border: "1px solid var(--primary)",
+            color: "var(--primary-foreground)",
+          } : tab === t ? {
+            background: "oklch(0.72 0.25 285 / 0.15)",
+            color: "oklch(0.88 0.12 285)",
+            boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.35)",
+          } : { background: "transparent", color: "var(--c-55)" }}
+        >
+          {t === "free" ? (
+            <span className="flex flex-col items-center leading-tight">
+              <span>😄 Free</span>
+              <span className="text-[9px] font-semibold normal-case">coming soon</span>
+            </span>
+          ) : t}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ComingSoonCard() {
+  return (
+    <div className="rounded-xl px-4 py-8 text-center"
+      style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+      <p className="text-base font-bold" style={{ color: "var(--primary)" }}>
+        Great Good News!
+      </p>
+      <p className="text-sm font-medium mt-2" style={{ color: "var(--c-70)" }}>
+        Thank you for choosing us and for being part of our journey.
+      </p>
+      <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
+        We&apos;re building free resources to help you streamline your
+        production, reduce costs, and achieve more with less. Stay with us as we
+        continue to grow into the one-stop solution you&apos;ve been looking for.
+      </p>
+    </div>
+  );
+}
+
+type DemoBeat = (typeof DEMO_DATA.promptBeats)[number];
+
+// Interactive beat tile — mirrors the real generate grid: beat-number badge,
+// hover-prompt tooltip (desktop) / tap-to-view-prompt info button (touch), an
+// Eye view affordance, and a click that opens the full preview dialog.
+function BeatTile({
+  beat, type, onOpen, onHover, onLeave, onTapInfo,
+}: {
+  beat: DemoBeat;
+  type: "image" | "video";
+  onOpen: () => void;
+  onHover: (e: React.MouseEvent) => void;
+  onLeave: () => void;
+  onTapInfo: (e: React.MouseEvent) => void;
+}) {
+  return (
+    <div
+      className="relative w-full aspect-video rounded-lg overflow-hidden group cursor-pointer"
+      style={{ background: "var(--bg-progress)" }}
+      onMouseEnter={onHover}
+      onMouseLeave={onLeave}
+      onClick={onOpen}
+    >
+      {/* Beat number badge — top-left of every tile. */}
+      <span
+        className="absolute top-1.5 left-1.5 z-10 min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center text-[9px] font-semibold tabular-nums pointer-events-none"
+        style={{ background: "oklch(0 0 0 / 0.6)", color: "white", border: "1px solid oklch(1 0 0 / 0.15)" }}
+      >
+        {beat.beat}
+      </span>
+      {/* Touch-only "view prompt" — desktop uses hover. */}
+      <button
+        type="button"
+        onClick={onTapInfo}
+        aria-label={`View prompt for beat ${beat.beat}`}
+        className="touch-only absolute bottom-1.5 left-1.5 z-20 w-7 h-7 rounded-full items-center justify-center"
+        style={{ background: "oklch(0 0 0 / 0.6)", color: "white", border: "1px solid oklch(1 0 0 / 0.15)" }}
+      >
+        <Info size={14} />
+      </button>
+      {type === "image"
+        ? <ImageTile src={beat.imageUrl} alt={`Beat ${beat.beat}`} />
+        : <VideoTile src={beat.videoUrl} />}
+      {/* Eye — opens the full closable preview dialog. */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onOpen(); }}
+        title={`View ${type}`}
+        aria-label={`View beat ${beat.beat}`}
+        className="absolute top-1.5 right-1.5 z-10 w-7 h-7 rounded-full flex items-center justify-center transition-all opacity-100 sm:opacity-0 sm:group-hover:opacity-100 hover:scale-110"
+        style={{ background: "oklch(0 0 0 / 0.6)", color: "white", border: "1px solid oklch(1 0 0 / 0.15)" }}
+      >
+        <Eye size={12} strokeWidth={2.4} />
+      </button>
+    </div>
+  );
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export default function DemoGeneratePage() {
@@ -148,10 +263,86 @@ export default function DemoGeneratePage() {
   const { state, update } = useDemoState();
 
   const [navigating, setNavigating] = useState(false);
+  const [imageModelTab, setImageModelTab] = useState<ModelTab>("all");
+  const [videoModelTab, setVideoModelTab] = useState<ModelTab>("all");
+  // Images / Videos / Both column switcher — mirrors the real generate step.
+  // "both" shows the two panels side by side; "image"/"video" show one.
+  const [columnView, setColumnView] = useState<"image" | "video" | "both">("both");
+  // "Both" is desktop-only — mobile shows one panel at a time (matches the
+  // real generate step). On mobile a persisted "both" falls back to Images.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(max-width: 767px)");
+    const apply = () => setIsMobile(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+  const effectiveView = isMobile && columnView === "both" ? "image" : columnView;
+
+  // Beat preview dialog + hover-prompt tooltip — mirror the real step.
+  const [previewBeat, setPreviewBeat] = useState<{ beat: DemoBeat; type: "image" | "video" } | null>(null);
+  const [previewEditing, setPreviewEditing] = useState(false);
+  const [previewShowPrompt, setPreviewShowPrompt] = useState(false);
+  const [previewEditedPrompt, setPreviewEditedPrompt] = useState("");
+  const [previewAspect, setPreviewAspect] = useState<number | null>(null);
+  const [promptPopup, setPromptPopup] = useState<
+    { beatNumber: number; text: string; left: number; top: number; width: number; above: boolean } | null
+  >(null);
+
+  // Pin the dialog to the media's real size so it hugs the media instead of
+  // always opening at the full dialog width. Mirrors the real generate step.
+  const previewMediaSize = useMemo<{ w: number; h: number } | null>(() => {
+    if (!previewAspect || typeof window === "undefined") return null;
+    const chrome = previewEditing ? 120 : previewShowPrompt ? 170 : 0;
+    const maxW = window.innerWidth * 0.95;
+    const maxH = Math.max(window.innerHeight * 0.85 - chrome, 240);
+    const w = Math.round(Math.min(maxW, maxH * previewAspect));
+    return { w, h: Math.round(w / previewAspect) };
+  }, [previewAspect, previewEditing, previewShowPrompt]);
+
+  function openPreview(beat: DemoBeat, type: "image" | "video") {
+    // Seed the aspect synchronously from the grid-cached image so the dialog
+    // is sized on the first render (no wide flash). Video follows its image.
+    const probe = new Image();
+    probe.src = beat.imageUrl;
+    if (probe.complete && probe.naturalWidth) {
+      setPreviewAspect(probe.naturalWidth / probe.naturalHeight);
+    } else {
+      setPreviewAspect(16 / 9);
+    }
+    setPreviewBeat({ beat, type });
+    setPreviewEditing(false);
+    setPreviewShowPrompt(false);
+  }
+  function closePreview() {
+    setPreviewBeat(null);
+    setPreviewEditing(false);
+    setPreviewShowPrompt(false);
+    setPreviewAspect(null);
+  }
+  function showBeatPrompt(e: React.MouseEvent, beatNumber: number, text: string) {
+    if (typeof window !== "undefined" && window.matchMedia?.("(hover: none)").matches) return;
+    const r = e.currentTarget.getBoundingClientRect();
+    const width = Math.min(360, window.innerWidth - 16);
+    const left = Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8));
+    const above = r.bottom > window.innerHeight * 0.62;
+    setPromptPopup({ beatNumber, text, left, width, top: above ? r.top - 6 : r.bottom + 6, above });
+  }
+  function showBeatPromptTap(e: React.MouseEvent, beatNumber: number, text: string) {
+    e.stopPropagation();
+    const tile = ((e.currentTarget as HTMLElement).closest(".group") ?? e.currentTarget) as HTMLElement;
+    const r = tile.getBoundingClientRect();
+    const width = Math.min(360, window.innerWidth - 16);
+    const left = Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8));
+    const above = r.bottom > window.innerHeight * 0.62;
+    setPromptPopup({ beatNumber, text, left, width, top: above ? r.top - 6 : r.bottom + 6, above });
+  }
 
   const {
     selectedImageModel, selectedImageRatio, imagesPhase, imagesProgress,
-    selectedVideoModel, selectedVideoRatio, selectedDuration, videosPhase,
+    selectedVideoModel, selectedDuration, videosPhase,
   } = state;
 
   const totalBeats = DEMO_DATA.promptBeats.length;
@@ -192,21 +383,57 @@ export default function DemoGeneratePage() {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               Select a model for each service, then generate your final content
             </p>
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
               <DemoStepCostCard column="generate" />
+              <DemoStepBalanceCard />
             </div>
           </div>
 
-          <div className="py-4 sm:py-8 pb-24 sm:pb-24 grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Images / Videos / Both switcher — a persistent tab bar above the
+              two panels. Images & Videos show one panel; Both shows the pair. */}
+          <div className="pt-3 pb-3" style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)" }}>
+            <div className="flex items-center gap-1 rounded-xl p-1" style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
+              {([
+                { key: "image", label: "Images", icon: <ImageIcon size={15} /> },
+                { key: "video", label: "Videos", icon: <Video size={15} /> },
+                // "Both" is desktop-only.
+                ...(!isMobile ? [{
+                  key: "both", label: "Both", icon: (
+                    <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                      <rect x="2" y="2.5" width="5" height="11" rx="1.3" stroke="currentColor" strokeWidth="1.4" />
+                      <rect x="9" y="2.5" width="5" height="11" rx="1.3" stroke="currentColor" strokeWidth="1.4" />
+                    </svg>
+                  ),
+                }] : []),
+              ] as const).map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setColumnView(t.key as "image" | "video" | "both")}
+                  aria-pressed={effectiveView === t.key}
+                  className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5"
+                  style={effectiveView === t.key
+                    ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)" }
+                    : { color: "var(--c-55)" }}
+                >
+                  {t.icon} {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className={`py-4 sm:py-8 pb-24 sm:pb-24 grid gap-6 ${effectiveView === "both" ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1"}`}>
 
             {/* ── AI Images column ─────────────────────────────────────────── */}
+            {(effectiveView === "both" || effectiveView === "image") && (
             <div className="rounded-2xl flex flex-col overflow-hidden"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               <div className="p-5" style={{ borderBottom: "1px solid var(--bd-6)" }}>
                 <SectionHeader icon="◈" title="AI Images" subtitle={`${totalBeats} images from script beats`} />
                 <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
                   Select Model
                 </p>
+                <ModelTabs tab={imageModelTab} onTab={setImageModelTab} />
+                {imageModelTab === "free" ? <ComingSoonCard /> : (<>
                 <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
                   {FAKE_IMAGE_MODELS.map((m) => (
                     <button key={m.id} onClick={() => update({ selectedImageModel: m.id })}
@@ -250,6 +477,7 @@ export default function DemoGeneratePage() {
                     <button className="px-2.5 py-1 rounded-lg text-xs font-medium">placeholder</button>
                   </div>
                 </div>
+                </>)}
               </div>
 
               {/* Image beat grid */}
@@ -258,12 +486,20 @@ export default function DemoGeneratePage() {
                   <ProgressBar value={imagesPhase === "done" ? totalBeats : imagesProgress} total={totalBeats} />
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-72 overflow-y-auto">
                     {DEMO_DATA.promptBeats.map((beat) => (
-                      <div key={beat.beat}
-                        className="relative aspect-video rounded-lg overflow-hidden flex items-center justify-center"
-                        style={{ background: "var(--bg-progress)" }}>
-                        {imagesPhase === "done" ? (
-                          <ImageTile src={beat.imageUrl} alt={`Beat ${beat.beat}`} />
-                        ) : (
+                      imagesPhase === "done" ? (
+                        <BeatTile
+                          key={beat.beat}
+                          beat={beat}
+                          type="image"
+                          onOpen={() => openPreview(beat, "image")}
+                          onHover={(e) => showBeatPrompt(e, beat.beat, beat.imagePrompt)}
+                          onLeave={() => setPromptPopup(null)}
+                          onTapInfo={(e) => showBeatPromptTap(e, beat.beat, beat.imagePrompt)}
+                        />
+                      ) : (
+                        <div key={beat.beat}
+                          className="relative aspect-video rounded-lg overflow-hidden flex items-center justify-center"
+                          style={{ background: "var(--bg-progress)" }}>
                           <span className="text-[9px] px-1.5 py-0.5 rounded relative z-10"
                             style={{
                               background: "oklch(0.72 0.25 285 / 0.1)",
@@ -271,8 +507,8 @@ export default function DemoGeneratePage() {
                             }}>
                             generating
                           </span>
-                        )}
-                      </div>
+                        </div>
+                      )
                     ))}
                   </div>
                 </div>
@@ -301,15 +537,19 @@ export default function DemoGeneratePage() {
                 </button>
               </div>
             </div>
+            )}
 
             {/* ── AI Video Clips column ────────────────────────────────────── */}
+            {(effectiveView === "both" || effectiveView === "video") && (
             <div className="rounded-2xl flex flex-col overflow-hidden"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               <div className="p-5" style={{ borderBottom: "1px solid var(--bd-6)" }}>
                 <SectionHeader icon="⚡" title="AI Video Clips" subtitle={`${totalBeats} clips · 5–10s each`} />
                 <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
                   Select Model
                 </p>
+                <ModelTabs tab={videoModelTab} onTab={setVideoModelTab} />
+                {videoModelTab === "free" ? <ComingSoonCard /> : (<>
                 <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
                   {FAKE_VIDEO_MODELS.map((m) => (
                     <button key={m.id} onClick={() => update({ selectedVideoModel: m.id })}
@@ -339,10 +579,13 @@ export default function DemoGeneratePage() {
                   ))}
                 </div>
 
-                <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
-                  Aspect Ratio
-                </p>
-                <RatioButtons ratios={FAKE_VIDEO_RATIOS} selected={selectedVideoRatio} onSelect={(r) => update({ selectedVideoRatio: r })} />
+                {/* No aspect-ratio selector for video — the clip inherits the
+                    source image's ratio. Invisible spacer mirrors the image
+                    column's Aspect Ratio so both card headers stay aligned. */}
+                <div aria-hidden className="invisible">
+                  <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2">Aspect Ratio</p>
+                  <RatioButtons ratios={FAKE_IMAGE_RATIOS} selected="" onSelect={() => {}} />
+                </div>
 
                 <p className="text-xs font-semibold uppercase tracking-wider mt-3 mb-2" style={{ color: "var(--c-40)" }}>
                   Duration
@@ -364,6 +607,7 @@ export default function DemoGeneratePage() {
                     </button>
                   ))}
                 </div>
+                </>)}
               </div>
 
               {/* Video clip grid */}
@@ -372,12 +616,20 @@ export default function DemoGeneratePage() {
                   <ProgressBar value={videosPhase === "done" ? totalBeats : 0} total={totalBeats} />
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mt-3 max-h-72 overflow-y-auto">
                     {DEMO_DATA.promptBeats.map((beat) => (
-                      <div key={beat.beat}
-                        className="relative aspect-video rounded-lg overflow-hidden flex items-center justify-center"
-                        style={{ background: "var(--bg-progress)" }}>
-                        {videosPhase === "done" ? (
-                          <VideoTile src={beat.videoUrl} />
-                        ) : (
+                      videosPhase === "done" ? (
+                        <BeatTile
+                          key={beat.beat}
+                          beat={beat}
+                          type="video"
+                          onOpen={() => openPreview(beat, "video")}
+                          onHover={(e) => showBeatPrompt(e, beat.beat, beat.videoPrompt)}
+                          onLeave={() => setPromptPopup(null)}
+                          onTapInfo={(e) => showBeatPromptTap(e, beat.beat, beat.videoPrompt)}
+                        />
+                      ) : (
+                        <div key={beat.beat}
+                          className="relative aspect-video rounded-lg overflow-hidden flex items-center justify-center"
+                          style={{ background: "var(--bg-progress)" }}>
                           <span className="text-[9px] px-1.5 py-0.5 rounded relative z-10"
                             style={{
                               background: "oklch(0.72 0.25 285 / 0.1)",
@@ -385,8 +637,8 @@ export default function DemoGeneratePage() {
                             }}>
                             queued
                           </span>
-                        )}
-                      </div>
+                        </div>
+                      )
                     ))}
                   </div>
                 </div>
@@ -416,6 +668,7 @@ export default function DemoGeneratePage() {
                 </button>
               </div>
             </div>
+            )}
           </div>
         </main>
       </div>
@@ -438,6 +691,206 @@ export default function DemoGeneratePage() {
           </button>
         </div>
       </div>
+
+      {/* Hover-prompt tooltip — a single fixed element positioned from the
+          hovered tile so it escapes the beat grid's overflow clipping. */}
+      {promptPopup && (
+        <div className="touch-only fixed inset-0 z-[399]" onClick={() => setPromptPopup(null)} aria-hidden />
+      )}
+      {promptPopup && (
+        <div
+          className="fixed z-[400] rounded-lg shadow-xl pointer-events-none"
+          style={{
+            left: promptPopup.left,
+            top: promptPopup.top,
+            width: promptPopup.width,
+            transform: promptPopup.above ? "translateY(-100%)" : undefined,
+            background: "white",
+            padding: "7px",
+            border: "1px solid oklch(0 0 0 / 0.08)",
+          }}
+        >
+          <p className="text-[10px] font-semibold uppercase tracking-wider mb-1 text-zinc-500">
+            Beat {promptPopup.beatNumber}
+          </p>
+          <p
+            className="text-xs leading-snug text-zinc-800"
+            style={{ display: "-webkit-box", WebkitLineClamp: 6, WebkitBoxOrient: "vertical", overflow: "hidden" }}
+          >
+            {promptPopup.text}
+          </p>
+        </div>
+      )}
+
+      {/* Beat preview dialog — view the asset large, toggle its prompt, or
+          edit prompt + model/variant. Mirrors the real generate step; edits
+          are cosmetic in the demo. */}
+      <Dialog open={!!previewBeat} onOpenChange={(open) => { if (!open) closePreview(); }}>
+        <DialogContent
+          className="p-0 overflow-x-hidden overflow-y-auto"
+          showCloseButton={false}
+          style={{
+            background: "white",
+            display: "flex",
+            flexDirection: "column",
+            // Pin to the media's computed width so the dialog hugs it. In
+            // edit/show-prompt modes enforce a 400px minimum so the panel
+            // stays readable for tall media. maxWidth clamps on narrow screens.
+            width: previewMediaSize
+              ? (previewEditing || previewShowPrompt ? Math.max(previewMediaSize.w, 400) : previewMediaSize.w)
+              : undefined,
+            maxWidth: "95vw",
+            maxHeight: "95vh",
+          }}
+        >
+          {previewBeat && (
+            <>
+              {/* Action cluster */}
+              <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+                {!previewEditing && (
+                  <>
+                    <button
+                      onClick={() => setPreviewShowPrompt((v) => !v)}
+                      aria-pressed={previewShowPrompt}
+                      className="h-9 px-3 rounded-full flex items-center justify-center text-xs font-medium transition-all hover:scale-105"
+                      style={{ background: previewShowPrompt ? "oklch(0.72 0.25 285 / 0.85)" : "oklch(0 0 0 / 0.65)", color: "white", border: "1px solid oklch(1 0 0 / 0.2)" }}
+                    >
+                      {previewShowPrompt ? "Hide prompt" : "Show prompt"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPreviewEditedPrompt((previewBeat.type === "image" ? previewBeat.beat.imagePrompt : previewBeat.beat.videoPrompt) ?? "");
+                        setPreviewEditing(true);
+                      }}
+                      title="Edit prompt"
+                      aria-label="Edit prompt"
+                      className="w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110"
+                      style={{ background: "oklch(0 0 0 / 0.65)", color: "white", border: "1px solid oklch(1 0 0 / 0.2)" }}
+                    >
+                      <Pencil size={16} strokeWidth={2.4} />
+                    </button>
+                  </>
+                )}
+                <button
+                  onClick={closePreview}
+                  title="Close preview"
+                  aria-label="Close preview"
+                  className="w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110"
+                  style={{ background: "oklch(0 0 0 / 0.65)", color: "white", border: "1px solid oklch(1 0 0 / 0.2)" }}
+                >
+                  <X size={18} strokeWidth={2.4} />
+                </button>
+              </div>
+              {/* Beat number badge */}
+              <span
+                className="absolute top-3 left-3 z-20 min-w-[28px] h-7 px-2 rounded-full flex items-center justify-center text-xs font-semibold tabular-nums pointer-events-none"
+                style={{ background: "oklch(0 0 0 / 0.65)", color: "white", border: "1px solid oklch(1 0 0 / 0.2)" }}
+              >
+                {previewBeat.beat.beat}
+              </span>
+
+              {/* Media — sized to previewMediaSize so the dialog hugs it.
+                  onLoad refines the aspect to the exact ratio. */}
+              {previewBeat.type === "image" ? (
+                <img
+                  src={previewBeat.beat.imageUrl}
+                  alt={`Beat ${previewBeat.beat.beat}`}
+                  onLoad={(e) => setPreviewAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)}
+                  className="block mx-auto"
+                  style={{ width: previewMediaSize?.w, height: previewMediaSize?.h, maxWidth: "95vw", maxHeight: "85vh" }}
+                />
+              ) : (
+                <video
+                  key={previewBeat.beat.videoUrl}
+                  src={previewBeat.beat.videoUrl}
+                  onLoadedMetadata={(e) => setPreviewAspect(e.currentTarget.videoWidth / e.currentTarget.videoHeight)}
+                  className="block mx-auto"
+                  style={{ width: previewMediaSize?.w, height: previewMediaSize?.h, maxWidth: "95vw", maxHeight: "85vh" }}
+                  autoPlay
+                  loop
+                  playsInline
+                  controls
+                />
+              )}
+
+              {/* Read-only prompt */}
+              {previewShowPrompt && !previewEditing && (
+                <div className="px-4 py-3">
+                  <p className="text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>
+                    {previewBeat.type === "image" ? "Image prompt" : "Video prompt"} — beat {previewBeat.beat.beat}
+                  </p>
+                  <p className="text-xs leading-relaxed" style={{ color: "oklch(0.45 0 0)" }}>
+                    {(previewBeat.type === "image" ? previewBeat.beat.imagePrompt : previewBeat.beat.videoPrompt) || "—"}
+                  </p>
+                </div>
+              )}
+
+              {/* Edit mode */}
+              {previewEditing && (
+                <div className="px-4 py-3 space-y-3">
+                  <p className="text-xs font-semibold" style={{ color: "oklch(0.35 0 0)" }}>
+                    {previewBeat.type === "image" ? "Image prompt" : "Video prompt"} — beat {previewBeat.beat.beat}
+                  </p>
+                  <textarea
+                    value={previewEditedPrompt}
+                    onChange={(e) => setPreviewEditedPrompt(e.target.value)}
+                    rows={5}
+                    className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs leading-relaxed p-3 outline-none focus:border-zinc-400 resize-y"
+                    placeholder="Describe what this beat should look like…"
+                  />
+                  <div className="flex gap-3">
+                    <div className="flex-1 min-w-0">
+                      <label className="block text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>Model</label>
+                      <select
+                        value={(previewBeat.type === "image" ? selectedImageModel : selectedVideoModel) ?? ""}
+                        onChange={(e) => update(previewBeat.type === "image" ? { selectedImageModel: e.target.value } : { selectedVideoModel: e.target.value })}
+                        className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs p-2.5 outline-none focus:border-zinc-400"
+                      >
+                        {(previewBeat.type === "image" ? FAKE_IMAGE_MODELS : FAKE_VIDEO_MODELS).map((m) => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <label className="block text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>
+                        {previewBeat.type === "image" ? "Resolution" : "Duration"}
+                      </label>
+                      {previewBeat.type === "image" ? (
+                        <select className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs p-2.5 outline-none focus:border-zinc-400" defaultValue="1K">
+                          {["1K", "2K", "4K"].map((r) => <option key={r} value={r}>{r}</option>)}
+                        </select>
+                      ) : (
+                        <select
+                          value={String(selectedDuration)}
+                          onChange={(e) => update({ selectedDuration: Number(e.target.value) })}
+                          className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs p-2.5 outline-none focus:border-zinc-400"
+                        >
+                          {FAKE_DURATIONS.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => setPreviewEditing(false)}
+                      className="px-4 py-2 rounded-lg text-sm font-medium border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => setPreviewEditing(false)}
+                      className="px-4 py-2 rounded-lg text-sm font-semibold text-white"
+                      style={{ background: "oklch(0.72 0.25 285)" }}
+                    >
+                      Save &amp; regenerate
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { ArrowUpRight } from "lucide-react";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DemoStepCostCard } from "@/components/demo/DemoStepCostCard";
+import { DemoStepBalanceCard } from "@/components/demo/DemoStepBalanceCard";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -214,14 +215,15 @@ export default function DemoChannelPage() {
               <p className="text-sm mt-1" style={{ color: "var(--c-50)" }}>
                 Enter a YouTube channel URL to automatically extract style DNA and generate content.
               </p>
-              <div className="mt-3">
+              <div className="mt-3 flex items-center gap-2 flex-wrap">
                 <DemoStepCostCard column="channel_analysis" />
+                <DemoStepBalanceCard />
               </div>
             </div>
 
             {/* URL input + topic strategy card */}
             <div className="rounded-2xl p-6 space-y-5"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
 
               {/* Content Type — mirrors the real flow's first decision.
                   Locked once the demo analysis has run so a Re-analyze
@@ -365,7 +367,7 @@ export default function DemoChannelPage() {
               <div
                 ref={progressRef}
                 className="rounded-2xl p-6 space-y-4 scroll-mt-4"
-                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}
               >
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
                   Analysis Progress
@@ -404,8 +406,9 @@ export default function DemoChannelPage() {
                   ? DEMO_DATA.channelTopVideos.both
                   : DEMO_DATA.channelTopVideos.long;
               return (
+              <>
               <div className="rounded-2xl p-6 space-y-4"
-                style={{ background: "var(--bg-panel)", border: "1px solid oklch(0.72 0.25 285 / 0.15)" }}>
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <h2 className="font-semibold truncate">{DEMO_DATA.channel.name}</h2>
@@ -433,8 +436,11 @@ export default function DemoChannelPage() {
                       ) : null;
                     })()}
                   </div>
-                  <div className="rounded-lg overflow-hidden" style={{ background: "var(--bg-progress)" }}>
-                    <table className="w-full text-sm">
+                  {/* overflow-x-auto + a table min-width lets the 6-column
+                      table scroll sideways on mobile instead of crushing the
+                      Title column or getting clipped by the page. */}
+                  <div className="rounded-lg overflow-x-auto" style={{ background: "var(--bg-progress)" }}>
+                    <table className="w-full text-sm min-w-[640px]">
                       <thead>
                         <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
                           <th className="text-left px-3 py-2 text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>Title</th>
@@ -495,15 +501,16 @@ export default function DemoChannelPage() {
                     </table>
                   </div>
                 </div>
-
-                <button
-                  onClick={() => router.push("/demo/topic")}
-                  className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
-                  style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-                >
-                  Continue to Topic →
-                </button>
               </div>
+
+              <button
+                onClick={() => router.push("/demo/topic")}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+              >
+                Continue to Topic →
+              </button>
+              </>
               );
             })()}
 

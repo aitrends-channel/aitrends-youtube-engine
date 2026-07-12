@@ -316,7 +316,7 @@ function TicketRow({
       <button
         type="button"
         onClick={onToggle}
-        className="w-full px-3 py-2.5 flex items-center gap-3 text-left cursor-pointer hover:bg-[oklch(0_0_0_/_0.02)] transition-colors"
+        className="w-full px-3 py-2.5 flex flex-wrap sm:flex-nowrap items-center gap-x-2 sm:gap-3 gap-y-1.5 text-left cursor-pointer hover:bg-[oklch(0_0_0_/_0.02)] transition-colors"
       >
         <span className="shrink-0 inline-flex items-center justify-center w-5 h-5" style={{ color: "var(--c-50)" }}>
           {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -339,9 +339,13 @@ function TicketRow({
             {ticket.plan}
           </span>
         )}
-        <span className="min-w-0 flex-1 truncate">
-          <span className="text-base font-medium" style={{ color: "var(--c-90)" }}>{ticket.subject}</span>
-          <span className="text-sm ml-2" style={{ color: "var(--c-50)" }}>{ticket.email}</span>
+        {/* On mobile this drops to its own full-width line (order-last) so
+            the badges + time sit on the first line and the subject/email
+            aren't squeezed to a few characters. Desktop keeps the single
+            inline row (sm:basis-0 sm:grow = flex-1). */}
+        <span className="min-w-0 basis-full sm:basis-0 sm:grow truncate order-last sm:order-none">
+          <span className="text-sm sm:text-base font-medium" style={{ color: "var(--c-90)" }}>{ticket.subject}</span>
+          <span className="text-xs sm:text-sm ml-2" style={{ color: "var(--c-50)" }}>{ticket.email}</span>
         </span>
         {isPriority && (
           <span

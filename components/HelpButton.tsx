@@ -143,7 +143,7 @@ export function HelpButton() {
         onClick={() => setMenuOpen((v) => !v)}
         aria-label="Open help menu"
         title="Help"
-        className="fixed bottom-5 right-5 z-50 w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-105 active:scale-95 cursor-pointer"
+        className="fixed bottom-5 right-5 z-[350] w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-105 active:scale-95 cursor-pointer"
         style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 6px 18px oklch(0.72 0.25 285 / 0.45)" }}
       >
         {menuOpen ? <X size={20} /> : <HelpCircle size={22} />}
@@ -152,9 +152,9 @@ export function HelpButton() {
       {/* Support / Feedback chooser — small white card above the bubble. */}
       {menuOpen && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+          <div className="fixed inset-0 z-[350]" onClick={() => setMenuOpen(false)} />
           <div
-            className="fixed bottom-[4.75rem] right-5 z-50 w-48 rounded-xl bg-white shadow-2xl p-1.5 space-y-0.5"
+            className="fixed bottom-[4.75rem] right-5 z-[360] w-48 rounded-xl bg-white shadow-2xl p-1.5 space-y-0.5"
             style={{ border: "1px solid oklch(0 0 0 / 0.08)" }}
           >
             <button
@@ -198,7 +198,7 @@ export function HelpButton() {
             // (FAQ + form combined) constrained inside the modal so the
             // contact form can't visibly bleed past the bottom edge on
             // shorter viewports.
-            "max-w-lg sm:max-w-xl " +
+            "z-[350] max-w-lg sm:max-w-xl " +
             "sm:top-5 sm:left-auto sm:bottom-5 sm:right-5 " +
             "sm:translate-x-0 sm:translate-y-0 " +
             "max-h-[calc(100vh-2.5rem)] " +

@@ -6,6 +6,7 @@ import { Lock } from "lucide-react";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DemoStepCostCard } from "@/components/demo/DemoStepCostCard";
+import { DemoStepBalanceCard } from "@/components/demo/DemoStepBalanceCard";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
 
@@ -29,7 +30,7 @@ export default function DemoTopicPage() {
         <DemoBanner />
         <main className="flex-1 overflow-y-auto lg:px-[15px]">
         <div
-          className="py-4 sm:py-5"
+          className="px-5 sm:px-8 py-4 sm:py-5"
           style={{
             borderBottom: "1px solid var(--bd-6)",
             background: "var(--bg-header-2)",
@@ -40,17 +41,18 @@ export default function DemoTopicPage() {
           <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
             {isTopicLocked ? "Topic is locked — already used in script generation" : "Select a video idea generated for AncientHeclus"}
           </p>
-          <div className="mt-3">
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
             <DemoStepCostCard column="topic" />
+            <DemoStepBalanceCard />
           </div>
         </div>
 
-        <div className="pt-6 pb-24 space-y-5">
+        <div className="px-5 sm:px-8 pt-6 sm:pt-8 pb-24 space-y-5">
 
           {isTopicLocked ? (
             <>
               <div className="rounded-2xl p-5 space-y-3"
-                style={{ background: "var(--bg-panel)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
                     Selected Topic
@@ -85,8 +87,8 @@ export default function DemoTopicPage() {
                         selected
                           ? { background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.35)" }
                           : locked
-                          ? { background: "var(--bg-panel)", border: "1px solid var(--bd-7)", opacity: 0.35, cursor: "not-allowed" }
-                          : { background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }
+                          ? { background: "var(--bg-panel)", border: "1px solid var(--bd-card)", opacity: 0.35, cursor: "not-allowed" }
+                          : { background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }
                       }
                       onMouseEnter={(e) => {
                         if (!locked && !selected)

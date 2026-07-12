@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { DemoNav } from "@/components/demo/DemoNav";
 import { DemoBanner } from "@/components/demo/DemoBanner";
 import { DemoStepCostCard } from "@/components/demo/DemoStepCostCard";
+import { DemoStepBalanceCard } from "@/components/demo/DemoStepBalanceCard";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { useDemoState } from "@/lib/demo-context";
 
@@ -119,20 +120,21 @@ export default function DemoVisualsPage() {
 
           {/* Header */}
           <div
-            className="shrink-0 py-4 sm:py-5 px-[10px]"
+            className="shrink-0 px-5 sm:px-8 py-4 sm:py-5"
             style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)", backdropFilter: "blur(12px)" }}
           >
             <h1 className="font-bold text-lg">Visual Style Extraction</h1>
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               Auto-capture screenshots so we can extract the channel&apos;s visual signature
             </p>
-            <div className="mt-3">
+            <div className="mt-3 flex items-center gap-2 flex-wrap">
               <DemoStepCostCard column="visuals" />
+              <DemoStepBalanceCard />
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto">
-          <div className="py-4 sm:py-8 pb-[200px] space-y-6 px-[10px]">
+          <div className="px-5 sm:px-8 py-4 sm:py-8 pb-[200px] space-y-6">
 
             {/* Mode toggle (Manual locked) */}
             <div className="flex gap-2 p-1 rounded-xl"
@@ -159,7 +161,7 @@ export default function DemoVisualsPage() {
 
             {/* Fetch panel */}
             <div className="rounded-2xl p-5"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
                   <p className="font-semibold text-sm">Auto-capture from Channel Videos</p>
@@ -230,7 +232,7 @@ export default function DemoVisualsPage() {
 
                 {/* Images grid */}
                 <div className="rounded-2xl overflow-hidden"
-                  style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                  style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                   <div className="px-5 py-3 flex items-center gap-2"
                     style={{ borderBottom: "1px solid var(--bd-6)" }}>
                     <span style={{ color: "oklch(0.72 0.25 285)" }}>◈</span>
@@ -256,7 +258,7 @@ export default function DemoVisualsPage() {
             {/* Analysis progress */}
             {(isAnalyzing || hasDone) && (
               <div className="rounded-2xl p-5 space-y-4"
-                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-7)" }}>
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
                   Analysis Progress
                 </p>
@@ -291,13 +293,25 @@ export default function DemoVisualsPage() {
             {/* Visual profile result */}
             {hasDone && (
               <div className="rounded-2xl overflow-hidden"
-                style={{ background: "var(--bg-panel)", border: "1px solid oklch(0.55 0.15 145 / 0.25)", marginBottom: "60px" }}>
-                <div className="px-5 py-4 flex items-center gap-2"
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", marginBottom: "60px" }}>
+                <div className="px-5 py-4 flex items-center justify-between gap-2"
                   style={{ borderBottom: "1px solid var(--bd-6)", background: "oklch(0.55 0.15 145 / 0.06)" }}>
-                  <span style={{ color: "oklch(0.7 0.15 145)" }}>✓</span>
-                  <p className="font-semibold text-sm" style={{ color: "oklch(0.7 0.15 145)" }}>
-                    Visual Style Profile Extracted
-                  </p>
+                  <div className="flex items-center gap-2">
+                    <span style={{ color: "oklch(0.7 0.15 145)" }}>✓</span>
+                    <p className="font-semibold text-sm" style={{ color: "oklch(0.7 0.15 145)" }}>
+                      Visual Style Profile Extracted
+                    </p>
+                  </div>
+                  {/* Edit is present to mirror the real step but disabled in the
+                      demo — profile edits can't be persisted here. */}
+                  <button
+                    disabled
+                    title="Editing is available in the full app"
+                    className="text-xs px-3 py-1 rounded-lg transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{ background: "transparent", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
+                  >
+                    Edit
+                  </button>
                 </div>
                 <div className="p-5 grid grid-cols-2 gap-4">
                   {[
@@ -335,7 +349,11 @@ export default function DemoVisualsPage() {
       {hasDone && (
         <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
-          <div>
+          {/* Mirror the content's insets exactly — main's lg:px-[15px] plus
+              the body's px-5 sm:px-8 — so the full-width button lines up flush
+              with the cards above it. */}
+          <div className="lg:px-[15px]">
+          <div className="px-5 sm:px-8">
             <button
               onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/prompts"), 500); }}
               disabled={navigating}
@@ -349,6 +367,7 @@ export default function DemoVisualsPage() {
                 </span>
               ) : "Continue →"}
             </button>
+          </div>
           </div>
         </div>
       )}

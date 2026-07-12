@@ -350,6 +350,11 @@ body {
    so the scrollbar length is roughly right before anything renders. */
 .cv-tile { content-visibility: auto; contain-intrinsic-size: auto var(--tile-h, 120px); }
 
+/* Shown only on touch devices (no hover). Used for the per-tile "view
+   prompt" button — the desktop equivalent is hovering the tile. */
+.touch-only { display: none; }
+@media (hover: none) and (pointer: coarse) { .touch-only { display: flex; } }
+
 /* On mobile, hide scrollbars entirely — the rails are visually noisy on
    small screens and the media grids now scroll with the page rather than
    inside their own container. */
