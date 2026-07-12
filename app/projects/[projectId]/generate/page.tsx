@@ -498,6 +498,20 @@ export default function GeneratePage({ params }: PageProps) {
   const initialTtsSelected = useRef(false);
 
   const [navigating, setNavigating] = useState(false);
+  // The bottom-bar "skip warnings" drawer stays hidden until the user
+  // first clicks Continue while beats are still ungenerated. That first
+  // click slides the drawer up instead of navigating; the label then
+  // flips to "Continue anyway" so a second click actually advances.
+  const [warningsRevealed, setWarningsRevealed] = useState(false);
+  // Per-panel dismissal of the "script edited — beats are stale" banner.
+  // Reset whenever staleness clears so a fresh edit re-shows the banner.
+  const [staleImageDismissed, setStaleImageDismissed] = useState(false);
+  const [staleVideoDismissed, setStaleVideoDismissed] = useState(false);
+  // Per-panel dismissal of the generation-failure banners. Cleared by the
+  // reset helpers at the start of every new run, so a fresh failure always
+  // re-surfaces the banner even if the user dismissed the previous one.
+  const [imageErrorDismissed, setImageErrorDismissed] = useState(false);
+  const [videoErrorDismissed, setVideoErrorDismissed] = useState(false);
   const [generatingTts, setGeneratingTts] = useState(false);
   const [ttsProgress, setTtsProgress] = useState<{ current: number; total: number } | null>(null);
   const [ttsStatusMsg, setTtsStatusMsg] = useState<string>("");
@@ -567,6 +581,7 @@ export default function GeneratePage({ params }: PageProps) {
   // making it look like the new action already failed.
   function resetImageErrorBanner() {
     setImageRunError(null);
+    setImageErrorDismissed(false);
     imageBannerShown.current = false;
   }
   function resetVideoErrorBannerLocal() {
@@ -576,11 +591,13 @@ export default function GeneratePage({ params }: PageProps) {
     // just because the user retried one of them. The acted-on beat
     // gets its own video_error cleared by the queue route's UPDATE.
     setVideoRunError(null);
+    setVideoErrorDismissed(false);
     videoBannerShown.current = false;
   }
 
   function resetVideoErrorBanner() {
     setVideoRunError(null);
+    setVideoErrorDismissed(false);
     videoBannerShown.current = false;
     // Project-wide reset: clears video_error on every beat and flips
     // failed beats' status back to null so the banner fully resets.
@@ -1060,6 +1077,10 @@ export default function GeneratePage({ params }: PageProps) {
   const generatedImages = beats.filter((b) => b.imageUrl).length;
   const generatedVideos = beats.filter((b) => b.videoUrl).length;
   const videoBeats = videoBeatList.length;
+  // Re-hide the skip-warnings drawer whenever generation progress moves,
+  // so a fresh Continue click is required to reveal it again (and the
+  // label resets to "Continue" rather than staying "Continue anyway").
+  useEffect(() => { setWarningsRevealed(false); }, [generatedImages, generatedVideos, totalBeats, videoBeats]);
   // A beat that holds a videoUrl is logically done, even if a stale
   // "failed" status is still on the row from an earlier retry — the
   // worker doesn't clear video_url when writing a failure, so we have
@@ -1124,6 +1145,12 @@ export default function GeneratePage({ params }: PageProps) {
     && !!project?.prompts_script_hash
     && !!currentScriptHash
     && project.prompts_script_hash !== currentScriptHash;
+
+  // Once the beats are no longer stale (user regenerated), forget any
+  // dismissal so the next edit surfaces the banner again.
+  useEffect(() => {
+    if (!beatsStale) { setStaleImageDismissed(false); setStaleVideoDismissed(false); }
+  }, [beatsStale]);
 
   useEffect(() => {
     if (!generatingImages && project?.images_progress) setImagesProgress(project.images_progress);
@@ -1960,30 +1987,58 @@ export default function GeneratePage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* Images/Videos tabs — a persistent switcher between the two panels,
-            replacing the old Continue/Back nav. Shown for single-column view
-            (always on mobile; on desktop only when single column is picked).
-            Sits outside the scroller as a shrink-0 row so it stays fixed above
-            the scrolling grid. */}
-        {effectiveView === "single" && (
+        {/* Images / Videos / Both switcher — a persistent tab bar above the
+            scrolling grid. Images & Videos drive the single-column view (one
+            panel at a time); Both switches to the side-by-side two-column
+            view. "Both" is desktop-only — mobile forces single-column for
+            performance. Sits outside the scroller as a shrink-0 row so it
+            stays fixed above the grid. */}
         <div className="shrink-0 px-5 sm:px-8 pt-3 pb-3" style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header-2)" }}>
           <div className="flex items-center gap-1 rounded-xl p-1" style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
-            {([["image", "Images", <ImageIcon key="i" size={15} />], ["video", "Videos", <Video key="v" size={15} />]] as const).map(([step, label, icon]) => (
+            {([
+              {
+                key: "image",
+                label: "Images",
+                icon: <ImageIcon size={15} />,
+                active: effectiveView === "single" && singleStep === "image",
+                // On mobile the view is force-single, so only move the step
+                // and leave the persisted desktop columnView preference alone.
+                onClick: () => { if (!isMobile) chooseColumnView("single"); setSingleStep("image"); },
+              },
+              {
+                key: "video",
+                label: "Videos",
+                icon: <Video size={15} />,
+                active: effectiveView === "single" && singleStep === "video",
+                onClick: () => { if (!isMobile) chooseColumnView("single"); setSingleStep("video"); },
+              },
+              ...(!isMobile ? [{
+                key: "both",
+                label: "Both",
+                icon: (
+                  <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                    <rect x="2" y="2.5" width="5" height="11" rx="1.3" stroke="currentColor" strokeWidth="1.4" />
+                    <rect x="9" y="2.5" width="5" height="11" rx="1.3" stroke="currentColor" strokeWidth="1.4" />
+                  </svg>
+                ),
+                active: effectiveView === "double",
+                onClick: () => chooseColumnView("double"),
+              }] : []),
+            ]).map((t) => (
               <button
-                key={step}
-                onClick={() => setSingleStep(step)}
-                aria-pressed={singleStep === step}
+                key={t.key}
+                onClick={t.onClick}
+                aria-pressed={t.active}
                 className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5"
-                style={singleStep === step
-                  ? { background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }
+                style={t.active
+                  ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)" }
                   : { color: "var(--c-55)" }}
               >
-                {icon} {label}
+                {t.icon} {t.label}
               </button>
             ))}
           </div>
         </div>
-        )}
 
         <div className="flex-1 overflow-y-auto pb-[70px]">
         {/* 3-row subgrid keeps the image and video panels perfectly
@@ -1992,33 +2047,7 @@ export default function GeneratePage({ params }: PageProps) {
             Without subgrid, extra content on one side (e.g. a taller
             aspect list, or a resolution section that only one panel
             has) would push the sections below it out of alignment. */}
-        {/* View toggle — sits directly above the panels, aligned to their
-            right edge. Single column (images → video) vs two columns. */}
-        <div className="px-5 sm:px-8 pt-4 sm:pt-6 hidden md:flex justify-end">
-          <div className="flex items-center gap-1 rounded-lg p-0.5" style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
-            <button
-              onClick={() => chooseColumnView("single")}
-              title="Single column — images first, then video"
-              aria-label="Single column view"
-              aria-pressed={effectiveView === "single"}
-              className="w-14 h-8 rounded-md flex items-center justify-center transition-colors"
-              style={effectiveView === "single" ? { background: "oklch(0.72 0.25 285 / 0.2)", color: "oklch(0.88 0.12 285)" } : { color: "var(--c-45)" }}
-            >
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="4.5" y="2.5" width="7" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.4" /></svg>
-            </button>
-            <button
-              onClick={() => chooseColumnView("double")}
-              title="Two columns — image and video side by side"
-              aria-label="Two column view"
-              aria-pressed={effectiveView === "double"}
-              className="w-14 h-8 rounded-md flex items-center justify-center transition-colors"
-              style={effectiveView === "double" ? { background: "oklch(0.72 0.25 285 / 0.2)", color: "oklch(0.88 0.12 285)" } : { color: "var(--c-45)" }}
-            >
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2" y="2.5" width="5" height="11" rx="1.3" stroke="currentColor" strokeWidth="1.4" /><rect x="9" y="2.5" width="5" height="11" rx="1.3" stroke="currentColor" strokeWidth="1.4" /></svg>
-            </button>
-          </div>
-        </div>
-        <div className={`px-5 pb-4 pt-3 sm:px-8 sm:pb-8 mb-[84px] grid gap-6 ${effectiveView === "double" ? "grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto]" : "grid-cols-1"}`}>
+        <div className={`px-5 pb-4 pt-4 sm:px-8 sm:pb-8 sm:pt-6 mb-[84px] grid gap-6 ${effectiveView === "double" ? "grid-cols-1 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto]" : "grid-cols-1"}`}>
           {/* Image Gen Panel — unmounted (not just hidden) when it isn't
               the active single-view step, so its hundreds of tiles +
               IntersectionObservers don't stay mounted and freeze mobile. */}
@@ -2044,14 +2073,23 @@ export default function GeneratePage({ params }: PageProps) {
                 / middle / actions) and subgrid row alignment holds even
                 when both inner blocks are empty. */}
             <div className="flex flex-col">
-            {beatsStale && (
+            {beatsStale && !staleImageDismissed && (
               <div className="px-5 pt-4">
                 <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
                   style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "oklch(0.85 0.12 70)" }}>
                   <span aria-hidden>⚠</span>
-                  <span>
+                  <span className="flex-1">
                     Script was edited after these beats were generated. Any images below were prompted from the old script — regenerate the beats in <strong>Prompt Studio</strong> before re-running images.
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => setStaleImageDismissed(true)}
+                    aria-label="Dismiss"
+                    className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-md transition-colors hover:bg-[oklch(0.72_0.16_70_/_0.18)]"
+                    style={{ color: "oklch(0.85 0.12 70)" }}
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
               </div>
             )}
@@ -2255,15 +2293,26 @@ export default function GeneratePage({ params }: PageProps) {
                         </span>
                       </div>
                     )}
-                    {isPartial && !generatingImages && !showCreditBanner && !userStoppedImages && (
-                      <div ref={imageErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug space-y-1"
+                    {isPartial && !generatingImages && !showCreditBanner && !userStoppedImages && !imageErrorDismissed && (
+                      <div ref={imageErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug flex items-start gap-2"
                         style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "oklch(0.78 0.12 25)" }}>
-                        <p>
-                          {pendingCount} image{pendingCount === 1 ? "" : "s"} didn't generate on <span style={{ fontWeight: 600 }}>{workingImageName}</span>. Try switching to a different model above, then run again.
-                        </p>
-                        {imageRunError && (
-                          <p style={{ color: "oklch(0.85 0.08 25)" }}>{imageRunError}</p>
-                        )}
+                        <div className="flex-1 space-y-1">
+                          <p>
+                            {pendingCount} image{pendingCount === 1 ? "" : "s"} didn't generate on <span style={{ fontWeight: 600 }}>{workingImageName}</span>. Try switching to a different model above, then run again.
+                          </p>
+                          {imageRunError && (
+                            <p style={{ color: "oklch(0.85 0.08 25)" }}>{imageRunError}</p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setImageErrorDismissed(true)}
+                          aria-label="Dismiss"
+                          className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-md transition-colors hover:bg-[oklch(0.6_0.22_25_/_0.15)]"
+                          style={{ color: "oklch(0.78 0.12 25)" }}
+                        >
+                          <X size={14} />
+                        </button>
                       </div>
                     )}
                     {generatingImages && (
@@ -2342,14 +2391,23 @@ export default function GeneratePage({ params }: PageProps) {
                 Always renders so the video panel has exactly three
                 direct children matching the image panel's subgrid. */}
             <div className="flex flex-col">
-            {beatsStale && (
+            {beatsStale && !staleVideoDismissed && (
               <div className="px-5 pt-4">
                 <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
                   style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "oklch(0.85 0.12 70)" }}>
                   <span aria-hidden>⚠</span>
-                  <span>
+                  <span className="flex-1">
                     Script was edited after these beats were generated. Any clips below were prompted from the old script — regenerate the beats in <strong>Prompt Studio</strong> before re-running videos.
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => setStaleVideoDismissed(true)}
+                    aria-label="Dismiss"
+                    className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-md transition-colors hover:bg-[oklch(0.72_0.16_70_/_0.18)]"
+                    style={{ color: "oklch(0.85 0.12 70)" }}
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
               </div>
             )}
@@ -2644,34 +2702,58 @@ export default function GeneratePage({ params }: PageProps) {
             </div>
 
             <div className={effectiveView === "single" ? "p-5 flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-2 lg:[&>div]:basis-full lg:[&>button]:flex-1" : "p-5 space-y-2"}>
-              {((failedVideos > 0 && !hasActiveVideos) || videoRunError) && (() => {
+              {((failedVideos > 0 && !hasActiveVideos) || videoRunError) && !videoErrorDismissed && (() => {
                 const workingId = project?.video_model_id as string | undefined;
                 const workingName = videoModels?.find((m) => m.id === workingId)?.name ?? "the selected model";
-                // Pick the message body: the most recent action-level
-                // error (videoRunError) wins over the per-beat error
-                // when both are present — it's almost always the more
-                // immediate failure to surface. Fall back to the
-                // latest failed beat's videoError (highest beatNumber
-                // = most recently submitted) when no action error is
-                // set.
-                const failedWithError = beats
-                  .filter((b) => b.videoStatus === "failed" && b.videoError)
-                  .sort((a, b) => b.beatNumber - a.beatNumber);
-                const beatError = failedWithError.length > 0
-                  ? friendlyError(failedWithError[0].videoError!)
-                  : null;
-                const currentError = videoRunError ?? beatError;
+                // Surface every DISTINCT failure reason across the failed
+                // beats (deduped by friendly message), not just the most
+                // recent one — otherwise the user fixes the one beat shown
+                // here and a different error surfaces on the next retry. A
+                // fresh action-level error (videoRunError) leads the list.
+                const distinctBeatErrors = Array.from(new Set(
+                  beats
+                    .filter((b) => b.videoStatus === "failed" && b.videoError)
+                    .map((b) => friendlyError(b.videoError!)),
+                ));
+                const errors = videoRunError
+                  ? [videoRunError, ...distinctBeatErrors.filter((e) => e !== videoRunError)]
+                  : distinctBeatErrors;
+                // Content-policy blocks are fixed by rephrasing the prompt,
+                // not by switching models — so drop the generic "switch
+                // model" advice when every surfaced error is a content block
+                // (the per-error message already routes them to Prompt Studio).
+                const isContentBlock = (e: string) => e.startsWith("Content policy block");
+                const allContentBlocks = errors.length > 0 && errors.every(isContentBlock);
+                const MAX_SHOWN = 3;
+                const shown = errors.slice(0, MAX_SHOWN);
+                const extra = errors.length - shown.length;
                 return (
-                  <div ref={videoErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug space-y-1"
+                  <div ref={videoErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug flex items-start gap-2"
                     style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "oklch(0.78 0.12 25)" }}>
-                    {failedVideos > 0 && (
-                      <p>
-                        {failedVideos} clip{failedVideos === 1 ? "" : "s"} failed on <span style={{ fontWeight: 600 }}>{workingName}</span>. Try switching to a different model above, then retry.
-                      </p>
-                    )}
-                    {currentError && (
-                      <p style={{ color: "oklch(0.85 0.08 25)" }}>{currentError}</p>
-                    )}
+                    <div className="flex-1 space-y-1">
+                      {failedVideos > 0 && !allContentBlocks && (
+                        <p>
+                          {failedVideos} clip{failedVideos === 1 ? "" : "s"} failed on <span style={{ fontWeight: 600 }}>{workingName}</span>. Try switching to a different model above, then retry.
+                        </p>
+                      )}
+                      {shown.map((e) => (
+                        <p key={e} style={{ color: "oklch(0.85 0.08 25)" }}>{e}</p>
+                      ))}
+                      {extra > 0 && (
+                        <p style={{ color: "oklch(0.85 0.08 25)" }}>
+                          +{extra} more failed beat{extra === 1 ? "" : "s"} with a different error.
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setVideoErrorDismissed(true)}
+                      aria-label="Dismiss"
+                      className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-md transition-colors hover:bg-[oklch(0.6_0.22_25_/_0.15)]"
+                      style={{ color: "oklch(0.78 0.12 25)" }}
+                    >
+                      <X size={14} />
+                    </button>
                   </div>
                 );
               })()}
@@ -2783,38 +2865,72 @@ export default function GeneratePage({ params }: PageProps) {
         const pendingVideoCount = videoBeats > 0 ? videoBeats - generatedVideos : 0;
         const noVideosYet = canContinue && videoBeats > 0 && generatedVideos === 0;
         const someVideosPending = canContinue && videoBeats > 0 && pendingVideoCount > 0 && !noVideosYet;
-        // "Continue anyway" wins as soon as anything is still pending
-        // (images OR videos), since we're advancing on a partial set.
-        const continueLabel = (someImagesPending || someVideosPending || noVideosYet)
-          ? "Continue anyway"
-          : "Continue →";
+        // Whether advancing now means advancing on a partial set. When true,
+        // the first Continue click reveals the skip-warnings drawer instead
+        // of navigating; the drawer explains what gets skipped/substituted.
+        const hasPendingWarnings = someImagesPending || someVideosPending || noVideosYet;
+        const drawerOpen = warningsRevealed && hasPendingWarnings && !navigating;
+        // Label stays "Continue →" until the drawer is showing, then flips
+        // to "Continue anyway" to signal the second click advances anyway.
+        const continueLabel = drawerOpen ? "Continue anyway" : "Continue →";
+        const handleContinue = () => {
+          if (hasPendingWarnings && !warningsRevealed) { setWarningsRevealed(true); return; }
+          setNavigating(true);
+          router.push(`/projects/${projectId}/assemble`);
+        };
 
         return (
           <div className="fixed bottom-0 left-0 md:left-64 right-0 z-20 py-3"
             style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}>
-            <div className="sm:px-8 space-y-2">
+            <div className="sm:px-8">
               {!canContinue && !navigating && (
-                <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
+                <p className="text-xs text-center mb-2" style={{ color: "var(--c-40)" }}>
                   Generate at least one image to continue.
                 </p>
               )}
-              {!navigating && someImagesPending && (
-                <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
-                  {pendingImageCount} beat{pendingImageCount === 1 ? "" : "s"} still without image — {pendingImageCount === 1 ? "it will" : "they will"} be skipped at assembly.
-                </p>
-              )}
-              {!navigating && noVideosYet && (
-                <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
-                  No video clips yet — every beat will use its image at assembly.
-                </p>
-              )}
-              {!navigating && someVideosPending && (
-                <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
-                  {pendingVideoCount} clip{pendingVideoCount === 1 ? "" : "s"} without video — the matching image{pendingVideoCount === 1 ? "" : "s"} will be used in those spots.
-                </p>
-              )}
+              {/* Skip-warnings drawer — hidden until the first Continue click.
+                  A 0fr→1fr grid row animates the height so it slides up from
+                  the bar as a drawer. Kept mounted (not conditionally
+                  rendered) so the open/close transition is smooth. */}
+              <div
+                className="grid transition-[grid-template-rows,opacity] duration-300 ease-out"
+                style={{ gridTemplateRows: drawerOpen ? "1fr" : "0fr", opacity: drawerOpen ? 1 : 0 }}
+                aria-hidden={!drawerOpen}
+              >
+                <div className="overflow-hidden">
+                  <div className="flex items-center justify-center gap-2 pb-2 pt-1">
+                    <div className="space-y-1">
+                      {someImagesPending && (
+                        <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
+                          {pendingImageCount} beat{pendingImageCount === 1 ? "" : "s"} still without image — {pendingImageCount === 1 ? "it will" : "they will"} be skipped at assembly.
+                        </p>
+                      )}
+                      {noVideosYet && (
+                        <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
+                          No video clips yet — every beat will use its image at assembly.
+                        </p>
+                      )}
+                      {someVideosPending && (
+                        <p className="text-xs text-center" style={{ color: "var(--c-40)" }}>
+                          {pendingVideoCount} clip{pendingVideoCount === 1 ? "" : "s"} without video — the matching image{pendingVideoCount === 1 ? "" : "s"} will be used in those spots.
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setWarningsRevealed(false)}
+                      aria-label="Dismiss"
+                      tabIndex={drawerOpen ? 0 : -1}
+                      className="shrink-0 p-1 rounded-md transition-colors hover:bg-[var(--bg-input)]"
+                      style={{ color: "var(--c-40)" }}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
               <button
-                onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/assemble`); }}
+                onClick={handleContinue}
                 disabled={navigating || !canContinue}
                 className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
                 style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}

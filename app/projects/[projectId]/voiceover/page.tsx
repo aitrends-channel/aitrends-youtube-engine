@@ -183,7 +183,7 @@ export default function VoiceoverPage({ params }: PageProps) {
   // the voice that was actually used to generate any existing beats),
   // else first model of the active gender tab.
   const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
-  const [voiceTab, setVoiceTab] = useState<"female" | "male" | "custom">("female");
+  const [voiceTab, setVoiceTab] = useState<"female" | "male" | "custom" | "free">("female");
   const [previewingId, setPreviewingId] = useState<string | null>(null);
   // Sticky bit so a subsequent project SWR update doesn't overwrite an
   // explicit user pick. Only the very first resolution honors
@@ -330,7 +330,7 @@ export default function VoiceoverPage({ params }: PageProps) {
   }
 
   async function runGeneration(opts: { beatNumbers?: number[] } = {}) {
-    if (!selectedVoice) { toast.error("Pick a voice first"); return; }
+    if (!requireVoice()) return;
     if (!totalBeats) { toast.error("No beats — run Prompts step first"); return; }
     if (generating) return;
     setGenerating(true);
@@ -577,7 +577,7 @@ export default function VoiceoverPage({ params }: PageProps) {
   const perBeatAbortRef = useRef<AbortController | null>(null);
 
   async function startPerBeatRegen(beatNumber: number) {
-    if (!selectedVoice) { toast.error("Pick a voice first"); return; }
+    if (!requireVoice()) return;
     setPerBeatRegen({ beatNumber, status: "running" });
     const ctrl = new AbortController();
     perBeatAbortRef.current = ctrl;
@@ -703,8 +703,34 @@ export default function VoiceoverPage({ params }: PageProps) {
     confirmLabel: string;
     confirmBg: string;
     onConfirm: () => void | Promise<void>;
+    // Alert-style modal: single acknowledge button, no Cancel.
+    singleButton?: boolean;
   };
   const [confirm, setConfirm] = useState<ConfirmConfig | null>(null);
+
+  // Guards the generation entry points against a missing or stale voice.
+  // selectedVoice can hold a saved id that's no longer in the user's
+  // ElevenLabs catalog (e.g. a voice they removed, or an old default) —
+  // that isn't null, so a plain !selectedVoice check misses it and the
+  // run fails downstream with a cryptic "voice_id … not found". Validate
+  // against the live catalog and surface an alert modal instead.
+  function requireVoice(): boolean {
+    const valid = !!selectedVoice && (ttsModels ? ttsModels.some((m) => m.id === selectedVoice) : true);
+    if (valid) return true;
+    setConfirm({
+      title: "Select a voice first",
+      body: "Pick a voice from the picker above before generating voiceovers.",
+      icon: "!",
+      iconColor: "oklch(0.72 0.25 285)",
+      iconBg: "oklch(0.72 0.25 285 / 0.12)",
+      iconBorder: "oklch(0.72 0.25 285 / 0.3)",
+      confirmLabel: "Got it",
+      confirmBg: "oklch(0.72 0.25 285)",
+      singleButton: true,
+      onConfirm: () => setConfirm(null),
+    });
+    return false;
+  }
 
   async function clearAll() {
     setConfirm(null);
@@ -754,7 +780,7 @@ export default function VoiceoverPage({ params }: PageProps) {
 
   function openRegenConfirm() {
     if (generating || clearing) return;
-    if (!selectedVoice) { toast.error("Pick a voice first"); return; }
+    if (!requireVoice()) return;
     if (doneCount === 0) {
       // Nothing on file — Regenerate is just a normal first-time run.
       runGeneration();
@@ -812,6 +838,9 @@ export default function VoiceoverPage({ params }: PageProps) {
       const inTab = (ttsModels ?? []).filter((m) => {
         const isCustom = m.tags?.includes("Custom");
         if (voiceTab === "custom") return isCustom;
+        // Free tab renders a "coming soon" placeholder, not a voice grid,
+        // so nothing needs to match here.
+        if (voiceTab === "free") return false;
         if (isCustom) return false;
         const tag = m.tags?.[0]?.toLowerCase();
         return tag === voiceTab || tag === "neutral";
@@ -857,7 +886,7 @@ export default function VoiceoverPage({ params }: PageProps) {
               <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
                 Voice
               </p>
-              {!!ttsModels?.length && (
+              {voiceTab !== "free" && !!ttsModels?.length && (
                 <span className="text-[11px] font-mono tabular-nums" style={{ color: "var(--c-45)" }}>
                   {ttsModels.length} voices · {filteredVoices.length} {voiceTab}
                 </span>
@@ -866,13 +895,19 @@ export default function VoiceoverPage({ params }: PageProps) {
             {/* Gender / custom tabs. Custom only renders when the user's
                 ElevenLabs account has added/cloned voices. */}
             <div className="flex gap-1 mb-2">
-              {([...(["female", "male"] as const), ...(hasCustomVoices ? (["custom"] as const) : [])]).map((tab) => (
+              {([...(["female", "male"] as const), ...(hasCustomVoices ? (["custom"] as const) : []), ...(["free"] as const)]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => { setVoiceTab(tab); setVoiceSearch(""); }}
                   disabled={effectivelyGenerating}
                   className="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium capitalize transition-all disabled:opacity-40"
-                  style={voiceTab === tab ? {
+                  style={tab === "free" ? {
+                    // Free tab always wears the solid brand button color so
+                    // it stands out as a promo, active or not.
+                    background: "var(--primary)",
+                    border: "1px solid var(--primary)",
+                    color: "var(--primary-foreground)",
+                  } : voiceTab === tab ? {
                     background: "oklch(0.72 0.25 285 / 0.15)",
                     border: "1px solid oklch(0.72 0.25 285 / 0.4)",
                     color: "oklch(0.88 0.12 285)",
@@ -888,9 +923,36 @@ export default function VoiceoverPage({ params }: PageProps) {
                       cloned · generated · professional
                     </span>
                   </span>
+                ) : tab === "free" ? (
+                  <span className="flex flex-col items-center leading-tight">
+                    <span>😄 Free</span>
+                    <span className="text-[9px] font-semibold normal-case">
+                      coming soon
+                    </span>
+                  </span>
                 ) : tab}</button>
               ))}
             </div>
+            {voiceTab === "free" ? (
+              // Placeholder tab — no free voices yet. Warm "coming soon"
+              // note so the tab reads as intentional, not broken.
+              <div className="rounded-xl px-4 py-8 text-center"
+                style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+                <p className="text-base font-bold" style={{ color: "var(--primary)" }}>
+                  Great Good News!
+                </p>
+                <p className="text-sm font-medium mt-2" style={{ color: "var(--c-70)" }}>
+                  Thank you for choosing us and for being part of our journey.
+                </p>
+                <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
+                  We&apos;re building free resources to help you streamline your
+                  production, reduce costs, and achieve more with less. Stay with
+                  us as we continue to grow into the one-stop solution you&apos;ve
+                  been looking for.
+                </p>
+              </div>
+            ) : (
+            <>
             {/* Search — spans the full width across all tabs; filters the
                 active tab's voices by name or tag. */}
             <input
@@ -938,6 +1000,8 @@ export default function VoiceoverPage({ params }: PageProps) {
                 </>
               )}
             </div>
+            </>
+            )}
           </div>
 
           {project === undefined ? null : (
@@ -1451,13 +1515,15 @@ export default function VoiceoverPage({ params }: PageProps) {
               </div>
             </div>
             <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                onClick={() => setConfirm(null)}
-                className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80"
-                style={{ background: "transparent", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
-              >
-                Cancel
-              </button>
+              {!confirm.singleButton && (
+                <button
+                  onClick={() => setConfirm(null)}
+                  className="px-4 py-2 rounded-lg text-sm font-medium transition-opacity hover:opacity-80"
+                  style={{ background: "transparent", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
+                >
+                  Cancel
+                </button>
+              )}
               <button
                 onClick={() => { void confirm.onConfirm(); }}
                 autoFocus
