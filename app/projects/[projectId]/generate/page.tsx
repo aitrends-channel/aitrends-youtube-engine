@@ -1903,7 +1903,7 @@ export default function GeneratePage({ params }: PageProps) {
               <div className="px-5 pt-4">
                 <ProgressBar value={clearingImages ? 0 : generatedImages} total={totalBeats} />
                 <div className="relative mt-3">
-                <div ref={imageGridRef} className={`grid grid-cols-1 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
+                <div ref={imageGridRef} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
                   {beats.map((b) => {
                     const isRegening = regenBeats.has(b.beatNumber);
                     return (
@@ -2204,7 +2204,7 @@ export default function GeneratePage({ params }: PageProps) {
               <div className="px-5 pt-4">
                 <ProgressBar value={generatedVideos} total={videoBeats} />
                 <div className="relative mt-3">
-                <div ref={videoGridRef} className={`grid grid-cols-1 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
+                <div ref={videoGridRef} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
                     {beats.filter((b) => b.videoPrompt).map((b) => (
                       <div
                         key={b.beatNumber}
