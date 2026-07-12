@@ -233,11 +233,13 @@ export function ModelPicker(props: ModelPickerProps) {
             Great Good News!
           </p>
           <p className="text-sm font-medium mt-2" style={{ color: "var(--c-70)" }}>
-            Thank you for choosing us and staying with us.
+            Thank you for choosing us and for being part of our journey.
           </p>
           <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
-            We&apos;re working on free resources you can use to augment your
-            production and cut costs. Coming soon.
+            We&apos;re building free resources to help you streamline your
+            production, reduce costs, and achieve more with less. Stay with us
+            as we continue to grow into the one-stop solution you&apos;ve been
+            looking for.
           </p>
         </div>
       ) : (
