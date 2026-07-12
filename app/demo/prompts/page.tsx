@@ -113,7 +113,7 @@ export default function DemoPromptsPage() {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               {DEMO_DATA.promptStepBeats.length} beats · image & video prompts
             </p>
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <div className="mt-3 flex items-center gap-2">
               <DemoStepCostCard column="prompts" />
               <DemoStepBalanceCard />
             </div>

@@ -127,7 +127,7 @@ export default function DemoVisualsPage() {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               Auto-capture screenshots so we can extract the channel&apos;s visual signature
             </p>
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <div className="mt-3 flex items-center gap-2">
               <DemoStepCostCard column="visuals" />
               <DemoStepBalanceCard />
             </div>
@@ -355,7 +355,7 @@ export default function DemoVisualsPage() {
           <div className="lg:px-[15px]">
           <div className="px-5 sm:px-8">
             <button
-              onClick={() => { setNavigating(true); setTimeout(() => router.push("/demo/prompts"), 500); }}
+              onClick={() => { setNavigating(true); router.push("/demo/prompts"); }}
               disabled={navigating}
               className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 transition-all"
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
