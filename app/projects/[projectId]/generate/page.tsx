@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, use, useEffect, useMemo, useRef } from "react";
+import { useState, use, useEffect, useMemo, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 // FreeResourcesButton is temporarily hidden — see comment near
@@ -448,6 +448,33 @@ export default function GeneratePage({ params }: PageProps) {
   const imageGridRef = useRef<HTMLDivElement | null>(null);
   const videoGridRef = useRef<HTMLDivElement | null>(null);
   const videoErrorBannerRef = useRef<HTMLDivElement | null>(null);
+  // Measure the first tile's real rendered height and publish it as a
+  // --tile-h CSS var on the grid. content-visibility reserves exactly that
+  // height for off-screen tiles, so revealing them causes zero layout shift
+  // — the stutter that showed up past ~400 beats. A ResizeObserver keeps it
+  // correct across breakpoints / orientation changes.
+  const imgRoRef = useRef<ResizeObserver | null>(null);
+  const vidRoRef = useRef<ResizeObserver | null>(null);
+  const makeGridRef = (
+    refObj: React.MutableRefObject<HTMLDivElement | null>,
+    roRef: React.MutableRefObject<ResizeObserver | null>,
+  ) =>
+    (node: HTMLDivElement | null) => {
+      refObj.current = node;
+      roRef.current?.disconnect();
+      if (!node) return;
+      const apply = () => {
+        const first = node.firstElementChild as HTMLElement | null;
+        if (first?.offsetHeight) node.style.setProperty("--tile-h", `${first.offsetHeight}px`);
+      };
+      apply();
+      roRef.current = new ResizeObserver(apply);
+      roRef.current.observe(node);
+    };
+  // useCallback keeps the ref identity stable so React only re-attaches on
+  // real mount/unmount, not every render.
+  const setImageGrid = useCallback(makeGridRef(imageGridRef, imgRoRef), []);
+  const setVideoGrid = useCallback(makeGridRef(videoGridRef, vidRoRef), []);
   // Latch the "was visible" state so we only scroll-into-view once per
   // banner appearance (not on every re-render while it's open).
   const imageBannerShown = useRef(false);
@@ -1903,7 +1930,7 @@ export default function GeneratePage({ params }: PageProps) {
               <div className="px-5 pt-4">
                 <ProgressBar value={clearingImages ? 0 : generatedImages} total={totalBeats} />
                 <div className="relative mt-3">
-                <div ref={imageGridRef} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
+                <div ref={setImageGrid} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
                   {beats.map((b) => {
                     const isRegening = regenBeats.has(b.beatNumber);
                     return (
@@ -2212,7 +2239,7 @@ export default function GeneratePage({ params }: PageProps) {
               <div className="px-5 pt-4">
                 <ProgressBar value={generatedVideos} total={videoBeats} />
                 <div className="relative mt-3">
-                <div ref={videoGridRef} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
+                <div ref={setVideoGrid} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
                     {beats.filter((b) => b.videoPrompt).map((b) => (
                       <div
                         key={b.beatNumber}
