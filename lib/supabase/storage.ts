@@ -35,7 +35,32 @@ const r2 = new S3Client({
 });
 
 const BUCKET = process.env.R2_BUCKET_NAME!;
-const PUBLIC_URL = (process.env.R2_PUBLIC_URL ?? "").replace(/\/$/, "");
+
+// Resolve + validate the public bucket origin ONCE at module load. A
+// malformed R2_PUBLIC_URL (e.g. a stray leading "=" from a KEY=value
+// copy-paste slip, or a wrong host) previously flowed straight into
+// `${PUBLIC_URL}/${key}` and got persisted into projects.auto_frames as
+// unparseable image URLs like "=https://pub-xxx.dev/..." — which then
+// fail to render in the browser AND get rejected by Anthropic's image
+// fetcher ("Only HTTPS URLs are supported"). Fail loud here instead so
+// the misconfig surfaces immediately rather than corrupting stored data.
+function resolvePublicUrl(): string {
+  const raw = (process.env.R2_PUBLIC_URL ?? "").trim();
+  if (!raw) return ""; // absence handled at call sites with a clear error
+  const cleaned = raw.replace(/\/+$/, "");
+  let parsed: URL;
+  try {
+    parsed = new URL(cleaned);
+  } catch {
+    throw new Error(`R2_PUBLIC_URL is not a valid URL: "${raw}" — check for a stray '=' or missing scheme`);
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error(`R2_PUBLIC_URL must be an https:// URL, got "${raw}"`);
+  }
+  return cleaned;
+}
+
+const PUBLIC_URL = resolvePublicUrl();
 
 // Per-user folder name for R2 keys. Email is preferred (human-readable
 // when browsing the bucket); user.id is the safe fallback. Lowercased

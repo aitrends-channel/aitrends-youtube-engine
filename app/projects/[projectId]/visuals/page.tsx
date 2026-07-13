@@ -79,6 +79,13 @@ function StepRow({ label, sublabel, status, expectedMs = 12000 }: { label: strin
 function SelectableImage({
   url, selected, onToggle, label,
 }: { url: string; selected: boolean; onToggle: () => void; label?: string }) {
+  // Load state so a frame that 404s (missing R2 object, or a YouTube
+  // auto-frame that doesn't exist for the video) doesn't fall back to
+  // the browser's broken-image glyph + alt text — which collided with
+  // the label overlay below and made the whole grid read as broken.
+  // `alt=""` keeps the img decorative; we render our own placeholder.
+  const [state, setState] = useState<"loading" | "loaded" | "error">("loading");
+
   return (
     <button
       onClick={onToggle}
@@ -88,7 +95,32 @@ function SelectableImage({
         boxShadow: selected ? "0 0 12px oklch(0.72 0.25 285 / 0.3)" : "none",
       }}
     >
-      <img src={url} alt={label ?? ""} className="w-full aspect-video object-cover" />
+      {/* Reserve the tile box even while loading/errored so the grid
+          doesn't reflow as frames resolve. */}
+      <div className="relative w-full aspect-video" style={{ background: "oklch(0.11 0 0)" }}>
+        {state !== "error" && (
+          <img
+            src={url}
+            alt=""
+            onLoad={() => setState("loaded")}
+            onError={() => setState("error")}
+            className="w-full h-full object-cover transition-opacity duration-300"
+            style={{ opacity: state === "loaded" ? 1 : 0 }}
+          />
+        )}
+        {/* Loading shimmer */}
+        {state === "loading" && (
+          <div className="absolute inset-0 animate-pulse" style={{ background: "var(--bg-progress)" }} />
+        )}
+        {/* Error placeholder — one tidy icon + label, no broken glyph */}
+        {state === "error" && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1"
+            style={{ color: "var(--c-35)" }}>
+            <span className="text-lg leading-none">◇</span>
+            <span className="text-[10px]">Unavailable</span>
+          </div>
+        )}
+      </div>
       {/* Selected overlay */}
       <div className="absolute inset-0 transition-all"
         style={{ background: selected ? "oklch(0.72 0.25 285 / 0.12)" : "transparent" }} />
