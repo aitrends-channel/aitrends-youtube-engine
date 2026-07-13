@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { submitImageTask } from "@/lib/kie/images";
 import { KieUpstreamError } from "@/lib/kie/client";
+import { generateCloudflareImage, isCloudflareModel, CloudflareError } from "@/lib/cloudflare/images";
+import { incrementFreeUsage } from "@/lib/freeUsage";
+import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { getAppUrl } from "@/lib/utils";
 import type { User } from "@supabase/supabase-js";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(req: Request) {
   let user: User;
@@ -30,6 +33,33 @@ export async function POST(req: Request) {
     if (!imagePrompt) {
       console.error(`[images/submit] Beat ${beatNumber} has no imagePrompt`);
       return NextResponse.json({ error: `Beat ${beatNumber} has no image prompt` }, { status: 400 });
+    }
+
+    // Free path (BYO Cloudflare Workers AI). Cloudflare returns image bytes
+    // synchronously — no task id / webhook — so we generate, upload, and
+    // mark the beat done inline. Runs on the user's own free quota; no KIE
+    // credits and no cost-ledger entry.
+    if (isCloudflareModel(modelId)) {
+      await supabase.from("project_beats")
+        .update({ image_status: "generating", image_model_id: modelId, image_task_id: null })
+        .eq("project_id", projectId)
+        .eq("beat_number", beatNumber);
+
+      const { buffer, contentType } = await generateCloudflareImage(imagePrompt, modelId, aspectRatio, user.id);
+      const folder = userFolderFor({ id: user.id, email: user.email ?? null });
+      const storagePath = `${folder}/${projectId}/images/beat-${beatNumber}_${Date.now()}.jpg`;
+      const publicUrl = await uploadBuffer(storagePath, buffer, contentType);
+
+      await supabase.from("project_beats")
+        .update({ image_url: publicUrl, image_status: "done", image_task_id: null })
+        .eq("project_id", projectId)
+        .eq("beat_number", beatNumber);
+
+      // Awaited (not fire-and-forget): on serverless the function can be
+      // frozen the moment we return, cutting off an un-awaited RPC.
+      await incrementFreeUsage(user.id, "image", 1);
+      console.log(`[images/submit] beat=${beatNumber} model=${modelId} (free/cloudflare) done`);
+      return NextResponse.json({ done: true, beatNumber, imageUrl: publicUrl });
     }
 
     // Webhook URL — KIE POSTs here the moment the image finishes, so
@@ -68,6 +98,14 @@ export async function POST(req: Request) {
         .update({ image_status: "failed" })
         .eq("project_id", projectId)
         .eq("beat_number", beatNumber);
+    }
+
+    if (err instanceof CloudflareError) {
+      // 401 = key not connected, 429 = free quota spent; both are user-
+      // config issues, not server failures, so don't 500 / page on them.
+      console.warn(`[images/submit] Cloudflare error on beat ${beatNumber}: ${err.message}`);
+      const status = err.status === 401 ? 401 : err.status === 429 ? 429 : 502;
+      return NextResponse.json({ error: err.message, code: "cloudflare_free" }, { status });
     }
 
     if (err instanceof KieUpstreamError) {

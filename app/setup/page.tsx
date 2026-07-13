@@ -30,16 +30,40 @@ const KEY_FIELDS: KeyField[] = [
     description: "Powers TTS voiceovers (direct ElevenLabs call — fast per-beat synthesis at per-character pricing) and assembler speech-to-text alignment for captions.",
     placeholder: "sk_…",
   },
+  {
+    key: "cloudflare_account_id",
+    label: "Cloudflare Account ID",
+    description: "Powers the Free image option (Cloudflare Workers AI · FLUX Schnell) on your own free daily quota. It's the long hex string in your Cloudflare dashboard URL — dash.cloudflare.com/<Account ID>. See the Instructions tab for the full walkthrough.",
+    placeholder: "e.g. 1a2b3c4d5e6f7a8b9c0d…",
+  },
+  {
+    key: "cloudflare_api_token",
+    label: "Cloudflare API Token",
+    description: "Goes with the Account ID above. Create it at dash.cloudflare.com → My Profile → API Tokens → Create Token, using the \"Workers AI\" template.",
+    placeholder: "paste your Workers AI token",
+  },
+  {
+    key: "google_tts_key",
+    label: "Google Cloud TTS Key",
+    description: "Powers the Free voiceover option (Google Cloud Text-to-Speech) — 1,000,000 characters/month free on your own account. Requires a Google Cloud project with billing enabled (you're not charged within the free tier) and the Text-to-Speech API turned on. See the Instructions tab.",
+    placeholder: "AIza…",
+  },
 ];
 
 interface FormState {
   kie_api_key: string;
   elevenlabs_api_key: string;
+  cloudflare_account_id: string;
+  cloudflare_api_token: string;
+  google_tts_key: string;
 }
 
 const EMPTY_FORM: FormState = {
   kie_api_key: "",
   elevenlabs_api_key: "",
+  cloudflare_account_id: "",
+  cloudflare_api_token: "",
+  google_tts_key: "",
 };
 
 function AddUserSection() {
@@ -428,6 +452,33 @@ export default function SettingsPage() {
                   "Create a key with text-to-speech and speech-to-text permissions, then copy it.",
                   "Pick a plan that fits your character volume (per-char billing).",
                   "Optional: from the Voice Library, add any non-Premade voices you want available in the picker.",
+                ],
+              },
+              {
+                num: 3,
+                title: "Cloudflare Workers AI (Free images)",
+                sub: "Powers the Free image option — free daily quota on your own account (~500–2,000 images/day)",
+                href: "https://dash.cloudflare.com",
+                linkLabel: "dash.cloudflare.com",
+                steps: [
+                  "Sign up free at dash.cloudflare.com — no credit card required.",
+                  "Get your Account ID: after logging in, the browser URL looks like dash.cloudflare.com/abc123…def — copy ONLY that 32-character ID (the part right after the slash), not the whole URL.",
+                  "Create a token: avatar (top-right) → Profile → API Tokens → Create Token → pick the \"Workers AI\" template → Continue to summary → Create Token. Copy it.",
+                  "Paste the Account ID and API Token into the Setup tab.",
+                ],
+              },
+              {
+                num: 4,
+                title: "Google Cloud TTS (Free voiceover)",
+                sub: "Powers the Free voiceover option — 1,000,000 characters/month free on your own account",
+                href: "https://console.cloud.google.com",
+                linkLabel: "console.cloud.google.com",
+                steps: [
+                  "At console.cloud.google.com, create a project (or pick an existing one).",
+                  "Enable billing on the project — Google requires a billing account to use the API, but you won't be charged within the free 1M-chars/month tier.",
+                  "Enable the API: APIs & Services → Library → search \"Cloud Text-to-Speech API\" → Enable.",
+                  "Create the key: APIs & Services → Credentials → Create credentials → API key. Copy it.",
+                  "Paste the key into the Setup tab.",
                 ],
               },
             ].map(({ num, title, sub, href, linkLabel, steps }) => (

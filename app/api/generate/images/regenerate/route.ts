@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { submitImageTask, checkImageTask } from "@/lib/kie/images";
 import { KieUpstreamError } from "@/lib/kie/client";
+import { generateCloudflareImage, isCloudflareModel, CloudflareError } from "@/lib/cloudflare/images";
+import { incrementFreeUsage } from "@/lib/freeUsage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
-import { uploadFromUrl, deleteObject, r2KeyFromUrl, userFolderFor } from "@/lib/supabase/storage";
+import { uploadBuffer, uploadFromUrl, deleteObject, r2KeyFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { logProjectCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 
@@ -69,6 +71,39 @@ export async function POST(req: Request) {
       .eq("beat_number", beatNumber)
       .maybeSingle();
     const previousImageUrl = beatRow?.image_url ?? null;
+
+    // Free path (BYO Cloudflare Workers AI) — synchronous, no KIE task/poll.
+    // Generate, upload, mark done, then delete the previous object. Runs on
+    // the user's own free quota; no KIE credits / cost-ledger entry.
+    if (isCloudflareModel(modelId)) {
+      await supabase.from("project_beats")
+        .update({ image_status: "generating", image_model_id: modelId, image_task_id: null, image_prompt: imagePrompt })
+        .eq("project_id", projectId)
+        .eq("beat_number", beatNumber);
+
+      const { buffer, contentType } = await generateCloudflareImage(imagePrompt, modelId, aspectRatio, user.id);
+      const folder = userFolderFor({ id: user.id, email: user.email ?? null });
+      const storagePath = `${folder}/${projectId}/images/beat-${beatNumber}_${Date.now()}.jpg`;
+      const publicUrl = await uploadBuffer(storagePath, buffer, contentType);
+
+      await supabase.from("project_beats")
+        .update({ image_url: publicUrl, image_prompt: imagePrompt, image_status: "done", image_task_id: null, image_model_id: null })
+        .eq("project_id", projectId)
+        .eq("beat_number", beatNumber);
+
+      if (previousImageUrl) {
+        try {
+          const oldKey = r2KeyFromUrl(previousImageUrl);
+          if (oldKey) await deleteObject(oldKey);
+        } catch (e) {
+          console.warn(`[images/regenerate] beat=${beatNumber} (free) delete previous failed:`, e instanceof Error ? e.message : e);
+        }
+      }
+
+      await incrementFreeUsage(user.id, "image", 1);
+      console.log(`[images/regenerate] beat=${beatNumber} model=${modelId} (free/cloudflare) done`);
+      return NextResponse.json({ ok: true, url: publicUrl });
+    }
 
     // 2. Submit to KIE. No callBackUrl — this route owns the
     //    completion path. Stamp t0 here so the wall-clock elapsed
@@ -174,6 +209,11 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, url: publicUrl });
   } catch (err) {
+    if (err instanceof CloudflareError) {
+      console.warn(`[images/regenerate] Cloudflare error: ${err.message}`);
+      const status = err.status === 401 ? 401 : err.status === 429 ? 429 : 502;
+      return NextResponse.json({ error: err.message, code: "cloudflare_free" }, { status });
+    }
     if (err instanceof KieUpstreamError) {
       const headers: Record<string, string> = {};
       if (err.upstreamStatus === 429 && err.retryAfter != null) headers["Retry-After"] = String(err.retryAfter);
