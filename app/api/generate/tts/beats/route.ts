@@ -7,6 +7,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
 import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import { logProjectCost } from "@/lib/costs";
+import { incrementFreeUsage } from "@/lib/freeUsage";
 import type { User } from "@supabase/supabase-js";
 
 export const maxDuration = 800;
@@ -295,6 +296,9 @@ export async function POST(req: Request) {
               const { audio: audioBuf, charsConsumed } = await generateTTS(ttsText, voiceId, undefined, undefined, user.id);
               // Free Google voices run on the user's own BYO quota — no
               // ElevenLabs spend, so don't record a cost-ledger charge.
+              // Instead count the chars into free_usage so the voiceover
+              // Free tab can show the monthly usage bar (mirrors how the
+              // free image path increments its own daily counter).
               if (charsConsumed && !isGoogleVoice(voiceId)) {
                 void logProjectCost({
                   projectId,
@@ -305,6 +309,8 @@ export async function POST(req: Request) {
                   units: charsConsumed,
                   unitKind: "elevenlabs_chars",
                 });
+              } else if (charsConsumed && isGoogleVoice(voiceId)) {
+                void incrementFreeUsage(user.id, "tts_chars", charsConsumed);
               }
               // Hash the RAW segment (matches what selectStaleBeats
               // checks). Hashing the dedup'd text would cause every
