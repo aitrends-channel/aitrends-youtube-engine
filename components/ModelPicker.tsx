@@ -168,6 +168,25 @@ export function ModelPicker(props: ModelPickerProps) {
     return () => { cancelled = true; clearInterval(id); window.removeEventListener("focus", onFocus); };
   }, [tab, type]);
 
+  // Free-tier BYO key status, fetched when the Free tab opens, to gate the
+  // tab behind "set up your free tools first" until the user has connected
+  // their own Cloudflare (images) / Google Cloud TTS (voice) credentials.
+  const [freeKeys, setFreeKeys] = useState<{ cloudflareSet: boolean; googleTtsSet: boolean } | null>(null);
+  useEffect(() => {
+    if (tab !== "free") return;
+    let cancelled = false;
+    fetch("/api/me/api-keys-status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled || !d) return;
+        setFreeKeys({ cloudflareSet: !!d.cloudflareSet, googleTtsSet: !!d.googleTtsSet });
+      })
+      .catch(() => { /* leave null — don't gate on a failed check */ });
+    return () => { cancelled = true; };
+  }, [tab]);
+  // For images we need Cloudflare; only gate once we know it's missing.
+  const needsFreeSetup = tab === "free" && type === "image" && freeKeys !== null && !freeKeys.cloudflareSet;
+
   const searchQ = query.trim().toLowerCase();
   const matchesSearch = (m: KieModel) =>
     !searchQ ||
@@ -230,25 +249,13 @@ export function ModelPicker(props: ModelPickerProps) {
             onClick={() => setTab(t)}
             disabled={disabled}
             className="flex-1 flex items-center justify-center px-2 py-1 rounded-md text-xs font-medium capitalize transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-            style={t === "free" ? {
-              // Free tab always wears the solid brand color so it reads as
-              // a promo, active or not — same treatment as the voiceover
-              // step's Free tab.
-              background: "var(--primary)",
-              border: "1px solid var(--primary)",
-              color: "var(--primary-foreground)",
-            } : tab === t ? {
+            style={tab === t ? {
               background: "oklch(0.72 0.25 285 / 0.15)",
               color: "oklch(0.88 0.12 285)",
               boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.35)",
             } : { background: "transparent", color: "var(--c-55)" }}
           >
-            {t === "free" ? (
-              <span className="flex flex-col items-center leading-tight">
-                <span>😄 Free</span>
-                <span className="text-[9px] font-semibold normal-case">coming soon</span>
-              </span>
-            ) : t}
+            {t}
           </button>
         ))}
       </div>
@@ -258,11 +265,16 @@ export function ModelPicker(props: ModelPickerProps) {
           // Free image models grouped under their provider (Cloudflare),
           // sharing one daily quota — they all draw from the same account's
           // free Neuron pool. A second provider would get its own section.
-          (() => {
+          needsFreeSetup ? (
+            <FreeSetupPrompt />
+          ) : (() => {
             const used = freeUsage?.image ?? 0;
             const cap = freeUsage?.imageCap ?? FREE_IMAGE_DAILY_CAP_UI;
-            const pct = Math.min(100, cap > 0 ? Math.round((used / cap) * 100) : 0);
-            const near = pct >= 90;
+            const pctRaw = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
+            // Any nonzero usage gets at least a ~1% sliver so the green is
+            // actually visible even at a handful of images out of the cap.
+            const fillWidth = used > 0 ? Math.max(pctRaw, 1) : 0;
+            const near = pctRaw >= 90;
             return (
               <div className="rounded-xl p-3 space-y-2.5 mt-[5px]" style={{ border: "1px solid var(--bd-card)" }}>
                 {/* Section header: provider name (left) + shared daily-quota
@@ -276,14 +288,14 @@ export function ModelPicker(props: ModelPickerProps) {
                         {freeUsage ? `${used} / ${cap}` : "…"}
                       </span>
                     </div>
-                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
+                    <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
                       <div
                         className="h-full rounded-full transition-all"
                         style={{
-                          width: `${pct}%`,
+                          width: `${fillWidth}%`,
                           background: near
                             ? "oklch(0.72 0.18 65)"
-                            : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+                            : "linear-gradient(90deg, oklch(0.7 0.19 150), oklch(0.6 0.2 145))",
                         }}
                       />
                     </div>
@@ -306,12 +318,10 @@ export function ModelPicker(props: ModelPickerProps) {
           <div className="rounded-xl px-4 py-8 text-center"
             style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
             <p className="text-sm font-medium" style={{ color: "var(--c-70)" }}>
-              Free video isn&apos;t available yet.
+              Free video is coming soon.
             </p>
             <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
-              Video generation is compute-heavy, so it stays on the paid models
-              for now. Free images (Cloudflare) and free voiceover (Google) are
-              available today.
+              We&apos;re still working on it. Check back soon.
             </p>
           </div>
         )
@@ -375,62 +385,9 @@ export function ModelPicker(props: ModelPickerProps) {
         </p>
       )}
 
-      {props.hideAspectRatio ? null : props.lockAspectRatio ? (
-        <>
-          <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
-            Aspect Ratio{" "}
-            <span className="normal-case font-normal" style={{ color: "var(--c-35)" }}>· matches the image</span>
-          </p>
-          {/* Read-only: the clip inherits the source image's ratio, so the
-              value is shown but not selectable. */}
-          <span
-            className="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium"
-            style={{
-              background: "oklch(0.72 0.25 285 / 0.15)",
-              border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-              color: "oklch(0.88 0.12 285)",
-            }}
-          >
-            {props.selectedAspectRatio || "—"}
-          </span>
-        </>
-      ) : config && config.aspectRatios.length > 0 && (
-        <>
-          <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
-            Aspect Ratio
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {config.aspectRatios.map((r) => (
-              <VariantPill
-                key={r}
-                label={r}
-                selected={props.selectedAspectRatio === r}
-                disabled={disabled}
-                onClick={() => props.onSelectAspectRatio(r)}
-              />
-            ))}
-          </div>
-        </>
-      )}
-
-      {props.type === "image" && imageConfig?.resolutions && imageConfig.resolutions.length > 0 && (
-        <>
-          <p className="text-xs font-semibold uppercase tracking-wider mt-3 mb-2" style={{ color: "var(--c-40)" }}>
-            Resolution
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {imageConfig.resolutions.map((res) => (
-              <VariantPill
-                key={res}
-                label={res}
-                selected={props.selectedResolution === res}
-                disabled={disabled}
-                onClick={() => props.onSelectResolution(res === props.selectedResolution ? null : res)}
-              />
-            ))}
-          </div>
-        </>
-      )}
+      {/* Image aspect-ratio + resolution selectors were moved out of this
+          non-free branch to below the tab ternary, so the Free tab shows
+          them too (config-driven per selected model). */}
 
       {/* Video variant knobs — resolution/mode/quality on the left,
           duration on the right, in a single flex row so the two short
@@ -489,6 +446,89 @@ export function ModelPicker(props: ModelPickerProps) {
       )}
       </>
       )}
+
+      {/* Aspect ratio + resolution — OUTSIDE the tab ternary so the Free tab
+          gets them too. Config-driven per selected model: free SDXL offers
+          16:9/1:1/9:16/4:3/3:4, free FLUX Schnell only 1:1, and Cloudflare
+          free models have no resolution tiers (so that block stays hidden
+          for them). */}
+      {props.hideAspectRatio ? null : props.lockAspectRatio ? (
+        <>
+          <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
+            Aspect Ratio{" "}
+            <span className="normal-case font-normal" style={{ color: "var(--c-35)" }}>· matches the image</span>
+          </p>
+          <span
+            className="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium"
+            style={{
+              background: "oklch(0.72 0.25 285 / 0.15)",
+              border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+              color: "oklch(0.88 0.12 285)",
+            }}
+          >
+            {props.selectedAspectRatio || "—"}
+          </span>
+        </>
+      ) : config && config.aspectRatios.length > 0 && (
+        <>
+          <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
+            Aspect Ratio
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {config.aspectRatios.map((r) => (
+              <VariantPill
+                key={r}
+                label={r}
+                selected={props.selectedAspectRatio === r}
+                disabled={disabled}
+                onClick={() => props.onSelectAspectRatio(r)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+
+      {props.type === "image" && imageConfig?.resolutions && imageConfig.resolutions.length > 0 && (
+        <>
+          <p className="text-xs font-semibold uppercase tracking-wider mt-3 mb-2" style={{ color: "var(--c-40)" }}>
+            Resolution
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {imageConfig.resolutions.map((res) => (
+              <VariantPill
+                key={res}
+                label={res}
+                selected={props.selectedResolution === res}
+                disabled={disabled}
+                onClick={() => props.onSelectResolution(res === props.selectedResolution ? null : res)}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Shown on the Free tab when the user hasn't connected their own BYO
+// free-tier credentials yet (Cloudflare for images). Sends them to the
+// setup page instead of a picker that would 401 on the first generation.
+function FreeSetupPrompt() {
+  return (
+    <div
+      className="rounded-xl px-4 py-8 text-center"
+      style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}
+    >
+      <p className="text-sm font-medium" style={{ color: "var(--c-70)" }}>
+        You must set up your free tools first
+      </p>
+      <a
+        href="/setup"
+        className="mt-3 inline-flex items-center px-4 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-90"
+        style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
+      >
+        Go to setup
+      </a>
     </div>
   );
 }

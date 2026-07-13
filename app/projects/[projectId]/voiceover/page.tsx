@@ -253,6 +253,37 @@ export default function VoiceoverPage({ params }: PageProps) {
   // stream ends and SWR catches up.
   const [liveBeats, setLiveBeats] = useState<Map<number, LiveBeatState>>(new Map());
   const [generating, setGenerating] = useState(false);
+  // Google-TTS free monthly usage for the Free tab's usage bar (mirrors the
+  // free-image daily bar in ModelPicker). Fetched lazily when the Free tab is
+  // opened and refreshed after generation so the bar reflects new chars.
+  // Declared after `generating` so the effect below can depend on it without
+  // a temporal-dead-zone error.
+  const [freeTtsUsage, setFreeTtsUsage] = useState<{ ttsChars: number; ttsCap: number } | null>(null);
+  useEffect(() => {
+    if (voiceTab !== "free") return;
+    let cancelled = false;
+    fetch("/api/free-usage")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled || !d || typeof d.ttsChars !== "number") return;
+        setFreeTtsUsage({ ttsChars: d.ttsChars, ttsCap: d.ttsCap ?? 1_000_000 });
+      })
+      .catch(() => { /* fail-soft: bar just shows "…" */ });
+    return () => { cancelled = true; };
+  }, [voiceTab, generating]);
+  // Whether the user has connected their own Google Cloud TTS key. Gates the
+  // Free tab behind "set up your free tools first" until it's present. null =
+  // not-yet-known (don't gate); false = confirmed missing (gate).
+  const [googleTtsSet, setGoogleTtsSet] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (voiceTab !== "free") return;
+    let cancelled = false;
+    fetch("/api/me/api-keys-status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d) setGoogleTtsSet(!!d.googleTtsSet); })
+      .catch(() => { /* leave null — don't gate on a failed check */ });
+    return () => { cancelled = true; };
+  }, [voiceTab]);
   const [exportingVoiceover, setExportingVoiceover] = useState(false);
   const [stopped, setStopped] = useState(false);
   // Mirror `stopped` into a ref so the SSE handler (a long-lived async
@@ -940,13 +971,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                   onClick={() => { setVoiceTab(tab); setVoiceSearch(""); }}
                   disabled={effectivelyGenerating}
                   className="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium capitalize transition-all disabled:opacity-40"
-                  style={tab === "free" ? {
-                    // Free tab always wears the solid brand button color so
-                    // it stands out as a promo, active or not.
-                    background: "var(--primary)",
-                    border: "1px solid var(--primary)",
-                    color: "var(--primary-foreground)",
-                  } : voiceTab === tab ? {
+                  style={voiceTab === tab ? {
                     background: "oklch(0.72 0.25 285 / 0.15)",
                     border: "1px solid oklch(0.72 0.25 285 / 0.4)",
                     color: "oklch(0.88 0.12 285)",
@@ -962,25 +987,79 @@ export default function VoiceoverPage({ params }: PageProps) {
                       cloned · generated · professional
                     </span>
                   </span>
-                ) : tab === "free" ? (
-                  <span className="flex flex-col items-center leading-tight">
-                    <span>😄 Free</span>
-                    <span className="text-[9px] font-semibold normal-case">
-                      coming soon
-                    </span>
-                  </span>
                 ) : tab}</button>
               ))}
             </div>
             {voiceTab === "free" ? (
+              googleTtsSet === false ? (
+                // No Google Cloud TTS key yet — send them to setup rather than
+                // a picker that would fail on the first synthesis.
+                <div
+                  className="rounded-xl px-4 py-8 text-center"
+                  style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}
+                >
+                  <p className="text-sm font-medium" style={{ color: "var(--c-70)" }}>
+                    You must set up your free tools first
+                  </p>
+                  <a
+                    href="/setup"
+                    className="mt-3 inline-flex items-center px-4 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-90"
+                    style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
+                  >
+                    Go to setup
+                  </a>
+                </div>
+              ) : (
               // Free voices run on the user's own connected Google Cloud TTS
               // account (BYO) — free on their 1M chars/month quota.
               <div className="space-y-2">
-                <p className="text-[11px] leading-snug px-1" style={{ color: "var(--c-45)" }}>
-                  ⚡ Free — runs on your own Google Cloud account.{" "}
-                  <a href="/setup" className="underline" style={{ color: "var(--primary)" }}>Add your key in Settings</a>{" "}
-                  if you haven&apos;t.
-                </p>
+                {/* Monthly free-quota usage bar — Google Cloud TTS is
+                    1M chars/month on the user's own BYO account. Mirrors the
+                    free-image daily bar in ModelPicker. */}
+                {(() => {
+                  const used = freeTtsUsage?.ttsChars ?? 0;
+                  const cap = freeTtsUsage?.ttsCap ?? 1_000_000;
+                  // Exact percent — the 1M cap means real usage is often <1%,
+                  // where rounding to an integer shows a misleading "0%".
+                  const pctRaw = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
+                  const pctLabel =
+                    pctRaw === 0 ? "0%"
+                    : pctRaw < 1 ? `${pctRaw.toFixed(2)}%`
+                    : pctRaw < 10 ? `${pctRaw.toFixed(1)}%`
+                    : `${Math.round(pctRaw)}%`;
+                  // Any nonzero usage gets at least a ~1% sliver so the green
+                  // is actually visible even at fractions of a percent.
+                  const fillWidth = used > 0 ? Math.max(pctRaw, 1) : 0;
+                  const near = pctRaw >= 90;
+                  return (
+                    <div className="rounded-xl px-1 py-1 space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs font-semibold" style={{ color: "var(--c-55)" }}>Google Cloud TTS</span>
+                        <span className="text-[10px] tabular-nums" style={{ color: "var(--c-45)" }}>
+                          {freeTtsUsage ? `${used.toLocaleString()} / ${cap.toLocaleString()}` : "…"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-[10px]" style={{ color: "var(--c-45)" }}>
+                        <span>Monthly quota</span>
+                        <span className="tabular-nums">{freeTtsUsage ? pctLabel : ""}</span>
+                      </div>
+                      <div
+                        className="h-2.5 rounded-full overflow-hidden"
+                        style={{ background: "var(--bg-track)" }}
+                      >
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{
+                            width: `${fillWidth}%`,
+                            background: near
+                              ? "oklch(0.72 0.18 65)"
+                              : "linear-gradient(90deg, oklch(0.7 0.19 150), oklch(0.6 0.2 145))",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="scroll-themed grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1">
                   {GOOGLE_VOICES.map((m) => (
                     <VoiceOption
@@ -994,6 +1073,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                   ))}
                 </div>
               </div>
+              )
             ) : (
             <>
             {/* Search — spans the full width across all tabs; filters the
@@ -1004,10 +1084,11 @@ export default function VoiceoverPage({ params }: PageProps) {
               onChange={(e) => setVoiceSearch(e.target.value)}
               placeholder={`Search ${voiceTab} voices…`}
               aria-label="Search voices"
-              className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none transition-colors mb-3 text-zinc-900 placeholder:text-black"
+              className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none transition-colors mb-3"
               style={{
-                background: "#ecf0f1",
+                background: "var(--bg-input)",
                 border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+                color: "var(--c-70)",
               }}
             />
             {voiceSearch.trim() && filteredVoices.length === 0 && (
