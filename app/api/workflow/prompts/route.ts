@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHash, randomUUID } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
-import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { getAnthropicClient, MODEL, PROMPT_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 import {
   buildImagePromptsCached,
   buildImagePromptsDynamic,
@@ -1073,6 +1073,11 @@ export async function POST(req: Request) {
   if (!projectId || !step) {
     return NextResponse.json({ error: "projectId and step are required" }, { status: 400 });
   }
+  // Image + video prompt steps run on the fast PROMPT_MODEL (Haiku) —
+  // Opus's ~5-min/call latency through KIE caused the timeouts and
+  // queue-stalls. Thumbnails stay on Opus (`model`): a single quality-
+  // sensitive call that produces visual concepts, not a long multi-chunk
+  // grind, so its latency was never the problem.
   const model = MODEL;
 
   if (step === "images") {
@@ -1096,12 +1101,12 @@ export async function POST(req: Request) {
       if ((proj?.prompt_style as string | null) === "cinematic") promptStyle = "cinematic";
     }
     return sseStream((send) =>
-      generateImages(projectId, user.id, body.script!, body.visualProfile!, send, model, promptStyle)
+      generateImages(projectId, user.id, body.script!, body.visualProfile!, send, PROMPT_MODEL, promptStyle)
     );
   }
 
   if (step === "videos") {
-    return sseStream((send) => generateVideos(projectId, user.id, send, model));
+    return sseStream((send) => generateVideos(projectId, user.id, send, PROMPT_MODEL));
   }
 
   if (step === "thumbnails") {

@@ -539,6 +539,26 @@ async function streamStep(
   };
   resetIdle();
 
+  // Progress watchdog. resetIdle() above fires on ANY bytes, including the
+  // route's 15s ": keepalive" heartbeat, so it only catches a fully dead
+  // connection — NOT a server that keeps heartbeating while making no real
+  // progress (stuck KIE stream / wedged retry). That heartbeat-kept-alive
+  // case is exactly what pinned the UI at 95% forever. This timer resets
+  // ONLY when a real work event is parsed (below), ignoring heartbeats, so
+  // a run that goes quiet for NO_PROGRESS_MS is surfaced as a resumable
+  // stall. Healthy gaps are small — with concurrency some chunk is almost
+  // always emitting beat ticks — so 4 min clears the worst realistic gap
+  // (both in-flight chunks hitting the 120s server idle-abort at once, then
+  // re-establishing) without riding the heartbeat indefinitely.
+  const NO_PROGRESS_MS = 240_000;
+  let stalled = false;
+  let progressTimer: ReturnType<typeof setTimeout> | null = null;
+  const resetProgress = () => {
+    if (progressTimer) clearTimeout(progressTimer);
+    progressTimer = setTimeout(() => { stalled = true; reader.cancel().catch(() => {}); }, NO_PROGRESS_MS);
+  };
+  resetProgress();
+
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -553,6 +573,9 @@ async function streamStep(
         if (!line.startsWith("data: ")) continue;
         try {
           const event = JSON.parse(line.slice(6));
+          // Any parsed event is real work (heartbeats are ": keepalive"
+          // lines, skipped above) — keep the stall watchdog at bay.
+          resetProgress();
           if (event.type === "status") {
             // Status events drop progress + live count — they fire at
             // the start of the run before any chunk reports in.
@@ -586,6 +609,15 @@ async function streamStep(
     }
   } finally {
     if (idleTimer) clearTimeout(idleTimer);
+    if (progressTimer) clearTimeout(progressTimer);
+  }
+
+  // Progress watchdog cancelled the reader → the loop broke on `done`.
+  // Surface a resumable stall instead of a silent stream-end so the UI
+  // leaves 95% and the user can click Generate to finish the rest (every
+  // persisted beat is preserved; the route resumes from them).
+  if (stalled) {
+    throw new Error("Generation stalled — no progress from the server for several minutes. Any beats saved so far are preserved. Click Generate to resume the rest.");
   }
 
   return doneReceived;

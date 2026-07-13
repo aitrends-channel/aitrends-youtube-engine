@@ -347,6 +347,18 @@ export const MODEL = "claude-opus-4-7";
 // adherence) wins on overall reliability for that workload.
 export const FAST_MODEL = "claude-haiku-4-5";
 
+// Model for the prompt-generation steps (image + video prompts). Opus's
+// ~5-min/call latency through KIE was the root of the reliability spiral:
+// sequential runs overran the 800s function ceiling, and concurrent runs
+// made KIE queue requests so their time-to-first-token blew past the
+// stream idle-abort, aborting valid work. Haiku keeps each call short
+// (~30-60s) so first-token is quick, queueing disappears, and runs finish
+// well inside 800s. Prompt writing is mechanical description work — Haiku's
+// quality is ample, and the route's text-mode fallback already absorbs its
+// looser tool_choice adherence. Swap to a Sonnet tag here if KIE exposes
+// one and you want richer prompts (verify KIE accepts the id first).
+export const PROMPT_MODEL = FAST_MODEL;
+
 // Vision analysis runs on Opus 4.7 (per user request). We previously
 // ran Haiku here because Opus + ~10 image blocks could exceed the
 // old function-timeout caps and surface as "network error". With the
