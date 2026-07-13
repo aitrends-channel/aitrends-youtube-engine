@@ -65,22 +65,19 @@ export type ConcurrencyNumericKey = Exclude<keyof ConcurrencyConfig, "assembly_b
 
 export const CONCURRENCY_DEFAULTS: ConcurrencyConfig = {
   video_worker: 3,
-  // Parallelize prompt-generation chunks. Opus-via-KIE runs ~5 min per
-  // image-prompt section, so sequential (1) made a 5-section script take
-  // ~25 min and overrun the 800s function ceiling. Parallelism collapses
-  // that to a few waves. Beat numbering stays correct under concurrency —
-  // persistGates serialize the DB inserts in script order; only the SSE
-  // progress ticks arrive slightly out of order.
-  //
-  // Held at 2 (not higher): 4 simultaneous heavy Opus streams overloaded
-  // KIE's account capacity — it shed load with 500 "Server exception"
-  // errors that exhausted the retry budget and failed whole runs. 2 keeps
-  // a solid speedup (a 5-section script ≈ 3 waves ≈ 15 min, under the 800s
-  // ceiling) while staying inside what KIE tolerates. Revisit upward only
-  // if KIE capacity increases or the transient-retry policy is made more
-  // patient.
-  image_prompts_chunks: 2,
-  video_prompts_chunks: 2,
+  // Prompt-generation chunk concurrency, pinned to 1 (fully sequential).
+  // Running heavy Opus-via-KIE streams in parallel made KIE queue the
+  // extra requests — their time-to-first-token blew past the stream
+  // idle-abort (aborting valid work) — and at higher fan-out KIE shed
+  // load with 500 "Server exception" storms that failed whole runs.
+  // Sequential keeps exactly one Opus stream in flight, which is what KIE
+  // reliably tolerates. Trade-off: a many-section script can approach the
+  // 800s function ceiling; the per-chunk DB persistence + resume flow
+  // (and the client stall watchdog) cover that by letting the user resume
+  // from saved beats. Raise only if KIE proves it can handle concurrent
+  // Opus streams for this account.
+  image_prompts_chunks: 1,
+  video_prompts_chunks: 1,
   finish_images_poll: 5,
   image_generation_batch: 3,
   thumbnail_batch: 2,
