@@ -85,13 +85,35 @@ function makeFetchViaKie(creditsRef: { value: number | null }): typeof fetch {
     // The SDK ignores the extra field; we just need to lift it into
     // creditsRef so the caller can log it.
     const contentType = (upstream.headers.get("content-type") ?? "").toLowerCase();
-    if (upstream.ok && contentType.includes("text/event-stream")) {
-      const [forSdk, forCredits] = upstream.body ? upstream.body.tee() : [null, null];
-      if (forCredits) {
-        void scanSseForCredits(forCredits, creditsRef).catch((e) =>
-          console.warn("[kie-credits] sse scan failed:", e instanceof Error ? e.message : e));
-      }
-      return new Response(forSdk ?? upstream.body, {
+    if (upstream.ok && contentType.includes("text/event-stream") && upstream.body) {
+      // Do NOT tee() the SSE body. tee() couples the SDK's reader with a
+      // second (credit-scan) reader via SHARED BACKPRESSURE: the source is
+      // only pulled as fast as the slower branch, and if the fire-and-forget
+      // scan branch stalls or errors mid-stream, the source stops pulling
+      // and the SDK stops receiving events. On long tool_use generations
+      // (image prompts stream a 5-9k-token tool call over ~5 min) that
+      // surfaced as a 120s stream stall — the route's idle-abort fired with
+      // "Request was aborted" even though KIE was streaming perfectly
+      // (verified by calling KIE directly, which has no tee). Instead pipe
+      // through a TransformStream so there is exactly ONE consumer (the SDK)
+      // and peek at bytes in flight to lift KIE's `credits_consumed` (it
+      // lands on the final message_delta). No second reader → no deadlock.
+      const decoder = new TextDecoder();
+      let creditBuf = "";
+      const peekCredits = new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          controller.enqueue(chunk); // pass straight through, unmodified
+          try {
+            creditBuf += decoder.decode(chunk, { stream: true });
+            const m = creditBuf.match(/"credits_consumed"\s*:\s*([0-9]+(?:\.[0-9]+)?)/);
+            if (m) creditsRef.value = parseFloat(m[1]);
+            // Bound the peek buffer — credits land near end-of-stream, so we
+            // only need a recent tail, never the whole 5-9k-token payload.
+            if (creditBuf.length > 16384) creditBuf = creditBuf.slice(-4096);
+          } catch { /* best-effort peek; never affects the SDK's bytes */ }
+        },
+      });
+      return new Response(upstream.body.pipeThrough(peekCredits), {
         status: upstream.status,
         statusText: upstream.statusText,
         headers: upstream.headers,
@@ -189,50 +211,6 @@ function readNumericField(obj: unknown, key: string): number | null {
     return Number.isFinite(n) ? n : null;
   }
   return null;
-}
-
-// Read the tee'd SSE branch, parse every event's data payload as
-// JSON, and pluck out KIE's `credits_consumed` field whenever it
-// appears (typically on the final message_delta event of a
-// /claude/messages stream). Last value wins — the most reliable
-// number is the one KIE writes at end-of-stream after the model
-// stopped, so overwriting an earlier value is the correct behavior
-// for the rare case the stream emits credits multiple times.
-async function scanSseForCredits(
-  body: ReadableStream<Uint8Array>,
-  creditsRef: { value: number | null },
-): Promise<void> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    // SSE events are separated by blank lines. Drain complete events
-    // out of the buffer and leave the trailing partial behind.
-    let sepIdx: number;
-    while ((sepIdx = buffer.indexOf("\n\n")) !== -1) {
-      const eventBlock = buffer.slice(0, sepIdx);
-      buffer = buffer.slice(sepIdx + 2);
-      // Walk each line of the block; concatenate data: lines per the
-      // SSE spec, ignore event:/id:/retry: prefixes for our purpose.
-      let dataPayload = "";
-      for (const line of eventBlock.split("\n")) {
-        if (line.startsWith("data:")) dataPayload += line.slice(5).trimStart();
-      }
-      if (!dataPayload) continue;
-      try {
-        const parsed = JSON.parse(dataPayload) as Record<string, unknown>;
-        const credits =
-          readNumericField(parsed, "credits_consumed") ??
-          readNumericField(parsed, "creditsConsumed");
-        if (credits != null) creditsRef.value = credits;
-      } catch {
-        // Non-JSON data payload — ignore.
-      }
-    }
-  }
 }
 
 // A wrapped Anthropic client that also exposes the active routing
@@ -347,17 +325,15 @@ export const MODEL = "claude-opus-4-7";
 // adherence) wins on overall reliability for that workload.
 export const FAST_MODEL = "claude-haiku-4-5";
 
-// Model for the prompt-generation steps (image + video prompts). Opus's
-// ~5-min/call latency through KIE was the root of the reliability spiral:
-// sequential runs overran the 800s function ceiling, and concurrent runs
-// made KIE queue requests so their time-to-first-token blew past the
-// stream idle-abort, aborting valid work. Haiku keeps each call short
-// (~30-60s) so first-token is quick, queueing disappears, and runs finish
-// well inside 800s. Prompt writing is mechanical description work — Haiku's
-// quality is ample, and the route's text-mode fallback already absorbs its
-// looser tool_choice adherence. Swap to a Sonnet tag here if KIE exposes
-// one and you want richer prompts (verify KIE accepts the id first).
-export const PROMPT_MODEL = FAST_MODEL;
+// Model for the prompt-generation steps (image + video prompts). Kept on
+// Opus (per user preference for prompt quality). We briefly moved this to
+// Haiku to shrink per-call latency, but staging showed KIE still returning
+// silent/dead streams under Haiku too — the stalls are a KIE-side problem,
+// not model latency — so the switch bought nothing and cost quality. To
+// avoid KIE queueing under Opus's longer calls, prompt-chunk concurrency
+// is pinned to 1 (see CONCURRENCY_DEFAULTS). Point this back at a faster
+// model here if KIE stabilizes and per-call latency becomes the bottleneck.
+export const PROMPT_MODEL = MODEL;
 
 // Vision analysis runs on Opus 4.7 (per user request). We previously
 // ran Haiku here because Opus + ~10 image blocks could exceed the
