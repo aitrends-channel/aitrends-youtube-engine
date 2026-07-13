@@ -315,14 +315,15 @@ async function generateImages(
     await supabase.from("project_beats").delete().eq("project_id", projectId);
   }
 
-  // ~300 words/chunk → ~17 beats. Kept small so each chunk's output —
-  // even Opus's verbose `<tool_calls>` text fallback — fits under the
-  // 12288 max_tokens ceiling (see the streaming call below) without
-  // truncating. The ceiling must stay below 16384 (a sharp first-token
-  // latency cliff: ~25s at 12288 vs ~129s at 16384), so the chunk has to
-  // be small enough that ~17 beats never overrun 12288. Small chunk +
-  // sub-cliff ceiling = fast first token AND no truncation.
-  const SCRIPT_CHUNK_WORDS = 300;
+  // ~200 words/chunk. Beat density runs high (~1 beat per 8 words → a
+  // 300-word chunk produced 38+ beats and, in Opus's verbose <tool_calls>
+  // text fallback, overran 12288 tokens → stop=max_tokens truncation).
+  // 200 words caps a chunk at ~25 beats, whose verbose fallback stays
+  // comfortably under 12288 even for dense content. The ceiling can't just
+  // be raised — 16384 triggers the ~129s first-token latency cliff — so
+  // the chunk size is the lever. Smaller chunks = more chunks, but
+  // concurrency (3) and per-chunk persistence + resume absorb that.
+  const SCRIPT_CHUNK_WORDS = 200;
   const words = script.trim().split(/\s+/).filter(Boolean);
   const allChunks: string[] = [];
   for (let i = 0; i < words.length; i += SCRIPT_CHUNK_WORDS) {
@@ -586,6 +587,9 @@ async function generateImages(
           armIdle();
           let toolJsonAccum = "";
           let lastReportedBeats = 0;
+          // Throttle for keepalives on non-beat activity. Date.now() is
+          // fine here (normal route, not a workflow sandbox).
+          let lastKeepalive = Date.now();
           for await (const ev of stream) {
             armIdle();
             if (ev.type === "content_block_delta" && ev.delta.type === "input_json_delta") {
@@ -598,21 +602,24 @@ async function generateImages(
                   chunkIndex,
                   beatsInChunk: completeBeats,
                 });
+                lastKeepalive = Date.now();
               }
-            } else if ((ev.type as string) === "ping" || ev.type === "message_start") {
-              // KIE emits `ping` every ~30s during Opus's long time-to-
-              // first-token on big tool_use calls — measured at ~130s
-              // before the first beat streams, with only pings in between.
-              // Forward each as a keepalive so the client's progress
-              // watchdog sees the server is alive-and-working (not stalled)
-              // even before any beat lands. beatsInChunk stays at the
-              // running tally (0 until content starts), so the visible
-              // count is unchanged; this only refreshes the watchdog.
+            } else if (Date.now() - lastKeepalive > 10_000) {
+              // Keepalive on ANY other stream activity — throttled to ~10s.
+              // This is essential for the case where Opus ignores tool_choice
+              // and returns the verbose <tool_calls> TEXT fallback: its
+              // deltas are `text_delta`, so the input_json_delta branch above
+              // never fires, NO beat progress is produced, and KIE sends no
+              // pings during active text streaming — the client would sit
+              // silent for the whole (multi-minute) chunk and trip its
+              // progress watchdog even though the server is streaming fine.
+              // Also covers the ping/message_start first-token gap.
               send({
                 type: "chunk_beat_progress",
                 chunkIndex,
                 beatsInChunk: lastReportedBeats,
               });
+              lastKeepalive = Date.now();
             }
           }
           const message = await stream.finalMessage();

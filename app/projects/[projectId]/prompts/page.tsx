@@ -612,12 +612,16 @@ async function streamStep(
     if (progressTimer) clearTimeout(progressTimer);
   }
 
-  // Progress watchdog cancelled the reader → the loop broke on `done`.
-  // Surface a resumable stall instead of a silent stream-end so the UI
-  // leaves 95% and the user can click Generate to finish the rest (every
-  // persisted beat is preserved; the route resumes from them).
+  // Progress watchdog cancelled the reader. Do NOT throw here — fall
+  // through and let the caller's DB poll loop decide. The run may actually
+  // have COMPLETED (current_state=14, all beats saved) with only the final
+  // `done` SSE lost in the tail gap between the last beat and the hash
+  // write; throwing would wrongly show "stalled" on a finished run. The
+  // poll loop reconciles against the DB: shows done if complete, keeps
+  // polling while the server is still active, or surfaces a resumable
+  // error via its own (longer) watchdog if the run is genuinely dead.
   if (stalled) {
-    throw new Error("Generation stalled — no progress from the server for several minutes. Any beats saved so far are preserved. Click Generate to resume the rest.");
+    console.warn("[prompts] stream progress watchdog fired — handing off to DB poll loop for reconciliation");
   }
 
   return doneReceived;

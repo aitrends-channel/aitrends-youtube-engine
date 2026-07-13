@@ -1450,8 +1450,8 @@ const CONCURRENCY_FIELDS: {
   disabled?: boolean;
   group?: string;
 }[] = [
-  { key: "image_prompts_chunks",   label: "Image prompts generation", description: "How many chunks generated at a time.", default: 1, min: 1, max: 20, group: "Prompts" },
-  { key: "video_prompts_chunks",   label: "Video prompts generation", description: "How many chunks generated at a time.", default: 1, min: 1, max: 20, group: "Prompts" },
+  { key: "image_prompts_chunks",   label: "Image prompts generation", description: "How many script chunks generated in parallel. Higher = faster but more load on KIE (watch for 500s).", default: 3, min: 1, max: 20, group: "Prompts" },
+  { key: "video_prompts_chunks",   label: "Video prompts generation", description: "How many script chunks generated in parallel. Higher = faster but more load on KIE.", default: 3, min: 1, max: 20, group: "Prompts" },
   { key: "tts_beat_batch",         label: "Voiceovers",          description: "Voiceover beats generated per batch.", default: 5, min: 1, max: 20, group: "Media" },
   { key: "video_worker",           label: "AI videos generation", description: "How many videos generated at once.",   default: 3, min: 1, max: 50, group: "Media" },
   { key: "image_generation_batch", label: "AI image generation",  description: "How many images generated at once.",   default: 3, min: 1, max: 20, group: "Media" },
