@@ -65,19 +65,19 @@ export type ConcurrencyNumericKey = Exclude<keyof ConcurrencyConfig, "assembly_b
 
 export const CONCURRENCY_DEFAULTS: ConcurrencyConfig = {
   video_worker: 3,
-  // Prompt-generation chunk concurrency, pinned to 1 (fully sequential).
-  // Running heavy Opus-via-KIE streams in parallel made KIE queue the
-  // extra requests — their time-to-first-token blew past the stream
-  // idle-abort (aborting valid work) — and at higher fan-out KIE shed
-  // load with 500 "Server exception" storms that failed whole runs.
-  // Sequential keeps exactly one Opus stream in flight, which is what KIE
-  // reliably tolerates. Trade-off: a many-section script can approach the
-  // 800s function ceiling; the per-chunk DB persistence + resume flow
-  // (and the client stall watchdog) cover that by letting the user resume
-  // from saved beats. Raise only if KIE proves it can handle concurrent
-  // Opus streams for this account.
-  image_prompts_chunks: 1,
-  video_prompts_chunks: 1,
+  // Prompt-generation chunk concurrency = 3. Chunks are slow (Opus via
+  // KIE runs ~6 min for a dense ~35-beat, 300-word chunk), so sequential
+  // made a full script overrun the 800s function ceiling repeatedly. The
+  // earlier parallel failures — KIE queueing requests until their
+  // time-to-first-token blew the idle-abort, plus 500 "Server exception"
+  // storms at fan-out 4 — were symptoms of the 16384 first-token cliff and
+  // the tee starving the SDK, both now fixed. Each call is lighter (12288,
+  // fast first token), so 3 in flight cuts wall-clock to ~a third without
+  // overloading KIE. Beat numbering stays correct — persistGates serialize
+  // the DB inserts in script order. Nudge down to 2 if KIE 500s reappear,
+  // up toward 4 only after confirming this account tolerates it.
+  image_prompts_chunks: 3,
+  video_prompts_chunks: 3,
   finish_images_poll: 5,
   image_generation_batch: 3,
   thumbnail_batch: 2,

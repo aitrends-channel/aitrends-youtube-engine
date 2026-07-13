@@ -315,13 +315,14 @@ async function generateImages(
     await supabase.from("project_beats").delete().eq("project_id", projectId);
   }
 
-  // Smaller chunks = smaller per-call payload = more chances of getting
-  // past KIE+Opus's intermittent 500s. ~500 words/chunk produces ~30
-  // beats × ~150 tokens ≈ 4500 output tokens, well under the 16384
-  // ceiling set on the streaming call below, and each call finishes
-  // faster (30-60s typical) reducing the surface area for KIE to drop
-  // the connection.
-  const SCRIPT_CHUNK_WORDS = 500;
+  // ~300 words/chunk → ~17 beats. Kept small so each chunk's output —
+  // even Opus's verbose `<tool_calls>` text fallback — fits under the
+  // 12288 max_tokens ceiling (see the streaming call below) without
+  // truncating. The ceiling must stay below 16384 (a sharp first-token
+  // latency cliff: ~25s at 12288 vs ~129s at 16384), so the chunk has to
+  // be small enough that ~17 beats never overrun 12288. Small chunk +
+  // sub-cliff ceiling = fast first token AND no truncation.
+  const SCRIPT_CHUNK_WORDS = 300;
   const words = script.trim().split(/\s+/).filter(Boolean);
   const allChunks: string[] = [];
   for (let i = 0; i < words.length; i += SCRIPT_CHUNK_WORDS) {
@@ -520,17 +521,18 @@ async function generateImages(
     const { res, input } = await retryClaudeCall(
       `image prompts chunk ${chunkIndex + 1}/${totalChunks}`,
       async (): Promise<{ res: Anthropic.Messages.Message; input: Record<string, unknown> | null }> => {
-        // 16384 (not 8192) so verbose chunks have headroom to finish.
-        // Typical 500-word chunk produces ~30 beats × ~150 tokens ≈
-        // 4500 output tokens — well inside this ceiling. The bump exists
-        // for the ~5% of chunks where Claude writes 3-4 sentence
-        // imagePrompts instead of 1-2, or where the script is dense
-        // enough to identify 50+ beats per chunk. Those used to hit the
-        // 8192 wall, throw `max_tokens`, and discard everything Claude
-        // had already written for the chunk; with the larger ceiling
-        // they finish naturally. Cost is only paid on chunks that
-        // actually exceed 8192 output — average chunks are unaffected
-        // since max_tokens is a ceiling, not a target.
+        // 12288. Two competing constraints, measured directly against KIE:
+        //   • first-token latency is fast for every ceiling BELOW 16384
+        //     (~16-25s) but jumps to ~129s at exactly 16384 — a sharp
+        //     cliff. That 2-min silent gap was what tripped the idle-abort
+        //     / stall watchdog, so we must stay under 16384.
+        //   • Opus intermittently ignores tool_choice and emits a VERBOSE
+        //     `<tool_calls>` *text* block instead of a compact tool_use;
+        //     8192 truncated that fallback mid-beats (stop=max_tokens).
+        // 12288 threads both: fast first token AND enough headroom for the
+        // verbose fallback of a ~300-word (~17-beat) chunk. Do NOT set 16384
+        // (first-token cliff) and do NOT drop back to 8192 (truncates the
+        // fallback). Re-measure both if you change either number.
         // Server-side idle-abort. KIE intermittently accepts a request
         // (its dashboard shows "running", duration 0, 0 credits) but then
         // forwards ZERO bytes — the stream sits open indefinitely. Without
@@ -544,7 +546,14 @@ async function generateImages(
         // take 4-5 min of continuous deltas — is never aborted; only a
         // genuinely silent connection trips it.
         const ac = new AbortController();
-        const STREAM_IDLE_MS = 120_000;
+        // 300s, not 120s: KIE's measured time-to-first-token on big Opus
+        // tool_use calls is ~130s (only `ping`s stream in that window), so
+        // 120s aborted valid requests ~1s before content arrived. 300s
+        // clears that with margin while still catching a genuinely dead
+        // connection. The timer resets on EVERY event — including the pings
+        // (now forwarded to the client as keepalives) — so a live-but-slow
+        // stream is never aborted; only true silence trips it.
+        const STREAM_IDLE_MS = 300_000;
         let idleTimer: ReturnType<typeof setTimeout> | null = null;
         const armIdle = () => {
           if (idleTimer) clearTimeout(idleTimer);
@@ -555,7 +564,7 @@ async function generateImages(
         };
         const stream = anthropic.messages.stream({
           model: model,
-          max_tokens: 16384,
+          max_tokens: 12288,
           system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
           tools: [{ name: "save_image_prompts", description: "Save image prompts for every visual beat in the chunk", input_schema: imagePromptsInputSchema }],
           tool_choice: { type: "tool", name: "save_image_prompts" },
@@ -590,6 +599,20 @@ async function generateImages(
                   beatsInChunk: completeBeats,
                 });
               }
+            } else if ((ev.type as string) === "ping" || ev.type === "message_start") {
+              // KIE emits `ping` every ~30s during Opus's long time-to-
+              // first-token on big tool_use calls — measured at ~130s
+              // before the first beat streams, with only pings in between.
+              // Forward each as a keepalive so the client's progress
+              // watchdog sees the server is alive-and-working (not stalled)
+              // even before any beat lands. beatsInChunk stays at the
+              // running tally (0 until content starts), so the visible
+              // count is unchanged; this only refreshes the watchdog.
+              send({
+                type: "chunk_beat_progress",
+                chunkIndex,
+                beatsInChunk: lastReportedBeats,
+              });
             }
           }
           const message = await stream.finalMessage();
