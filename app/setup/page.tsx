@@ -10,11 +10,14 @@ import Image from "next/image";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
+type Tier = "paid" | "free";
+
 interface KeyField {
   key: keyof FormState;
   label: string;
   description: string;
   placeholder: string;
+  tier: Tier;
 }
 
 const KEY_FIELDS: KeyField[] = [
@@ -23,30 +26,35 @@ const KEY_FIELDS: KeyField[] = [
     label: "KIE API Key",
     description: "Powers script generation & channel analysis, plus image and video generation through one provider.",
     placeholder: "kie-…",
+    tier: "paid",
   },
   {
     key: "elevenlabs_api_key",
     label: "ElevenLabs API Key",
     description: "Powers TTS voiceovers (direct ElevenLabs call — fast per-beat synthesis at per-character pricing) and assembler speech-to-text alignment for captions.",
     placeholder: "sk_…",
+    tier: "paid",
   },
   {
     key: "cloudflare_account_id",
     label: "Cloudflare Account ID",
     description: "Powers the Free image option (Cloudflare Workers AI · FLUX Schnell) on your own free daily quota. It's the long hex string in your Cloudflare dashboard URL — dash.cloudflare.com/<Account ID>. See the Instructions tab for the full walkthrough.",
     placeholder: "e.g. 1a2b3c4d5e6f7a8b9c0d…",
+    tier: "free",
   },
   {
     key: "cloudflare_api_token",
     label: "Cloudflare API Token",
     description: "Goes with the Account ID above. Create it at dash.cloudflare.com → My Profile → API Tokens → Create Token, using the \"Workers AI\" template.",
     placeholder: "paste your Workers AI token",
+    tier: "free",
   },
   {
     key: "google_tts_key",
     label: "Google Cloud TTS Key",
     description: "Powers the Free voiceover option (Google Cloud Text-to-Speech) — 1,000,000 characters/month free on your own account. Requires a Google Cloud project with billing enabled (you're not charged within the free tier) and the Text-to-Speech API turned on. See the Instructions tab.",
     placeholder: "AIza…",
+    tier: "free",
   },
 ];
 
@@ -151,6 +159,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState<"setup" | "instructions">("instructions");
+  const [subTab, setSubTab] = useState<Tier>("paid");
   const [userEmail, setUserEmail] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
@@ -293,10 +302,10 @@ export default function SettingsPage() {
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-2xl mx-auto px-4 sm:px-8 py-8 sm:py-14">
+      <main className="flex-1 w-full max-w-none px-4 sm:px-8 lg:px-12 py-8 sm:py-14">
 
         {/* Tabs */}
-        <div className="flex gap-1 mb-10 p-1 rounded-xl"
+        <div className="flex gap-1 mb-10 p-1 rounded-xl w-full"
           style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
           {(["instructions", "setup"] as const).map((t) => (
             <button
@@ -309,6 +318,24 @@ export default function SettingsPage() {
               }}
             >
               {t}
+            </button>
+          ))}
+        </div>
+
+        {/* Sub-tabs: Paid / Free — compact, not full width */}
+        <div className="flex gap-1 mb-8 p-1 rounded-xl w-fit"
+          style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+          {(["paid", "free"] as const).map((s) => (
+            <button
+              key={s}
+              onClick={() => setSubTab(s)}
+              className="px-6 py-1.5 rounded-lg text-xs font-bold tracking-widest uppercase transition-all cursor-pointer"
+              style={{
+                background: subTab === s ? "oklch(0.72 0.25 285)" : "transparent",
+                color: subTab === s ? "white" : "var(--c-45)",
+              }}
+            >
+              {s}
             </button>
           ))}
         </div>
@@ -337,8 +364,9 @@ export default function SettingsPage() {
                 <span className="text-sm">Loading settings…</span>
               </div>
             ) : (
-              <form onSubmit={handleSave} className="space-y-4">
-                {KEY_FIELDS.map((field) => {
+              <form onSubmit={handleSave} className="space-y-6">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {KEY_FIELDS.filter((field) => field.tier === subTab).map((field) => {
                   const currentMasked = masked[field.key] ?? "";
                   const isSet = !!currentMasked;
                   const isShowing = visible[field.key];
@@ -397,12 +425,13 @@ export default function SettingsPage() {
                     </div>
                   );
                 })}
+                </div>
 
                 <button
                   type="submit"
                   disabled={saving || Object.values(form).every((v) => !v.trim())}
                   onClick={() => console.log("[setup] Save button onClick fired. disabled flag =", saving || Object.values(form).every((v) => !v.trim()), "form =", { kie_len: form.kie_api_key.length, el_len: form.elevenlabs_api_key.length })}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+                  className="w-full sm:w-auto sm:min-w-[240px] flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
                   style={{
                     background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
                     color: "var(--c-98)",
@@ -428,75 +457,98 @@ export default function SettingsPage() {
               <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>Add your API keys once — takes ~5 minutes.</p>
             </div>
 
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {[
               {
                 num: 1,
+                tier: "paid" as Tier,
+                quota: "",
                 title: "Kie AI API Key",
                 sub: "Script generation, channel analysis, images & video clips",
                 href: "https://kie.ai",
                 linkLabel: "kie.ai",
                 steps: [
-                  "Sign in and go to API Keys.",
-                  "Create a key, name it, copy it.",
-                  "Top up credits — covers script, image, and video generation.",
+                  "Sign in → API Keys.",
+                  "Create a key, copy it.",
+                  "Top up credits (script, images, video).",
                 ],
               },
               {
                 num: 2,
+                tier: "paid" as Tier,
+                quota: "",
                 title: "ElevenLabs API Key",
                 sub: "Voiceover synthesis and caption-alignment STT",
                 href: "https://elevenlabs.io/app/settings/api-keys",
                 linkLabel: "elevenlabs.io",
                 steps: [
-                  "Sign in and open Settings → API Keys.",
-                  "Create a key with text-to-speech and speech-to-text permissions, then copy it.",
-                  "Pick a plan that fits your character volume (per-char billing).",
-                  "Optional: from the Voice Library, add any non-Premade voices you want available in the picker.",
+                  "Sign in → Settings → API Keys.",
+                  "Create a key with TTS + STT permissions, copy it.",
+                  "Pick a plan for your character volume.",
+                  "Optional: add voices from the Voice Library.",
                 ],
               },
               {
                 num: 3,
+                tier: "free" as Tier,
+                quota: "500 imgs/month",
                 title: "Cloudflare Workers AI (Free images)",
                 sub: "Powers the Free image option — free daily quota on your own account (~500–2,000 images/day)",
                 href: "https://dash.cloudflare.com",
                 linkLabel: "dash.cloudflare.com",
                 steps: [
-                  "Sign up free at dash.cloudflare.com — no credit card required.",
-                  "Get your Account ID: after logging in, the browser URL looks like dash.cloudflare.com/abc123…def — copy ONLY that 32-character ID (the part right after the slash), not the whole URL.",
-                  "Create a token: avatar (top-right) → Profile → API Tokens → Create Token → pick the \"Workers AI\" template → Continue to summary → Create Token. Copy it.",
-                  "Paste the Account ID and API Token into the Setup tab.",
+                  <>Sign up free at <a href="https://dash.cloudflare.com" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>dash.cloudflare.com ↗</a> — no card needed.</>,
+                  "Copy your Account ID (the 32-char part after the slash in the dashboard URL).",
+                  "Create a token with the \"Workers AI\" template, copy it.",
+                  "Paste both into the Setup tab.",
                 ],
               },
               {
                 num: 4,
+                tier: "free" as Tier,
+                quota: "1M chars/month",
                 title: "Google Cloud TTS (Free voiceover)",
                 sub: "Powers the Free voiceover option — 1,000,000 characters/month free on your own account",
                 href: "https://console.cloud.google.com",
                 linkLabel: "console.cloud.google.com",
                 steps: [
-                  "At console.cloud.google.com, create a project (or pick an existing one).",
-                  "Enable billing on the project — Google requires a billing account to use the API, but you won't be charged within the free 1M-chars/month tier.",
-                  "Enable the API: APIs & Services → Library → search \"Cloud Text-to-Speech API\" → Enable.",
-                  "Create the key: APIs & Services → Credentials → Create credentials → API key. Copy it.",
+                  <>Create a project — <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>open ↗</a> (via the top-bar dropdown).</>,
+                  "Enable billing (free tier isn't charged).",
+                  <>Enable the <a href="https://console.cloud.google.com/apis/library/texttospeech.googleapis.com" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>Text-to-Speech API ↗</a> on that project.</>,
+                  <>Create an API key on the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>Credentials page ↗</a>, copy it.</>,
                   "Paste the key into the Setup tab.",
                 ],
               },
-            ].map(({ num, title, sub, href, linkLabel, steps }) => (
-              <div key={num} className="p-4 rounded-2xl space-y-3" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-                <div className="flex items-center gap-3">
+            ].filter((step) => step.tier === subTab).map(({ title, sub, href, linkLabel, steps, quota }, idx) => (
+              <div key={title} className="p-4 rounded-2xl space-y-3" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+                <div
+                  className={`flex items-center gap-3 ${subTab === "free" ? "-mx-4 -mt-4 mb-2 px-4 py-3 rounded-t-2xl h-[76px] overflow-hidden" : ""}`}
+                  style={subTab === "free" ? { background: "oklch(0.72 0.25 285)" } : undefined}
+                >
                   <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 text-xs font-bold"
-                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>{num}</div>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{title}</p>
-                    <p className="text-xs" style={{ color: "var(--c-40)" }}>{sub}</p>
-                  </div>
-                  <a href={href} target="_blank" rel="noopener noreferrer"
-                    className="ml-auto text-xs shrink-0 hover:opacity-80"
-                    style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>
-                    {linkLabel} ↗
-                  </a>
+                    style={subTab === "free"
+                      ? { background: "oklch(1 0 0 / 0.22)", color: "white", border: "1px solid oklch(1 0 0 / 0.4)" }
+                      : { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>{idx + 1}</div>
+                  {subTab === "free" ? (
+                    <div className="min-w-0">
+                      <p className="text-lg font-bold leading-tight line-clamp-2" style={{ color: "white" }}>{title}</p>
+                      {quota && <p className="text-sm font-semibold mt-0.5" style={{ color: "#000000" }}>{quota}</p>}
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">{title}</p>
+                        <p className="text-xs" style={{ color: "var(--c-40)" }}>{sub}</p>
+                      </div>
+                      <a href={href} target="_blank" rel="noopener noreferrer"
+                        className="ml-auto text-xs shrink-0 hover:opacity-80"
+                        style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>
+                        {linkLabel} ↗
+                      </a>
+                    </>
+                  )}
                 </div>
-                <ol className="space-y-1 pl-9">
+                <ol className="space-y-2.5 pl-9">
                   {steps.map((s, i) => (
                     <li key={i} className="text-xs leading-relaxed" style={{ color: "var(--c-55)" }}>
                       <span className="font-medium" style={{ color: "var(--c-40)" }}>{i + 1}.</span> {s}
@@ -505,6 +557,7 @@ export default function SettingsPage() {
                 </ol>
               </div>
             ))}
+            </div>
 
             <div className="flex justify-end pt-1">
               <button
