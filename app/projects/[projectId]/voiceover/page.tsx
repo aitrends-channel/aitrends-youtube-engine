@@ -16,6 +16,7 @@ import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
 import { SequentialVoiceoverPreview } from "@/components/voiceover/SequentialVoiceoverPreview";
 import { BeatAudioPlayer } from "@/components/voiceover/BeatAudioPlayer";
+import { GOOGLE_VOICES, isGoogleVoice } from "@/lib/google/tts";
 import { RotateCw, ChevronUp, ChevronDown, Download } from "lucide-react";
 
 // Per-beat voiceover step. Each beat shows its own row with status,
@@ -58,19 +59,49 @@ function VoiceOption({
     }
   }, [isPlaying]);
   useEffect(() => () => { audioRef.current?.pause(); }, []);
-  function togglePreview(e: React.MouseEvent) {
+  async function togglePreview(e: React.MouseEvent) {
     e.stopPropagation();
     if (!model.previewUrl) return;
     if (isPlaying) {
       onPlayToggle(null);
-    } else {
-      onSelect();
+      return;
+    }
+    onSelect();
+
+    // Same-origin dynamic previews (the free Google voices → our /preview
+    // route) are auth'd and take a couple seconds to synthesize. Fetch
+    // them explicitly so we can (a) play reliably from a blob and (b)
+    // surface the error — "connect your key", quota, etc. — instead of
+    // failing silently. ElevenLabs previews are CROSS-ORIGIN static mp3s,
+    // where fetch() would trip CORS, so those keep the direct-Audio path.
+    const isDynamic = model.previewUrl.startsWith("/");
+    if (!isDynamic) {
       const audio = new Audio(model.previewUrl);
       audioRef.current = audio;
       audio.onended = () => onPlayToggle(null);
       audio.onerror = () => onPlayToggle(null);
       audio.play().catch(() => onPlayToggle(null));
       onPlayToggle(model.id);
+      return;
+    }
+
+    onPlayToggle(model.id); // show the "playing" state while it loads
+    try {
+      const res = await fetch(model.previewUrl);
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(data.error || `Preview failed (${res.status})`);
+      }
+      const url = URL.createObjectURL(await res.blob());
+      const audio = new Audio(url);
+      audioRef.current = audio;
+      const cleanup = () => { onPlayToggle(null); URL.revokeObjectURL(url); };
+      audio.onended = cleanup;
+      audio.onerror = cleanup;
+      await audio.play();
+    } catch (err) {
+      onPlayToggle(null);
+      toast.error(err instanceof Error ? err.message : "Voice preview failed");
     }
   }
   return (
@@ -91,7 +122,12 @@ function VoiceOption({
       }}
     >
       <div className="flex items-center gap-2">
-        <p className="font-medium text-xs flex-1 truncate">{model.name}</p>
+        <p className="font-medium text-xs flex-1 truncate">
+          {model.name}
+          {model.id.startsWith("google/") && (
+            <span style={{ color: "var(--primary)" }}> - free</span>
+          )}
+        </p>
         {model.previewUrl && (
           <button
             onClick={togglePreview}
@@ -715,7 +751,10 @@ export default function VoiceoverPage({ params }: PageProps) {
   // run fails downstream with a cryptic "voice_id … not found". Validate
   // against the live catalog and surface an alert modal instead.
   function requireVoice(): boolean {
-    const valid = !!selectedVoice && (ttsModels ? ttsModels.some((m) => m.id === selectedVoice) : true);
+    // Free Google voices aren't in the ElevenLabs catalog (ttsModels) — they
+    // carry a "google/" prefix and are validated by the backend against the
+    // user's connected key, so accept them here without a catalog match.
+    const valid = !!selectedVoice && (isGoogleVoice(selectedVoice) || (ttsModels ? ttsModels.some((m) => m.id === selectedVoice) : true));
     if (valid) return true;
     setConfirm({
       title: "Select a voice first",
@@ -934,22 +973,26 @@ export default function VoiceoverPage({ params }: PageProps) {
               ))}
             </div>
             {voiceTab === "free" ? (
-              // Placeholder tab — no free voices yet. Warm "coming soon"
-              // note so the tab reads as intentional, not broken.
-              <div className="rounded-xl px-4 py-8 text-center"
-                style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
-                <p className="text-base font-bold" style={{ color: "var(--primary)" }}>
-                  Great Good News!
+              // Free voices run on the user's own connected Google Cloud TTS
+              // account (BYO) — free on their 1M chars/month quota.
+              <div className="space-y-2">
+                <p className="text-[11px] leading-snug px-1" style={{ color: "var(--c-45)" }}>
+                  ⚡ Free — runs on your own Google Cloud account.{" "}
+                  <a href="/setup" className="underline" style={{ color: "var(--primary)" }}>Add your key in Settings</a>{" "}
+                  if you haven&apos;t.
                 </p>
-                <p className="text-sm font-medium mt-2" style={{ color: "var(--c-70)" }}>
-                  Thank you for choosing us and for being part of our journey.
-                </p>
-                <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
-                  We&apos;re building free resources to help you streamline your
-                  production, reduce costs, and achieve more with less. Stay with
-                  us as we continue to grow into the one-stop solution you&apos;ve
-                  been looking for.
-                </p>
+                <div className="scroll-themed grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1">
+                  {GOOGLE_VOICES.map((m) => (
+                    <VoiceOption
+                      key={m.id}
+                      model={m}
+                      selected={selectedVoice === m.id}
+                      onSelect={() => setSelectedVoice(m.id)}
+                      isPlaying={previewingId === m.id}
+                      onPlayToggle={setPreviewingId}
+                    />
+                  ))}
+                </div>
               </div>
             ) : (
             <>
@@ -1015,7 +1058,11 @@ export default function VoiceoverPage({ params }: PageProps) {
                 catalog so the name (e.g. "Bella · female") shows
                 instead of the opaque id. */}
             {(() => {
-              const model = selectedVoice ? ttsModels?.find((m) => m.id === selectedVoice) : null;
+              // Resolve the name from the ElevenLabs catalog OR the free
+              // Google catalog so a selected free voice shows its name too.
+              const model = selectedVoice
+                ? (ttsModels?.find((m) => m.id === selectedVoice) ?? GOOGLE_VOICES.find((m) => m.id === selectedVoice))
+                : null;
               const tag = model?.tags?.[0];
               return (
                 <div

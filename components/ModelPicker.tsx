@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Search } from "lucide-react";
 import type { KieModel } from "@/lib/types";
-import { getModelConfig } from "@/lib/kie/imageModels";
+import { getModelConfig, FREE_IMAGE_MODELS } from "@/lib/kie/imageModels";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
 
 // Shared model + variant selector used wherever the user picks an
@@ -15,6 +15,11 @@ import { getVideoModelConfig } from "@/lib/kie/videoModels";
 // durations (video).
 
 type ModelTab = "all" | "fastest" | "cheapest" | "free";
+
+// Fallback cap shown before /api/free-usage responds (the response's
+// imageCap wins once it lands). Kept local so this client component
+// doesn't import the server-only freeUsage lib (service-role client).
+const FREE_IMAGE_DAILY_CAP_UI = 500;
 
 interface CommonProps {
   models: KieModel[] | undefined;
@@ -58,11 +63,14 @@ function ModelOption({
   selected,
   disabled,
   onSelect,
+  footer,
 }: {
   model: KieModel;
   selected: boolean;
   disabled?: boolean;
   onSelect: () => void;
+  /** Optional content rendered inside the card, below the tags. */
+  footer?: React.ReactNode;
 }) {
   return (
     <button
@@ -98,6 +106,7 @@ function ModelOption({
           )}
         </div>
       )}
+      {footer}
     </button>
   );
 }
@@ -138,6 +147,26 @@ export function ModelPicker(props: ModelPickerProps) {
   const { type, models, selectedModelId, onSelectModel, disabled = false } = props;
   const [tab, setTab] = useState<ModelTab>("all");
   const [query, setQuery] = useState("");
+
+  // Free-tier daily usage, fetched when the Free image tab is open, to
+  // drive the usage/progress bar.
+  const [freeUsage, setFreeUsage] = useState<{ image: number; imageCap: number } | null>(null);
+  useEffect(() => {
+    if (tab !== "free" || type !== "image") return;
+    let cancelled = false;
+    const load = () =>
+      fetch("/api/free-usage")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (!cancelled && d) setFreeUsage(d as { image: number; imageCap: number }); })
+        .catch(() => { /* bar just shows "…" — non-critical */ });
+    load();
+    // Poll while the Free tab is open so the bar reflects generations that
+    // just happened (the picker gets no direct signal when a beat finishes).
+    const id = setInterval(load, 5000);
+    const onFocus = () => load();
+    window.addEventListener("focus", onFocus);
+    return () => { cancelled = true; clearInterval(id); window.removeEventListener("focus", onFocus); };
+  }, [tab, type]);
 
   const searchQ = query.trim().toLowerCase();
   const matchesSearch = (m: KieModel) =>
@@ -225,23 +254,67 @@ export function ModelPicker(props: ModelPickerProps) {
       </div>
 
       {tab === "free" ? (
-        // Placeholder — no free models yet. Warm "coming soon" card, mirrored
-        // from the voiceover step's Free tab so the two read the same.
-        <div className="rounded-xl px-4 py-8 text-center"
-          style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
-          <p className="text-base font-bold" style={{ color: "var(--primary)" }}>
-            Great Good News!
-          </p>
-          <p className="text-sm font-medium mt-2" style={{ color: "var(--c-70)" }}>
-            Thank you for choosing us and for being part of our journey.
-          </p>
-          <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
-            We&apos;re building free resources to help you streamline your
-            production, reduce costs, and achieve more with less. Stay with us
-            as we continue to grow into the one-stop solution you&apos;ve been
-            looking for.
-          </p>
-        </div>
+        type === "image" ? (
+          // Free image models grouped under their provider (Cloudflare),
+          // sharing one daily quota — they all draw from the same account's
+          // free Neuron pool. A second provider would get its own section.
+          (() => {
+            const used = freeUsage?.image ?? 0;
+            const cap = freeUsage?.imageCap ?? FREE_IMAGE_DAILY_CAP_UI;
+            const pct = Math.min(100, cap > 0 ? Math.round((used / cap) * 100) : 0);
+            const near = pct >= 90;
+            return (
+              <div className="rounded-xl p-3 space-y-2.5 mt-[5px]" style={{ border: "1px solid var(--bd-card)" }}>
+                {/* Section header: provider name (left) + shared daily-quota
+                    usage bar (right). */}
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs font-semibold" style={{ color: "var(--c-55)" }}>Cloudflare</span>
+                  <div className="w-[150px] shrink-0">
+                    <div className="flex items-center justify-between text-[10px] mb-1">
+                      <span style={{ color: "var(--c-45)" }}>Daily quota</span>
+                      <span className="tabular-nums" style={{ color: "var(--c-45)" }}>
+                        {freeUsage ? `${used} / ${cap}` : "…"}
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{
+                          width: `${pct}%`,
+                          background: near
+                            ? "oklch(0.72 0.18 65)"
+                            : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                {FREE_IMAGE_MODELS.map((m) => (
+                  <ModelOption
+                    key={m.id}
+                    model={m}
+                    selected={selectedModelId === m.id}
+                    disabled={disabled}
+                    onSelect={() => onSelectModel(m.id)}
+                  />
+                ))}
+              </div>
+            );
+          })()
+        ) : (
+          // No free video provider — video generation stays on paid models.
+          <div className="rounded-xl px-4 py-8 text-center"
+            style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+            <p className="text-sm font-medium" style={{ color: "var(--c-70)" }}>
+              Free video isn&apos;t available yet.
+            </p>
+            <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
+              Video generation is compute-heavy, so it stays on the paid models
+              for now. Free images (Cloudflare) and free voiceover (Google) are
+              available today.
+            </p>
+          </div>
+        )
       ) : (
       <>
       <div className="relative mb-2">

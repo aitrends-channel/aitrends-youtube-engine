@@ -1,4 +1,5 @@
 import { getSettings } from "@/lib/settings";
+import { isGoogleVoice, generateGoogleTTS } from "@/lib/google/tts";
 import type { KieModel } from "@/lib/types";
 
 // Direct ElevenLabs TTS. Used to go through KIE's proxy (commit b5b38ac)
@@ -319,6 +320,15 @@ export async function generateTTS(
   onStatus?: (msg: string) => void,
   userId?: string,
 ): Promise<{ audio: ArrayBuffer; charsConsumed: number }> {
+  // Free path — Google Cloud TTS voices carry a "google/" prefix and run on
+  // the user's own free quota. Delegate entirely; same return contract.
+  if (isGoogleVoice(voiceId)) {
+    onProgress?.(0, 1);
+    const result = await generateGoogleTTS(text, voiceId, userId);
+    onProgress?.(1, 1);
+    return result;
+  }
+
   const apiKey = userId
     ? (await getSettings(userId)).elevenlabs_api_key
     : (process.env.ELEVENLABS_API_KEY ?? "");

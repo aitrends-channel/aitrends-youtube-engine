@@ -539,6 +539,26 @@ async function streamStep(
   };
   resetIdle();
 
+  // Progress watchdog. resetIdle() above fires on ANY bytes, including the
+  // route's 15s ": keepalive" heartbeat, so it only catches a fully dead
+  // connection — NOT a server that keeps heartbeating while making no real
+  // progress (stuck KIE stream / wedged retry). That heartbeat-kept-alive
+  // case is exactly what pinned the UI at 95% forever. This timer resets
+  // ONLY when a real work event is parsed (below), ignoring heartbeats, so
+  // a run that goes quiet for NO_PROGRESS_MS is surfaced as a resumable
+  // stall. Healthy gaps are small — with concurrency some chunk is almost
+  // always emitting beat ticks — so 4 min clears the worst realistic gap
+  // (both in-flight chunks hitting the 120s server idle-abort at once, then
+  // re-establishing) without riding the heartbeat indefinitely.
+  const NO_PROGRESS_MS = 240_000;
+  let stalled = false;
+  let progressTimer: ReturnType<typeof setTimeout> | null = null;
+  const resetProgress = () => {
+    if (progressTimer) clearTimeout(progressTimer);
+    progressTimer = setTimeout(() => { stalled = true; reader.cancel().catch(() => {}); }, NO_PROGRESS_MS);
+  };
+  resetProgress();
+
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -553,6 +573,9 @@ async function streamStep(
         if (!line.startsWith("data: ")) continue;
         try {
           const event = JSON.parse(line.slice(6));
+          // Any parsed event is real work (heartbeats are ": keepalive"
+          // lines, skipped above) — keep the stall watchdog at bay.
+          resetProgress();
           if (event.type === "status") {
             // Status events drop progress + live count — they fire at
             // the start of the run before any chunk reports in.
@@ -586,6 +609,15 @@ async function streamStep(
     }
   } finally {
     if (idleTimer) clearTimeout(idleTimer);
+    if (progressTimer) clearTimeout(progressTimer);
+  }
+
+  // Progress watchdog cancelled the reader → the loop broke on `done`.
+  // Surface a resumable stall instead of a silent stream-end so the UI
+  // leaves 95% and the user can click Generate to finish the rest (every
+  // persisted beat is preserved; the route resumes from them).
+  if (stalled) {
+    throw new Error("Generation stalled — no progress from the server for several minutes. Any beats saved so far are preserved. Click Generate to resume the rest.");
   }
 
   return doneReceived;
@@ -1051,7 +1083,26 @@ export default function PromptsPage({ params }: PageProps) {
       // Either signal terminates the loop. Until then, keep the card
       // in "running" with live beat counts and a Stop button.
       const POLL_MS = 3000;
+      // Stall watchdog: prompts_active_run_id carries no server heartbeat
+      // (migration 030 is a bare UUID), so a run that dies without its
+      // finally — function timeout at maxDuration=800, crash, or a mid-run
+      // redeploy — leaves the flag set forever and this loop would poll
+      // indefinitely, pinning the bar at the ~95% ceiling. If the persisted
+      // beat count stops advancing for STALL_MS while the server still
+      // claims the run active, treat it as a dead run and surface a
+      // resumable error.
+      //
+      // Threshold must sit ABOVE the server's worst-case gap between beat
+      // persists on a *healthy* run, or we'd false-trip a slow-but-live
+      // chunk. That worst case is a KIE stream idle-abort (120s, route.ts)
+      // followed by a fresh full-length stream (these dense chunks run
+      // ~5 min), i.e. ~7 min before the retried chunk lands. 450s clears
+      // it. Only reached when the SSE channel already dropped (else the
+      // client stays in streamStep, kept warm by the route's heartbeat).
+      const STALL_MS = 450_000;
       let fresh = await mutate();
+      let maxBeatsSeen = ((fresh?.beats ?? []) as Beat[]).length;
+      let lastAdvanceAt = Date.now();
       while (true) {
         if (imageAbortRef.current?.signal.aborted) {
           setImageStep(IDLE);
@@ -1059,6 +1110,10 @@ export default function PromptsPage({ params }: PageProps) {
           return;
         }
         const freshBeats = (fresh?.beats ?? []) as Beat[];
+        if (freshBeats.length > maxBeatsSeen) {
+          maxBeatsSeen = freshBeats.length;
+          lastAdvanceAt = Date.now();
+        }
         const completedOnServer = (fresh?.current_state ?? 0) >= 14;
         const beatsReady = freshBeats.length > 0 && freshBeats.every((b) => !!b.imagePrompt);
         const serverStillActive = !!fresh?.prompts_active_run_id;
@@ -1086,6 +1141,14 @@ export default function PromptsPage({ params }: PageProps) {
           throw new Error(doneReceived
             ? "Generation reported done but the server didn't mark the step complete. Try again — the existing beats are preserved."
             : "Generation stopped before completing. Any beats saved so far are preserved. Try again to complete the rest.");
+        }
+        if (Date.now() - lastAdvanceAt > STALL_MS) {
+          // Server still advertises an active run but no new beats have
+          // landed for STALL_MS — the run almost certainly died without
+          // clearing its flag (timeout/crash/redeploy). Stop polling and
+          // let the user resume; the route's chunk-walk picks up where
+          // this left off, preserving every beat already saved.
+          throw new Error("Generation stalled — the server stopped responding while working. Any beats saved so far are preserved. Click Generate to resume the rest.");
         }
 
         // Server is still working — keep the card live.

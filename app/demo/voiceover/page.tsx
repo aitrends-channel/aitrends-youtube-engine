@@ -148,7 +148,7 @@ export default function DemoVoiceoverPage() {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               Pick a voice and generate the narration for your script
             </p>
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <div className="mt-3 flex items-center gap-2">
               <DemoStepCostCard column="voiceover" />
               <DemoStepBalanceCard />
             </div>

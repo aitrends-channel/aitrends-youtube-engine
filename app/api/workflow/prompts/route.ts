@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHash, randomUUID } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
-import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { getAnthropicClient, MODEL, PROMPT_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 import {
   buildImagePromptsCached,
   buildImagePromptsDynamic,
@@ -502,9 +502,24 @@ async function generateImages(
     // Streaming + tool_use on Opus. Streaming keeps KIE's connection
     // warm with continuous delta events. The cached prefix block hits
     // Anthropic's ephemeral cache after the first chunk lands.
-    const res = await retryClaudeCall(
+    // Extraction lives INSIDE the retry closure so a KIE stream that
+    // completes "successfully" but empty (no tool_use, no recoverable
+    // text — a known intermittent KIE gateway quirk) is thrown here and
+    // retried, instead of escaping the retry wrapper and hard-failing
+    // the whole run. retryClaudeCall treats a status-less throw as
+    // transient, so these empty responses get retried. Capped at 3 (not
+    // more): each empty is a full ~30-60s stream, and this closure's
+    // attempts share the budget with the whole chunk — 5+ slow empties
+    // across several chunks can push a multi-chunk run past the 800s
+    // function ceiling, time out mid-run, and strand prompts_active_run_id
+    // set (the client then polls forever, pinned at ~95%). 3 bounds a
+    // chunk's worst case to ~3 min, under the poll-loop stall watchdog.
+    // Truncation (max_tokens) is deliberately NOT thrown here — a
+    // truncated response still carries partial content and should fail
+    // fast via assertComplete below rather than burn identical retries.
+    const { res, input } = await retryClaudeCall(
       `image prompts chunk ${chunkIndex + 1}/${totalChunks}`,
-      async () => {
+      async (): Promise<{ res: Anthropic.Messages.Message; input: Record<string, unknown> | null }> => {
         // 16384 (not 8192) so verbose chunks have headroom to finish.
         // Typical 500-word chunk produces ~30 beats × ~150 tokens ≈
         // 4500 output tokens — well inside this ceiling. The bump exists
@@ -516,6 +531,28 @@ async function generateImages(
         // they finish naturally. Cost is only paid on chunks that
         // actually exceed 8192 output — average chunks are unaffected
         // since max_tokens is a ceiling, not a target.
+        // Server-side idle-abort. KIE intermittently accepts a request
+        // (its dashboard shows "running", duration 0, 0 credits) but then
+        // forwards ZERO bytes — the stream sits open indefinitely. Without
+        // this guard the for-await below blocks until the 800s function
+        // ceiling, which strands prompts_active_run_id and pins the UI at
+        // ~95% (or freezes mid-run, e.g. "section 4/5"). We arm a timer
+        // that aborts the stream if no event arrives for STREAM_IDLE_MS,
+        // then let retryClaudeCall reissue a FRESH request (a brand-new
+        // request is rarely stuck the same way). The timer resets on every
+        // event, so a slow-but-live stream — these dense chunks legitimately
+        // take 4-5 min of continuous deltas — is never aborted; only a
+        // genuinely silent connection trips it.
+        const ac = new AbortController();
+        const STREAM_IDLE_MS = 120_000;
+        let idleTimer: ReturnType<typeof setTimeout> | null = null;
+        const armIdle = () => {
+          if (idleTimer) clearTimeout(idleTimer);
+          idleTimer = setTimeout(
+            () => ac.abort(new Error(`KIE stream idle >${STREAM_IDLE_MS}ms — aborting to retry with a fresh request`)),
+            STREAM_IDLE_MS,
+          );
+        };
         const stream = anthropic.messages.stream({
           model: model,
           max_tokens: 16384,
@@ -529,32 +566,65 @@ async function generateImages(
               { type: "text", text: buildImagePromptsDynamic(content) },
             ],
           }],
-        });
-        // Tally beats as they appear in the tool_use JSON stream so the
-        // UI can show "section 2 in progress (15 beats so far)" instead
-        // of waiting the full 30-60s for the chunk to land in one shot.
-        // Each input_json_delta carries another fragment of the
-        // tool_use input JSON; we accumulate then re-count complete
-        // beat objects, and only emit when the tally goes up.
-        let toolJsonAccum = "";
-        let lastReportedBeats = 0;
-        for await (const ev of stream) {
-          if (ev.type === "content_block_delta" && ev.delta.type === "input_json_delta") {
-            toolJsonAccum += ev.delta.partial_json;
-            const completeBeats = countCompleteBeatsInPartialJson(toolJsonAccum);
-            if (completeBeats > lastReportedBeats) {
-              lastReportedBeats = completeBeats;
-              send({
-                type: "chunk_beat_progress",
-                chunkIndex,
-                beatsInChunk: completeBeats,
-              });
+        }, { signal: ac.signal });
+        try {
+          // Tally beats as they appear in the tool_use JSON stream so the
+          // UI can show "section 2 in progress (15 beats so far)" instead
+          // of waiting the full 30-60s for the chunk to land in one shot.
+          // Each input_json_delta carries another fragment of the
+          // tool_use input JSON; we accumulate then re-count complete
+          // beat objects, and only emit when the tally goes up.
+          armIdle();
+          let toolJsonAccum = "";
+          let lastReportedBeats = 0;
+          for await (const ev of stream) {
+            armIdle();
+            if (ev.type === "content_block_delta" && ev.delta.type === "input_json_delta") {
+              toolJsonAccum += ev.delta.partial_json;
+              const completeBeats = countCompleteBeatsInPartialJson(toolJsonAccum);
+              if (completeBeats > lastReportedBeats) {
+                lastReportedBeats = completeBeats;
+                send({
+                  type: "chunk_beat_progress",
+                  chunkIndex,
+                  beatsInChunk: completeBeats,
+                });
+              }
             }
           }
+          const message = await stream.finalMessage();
+
+          // Pull the beats out of the tool_use block, falling back to the
+          // text-mode parser for the case where Opus emits a fake
+          // <tool_calls> text block instead of invoking the tool.
+          let extracted: Record<string, unknown> | null = null;
+          const toolBlock = message.content.find((b) => b.type === "tool_use");
+          if (toolBlock && toolBlock.type === "tool_use") {
+            extracted = toolBlock.input as Record<string, unknown>;
+          } else {
+            const textBlock = message.content.find((b) => b.type === "text");
+            const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
+            console.log(`[image-prompts] chunk ${chunkIndex + 1} fallback parsing text len=${raw.length} head=${raw.slice(0, 200)}`);
+            extracted = extractToolInputFromText(raw);
+            if (extracted) console.log(`[image-prompts] chunk ${chunkIndex + 1} fallback recovered ${(extracted.beats as unknown[])?.length ?? 0} beats`);
+          }
+
+          // Only retry genuinely EMPTY responses. A truncated (max_tokens)
+          // response has content and is handled by assertComplete outside.
+          if (message.stop_reason !== "max_tokens") {
+            if (!extracted) {
+              throw new Error(`No image prompts returned for chunk ${chunkIndex + 1} — KIE returned an empty response; retrying.`);
+            }
+            if (!Array.isArray(extracted.beats) || extracted.beats.length === 0) {
+              throw new Error(`Chunk ${chunkIndex + 1} returned no beats — empty response; retrying.`);
+            }
+          }
+          return { res: message, input: extracted };
+        } finally {
+          if (idleTimer) clearTimeout(idleTimer);
         }
-        return stream.finalMessage();
       },
-      5
+      3
     );
 
     console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} claude done in ${Date.now() - t0}ms stop=${res.stop_reason}`);
@@ -568,18 +638,6 @@ async function generateImages(
       kieCreditsConsumed: takeLastCreditsConsumed(),
     });
     assertComplete(res.stop_reason, `image prompts chunk ${chunkIndex + 1}/${totalChunks}`);
-
-    let input: Record<string, unknown> | null = null;
-    const tool = res.content.find((b) => b.type === "tool_use");
-    if (tool && tool.type === "tool_use") {
-      input = tool.input as Record<string, unknown>;
-    } else {
-      const textBlock = res.content.find((b) => b.type === "text");
-      const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
-      console.log(`[image-prompts] chunk ${chunkIndex + 1} fallback parsing text len=${raw.length} head=${raw.slice(0, 200)}`);
-      input = extractToolInputFromText(raw);
-      if (input) console.log(`[image-prompts] chunk ${chunkIndex + 1} fallback recovered ${(input.beats as unknown[])?.length ?? 0} beats`);
-    }
 
     if (!input) throw new Error(`No image prompts returned for chunk ${chunkIndex + 1}. Try again — any beats saved so far are preserved.`);
     if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Chunk ${chunkIndex + 1} returned no beats. Try again — any beats saved so far are preserved.`);
@@ -1015,6 +1073,11 @@ export async function POST(req: Request) {
   if (!projectId || !step) {
     return NextResponse.json({ error: "projectId and step are required" }, { status: 400 });
   }
+  // Image + video prompt steps run on the fast PROMPT_MODEL (Haiku) —
+  // Opus's ~5-min/call latency through KIE caused the timeouts and
+  // queue-stalls. Thumbnails stay on Opus (`model`): a single quality-
+  // sensitive call that produces visual concepts, not a long multi-chunk
+  // grind, so its latency was never the problem.
   const model = MODEL;
 
   if (step === "images") {
@@ -1038,12 +1101,12 @@ export async function POST(req: Request) {
       if ((proj?.prompt_style as string | null) === "cinematic") promptStyle = "cinematic";
     }
     return sseStream((send) =>
-      generateImages(projectId, user.id, body.script!, body.visualProfile!, send, model, promptStyle)
+      generateImages(projectId, user.id, body.script!, body.visualProfile!, send, PROMPT_MODEL, promptStyle)
     );
   }
 
   if (step === "videos") {
-    return sseStream((send) => generateVideos(projectId, user.id, send, model));
+    return sseStream((send) => generateVideos(projectId, user.id, send, PROMPT_MODEL));
   }
 
   if (step === "thumbnails") {

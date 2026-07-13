@@ -89,7 +89,7 @@ export default function DemoThumbnailsPage() {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               AI-powered thumbnail concepts and images matched to your channel style
             </p>
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <div className="mt-3 flex items-center gap-2">
               <DemoStepCostCard column="thumbnail" />
               <DemoStepBalanceCard />
             </div>
