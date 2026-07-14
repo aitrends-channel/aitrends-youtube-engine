@@ -9,8 +9,32 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import Image from "next/image";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { FREE_TIER_COMING_SOON } from "@/lib/free-tier-flag";
 
 type Tier = "paid" | "free";
+
+// TEMPORARY (lib/free-tier-flag.ts): shared "coming soon" card shown in
+// place of the Free sub-tab's key fields / instructions while the free
+// tier is paused. The functional content below stays intact.
+function FreeComingSoonCard() {
+  return (
+    <div className="rounded-2xl px-4 py-10 text-center max-w-xl"
+      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+      <p className="text-base font-bold" style={{ color: "oklch(0.72 0.25 285)" }}>
+        Great Good News!
+      </p>
+      <p className="text-sm font-medium mt-2" style={{ color: "var(--c-70)" }}>
+        Thank you for choosing us and for being part of our journey.
+      </p>
+      <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
+        We&apos;re building free resources to help you streamline your
+        production, reduce costs, and achieve more with less. Stay with us
+        as we continue to grow into the one-stop solution you&apos;ve been
+        looking for.
+      </p>
+    </div>
+  );
+}
 
 interface KeyField {
   key: keyof FormState;
@@ -335,7 +359,12 @@ export default function SettingsPage() {
                 color: subTab === s ? "white" : "var(--c-45)",
               }}
             >
-              {s}
+              {s === "free" && FREE_TIER_COMING_SOON ? (
+                <span className="flex flex-col items-center leading-tight">
+                  <span>😄 Free</span>
+                  <span className="text-[9px] font-semibold normal-case tracking-normal">coming soon</span>
+                </span>
+              ) : s}
             </button>
           ))}
         </div>
@@ -358,7 +387,9 @@ export default function SettingsPage() {
             </div>
 
             {/* Form */}
-            {loading ? (
+            {subTab === "free" && FREE_TIER_COMING_SOON ? (
+              <FreeComingSoonCard />
+            ) : loading ? (
               <div className="flex items-center gap-2 py-6" style={{ color: "var(--c-40)" }}>
                 <Spinner size={16} />
                 <span className="text-sm">Loading settings…</span>
@@ -457,6 +488,9 @@ export default function SettingsPage() {
               <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>Add your API keys once — takes ~5 minutes.</p>
             </div>
 
+            {subTab === "free" && FREE_TIER_COMING_SOON ? (
+              <FreeComingSoonCard />
+            ) : (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {[
               {
@@ -558,6 +592,7 @@ export default function SettingsPage() {
               </div>
             ))}
             </div>
+            )}
 
             <div className="flex justify-end pt-1">
               <button

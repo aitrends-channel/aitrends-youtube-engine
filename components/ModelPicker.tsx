@@ -5,6 +5,7 @@ import { Search } from "lucide-react";
 import type { KieModel } from "@/lib/types";
 import { getModelConfig, FREE_IMAGE_MODELS } from "@/lib/kie/imageModels";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
+import { FREE_TIER_COMING_SOON } from "@/lib/free-tier-flag";
 
 // Shared model + variant selector used wherever the user picks an
 // image or video model. Lives in one place so every step in the
@@ -255,13 +256,38 @@ export function ModelPicker(props: ModelPickerProps) {
               boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.35)",
             } : { background: "transparent", color: "var(--c-55)" }}
           >
-            {t}
+            {t === "free" && FREE_TIER_COMING_SOON ? (
+              <span className="flex flex-col items-center leading-tight">
+                <span>😄 Free</span>
+                <span className="text-[9px] font-semibold normal-case">coming soon</span>
+              </span>
+            ) : t}
           </button>
         ))}
       </div>
 
       {tab === "free" ? (
-        type === "image" ? (
+        FREE_TIER_COMING_SOON ? (
+          // TEMPORARY (lib/free-tier-flag.ts): free tier paused — warm
+          // "coming soon" card, same copy the tab originally shipped
+          // with. The functional branches below stay intact for when
+          // the flag flips back.
+          <div className="rounded-xl px-4 py-8 text-center"
+            style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+            <p className="text-base font-bold" style={{ color: "var(--primary)" }}>
+              Great Good News!
+            </p>
+            <p className="text-sm font-medium mt-2" style={{ color: "var(--c-70)" }}>
+              Thank you for choosing us and for being part of our journey.
+            </p>
+            <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
+              We&apos;re building free resources to help you streamline your
+              production, reduce costs, and achieve more with less. Stay with us
+              as we continue to grow into the one-stop solution you&apos;ve been
+              looking for.
+            </p>
+          </div>
+        ) : type === "image" ? (
           // Free image models grouped under their provider (Cloudflare),
           // sharing one daily quota — they all draw from the same account's
           // free Neuron pool. A second provider would get its own section.
