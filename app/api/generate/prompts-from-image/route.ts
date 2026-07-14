@@ -11,6 +11,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import { logAnthropicCost } from "@/lib/costs";
 import type { VisualProfileOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
+import { requireActiveSubscription } from "@/lib/subscription";
 
 // Generate a beat's image + video prompts FROM a user-uploaded image
 // (Claude vision). Called after a manual image upload so the beat's
@@ -29,6 +30,8 @@ const saveSchema = {
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const expired = requireActiveSubscription(user);
+  if (expired) return expired;
 
   try {
     const { projectId, beatNumber, imageUrl } = await req.json().catch(() => ({})) as {

@@ -8,6 +8,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import { uploadBuffer, uploadFromUrl, deleteObject, r2KeyFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { logProjectCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
+import { requireActiveSubscription } from "@/lib/subscription";
 
 export const maxDuration = 120;
 
@@ -48,6 +49,8 @@ export async function POST(req: Request) {
 
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const expired = requireActiveSubscription(user);
+  if (expired) return expired;
 
   try {
     const { projectId, beatNumber, imagePrompt, modelId, aspectRatio = "16:9", resolution } = await req.json() as {
