@@ -28,6 +28,7 @@ import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import { logAnthropicCost } from "@/lib/costs";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
+import { requireActiveSubscription } from "@/lib/subscription";
 
 export const maxDuration = 800;
 
@@ -1090,6 +1091,8 @@ async function generateThumbnails(
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const expired = requireActiveSubscription(user);
+  if (expired) return expired;
 
   const body = await req.json() as {
     step: "images" | "videos" | "thumbnails";

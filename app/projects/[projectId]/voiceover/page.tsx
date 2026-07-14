@@ -17,6 +17,7 @@ import type { KieModel, Beat } from "@/lib/types";
 import { SequentialVoiceoverPreview } from "@/components/voiceover/SequentialVoiceoverPreview";
 import { BeatAudioPlayer } from "@/components/voiceover/BeatAudioPlayer";
 import { GOOGLE_VOICES, isGoogleVoice } from "@/lib/google/tts";
+import { FREE_TIER_COMING_SOON } from "@/lib/free-tier-flag";
 import { RotateCw, ChevronUp, ChevronDown, Download } from "lucide-react";
 
 // Per-beat voiceover step. Each beat shows its own row with status,
@@ -987,11 +988,35 @@ export default function VoiceoverPage({ params }: PageProps) {
                       cloned · generated · professional
                     </span>
                   </span>
+                ) : tab === "free" && FREE_TIER_COMING_SOON ? (
+                  <span className="flex flex-col items-center leading-tight">
+                    <span>😄 Free</span>
+                    <span className="text-[9px] font-semibold normal-case">coming soon</span>
+                  </span>
                 ) : tab}</button>
               ))}
             </div>
             {voiceTab === "free" ? (
-              googleTtsSet === false ? (
+              FREE_TIER_COMING_SOON ? (
+                // TEMPORARY (lib/free-tier-flag.ts): free tier paused —
+                // the tab's original "coming soon" card. The functional
+                // Google-TTS branches below stay intact for the flip back.
+                <div className="rounded-xl px-4 py-8 text-center"
+                  style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+                  <p className="text-base font-bold" style={{ color: "var(--primary)" }}>
+                    Great Good News!
+                  </p>
+                  <p className="text-sm font-medium mt-2" style={{ color: "var(--c-70)" }}>
+                    Thank you for choosing us and for being part of our journey.
+                  </p>
+                  <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
+                    We&apos;re building free resources to help you streamline your
+                    production, reduce costs, and achieve more with less. Stay with us
+                    as we continue to grow into the one-stop solution you&apos;ve been
+                    looking for.
+                  </p>
+                </div>
+              ) : googleTtsSet === false ? (
                 // No Google Cloud TTS key yet — send them to setup rather than
                 // a picker that would fail on the first synthesis.
                 <div

@@ -5,6 +5,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import { isAdminUser } from "@/lib/admin";
 import { getPlanBySlug } from "@/lib/plans";
 import type { User } from "@supabase/supabase-js";
+import { requireActiveSubscription } from "@/lib/subscription";
 
 export async function GET() {
   let user: User;
@@ -23,6 +24,8 @@ export async function GET() {
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const expired = requireActiveSubscription(user);
+  if (expired) return expired;
 
   let body: Record<string, unknown> = {};
   try { body = await req.json(); } catch { /* empty body is fine */ }

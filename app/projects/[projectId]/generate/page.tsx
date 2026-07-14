@@ -1208,6 +1208,25 @@ export default function GeneratePage({ params }: PageProps) {
     return () => { cancelled = true; clearInterval(id); };
   }, [hasInflightImages, generatingImages, projectId, mutate, selectedImageModel]);
 
+  // Crash recovery for the "queued" image indicator: queued is a purely
+  // client-driven transient (stamped at bulk-run start, upgraded to
+  // "generating" per submit, cleared in the run's finally). If the tab
+  // died mid-run, leftover queued beats would spin forever — so on first
+  // project load with no active run, sweep them back to NULL. One-shot:
+  // a legitimately active run in another tab re-stamps "generating" on
+  // its own submits, so the worst case here is a briefly hidden badge.
+  const sweptStaleQueued = useRef(false);
+  useEffect(() => {
+    if (sweptStaleQueued.current || !project?.beats || generatingImages) return;
+    sweptStaleQueued.current = true;
+    if (!beats.some((b) => b.imageStatus === "queued")) return;
+    void fetch(`/api/projects/${projectId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clear_queued_images: true }),
+    }).then(() => mutate()).catch(() => {});
+  }, [project?.beats, generatingImages, beats, projectId, mutate]);
+
   useEffect(() => {
     if (ttsModels?.length && !initialTtsSelected.current) {
       initialTtsSelected.current = true;
@@ -1340,7 +1359,7 @@ export default function GeneratePage({ params }: PageProps) {
   const hasActiveVideos = beats.some((b) =>
     b.videoStatus === "queued" || b.videoStatus === "submitting" || b.videoStatus === "rendering");
   const hasActiveImages = generatingImages
-    || beats.some((b) => b.imageStatus === "generating" && !b.imageUrl);
+    || beats.some((b) => (b.imageStatus === "generating" || b.imageStatus === "queued") && !b.imageUrl);
 
   useEffect(() => {
     if (hasActiveVideos && !videosSubmitted) setVideosSubmitted(true);
@@ -1571,6 +1590,33 @@ export default function GeneratePage({ params }: PageProps) {
         setClearingImages(false);
       }
 
+      // Flip the ENTIRE target set to "queued" before submission starts —
+      // optimistically in the SWR cache (instant), and in the DB (so the
+      // ~1.5s poll doesn't revert beats whose submit hasn't landed yet).
+      // Beats are submitted in small batches below; without this, only
+      // the current batch showed any in-flight indicator while the rest
+      // of the run's beats sat looking idle. Each submit upgrades its
+      // beat to "generating"; whatever is still "queued" when the run
+      // ends is reset by the finally-block cleanup.
+      const targetNumbers = new Set(targetBeats.map((b) => b.beatNumber));
+      void mutate(
+        (current?: { beats?: Beat[] } & Record<string, unknown>) => {
+          if (!current?.beats) return current;
+          return {
+            ...current,
+            beats: current.beats.map((b) =>
+              targetNumbers.has(b.beatNumber) ? { ...b, imageStatus: "queued" } : b,
+            ),
+          };
+        },
+        { revalidate: false },
+      );
+      await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ queue_images: [...targetNumbers] }),
+      }).catch(() => { /* indicator-only — submission proceeds regardless */ });
+
       // Submit beats in batches. KIE's "call frequency too high" 429
       // can fire on sustained submission even at moderate rates, so we
       // keep the batch conservative (4+1500ms = ~2.7 req/s baseline)
@@ -1743,6 +1789,16 @@ export default function GeneratePage({ params }: PageProps) {
         setImageRunError(friendlyError(err instanceof Error ? err.message : null));
       }
     } finally {
+      // Reset any beat still "queued" — those never reached a KIE submit
+      // (user stopped, or the submit itself failed client-side) so their
+      // tiles must drop the in-flight indicator. Server-side no-op when
+      // every target advanced to generating/done/failed.
+      await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clear_queued_images: true }),
+      }).catch(() => { /* best-effort — the mount cleanup covers a miss */ });
+      await mutate();
       setGeneratingImages(false);
       setClearingImages(false);
       setStoppingImages(false);
@@ -2172,6 +2228,23 @@ export default function GeneratePage({ params }: PageProps) {
                             <Spinner size={20} className="text-white" />
                             <span className="text-[10px] font-medium" style={{ color: "oklch(0.95 0 0)" }}>
                               Regenerating…
+                            </span>
+                          </div>
+                        ) : (b.imageStatus === "generating" || b.imageStatus === "queued") && !clearingImages ? (
+                          // In-flight overlay driven by the DB status —
+                          // covers bulk runs (and runs resumed from
+                          // another tab), which regenBeats can't see.
+                          // "queued" = stamped on the whole target set at
+                          // bulk-run start; each beat upgrades to
+                          // "generating" when its KIE submit lands.
+                          // Mirrors the video tiles' spinner + label so
+                          // "work is happening here" reads the same on
+                          // both grids.
+                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1"
+                            style={{ background: "oklch(0 0 0 / 0.55)" }}>
+                            <Spinner size={20} className="text-white" />
+                            <span className="text-[10px] font-medium" style={{ color: "oklch(0.95 0 0)" }}>
+                              {b.imageStatus}…
                             </span>
                           </div>
                         ) : (

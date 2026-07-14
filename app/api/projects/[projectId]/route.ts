@@ -95,6 +95,36 @@ export async function PATCH(
     return NextResponse.json({ success: true });
   }
 
+  // Bulk-run kickoff: flip the whole target set to "queued" in one write
+  // so every tile the run will touch shows its in-flight indicator
+  // immediately — the per-beat submit loop then upgrades each one to
+  // "generating" as it actually reaches KIE.
+  if (Array.isArray(body.queue_images) && body.queue_images.length > 0) {
+    const beatNumbers = (body.queue_images as unknown[]).filter((n) => Number.isInteger(n));
+    const { error } = await supabase
+      .from("project_beats")
+      .update({ image_status: "queued" })
+      .eq("project_id", projectId)
+      .in("beat_number", beatNumbers);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true });
+  }
+
+  // Bulk-run teardown: any beat still "queued" never made it to a KIE
+  // submit (user stopped the run, submit threw client-side, or the tab
+  // died). Reset to NULL so the tile goes back to its idle affordance
+  // instead of spinning forever. "generating" beats are untouched —
+  // those have real KIE tasks the reconciliation poller will finish.
+  if (body.clear_queued_images) {
+    const { error } = await supabase
+      .from("project_beats")
+      .update({ image_status: null })
+      .eq("project_id", projectId)
+      .eq("image_status", "queued");
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true });
+  }
+
   // Wipe all image-prompt beats for this project so the prompts step can
   // start over from a clean slate. Also implicitly clears any video
   // prompts since they live on the same rows. Nulling

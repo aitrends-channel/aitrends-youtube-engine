@@ -4,12 +4,15 @@ import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { redis } from "@/lib/queue/client";
 import { isProResolution, isProTier } from "@/lib/plans-gating";
 import type { User } from "@supabase/supabase-js";
+import { requireActiveSubscription } from "@/lib/subscription";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const expired = requireActiveSubscription(user);
+  if (expired) return expired;
 
   const client = await createSupabaseServerClient();
 

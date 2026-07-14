@@ -12,6 +12,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { logAnthropicCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
+import { requireActiveSubscription } from "@/lib/subscription";
 
 // Anthropic's image `url` source rejects anything that isn't HTTPS with
 // a 400 ("Only HTTPS URLs are supported"). Frame/thumbnail URLs can
@@ -48,6 +49,8 @@ function toHttpsImageUrls(urls: string[]): string[] {
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const expired = requireActiveSubscription(user);
+  if (expired) return expired;
 
   try {
     const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "visual_analysis");
