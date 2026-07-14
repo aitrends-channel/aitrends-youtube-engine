@@ -122,7 +122,10 @@ export interface Beat {
   videoPrompt?: string;
   imageUrl?: string;
   videoUrl?: string;
-  imageStatus?: "pending" | "generating" | "done" | "failed";
+  /** "queued" = part of a bulk run whose KIE submit hasn't landed yet
+   *  (stamped on the whole target set at run start, upgraded to
+   *  "generating" per-beat as each submit goes out). */
+  imageStatus?: "pending" | "queued" | "generating" | "done" | "failed";
   videoStatus?: "pending" | "queued" | "submitting" | "rendering" | "done" | "failed" | "paused";
   imageTaskId?: string;
   imageModelId?: string;
