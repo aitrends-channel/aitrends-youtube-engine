@@ -2230,21 +2230,32 @@ export default function GeneratePage({ params }: PageProps) {
                               Regenerating…
                             </span>
                           </div>
-                        ) : (b.imageStatus === "generating" || b.imageStatus === "queued") && !clearingImages ? (
+                        ) : b.imageStatus === "generating" && !clearingImages ? (
                           // In-flight overlay driven by the DB status —
                           // covers bulk runs (and runs resumed from
                           // another tab), which regenBeats can't see.
-                          // "queued" = stamped on the whole target set at
-                          // bulk-run start; each beat upgrades to
-                          // "generating" when its KIE submit lands.
-                          // Mirrors the video tiles' spinner + label so
-                          // "work is happening here" reads the same on
-                          // both grids.
+                          // Spinner = this beat's KIE submit has gone
+                          // out; beats still waiting their turn in the
+                          // submission batches show the static "queued"
+                          // badge below instead. Mirrors the video
+                          // tiles' queued → in-flight visual language.
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1"
                             style={{ background: "oklch(0 0 0 / 0.55)" }}>
                             <Spinner size={20} className="text-white" />
                             <span className="text-[10px] font-medium" style={{ color: "oklch(0.95 0 0)" }}>
-                              {b.imageStatus}…
+                              generating…
+                            </span>
+                          </div>
+                        ) : b.imageStatus === "queued" && !clearingImages ? (
+                          // Waiting its turn — part of the run's target
+                          // set but not yet submitted to KIE. Static
+                          // badge (no spinner) so only actively
+                          // generating beats read as "work happening".
+                          <div className="absolute inset-0 flex items-center justify-center"
+                            style={{ background: "oklch(0 0 0 / 0.35)" }}>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded"
+                              style={{ background: "var(--bg-track)", color: "var(--c-55)" }}>
+                              queued
                             </span>
                           </div>
                         ) : (
