@@ -202,7 +202,7 @@ function StatusPill({ status }: { status: BeatStatus }) {
 // Monthly free-quota usage bar shared by the free voice providers
 // (Qwen perk cap, Google BYO 1M). Mirrors the free-image daily bar
 // in ModelPicker.
-function FreeQuotaBar({ label, used, cap, loaded }: { label: string; used: number; cap: number; loaded: boolean }) {
+function FreeQuotaBar({ label, used, cap, loaded, badge, badgeNote }: { label: string; used: number; cap: number; loaded: boolean; badge?: string; badgeNote?: string }) {
   // Exact percent — big caps mean real usage is often <1%, where
   // rounding to an integer shows a misleading "0%".
   const pctRaw = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
@@ -217,8 +217,23 @@ function FreeQuotaBar({ label, used, cap, loaded }: { label: string; used: numbe
   const near = pctRaw >= 90;
   return (
     <div className="rounded-xl px-1 py-1 space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-semibold" style={{ color: "var(--c-55)" }}>{label}</span>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <span className="flex items-start gap-2">
+          <span className="text-xs font-semibold" style={{ color: "var(--c-55)" }}>{label}</span>
+          {badge && (
+            <span className="flex flex-col items-center shrink-0" style={{ marginLeft: "30px" }}>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
+                style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
+                {badge}
+              </span>
+              {badgeNote && (
+                <span className="text-[8px] mt-0.5 whitespace-nowrap" style={{ color: "var(--c-45)" }}>
+                  {badgeNote}
+                </span>
+              )}
+            </span>
+          )}
+        </span>
         <span className="text-[10px] tabular-nums" style={{ color: "var(--c-45)" }}>
           {loaded ? `${used.toLocaleString()} / ${cap.toLocaleString()}` : "…"}
         </span>
@@ -312,7 +327,7 @@ export default function VoiceoverPage({ params }: PageProps) {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (cancelled || !d || typeof d.ttsChars !== "number") return;
-        setFreeTtsUsage({ ttsChars: d.ttsChars, ttsCap: d.ttsCap ?? 1_000_000, qwenTtsChars: d.qwenTtsChars ?? 0, qwenTtsCap: d.qwenTtsCap ?? 100_000 });
+        setFreeTtsUsage({ ttsChars: d.ttsChars, ttsCap: d.ttsCap ?? 1_000_000, qwenTtsChars: d.qwenTtsChars ?? 0, qwenTtsCap: d.qwenTtsCap ?? 50_000 });
       })
       .catch(() => { /* fail-soft: bar just shows "…" */ });
     return () => { cancelled = true; };
@@ -1068,11 +1083,27 @@ export default function VoiceoverPage({ params }: PageProps) {
               // 1M chars/month quota, so only that section gates on
               // the key being connected.
               <div className="scroll-themed space-y-4 max-h-[26rem] overflow-y-auto pr-1">
+                {freeTtsUsage && freeTtsUsage.qwenTtsCap <= 0 ? (
+                  // Plan gate: qwenTtsCap 0 = Qwen isn't included in this
+                  // plan (Founder). The server enforces the same rule, so
+                  // this card is honest, not just cosmetic.
+                  <div className="rounded-xl px-4 py-5 text-center"
+                    style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+                    <p className="text-sm font-medium" style={{ color: "var(--c-70)" }}>
+                      Qwen voices aren&apos;t included in the Founder plan
+                    </p>
+                    <p className="text-xs mt-1.5" style={{ color: "var(--c-45)" }}>
+                      Use the free Google voices below on your own key, or a paid voice.
+                    </p>
+                  </div>
+                ) : (
                 <div className="space-y-2">
                   <FreeQuotaBar
-                    label="Qwen voices — free, on us"
+                    label="Qwen voices"
+                    badge="Heclus perks 🎁"
+                    badgeNote="You use, we pay"
                     used={freeTtsUsage?.qwenTtsChars ?? 0}
-                    cap={freeTtsUsage?.qwenTtsCap ?? 100_000}
+                    cap={freeTtsUsage?.qwenTtsCap ?? 50_000}
                     loaded={!!freeTtsUsage}
                   />
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1088,6 +1119,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                     ))}
                   </div>
                 </div>
+                )}
 
                 {googleTtsSet === false ? (
                   // No Google Cloud TTS key yet — section-level setup
