@@ -1794,9 +1794,16 @@ export default function AssemblePage({ params }: PageProps) {
                     {/* Hide Export when the preview can't load — its
                         href points at the same URL the player just
                         failed on, so clicking it would 404 too.
-                        Reassemble fills the row via flex-1. */}
+                        Reassemble fills the row via flex-1.
+                        The href goes through our export route (which
+                        302s to a presigned attachment URL) instead of
+                        the raw R2 URL — the anchor `download`
+                        attribute is ignored cross-origin, so linking
+                        R2 directly opened the video in the tab
+                        instead of downloading it. */}
                     {!previewLoadError && (
-                      <a href={previewUrl} download="assembled.mp4"
+                      <a
+                        href={`/api/projects/${projectId}/export-video?url=${encodeURIComponent(previewUrl)}&filename=${encodeURIComponent(`${(project?.channel_name as string | undefined)?.trim() || "video"}.mp4`)}`}
                         className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-center transition-all"
                         style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
                         ↓ Export
