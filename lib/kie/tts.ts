@@ -1,5 +1,6 @@
 import { getSettings } from "@/lib/settings";
 import { isGoogleVoice, generateGoogleTTS } from "@/lib/google/tts";
+import { isQwenVoice, generateQwenTTS } from "@/lib/replicate/tts";
 import type { KieModel } from "@/lib/types";
 
 // Direct ElevenLabs TTS. Used to go through KIE's proxy (commit b5b38ac)
@@ -325,6 +326,15 @@ export async function generateTTS(
   if (isGoogleVoice(voiceId)) {
     onProgress?.(0, 1);
     const result = await generateGoogleTTS(text, voiceId, userId);
+    onProgress?.(1, 1);
+    return result;
+  }
+
+  // Free path — Qwen3-TTS voices ("qwen/" prefix) run on Replicate under
+  // Heclus's own token as a perk, capped per user per month.
+  if (isQwenVoice(voiceId)) {
+    onProgress?.(0, 1);
+    const result = await generateQwenTTS(text, voiceId, userId);
     onProgress?.(1, 1);
     return result;
   }
