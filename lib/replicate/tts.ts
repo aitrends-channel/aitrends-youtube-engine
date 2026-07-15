@@ -123,48 +123,112 @@ function audioUrlFrom(output: unknown): string | null {
   return null;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Replicate allows very little request concurrency on this account tier
+// (a burst of 6 predictions → five 429s, measured). The beats route
+// fires a whole batch of syntheses at once inside one function
+// invocation, so gate prediction creation through a module-level queue:
+// max 2 in flight, small gap between starts. Retries below remain the
+// backstop for cross-invocation collisions (e.g. two users at once).
+const MAX_INFLIGHT = 2;
+const START_GAP_MS = 400;
+let inflight = 0;
+const waiters: (() => void)[] = [];
+
+async function acquireSlot(): Promise<void> {
+  if (inflight < MAX_INFLIGHT) { inflight++; return; }
+  await new Promise<void>((resolve) => waiters.push(resolve));
+  inflight++;
+}
+
+function releaseSlot(): void {
+  inflight--;
+  waiters.shift()?.();
+}
+
+// Create the prediction, riding out transient throttling. The beats
+// route synthesizes a whole batch concurrently, which can trip
+// Replicate's burst limit — a 429 (or blippy 5xx / network error) here
+// is almost always momentary, so retry with backoff (honoring
+// Retry-After) instead of failing the beat.
+async function createPrediction(text: string, speaker: string, token: string): Promise<ReplicatePrediction> {
+  const MAX_RETRIES = 5;
+  for (let attempt = 0; ; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(predictionEndpoint(), {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+          // Hold the connection until the prediction settles (up to 60s);
+          // we still poll afterwards in case it takes longer.
+          Prefer: "wait=60",
+        },
+        body: JSON.stringify({ input: buildInput(text, speaker) }),
+      });
+    } catch (err) {
+      if (attempt < MAX_RETRIES) { await sleep(Math.min(10_000, 2000 * 2 ** attempt)); continue; }
+      throw new QwenTTSError(`Replicate network error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    if (res.status === 401 || res.status === 403) {
+      throw new QwenTTSError("Replicate auth failed — the server's REPLICATE_API_TOKEN is missing or invalid.", res.status);
+    }
+    if (res.status === 402) {
+      throw new QwenTTSError("Replicate account is out of credit. Free Qwen voices are temporarily unavailable.", 402);
+    }
+    if (res.status === 429 || res.status >= 500) {
+      if (attempt < MAX_RETRIES) {
+        const retryAfter = Number(res.headers.get("Retry-After"));
+        const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+          ? Math.min(15_000, retryAfter * 1000)
+          : Math.min(10_000, 2000 * 2 ** attempt);
+        await sleep(waitMs);
+        continue;
+      }
+      throw new QwenTTSError(
+        res.status === 429
+          ? "Replicate kept rate-limiting after several retries. Wait a minute and try again."
+          : `Replicate error ${res.status} persisted after retries. Try again.`,
+        res.status,
+      );
+    }
+    if (!res.ok && res.status !== 201) {
+      const body = await res.text().catch(() => "");
+      throw new QwenTTSError(`Replicate error ${res.status}: ${body.replace(/\s+/g, " ").trim().slice(0, 300)}`, res.status);
+    }
+
+    const prediction = (await res.json().catch(() => null)) as ReplicatePrediction | null;
+    if (!prediction?.id) throw new QwenTTSError("Replicate returned an unexpected response.");
+    return prediction;
+  }
+}
+
 async function synthChunk(text: string, speaker: string, token: string): Promise<ArrayBuffer> {
-  let res: Response;
+  await acquireSlot();
+  let prediction: ReplicatePrediction;
   try {
-    res = await fetch(predictionEndpoint(), {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        // Hold the connection until the prediction settles (up to 60s);
-        // we still poll below in case it takes longer.
-        Prefer: "wait=60",
-      },
-      body: JSON.stringify({ input: buildInput(text, speaker) }),
-    });
-  } catch (err) {
-    throw new QwenTTSError(`Replicate network error: ${err instanceof Error ? err.message : String(err)}`);
+    prediction = await createPrediction(text, speaker, token);
+    // Brief spacing before the next queued creation starts — bursts are
+    // what trip the limiter, not sustained volume.
+    await sleep(START_GAP_MS);
+  } finally {
+    releaseSlot();
   }
-
-  if (res.status === 401 || res.status === 403) {
-    throw new QwenTTSError("Replicate auth failed — the server's REPLICATE_API_TOKEN is missing or invalid.", res.status);
-  }
-  if (res.status === 402) {
-    throw new QwenTTSError("Replicate account is out of credit. Free Qwen voices are temporarily unavailable.", 402);
-  }
-  if (res.status === 429) {
-    throw new QwenTTSError("Replicate is rate-limiting requests. Try again in a moment.", 429);
-  }
-  if (!res.ok && res.status !== 201) {
-    const body = await res.text().catch(() => "");
-    throw new QwenTTSError(`Replicate error ${res.status}: ${body.replace(/\s+/g, " ").trim().slice(0, 300)}`, res.status);
-  }
-
-  let prediction = (await res.json().catch(() => null)) as ReplicatePrediction | null;
-  if (!prediction?.id) throw new QwenTTSError("Replicate returned an unexpected response.");
 
   // Poll until terminal (Prefer: wait usually returns settled already).
+  // Throttled/blippy poll responses just wait for the next tick — the
+  // deadline bounds the total time, so transient 429s can't fail a
+  // prediction that's still running fine on Replicate's side.
   const deadline = Date.now() + 120_000;
   while (prediction.status === "starting" || prediction.status === "processing") {
     if (Date.now() > deadline) throw new QwenTTSError("Qwen TTS timed out. Try again.", 504);
-    await new Promise((r) => setTimeout(r, 1500));
+    await sleep(1500);
     const pollUrl = prediction.urls?.get ?? `https://api.replicate.com/v1/predictions/${prediction.id}`;
-    const poll = await fetch(pollUrl, { headers: { Authorization: `Bearer ${token}` } });
+    const poll = await fetch(pollUrl, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null);
+    if (!poll || poll.status === 429 || poll.status >= 500) continue;
     if (!poll.ok) throw new QwenTTSError(`Replicate poll failed (${poll.status}).`, poll.status);
     prediction = (await poll.json()) as ReplicatePrediction;
   }
