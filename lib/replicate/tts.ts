@@ -39,15 +39,17 @@ function qv(speaker: string, label: string, tags: string[]): KieModel {
   };
 }
 
+// The English-suited subset of the speakers the Replicate deployment
+// actually exposes (verified against the live schema with
+// scripts/check-qwen-tts.mjs — the full enum also has Ono_anna, Sohee,
+// and Uncle_fu, which are Japanese/Korean/Chinese-dialect voices).
 export const QWEN_VOICES: KieModel[] = [
-  qv("Cherry",   "Cherry",   ["Female", "Warm"]),
-  qv("Jennifer", "Jennifer", ["Female", "US"]),
-  qv("Katerina", "Katerina", ["Female", "Mature"]),
-  qv("Sunny",    "Sunny",    ["Female", "Bright"]),
-  qv("Ethan",    "Ethan",    ["Male", "US"]),
-  qv("Ryan",     "Ryan",     ["Male", "Energetic"]),
-  qv("Elias",    "Elias",    ["Male", "Narration"]),
-  qv("Dylan",    "Dylan",    ["Male", "Casual"]),
+  qv("Serena", "Serena", ["Female", "Warm"]),
+  qv("Vivian", "Vivian", ["Female", "Bright"]),
+  qv("Aiden",  "Aiden",  ["Male", "US"]),
+  qv("Dylan",  "Dylan",  ["Male", "Casual"]),
+  qv("Eric",   "Eric",   ["Male", "Narration"]),
+  qv("Ryan",   "Ryan",   ["Male", "Energetic"]),
 ];
 
 export function isQwenVoice(voiceId: string): boolean {
@@ -78,15 +80,16 @@ function splitForQwen(text: string): string[] {
   return chunks;
 }
 
-// Model input for one synthesis. Isolated so the field names have ONE
-// place to change — verify against the live schema with
-// scripts/check-qwen-tts.mjs once REPLICATE_API_TOKEN is set.
+// Model input for one synthesis — field names verified against the live
+// schema (scripts/check-qwen-tts.mjs): text, speaker (enum), mode
+// ("custom_voice" = built-in speakers, vs voice_clone / voice_design),
+// language (lowercase "auto" or a language name).
 function buildInput(text: string, speaker: string): Record<string, unknown> {
   return {
     text,
-    voice: speaker,
-    mode: "voice",           // built-in speaker mode (vs clone / design)
-    language: "Auto",
+    speaker,
+    mode: "custom_voice",
+    language: "auto",
   };
 }
 
