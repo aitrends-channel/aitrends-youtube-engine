@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { isAdminUser, isProductionTestUser } from "@/lib/admin";
 import { getPlanBySlug } from "@/lib/plans";
+import { subscriptionExpired } from "@/lib/subscription";
 import type { User } from "@supabase/supabase-js";
 
 export async function GET() {
@@ -91,6 +92,10 @@ export async function GET() {
     is_production_test: isProductionTest,
     has_active_subscription: hasActiveSubscription,
     has_current_access: hasCurrentAccess,
+    // Ex-subscriber whose paid period has lapsed (same predicate the
+    // spend-gated routes use for their 403). Lets SubscriptionModal
+    // render renew/upgrade framing instead of a first-purchase pitch.
+    subscription_expired: subscriptionExpired(user),
     email: user.email ?? null,
   });
 }
