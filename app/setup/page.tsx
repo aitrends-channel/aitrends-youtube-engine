@@ -13,6 +13,17 @@ import { FREE_TIER_COMING_SOON } from "@/lib/free-tier-flag";
 
 type Tier = "paid" | "free";
 
+// Inline external link used across the Instructions steps — one style,
+// always opens in a new tab, so every step can carry a direct link.
+function ExtLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer"
+      style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>
+      {children} ↗
+    </a>
+  );
+}
+
 // TEMPORARY (lib/free-tier-flag.ts): shared "coming soon" card shown in
 // place of the Free sub-tab's key fields / instructions while the free
 // tier is paused. The functional content below stays intact.
@@ -397,6 +408,37 @@ export default function SettingsPage() {
             ) : (
               <form onSubmit={handleSave} className="space-y-6">
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {/* Qwen voices need NO user setup — they run on Heclus's
+                    own Replicate account as a perk. This card exists so
+                    the Free tab tells the whole free-tier story instead
+                    of looking like Qwen was forgotten. */}
+                {subTab === "free" && (
+                  <div className="p-5 rounded-2xl space-y-3"
+                    style={{ background: "oklch(0.72 0.25 285 / 0.08)", border: "1px solid oklch(0.72 0.25 285 / 0.35)" }}>
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <label className="text-sm font-semibold text-foreground">Qwen Voices</label>
+                        <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium"
+                          style={{
+                            background: "oklch(0.55 0.15 145 / 0.15)",
+                            color: "oklch(0.65 0.15 145)",
+                            border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                          }}>
+                          <CheckCircle2 size={10} />
+                          Included — no setup needed
+                        </span>
+                      </div>
+                      <p className="text-xs" style={{ color: "var(--c-45)" }}>
+                        Free voiceover voices powered by Qwen, on us — they run on Heclus&apos;s own account,
+                        so there&apos;s nothing to connect. You get 100,000 characters every month; the
+                        Voiceover step&apos;s Free tab shows your usage bar.
+                      </p>
+                    </div>
+                    <p className="text-xs font-medium" style={{ color: "oklch(0.72 0.25 285)" }}>
+                      Just open the Voiceover step → Free tab and pick a Qwen voice.
+                    </p>
+                  </div>
+                )}
                 {KEY_FIELDS.filter((field) => field.tier === subTab).map((field) => {
                   const currentMasked = masked[field.key] ?? "";
                   const isSet = !!currentMasked;
@@ -525,20 +567,35 @@ export default function SettingsPage() {
               {
                 num: 3,
                 tier: "free" as Tier,
+                quota: "100k chars/month",
+                title: "Qwen Voices (Free voiceover — on us)",
+                sub: "Included with every account — runs on Heclus's own infrastructure, nothing to connect",
+                href: "",
+                linkLabel: "",
+                steps: [
+                  "There is nothing to set up — Qwen voices are already included free with your account.",
+                  <>Open a niche from your <ExtLink href="/dashboard">dashboard</ExtLink> and go to the <b>Voiceover</b> step.</>,
+                  <>Click the <b>Free</b> tab in the voice picker.</>,
+                  <>Pick any Qwen voice (Cherry, Ethan, Jennifer, …) and generate — the usage bar shows how much of your free 100,000 characters is left this month.</>,
+                ],
+              },
+              {
+                num: 4,
+                tier: "free" as Tier,
                 quota: "500 imgs/month",
                 title: "Cloudflare Workers AI (Free images)",
                 sub: "Powers the Free image option — free daily quota on your own account (~500–2,000 images/day)",
                 href: "https://dash.cloudflare.com",
                 linkLabel: "dash.cloudflare.com",
                 steps: [
-                  <>Sign up free at <a href="https://dash.cloudflare.com" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>dash.cloudflare.com ↗</a> — no card needed.</>,
-                  "Copy your Account ID (the 32-char part after the slash in the dashboard URL).",
-                  "Create a token with the \"Workers AI\" template, copy it.",
-                  "Paste both into the Setup tab.",
+                  <>Create a free account at <ExtLink href="https://dash.cloudflare.com/sign-up">dash.cloudflare.com/sign-up</ExtLink> — no credit card needed.</>,
+                  <>Copy your <b>Account ID</b>: after you log in at <ExtLink href="https://dash.cloudflare.com">dash.cloudflare.com</ExtLink>, the address bar shows <span style={{ fontFamily: "monospace" }}>dash.cloudflare.com/&lt;Account ID&gt;</span> — copy that 32-character code.</>,
+                  <>Create an API token: open <ExtLink href="https://dash.cloudflare.com/profile/api-tokens">the API Tokens page</ExtLink> → <b>Create Token</b> → pick the <b>Workers AI</b> template → <b>Continue to summary</b> → <b>Create Token</b> → copy it.</>,
+                  <>Paste the Account ID and the token into the <b>Setup</b> tab above and hit Save.</>,
                 ],
               },
               {
-                num: 4,
+                num: 5,
                 tier: "free" as Tier,
                 quota: "1M chars/month",
                 title: "Google Cloud TTS (Free voiceover)",
@@ -546,27 +603,25 @@ export default function SettingsPage() {
                 href: "https://console.cloud.google.com",
                 linkLabel: "console.cloud.google.com",
                 steps: [
-                  <>Create a project — <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>open ↗</a> (via the top-bar dropdown).</>,
-                  "Enable billing (free tier isn't charged).",
-                  <>Enable the <a href="https://console.cloud.google.com/apis/library/texttospeech.googleapis.com" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>Text-to-Speech API ↗</a> on that project.</>,
-                  <>Create an API key on the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>Credentials page ↗</a>, copy it.</>,
-                  "Paste the key into the Setup tab.",
+                  <>Create a Google Cloud project at <ExtLink href="https://console.cloud.google.com/projectcreate">console.cloud.google.com/projectcreate</ExtLink> — any name works.</>,
+                  <>Enable billing for it at <ExtLink href="https://console.cloud.google.com/billing">console.cloud.google.com/billing</ExtLink>. Don&apos;t worry: the first 1M characters each month are free and never charged.</>,
+                  <>Turn on the Text-to-Speech API: open <ExtLink href="https://console.cloud.google.com/apis/library/texttospeech.googleapis.com">this page</ExtLink> and click <b>Enable</b>.</>,
+                  <>Create your key: open the <ExtLink href="https://console.cloud.google.com/apis/credentials">Credentials page</ExtLink> → <b>+ Create credentials</b> → <b>API key</b> → copy it.</>,
+                  <>Paste the key into the <b>Setup</b> tab above and hit Save.</>,
                 ],
               },
             ].filter((step) => step.tier === subTab).map(({ title, sub, href, linkLabel, steps, quota }, idx) => (
               <div key={title} className="p-4 rounded-2xl space-y-3" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
                 <div
-                  className={`flex items-center gap-3 ${subTab === "free" ? "-mx-4 -mt-4 mb-2 px-4 py-3 rounded-t-2xl h-[76px] overflow-hidden" : ""}`}
-                  style={subTab === "free" ? { background: "oklch(0.72 0.25 285)" } : undefined}
+                  className={`flex items-center gap-3 ${subTab === "free" ? "mb-2 px-4 py-3 rounded-xl h-[72px] overflow-hidden" : ""}`}
+                  style={subTab === "free" ? { border: "1px solid white" } : undefined}
                 >
                   <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 text-xs font-bold"
-                    style={subTab === "free"
-                      ? { background: "oklch(1 0 0 / 0.22)", color: "white", border: "1px solid oklch(1 0 0 / 0.4)" }
-                      : { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>{idx + 1}</div>
+                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>{idx + 1}</div>
                   {subTab === "free" ? (
                     <div className="min-w-0">
-                      <p className="text-lg font-bold leading-tight line-clamp-2" style={{ color: "white" }}>{title}</p>
-                      {quota && <p className="text-sm font-semibold mt-0.5" style={{ color: "#000000" }}>{quota}</p>}
+                      <p className="text-lg font-bold leading-tight line-clamp-2" style={{ color: "var(--c-90)" }}>{title}</p>
+                      {quota && <p className="text-sm font-semibold mt-0.5" style={{ color: "oklch(0.72 0.25 285)" }}>{quota}</p>}
                     </div>
                   ) : (
                     <>
