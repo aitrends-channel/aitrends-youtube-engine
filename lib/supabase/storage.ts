@@ -159,6 +159,28 @@ export async function getObjectToFile(key: string, destPath: string): Promise<vo
   await pipeline(res.Body as NodeJS.ReadableStream, createWriteStream(destPath));
 }
 
+// Presigned GET URL that forces a browser download. The public r2.dev
+// URL serves objects inline (and ignores the anchor `download`
+// attribute cross-origin), so "Export" clicks used to open the video
+// in the tab instead of saving it. A presigned S3 GET with
+// ResponseContentDisposition=attachment makes R2 itself send the
+// save-as header — no proxying the (possibly 100MB+) body through us.
+export async function createPresignedDownload(
+  key: string,
+  filename: string,
+  expiresInSeconds: number = 600,
+): Promise<string> {
+  if (!BUCKET) throw new Error("R2 storage is not configured — R2_BUCKET_NAME environment variable is missing");
+  // Quotes/control chars would break the header; keep it simple ASCII.
+  const safe = filename.replace(/[^\w .-]+/g, "_").slice(0, 120) || "download";
+  const cmd = new GetObjectCommand({
+    Bucket: BUCKET,
+    Key: key,
+    ResponseContentDisposition: `attachment; filename="${safe}"`,
+  });
+  return getSignedUrl(r2, cmd, { expiresIn: expiresInSeconds });
+}
+
 // Convert a R2 public URL back to its bucket key. Returns null when the
 // URL is unrelated to our R2 bucket (e.g. the worker's /api/preview/
 // proxy URL, or a Supabase legacy URL) so callers can skip the delete.
