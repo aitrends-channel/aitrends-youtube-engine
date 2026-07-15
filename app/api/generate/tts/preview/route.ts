@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { generateGoogleTTS, isGoogleVoice, GoogleTTSError } from "@/lib/google/tts";
+import { generateQwenTTS, isQwenVoice, QwenTTSError } from "@/lib/replicate/tts";
 import type { User } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
@@ -18,12 +19,14 @@ export async function GET(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   const voice = new URL(req.url).searchParams.get("voice") ?? "";
-  if (!isGoogleVoice(voice)) {
-    return NextResponse.json({ error: "A Google voice id is required." }, { status: 400 });
+  if (!isGoogleVoice(voice) && !isQwenVoice(voice)) {
+    return NextResponse.json({ error: "A free (google/ or qwen/) voice id is required." }, { status: 400 });
   }
 
   try {
-    const { audio } = await generateGoogleTTS(SAMPLE, voice, user.id);
+    const { audio } = isQwenVoice(voice)
+      ? await generateQwenTTS(SAMPLE, voice, user.id)
+      : await generateGoogleTTS(SAMPLE, voice, user.id);
     return new NextResponse(Buffer.from(audio), {
       headers: {
         "Content-Type": "audio/mpeg",
@@ -32,7 +35,7 @@ export async function GET(req: Request) {
       },
     });
   } catch (err) {
-    if (err instanceof GoogleTTSError) {
+    if (err instanceof GoogleTTSError || err instanceof QwenTTSError) {
       const status = err.status === 401 ? 401 : err.status === 429 ? 429 : 502;
       return NextResponse.json({ error: err.message }, { status });
     }

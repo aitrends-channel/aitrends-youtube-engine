@@ -12,7 +12,7 @@ export const FREE_IMAGE_DAILY_CAP = 500;
 // is a monthly quota, so it's read via getFreeUsageThisMonth below.
 export const FREE_TTS_MONTHLY_CAP = 1_000_000;
 
-export type FreeUsageKind = "image" | "tts_chars";
+export type FreeUsageKind = "image" | "tts_chars" | "qwen_tts_chars";
 
 // Fail-soft: a lost/failed counter write must never break a generation.
 export async function incrementFreeUsage(userId: string, kind: FreeUsageKind, amount = 1): Promise<void> {
