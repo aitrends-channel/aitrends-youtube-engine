@@ -3,8 +3,9 @@
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { ChevronDown, ChevronRight, Inbox, ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Inbox, ArrowDownLeft, ArrowUpRight, Mail } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { BulkMailPanel } from "@/components/admin/BulkMailPanel";
 
 interface ThreadEmail {
   id: string;
@@ -103,13 +104,17 @@ function timeAgo(iso: string): string {
 // admin notes textarea + status dropdown. Saving flips the status
 // and notes in one PATCH; the responded_at column is stamped
 // server-side on first move off "open".
+// The tab row is the ticket-status filters plus a non-status "Bulk mail"
+// tab that swaps the ticket list for the bulk-email composer.
+type SupportTab = "all" | TicketStatus | "bulk_mail";
+
 export function SupportPanel() {
-  const [filter, setFilter] = useState<"all" | TicketStatus>("all");
+  const [filter, setFilter] = useState<SupportTab>("all");
   // Sub-filter only meaningful when the main filter is "open". Lets
   // the admin focus the queue on tickets from priority-tier plans
   // without losing the standard list when they tab back.
   const [openSubTab, setOpenSubTab] = useState<"all" | "priority">("all");
-  const qs = filter === "all" ? "" : `?status=${filter}`;
+  const qs = filter === "all" || filter === "bulk_mail" ? "" : `?status=${filter}`;
   const { data, mutate, isLoading } = useSWR<{ tickets: Ticket[] }>(`/api/admin/support-tickets${qs}`, fetcher);
   const rawTickets = data?.tickets ?? [];
   const tickets = useMemo(() => {
@@ -139,23 +144,26 @@ export function SupportPanel() {
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <p className="text-base font-semibold" style={{ color: "var(--c-90)" }}>Support tickets</p>
+          <p className="text-base font-semibold" style={{ color: "var(--c-90)" }}>Support</p>
           <p className="text-sm mt-1" style={{ color: "var(--c-50)" }}>
-            Filed via the in-app HelpButton. Newest first. Filter by status to triage.
+            {filter === "bulk_mail"
+              ? "Send a one-off email to a segment of users."
+              : "Tickets filed via the in-app HelpButton. Newest first. Filter by status to triage."}
           </p>
         </div>
       </div>
 
       <div className="flex items-center gap-1.5 flex-wrap">
-        {(["all", "open", "in_progress", "resolved", "closed"] as const).map((f) => {
+        {(["all", "open", "in_progress", "resolved", "closed", "bulk_mail"] as const).map((f) => {
           const active = filter === f;
-          const label = f === "all" ? "All" : STATUS_LABELS[f];
-          const count = counts[f] ?? 0;
+          const isBulk = f === "bulk_mail";
+          const label = f === "all" ? "All" : isBulk ? "Bulk mail" : STATUS_LABELS[f];
+          const count = isBulk ? null : counts[f] ?? 0;
           return (
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all cursor-pointer"
+              className="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all cursor-pointer inline-flex items-center gap-1.5"
               style={active ? {
                 background: "oklch(0.62 0.15 220)",
                 color: "white",
@@ -165,7 +173,9 @@ export function SupportPanel() {
                 border: "1px solid var(--bd-7)",
               }}
             >
-              {label} <span className="opacity-70">({count})</span>
+              {isBulk && <Mail size={13} />}
+              {label}
+              {count !== null && <span className="opacity-70">({count})</span>}
             </button>
           );
         })}
@@ -203,7 +213,9 @@ export function SupportPanel() {
         </div>
       )}
 
-      {isLoading ? (
+      {filter === "bulk_mail" ? (
+        <BulkMailPanel />
+      ) : isLoading ? (
         <div className="flex items-center justify-center py-10 text-sm" style={{ color: "var(--c-50)" }}>
           <Spinner size={14} className="mr-2" />
           Loading tickets…

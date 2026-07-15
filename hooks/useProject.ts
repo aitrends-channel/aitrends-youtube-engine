@@ -69,6 +69,7 @@ function hasActiveGeneration(project: ProjectFields | undefined): boolean {
   return beats.some(
     (b) =>
       b.imageStatus === "generating" ||
+      b.imageStatus === "queued" ||
       b.videoStatus === "queued" ||
       b.videoStatus === "submitting" ||
       b.videoStatus === "rendering"

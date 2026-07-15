@@ -6,6 +6,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import { logProjectCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
+import { requireActiveSubscription } from "@/lib/subscription";
 
 export const maxDuration = 800;
 
@@ -21,6 +22,8 @@ async function sleep(ms: number) {
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const expired = requireActiveSubscription(user);
+  if (expired) return expired;
 
   try {
     const { projectId, thumbnails, modelId, aspectRatio = "16:9", resolution, clearFirst = false } = await req.json() as {

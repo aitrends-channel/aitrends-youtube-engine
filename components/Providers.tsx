@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
+import { SubscriptionExpiredGate } from "@/components/SubscriptionExpiredGate";
 
 type Theme = "dark" | "light";
 
@@ -35,6 +36,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ThemeCtx.Provider value={{ resolvedTheme: theme, setTheme }}>
       {children}
+      <SubscriptionExpiredGate />
       <Toaster position="bottom-right" theme={theme} />
     </ThemeCtx.Provider>
   );

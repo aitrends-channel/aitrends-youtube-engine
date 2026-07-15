@@ -65,8 +65,19 @@ export type ConcurrencyNumericKey = Exclude<keyof ConcurrencyConfig, "assembly_b
 
 export const CONCURRENCY_DEFAULTS: ConcurrencyConfig = {
   video_worker: 3,
-  image_prompts_chunks: 1,
-  video_prompts_chunks: 1,
+  // Prompt-generation chunk concurrency = 3. Chunks are slow (Opus via
+  // KIE runs ~6 min for a dense ~35-beat, 300-word chunk), so sequential
+  // made a full script overrun the 800s function ceiling repeatedly. The
+  // earlier parallel failures — KIE queueing requests until their
+  // time-to-first-token blew the idle-abort, plus 500 "Server exception"
+  // storms at fan-out 4 — were symptoms of the 16384 first-token cliff and
+  // the tee starving the SDK, both now fixed. Each call is lighter (12288,
+  // fast first token), so 3 in flight cuts wall-clock to ~a third without
+  // overloading KIE. Beat numbering stays correct — persistGates serialize
+  // the DB inserts in script order. Nudge down to 2 if KIE 500s reappear,
+  // up toward 4 only after confirming this account tolerates it.
+  image_prompts_chunks: 3,
+  video_prompts_chunks: 3,
   finish_images_poll: 5,
   image_generation_batch: 3,
   thumbnail_batch: 2,

@@ -1,16 +1,21 @@
 import { createHash } from "crypto";
 import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
+import { isGoogleVoice } from "@/lib/google/tts";
 import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { logProjectCost } from "@/lib/costs";
+import { incrementFreeUsage } from "@/lib/freeUsage";
 import type { User } from "@supabase/supabase-js";
+import { requireActiveSubscription } from "@/lib/subscription";
 
 export const maxDuration = 800;
 
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const expired = requireActiveSubscription(user);
+  if (expired) return expired;
 
   const { projectId, script, voiceId } = await req.json();
 
@@ -38,7 +43,10 @@ export async function POST(req: Request) {
             (msg) => { send({ type: "status", message: msg }); },
             user.id
           );
-          if (charsConsumed) {
+          // Google BYO voices draw the user's own free monthly quota — count
+          // them into free_usage for the Free-tab usage bar; only ElevenLabs
+          // voices are a real cost-ledger charge.
+          if (charsConsumed && !isGoogleVoice(voiceId)) {
             void logProjectCost({
               projectId,
               userId: user.id,
@@ -48,6 +56,8 @@ export async function POST(req: Request) {
               units: charsConsumed,
               unitKind: "elevenlabs_chars",
             });
+          } else if (charsConsumed && isGoogleVoice(voiceId)) {
+            void incrementFreeUsage(user.id, "tts_chars", charsConsumed);
           }
 
           send({ type: "status", message: "Uploading audio..." });

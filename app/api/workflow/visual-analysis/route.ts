@@ -12,10 +12,45 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { logAnthropicCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
+import { requireActiveSubscription } from "@/lib/subscription";
+
+// Anthropic's image `url` source rejects anything that isn't HTTPS with
+// a 400 ("Only HTTPS URLs are supported"). Frame/thumbnail URLs can
+// arrive malformed — protocol-less (a public bucket URL persisted when
+// R2_PUBLIC_URL lost its scheme) or plain http — so coerce every URL to
+// https before we build the image blocks. Anything still not an https
+// URL after coercion (blob:, data:, relative paths) is dropped: better
+// to analyze fewer frames than to fail the whole call on one bad entry.
+function toHttpsImageUrls(urls: string[]): string[] {
+  const out: string[] = [];
+  for (const raw of urls) {
+    // Strip a stray leading "=" (the KEY=value copy-paste slip that
+    // corrupted some stored auto_frames URLs into "=https://...") before
+    // any scheme handling, so it doesn't get mistaken for a scheme-less
+    // host and double-prefixed into "https://=https://...".
+    const trimmed = raw?.trim().replace(/^=+/, "").trim();
+    if (!trimmed) continue;
+    // Protocol-relative (//host/...) or scheme-less host (host/path).
+    // Prepend https:// and let the URL parse below validate it.
+    let candidate = trimmed;
+    if (candidate.startsWith("//")) candidate = `https:${candidate}`;
+    else if (candidate.startsWith("http://")) candidate = `https://${candidate.slice("http://".length)}`;
+    else if (!/^[a-z][a-z0-9+.-]*:/i.test(candidate)) candidate = `https://${candidate}`;
+    try {
+      const u = new URL(candidate);
+      if (u.protocol === "https:") out.push(u.toString());
+    } catch {
+      // Unparseable — skip it.
+    }
+  }
+  return out;
+}
 
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const expired = requireActiveSubscription(user);
+  if (expired) return expired;
 
   try {
     const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "visual_analysis");
@@ -30,10 +65,28 @@ export async function POST(req: Request) {
     };
     const model = VISION_MODEL;
 
-    const hasVideo = !!videoImageUrls?.length;
-    const hasThumbnails = !!thumbnailImageUrls?.length;
+    // Normalize to https up-front so a malformed URL doesn't 400 the
+    // whole Anthropic call. Recompute hasVideo/hasThumbnails off the
+    // cleaned lists so we don't claim to have images we just dropped.
+    const videoUrls = toHttpsImageUrls(videoImageUrls ?? []);
+    const thumbnailUrls = toHttpsImageUrls(thumbnailImageUrls ?? []);
+    const droppedVideo = (videoImageUrls?.length ?? 0) - videoUrls.length;
+    const droppedThumbs = (thumbnailImageUrls?.length ?? 0) - thumbnailUrls.length;
+    if (droppedVideo > 0 || droppedThumbs > 0) {
+      console.warn(`[visual-analysis] dropped non-https image URLs — video=${droppedVideo} thumbnails=${droppedThumbs}`);
+    }
+
+    const hasVideo = videoUrls.length > 0;
+    const hasThumbnails = thumbnailUrls.length > 0;
     if (!hasVideo && !hasThumbnails) {
-      return NextResponse.json({ error: "At least one image URL is required" }, { status: 400 });
+      // Distinguish "none sent" from "all sent were malformed" so the
+      // user gets an actionable message instead of a silent empty call.
+      const anySent = (videoImageUrls?.length ?? 0) + (thumbnailImageUrls?.length ?? 0) > 0;
+      return NextResponse.json({
+        error: anySent
+          ? "All image URLs were invalid (must be public HTTPS links). Refetch screenshots and try again."
+          : "At least one image URL is required",
+      }, { status: 400 });
     }
 
     // Bumped from 10 → 20 to consume all 2-frame × 10-video stills the
@@ -41,19 +94,17 @@ export async function POST(req: Request) {
     // each at high-res, so 20 images ≈ 32k input tokens — manageable
     // for a one-shot analysis call.
     const MAX_VIDEO_IMAGES = 20;
-    const cappedVideoImages = hasVideo ? (videoImageUrls as string[]).slice(0, MAX_VIDEO_IMAGES) : [];
+    const cappedVideoImages = videoUrls.slice(0, MAX_VIDEO_IMAGES);
 
     const imageBlocks = [
       ...cappedVideoImages.map((url) => ({
         type: "image" as const,
         source: { type: "url" as const, url },
       })),
-      ...(hasThumbnails
-        ? (thumbnailImageUrls as string[]).map((url) => ({
-            type: "image" as const,
-            source: { type: "url" as const, url },
-          }))
-        : []),
+      ...thumbnailUrls.map((url) => ({
+        type: "image" as const,
+        source: { type: "url" as const, url },
+      })),
     ];
 
     // Build the combined schema dynamically — only ask Claude for the

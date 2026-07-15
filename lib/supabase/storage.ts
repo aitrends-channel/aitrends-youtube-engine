@@ -35,7 +35,36 @@ const r2 = new S3Client({
 });
 
 const BUCKET = process.env.R2_BUCKET_NAME!;
-const PUBLIC_URL = (process.env.R2_PUBLIC_URL ?? "").replace(/\/$/, "");
+
+// Sanitize the public bucket origin at module load — but DO NOT throw
+// here: this module is imported during `next build`, where a malformed
+// (or build-time-absent) R2_PUBLIC_URL must not fail the build. We strip
+// a stray leading "=" (the KEY=value copy-paste slip that previously
+// corrupted stored URLs into "=https://pub-xxx.dev/...", which fail to
+// render AND get rejected by Anthropic as non-HTTPS) plus whitespace and
+// trailing slashes. Hard validation is deferred to publicUrlBase(),
+// which runs only when we actually mint a URL (i.e. at upload time).
+const PUBLIC_URL = (process.env.R2_PUBLIC_URL ?? "")
+  .trim()
+  .replace(/^=+/, "")
+  .replace(/\/+$/, "");
+
+// Validate lazily, at the point a public URL is built, so a misconfig
+// surfaces as a clear runtime error on the failing upload rather than
+// silently persisting a broken URL — without breaking the build.
+function publicUrlBase(): string {
+  if (!PUBLIC_URL) throw new Error("R2 storage is not configured — R2_PUBLIC_URL environment variable is missing");
+  let parsed: URL;
+  try {
+    parsed = new URL(PUBLIC_URL);
+  } catch {
+    throw new Error(`R2_PUBLIC_URL is not a valid URL: "${process.env.R2_PUBLIC_URL}" — check for a stray '=' or missing scheme`);
+  }
+  if (parsed.protocol !== "https:") {
+    throw new Error(`R2_PUBLIC_URL must be an https:// URL, got "${process.env.R2_PUBLIC_URL}"`);
+  }
+  return PUBLIC_URL;
+}
 
 // Per-user folder name for R2 keys. Email is preferred (human-readable
 // when browsing the bucket); user.id is the safe fallback. Lowercased
@@ -50,14 +79,14 @@ export async function uploadBuffer(
   contentType: string
 ): Promise<string> {
   if (!BUCKET) throw new Error("R2 storage is not configured — R2_BUCKET_NAME environment variable is missing");
-  if (!PUBLIC_URL) throw new Error("R2 storage is not configured — R2_PUBLIC_URL environment variable is missing");
+  const base = publicUrlBase();
   await r2.send(new PutObjectCommand({
     Bucket: BUCKET,
     Key: path,
     Body: Buffer.from(buffer),
     ContentType: contentType,
   }));
-  return `${PUBLIC_URL}/${path}`;
+  return `${base}/${path}`;
 }
 
 export async function uploadFromUrl(path: string, url: string, contentType: string): Promise<string> {
@@ -68,7 +97,7 @@ export async function uploadFromUrl(path: string, url: string, contentType: stri
 }
 
 export function getPublicUrl(path: string): string {
-  return `${PUBLIC_URL}/${path}`;
+  return `${publicUrlBase()}/${path}`;
 }
 
 // Presigned PUT URL for direct browser → R2 uploads. Use this when the
@@ -82,14 +111,14 @@ export async function createPresignedUpload(
   expiresInSeconds: number = 600
 ): Promise<{ uploadUrl: string; publicUrl: string }> {
   if (!BUCKET) throw new Error("R2 storage is not configured — R2_BUCKET_NAME environment variable is missing");
-  if (!PUBLIC_URL) throw new Error("R2 storage is not configured — R2_PUBLIC_URL environment variable is missing");
+  const base = publicUrlBase();
   const cmd = new PutObjectCommand({
     Bucket: BUCKET,
     Key: path,
     ContentType: contentType,
   });
   const uploadUrl = await getSignedUrl(r2, cmd, { expiresIn: expiresInSeconds });
-  return { uploadUrl, publicUrl: `${PUBLIC_URL}/${path}` };
+  return { uploadUrl, publicUrl: `${base}/${path}` };
 }
 
 // Best-effort delete of a single object by R2 key. Used by callers that

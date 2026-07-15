@@ -8,6 +8,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import { logAnthropicCost } from "@/lib/costs";
 import type { ChannelAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
+import { requireActiveSubscription } from "@/lib/subscription";
 
 export const maxDuration = 800;
 
@@ -124,6 +125,8 @@ function trimRepetitionTail(text: string): string {
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const expired = requireActiveSubscription(user);
+  if (expired) return expired;
 
   try {
     const { projectId, analysis, topic, mode } = await req.json() as {
