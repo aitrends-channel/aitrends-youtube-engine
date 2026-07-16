@@ -31,7 +31,7 @@ if (schema?.properties) {
     const enums = v.enum ?? v.allOf?.[0]?.enum;
     console.log(` - ${k} (${v.type ?? "ref"})${v.default !== undefined ? ` default=${JSON.stringify(v.default)}` : ""}${enums ? ` enum=[${enums.join(", ")}]` : ""}`);
   }
-  const sent = ["text", "voice", "mode", "language"];
+  const sent = ["text", "speaker", "mode", "language"];
   const missing = sent.filter((k) => !(k in schema.properties));
   if (missing.length) {
     console.log(`\n⚠️  buildInput() sends [${missing.join(", ")}] which the schema doesn't list — update lib/replicate/tts.ts buildInput().`);
@@ -44,11 +44,11 @@ if (schema?.properties) {
 
 // 2) Optional live synthesis
 if (process.argv.includes("--synth")) {
-  console.log("\nRunning a test synthesis (Cherry)…");
+  console.log("\nRunning a test synthesis (Serena)…");
   const res = await fetch("https://api.replicate.com/v1/models/qwen/qwen3-tts/predictions", {
     method: "POST",
     headers: { ...headers, Prefer: "wait=60" },
-    body: JSON.stringify({ input: { text: "Hello from Heclus — this is a Qwen voice test.", voice: "Cherry", mode: "voice", language: "Auto" } }),
+    body: JSON.stringify({ input: { text: "Hello from Heclus — this is a Qwen voice test.", speaker: "Serena", mode: "custom_voice", language: "auto" } }),
   });
   const pred = await res.json();
   console.log("status:", pred.status, "| error:", pred.error ?? "none");

@@ -13,6 +13,17 @@ import { FREE_TIER_COMING_SOON } from "@/lib/free-tier-flag";
 
 type Tier = "paid" | "free";
 
+// Inline external link used across the Instructions steps — one style,
+// always opens in a new tab, so every step can carry a direct link.
+function ExtLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer"
+      style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>
+      {children} ↗
+    </a>
+  );
+}
+
 // TEMPORARY (lib/free-tier-flag.ts): shared "coming soon" card shown in
 // place of the Free sub-tab's key fields / instructions while the free
 // tier is paused. The functional content below stays intact.
@@ -98,6 +109,104 @@ const EMPTY_FORM: FormState = {
   google_tts_key: "",
 };
 
+// One card per service: the walkthrough steps AND the key input(s)
+// live together, so the user never bounces between an Instructions
+// tab and a Setup tab to configure one provider.
+interface ServiceCard {
+  tier: Tier;
+  title: string;
+  sub: string;
+  quota?: string;
+  href?: string;
+  linkLabel?: string;
+  /** Included-with-account perk — green badge, no inputs. */
+  perk?: boolean;
+  steps: React.ReactNode[];
+  /** Key inputs rendered inside this card (looked up in KEY_FIELDS). */
+  fields: (keyof FormState)[];
+}
+
+const SERVICES: ServiceCard[] = [
+  {
+    tier: "paid",
+    title: "Kie AI",
+    sub: "Script generation, channel analysis, images & video clips",
+    href: "https://kie.ai",
+    linkLabel: "kie.ai",
+    steps: [
+      <>Create your account at <ExtLink href="https://kie.ai">kie.ai</ExtLink> — sign in with Google or email.</>,
+      <>Open your <ExtLink href="https://kie.ai/api-key">API Key page</ExtLink> → <b>Create New API Key</b> → copy it right away (it&apos;s shown only once).</>,
+      <>Add credits on the <ExtLink href="https://kie.ai/billing">Billing page</ExtLink> — credits pay for scripts, channel analysis, images, and video clips.</>,
+      <>Paste the key below and hit <b>Save</b>.</>,
+    ],
+    fields: ["kie_api_key"],
+  },
+  {
+    tier: "paid",
+    title: "ElevenLabs",
+    sub: "Voiceover synthesis and caption-alignment STT",
+    href: "https://elevenlabs.io/app/settings/api-keys",
+    linkLabel: "elevenlabs.io",
+    steps: [
+      <>Create your account at <ExtLink href="https://elevenlabs.io/app/sign-up">elevenlabs.io/app/sign-up</ExtLink>.</>,
+      <>Open the <ExtLink href="https://elevenlabs.io/app/settings/api-keys">API Keys page</ExtLink> → <b>Create API Key</b> → make sure <b>Text to Speech</b> and <b>Speech to Text</b> permissions are enabled → copy the key right away (it&apos;s shown only once).</>,
+      <>Pick a plan on the <ExtLink href="https://elevenlabs.io/app/subscription">Subscription page</ExtLink> that covers your monthly character volume.</>,
+      <>Optional: browse the <ExtLink href="https://elevenlabs.io/app/voice-library">Voice Library</ExtLink> and add voices to <b>My Voices</b> — they&apos;ll show up in the Voiceover step.</>,
+      <>Paste the key below and hit <b>Save</b>.</>,
+    ],
+    fields: ["elevenlabs_api_key"],
+  },
+  {
+    tier: "free",
+    quota: "50k–100k chars/month",
+    title: "Qwen Voices (Free voiceover — on us)",
+    sub: "Included with every account — runs on Heclus's own infrastructure, nothing to connect",
+    perk: true,
+    steps: [
+      <>
+        <span className="block text-2xl font-bold" style={{ color: "var(--c-90)" }}>This is a perk 🎁</span>
+        <span className="block mt-1 text-sm">Heclus bears the cost.</span>
+        <span className="block" style={{ marginTop: "40px" }}>
+          <span className="block text-xs font-semibold" style={{ color: "oklch(0.72 0.25 285)" }}>50k chrs/month for Starters</span>
+          <span className="block text-xs font-semibold mt-1" style={{ color: "oklch(0.72 0.25 285)" }}>100k chrs/month for Pros</span>
+        </span>
+      </>,
+    ],
+    fields: [],
+  },
+  {
+    tier: "free",
+    quota: "500 imgs/month",
+    title: "Cloudflare Workers AI (Free images)",
+    sub: "Powers the Free image option — free daily quota on your own account (~500–2,000 images/day)",
+    href: "https://dash.cloudflare.com",
+    linkLabel: "dash.cloudflare.com",
+    steps: [
+      <>Create a free account at <ExtLink href="https://dash.cloudflare.com/sign-up">dash.cloudflare.com/sign-up</ExtLink> — no credit card needed.</>,
+      <>Copy your <b>Account ID</b>: after you log in at <ExtLink href="https://dash.cloudflare.com">dash.cloudflare.com</ExtLink>, the address bar shows <span style={{ fontFamily: "monospace" }}>dash.cloudflare.com/&lt;Account ID&gt;</span> — copy that 32-character code.</>,
+      <>Create an API token: open <ExtLink href="https://dash.cloudflare.com/profile/api-tokens">the API Tokens page</ExtLink> → <b>Create Token</b> → pick the <b>Workers AI</b> template → <b>Continue to summary</b> → <b>Create Token</b> → copy it.</>,
+      <>Paste the Account ID and the token below and hit <b>Save</b>.</>,
+    ],
+    fields: ["cloudflare_account_id", "cloudflare_api_token"],
+  },
+  {
+    tier: "free",
+    quota: "1M chars/month",
+    title: "Google Cloud TTS (Free voiceover)",
+    sub: "Powers the Free voiceover option — 1,000,000 characters/month free on your own account",
+    href: "https://console.cloud.google.com",
+    linkLabel: "console.cloud.google.com",
+    steps: [
+      <>Create a Google Cloud project at <ExtLink href="https://console.cloud.google.com/projectcreate">console.cloud.google.com/projectcreate</ExtLink> — any name works.</>,
+      <>Enable billing for it at <ExtLink href="https://console.cloud.google.com/billing">console.cloud.google.com/billing</ExtLink>. Don&apos;t worry: the first 1M characters each month are free and never charged.</>,
+      <>Turn on the Text-to-Speech API: open <ExtLink href="https://console.cloud.google.com/apis/library/texttospeech.googleapis.com">this page</ExtLink> and click <b>Enable</b>.</>,
+      <>Create your key: open the <ExtLink href="https://console.cloud.google.com/apis/credentials">Credentials page</ExtLink> → <b>+ Create credentials</b> → <b>API key</b> → copy it.</>,
+      <>Paste the key below and hit <b>Save</b>.</>,
+    ],
+    fields: ["google_tts_key"],
+  },
+];
+
 function AddUserSection() {
   const [email, setEmail] = useState("");
   const [adding, setAdding] = useState(false);
@@ -182,8 +291,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [tab, setTab] = useState<"setup" | "instructions">("instructions");
-  const [subTab, setSubTab] = useState<Tier>("paid");
+  const [tab, setTab] = useState<Tier>("paid");
   const [userEmail, setUserEmail] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
@@ -206,8 +314,6 @@ export default function SettingsPage() {
       .then((r) => r.json())
       .then((data) => {
         setMasked(data as FormState);
-        const anyConfigured = Object.values(data as FormState).some(Boolean);
-        setTab(anyConfigured ? "setup" : "instructions");
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -328,10 +434,10 @@ export default function SettingsPage() {
 
       <main className="flex-1 w-full max-w-none px-4 sm:px-8 lg:px-12 py-8 sm:py-14">
 
-        {/* Tabs */}
+        {/* Tabs: PAID / FREE */}
         <div className="flex gap-1 mb-10 p-1 rounded-xl w-full"
           style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-          {(["instructions", "setup"] as const).map((t) => (
+          {(["paid", "free"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -341,270 +447,180 @@ export default function SettingsPage() {
                 color: tab === t ? "white" : "var(--c-45)",
               }}
             >
-              {t}
-            </button>
-          ))}
-        </div>
-
-        {/* Sub-tabs: Paid / Free — compact, not full width */}
-        <div className="flex gap-1 mb-8 p-1 rounded-xl w-fit"
-          style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-          {(["paid", "free"] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => setSubTab(s)}
-              className="px-6 py-1.5 rounded-lg text-xs font-bold tracking-widest uppercase transition-all cursor-pointer"
-              style={{
-                background: subTab === s ? "oklch(0.72 0.25 285)" : "transparent",
-                color: subTab === s ? "white" : "var(--c-45)",
-              }}
-            >
-              {s === "free" && FREE_TIER_COMING_SOON ? (
+              {t === "free" && FREE_TIER_COMING_SOON ? (
                 <span className="flex flex-col items-center leading-tight">
                   <span>😄 Free</span>
                   <span className="text-[9px] font-semibold normal-case tracking-normal">coming soon</span>
                 </span>
-              ) : s}
+              ) : t}
             </button>
           ))}
         </div>
 
-        {/* SETUP tab */}
-        {tab === "setup" && (
-          <div className="space-y-8">
-            {/* Page heading */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                  style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-                  <Settings size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
-                </div>
-                <h1 className="text-2xl font-bold text-foreground">API Keys</h1>
+        <div className="space-y-8">
+          {/* Page heading */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+                <Settings size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
               </div>
-              <p className="text-sm leading-relaxed" style={{ color: "var(--c-50)" }}>
-                Enter your API keys below. They are saved securely and take effect immediately.
-              </p>
+              <h1 className="text-2xl font-bold text-foreground">API Keys</h1>
             </div>
+            <p className="text-sm leading-relaxed" style={{ color: "var(--c-50)" }}>
+              Each card walks you through one service and takes its keys right there — takes ~5 minutes.
+              Keys are saved securely and take effect immediately.
+            </p>
+          </div>
 
-            {/* Form */}
-            {subTab === "free" && FREE_TIER_COMING_SOON ? (
-              <FreeComingSoonCard />
-            ) : loading ? (
-              <div className="flex items-center gap-2 py-6" style={{ color: "var(--c-40)" }}>
-                <Spinner size={16} />
-                <span className="text-sm">Loading settings…</span>
-              </div>
-            ) : (
-              <form onSubmit={handleSave} className="space-y-6">
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {KEY_FIELDS.filter((field) => field.tier === subTab).map((field) => {
-                  const currentMasked = masked[field.key] ?? "";
-                  const isSet = !!currentMasked;
-                  const isShowing = visible[field.key];
-
-                  return (
-                    <div key={field.key} className="p-5 rounded-2xl space-y-3"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <label className="text-sm font-semibold text-foreground">{field.label}</label>
-                          {isSet && (
-                            <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium"
-                              style={{
-                                background: "oklch(0.55 0.15 145 / 0.15)",
-                                color: "oklch(0.65 0.15 145)",
-                                border: "1px solid oklch(0.55 0.15 145 / 0.3)",
-                              }}>
-                              <CheckCircle2 size={10} />
-                              Configured
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-xs" style={{ color: "var(--c-45)" }}>{field.description}</p>
+          {tab === "free" && FREE_TIER_COMING_SOON ? (
+            <FreeComingSoonCard />
+          ) : loading ? (
+            <div className="flex items-center gap-2 py-6" style={{ color: "var(--c-40)" }}>
+              <Spinner size={16} />
+              <span className="text-sm">Loading settings…</span>
+            </div>
+          ) : (
+            <form onSubmit={handleSave} className="space-y-6">
+              {/* items-start keeps cards their natural height instead of
+                  stretching to the tallest sibling in the row. */}
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 items-start">
+                {SERVICES.filter((svc) => svc.tier === tab).map((svc, idx) => (
+                  <div key={svc.title} className="p-5 rounded-2xl space-y-4"
+                    style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
+                    {/* Card header */}
+                    <div className="flex items-start gap-3">
+                      <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 text-xs font-bold"
+                        style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
+                        {idx + 1}
                       </div>
-
-                      {isSet && (
-                        <div className="text-xs font-mono px-3 py-2 rounded-lg"
-                          style={{ background: "var(--bg-code)", color: "var(--c-40)", border: "1px solid var(--bd-5)" }}>
-                          Current: {currentMasked}
-                        </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-foreground">{svc.title}</p>
+                        <p className="text-xs" style={{ color: "var(--c-40)" }}>{svc.sub}</p>
+                        {svc.quota && (
+                          <p className="text-xs font-semibold mt-0.5"
+                            style={{ color: "oklch(0.72 0.25 285)", ...(svc.perk ? { marginBottom: "40px" } : {}) }}>
+                            {svc.quota}
+                          </p>
+                        )}
+                      </div>
+                      {svc.href && (
+                        <a href={svc.href} target="_blank" rel="noopener noreferrer"
+                          className="ml-auto text-xs shrink-0 hover:opacity-80"
+                          style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>
+                          {svc.linkLabel} ↗
+                        </a>
                       )}
-
-                      <div className="relative">
-                        <input
-                          type={isShowing ? "text" : "password"}
-                          name={field.key}
-                          autoComplete="new-password"
-                          spellCheck={false}
-                          value={form[field.key]}
-                          onChange={(e) => {
-                            console.log(`[setup] input onChange field=${field.key} valueLen=${e.target.value.length}`);
-                            setForm((f) => ({ ...f, [field.key]: e.target.value }));
-                          }}
-                          placeholder={isSet ? "Enter new value to replace…" : field.placeholder}
-                          className="w-full pr-10 px-3 py-2.5 rounded-xl text-sm font-mono outline-none transition-all"
-                          style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-88)" }}
-                          onFocus={(e) => { (e.target as HTMLInputElement).style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
-                          onBlur={(e) => { (e.target as HTMLInputElement).style.borderColor = "var(--bd-10)"; }}
-                        />
-                        <button type="button" tabIndex={-1} onClick={() => toggle(field.key)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 transition-opacity hover:opacity-70"
-                          style={{ color: "var(--c-40)" }}>
-                          {isShowing ? <EyeOff size={14} /> : <Eye size={14} />}
-                        </button>
-                      </div>
                     </div>
-                  );
-                })}
-                </div>
 
-                <button
-                  type="submit"
-                  disabled={saving || Object.values(form).every((v) => !v.trim())}
-                  onClick={() => console.log("[setup] Save button onClick fired. disabled flag =", saving || Object.values(form).every((v) => !v.trim()), "form =", { kie_len: form.kie_api_key.length, el_len: form.elevenlabs_api_key.length })}
-                  className="w-full sm:w-auto sm:min-w-[240px] flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
-                  style={{
-                    background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-                    color: "var(--c-98)",
-                    boxShadow: "0 0 24px oklch(0.72 0.25 285 / 0.25)",
-                  }}>
-                  {saving ? <Spinner size={15} /> : <Save size={15} />}
-                  {saving ? "Saving…" : "Save API Keys"}
-                </button>
-              </form>
-            )}
+                    {svc.perk && (
+                      <span className="mx-auto w-fit flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium"
+                        style={{
+                          background: "oklch(0.55 0.15 145 / 0.15)",
+                          color: "oklch(0.65 0.15 145)",
+                          border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                        }}>
+                        <CheckCircle2 size={10} />
+                        Included — no setup needed
+                      </span>
+                    )}
 
-            {/* Info note */}
-            {/* Add User — admin only */}
-            {isAdmin && <AddUserSection />}
-          </div>
-        )}
+                    {/* Instructions — a single-step card (e.g. the Qwen
+                        perk) reads as a centered statement, not a
+                        numbered list. */}
+                    {svc.steps.length === 1 ? (
+                      <p className="text-xs leading-relaxed text-center" style={{ color: "var(--c-55)" }}>{svc.steps[0]}</p>
+                    ) : (
+                      <ol className="space-y-2.5 pl-9">
+                        {svc.steps.map((s, i) => (
+                          <li key={i} className="text-xs leading-relaxed" style={{ color: "var(--c-55)" }}>
+                            <span className="font-medium" style={{ color: "var(--c-40)" }}>{i + 1}.</span> {s}
+                          </li>
+                        ))}
+                      </ol>
+                    )}
 
-        {/* INSTRUCTIONS tab */}
-        {tab === "instructions" && (
-          <div className="space-y-5">
-            <div>
-              <h1 className="text-xl font-bold text-foreground">Setup Guide</h1>
-              <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>Add your API keys once — takes ~5 minutes.</p>
-            </div>
+                    {/* Key inputs for this service */}
+                    {svc.fields.map((key) => {
+                      const field = KEY_FIELDS.find((f) => f.key === key)!;
+                      const currentMasked = masked[field.key] ?? "";
+                      const isSet = !!currentMasked;
+                      const isShowing = visible[field.key];
 
-            {subTab === "free" && FREE_TIER_COMING_SOON ? (
-              <FreeComingSoonCard />
-            ) : (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {[
-              {
-                num: 1,
-                tier: "paid" as Tier,
-                quota: "",
-                title: "Kie AI API Key",
-                sub: "Script generation, channel analysis, images & video clips",
-                href: "https://kie.ai",
-                linkLabel: "kie.ai",
-                steps: [
-                  "Sign in → API Keys.",
-                  "Create a key, copy it.",
-                  "Top up credits (script, images, video).",
-                ],
-              },
-              {
-                num: 2,
-                tier: "paid" as Tier,
-                quota: "",
-                title: "ElevenLabs API Key",
-                sub: "Voiceover synthesis and caption-alignment STT",
-                href: "https://elevenlabs.io/app/settings/api-keys",
-                linkLabel: "elevenlabs.io",
-                steps: [
-                  "Sign in → Settings → API Keys.",
-                  "Create a key with TTS + STT permissions, copy it.",
-                  "Pick a plan for your character volume.",
-                  "Optional: add voices from the Voice Library.",
-                ],
-              },
-              {
-                num: 3,
-                tier: "free" as Tier,
-                quota: "500 imgs/month",
-                title: "Cloudflare Workers AI (Free images)",
-                sub: "Powers the Free image option — free daily quota on your own account (~500–2,000 images/day)",
-                href: "https://dash.cloudflare.com",
-                linkLabel: "dash.cloudflare.com",
-                steps: [
-                  <>Sign up free at <a href="https://dash.cloudflare.com" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>dash.cloudflare.com ↗</a> — no card needed.</>,
-                  "Copy your Account ID (the 32-char part after the slash in the dashboard URL).",
-                  "Create a token with the \"Workers AI\" template, copy it.",
-                  "Paste both into the Setup tab.",
-                ],
-              },
-              {
-                num: 4,
-                tier: "free" as Tier,
-                quota: "1M chars/month",
-                title: "Google Cloud TTS (Free voiceover)",
-                sub: "Powers the Free voiceover option — 1,000,000 characters/month free on your own account",
-                href: "https://console.cloud.google.com",
-                linkLabel: "console.cloud.google.com",
-                steps: [
-                  <>Create a project — <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>open ↗</a> (via the top-bar dropdown).</>,
-                  "Enable billing (free tier isn't charged).",
-                  <>Enable the <a href="https://console.cloud.google.com/apis/library/texttospeech.googleapis.com" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>Text-to-Speech API ↗</a> on that project.</>,
-                  <>Create an API key on the <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>Credentials page ↗</a>, copy it.</>,
-                  "Paste the key into the Setup tab.",
-                ],
-              },
-            ].filter((step) => step.tier === subTab).map(({ title, sub, href, linkLabel, steps, quota }, idx) => (
-              <div key={title} className="p-4 rounded-2xl space-y-3" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-                <div
-                  className={`flex items-center gap-3 ${subTab === "free" ? "-mx-4 -mt-4 mb-2 px-4 py-3 rounded-t-2xl h-[76px] overflow-hidden" : ""}`}
-                  style={subTab === "free" ? { background: "oklch(0.72 0.25 285)" } : undefined}
-                >
-                  <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 text-xs font-bold"
-                    style={subTab === "free"
-                      ? { background: "oklch(1 0 0 / 0.22)", color: "white", border: "1px solid oklch(1 0 0 / 0.4)" }
-                      : { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>{idx + 1}</div>
-                  {subTab === "free" ? (
-                    <div className="min-w-0">
-                      <p className="text-lg font-bold leading-tight line-clamp-2" style={{ color: "white" }}>{title}</p>
-                      {quota && <p className="text-sm font-semibold mt-0.5" style={{ color: "#000000" }}>{quota}</p>}
-                    </div>
-                  ) : (
-                    <>
-                      <div>
-                        <p className="text-sm font-semibold text-foreground">{title}</p>
-                        <p className="text-xs" style={{ color: "var(--c-40)" }}>{sub}</p>
-                      </div>
-                      <a href={href} target="_blank" rel="noopener noreferrer"
-                        className="ml-auto text-xs shrink-0 hover:opacity-80"
-                        style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>
-                        {linkLabel} ↗
-                      </a>
-                    </>
-                  )}
-                </div>
-                <ol className="space-y-2.5 pl-9">
-                  {steps.map((s, i) => (
-                    <li key={i} className="text-xs leading-relaxed" style={{ color: "var(--c-55)" }}>
-                      <span className="font-medium" style={{ color: "var(--c-40)" }}>{i + 1}.</span> {s}
-                    </li>
-                  ))}
-                </ol>
+                      return (
+                        <div key={field.key} className="space-y-2 pt-3"
+                          style={{ borderTop: "1px solid oklch(1 0 0 / 0.07)" }}>
+                          <div className="flex items-center gap-2">
+                            <label className="text-sm font-semibold text-foreground">{field.label}</label>
+                            {isSet && (
+                              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium"
+                                style={{
+                                  background: "oklch(0.55 0.15 145 / 0.15)",
+                                  color: "oklch(0.65 0.15 145)",
+                                  border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                                }}>
+                                <CheckCircle2 size={10} />
+                                Configured
+                              </span>
+                            )}
+                          </div>
+
+                          {isSet && (
+                            <div className="text-xs font-mono px-3 py-2 rounded-lg"
+                              style={{ background: "var(--bg-code)", color: "var(--c-40)", border: "1px solid var(--bd-5)" }}>
+                              Current: {currentMasked}
+                            </div>
+                          )}
+
+                          <div className="relative">
+                            <input
+                              type={isShowing ? "text" : "password"}
+                              name={field.key}
+                              autoComplete="new-password"
+                              spellCheck={false}
+                              value={form[field.key]}
+                              onChange={(e) => {
+                                console.log(`[setup] input onChange field=${field.key} valueLen=${e.target.value.length}`);
+                                setForm((f) => ({ ...f, [field.key]: e.target.value }));
+                              }}
+                              placeholder={isSet ? "Enter new value to replace…" : field.placeholder}
+                              className="w-full pr-10 px-3 py-2.5 rounded-xl text-sm font-mono outline-none transition-all"
+                              style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-88)" }}
+                              onFocus={(e) => { (e.target as HTMLInputElement).style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
+                              onBlur={(e) => { (e.target as HTMLInputElement).style.borderColor = "var(--bd-10)"; }}
+                            />
+                            <button type="button" tabIndex={-1} onClick={() => toggle(field.key)}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 transition-opacity hover:opacity-70"
+                              style={{ color: "var(--c-40)" }}>
+                              {isShowing ? <EyeOff size={14} /> : <Eye size={14} />}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
-            ))}
-            </div>
-            )}
 
-            <div className="flex justify-end pt-1">
               <button
-                onClick={() => setTab("setup")}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
-                style={{ background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))", color: "var(--c-98)" }}>
-                <ArrowLeft size={14} style={{ transform: "rotate(180deg)" }} />
-                Go to Setup
+                type="submit"
+                disabled={saving || Object.values(form).every((v) => !v.trim())}
+                onClick={() => console.log("[setup] Save button onClick fired. disabled flag =", saving || Object.values(form).every((v) => !v.trim()), "form =", { kie_len: form.kie_api_key.length, el_len: form.elevenlabs_api_key.length })}
+                className="w-full sm:w-auto sm:min-w-[240px] flex items-center justify-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+                style={{
+                  background: "linear-gradient(135deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+                  color: "var(--c-98)",
+                  boxShadow: "0 0 24px oklch(0.72 0.25 285 / 0.25)",
+                }}>
+                {saving ? <Spinner size={15} /> : <Save size={15} />}
+                {saving ? "Saving…" : "Save API Keys"}
               </button>
-            </div>
-          </div>
-        )}
+            </form>
+          )}
+
+          {/* Add User — admin only */}
+          {isAdmin && <AddUserSection />}
+        </div>
 
       </main>
     </div>

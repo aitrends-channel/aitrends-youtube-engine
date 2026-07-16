@@ -65,7 +65,7 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
   // Used solely to read is_production_test for the current user — the
   // production-test plan card is otherwise hidden so customers never
   // see it. is_admin is also returned here but we don't need it.
-  const { data: usageData } = useSWR<{ is_production_test?: boolean; has_active_subscription?: boolean; has_current_access?: boolean }>(
+  const { data: usageData, isLoading: usageLoading } = useSWR<{ is_production_test?: boolean; has_active_subscription?: boolean; has_current_access?: boolean; subscription_expired?: boolean; plan?: string }>(
     "/api/usage",
     swrFetcher,
     { revalidateOnFocus: true },
@@ -77,17 +77,30 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
   // Hide the production-test card while the user still has access —
   // either an active sub OR a cancelled-but-in-grace-period sub.
   const hasCurrentAccess = usageData?.has_current_access === true;
+  // Ex-subscriber whose paid period lapsed: reframe the whole modal as
+  // a renewal/upgrade (they already know the product — "Unlock Heclus"
+  // and the free-demo pitch would read as if their account was wiped).
+  const isRenewal = usageData?.subscription_expired === true;
+  const previousPlan = isRenewal ? plans?.find(p => p.slug === usageData?.plan) ?? null : null;
 
   // Seed the selectedPlan once plans land. SWR may resolve before
   // this effect runs (cache hit), so we guard on a non-empty plans
-  // list rather than a "just loaded" trigger.
+  // list rather than a "just loaded" trigger. We also wait for the
+  // usage fetch to settle: an expired subscriber should re-open on
+  // their previous plan, and seeding before /api/usage answers would
+  // lock in the founder/default pick instead. On fetch error
+  // usageLoading flips false with no data, so seeding still happens.
   useEffect(() => {
-    if (defaultPlan || !plans || plans.length === 0 || selectedPlan) return;
+    if (defaultPlan || !plans || plans.length === 0 || selectedPlan || usageLoading) return;
+    if (isRenewal && previousPlan && !previousPlan.disabled) {
+      setSelectedPlan(previousPlan.slug);
+      return;
+    }
     const founder = plans.find(p => p.isFounder && !p.disabled);
     setSelectedPlan(
       (founder ?? plans.find(p => !p.disabled && p.slug !== PRODUCTION_TEST_SLUG) ?? plans[0]).slug,
     );
-  }, [plans, defaultPlan, selectedPlan]);
+  }, [plans, defaultPlan, selectedPlan, usageLoading, isRenewal, previousPlan]);
 
   // Founder visibility gated by the single 'active' flag from the server.
   const founderAvailable = founderActive === null || founderActive === true;
@@ -209,16 +222,22 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
 
 
         <div className="text-center mb-6">
-          <h2 className="text-xl font-bold mb-1" style={{ color: "var(--c-90)" }}>Unlock Heclus</h2>
-          <p className="text-sm" style={{ color: "var(--c-45)" }}>Pick the plan that fits your workflow.</p>
+          <h2 className="text-xl font-bold mb-1" style={{ color: "var(--c-90)" }}>
+            {isRenewal ? "Your subscription has expired" : "Unlock Heclus"}
+          </h2>
+          <p className="text-sm" style={{ color: "var(--c-45)" }}>
+            {isRenewal
+              ? "Your niches and videos are safe. Renew to keep creating — or move up a plan."
+              : "Pick the plan that fits your workflow."}
+          </p>
         </div>
 
         {/* Try Demo — hidden when the caller explicitly opts out
-            (hideTryDemo) OR when the user already has current access.
-            Both signals mean the "explore Heclus free" pitch is either
-            noise (they've already committed) or actively confusing
-            (they're a paying user reading a "free" card). */}
-        {!hideTryDemo && !hasCurrentAccess && <button
+            (hideTryDemo), when the user already has current access, OR
+            when this is a renewal (an expired subscriber has done the
+            demo's job already; pitching "explore Heclus free" next to
+            "your subscription expired" reads like a downgrade offer). */}
+        {!hideTryDemo && !hasCurrentAccess && !isRenewal && <button
           onClick={() => { onClose(); router.push("/demo/channel"); }}
           className="w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all hover:opacity-90 cursor-pointer"
           style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.08)", marginBottom: "30px" }}
@@ -354,8 +373,18 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
               <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
               Loading…
             </>
+          ) : !selected ? (
+            "Subscribe"
+          ) : !isRenewal ? (
+            `Subscribe to ${selected.name}`
+          ) : !previousPlan || previousPlan.slug === selected.slug ? (
+            // Unknown previous plan (webhook wrote paid but never a
+            // slug, or the plan was retired) still reads as a renewal.
+            `Renew ${selected.name}`
+          ) : selected.sortOrder > previousPlan.sortOrder ? (
+            `Upgrade to ${selected.name}`
           ) : (
-            `Subscribe${selected ? ` to ${selected.name}` : ""}`
+            `Switch to ${selected.name}`
           )}
         </button>
 
