@@ -2,7 +2,9 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { getFreeUsageToday, getFreeUsageThisMonth, FREE_IMAGE_DAILY_CAP, FREE_TTS_MONTHLY_CAP } from "@/lib/freeUsage";
-import { QWEN_TTS_MONTHLY_CAP } from "@/lib/replicate/tts";
+import { qwenCapForPlan } from "@/lib/replicate/tts";
+import { planSlugOf } from "@/lib/plans-gating";
+import { isAdminUser } from "@/lib/admin";
 import type { User } from "@supabase/supabase-js";
 
 // Powers the "Free" tab usage bars. Returns the signed-in user's free-image
@@ -23,6 +25,7 @@ export async function GET() {
     ttsChars,
     ttsCap: FREE_TTS_MONTHLY_CAP,
     qwenTtsChars,
-    qwenTtsCap: QWEN_TTS_MONTHLY_CAP,
+    // Plan-tiered: 0 = Qwen not available on this plan (founder).
+    qwenTtsCap: qwenCapForPlan(planSlugOf(user), isAdminUser(user)),
   });
 }

@@ -1,5 +1,6 @@
 import type { KieModel } from "@/lib/types";
 import { getFreeUsageThisMonth } from "@/lib/freeUsage";
+import { supabase } from "@/lib/supabase/client";
 
 // Qwen3-TTS via Replicate — the SECOND free voiceover option, alongside
 // the BYO Google path. Unlike Google/Cloudflare (user's own key), this
@@ -20,9 +21,20 @@ export class QwenTTSError extends Error {
   }
 }
 
-// Heclus-paid perk budget per user per month, in characters. Generous
-// enough for several full voiceovers; env-overridable without a deploy.
-export const QWEN_TTS_MONTHLY_CAP = Number(process.env.QWEN_TTS_MONTHLY_CAP ?? 100_000);
+// Heclus-paid perk budget per user per month, in characters — tiered by
+// plan. Founders get no Qwen access at all (cap 0); admins count as Pro.
+// Env-overridable without a deploy.
+export const QWEN_TTS_CAP_STARTER = Number(process.env.QWEN_TTS_CAP_STARTER ?? 50_000);
+export const QWEN_TTS_CAP_PRO = Number(process.env.QWEN_TTS_CAP_PRO ?? 100_000);
+
+export function qwenCapForPlan(plan: string | null | undefined, isAdmin = false): number {
+  if (isAdmin) return QWEN_TTS_CAP_PRO;
+  const p = (plan ?? "").trim().toLowerCase();
+  if (p === "founder") return 0;
+  if (p === "pro") return QWEN_TTS_CAP_PRO;
+  // starter, demo, unknown → the entry-level cap.
+  return QWEN_TTS_CAP_STARTER;
+}
 
 // Voice ids are prefixed "qwen/" so they can't collide with ElevenLabs or
 // google/ ids and generateTTS can route on the prefix alone. The catalog
@@ -255,12 +267,22 @@ export async function generateQwenTTS(
     throw new QwenTTSError("Free Qwen voices aren't configured on this server yet (REPLICATE_API_TOKEN).", 503);
   }
 
-  // Per-user monthly perk budget — Heclus pays for these characters, so
-  // enforce OUR cap up front (Google's equivalent is enforced by Google).
-  const used = await getFreeUsageThisMonth(userId, "qwen_tts_chars");
-  if (used + text.length > QWEN_TTS_MONTHLY_CAP) {
+  // Per-user monthly perk budget, tiered by plan — Heclus pays for these
+  // characters, so enforce OUR cap up front (Google's equivalent is
+  // enforced by Google). Founders have no Qwen allowance at all.
+  const { data: userData } = await supabase.auth.admin.getUserById(userId);
+  const meta = (userData?.user?.app_metadata ?? {}) as { plan?: string; is_admin?: boolean };
+  const cap = qwenCapForPlan(meta.plan, meta.is_admin === true);
+  if (cap <= 0) {
     throw new QwenTTSError(
-      `This voiceover needs ${text.length.toLocaleString()} characters but you have ${Math.max(0, QWEN_TTS_MONTHLY_CAP - used).toLocaleString()} left on this month's free Qwen quota. It resets next month — or pick a Google or paid voice.`,
+      "Qwen voices aren't included in the Founder plan — pick a Google voice (free on your own key) or a paid voice.",
+      403,
+    );
+  }
+  const used = await getFreeUsageThisMonth(userId, "qwen_tts_chars");
+  if (used + text.length > cap) {
+    throw new QwenTTSError(
+      `This voiceover needs ${text.length.toLocaleString()} characters but you have ${Math.max(0, cap - used).toLocaleString()} left on this month's free Qwen quota. It resets next month — or pick a Google or paid voice.`,
       429,
     );
   }
