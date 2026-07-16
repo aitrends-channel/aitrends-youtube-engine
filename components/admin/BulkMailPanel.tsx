@@ -89,6 +89,50 @@ Heclus Support`,
   };
 }
 
+// Selectable starting points for the composer. Only the support check-in
+// weaves the selected step into its copy; the others are step-agnostic.
+// Picking one replaces the current draft (same semantics as "Reset to
+// template") and resumes auto-syncing with the selected condition.
+const TEMPLATES: { id: string; label: string; build: (phaseId: string) => { subject: string; body: string } }[] = [
+  { id: "checkin", label: "Support check-in", build: templateFor },
+  {
+    id: "nudge",
+    label: "Re-engagement nudge",
+    build: () => ({
+      subject: "Your Heclus {{video}} is almost there",
+      body: `Hi {{name}},
+
+Your {{video}} is saved exactly where you left off - nothing is lost.
+
+Most videos take just a few more minutes to finish once the pipeline is running again. Jump back in and Heclus picks up from the step you stopped at.
+
+If anything got in the way, just reply and I'll help you through it.
+
+Thanks,
+Alex
+Heclus Support`,
+    }),
+  },
+  {
+    id: "founder",
+    label: "Founder offer",
+    build: () => ({
+      subject: "A full year of Heclus for $40",
+      body: `Hi {{name}},
+
+Since you have a {{video}} in progress, I wanted to make sure you saw this before it's gone: the Founder offer - a full year of Heclus for a one-time $40. Everything in Starter, 20 niches for the year, no monthly renewal.
+
+It's limited to the first 100 creators and spots are running low.
+
+You can claim it at https://heclus.com/pricing.
+
+Thanks,
+Alex
+Heclus Support`,
+    }),
+  },
+];
+
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(r.status)));
 
 function timeAgo(iso: string): string {
@@ -131,6 +175,8 @@ function MailColumn({ mode }: { mode: "phase" | "any" }) {
   const videos = data?.videos ?? [];
   const activePhaseLabel = anyMode ? "" : PHASES.find((p) => p.id === phase)?.label ?? phase;
 
+  const [templateId, setTemplateId] = useState<string>(TEMPLATES[0].id);
+  const activeTemplate = TEMPLATES.find((t) => t.id === templateId) ?? TEMPLATES[0];
   const [subject, setSubject] = useState<string>(() => templateFor(anyMode ? "any" : PHASES[0].id).subject);
   const [bodyText, setBodyText] = useState<string>(() => templateFor(anyMode ? "any" : PHASES[0].id).body);
   // Auto-sync the template to the selected step until the admin edits the
@@ -142,10 +188,10 @@ function MailColumn({ mode }: { mode: "phase" | "any" }) {
 
   useEffect(() => {
     if (edited) return;
-    const t = templateFor(audiencePhase);
+    const t = activeTemplate.build(audiencePhase);
     setSubject(t.subject);
     setBodyText(t.body);
-  }, [audiencePhase, edited]);
+  }, [audiencePhase, edited, activeTemplate]);
 
   const composed = subject.trim().length > 0 && bodyText.trim().length > 0;
   const canArm = composed && recipients.length > 0 && !sending;
@@ -170,7 +216,7 @@ function MailColumn({ mode }: { mode: "phase" | "any" }) {
   }, [subject, bodyText, sampleName, sampleUserId, videos, activePhaseLabel]);
 
   function resetTemplate() {
-    const t = templateFor(audiencePhase);
+    const t = activeTemplate.build(audiencePhase);
     setSubject(t.subject);
     setBodyText(t.body);
     setEdited(false); // resume auto-syncing with the selected step
@@ -291,17 +337,33 @@ function MailColumn({ mode }: { mode: "phase" | "any" }) {
 
       {/* Composer */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
           <p className="text-xs uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Email content</p>
-          <button
-            onClick={resetTemplate}
-            disabled={sending}
-            title="Restore the default template for the selected condition"
-            className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg cursor-pointer disabled:opacity-40"
-            style={{ background: "oklch(0 0 0 / 0.04)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}
-          >
-            <RefreshCw size={12} /> Reset to template
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Picking a template intentionally replaces the draft — same
+                semantics as "Reset to template", just a different preset. */}
+            <select
+              value={templateId}
+              onChange={(e) => { setTemplateId(e.target.value); setEdited(false); setConfirming(false); }}
+              disabled={sending}
+              title="Start from a preset template"
+              className="px-2.5 py-1.5 rounded-lg text-xs font-semibold outline-none bg-white text-zinc-900 cursor-pointer disabled:opacity-40"
+              style={selectStyle}
+            >
+              {TEMPLATES.map((t) => (
+                <option key={t.id} value={t.id}>{t.label}</option>
+              ))}
+            </select>
+            <button
+              onClick={resetTemplate}
+              disabled={sending}
+              title="Restore the selected template for the selected condition"
+              className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg cursor-pointer disabled:opacity-40"
+              style={{ background: "oklch(0 0 0 / 0.04)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}
+            >
+              <RefreshCw size={12} /> Reset to template
+            </button>
+          </div>
         </div>
         <div>
           <label className="text-xs uppercase tracking-wider block mb-1.5" style={{ color: "var(--c-40)" }}>Subject</label>
