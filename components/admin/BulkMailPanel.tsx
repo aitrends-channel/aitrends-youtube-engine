@@ -131,6 +131,44 @@ Alex
 Heclus Support`,
     }),
   },
+  // The two ids below match their audience ids so picking that audience
+  // auto-selects the paired template (see switchPhase).
+  {
+    id: "paid-no-setup",
+    label: "Paid: get set up",
+    build: () => ({
+      subject: "Your plan is active - let's get your first video out",
+      body: `Hi {{name}},
+
+Thanks for joining Heclus - your plan is live and everything is ready on our side.
+
+I noticed you haven't set up your first channel yet, and I don't want you paying for something you're not getting videos out of. Setup takes about two minutes: paste any YouTube channel URL, and the pipeline takes it from there - script, voiceover, images, video clips, and thumbnails.
+
+If anything was unclear, or you'd like me to walk you through your first video personally, just reply to this email. I read every response.
+
+Thanks,
+Alex
+Heclus Support`,
+    }),
+  },
+  {
+    id: "paid-setup-no-video",
+    label: "Paid: finish first video",
+    build: () => ({
+      subject: "Your first video is closer than you think",
+      body: `Hi {{name}},
+
+You've already done the hard part - your channel is analyzed and your {{video}} is sitting mid-pipeline, saved exactly where you left off.
+
+Most videos need only a few more minutes of pipeline time to cross the finish line, and your plan already covers it.
+
+If something got in the way - a confusing step, a result you didn't like, an error - reply and tell me what happened. I'll personally make sure your first video gets exported.
+
+Thanks,
+Alex
+Heclus Support`,
+    }),
+  },
 ];
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(r.status)));
@@ -161,17 +199,25 @@ const selectStyle = {
 
 function MailComposer() {
   // "any" targets owners of any unfinished video; a step id targets
-  // users stuck at that step. Both share one grouped filter row.
+  // users stuck at that step; "paid-*" audiences target paying customers
+  // by funnel position (idle window doesn't apply to those).
   const [phase, setPhase] = useState<string>("any");
   const anyMode = phase === "any";
+  const paidMode = phase.startsWith("paid-");
   const audiencePhase = phase;
   const [idleHours, setIdleHours] = useState<number>(24);
 
   // The duration option lists differ per mode; when a switch strands the
   // current value on an option that no longer exists, fall back to 24h.
+  // Picking a paid audience also auto-selects its paired template (same
+  // id) unless the admin has edited the draft.
   function switchPhase(next: string) {
     const durations = next === "any" ? ANY_DURATIONS : PHASE_DURATIONS;
     if (!durations.some((d) => d.hours === idleHours)) setIdleHours(24);
+    if (!edited) {
+      if (TEMPLATES.some((t) => t.id === next)) setTemplateId(next);
+      else if (templateId.startsWith("paid-")) setTemplateId(TEMPLATES[0].id);
+    }
     setPhase(next);
   }
 
@@ -179,7 +225,9 @@ function MailComposer() {
   const { data, isLoading, mutate, isValidating } = useSWR<RecipientsResponse>(swrKey, fetcher);
   const recipients = data?.recipients ?? [];
   const videos = data?.videos ?? [];
-  const activePhaseLabel = anyMode ? "" : PHASES.find((p) => p.id === phase)?.label ?? phase;
+  // Empty for "any" and the paid audiences — their video rows carry
+  // per-row resolved step labels instead of one shared phase label.
+  const activePhaseLabel = anyMode || paidMode ? "" : PHASES.find((p) => p.id === phase)?.label ?? phase;
 
   const [templateId, setTemplateId] = useState<string>(TEMPLATES[0].id);
   const activeTemplate = TEMPLATES.find((t) => t.id === templateId) ?? TEMPLATES[0];
@@ -274,23 +322,35 @@ function MailComposer() {
                 <option key={p.id} value={p.id}>Stuck at {p.label}</option>
               ))}
             </optgroup>
+            <optgroup label="Customers">
+              <option value="paid-no-setup">Paid users with no setup</option>
+              <option value="paid-setup-no-video">Paid users with setup but zero video</option>
+            </optgroup>
           </select>
 
-          <span className="text-sm" style={{ color: "var(--c-55)" }}>idle for</span>
+          {!paidMode && (
+            <>
+              <span className="text-sm" style={{ color: "var(--c-55)" }}>idle for</span>
 
-          <select
-            value={idleHours}
-            onChange={(e) => { setIdleHours(Number(e.target.value)); setConfirming(false); }}
-            className="px-3 py-2.5 rounded-lg text-base font-semibold outline-none bg-white text-zinc-900 cursor-pointer"
-            style={selectStyle}
-          >
-            {(anyMode ? ANY_DURATIONS : PHASE_DURATIONS).map((d) => (
-              <option key={d.hours} value={d.hours}>{d.label}</option>
-            ))}
-          </select>
+              <select
+                value={idleHours}
+                onChange={(e) => { setIdleHours(Number(e.target.value)); setConfirming(false); }}
+                className="px-3 py-2.5 rounded-lg text-base font-semibold outline-none bg-white text-zinc-900 cursor-pointer"
+                style={selectStyle}
+              >
+                {(anyMode ? ANY_DURATIONS : PHASE_DURATIONS).map((d) => (
+                  <option key={d.hours} value={d.hours}>{d.label}</option>
+                ))}
+              </select>
+            </>
+          )}
         </div>
         <p className="text-[11px] mt-2" style={{ color: "var(--c-45)" }}>
-          {anyMode
+          {phase === "paid-no-setup"
+            ? "Paying customers who never completed a channel setup — no idle window, matched regardless of last activity."
+            : phase === "paid-setup-no-video"
+            ? "Paying customers who set up a channel but have no completed video yet — no idle window."
+            : anyMode
             ? "Targets owners of any unfinished video, whatever step it's on, idle for the selected duration."
             : "“Stuck at” = the user is currently at that step and has been idle for the selected duration."}
         </p>
@@ -459,7 +519,7 @@ function MailComposer() {
             style={{ border: "1px solid var(--bd-7)", background: "oklch(0 0 0 / 0.02)" }}
           >
             {recipients.map((r) => {
-              const label = anyMode ? stepsFor(videos, r.userId) : activePhaseLabel;
+              const label = anyMode || paidMode ? stepsFor(videos, r.userId) : activePhaseLabel;
               return (
                 <li key={r.userId} className="px-3 py-2 flex items-center gap-3 flex-wrap" style={{ borderColor: "var(--bd-7)" }}>
                   <span className="text-sm font-medium min-w-0 truncate" style={{ color: "var(--c-90)" }}>{r.email}</span>
