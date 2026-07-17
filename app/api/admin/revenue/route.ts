@@ -156,6 +156,25 @@ export async function GET() {
     amountCents: monthlyMap.get(month) ?? 0,
   }));
 
+  // Daily sales for the trailing 30 days — feeds the Reports tab's
+  // sales-activity line. Amount + payment count per UTC day.
+  const dailyMap = new Map<string, { cents: number; count: number }>();
+  for (const r of rows) {
+    if (!r.occurred_at) continue;
+    const day = new Date(r.occurred_at).toISOString().slice(0, 10);
+    const e = dailyMap.get(day) ?? { cents: 0, count: 0 };
+    e.cents += usdCents(r);
+    e.count += 1;
+    dailyMap.set(day, e);
+  }
+  const daily = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - (29 - i));
+    const day = d.toISOString().slice(0, 10);
+    const e = dailyMap.get(day);
+    return { date: day, amountCents: e?.cents ?? 0, count: e?.count ?? 0 };
+  });
+
   // Recent events — capped so the response payload stays small for
   // the admin Revenue tab. Full table can be paginated later if
   // anyone needs deeper history.
@@ -178,6 +197,7 @@ export async function GET() {
     payingUserCount,
     launchedAt,
     last12Months,
+    daily,
     recentEvents,
     eventCount: rows.length,
   });
