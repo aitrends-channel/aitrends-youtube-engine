@@ -360,15 +360,6 @@ function MailComposer() {
             >
               <RefreshCw size={12} /> Reset to template
             </button>
-            <button
-              onClick={saveTemplate}
-              disabled={sending || savingTemplate || !composed || !edited}
-              title="Save the current subject, message, and video-table setting as this template"
-              className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg cursor-pointer disabled:opacity-40"
-              style={{ background: "oklch(0.62 0.15 220 / 0.1)", color: "oklch(0.45 0.13 220)", border: "1px solid oklch(0.62 0.15 220 / 0.35)" }}
-            >
-              {savingTemplate ? (<><Spinner size={12} /> Saving…</>) : <>Save to template</>}
-            </button>
           </div>
         </div>
         <div>
@@ -395,6 +386,23 @@ function MailComposer() {
             <code>{"{{name}}"}</code> → recipient&apos;s first name (falls back to “there”); <code>{"{{video}}"}</code> → “video” / “videos” by count;{" "}
             <code>{"{{stuck}}"}</code> → audience-aware sentence (“…stuck at the topic step for a while.”).
           </p>
+          {/* Persist the draft to the DB as the selected template's new
+              saved version — sits under the editor so it reads as
+              "save what I just wrote". */}
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              onClick={saveTemplate}
+              disabled={sending || savingTemplate || !composed}
+              title="Save the current subject, message, and video-table setting to the database as this template"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3.5 py-2 rounded-lg cursor-pointer disabled:opacity-40 transition-opacity hover:opacity-90"
+              style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
+            >
+              {savingTemplate ? (<><Spinner size={12} className="text-white" /> Saving…</>) : <>Save template</>}
+            </button>
+            <span className="text-[11px]" style={{ color: "var(--c-45)" }}>
+              Saves your edits to “{activeTemplate.label}” for every future send.
+            </span>
+          </div>
         </div>
 
         {/* Live branded preview of the exact email recipients receive. */}
