@@ -23,6 +23,7 @@ export async function GET() {
       cloudflare_account_id: mask(s.cloudflare_account_id),
       cloudflare_api_token: mask(s.cloudflare_api_token),
       google_tts_key: mask(s.google_tts_key),
+      gemini_api_key: mask(s.gemini_api_key),
     });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to load settings" }, { status: 500 });
@@ -40,6 +41,7 @@ export async function POST(req: Request) {
       cloudflare_account_id: string;
       cloudflare_api_token: string;
       google_tts_key: string;
+      gemini_api_key: string;
     }>;
 
     const update: Record<string, string> = {};
@@ -48,6 +50,7 @@ export async function POST(req: Request) {
     if (body.cloudflare_account_id?.trim()) update.cloudflare_account_id = body.cloudflare_account_id.trim();
     if (body.cloudflare_api_token?.trim()) update.cloudflare_api_token = body.cloudflare_api_token.trim();
     if (body.google_tts_key?.trim()) update.google_tts_key = body.google_tts_key.trim();
+    if (body.gemini_api_key?.trim()) update.gemini_api_key = body.gemini_api_key.trim();
 
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ error: "No keys provided" }, { status: 400 });
@@ -63,7 +66,7 @@ export async function POST(req: Request) {
         { user_id: user.id, ...update },
         { onConflict: "user_id", ignoreDuplicates: false },
       )
-      .select("user_id, kie_api_key, elevenlabs_api_key, cloudflare_account_id, cloudflare_api_token, google_tts_key")
+      .select("user_id, kie_api_key, elevenlabs_api_key, cloudflare_account_id, cloudflare_api_token, google_tts_key, gemini_api_key")
       .single();
 
     if (error) throw new Error(error.message);

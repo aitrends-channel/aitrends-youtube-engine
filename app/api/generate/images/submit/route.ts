@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { submitImageTask } from "@/lib/kie/images";
 import { KieUpstreamError } from "@/lib/kie/client";
 import { generateCloudflareImage, isCloudflareModel, CloudflareError } from "@/lib/cloudflare/images";
+import { generateGeminiImage, isGeminiImageModel, GeminiImageError } from "@/lib/gemini/images";
 import { incrementFreeUsage } from "@/lib/freeUsage";
 import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
@@ -39,13 +40,14 @@ export async function POST(req: Request) {
     // synchronously — no task id / webhook — so we generate, upload, and
     // mark the beat done inline. Runs on the user's own free quota; no KIE
     // credits and no cost-ledger entry.
-    if (isCloudflareModel(modelId)) {
+    if (isCloudflareModel(modelId) || isGeminiImageModel(modelId)) {
       await supabase.from("project_beats")
         .update({ image_status: "generating", image_model_id: modelId, image_task_id: null })
         .eq("project_id", projectId)
         .eq("beat_number", beatNumber);
 
-      const { buffer, contentType } = await generateCloudflareImage(imagePrompt, modelId, aspectRatio, user.id);
+      const generateFree = isGeminiImageModel(modelId) ? generateGeminiImage : generateCloudflareImage;
+      const { buffer, contentType } = await generateFree(imagePrompt, modelId, aspectRatio, user.id);
       const folder = userFolderFor({ id: user.id, email: user.email ?? null });
       const storagePath = `${folder}/${projectId}/images/beat-${beatNumber}_${Date.now()}.jpg`;
       const publicUrl = await uploadBuffer(storagePath, buffer, contentType);
@@ -100,12 +102,15 @@ export async function POST(req: Request) {
         .eq("beat_number", beatNumber);
     }
 
-    if (err instanceof CloudflareError) {
+    if (err instanceof CloudflareError || err instanceof GeminiImageError) {
       // 401 = key not connected, 429 = free quota spent; both are user-
       // config issues, not server failures, so don't 500 / page on them.
-      console.warn(`[images/submit] Cloudflare error on beat ${beatNumber}: ${err.message}`);
+      console.warn(`[images/submit] free-provider error on beat ${beatNumber}: ${err.message}`);
       const status = err.status === 401 ? 401 : err.status === 429 ? 429 : 502;
-      return NextResponse.json({ error: err.message, code: "cloudflare_free" }, { status });
+      return NextResponse.json(
+        { error: err.message, code: err instanceof GeminiImageError ? "gemini_free" : "cloudflare_free" },
+        { status },
+      );
     }
 
     if (err instanceof KieUpstreamError) {
