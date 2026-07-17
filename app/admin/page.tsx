@@ -4425,7 +4425,9 @@ export default function AdminPage() {
   const [flaggingProdTest, setFlaggingProdTest] = useState<string | null>(null);
   const [usersPage, setUsersPage] = useState(1);
   const [userSearch, setUserSearch] = useState("");
-  type PlanBucket = "all" | "admin" | "founder" | "pro" | "starter" | "free" | "pending";
+  // "zero-video" / "no-setup" are cross-cutting slices (they overlap the
+  // plan buckets), matched by predicate rather than bucketOf below.
+  type PlanBucket = "all" | "admin" | "founder" | "pro" | "starter" | "free" | "pending" | "zero-video" | "no-setup";
   const [planFilter, setPlanFilter] = useState<PlanBucket>("all");
   const [nicheLimitUser, setNicheLimitUser] = useState<AdminUser | null>(null);
   const [projectsPage, setProjectsPage] = useState(1);
@@ -4585,7 +4587,7 @@ export default function AdminPage() {
   // the plan, and that only fires if the user lands on the callback)
   // fall back to "starter" — the cheapest paid tier — instead of
   // Free/Demo, since they did pay something.
-  function bucketOf(u: AdminUser): Exclude<PlanBucket, "all"> {
+  function bucketOf(u: AdminUser): Exclude<PlanBucket, "all" | "zero-video" | "no-setup"> {
     if (u.isAdmin) return "admin";
     if (u.status === "Pending") return "pending";
     const planNorm = (u.plan ?? "").toLowerCase().trim();
@@ -4596,9 +4598,21 @@ export default function AdminPage() {
     return "free";
   }
 
+  // Customers who never created a video project / never completed a
+  // channel setup (no niche consumed). Admins and pending invites are
+  // excluded — pending rows always carry zero counts and would inflate
+  // both slices.
+  const hasZeroVideos = (u: AdminUser) => !u.isAdmin && u.status !== "Pending" && u.projectCount === 0;
+  const hasNoSetup = (u: AdminUser) => !u.isAdmin && u.status !== "Pending" && u.nichesUsed === 0;
+
   const userSearchLower = userSearch.trim().toLowerCase();
   const filteredUsers = users.filter((u) => {
-    if (planFilter !== "all" && bucketOf(u) !== planFilter) return false;
+    const matchesBucket =
+      planFilter === "all" ? true
+      : planFilter === "zero-video" ? hasZeroVideos(u)
+      : planFilter === "no-setup" ? hasNoSetup(u)
+      : bucketOf(u) === planFilter;
+    if (!matchesBucket) return false;
     if (userSearchLower && !u.email.toLowerCase().includes(userSearchLower)) return false;
     return true;
   });
@@ -5115,15 +5129,19 @@ export default function AdminPage() {
               active pill (or Total) clears the filter. */}
           <div className="flex flex-wrap gap-2 text-xs">
             {([
-              { id: "all",     label: "Total",     value: users.length,          accent: "oklch(0.55 0.15 220)", bg: "oklch(0 0 0 / 0.04)",          color: "var(--c-65)",       border: "oklch(0 0 0 / 0.08)" },
-              { id: "admin",   label: "Admin",     value: userBreakdown.admin,   accent: "oklch(0.72 0.18 75)",  bg: "oklch(0.72 0.18 75 / 0.15)",   color: "oklch(0.6 0.18 75)",  border: "oklch(0.72 0.18 75 / 0.4)" },
-              { id: "founder", label: "Founder",   value: userBreakdown.founder, accent: "oklch(0.55 0.15 145)", bg: "oklch(0.55 0.15 145 / 0.15)",  color: "oklch(0.65 0.15 145)", border: "oklch(0.55 0.15 145 / 0.3)" },
-              { id: "pro",     label: "Pro",       value: userBreakdown.pro,     accent: "oklch(0.55 0.15 145)", bg: "oklch(0.55 0.15 145 / 0.15)",  color: "oklch(0.65 0.15 145)", border: "oklch(0.55 0.15 145 / 0.3)" },
-              { id: "starter", label: "Starter",   value: userBreakdown.starter, accent: "oklch(0.55 0.15 145)", bg: "oklch(0.55 0.15 145 / 0.15)",  color: "oklch(0.65 0.15 145)", border: "oklch(0.55 0.15 145 / 0.3)" },
-              { id: "free",    label: "Free/Demo", value: userBreakdown.free,    accent: "oklch(0.5 0 0)",       bg: "oklch(0 0 0 / 0.05)",          color: "var(--c-55)",       border: "oklch(0 0 0 / 0.12)" },
-              { id: "pending", label: "Pending",   value: userBreakdown.pending, accent: "oklch(0.72 0.25 285)", bg: "oklch(0.72 0.25 285 / 0.1)",   color: "oklch(0.72 0.25 285)", border: "oklch(0.72 0.25 285 / 0.2)" },
+              { id: "all",        label: "Total",           value: users.length,                        accent: "oklch(0.55 0.15 220)", bg: "oklch(0 0 0 / 0.04)",          color: "var(--c-65)",       border: "oklch(0 0 0 / 0.08)" },
+              { id: "admin",      label: "Admin",           value: userBreakdown.admin,                 accent: "oklch(0.72 0.18 75)",  bg: "oklch(0.72 0.18 75 / 0.15)",   color: "oklch(0.6 0.18 75)",  border: "oklch(0.72 0.18 75 / 0.4)" },
+              { id: "founder",    label: "Founder",         value: userBreakdown.founder,               accent: "oklch(0.55 0.15 145)", bg: "oklch(0.55 0.15 145 / 0.15)",  color: "oklch(0.65 0.15 145)", border: "oklch(0.55 0.15 145 / 0.3)" },
+              { id: "pro",        label: "Pro",             value: userBreakdown.pro,                   accent: "oklch(0.55 0.15 145)", bg: "oklch(0.55 0.15 145 / 0.15)",  color: "oklch(0.65 0.15 145)", border: "oklch(0.55 0.15 145 / 0.3)" },
+              { id: "starter",    label: "Starter",         value: userBreakdown.starter,               accent: "oklch(0.55 0.15 145)", bg: "oklch(0.55 0.15 145 / 0.15)",  color: "oklch(0.65 0.15 145)", border: "oklch(0.55 0.15 145 / 0.3)" },
+              { id: "free",       label: "Free/Demo",       value: userBreakdown.free,                  accent: "oklch(0.5 0 0)",       bg: "oklch(0 0 0 / 0.05)",          color: "var(--c-55)",       border: "oklch(0 0 0 / 0.12)" },
+              { id: "pending",    label: "Pending",         value: userBreakdown.pending,               accent: "oklch(0.72 0.25 285)", bg: "oklch(0.72 0.25 285 / 0.1)",   color: "oklch(0.72 0.25 285)", border: "oklch(0.72 0.25 285 / 0.2)" },
+              { id: "zero-video", label: "With zero video", value: users.filter(hasZeroVideos).length,  accent: "oklch(0.6 0.19 25)",   bg: "oklch(0.6 0.19 25 / 0.12)",    color: "oklch(0.55 0.19 25)", border: "oklch(0.6 0.19 25 / 0.3)" },
+              { id: "no-setup",   label: "With no setup",   value: users.filter(hasNoSetup).length,     accent: "oklch(0.6 0.19 25)",   bg: "oklch(0.6 0.19 25 / 0.12)",    color: "oklch(0.55 0.19 25)", border: "oklch(0.6 0.19 25 / 0.3)" },
             ] as const).map((s) => {
               const isActive = planFilter === s.id;
+              // Every pill except Total carries its share of all users.
+              const pct = s.id === "all" || users.length === 0 ? null : Math.round((s.value / users.length) * 100);
               return (
                 <button
                   key={s.id}
@@ -5138,6 +5156,7 @@ export default function AdminPage() {
                 >
                   <span>{s.label}</span>
                   <span className="font-semibold">{s.value}</span>
+                  {pct !== null && <span className="opacity-70">· {pct}%</span>}
                 </button>
               );
             })}
