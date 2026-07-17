@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -4641,6 +4641,18 @@ export default function AdminPage() {
     { admin: 0, founder: 0, pro: 0, starter: 0, free: 0, pending: 0 }
   );
 
+  // Active vs dormant accounts for the Stats cards, computed UI-side
+  // from the users list the stats API already ships. Active = signed in
+  // within the last 30 days; dormant = the rest (including never signed
+  // in). Pending invites and admins are excluded, matching the server's
+  // activeAccounts count ("Total Users" on the cards).
+  const ACTIVE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+  const accountUsers = users.filter((u) => !u.isAdmin && u.status !== "Pending");
+  const activeUserCount = stats === undefined ? undefined
+    : accountUsers.filter((u) => u.lastSignIn && Date.now() - new Date(u.lastSignIn).getTime() <= ACTIVE_WINDOW_MS).length;
+  const dormantUserCount = stats === undefined || activeUserCount === undefined ? undefined
+    : Math.max(0, (stats.activeAccounts ?? accountUsers.length) - activeUserCount);
+
   return (
     <div className="min-h-screen flex flex-col" data-theme="light" style={{ background: "var(--bg-page)" }}>
       {/* Header */}
@@ -4807,10 +4819,14 @@ export default function AdminPage() {
         {/* Stats cards */}
         <div id="stats" className="rounded-2xl space-y-3" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "stats" ? undefined : "none" }}>
           <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "oklch(0.50 0 0)" }}>Stats</p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-[10px]">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-[10px]">
             <StatCard label="Total Niches"      value={stats?.totalProjects}    icon={FolderOpen}                    />
             <StatCard label="Access Granted"    value={stats?.accessGranted}    icon={Users}         accent="purple" />
-            <StatCard label="Active Accounts"   value={stats?.activeAccounts}   icon={UserCheck}                     />
+            <StatCard label="Total Users"       value={stats?.activeAccounts}   icon={Users}                         />
+            <StatCard label="Active Users"      value={activeUserCount}         icon={UserCheck}     accent="green"
+              hint={pctOfTotal(activeUserCount, stats?.activeAccounts)} />
+            <StatCard label="Dormant Users"     value={dormantUserCount}        icon={UserX}         accent="amber"
+              hint={pctOfTotal(dormantUserCount, stats?.activeAccounts)} />
             <StatCard label="Total Videos"      value={stats?.totalProjects}    icon={Film}                          />
             <StatCard label="Videos in Progress" value={stats?.videosInProgress} icon={Clock}        accent="amber"
               hint={pctOfTotal(stats?.videosInProgress, stats?.totalProjects)} />
