@@ -102,6 +102,17 @@ export async function GET() {
   // Total — full lifetime revenue regardless of cutoff, in USD cents.
   const totalCents = rows.reduce((sum, r) => sum + usdCents(r), 0);
 
+  // Lifetime revenue + payment count per plan, for the Total card's
+  // breakdown line and the payments-table filter cards. Events written
+  // before the plan was known land under "other".
+  const byPlan: Record<string, { cents: number; count: number }> = {};
+  for (const r of rows) {
+    const plan = (r.plan ?? "other").toLowerCase();
+    const entry = (byPlan[plan] ??= { cents: 0, count: 0 });
+    entry.cents += usdCents(r);
+    entry.count += 1;
+  }
+
   // Rolling-window aggregates. Sourced from revenue_events so the
   // numbers survive user deletion. Caveats:
   //   - MRR is a rolling-30-day actual-revenue figure. Annual plans
@@ -161,6 +172,7 @@ export async function GET() {
 
   return NextResponse.json({
     totalCents,
+    byPlan,
     mrrCents,
     arrCents,
     payingUserCount,

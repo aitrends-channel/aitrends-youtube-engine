@@ -4382,6 +4382,7 @@ export default function AdminPage() {
   // figures (last 30 / 365 days), not amortized recurring math.
   const { data: revenue } = useSWR<{
     totalCents: number;
+    byPlan: Record<string, { cents: number; count: number }>;
     mrrCents: number;
     arrCents: number;
     payingUserCount: number;
@@ -6214,18 +6215,30 @@ export default function AdminPage() {
                 <h2 className="text-lg font-bold text-foreground">Revenue</h2>
               </div>
 
-              {/* Summary cards */}
+              {/* Summary cards. The Total card carries a per-plan
+                  breakdown line sourced from the same ledger. */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
                   { label: "Paid Users",     value: payingUserCount.toString() },
-                  { label: "Total Revenue",  value: `$${totalRevenue.toFixed(2)}` },
+                  {
+                    label: "Total Revenue",
+                    value: `$${totalRevenue.toFixed(2)}`,
+                    sub: (["founder", "starter", "pro"] as const)
+                      .map((p) => `${PLAN_LABEL[p] ?? p}: $${((revenue?.byPlan?.[p]?.cents ?? 0) / 100).toFixed(2)}`)
+                      .join("  ·  "),
+                  },
                   { label: "Est. MRR",       value: `$${mrr.toFixed(2)}` },
                   { label: "Est. ARR",       value: `$${arr.toFixed(2)}` },
-                ].map(({ label, value }) => (
+                ].map(({ label, value, ...card }) => (
                   <div key={label} className="p-4 rounded-xl text-center space-y-1"
                     style={{ background: "oklch(0.55 0.18 65 / 0.06)", border: "1px solid oklch(0.55 0.18 65 / 0.12)" }}>
                     <p className="text-xs font-medium uppercase tracking-wider" style={{ color: "oklch(0.55 0 0)" }}>{label}</p>
                     <p className="text-2xl font-black" style={{ color: "oklch(0.72 0.18 65)" }}>{value}</p>
+                    {"sub" in card && card.sub && (
+                      <p className="text-[10px] whitespace-nowrap overflow-hidden text-ellipsis" style={{ color: "oklch(0.55 0 0)" }} title={card.sub}>
+                        {card.sub}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -6313,6 +6326,39 @@ export default function AdminPage() {
                     ))}
                   </svg>
                 </div>
+              </div>
+
+              {/* Per-plan filter cards for the payments table — payment
+                  count + lifetime revenue from the ledger. Clicking one
+                  filters the table to that plan (same state as the Plan
+                  dropdown); clicking the active card clears it. */}
+              <div className="grid grid-cols-3 gap-3">
+                {(["founder", "starter", "pro"] as const).map((p) => {
+                  const entry = revenue?.byPlan?.[p];
+                  const isActive = revPlanFilter === p;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setRevPlanFilter(isActive ? "" : p)}
+                      className="p-3 rounded-xl text-center space-y-0.5 cursor-pointer transition-all hover:opacity-90"
+                      style={{
+                        background: isActive ? "oklch(0.55 0.18 65 / 0.12)" : "oklch(0 0 0 / 0.015)",
+                        border: `1px solid ${isActive ? "oklch(0.55 0.18 65 / 0.5)" : "oklch(0 0 0 / 0.08)"}`,
+                        boxShadow: isActive ? "0 0 0 2px oklch(0.72 0.18 65 / 0.35)" : "none",
+                      }}
+                    >
+                      <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: "oklch(0.5 0 0)" }}>
+                        {PLAN_LABEL[p]}
+                      </p>
+                      <p className="text-lg font-black tabular-nums" style={{ color: "oklch(0.72 0.18 65)" }}>
+                        ${((entry?.cents ?? 0) / 100).toFixed(2)}
+                      </p>
+                      <p className="text-[11px] tabular-nums" style={{ color: "oklch(0.55 0 0)" }}>
+                        {entry?.count ?? 0} payment{(entry?.count ?? 0) === 1 ? "" : "s"}
+                      </p>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Date-range filter for the payments table */}
