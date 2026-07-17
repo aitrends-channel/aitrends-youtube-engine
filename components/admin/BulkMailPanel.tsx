@@ -50,7 +50,7 @@ const PHASES: { id: string; label: string }[] = [
   { id: "thumbnails", label: "Thumbnails" },
 ];
 
-// Idle-threshold options per column's condition picker.
+// Idle-threshold options per audience mode.
 const PHASE_DURATIONS: { label: string; hours: number }[] = [
   { label: "12 hours", hours: 12 },
   { label: "24 hours", hours: 24 },
@@ -93,11 +93,16 @@ Heclus Support`,
 // weaves the selected step into its copy; the others are step-agnostic.
 // Picking one replaces the current draft (same semantics as "Reset to
 // template") and resumes auto-syncing with the selected condition.
-const TEMPLATES: { id: string; label: string; build: (phaseId: string) => { subject: string; body: string } }[] = [
-  { id: "checkin", label: "Support check-in", build: templateFor },
+// videoTable: whether the branded email should append the recipient's
+// stuck-videos table. On for copy that talks about "your video"; off for
+// promos and setup nudges where a table (often empty) is just noise. The
+// admin can override per send with the checkbox next to the template.
+const TEMPLATES: { id: string; label: string; videoTable: boolean; build: (phaseId: string) => { subject: string; body: string } }[] = [
+  { id: "checkin", label: "Support check-in", videoTable: true, build: templateFor },
   {
     id: "nudge",
     label: "Re-engagement nudge",
+    videoTable: true,
     build: () => ({
       subject: "Your Heclus {{video}} is almost there",
       body: `Hi {{name}},
@@ -116,6 +121,7 @@ Heclus Support`,
   {
     id: "founder",
     label: "Founder offer",
+    videoTable: false,
     build: () => ({
       subject: "A full year of Heclus for $40",
       body: `Hi {{name}},
@@ -125,6 +131,46 @@ Since you have a {{video}} in progress, I wanted to make sure you saw this befor
 It's limited to the first 100 creators and spots are running low.
 
 You can claim it at https://heclus.com/pricing.
+
+Thanks,
+Alex
+Heclus Support`,
+    }),
+  },
+  // The two ids below match their audience ids so picking that audience
+  // auto-selects the paired template (see switchPhase).
+  {
+    id: "paid-no-setup",
+    label: "Paid: finish account setup",
+    videoTable: false,
+    build: () => ({
+      subject: "One step left to unlock your Heclus plan",
+      body: `Hi {{name}},
+
+Thanks for joining Heclus - your plan is active, but your account setup isn't finished yet, so none of it is working for you.
+
+It's one quick step: open the Setup page, add your API key (the page walks you through getting it), and you're live. From there your first video is as simple as pasting a YouTube channel URL - the pipeline handles the script, voiceover, images, video clips, and thumbnails.
+
+If anything about the setup is unclear, reply to this email and I'll walk you through it personally. I read every response.
+
+Thanks,
+Alex
+Heclus Support`,
+    }),
+  },
+  {
+    id: "paid-setup-no-video",
+    label: "Paid: start first niche",
+    videoTable: false,
+    build: () => ({
+      subject: "Your account is ready - your first video takes about two minutes",
+      body: `Hi {{name}},
+
+Your account is fully set up - the only thing missing is your first niche.
+
+Here's all it takes: paste any YouTube channel URL and Heclus analyzes it, then generates the script, voiceover, images, video clips, and thumbnails for you. A couple of minutes of your time, and your plan starts earning its keep.
+
+Not sure which channel to start with? Reply with your topic and I'll suggest a good niche to clone.
 
 Thanks,
 Alex
@@ -145,17 +191,13 @@ function timeAgo(iso: string): string {
   return `${Math.floor(day / 30)}mo ago`;
 }
 
-// Two composers side by side, differing only in how the audience is
-// picked: column 1 targets users stuck at a specific wizard step; column
-// 2 targets owners of ANY unfinished video idle beyond a duration
-// (phase "any" server-side).
+// Single composer. The audience filters are grouped into one control
+// row — the first select picks the condition ("any unfinished video" or
+// a specific stuck-at step, phase "any" vs step ids server-side), the
+// second the idle duration — so there's exactly one template/composer
+// section instead of the old duplicated two-column layout.
 export function BulkMailPanel() {
-  return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
-      <MailColumn mode="phase" />
-      <MailColumn mode="any" />
-    </div>
-  );
+  return <MailComposer />;
 }
 
 const selectStyle = {
@@ -163,22 +205,48 @@ const selectStyle = {
   boxShadow: "0 1px 3px oklch(0 0 0 / 0.08)",
 } as const;
 
-function MailColumn({ mode }: { mode: "phase" | "any" }) {
-  const anyMode = mode === "any";
-  const [phase, setPhase] = useState<string>(PHASES[0].id);
-  const audiencePhase = anyMode ? "any" : phase;
+function MailComposer() {
+  // "any" targets owners of any unfinished video; a step id targets
+  // users stuck at that step; "paid-*" audiences target paying customers
+  // by funnel position (idle window doesn't apply to those).
+  const [phase, setPhase] = useState<string>("any");
+  const anyMode = phase === "any";
+  const paidMode = phase.startsWith("paid-");
+  const audiencePhase = phase;
   const [idleHours, setIdleHours] = useState<number>(24);
+
+  // The duration option lists differ per mode; when a switch strands the
+  // current value on an option that no longer exists, fall back to 24h.
+  // Picking a paid audience also auto-selects its paired template (same
+  // id) unless the admin has edited the draft.
+  function switchPhase(next: string) {
+    const durations = next === "any" ? ANY_DURATIONS : PHASE_DURATIONS;
+    if (!durations.some((d) => d.hours === idleHours)) setIdleHours(24);
+    if (!edited) {
+      if (TEMPLATES.some((t) => t.id === next)) setTemplateId(next);
+      else if (templateId.startsWith("paid-")) setTemplateId(TEMPLATES[0].id);
+    }
+    setPhase(next);
+  }
 
   const swrKey = `/api/admin/bulk-mail/recipients?phase=${audiencePhase}&idleHours=${idleHours}`;
   const { data, isLoading, mutate, isValidating } = useSWR<RecipientsResponse>(swrKey, fetcher);
   const recipients = data?.recipients ?? [];
   const videos = data?.videos ?? [];
-  const activePhaseLabel = anyMode ? "" : PHASES.find((p) => p.id === phase)?.label ?? phase;
+  // Empty for "any" and the paid audiences — their video rows carry
+  // per-row resolved step labels instead of one shared phase label.
+  const activePhaseLabel = anyMode || paidMode ? "" : PHASES.find((p) => p.id === phase)?.label ?? phase;
 
   const [templateId, setTemplateId] = useState<string>(TEMPLATES[0].id);
   const activeTemplate = TEMPLATES.find((t) => t.id === templateId) ?? TEMPLATES[0];
-  const [subject, setSubject] = useState<string>(() => templateFor(anyMode ? "any" : PHASES[0].id).subject);
-  const [bodyText, setBodyText] = useState<string>(() => templateFor(anyMode ? "any" : PHASES[0].id).body);
+  // Follows the selected template's default; the checkbox next to the
+  // template select lets the admin override for this send.
+  const [includeVideoTable, setIncludeVideoTable] = useState<boolean>(TEMPLATES[0].videoTable);
+  useEffect(() => {
+    setIncludeVideoTable(activeTemplate.videoTable);
+  }, [activeTemplate]);
+  const [subject, setSubject] = useState<string>(() => templateFor("any").subject);
+  const [bodyText, setBodyText] = useState<string>(() => templateFor("any").body);
   // Auto-sync the template to the selected step until the admin edits the
   // copy, so the "stuck at the <step> step" line always matches the
   // chosen audience. Once they type, we stop clobbering their message.
@@ -206,14 +274,16 @@ function MailColumn({ mode }: { mode: "phase" | "any" }) {
     const vids = videos
       .filter((v) => v.userId === sampleUserId)
       .map((v) => ({ title: v.title, currentState: v.currentState, step: v.step }));
+    // {{video}} pluralization always uses the real count, even when the
+    // table itself is switched off.
     const count = vids.length || 1;
     return renderBulkMailHtml(
       personalizeBulkMail(subject, sampleName, count),
       personalizeBulkMail(bodyText, sampleName, count),
-      vids,
+      includeVideoTable ? vids : [],
       activePhaseLabel,
     );
-  }, [subject, bodyText, sampleName, sampleUserId, videos, activePhaseLabel]);
+  }, [subject, bodyText, sampleName, sampleUserId, videos, activePhaseLabel, includeVideoTable]);
 
   function resetTemplate() {
     const t = activeTemplate.build(audiencePhase);
@@ -229,7 +299,7 @@ function MailColumn({ mode }: { mode: "phase" | "any" }) {
       const res = await fetch("/api/admin/bulk-mail/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject: subject.trim(), bodyText: bodyText.trim(), phase: audiencePhase, idleHours }),
+        body: JSON.stringify({ subject: subject.trim(), bodyText: bodyText.trim(), phase: audiencePhase, idleHours, includeVideoTable }),
       });
       const d = (await res.json().catch(() => ({}))) as { sent?: number; failedCount?: number; error?: string };
       if (!res.ok) throw new Error(d.error ?? `Send failed (${res.status})`);
@@ -249,39 +319,33 @@ function MailColumn({ mode }: { mode: "phase" | "any" }) {
 
   return (
     <div className="space-y-5">
-      {/* Condition selector — the only piece that differs between columns */}
+      {/* Audience — all filters grouped in one row: the condition
+          (any unfinished video / stuck at a step) and the idle window. */}
       <div>
         <h3 className="text-base font-semibold mb-2" style={{ color: "var(--c-90)" }}>
-          {anyMode ? "Email users with any video in progress stuck for:" : "Email users who meet the following condition:"}
+          Audience
         </h3>
         <div className="flex items-center gap-2 flex-wrap">
-          {anyMode ? (
-            <select
-              value={idleHours}
-              onChange={(e) => { setIdleHours(Number(e.target.value)); setConfirming(false); }}
-              className="px-3 py-2.5 rounded-lg text-base font-semibold outline-none bg-white text-zinc-900 cursor-pointer min-w-[180px]"
-              style={selectStyle}
-            >
-              {ANY_DURATIONS.map((d) => (
-                <option key={d.hours} value={d.hours}>{d.label}</option>
+          <select
+            value={phase}
+            onChange={(e) => { switchPhase(e.target.value); setConfirming(false); }}
+            className="px-3 py-2.5 rounded-lg text-base font-semibold outline-none bg-white text-zinc-900 cursor-pointer min-w-[220px]"
+            style={selectStyle}
+          >
+            <option value="any">Any unfinished video</option>
+            <optgroup label="Stuck at step">
+              {PHASES.map((p) => (
+                <option key={p.id} value={p.id}>Stuck at {p.label}</option>
               ))}
-            </select>
-          ) : (
-            <>
-              <select
-                value={phase}
-                onChange={(e) => { setPhase(e.target.value); setConfirming(false); }}
-                className="px-3 py-2.5 rounded-lg text-base font-semibold outline-none bg-white text-zinc-900 cursor-pointer min-w-[220px]"
-                style={selectStyle}
-              >
-                <optgroup label="Stuck at step">
-                  {PHASES.map((p) => (
-                    <option key={p.id} value={p.id}>Stuck at {p.label}</option>
-                  ))}
-                </optgroup>
-                <option value="__add__" disabled>＋ Add new condition…</option>
-              </select>
+            </optgroup>
+            <optgroup label="Customers">
+              <option value="paid-no-setup">Paid users with no setup</option>
+              <option value="paid-setup-no-video">Paid users with setup but zero video</option>
+            </optgroup>
+          </select>
 
+          {!paidMode && (
+            <>
               <span className="text-sm" style={{ color: "var(--c-55)" }}>idle for</span>
 
               <select
@@ -290,7 +354,7 @@ function MailColumn({ mode }: { mode: "phase" | "any" }) {
                 className="px-3 py-2.5 rounded-lg text-base font-semibold outline-none bg-white text-zinc-900 cursor-pointer"
                 style={selectStyle}
               >
-                {PHASE_DURATIONS.map((d) => (
+                {(anyMode ? ANY_DURATIONS : PHASE_DURATIONS).map((d) => (
                   <option key={d.hours} value={d.hours}>{d.label}</option>
                 ))}
               </select>
@@ -298,7 +362,11 @@ function MailColumn({ mode }: { mode: "phase" | "any" }) {
           )}
         </div>
         <p className="text-[11px] mt-2" style={{ color: "var(--c-45)" }}>
-          {anyMode
+          {phase === "paid-no-setup"
+            ? "Paying customers who haven't finished account setup (no API key saved) — no idle window, matched regardless of last activity."
+            : phase === "paid-setup-no-video"
+            ? "Paying customers with account setup done but no niche created yet (no channel analyzed) — no idle window."
+            : anyMode
             ? "Targets owners of any unfinished video, whatever step it's on, idle for the selected duration."
             : "“Stuck at” = the user is currently at that step and has been idle for the selected duration."}
         </p>
@@ -339,7 +407,21 @@ function MailColumn({ mode }: { mode: "phase" | "any" }) {
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <p className="text-xs uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Email content</p>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <label
+              className="inline-flex items-center gap-1.5 text-xs font-semibold cursor-pointer select-none"
+              style={{ color: "var(--c-60)" }}
+              title="Append a table of the recipient's own stuck videos to the email"
+            >
+              <input
+                type="checkbox"
+                checked={includeVideoTable}
+                onChange={(e) => { setIncludeVideoTable(e.target.checked); setConfirming(false); }}
+                disabled={sending}
+                className="accent-zinc-700"
+              />
+              Video table
+            </label>
             {/* Picking a template intentionally replaces the draft — same
                 semantics as "Reset to template", just a different preset. */}
             <select
@@ -447,9 +529,8 @@ function MailColumn({ mode }: { mode: "phase" | "any" }) {
         </span>
       </div>
 
-      {/* Audience detail — same recipients list in both columns. The
-          "any" column has no single step, so each row's badge shows the
-          steps of that user's matching videos instead. */}
+      {/* Audience detail. The "any" audience has no single step, so each
+          row's badge shows the steps of that user's matching videos. */}
       <div>
         <p className="text-xs uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
           Recipients{recipients.length > 0 ? ` (${recipients.length})` : ""}
@@ -468,7 +549,7 @@ function MailColumn({ mode }: { mode: "phase" | "any" }) {
             style={{ border: "1px solid var(--bd-7)", background: "oklch(0 0 0 / 0.02)" }}
           >
             {recipients.map((r) => {
-              const label = anyMode ? stepsFor(videos, r.userId) : activePhaseLabel;
+              const label = anyMode || paidMode ? stepsFor(videos, r.userId) : activePhaseLabel;
               return (
                 <li key={r.userId} className="px-3 py-2 flex items-center gap-3 flex-wrap" style={{ borderColor: "var(--bd-7)" }}>
                   <span className="text-sm font-medium min-w-0 truncate" style={{ color: "var(--c-90)" }}>{r.email}</span>

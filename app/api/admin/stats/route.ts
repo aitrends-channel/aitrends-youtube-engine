@@ -7,16 +7,20 @@ import { isProductionEnv } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
+// State 13 is the thumbnails side-branch and resting state 15 means the
+// user reached Assemble but hasn't produced a video yet — same map the
+// bulk-mail audience queries use. A project only counts as Complete when
+// assembled_url exists (or state 16, thumbnails-done).
 const PHASE_LABELS: Record<number, string> = {
   1: "Setup", 2: "Setup", 3: "Setup", 4: "Analyzing", 5: "Analyzing",
   6: "Topic", 7: "Visuals", 8: "Visuals", 9: "Prompts", 10: "Prompts",
-  11: "Visuals", 12: "Visuals", 13: "Prompts", 14: "Generate", 15: "Complete",
+  11: "Visuals", 12: "Visuals", 13: "Thumbnails", 14: "Generate", 15: "Assemble",
 };
 
 const PHASE_PATHS: Record<number, string> = {
   1: "channel", 2: "channel", 3: "channel", 4: "channel", 5: "channel",
   6: "topic", 7: "visuals", 8: "visuals", 9: "prompts", 10: "prompts",
-  11: "visuals", 12: "visuals", 13: "prompts", 14: "generate", 15: "assemble",
+  11: "visuals", 12: "visuals", 13: "thumbnails", 14: "generate", 15: "assemble",
 };
 
 export async function GET() {
@@ -199,7 +203,11 @@ export async function GET() {
     // fixes the "100% progress · Setup phase" mismatch admins were
     // seeing in the videos table.
     const rawState = p.current_state ?? 1;
-    const state = p.assembled_url ? 15 : rawState;
+    // Complete = final MP4 exists (or state 16, the thumbnails-done
+    // terminal). Resting state 15 WITHOUT a video means the user is
+    // still at the Assemble step — not complete.
+    const isComplete = Boolean(p.assembled_url) || rawState >= 16;
+    const state = isComplete ? 15 : rawState;
     const userEmail = p.user_id ? (userIdToEmail.get(p.user_id) ?? "Unknown") : "Unknown";
     // Wall-clock assembly duration in seconds, or null when the
     // project hasn't completed an assembly yet (or pre-dates the
@@ -220,16 +228,32 @@ export async function GET() {
       channelName: p.channel_name ?? null,
       selectedTopic: p.selected_topic ?? null,
       currentState: state,
-      phaseLabel: PHASE_LABELS[state] ?? "Setup",
+      isComplete,
+      // State 6 is shared by the Topic and Script steps; a chosen topic
+      // means the user has moved on to the script. Same signal the
+      // bulk-mail audience queries use.
+      phaseLabel: isComplete
+        ? "Complete"
+        : state === 6 && p.selected_topic
+          ? "Script"
+          : (PHASE_LABELS[state] ?? "Setup"),
       phasePath: PHASE_PATHS[state] ?? "channel",
-      progress: Math.min(100, Math.round((state / 15) * 100)),
+      // Only a complete video reads 100% — a project resting at the
+      // Assemble step caps at 99 so the bar never lies.
+      progress: isComplete ? 100 : Math.min(99, Math.round((state / 15) * 100)),
       createdAt: p.created_at,
+      // When the video finished assembling — feeds the "Completed
+      // today/yesterday" filters. Null for incomplete projects and for
+      // completions that pre-date migration 049_assembly_timing.
+      completedAt: isComplete ? (finished ?? null) : null,
       assembleSeconds,
     };
   });
 
-  const completed = nonAdminProjects.filter((p) => p.assembled_url || (p.current_state ?? 0) >= 15).length;
-  const videosInProgress = nonAdminProjects.filter((p) => (p.current_state ?? 1) > 1 && !p.assembled_url && (p.current_state ?? 0) < 15).length;
+  // Same completion rule as the rows above: an MP4 (or terminal state
+  // 16) — resting at the Assemble step no longer counts as complete.
+  const completed = nonAdminProjects.filter((p) => p.assembled_url || (p.current_state ?? 0) >= 16).length;
+  const videosInProgress = nonAdminProjects.filter((p) => (p.current_state ?? 1) > 1 && !p.assembled_url && (p.current_state ?? 0) < 16).length;
 
   // Last 30 days activity
   const activityDates = Array.from({ length: 30 }, (_, i) => {

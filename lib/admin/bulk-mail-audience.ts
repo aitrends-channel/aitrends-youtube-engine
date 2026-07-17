@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { isAdminUser } from "@/lib/admin";
 
 // Bulk-mail audience: owners of a project "stuck at" a given wizard
 // phase — currently sitting at that step AND idle (projects.updated_at)
@@ -37,17 +38,37 @@ export const STUCK_PHASES = [
 
 export type StuckPhaseId = (typeof STUCK_PHASES)[number]["id"];
 
-// Full audience id: a concrete wizard phase, or "any" — owners of ANY
-// unfinished video idle beyond the cutoff, regardless of step. "any"
-// backs the second composer column.
-export type BulkMailPhase = StuckPhaseId | "any";
+// Customer-level audiences: paying users at the two worst funnel spots.
+// User-first (start from paid accounts, not projects), so idleHours does
+// not apply — a paying customer with no output is worth contacting
+// regardless of when they last touched the app.
+// "Setup" here means ACCOUNT setup — the Setup page's API key
+// (account_settings.kie_api_key) — not channel setup.
+//   • paid-no-setup       — paid, but no API key saved yet: paying for
+//                           a product they can't run.
+//   • paid-setup-no-video — paid, account fully set up, but never
+//                           created a niche (niches_used = 0 — no
+//                           channel analyzed, so no videos either).
+export const PAID_AUDIENCES = [
+  { id: "paid-no-setup",       label: "Paid, no setup yet" },
+  { id: "paid-setup-no-video", label: "Paid, set up but no video" },
+] as const;
+export type PaidAudienceId = (typeof PAID_AUDIENCES)[number]["id"];
+
+// Full audience id: a concrete wizard phase, "any" — owners of ANY
+// unfinished video idle beyond the cutoff — or a paid-customer slice.
+export type BulkMailPhase = StuckPhaseId | "any" | PaidAudienceId;
 
 const PHASE_IDS = new Set<string>(STUCK_PHASES.map((p) => p.id));
+const PAID_IDS = new Set<string>(PAID_AUDIENCES.map((p) => p.id));
 export function isStuckPhase(v: unknown): v is StuckPhaseId {
   return typeof v === "string" && PHASE_IDS.has(v);
 }
+export function isPaidAudience(v: unknown): v is PaidAudienceId {
+  return typeof v === "string" && PAID_IDS.has(v);
+}
 export function isBulkMailPhase(v: unknown): v is BulkMailPhase {
-  return v === "any" || isStuckPhase(v);
+  return v === "any" || isStuckPhase(v) || isPaidAudience(v);
 }
 
 export function clampIdleHours(v: unknown): number {
@@ -117,10 +138,113 @@ function resolveStep(p: ProjectRow, state14HasAudio: Set<string>): string {
   return `Step ${n}`;
 }
 
+// Paid-customer audiences. User-first: start from paying accounts, then
+// look at what they have (or haven't) produced. idleHours is ignored on
+// purpose — see PAID_AUDIENCES.
+async function getPaidAudience(phase: PaidAudienceId): Promise<BulkMailAudience> {
+  const { data: usersData, error: listErr } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+  if (listErr) throw new Error(`listUsers failed: ${listErr.message}`);
+  const paidUsers = usersData.users.filter(
+    (u) =>
+      u.email &&
+      u.app_metadata?.paid === true &&
+      !isAdminUser(u) &&
+      (u.app_metadata as { is_production_test?: boolean }).is_production_test !== true,
+  );
+  if (paidUsers.length === 0) return { recipients: [], videos: [] };
+  const paidIds = paidUsers.map((u) => u.id);
+
+  const [settingsRes, projectsRes] = await Promise.all([
+    supabase.from("account_settings").select("user_id, niches_used, kie_api_key").in("user_id", paidIds),
+    supabase
+      .from("projects")
+      .select("id, user_id, current_state, updated_at, selected_topic, channel_name, assembled_url")
+      .in("user_id", paidIds)
+      .limit(10_000),
+  ]);
+  if (settingsRes.error) throw new Error(`Failed to load settings: ${settingsRes.error.message}`);
+  if (projectsRes.error) throw new Error(`Failed to load projects: ${projectsRes.error.message}`);
+
+  const settingsByUser = new Map(
+    (settingsRes.data ?? []).map((s) => [
+      s.user_id as string,
+      { niches: (s.niches_used as number) ?? 0, hasKey: Boolean((s.kie_api_key as string | null)?.trim()) },
+    ]),
+  );
+  const allProjects = (projectsRes.data ?? []) as (ProjectRow & { assembled_url: string | null })[];
+  const projectsByUser = new Map<string, (ProjectRow & { assembled_url: string | null })[]>();
+  for (const p of allProjects) {
+    const list = projectsByUser.get(p.user_id) ?? [];
+    list.push(p);
+    projectsByUser.set(p.user_id, list);
+  }
+  const isDone = (p: { assembled_url: string | null; current_state: number }) =>
+    Boolean(p.assembled_url) || (p.current_state ?? 0) >= BULK_MAIL_FINAL_STATE;
+
+  const matched = paidUsers.filter((u) => {
+    const s = settingsByUser.get(u.id);
+    const accountSetUp = s?.hasKey ?? false;
+    if (phase === "paid-no-setup") return !accountSetUp;
+    // paid-setup-no-video: account fully set up, but never created a
+    // niche — no channel analyzed, hence zero videos.
+    return accountSetUp && (s?.niches ?? 0) === 0;
+  });
+
+  // Unfinished projects of matched users feed the preview table (and the
+  // per-recipient video list in the email itself). Resolve real step
+  // labels, including the state-14 voiceover/generate split.
+  const rows = matched.flatMap((u) => (projectsByUser.get(u.id) ?? []).filter((p) => !isDone(p)));
+  let hasAudio = new Set<string>();
+  const s14 = rows.filter((p) => p.current_state === 14).map((p) => p.id);
+  if (s14.length > 0) {
+    const { data: beats, error: beatErr } = await supabase
+      .from("project_beats")
+      .select("project_id, audio_url")
+      .in("project_id", s14)
+      .not("audio_url", "is", null)
+      .limit(50_000);
+    if (beatErr) throw new Error(`Failed to load beats: ${beatErr.message}`);
+    hasAudio = new Set((beats ?? []).map((b) => b.project_id as string));
+  }
+
+  const recipients: BulkMailRecipient[] = matched.map((u) => {
+    const own = projectsByUser.get(u.id) ?? [];
+    const last =
+      own.map((p) => p.updated_at).sort().at(-1) ??
+      u.last_sign_in_at ??
+      u.created_at ??
+      new Date(0).toISOString();
+    return {
+      userId: u.id,
+      email: u.email as string,
+      name: firstNameFor(u),
+      projectCount: own.length,
+      furthestState: own.reduce((m, p) => Math.max(m, p.current_state ?? 0), 0),
+      lastActivity: last,
+    };
+  });
+  recipients.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
+
+  const videos: BulkMailVideo[] = rows.map((p) => ({
+    projectId: p.id,
+    userId: p.user_id,
+    ownerEmail: (paidUsers.find((u) => u.id === p.user_id)?.email as string) ?? "",
+    title: p.selected_topic?.trim() || p.channel_name?.trim() || "Untitled video",
+    currentState: p.current_state ?? 0,
+    step: resolveStep(p, hasAudio),
+    lastActivity: p.updated_at,
+  }));
+  videos.sort((a, b) => a.lastActivity.localeCompare(b.lastActivity));
+
+  return { recipients, videos };
+}
+
 export async function getBulkMailAudience(
   phase: BulkMailPhase,
   idleHours: number = BULK_MAIL_DEFAULT_IDLE_HOURS,
 ): Promise<BulkMailAudience> {
+  if (isPaidAudience(phase)) return getPaidAudience(phase);
+
   const hours = clampIdleHours(idleHours);
   const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString();
 

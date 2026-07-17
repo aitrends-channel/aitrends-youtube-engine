@@ -21,8 +21,11 @@ export function personalizeBulkMail(text: string, name: string, videoCount = 1):
 // Step-based completion %. current_state can't distinguish Topic/Script
 // (both 6) or Voiceover/Generate (both 14), so the *step label* is passed
 // in from the selected phase rather than derived here.
+// Same formula as the admin videos table (state / 15, capped at 99) so an
+// email never disagrees with the dashboard — every row in these emails is
+// an unfinished video, so 100% would always be a lie.
 export function progressPct(n: number): number {
-  return Math.max(0, Math.min(100, Math.round((n / 16) * 100)));
+  return Math.max(0, Math.min(99, Math.round((n / 15) * 100)));
 }
 
 export interface BulkMailVideoRow {
@@ -37,6 +40,8 @@ export interface BulkMailVideoRow {
 // `step` is the fallback label (the selected phase) for rows without
 // their own — "any"-audience rows carry a resolved per-row step.
 const MAX_TABLE_ROWS = 12;
+// Progress-bar track width; the fill cell is computed in px from pct.
+const BAR_WIDTH_PX = 52;
 function renderVideoTable(videos: BulkMailVideoRow[], step: string): string {
   if (videos.length === 0) return "";
   const shown = videos.slice(0, MAX_TABLE_ROWS);
@@ -50,13 +55,22 @@ function renderVideoTable(videos: BulkMailVideoRow[], step: string): string {
   const rows = shown
     .map((v) => {
       const pct = progressPct(v.currentState);
+      const fillPx = Math.round((BAR_WIDTH_PX * pct) / 100);
       return `
                 <tr>
                   <td style="padding:11px 12px;font-size:13px;color:#dcdcdc;border-top:1px solid rgba(255,255,255,0.06);">${escapeHtml(v.title)}</td>
                   <td style="padding:11px 12px;font-size:13px;color:#a0a0a0;border-top:1px solid rgba(255,255,255,0.06);white-space:nowrap;">${escapeHtml(v.step || step)}</td>
                   <td style="padding:11px 12px;border-top:1px solid rgba(255,255,255,0.06);white-space:nowrap;">
-                    <table cellpadding="0" cellspacing="0" border="0" style="display:inline-block;width:52px;background:#2a2a2a;border-radius:4px;vertical-align:middle;">
-                      <tr><td style="width:${pct}%;height:6px;background:#8b6cf7;border-radius:4px;font-size:0;line-height:0;">&nbsp;</td></tr>
+                    <!-- Fill + remainder cells with PIXEL widths, resolved
+                         here from pct. display:inline-block (and pct-width
+                         cells under it) strips table layout semantics and
+                         collapsed the fill to 0 — inline-table + px widths
+                         renders correctly in browsers and email clients. -->
+                    <table cellpadding="0" cellspacing="0" border="0" width="${BAR_WIDTH_PX}" style="display:inline-table;width:${BAR_WIDTH_PX}px;background:#2a2a2a;border-radius:4px;vertical-align:middle;">
+                      <tr>
+                        ${fillPx > 0 ? `<td width="${fillPx}" style="width:${fillPx}px;height:6px;background:#8b6cf7;border-radius:4px;font-size:0;line-height:0;"></td>` : ""}
+                        ${fillPx < BAR_WIDTH_PX ? `<td width="${BAR_WIDTH_PX - fillPx}" style="width:${BAR_WIDTH_PX - fillPx}px;height:6px;font-size:0;line-height:0;"></td>` : ""}
+                      </tr>
                     </table>
                     <span style="font-size:12px;color:#a0a0a0;padding-left:8px;vertical-align:middle;">${pct}%</span>
                   </td>
