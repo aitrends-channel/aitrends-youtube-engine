@@ -19,11 +19,24 @@ export const dynamic = "force-dynamic";
 
 interface RevenueRow {
   amount_cents: number | null;
+  currency: string | null;
   occurred_at: string | null;
   user_email: string | null;
   plan: string | null;
   event_type: string | null;
   dodo_payment_id: string | null;
+}
+
+// The ledger is (nearly) single-currency: writers store Dodo's USD
+// settlement amount, but EUR/GBP customers settle in their own currency
+// (localized Founder pricing), so those rows are truthfully denominated
+// in eur/gbp. Convert at read time with static approximate rates — at a
+// $40 price point the rounding error is cents. Revisit if non-USD
+// volume ever becomes material.
+const USD_RATE: Record<string, number> = { usd: 1, eur: 1.09, gbp: 1.27 };
+function usdCents(r: RevenueRow): number {
+  const rate = USD_RATE[(r.currency ?? "usd").toLowerCase()] ?? 1;
+  return Math.round((r.amount_cents ?? 0) * rate);
 }
 
 export async function GET() {
@@ -33,7 +46,7 @@ export async function GET() {
   const [eventsRes, cutoffRes, authUsersRes] = await Promise.all([
     supabase
       .from("revenue_events")
-      .select("amount_cents, occurred_at, user_email, plan, event_type, dodo_payment_id")
+      .select("amount_cents, currency, occurred_at, user_email, plan, event_type, dodo_payment_id")
       .order("occurred_at", { ascending: false }),
     // activity_cutoff_at is set by the Launch action on the _global
     // singleton. We surface it as launchedAt so the Revenue tab can
@@ -86,8 +99,8 @@ export async function GET() {
     return true;
   });
 
-  // Total — full lifetime revenue regardless of cutoff.
-  const totalCents = rows.reduce((sum, r) => sum + (r.amount_cents ?? 0), 0);
+  // Total — full lifetime revenue regardless of cutoff, in USD cents.
+  const totalCents = rows.reduce((sum, r) => sum + usdCents(r), 0);
 
   // Rolling-window aggregates. Sourced from revenue_events so the
   // numbers survive user deletion. Caveats:
@@ -105,7 +118,7 @@ export async function GET() {
   const payingEmails = new Set<string>();
   for (const r of rows) {
     const occurred = r.occurred_at ? new Date(r.occurred_at).getTime() : 0;
-    const cents = r.amount_cents ?? 0;
+    const cents = usdCents(r);
     if (now - occurred <= THIRTY_DAYS_MS) mrrCents += cents;
     if (now - occurred <= ONE_YEAR_MS)    arrCents += cents;
     if (r.user_email) payingEmails.add(r.user_email.toLowerCase());
@@ -125,7 +138,7 @@ export async function GET() {
   for (const r of rows) {
     if (!r.occurred_at) continue;
     const month = new Date(r.occurred_at).toISOString().slice(0, 7);
-    monthlyMap.set(month, (monthlyMap.get(month) ?? 0) + (r.amount_cents ?? 0));
+    monthlyMap.set(month, (monthlyMap.get(month) ?? 0) + usdCents(r));
   }
   const last12Months = last12.map((month) => ({
     month,
@@ -136,7 +149,9 @@ export async function GET() {
   // the admin Revenue tab. Full table can be paginated later if
   // anyone needs deeper history.
   const recentEvents = rows.slice(0, 50).map((r) => ({
-    amountCents: r.amount_cents ?? 0,
+    // USD-normalized so the client's $-formatting stays truthful for
+    // the eur/gbp-settled rows.
+    amountCents: usdCents(r),
     occurredAt: r.occurred_at,
     userEmail: r.user_email,
     plan: r.plan,
