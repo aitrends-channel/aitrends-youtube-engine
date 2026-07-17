@@ -50,7 +50,7 @@ const PHASES: { id: string; label: string }[] = [
   { id: "thumbnails", label: "Thumbnails" },
 ];
 
-// Idle-threshold options per column's condition picker.
+// Idle-threshold options per audience mode.
 const PHASE_DURATIONS: { label: string; hours: number }[] = [
   { label: "12 hours", hours: 12 },
   { label: "24 hours", hours: 24 },
@@ -145,17 +145,13 @@ function timeAgo(iso: string): string {
   return `${Math.floor(day / 30)}mo ago`;
 }
 
-// Two composers side by side, differing only in how the audience is
-// picked: column 1 targets users stuck at a specific wizard step; column
-// 2 targets owners of ANY unfinished video idle beyond a duration
-// (phase "any" server-side).
+// Single composer. The audience filters are grouped into one control
+// row — the first select picks the condition ("any unfinished video" or
+// a specific stuck-at step, phase "any" vs step ids server-side), the
+// second the idle duration — so there's exactly one template/composer
+// section instead of the old duplicated two-column layout.
 export function BulkMailPanel() {
-  return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
-      <MailColumn mode="phase" />
-      <MailColumn mode="any" />
-    </div>
-  );
+  return <MailComposer />;
 }
 
 const selectStyle = {
@@ -163,11 +159,21 @@ const selectStyle = {
   boxShadow: "0 1px 3px oklch(0 0 0 / 0.08)",
 } as const;
 
-function MailColumn({ mode }: { mode: "phase" | "any" }) {
-  const anyMode = mode === "any";
-  const [phase, setPhase] = useState<string>(PHASES[0].id);
-  const audiencePhase = anyMode ? "any" : phase;
+function MailComposer() {
+  // "any" targets owners of any unfinished video; a step id targets
+  // users stuck at that step. Both share one grouped filter row.
+  const [phase, setPhase] = useState<string>("any");
+  const anyMode = phase === "any";
+  const audiencePhase = phase;
   const [idleHours, setIdleHours] = useState<number>(24);
+
+  // The duration option lists differ per mode; when a switch strands the
+  // current value on an option that no longer exists, fall back to 24h.
+  function switchPhase(next: string) {
+    const durations = next === "any" ? ANY_DURATIONS : PHASE_DURATIONS;
+    if (!durations.some((d) => d.hours === idleHours)) setIdleHours(24);
+    setPhase(next);
+  }
 
   const swrKey = `/api/admin/bulk-mail/recipients?phase=${audiencePhase}&idleHours=${idleHours}`;
   const { data, isLoading, mutate, isValidating } = useSWR<RecipientsResponse>(swrKey, fetcher);
@@ -177,8 +183,8 @@ function MailColumn({ mode }: { mode: "phase" | "any" }) {
 
   const [templateId, setTemplateId] = useState<string>(TEMPLATES[0].id);
   const activeTemplate = TEMPLATES.find((t) => t.id === templateId) ?? TEMPLATES[0];
-  const [subject, setSubject] = useState<string>(() => templateFor(anyMode ? "any" : PHASES[0].id).subject);
-  const [bodyText, setBodyText] = useState<string>(() => templateFor(anyMode ? "any" : PHASES[0].id).body);
+  const [subject, setSubject] = useState<string>(() => templateFor("any").subject);
+  const [bodyText, setBodyText] = useState<string>(() => templateFor("any").body);
   // Auto-sync the template to the selected step until the admin edits the
   // copy, so the "stuck at the <step> step" line always matches the
   // chosen audience. Once they type, we stop clobbering their message.
@@ -249,53 +255,39 @@ function MailColumn({ mode }: { mode: "phase" | "any" }) {
 
   return (
     <div className="space-y-5">
-      {/* Condition selector — the only piece that differs between columns */}
+      {/* Audience — all filters grouped in one row: the condition
+          (any unfinished video / stuck at a step) and the idle window. */}
       <div>
         <h3 className="text-base font-semibold mb-2" style={{ color: "var(--c-90)" }}>
-          {anyMode ? "Email users with any video in progress stuck for:" : "Email users who meet the following condition:"}
+          Audience
         </h3>
         <div className="flex items-center gap-2 flex-wrap">
-          {anyMode ? (
-            <select
-              value={idleHours}
-              onChange={(e) => { setIdleHours(Number(e.target.value)); setConfirming(false); }}
-              className="px-3 py-2.5 rounded-lg text-base font-semibold outline-none bg-white text-zinc-900 cursor-pointer min-w-[180px]"
-              style={selectStyle}
-            >
-              {ANY_DURATIONS.map((d) => (
-                <option key={d.hours} value={d.hours}>{d.label}</option>
+          <select
+            value={phase}
+            onChange={(e) => { switchPhase(e.target.value); setConfirming(false); }}
+            className="px-3 py-2.5 rounded-lg text-base font-semibold outline-none bg-white text-zinc-900 cursor-pointer min-w-[220px]"
+            style={selectStyle}
+          >
+            <option value="any">Any unfinished video</option>
+            <optgroup label="Stuck at step">
+              {PHASES.map((p) => (
+                <option key={p.id} value={p.id}>Stuck at {p.label}</option>
               ))}
-            </select>
-          ) : (
-            <>
-              <select
-                value={phase}
-                onChange={(e) => { setPhase(e.target.value); setConfirming(false); }}
-                className="px-3 py-2.5 rounded-lg text-base font-semibold outline-none bg-white text-zinc-900 cursor-pointer min-w-[220px]"
-                style={selectStyle}
-              >
-                <optgroup label="Stuck at step">
-                  {PHASES.map((p) => (
-                    <option key={p.id} value={p.id}>Stuck at {p.label}</option>
-                  ))}
-                </optgroup>
-                <option value="__add__" disabled>＋ Add new condition…</option>
-              </select>
+            </optgroup>
+          </select>
 
-              <span className="text-sm" style={{ color: "var(--c-55)" }}>idle for</span>
+          <span className="text-sm" style={{ color: "var(--c-55)" }}>idle for</span>
 
-              <select
-                value={idleHours}
-                onChange={(e) => { setIdleHours(Number(e.target.value)); setConfirming(false); }}
-                className="px-3 py-2.5 rounded-lg text-base font-semibold outline-none bg-white text-zinc-900 cursor-pointer"
-                style={selectStyle}
-              >
-                {PHASE_DURATIONS.map((d) => (
-                  <option key={d.hours} value={d.hours}>{d.label}</option>
-                ))}
-              </select>
-            </>
-          )}
+          <select
+            value={idleHours}
+            onChange={(e) => { setIdleHours(Number(e.target.value)); setConfirming(false); }}
+            className="px-3 py-2.5 rounded-lg text-base font-semibold outline-none bg-white text-zinc-900 cursor-pointer"
+            style={selectStyle}
+          >
+            {(anyMode ? ANY_DURATIONS : PHASE_DURATIONS).map((d) => (
+              <option key={d.hours} value={d.hours}>{d.label}</option>
+            ))}
+          </select>
         </div>
         <p className="text-[11px] mt-2" style={{ color: "var(--c-45)" }}>
           {anyMode
@@ -447,9 +439,8 @@ function MailColumn({ mode }: { mode: "phase" | "any" }) {
         </span>
       </div>
 
-      {/* Audience detail — same recipients list in both columns. The
-          "any" column has no single step, so each row's badge shows the
-          steps of that user's matching videos instead. */}
+      {/* Audience detail. The "any" audience has no single step, so each
+          row's badge shows the steps of that user's matching videos. */}
       <div>
         <p className="text-xs uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
           Recipients{recipients.length > 0 ? ` (${recipients.length})` : ""}
