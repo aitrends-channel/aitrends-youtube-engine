@@ -49,26 +49,30 @@ export type StuckPhaseId = (typeof STUCK_PHASES)[number]["id"];
 //   • paid-setup-no-video — paid, account fully set up, but never
 //                           created a niche (niches_used = 0 — no
 //                           channel analyzed, so no videos either).
-export const PAID_AUDIENCES = [
+export const CUSTOMER_AUDIENCES = [
   { id: "paid-no-setup",       label: "Paid, no setup yet" },
   { id: "paid-setup-no-video", label: "Paid, set up but no video" },
+  { id: "free-inactive-3d",    label: "Free/demo, no activity in 3 days" },
 ] as const;
-export type PaidAudienceId = (typeof PAID_AUDIENCES)[number]["id"];
+export type CustomerAudienceId = (typeof CUSTOMER_AUDIENCES)[number]["id"];
+// The free/demo inactivity window — fixed by the audience definition,
+// not the composer's idle selector.
+export const FREE_INACTIVE_HOURS = 72;
 
 // Full audience id: a concrete wizard phase, "any" — owners of ANY
-// unfinished video idle beyond the cutoff — or a paid-customer slice.
-export type BulkMailPhase = StuckPhaseId | "any" | PaidAudienceId;
+// unfinished video idle beyond the cutoff — or a customer slice.
+export type BulkMailPhase = StuckPhaseId | "any" | CustomerAudienceId;
 
 const PHASE_IDS = new Set<string>(STUCK_PHASES.map((p) => p.id));
-const PAID_IDS = new Set<string>(PAID_AUDIENCES.map((p) => p.id));
+const CUSTOMER_IDS = new Set<string>(CUSTOMER_AUDIENCES.map((p) => p.id));
 export function isStuckPhase(v: unknown): v is StuckPhaseId {
   return typeof v === "string" && PHASE_IDS.has(v);
 }
-export function isPaidAudience(v: unknown): v is PaidAudienceId {
-  return typeof v === "string" && PAID_IDS.has(v);
+export function isCustomerAudience(v: unknown): v is CustomerAudienceId {
+  return typeof v === "string" && CUSTOMER_IDS.has(v);
 }
 export function isBulkMailPhase(v: unknown): v is BulkMailPhase {
-  return v === "any" || isStuckPhase(v) || isPaidAudience(v);
+  return v === "any" || isStuckPhase(v) || isCustomerAudience(v);
 }
 
 export function clampIdleHours(v: unknown): number {
@@ -138,28 +142,32 @@ function resolveStep(p: ProjectRow, state14HasAudio: Set<string>): string {
   return `Step ${n}`;
 }
 
-// Paid-customer audiences. User-first: start from paying accounts, then
-// look at what they have (or haven't) produced. idleHours is ignored on
-// purpose — see PAID_AUDIENCES.
-async function getPaidAudience(phase: PaidAudienceId): Promise<BulkMailAudience> {
+// Customer audiences. User-first: start from accounts, then look at
+// what they have (or haven't) produced. idleHours is ignored on
+// purpose — each audience carries its own definition of relevance
+// (see CUSTOMER_AUDIENCES / FREE_INACTIVE_HOURS).
+async function getCustomerAudience(phase: CustomerAudienceId): Promise<BulkMailAudience> {
   const { data: usersData, error: listErr } = await supabase.auth.admin.listUsers({ perPage: 1000 });
   if (listErr) throw new Error(`listUsers failed: ${listErr.message}`);
-  const paidUsers = usersData.users.filter(
+  const paidPhase = phase !== "free-inactive-3d";
+  const candidates = usersData.users.filter(
     (u) =>
       u.email &&
-      u.app_metadata?.paid === true &&
+      (u.app_metadata?.paid === true) === paidPhase &&
       !isAdminUser(u) &&
       (u.app_metadata as { is_production_test?: boolean }).is_production_test !== true,
   );
-  if (paidUsers.length === 0) return { recipients: [], videos: [] };
-  const paidIds = paidUsers.map((u) => u.id);
+  if (candidates.length === 0) return { recipients: [], videos: [] };
+  const candidateIds = candidates.map((u) => u.id);
 
   const [settingsRes, projectsRes] = await Promise.all([
-    supabase.from("account_settings").select("user_id, niches_used, kie_api_key").in("user_id", paidIds),
+    paidPhase
+      ? supabase.from("account_settings").select("user_id, niches_used, kie_api_key").in("user_id", candidateIds)
+      : Promise.resolve({ data: [], error: null }),
     supabase
       .from("projects")
       .select("id, user_id, current_state, updated_at, selected_topic, channel_name, assembled_url")
-      .in("user_id", paidIds)
+      .in("user_id", candidateIds)
       .limit(10_000),
   ]);
   if (settingsRes.error) throw new Error(`Failed to load settings: ${settingsRes.error.message}`);
@@ -181,7 +189,21 @@ async function getPaidAudience(phase: PaidAudienceId): Promise<BulkMailAudience>
   const isDone = (p: { assembled_url: string | null; current_state: number }) =>
     Boolean(p.assembled_url) || (p.current_state ?? 0) >= BULK_MAIL_FINAL_STATE;
 
-  const matched = paidUsers.filter((u) => {
+  // Latest signal we have that the user touched the product: sign-in or
+  // any project write. Drives the free-inactivity audience.
+  const lastTouchMs = (u: (typeof candidates)[number]): number => {
+    const signIn = u.last_sign_in_at ? new Date(u.last_sign_in_at).getTime() : 0;
+    const proj = (projectsByUser.get(u.id) ?? []).reduce((m, p) => Math.max(m, new Date(p.updated_at).getTime()), 0);
+    return Math.max(signIn, proj);
+  };
+  const inactiveCutoffMs = Date.now() - FREE_INACTIVE_HOURS * 3_600_000;
+
+  const matched = candidates.filter((u) => {
+    if (phase === "free-inactive-3d") {
+      // Free/demo user with no sign-in and no project activity in the
+      // window (never-touched accounts match too).
+      return lastTouchMs(u) < inactiveCutoffMs;
+    }
     const s = settingsByUser.get(u.id);
     const accountSetUp = s?.hasKey ?? false;
     if (phase === "paid-no-setup") return !accountSetUp;
@@ -228,7 +250,7 @@ async function getPaidAudience(phase: PaidAudienceId): Promise<BulkMailAudience>
   const videos: BulkMailVideo[] = rows.map((p) => ({
     projectId: p.id,
     userId: p.user_id,
-    ownerEmail: (paidUsers.find((u) => u.id === p.user_id)?.email as string) ?? "",
+    ownerEmail: (candidates.find((u) => u.id === p.user_id)?.email as string) ?? "",
     title: p.selected_topic?.trim() || p.channel_name?.trim() || "Untitled video",
     currentState: p.current_state ?? 0,
     step: resolveStep(p, hasAudio),
@@ -243,7 +265,7 @@ export async function getBulkMailAudience(
   phase: BulkMailPhase,
   idleHours: number = BULK_MAIL_DEFAULT_IDLE_HOURS,
 ): Promise<BulkMailAudience> {
-  if (isPaidAudience(phase)) return getPaidAudience(phase);
+  if (isCustomerAudience(phase)) return getCustomerAudience(phase);
 
   const hours = clampIdleHours(idleHours);
   const cutoff = new Date(Date.now() - hours * 3_600_000).toISOString();
