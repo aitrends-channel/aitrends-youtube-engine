@@ -86,7 +86,18 @@ export async function POST(req: Request) {
         .eq("beat_number", beatNumber);
 
       const generateFree = isGeminiImageModel(modelId) ? generateGeminiImage : generateCloudflareImage;
-      const { buffer, contentType } = await generateFree(imagePrompt, modelId, aspectRatio, user.id);
+      let buffer: ArrayBuffer, contentType: string;
+      try {
+        ({ buffer, contentType } = await generateFree(imagePrompt, modelId, aspectRatio, user.id));
+      } catch (err) {
+        // No task id → nothing will rescue a "generating" beat; flip to
+        // failed before surfacing the error so it doesn't spin forever.
+        await supabase.from("project_beats")
+          .update({ image_status: "failed", image_task_id: null })
+          .eq("project_id", projectId)
+          .eq("beat_number", beatNumber);
+        throw err;
+      }
       const folder = userFolderFor({ id: user.id, email: user.email ?? null });
       const storagePath = `${folder}/${projectId}/images/beat-${beatNumber}_${Date.now()}.jpg`;
       const publicUrl = await uploadBuffer(storagePath, buffer, contentType);
