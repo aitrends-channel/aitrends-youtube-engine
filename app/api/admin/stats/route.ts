@@ -35,7 +35,7 @@ export async function GET() {
     // aggregation below adds into per-date Map buckets, which is
     // commutative — order doesn't change the chart numbers.
     supabase.from("projects").select("id, user_id, channel_name, current_state, selected_topic, created_at, assembled_url, assembly_started_at, assembly_finished_at").order("created_at", { ascending: false }),
-    supabase.from("account_settings").select("user_id, niches_used, niche_limit_override"),
+    supabase.from("account_settings").select("user_id, niches_used, niche_limit_override, kie_api_key"),
     getPlans(),
     supabase.from("product_config").select("activity_cutoff_at").eq("service", "_global").maybeSingle(),
   ]);
@@ -67,7 +67,7 @@ export async function GET() {
   // (column doesn't exist) and every user would silently show 0 niches
   // used. Detect that case and retry without the override column so the
   // numerator still renders correctly; overrides just default to null.
-  let settingsRows: Array<{ user_id: string; niches_used: number; niche_limit_override: number | null }> = [];
+  let settingsRows: Array<{ user_id: string; niches_used: number; niche_limit_override: number | null; has_setup: boolean }> = [];
   if (settingsRes.error) {
     console.warn("[admin/stats] account_settings full select failed; falling back to niches_used only", settingsRes.error);
     const fallback = await supabase.from("account_settings").select("user_id, niches_used");
@@ -78,6 +78,7 @@ export async function GET() {
         user_id: s.user_id as string,
         niches_used: (s.niches_used as number) ?? 0,
         niche_limit_override: null,
+        has_setup: false,
       }));
     }
   } else {
@@ -85,6 +86,9 @@ export async function GET() {
       user_id: s.user_id as string,
       niches_used: (s.niches_used as number) ?? 0,
       niche_limit_override: (s.niche_limit_override as number | null) ?? null,
+      // Account setup = the Setup page's API key saved. Same signal the
+      // bulk-mail paid audiences use.
+      has_setup: Boolean(((s as { kie_api_key?: string | null }).kie_api_key ?? "").trim()),
     }));
   }
   const settingsByUserId = new Map(settingsRows.map((s) => [s.user_id, s]));
@@ -158,6 +162,7 @@ export async function GET() {
         paidAt: (authUser.app_metadata?.paid_at as string | undefined) ?? null,
         planExpiresAt: (authUser.app_metadata?.plan_expires_at as string | undefined) ?? null,
         nichesUsed: settings?.niches_used ?? 0,
+        hasSetup: settings?.has_setup ?? false,
         planDefaultLimit,
         nicheLimitOverride: override,
         effectiveNicheLimit: override !== null ? override : planDefaultLimit,
@@ -184,6 +189,7 @@ export async function GET() {
         paidAt: null,
         planExpiresAt: null,
         nichesUsed: 0,
+        hasSetup: false,
         planDefaultLimit: null,
         nicheLimitOverride: null,
         effectiveNicheLimit: null,
