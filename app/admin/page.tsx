@@ -5433,7 +5433,7 @@ export default function AdminPage() {
               pill (or Total) clears it. Mirrors the Users tab's strip. */}
           {!selectedCostProject && !selectedGeneralProject && (
             <div className="flex flex-wrap gap-2 text-xs">
-              {PROJECT_STATUS_FILTERS.filter((f) => !f.id.includes("-")).map((f) => {
+              {PROJECT_STATUS_FILTERS.map((f) => {
                 const isActive = projectStatusFilter === f.id;
                 const value = f.id === "all" ? projects.length : projects.filter(f.match).length;
                 const tone = f.id === "all"
@@ -5442,7 +5442,11 @@ export default function AdminPage() {
                     ? { accent: "oklch(0.55 0.15 145)", bg: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "oklch(0.55 0.15 145 / 0.3)" }
                     : f.id === "inprogress"
                       ? { accent: "oklch(0.72 0.18 75)", bg: "oklch(0.72 0.18 75 / 0.15)",  color: "oklch(0.6 0.18 75)",  border: "oklch(0.72 0.18 75 / 0.4)" }
-                      : { accent: "oklch(0.72 0.25 285)", bg: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "oklch(0.72 0.25 285 / 0.2)" };
+                      : f.id.includes("-")
+                        // Today/yesterday pills — blue, to read as a time
+                        // slice rather than a pipeline step.
+                        ? { accent: "oklch(0.55 0.15 220)", bg: "oklch(0.55 0.15 220 / 0.12)", color: "oklch(0.5 0.15 220)", border: "oklch(0.55 0.15 220 / 0.3)" }
+                        : { accent: "oklch(0.72 0.25 285)", bg: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "oklch(0.72 0.25 285 / 0.2)" };
                 return (
                   <button
                     key={f.id}
