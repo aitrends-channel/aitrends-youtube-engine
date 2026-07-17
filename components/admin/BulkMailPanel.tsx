@@ -57,6 +57,8 @@ const CUSTOMER_AUDIENCE_LABELS: Record<string, string> = {
   "paid-no-setup": "Paid, no setup",
   "paid-setup-no-video": "Paid, no niche",
   "free-inactive-3d": "Free/demo inactive 3d+",
+  // Backfilled campaigns from before the ledger recorded audiences.
+  "unknown": "Unrecorded audience",
 };
 function audienceLabelFor(phase: string): string {
   if (phase === "any") return "Any unfinished video";
@@ -98,13 +100,136 @@ function timeAgo(iso: string): string {
   return `${Math.floor(day / 30)}mo ago`;
 }
 
-// Single composer. The audience filters are grouped into one control
-// row — the first select picks the condition ("any unfinished video" or
-// a specific stuck-at step, phase "any" vs step ids server-side), the
-// second the idle duration — so there's exactly one template/composer
-// section instead of the old duplicated two-column layout.
+// Two tabs: "Audience" is the composer (pick filters, write, send);
+// "History" is the anti-spam view — every audience filter with when it
+// was last emailed, plus the full send log.
 export function BulkMailPanel() {
-  return <MailComposer />;
+  const [tab, setTab] = useState<"audience" | "history">("audience");
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-1 p-1 rounded-xl w-full"
+        style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+        {(["audience", "history"] as const).map((id) => (
+          <button key={id} onClick={() => setTab(id)}
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer capitalize"
+            style={tab === id
+              ? { background: "oklch(0.62 0.15 220)", color: "white", boxShadow: "0 2px 8px oklch(0.62 0.15 220 / 0.35)" }
+              : { color: "oklch(0.50 0 0)" }}
+          >
+            {id}
+          </button>
+        ))}
+      </div>
+      {/* Both stay mounted so drafts survive tab switches. */}
+      <div style={{ display: tab === "audience" ? undefined : "none" }}><MailComposer /></div>
+      <div style={{ display: tab === "history" ? undefined : "none" }}><HistoryView /></div>
+    </div>
+  );
+}
+
+// History tab: one row per audience filter with its last-send recency,
+// then the detailed send log.
+function HistoryView() {
+  const { data: sendsData } = useSWR<{ sends: SendHistoryRow[]; note?: string }>(
+    "/api/admin/bulk-mail/sends", fetcher,
+  );
+  const { data: tplData } = useSWR<{ templates: BulkMailTemplate[] }>(
+    "/api/admin/bulk-mail/templates", fetcher,
+  );
+  const sends = sendsData?.sends ?? [];
+  const templates = tplData?.templates ?? DEFAULT_BULK_MAIL_TEMPLATES;
+
+  // Every audience the composer offers, in composer order.
+  const allAudiences: { id: string; label: string }[] = [
+    { id: "any", label: "Any unfinished video" },
+    ...BULK_MAIL_STEP_OPTIONS.map((p) => ({ id: p.id, label: `Stuck at ${p.label}` })),
+    { id: "paid-no-setup", label: "Paid users with no setup" },
+    { id: "paid-setup-no-video", label: "Paid users with setup but zero video" },
+    { id: "free-inactive-3d", label: "Free/demo users inactive 3+ days" },
+  ];
+
+  const byPhase = new Map<string, SendHistoryRow[]>();
+  for (const s of sends) {
+    const list = byPhase.get(s.phase) ?? [];
+    list.push(s);
+    byPhase.set(s.phase, list);
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Per-audience recency — the "are we about to spam?" answer. */}
+      <div>
+        <p className="text-xs uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
+          Last email per audience
+        </p>
+        {sendsData?.note && (
+          <p className="text-xs mb-2" style={{ color: "oklch(0.55 0.15 65)" }}>{sendsData.note}</p>
+        )}
+        <ul className="rounded-xl divide-y overflow-hidden"
+          style={{ border: "1px solid var(--bd-7)", background: "oklch(0 0 0 / 0.02)" }}>
+          {allAudiences.map((a) => {
+            const list = byPhase.get(a.id) ?? [];
+            const last = list[0]; // sends arrive newest-first
+            const lastMs = last ? new Date(last.createdAt).getTime() : null;
+            const recent = lastMs !== null && Date.now() - lastMs <= 7 * 24 * 60 * 60 * 1000;
+            return (
+              <li key={a.id} className="px-3 py-2 flex items-center gap-3 flex-wrap" style={{ borderColor: "var(--bd-7)" }}>
+                <span className="text-sm font-medium" style={{ color: "var(--c-85)" }}>{a.label}</span>
+                {list.length > 0 && (
+                  <span className="text-[11px]" style={{ color: "var(--c-45)" }}>
+                    {list.length} send{list.length === 1 ? "" : "s"}
+                  </span>
+                )}
+                <span className="text-xs ml-auto font-semibold tabular-nums"
+                  style={{ color: last ? (recent ? "oklch(0.55 0.15 65)" : "var(--c-55)") : "var(--c-35)" }}>
+                  {last
+                    ? `last sent ${timeAgo(last.createdAt)} · ${last.sentCount} user${last.sentCount === 1 ? "" : "s"}`
+                    : "never emailed"}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+        <p className="text-[11px] mt-2" style={{ color: "var(--c-45)" }}>
+          Amber = emailed within the last 7 days. Sends from before the history ledger (or with an unrecorded audience) appear only in the log below.
+        </p>
+      </div>
+
+      {/* Full send log */}
+      <div>
+        <p className="text-xs uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
+          Send log{sends.length > 0 ? ` (${sends.length})` : ""}
+        </p>
+        {sends.length === 0 ? (
+          <p className="text-xs py-2 italic" style={{ color: "var(--c-40)" }}>No bulk emails sent yet.</p>
+        ) : (
+          <ul className="rounded-xl divide-y overflow-hidden"
+            style={{ border: "1px solid var(--bd-7)", background: "oklch(0 0 0 / 0.02)" }}>
+            {sends.map((s) => (
+              <li key={s.id} className="px-3 py-2 flex items-center gap-2.5 flex-wrap" style={{ borderColor: "var(--bd-7)" }}>
+                <span className="text-[11px] px-1.5 py-0.5 rounded font-semibold shrink-0"
+                  style={{ background: "oklch(0.62 0.15 220 / 0.1)", color: "oklch(0.45 0.13 220)", border: "1px solid oklch(0.62 0.15 220 / 0.3)" }}>
+                  {audienceLabelFor(s.phase)}
+                </span>
+                {s.templateId && (
+                  <span className="text-[11px] px-1.5 py-0.5 rounded font-semibold shrink-0"
+                    style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-55)" }}>
+                    {templates.find((t) => t.id === s.templateId)?.label ?? s.templateId}
+                  </span>
+                )}
+                <span className="text-sm min-w-0 truncate" style={{ color: "var(--c-80)" }} title={s.subject}>
+                  {s.subject}
+                </span>
+                <span className="text-xs ml-auto shrink-0 tabular-nums" style={{ color: "var(--c-50)" }}>
+                  {s.sentCount} sent{s.failedCount > 0 ? ` · ${s.failedCount} failed` : ""} · {timeAgo(s.createdAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
 }
 
 const selectStyle = {
@@ -569,44 +694,6 @@ function MailComposer() {
         )}
       </div>
 
-      {/* Send history — every bulk email category ever sent, newest
-          first, so it's obvious who was contacted when. */}
-      <div>
-        <p className="text-xs uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
-          Send history{sends.length > 0 ? ` (${sends.length})` : ""}
-        </p>
-        {sendsData?.note ? (
-          <p className="text-xs py-2" style={{ color: "var(--c-45)" }}>{sendsData.note}</p>
-        ) : sends.length === 0 ? (
-          <p className="text-xs py-2 italic" style={{ color: "var(--c-40)" }}>No bulk emails sent yet.</p>
-        ) : (
-          <ul
-            className="rounded-xl divide-y overflow-hidden"
-            style={{ border: "1px solid var(--bd-7)", background: "oklch(0 0 0 / 0.02)" }}
-          >
-            {sends.map((s) => (
-              <li key={s.id} className="px-3 py-2 flex items-center gap-2.5 flex-wrap" style={{ borderColor: "var(--bd-7)" }}>
-                <span className="text-[11px] px-1.5 py-0.5 rounded font-semibold shrink-0"
-                  style={{ background: "oklch(0.62 0.15 220 / 0.1)", color: "oklch(0.45 0.13 220)", border: "1px solid oklch(0.62 0.15 220 / 0.3)" }}>
-                  {audienceLabelFor(s.phase)}
-                </span>
-                {s.templateId && (
-                  <span className="text-[11px] px-1.5 py-0.5 rounded font-semibold shrink-0"
-                    style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-55)" }}>
-                    {templates.find((t) => t.id === s.templateId)?.label ?? s.templateId}
-                  </span>
-                )}
-                <span className="text-sm min-w-0 truncate" style={{ color: "var(--c-80)" }} title={s.subject}>
-                  {s.subject}
-                </span>
-                <span className="text-xs ml-auto shrink-0 tabular-nums" style={{ color: "var(--c-50)" }}>
-                  {s.sentCount} sent{s.failedCount > 0 ? ` · ${s.failedCount} failed` : ""} · {timeAgo(s.createdAt)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
     </div>
   );
 }
