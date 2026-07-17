@@ -220,10 +220,17 @@ export async function GET() {
       channelName: p.channel_name ?? null,
       selectedTopic: p.selected_topic ?? null,
       currentState: state,
-      phaseLabel: PHASE_LABELS[state] ?? "Setup",
+      // State 6 is shared by the Topic and Script steps; a chosen topic
+      // means the user has moved on to the script. Same signal the
+      // bulk-mail audience queries use.
+      phaseLabel: state === 6 && p.selected_topic ? "Script" : (PHASE_LABELS[state] ?? "Setup"),
       phasePath: PHASE_PATHS[state] ?? "channel",
       progress: Math.min(100, Math.round((state / 15) * 100)),
       createdAt: p.created_at,
+      // When the video finished assembling — feeds the "Completed
+      // today/yesterday" filters. Null for incomplete projects and for
+      // completions that pre-date migration 049_assembly_timing.
+      completedAt: state >= 15 ? (finished ?? null) : null,
       assembleSeconds,
     };
   });

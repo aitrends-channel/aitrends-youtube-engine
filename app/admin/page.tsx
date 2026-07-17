@@ -29,6 +29,42 @@ const PHASE_PATHS: Record<number, string> = {
   11: "visuals", 12: "visuals", 13: "prompts", 14: "generate", 15: "assemble",
 };
 
+// True when the timestamp falls on the local calendar day `dayOffset`
+// days from today (0 = today, -1 = yesterday). Local time on purpose —
+// "today" should mean the admin's today, not UTC's.
+function isOnLocalDay(iso: string | null, dayOffset: number): boolean {
+  if (!iso) return false;
+  const d = new Date(iso);
+  const ref = new Date();
+  ref.setDate(ref.getDate() + dayOffset);
+  return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth() && d.getDate() === ref.getDate();
+}
+
+// Status filter for the Videos tab. Step ranges mirror PHASE_LABELS /
+// PHASE_PATHS so filtering agrees with the Phase column the table shows.
+// State 6 is shared by Topic and Script — split by selected_topic, the
+// same signal the bulk-mail audience queries use. "In progress" matches
+// the "Videos in Progress" stat card (started but not complete).
+// "Completed today/yesterday" uses completedAt (assembly finish), so
+// completions that pre-date the timing migration won't match — those are
+// all old anyway. "Started" = project created.
+type StatusFilterRow = { currentState: number; selectedTopic: string | null; createdAt: string; completedAt: string | null };
+const PROJECT_STATUS_FILTERS: { id: string; label: string; match: (p: StatusFilterRow) => boolean }[] = [
+  { id: "all",           label: "All statuses",        match: () => true },
+  { id: "completed",     label: "Completed",           match: (p) => p.currentState >= 15 },
+  { id: "inprogress",    label: "In progress",         match: (p) => p.currentState > 1 && p.currentState < 15 },
+  { id: "completed-today",     label: "Completed today",     match: (p) => p.currentState >= 15 && isOnLocalDay(p.completedAt, 0) },
+  { id: "started-today",       label: "Started today",       match: (p) => isOnLocalDay(p.createdAt, 0) },
+  { id: "completed-yesterday", label: "Completed yesterday", match: (p) => p.currentState >= 15 && isOnLocalDay(p.completedAt, -1) },
+  { id: "started-yesterday",   label: "Started yesterday",   match: (p) => isOnLocalDay(p.createdAt, -1) },
+  { id: "channel",    label: "At Channel",    match: (p) => p.currentState <= 5 },
+  { id: "topic",      label: "At Topic",      match: (p) => p.currentState === 6 && !p.selectedTopic },
+  { id: "script",     label: "At Script",     match: (p) => p.currentState === 6 && !!p.selectedTopic },
+  { id: "visuals",    label: "At Visuals",    match: (p) => [7, 8, 11, 12].includes(p.currentState) },
+  { id: "prompts",    label: "At Prompts",    match: (p) => [9, 10, 13].includes(p.currentState) },
+  { id: "generate",   label: "At Generate",   match: (p) => p.currentState === 14 },
+];
+
 const STATS_KEY = "/api/admin/stats";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
@@ -349,6 +385,9 @@ interface AdminProject {
   phasePath: string;
   progress: number;
   createdAt: string;
+  // When the video finished assembling. Null for incomplete projects
+  // and completions that pre-date migration 049_assembly_timing.
+  completedAt: string | null;
   // Wall-clock seconds between worker pickup and terminal status
   // (done/stopped/failed). Null when the project hasn't completed
   // an assembly yet, or pre-dates migration 049_assembly_timing.
@@ -4373,6 +4412,9 @@ export default function AdminPage() {
   // so one filter feeds both tables. Matches against title (topic),
   // channel name, user email, and project ID for flexibility.
   const [projectSearch, setProjectSearch] = useState("");
+  // Status/step dropdown next to the search box. Applies to both Videos
+  // sub-tabs, same as the search, since they render the same rows.
+  const [projectStatusFilter, setProjectStatusFilter] = useState("all");
   // Sub-tabs inside the Videos section. General = existing table.
   // Cost = the per-step usage breakdown introduced by the
   // project_costs ledger.
@@ -4548,7 +4590,7 @@ export default function AdminPage() {
     return tb - ta;
   });
   const projectSearchLower = projectSearch.trim().toLowerCase();
-  const filteredProjects = projectSearchLower
+  const searchedProjects = projectSearchLower
     ? projects.filter((p) => {
         const haystack = [
           p.selectedTopic,
@@ -4559,6 +4601,8 @@ export default function AdminPage() {
         return haystack.includes(projectSearchLower);
       })
     : projects;
+  const statusFilter = PROJECT_STATUS_FILTERS.find((f) => f.id === projectStatusFilter) ?? PROJECT_STATUS_FILTERS[0];
+  const filteredProjects = statusFilter.id === "all" ? searchedProjects : searchedProjects.filter(statusFilter.match);
   const sortedProjects = [...filteredProjects].sort((a, b) => {
     const ta = a.createdAt ? new Date(a.createdAt).getTime() : -Infinity;
     const tb = b.createdAt ? new Date(b.createdAt).getTime() : -Infinity;
@@ -5379,30 +5423,43 @@ export default function AdminPage() {
               tab choice feels primary and the filter feels like a
               refinement on whatever view is active. */}
           {!selectedCostProject && !selectedGeneralProject && (
-            <div className="relative">
-              <input
-                type="search"
-                value={projectSearch}
-                onChange={(e) => { setProjectSearch(e.target.value); setProjectsPage(1); setSelectedCostProject(null); setSelectedGeneralProject(null); }}
-                placeholder="Search videos by topic, channel, user, or project ID…"
-                className="w-full pl-9 pr-3 py-2.5 rounded-lg text-sm outline-none transition-all"
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+              <div className="relative flex-1 min-w-[220px]">
+                <input
+                  type="search"
+                  value={projectSearch}
+                  onChange={(e) => { setProjectSearch(e.target.value); setProjectsPage(1); setSelectedCostProject(null); setSelectedGeneralProject(null); }}
+                  placeholder="Search videos by topic, channel, user, or project ID…"
+                  className="w-full pl-9 pr-3 py-2.5 rounded-lg text-sm outline-none transition-all"
+                  style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
+                  onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
+                  onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
+                />
+                <svg className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--c-40)" }}>
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+                {projectSearch && (
+                  <button
+                    onClick={() => { setProjectSearch(""); setProjectsPage(1); setSelectedCostProject(null); setSelectedGeneralProject(null); }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-xs cursor-pointer transition-opacity hover:opacity-80"
+                    style={{ color: "var(--c-50)", background: "oklch(0 0 0 / 0.05)" }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              <select
+                value={projectStatusFilter}
+                onChange={(e) => { setProjectStatusFilter(e.target.value); setProjectsPage(1); setSelectedCostProject(null); setSelectedGeneralProject(null); }}
+                title="Filter videos by status or wizard step"
+                className="px-3 py-2.5 rounded-lg text-sm outline-none cursor-pointer shrink-0"
                 style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
-                onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
-                onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
-              />
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: "var(--c-40)" }}>
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              {projectSearch && (
-                <button
-                  onClick={() => { setProjectSearch(""); setProjectsPage(1); setSelectedCostProject(null); setSelectedGeneralProject(null); }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded text-xs cursor-pointer transition-opacity hover:opacity-80"
-                  style={{ color: "var(--c-50)", background: "oklch(0 0 0 / 0.05)" }}
-                >
-                  Clear
-                </button>
-              )}
+              >
+                {PROJECT_STATUS_FILTERS.map((f) => (
+                  <option key={f.id} value={f.id}>{f.label}</option>
+                ))}
+              </select>
             </div>
           )}
 
@@ -5520,7 +5577,9 @@ export default function AdminPage() {
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No projects yet.</div>
           ) : sortedProjects.length === 0 ? (
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>
-              No videos match &ldquo;{projectSearch}&rdquo;.
+              {projectSearchLower
+                ? <>No videos match &ldquo;{projectSearch}&rdquo;{statusFilter.id !== "all" ? ` in ${statusFilter.label}` : ""}.</>
+                : <>No videos in {statusFilter.label}.</>}
             </div>
           ) : (
             <div className="rounded-2xl overflow-x-auto w-full max-w-full"
