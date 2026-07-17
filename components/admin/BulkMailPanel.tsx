@@ -109,14 +109,14 @@ export function BulkMailPanel() {
     <div className="space-y-5">
       <div className="flex items-center gap-1 p-1 rounded-xl w-full"
         style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
-        {(["audience", "history"] as const).map((id) => (
+        {([["audience", "Send"], ["history", "History"]] as const).map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)}
-            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer capitalize"
+            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
             style={tab === id
               ? { background: "oklch(0.62 0.15 220)", color: "white", boxShadow: "0 2px 8px oklch(0.62 0.15 220 / 0.35)" }
               : { color: "oklch(0.50 0 0)" }}
           >
-            {id}
+            {label}
           </button>
         ))}
       </div>
