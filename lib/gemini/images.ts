@@ -48,21 +48,36 @@ export async function generateGeminiImage(
   }
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "x-goog-api-key": gemini_api_key, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseModalities: ["IMAGE"],
-          imageConfig: { aspectRatio: GEMINI_IMAGE_RATIOS.includes(aspectRatio) ? aspectRatio : "1:1" },
-        },
-      }),
-    });
-  } catch (err) {
-    throw new GeminiImageError(`Google AI Studio network error: ${err instanceof Error ? err.message : String(err)}`);
+  const doFetch = async (): Promise<Response> => {
+    try {
+      return await fetch(url, {
+        method: "POST",
+        headers: { "x-goog-api-key": gemini_api_key, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseModalities: ["IMAGE"],
+            imageConfig: { aspectRatio: GEMINI_IMAGE_RATIOS.includes(aspectRatio) ? aspectRatio : "1:1" },
+          },
+        }),
+      });
+    } catch (err) {
+      throw new GeminiImageError(`Google AI Studio network error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  // AI Studio's free tier has a low PER-MINUTE rate, and bulk generation
+  // fires several beats at once — so first-attempt 429s are normal burst
+  // throttling, not an exhausted key. Retry twice with backoff (honoring
+  // Retry-After up to 20s) before surfacing the 429 to the user.
+  let res = await doFetch();
+  for (let attempt = 0; res.status === 429 && attempt < 2; attempt++) {
+    const retryAfter = Number(res.headers.get("retry-after"));
+    const waitMs = Number.isFinite(retryAfter) && retryAfter > 0
+      ? Math.min(retryAfter * 1000, 20_000)
+      : 4_000 * (attempt + 1) + Math.random() * 2_000;
+    await new Promise((r) => setTimeout(r, waitMs));
+    res = await doFetch();
   }
 
   if (!res.ok) {
