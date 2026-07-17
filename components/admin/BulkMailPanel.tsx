@@ -40,6 +40,31 @@ interface RecipientsResponse {
   idleHours: number;
 }
 
+interface SendHistoryRow {
+  id: string;
+  phase: string;
+  templateId: string | null;
+  subject: string;
+  includeVideoTable: boolean;
+  recipientEmails: string[];
+  sentCount: number;
+  failedCount: number;
+  createdAt: string;
+}
+
+// Human label for an audience id in the history list.
+const CUSTOMER_AUDIENCE_LABELS: Record<string, string> = {
+  "paid-no-setup": "Paid, no setup",
+  "paid-setup-no-video": "Paid, no niche",
+  "free-inactive-3d": "Free/demo inactive 3d+",
+};
+function audienceLabelFor(phase: string): string {
+  if (phase === "any") return "Any unfinished video";
+  const step = BULK_MAIL_STEP_OPTIONS.find((p) => p.id === phase);
+  if (step) return `Stuck at ${step.label}`;
+  return CUSTOMER_AUDIENCE_LABELS[phase] ?? phase;
+}
+
 // Wizard phases (ids match STUCK_PHASES in lib/admin/bulk-mail-audience).
 // Sourced from the client-safe defaults module so this component never
 // imports the server-only audience module.
@@ -106,6 +131,27 @@ function MailComposer() {
     "/api/admin/bulk-mail/templates", fetcher,
   );
   const templates = tplData?.templates ?? DEFAULT_BULK_MAIL_TEMPLATES;
+
+  // Send history (bulk_mail_sends) — the anti-spam backbone: powers the
+  // history list below and the "emailed Xd ago" badges on recipients.
+  const { data: sendsData, mutate: mutateSends } = useSWR<{ sends: SendHistoryRow[]; note?: string }>(
+    "/api/admin/bulk-mail/sends", fetcher,
+  );
+  const sends = sendsData?.sends ?? [];
+  // email (lowercased) → most recent bulk-send timestamp.
+  const lastEmailedAt = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of sends) {
+      const t = new Date(s.createdAt).getTime();
+      for (const e of s.recipientEmails) {
+        const key = e.toLowerCase();
+        const prev = m.get(key);
+        if (!prev || t > prev) m.set(key, t);
+      }
+    }
+    return m;
+  }, [sends]);
+  const RECENTLY_EMAILED_MS = 7 * 24 * 60 * 60 * 1000;
 
   const [templateId, setTemplateId] = useState<string>(DEFAULT_BULK_MAIL_TEMPLATES[0].id);
   const activeTemplate = templates.find((t) => t.id === templateId) ?? templates[0];
@@ -211,7 +257,7 @@ function MailComposer() {
       const res = await fetch("/api/admin/bulk-mail/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject: subject.trim(), bodyText: bodyText.trim(), phase: audiencePhase, idleHours, includeVideoTable }),
+        body: JSON.stringify({ subject: subject.trim(), bodyText: bodyText.trim(), phase: audiencePhase, idleHours, includeVideoTable, templateId }),
       });
       const d = (await res.json().catch(() => ({}))) as { sent?: number; failedCount?: number; error?: string };
       if (!res.ok) throw new Error(d.error ?? `Send failed (${res.status})`);
@@ -222,6 +268,7 @@ function MailComposer() {
       setBodyText("");
       setConfirming(false);
       mutate();
+      mutateSends();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Send failed");
     } finally {
@@ -460,6 +507,17 @@ function MailComposer() {
         <span className="text-xs" style={{ color: "var(--c-45)" }}>
           {!composed ? "Add a subject and message to enable sending." : "One message per user, sent from support@heclus.com."}
         </span>
+        {(() => {
+          const recentCount = recipients.filter((r) => {
+            const t = lastEmailedAt.get(r.email.toLowerCase());
+            return t !== undefined && Date.now() - t <= RECENTLY_EMAILED_MS;
+          }).length;
+          return recentCount > 0 ? (
+            <span className="text-xs font-semibold w-full sm:w-auto" style={{ color: "oklch(0.55 0.15 65)" }}>
+              ⚠ {recentCount} of {recipients.length} matched user{recipients.length === 1 ? "" : "s"} already received a bulk email in the last 7 days.
+            </span>
+          ) : null;
+        })()}
       </div>
 
       {/* Audience detail. The "any" audience has no single step, so each
@@ -483,12 +541,21 @@ function MailComposer() {
           >
             {recipients.map((r) => {
               const label = anyMode || customerMode ? stepsFor(videos, r.userId) : activePhaseLabel;
+              const lastMailed = lastEmailedAt.get(r.email.toLowerCase());
+              const mailedRecently = lastMailed !== undefined && Date.now() - lastMailed <= RECENTLY_EMAILED_MS;
               return (
                 <li key={r.userId} className="px-3 py-2 flex items-center gap-3 flex-wrap" style={{ borderColor: "var(--bd-7)" }}>
                   <span className="text-sm font-medium min-w-0 truncate" style={{ color: "var(--c-90)" }}>{r.email}</span>
                   {label && (
                     <span className="text-[11px] px-1.5 py-0.5 rounded font-semibold" style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-55)" }}>
                       {label}
+                    </span>
+                  )}
+                  {mailedRecently && (
+                    <span className="text-[11px] px-1.5 py-0.5 rounded font-semibold"
+                      title="This user already received a bulk email recently"
+                      style={{ background: "oklch(0.72 0.18 65 / 0.12)", color: "oklch(0.5 0.15 65)", border: "1px solid oklch(0.72 0.18 65 / 0.3)" }}>
+                      emailed {timeAgo(new Date(lastMailed).toISOString())}
                     </span>
                   )}
                   {r.projectCount > 1 && (
@@ -498,6 +565,45 @@ function MailComposer() {
                 </li>
               );
             })}
+          </ul>
+        )}
+      </div>
+
+      {/* Send history — every bulk email category ever sent, newest
+          first, so it's obvious who was contacted when. */}
+      <div>
+        <p className="text-xs uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
+          Send history{sends.length > 0 ? ` (${sends.length})` : ""}
+        </p>
+        {sendsData?.note ? (
+          <p className="text-xs py-2" style={{ color: "var(--c-45)" }}>{sendsData.note}</p>
+        ) : sends.length === 0 ? (
+          <p className="text-xs py-2 italic" style={{ color: "var(--c-40)" }}>No bulk emails sent yet.</p>
+        ) : (
+          <ul
+            className="rounded-xl divide-y overflow-hidden"
+            style={{ border: "1px solid var(--bd-7)", background: "oklch(0 0 0 / 0.02)" }}
+          >
+            {sends.map((s) => (
+              <li key={s.id} className="px-3 py-2 flex items-center gap-2.5 flex-wrap" style={{ borderColor: "var(--bd-7)" }}>
+                <span className="text-[11px] px-1.5 py-0.5 rounded font-semibold shrink-0"
+                  style={{ background: "oklch(0.62 0.15 220 / 0.1)", color: "oklch(0.45 0.13 220)", border: "1px solid oklch(0.62 0.15 220 / 0.3)" }}>
+                  {audienceLabelFor(s.phase)}
+                </span>
+                {s.templateId && (
+                  <span className="text-[11px] px-1.5 py-0.5 rounded font-semibold shrink-0"
+                    style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-55)" }}>
+                    {templates.find((t) => t.id === s.templateId)?.label ?? s.templateId}
+                  </span>
+                )}
+                <span className="text-sm min-w-0 truncate" style={{ color: "var(--c-80)" }} title={s.subject}>
+                  {s.subject}
+                </span>
+                <span className="text-xs ml-auto shrink-0 tabular-nums" style={{ color: "var(--c-50)" }}>
+                  {s.sentCount} sent{s.failedCount > 0 ? ` · ${s.failedCount} failed` : ""} · {timeAgo(s.createdAt)}
+                </span>
+              </li>
+            ))}
           </ul>
         )}
       </div>

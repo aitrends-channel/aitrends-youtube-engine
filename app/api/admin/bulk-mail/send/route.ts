@@ -4,6 +4,7 @@ import { getBulkMailAudience, isBulkMailPhase, clampIdleHours, STUCK_PHASES } fr
 import { sendEmail } from "@/lib/email/smtp";
 import { renderBulkMailHtml, personalizeBulkMail } from "@/lib/email/bulk-mail-template";
 import { stuckLineFor } from "@/lib/admin/bulk-mail-template-defaults";
+import { supabase } from "@/lib/supabase/client";
 
 export const dynamic = "force-dynamic";
 // SMTP sends run serially to respect provider rate limits, so give the
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
   const guard = await requireAdmin();
   if (!guard.ok) return guard.response;
 
-  let body: { subject?: unknown; bodyText?: unknown; phase?: unknown; idleHours?: unknown; includeVideoTable?: unknown };
+  let body: { subject?: unknown; bodyText?: unknown; phase?: unknown; idleHours?: unknown; includeVideoTable?: unknown; templateId?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -72,6 +73,7 @@ export async function POST(req: Request) {
   // a table of *their* stuck videos; the raw text is sent as the fallback
   // part. Per-recipient failures are collected, never abort the whole run.
   let sent = 0;
+  const sentEmails: string[] = [];
   const failed: { email: string; error: string }[] = [];
   for (const r of recipients) {
     try {
@@ -89,10 +91,29 @@ export async function POST(req: Request) {
         html: renderBulkMailHtml(persSubject, persBody, includeVideoTable ? userVideos : [], stepLabel),
       });
       sent += 1;
+      sentEmails.push(r.email.toLowerCase());
     } catch (e) {
       failed.push({ email: r.email, error: e instanceof Error ? e.message : "send failed" });
     }
   }
+
+  // Campaign-level history row (bulk_mail_sends, migration 095) — feeds
+  // the panel's send history and its "emailed Xd ago" anti-spam badges.
+  // Fail-soft: the emails went out; the ledger write is best-effort.
+  const templateId = typeof body.templateId === "string" && /^[a-z0-9-]{1,60}$/.test(body.templateId)
+    ? body.templateId
+    : null;
+  const { error: histErr } = await supabase.from("bulk_mail_sends").insert({
+    phase: body.phase,
+    template_id: templateId,
+    subject,
+    body_text: bodyText,
+    include_video_table: includeVideoTable,
+    recipient_emails: sentEmails,
+    sent_count: sent,
+    failed_count: failed.length,
+  });
+  if (histErr) console.warn("[bulk-mail/send] history insert failed:", histErr.message);
 
   return NextResponse.json({
     sent,
