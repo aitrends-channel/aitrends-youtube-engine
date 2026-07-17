@@ -29,6 +29,14 @@ const PHASE_PATHS: Record<number, string> = {
   11: "visuals", 12: "visuals", 13: "thumbnails", 14: "generate", 15: "assemble",
 };
 
+// "62% of total" line for the stats cards — same wording as the client
+// dashboard's completed/in-progress cards. Undefined while stats load
+// (or with zero videos) so the card just omits the line.
+function pctOfTotal(n: number | undefined, total: number | undefined): string | undefined {
+  if (n === undefined || total === undefined || total <= 0) return undefined;
+  return `${Math.round((n / total) * 100)}% of total`;
+}
+
 // True when the timestamp falls on the local calendar day `dayOffset`
 // days from today (0 = today, -1 = yesterday). Local time on purpose —
 // "today" should mean the admin's today, not UTC's.
@@ -476,11 +484,15 @@ function StatCard({
   value,
   icon: Icon,
   accent,
+  hint,
 }: {
   label: string;
   value: number | undefined;
   icon: React.ElementType;
   accent?: "purple" | "green" | "amber";
+  // Small muted line under the value — e.g. "62% of total", matching
+  // the client dashboard's completed/in-progress cards.
+  hint?: string;
 }) {
   const valueColor = accent === "purple"
     ? "oklch(0.72 0.25 285)"
@@ -523,8 +535,13 @@ function StatCard({
           <Icon size={15} style={{ color: iconColor }} />
         </div>
       </div>
-      <div className="text-3xl font-black" style={{ color: valueColor }}>
-        {value === undefined ? "—" : value.toLocaleString()}
+      <div>
+        <div className="text-3xl font-black" style={{ color: valueColor }}>
+          {value === undefined ? "—" : value.toLocaleString()}
+        </div>
+        {hint && (
+          <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>{hint}</p>
+        )}
       </div>
     </div>
   );
@@ -4795,8 +4812,10 @@ export default function AdminPage() {
             <StatCard label="Access Granted"    value={stats?.accessGranted}    icon={Users}         accent="purple" />
             <StatCard label="Active Accounts"   value={stats?.activeAccounts}   icon={UserCheck}                     />
             <StatCard label="Total Videos"      value={stats?.totalProjects}    icon={Film}                          />
-            <StatCard label="Videos in Progress" value={stats?.videosInProgress} icon={Clock}        accent="amber"  />
-            <StatCard label="Videos Completed"  value={stats?.completed}        icon={CheckCircle2}  accent="green"  />
+            <StatCard label="Videos in Progress" value={stats?.videosInProgress} icon={Clock}        accent="amber"
+              hint={pctOfTotal(stats?.videosInProgress, stats?.totalProjects)} />
+            <StatCard label="Videos Completed"  value={stats?.completed}        icon={CheckCircle2}  accent="green"
+              hint={pctOfTotal(stats?.completed, stats?.totalProjects)} />
           </div>
 
           {/* Full-width: Available Founder promo slots */}
