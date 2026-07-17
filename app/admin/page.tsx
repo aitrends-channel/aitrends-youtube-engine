@@ -375,6 +375,8 @@ interface AdminUser {
   paidAt: string | null;
   planExpiresAt: string | null;
   nichesUsed: number;
+  // Account setup complete = API key saved on the Setup page.
+  hasSetup: boolean;
   planDefaultLimit: number | null;
   nicheLimitOverride: number | null;
   effectiveNicheLimit: number | null;
@@ -544,6 +546,201 @@ function StatCard({
         )}
       </div>
     </div>
+  );
+}
+
+// ── Reports tab ──────────────────────────────────────────────────────
+// One comprehensive read-only report composed from the data the
+// dashboard already loads: activation funnel, growth, engagement,
+// revenue, and pipeline health. All customer-only (admins and pending
+// invites excluded), matching the rest of the dashboard's aggregates.
+function ReportsSection({ stats, users, projects, revenue, activity }: {
+  stats: AdminStats | undefined;
+  users: AdminUser[];
+  projects: AdminProject[];
+  revenue: { totalCents: number; byPlan: Record<string, { cents: number; count: number }>; mrrCents: number; payingUserCount: number; launchedAt: string | null } | undefined;
+  activity: ActivityPoint[];
+}) {
+  const DAY = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const customers = users.filter((u) => !u.isAdmin && u.status !== "Pending");
+  const completedEmails = new Set(projects.filter((p) => p.isComplete && p.userEmail).map((p) => p.userEmail));
+
+  // Activation funnel — each stage is a subset of the previous one in
+  // product terms, so stage-to-stage conversion reads cleanly.
+  const funnel = [
+    { label: "Registered",        count: customers.length },
+    { label: "Account setup",     count: customers.filter((u) => u.hasSetup).length },
+    { label: "Created a niche",   count: customers.filter((u) => u.nichesUsed > 0).length },
+    { label: "Completed a video", count: customers.filter((u) => completedEmails.has(u.email)).length },
+  ];
+  const paidCount = customers.filter((u) => u.status === "Paid").length;
+  const pct = (n: number, d: number) => (d > 0 ? Math.round((n / d) * 100) : 0);
+
+  // Largest stage-to-stage drop, surfaced as the report's headline
+  // insight — the place fixing which moves activation the most.
+  let worstDrop = { from: "", to: "", lost: 0, pctLost: 0 };
+  for (let i = 1; i < funnel.length; i++) {
+    const lost = funnel[i - 1].count - funnel[i].count;
+    const pctLost = pct(lost, funnel[i - 1].count);
+    if (lost > worstDrop.lost) worstDrop = { from: funnel[i - 1].label, to: funnel[i].label, lost, pctLost };
+  }
+
+  const activeWithin = (days: number) =>
+    customers.filter((u) => u.lastSignIn && now - new Date(u.lastSignIn).getTime() <= days * DAY).length;
+  const active7 = activeWithin(7);
+  const active30 = activeWithin(30);
+
+  const sumActivity = (days: number, key: keyof ActivityPoint) =>
+    activity.slice(-days).reduce((s, d) => s + (d[key] as number), 0);
+
+  const inProgress = projects.filter((p) => !p.isComplete && p.currentState > 1);
+  const stepFilters = PROJECT_STATUS_FILTERS.filter((f) =>
+    ["channel", "topic", "script", "visuals", "prompts", "thumbnail", "generate", "assemble"].includes(f.id));
+  const stepCounts = stepFilters
+    .map((f) => ({ label: f.label.replace(/^At /, ""), count: projects.filter((p) => !p.isComplete && f.match(p)).length }))
+    .filter((s) => s.count > 0)
+    .sort((a, b) => b.count - a.count);
+  const maxStep = Math.max(...stepCounts.map((s) => s.count), 1);
+
+  const assembleTimes = projects.map((p) => p.assembleSeconds).filter((s): s is number => s !== null).sort((a, b) => a - b);
+  const median = assembleTimes.length ? assembleTimes[Math.floor(assembleTimes.length / 2)] : null;
+  const fmtDur = (s: number) => (s >= 3600 ? `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m` : s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`);
+
+  const totalRevenue = (revenue?.totalCents ?? 0) / 100;
+  const arpu = revenue?.payingUserCount ? totalRevenue / revenue.payingUserCount : 0;
+  const completionRate = pct(stats?.completed ?? 0, stats?.totalProjects ?? 0);
+  const PLAN_LABEL: Record<string, string> = { founder: "Founder", starter: "Starter", pro: "Pro" };
+
+  const card = "p-4 rounded-2xl space-y-3";
+  const cardStyle = { background: "oklch(0 0 0 / 0.015)", border: "1px solid oklch(0 0 0 / 0.07)" } as const;
+  const h = "text-xs font-medium uppercase tracking-wider";
+  const hStyle = { color: "oklch(0.5 0 0)" } as const;
+  const Row = ({ label, value }: { label: string; value: string }) => (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <span style={{ color: "var(--c-55)" }}>{label}</span>
+      <span className="font-semibold tabular-nums" style={{ color: "var(--c-90)" }}>{value}</span>
+    </div>
+  );
+
+  return (
+    <section id="reports" className="rounded-2xl space-y-5"
+      style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+            style={{ background: "oklch(0.72 0.25 285 / 0.1)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
+            <FileText size={16} style={{ color: "oklch(0.72 0.25 285)" }} />
+          </div>
+          <div>
+            <h2 className="text-lg font-bold text-foreground">Report</h2>
+            <p className="text-xs" style={{ color: "var(--c-42)" }}>
+              Generated {new Date().toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}
+              {revenue?.launchedAt ? ` · data since launch (${new Date(revenue.launchedAt).toLocaleDateString("en", { month: "short", day: "numeric" })})` : ""}
+              {" · customers only"}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Headline numbers */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-[10px]">
+        {[
+          { label: "Users",            value: `${customers.length}` },
+          { label: "Paying",           value: `${paidCount} (${pct(paidCount, customers.length)}%)` },
+          { label: "Total revenue",    value: `$${totalRevenue.toFixed(0)}` },
+          { label: "Videos completed", value: `${stats?.completed ?? 0}` },
+          { label: "Completion rate",  value: `${completionRate}%` },
+          { label: "Active (30d)",     value: `${active30} (${pct(active30, customers.length)}%)` },
+        ].map((s) => (
+          <div key={s.label} className="p-3 rounded-xl text-center" style={cardStyle}>
+            <p className="text-[11px] uppercase tracking-wider mb-1" style={hStyle}>{s.label}</p>
+            <p className="text-xl font-black tabular-nums" style={{ color: "var(--c-90)" }}>{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Headline insight */}
+      {worstDrop.lost > 0 && (
+        <div className="rounded-xl px-4 py-3 text-sm"
+          style={{ background: "oklch(0.6 0.19 25 / 0.07)", border: "1px solid oklch(0.6 0.19 25 / 0.25)", color: "oklch(0.45 0.15 25)" }}>
+          Biggest funnel leak: <strong>{worstDrop.pctLost}%</strong> of users ({worstDrop.lost}) drop between{" "}
+          <strong>{worstDrop.from}</strong> and <strong>{worstDrop.to}</strong>.
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Activation funnel */}
+        <div className={card} style={cardStyle}>
+          <p className={h} style={hStyle}>Activation funnel</p>
+          <div className="space-y-2">
+            {funnel.map((f, i) => (
+              <div key={f.label}>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span style={{ color: "var(--c-70)" }}>{f.label}</span>
+                  <span className="tabular-nums font-semibold" style={{ color: "var(--c-90)" }}>
+                    {f.count}
+                    <span className="font-normal text-xs" style={{ color: "var(--c-45)" }}>
+                      {" "}· {pct(f.count, customers.length)}% of users{i > 0 ? ` · ${pct(f.count, funnel[i - 1].count)}% of prev` : ""}
+                    </span>
+                  </span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(0 0 0 / 0.05)" }}>
+                  <div className="h-full rounded-full" style={{ width: `${pct(f.count, customers.length)}%`, background: "oklch(0.72 0.25 285)" }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <Row label="Paid conversion (of all users)" value={`${paidCount} · ${pct(paidCount, customers.length)}%`} />
+        </div>
+
+        {/* Revenue */}
+        <div className={card} style={cardStyle}>
+          <p className={h} style={hStyle}>Revenue</p>
+          <Row label="Total collected" value={`$${totalRevenue.toFixed(2)}`} />
+          {(["founder", "starter", "pro"] as const).map((p) => (
+            <Row key={p} label={`— ${PLAN_LABEL[p]}`}
+              value={`$${((revenue?.byPlan?.[p]?.cents ?? 0) / 100).toFixed(2)} · ${revenue?.byPlan?.[p]?.count ?? 0} payment${(revenue?.byPlan?.[p]?.count ?? 0) === 1 ? "" : "s"}`} />
+          ))}
+          <Row label="Collected last 30 days" value={`$${((revenue?.mrrCents ?? 0) / 100).toFixed(2)}`} />
+          <Row label="Paying users (ledger)" value={`${revenue?.payingUserCount ?? 0}`} />
+          <Row label="Avg revenue / paying user" value={`$${arpu.toFixed(2)}`} />
+        </div>
+
+        {/* Growth & engagement */}
+        <div className={card} style={cardStyle}>
+          <p className={h} style={hStyle}>Growth &amp; engagement</p>
+          <Row label="New users (7d / 30d)" value={`${sumActivity(7, "users")} / ${sumActivity(30, "users")}`} />
+          <Row label="Niches created (7d / 30d)" value={`${sumActivity(7, "projects")} / ${sumActivity(30, "projects")}`} />
+          <Row label="Videos completed (7d / 30d)" value={`${sumActivity(7, "videos")} / ${sumActivity(30, "videos")}`} />
+          <Row label="Active users (7d)" value={`${active7} · ${pct(active7, customers.length)}%`} />
+          <Row label="Active users (30d)" value={`${active30} · ${pct(active30, customers.length)}%`} />
+          <Row label="Dormant (30d+)" value={`${customers.length - active30} · ${pct(customers.length - active30, customers.length)}%`} />
+        </div>
+
+        {/* Pipeline health */}
+        <div className={card} style={cardStyle}>
+          <p className={h} style={hStyle}>Pipeline health</p>
+          <Row label="Videos total / completed / in progress"
+            value={`${stats?.totalProjects ?? 0} / ${stats?.completed ?? 0} / ${stats?.videosInProgress ?? 0}`} />
+          {median !== null && <Row label="Median assembly time" value={fmtDur(median)} />}
+          {stepCounts.length > 0 && (
+            <div className="space-y-1.5 pt-1">
+              <p className="text-[11px] uppercase tracking-wider" style={hStyle}>Unfinished videos by step ({inProgress.length})</p>
+              {stepCounts.map((s) => (
+                <div key={s.label} className="flex items-center gap-2 text-xs">
+                  <span className="w-24 shrink-0" style={{ color: "var(--c-55)" }}>{s.label}</span>
+                  <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: "oklch(0 0 0 / 0.05)" }}>
+                    <div className="h-full rounded-full" style={{ width: `${Math.round((s.count / maxStep) * 100)}%`, background: "oklch(0.72 0.18 65)" }} />
+                  </div>
+                  <span className="tabular-nums font-semibold w-6 text-right" style={{ color: "var(--c-90)" }}>{s.count}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -4467,11 +4664,11 @@ export default function AdminPage() {
   const [revDateTo, setRevDateTo] = useState("");
   const [revPlanFilter, setRevPlanFilter] = useState("");
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "activity" | "users" | "projects" | "revenue" | "logs" | "emails" | "support" | "reviews" | "memory" | "setup"
+    "stats" | "activity" | "users" | "projects" | "revenue" | "reports" | "logs" | "emails" | "support" | "reviews" | "memory" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "activity", "users", "projects", "revenue", "logs", "emails", "support", "reviews", "memory", "setup"],
+    ["stats", "activity", "users", "projects", "revenue", "reports", "logs", "emails", "support", "reviews", "memory", "setup"],
   );
 
   // Per-project cost rollups for the Videos → Cost sub-tab. Only
@@ -4799,6 +4996,7 @@ export default function AdminPage() {
             { id: "users",    label: "Users",    icon: Users },
             { id: "projects", label: "Videos",   icon: Clapperboard },
             { id: "revenue",  label: "Revenue",  icon: DollarSign },
+            { id: "reports",  label: "Reports",  icon: FileText },
             { id: "logs",     label: "Logs",     icon: FileText },
             { id: "emails",   label: "Emails",   icon: Mail },
             { id: "support",  label: "Support",  icon: LifeBuoy },
@@ -6100,6 +6298,12 @@ export default function AdminPage() {
             );
           })()}
         </section>
+
+        {/* Reports section — mounted only while active; everything is
+            computed from data other tabs already fetch. */}
+        {activeTab === "reports" && (
+          <ReportsSection stats={stats} users={users} projects={projects} revenue={revenue} activity={data?.activity ?? []} />
+        )}
 
         {/* Revenue section */}
         {(() => {
