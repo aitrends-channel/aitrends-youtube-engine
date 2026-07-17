@@ -10,12 +10,15 @@ function escapeHtml(s: string): string {
 
 // Substitute per-recipient tokens. {{name}} → first name; {{video}} (or
 // {{videos}}) → "video"/"videos" based on how many stuck videos the
-// recipient has. Used at send time and in the admin preview (with a
-// sample recipient). Case-insensitive, tolerant of inner spaces.
-export function personalizeBulkMail(text: string, name: string, videoCount = 1): string {
+// recipient has; {{stuck}} → the audience-aware "stuck at the X step"
+// sentence (see stuckLineFor in bulk-mail-template-defaults). Used at
+// send time and in the admin preview (with a sample recipient).
+// Case-insensitive, tolerant of inner spaces.
+export function personalizeBulkMail(text: string, name: string, videoCount = 1, stuckLine = ""): string {
   return text
     .replace(/\{\{\s*name\s*\}\}/gi, name)
-    .replace(/\{\{\s*videos?\s*\}\}/gi, videoCount === 1 ? "video" : "videos");
+    .replace(/\{\{\s*videos?\s*\}\}/gi, videoCount === 1 ? "video" : "videos")
+    .replace(/\{\{\s*stuck\s*\}\}/gi, stuckLine);
 }
 
 // Step-based completion %. current_state can't distinguish Topic/Script

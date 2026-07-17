@@ -6,6 +6,12 @@ import { toast } from "sonner";
 import { Mail, Users, AlertTriangle, RefreshCw } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { renderBulkMailHtml, personalizeBulkMail } from "@/lib/email/bulk-mail-template";
+import {
+  DEFAULT_BULK_MAIL_TEMPLATES,
+  BULK_MAIL_STEP_OPTIONS,
+  stuckLineFor,
+  type BulkMailTemplate,
+} from "@/lib/admin/bulk-mail-template-defaults";
 
 interface Recipient {
   userId: string;
@@ -34,21 +40,10 @@ interface RecipientsResponse {
   idleHours: number;
 }
 
-// Wizard phases (must match STUCK_PHASES ids in lib/admin/bulk-mail-
-// audience). Kept as a plain list here so this client component doesn't
-// import the server-only audience module. Topic/Script (state 6) and
-// Voiceover/Generate (state 14) are split server-side by a column signal.
-const PHASES: { id: string; label: string }[] = [
-  { id: "channel",    label: "Channel setup" },
-  { id: "topic",      label: "Topic" },
-  { id: "script",     label: "Script" },
-  { id: "visuals",    label: "Visuals" },
-  { id: "prompts",    label: "Prompts" },
-  { id: "voiceover",  label: "Voiceover" },
-  { id: "generate",   label: "Generate" },
-  { id: "assemble",   label: "Assemble" },
-  { id: "thumbnails", label: "Thumbnails" },
-];
+// Wizard phases (ids match STUCK_PHASES in lib/admin/bulk-mail-audience).
+// Sourced from the client-safe defaults module so this component never
+// imports the server-only audience module.
+const PHASES = BULK_MAIL_STEP_OPTIONS;
 
 // Idle-threshold options per audience mode.
 const PHASE_DURATIONS: { label: string; hours: number }[] = [
@@ -65,119 +60,6 @@ const ANY_DURATIONS: { label: string; hours: number }[] = [
   { label: "Over 1 month", hours: 720 },
 ];
 
-// Default support check-in template. Phase-aware: the step name is woven
-// in so the copy matches the selected audience ("any" gets step-agnostic
-// copy). The tone is a genuine support outreach — asking whether they hit
-// any issues and what stopped them from finishing. Fully editable;
-// "Reset to template" restores it.
-function templateFor(phaseId: string): { subject: string; body: string } {
-  const stuckLine =
-    phaseId === "any"
-      ? "I noticed you started a video that hasn't been finished yet."
-      : `I noticed your video has been stuck at the ${(PHASES.find((p) => p.id === phaseId)?.label ?? "current").toLowerCase()} step for a while.`;
-  return {
-    subject: "Checking in on your Heclus {{video}}",
-    body: `Hi {{name}},
-
-I'm Alex from the Heclus support team. ${stuckLine}
-
-Did you run into any issues there? Just reply and let me know what got in the way. Happy to help you finish it.
-
-Thanks,
-Alex
-Heclus Support`,
-  };
-}
-
-// Selectable starting points for the composer. Only the support check-in
-// weaves the selected step into its copy; the others are step-agnostic.
-// Picking one replaces the current draft (same semantics as "Reset to
-// template") and resumes auto-syncing with the selected condition.
-// videoTable: whether the branded email should append the recipient's
-// stuck-videos table. On for copy that talks about "your video"; off for
-// promos and setup nudges where a table (often empty) is just noise. The
-// admin can override per send with the checkbox next to the template.
-const TEMPLATES: { id: string; label: string; videoTable: boolean; build: (phaseId: string) => { subject: string; body: string } }[] = [
-  { id: "checkin", label: "Support check-in", videoTable: true, build: templateFor },
-  {
-    id: "nudge",
-    label: "Re-engagement nudge",
-    videoTable: true,
-    build: () => ({
-      subject: "Your Heclus {{video}} is almost there",
-      body: `Hi {{name}},
-
-Your {{video}} is saved exactly where you left off - nothing is lost.
-
-Most videos take just a few more minutes to finish once the pipeline is running again. Jump back in and Heclus picks up from the step you stopped at.
-
-If anything got in the way, just reply and I'll help you through it.
-
-Thanks,
-Alex
-Heclus Support`,
-    }),
-  },
-  {
-    id: "founder",
-    label: "Founder offer",
-    videoTable: false,
-    build: () => ({
-      subject: "A full year of Heclus for $40",
-      body: `Hi {{name}},
-
-Since you have a {{video}} in progress, I wanted to make sure you saw this before it's gone: the Founder offer - a full year of Heclus for a one-time $40. Everything in Starter, 20 niches for the year, no monthly renewal.
-
-It's limited to the first 100 creators and spots are running low.
-
-You can claim it at https://heclus.com/pricing.
-
-Thanks,
-Alex
-Heclus Support`,
-    }),
-  },
-  // The two ids below match their audience ids so picking that audience
-  // auto-selects the paired template (see switchPhase).
-  {
-    id: "paid-no-setup",
-    label: "Paid: finish account setup",
-    videoTable: false,
-    build: () => ({
-      subject: "One step left to unlock your Heclus plan",
-      body: `Hi {{name}},
-
-Thanks for joining Heclus - your plan is active, but your account setup isn't finished yet, so none of it is working for you.
-
-It's one quick step: open the Setup page, add your API key (the page walks you through getting it), and you're live. From there your first video is as simple as pasting a YouTube channel URL - the pipeline handles the script, voiceover, images, video clips, and thumbnails.
-
-If anything about the setup is unclear, reply to this email and I'll walk you through it personally. I read every response.
-
-Thanks,
-Alex
-Heclus Support`,
-    }),
-  },
-  {
-    id: "paid-setup-no-video",
-    label: "Paid: start first niche",
-    videoTable: false,
-    build: () => ({
-      subject: "Your account is ready - your first video takes about two minutes",
-      body: `Hi {{name}},
-
-Your account is fully set up - the only thing missing is your first niche.
-
-Here's all it takes: paste any YouTube channel URL and Heclus analyzes it, then generates the script, voiceover, images, video clips, and thumbnails for you. A couple of minutes of your time, and your plan starts earning its keep.
-
-Not sure which channel to start with? Reply with your topic and I'll suggest a good niche to clone.
-
-Thanks,
-Alex
-Heclus Support`,
-    }),
-  },
-];
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(r.status)));
 
@@ -207,24 +89,54 @@ const selectStyle = {
 
 function MailComposer() {
   // "any" targets owners of any unfinished video; a step id targets
-  // users stuck at that step; "paid-*" audiences target paying customers
-  // by funnel position (idle window doesn't apply to those).
+  // users stuck at that step; customer audiences ("paid-*",
+  // "free-inactive-3d") target accounts by funnel position or
+  // inactivity — those carry their own window, so the idle selector
+  // hides for them.
   const [phase, setPhase] = useState<string>("any");
   const anyMode = phase === "any";
-  const paidMode = phase.startsWith("paid-");
+  const customerMode = phase.startsWith("paid-") || phase === "free-inactive-3d";
   const audiencePhase = phase;
   const [idleHours, setIdleHours] = useState<number>(24);
 
+  // Templates come from the DB (migration 094) and are editable via
+  // "Save to template"; the API serves the code defaults until the
+  // table exists, so the composer always has something to offer.
+  const { data: tplData, mutate: mutateTemplates } = useSWR<{ templates: BulkMailTemplate[] }>(
+    "/api/admin/bulk-mail/templates", fetcher,
+  );
+  const templates = tplData?.templates ?? DEFAULT_BULK_MAIL_TEMPLATES;
+
+  const [templateId, setTemplateId] = useState<string>(DEFAULT_BULK_MAIL_TEMPLATES[0].id);
+  const activeTemplate = templates.find((t) => t.id === templateId) ?? templates[0];
+  const [includeVideoTable, setIncludeVideoTable] = useState<boolean>(DEFAULT_BULK_MAIL_TEMPLATES[0].videoTable);
+  const [subject, setSubject] = useState<string>(DEFAULT_BULK_MAIL_TEMPLATES[0].subject);
+  const [bodyText, setBodyText] = useState<string>(DEFAULT_BULK_MAIL_TEMPLATES[0].body);
+  // Until the admin edits the draft, it tracks the selected template
+  // (including when the saved copy arrives from the DB). Once they
+  // type, we stop clobbering their message.
+  const [edited, setEdited] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
+
+  useEffect(() => {
+    if (edited || !activeTemplate) return;
+    setSubject(activeTemplate.subject);
+    setBodyText(activeTemplate.body);
+    setIncludeVideoTable(activeTemplate.videoTable);
+  }, [edited, activeTemplate]);
+
   // The duration option lists differ per mode; when a switch strands the
   // current value on an option that no longer exists, fall back to 24h.
-  // Picking a paid audience also auto-selects its paired template (same
-  // id) unless the admin has edited the draft.
+  // Picking a customer audience also auto-selects its paired template
+  // (same id) unless the admin has edited the draft.
   function switchPhase(next: string) {
     const durations = next === "any" ? ANY_DURATIONS : PHASE_DURATIONS;
     if (!durations.some((d) => d.hours === idleHours)) setIdleHours(24);
     if (!edited) {
-      if (TEMPLATES.some((t) => t.id === next)) setTemplateId(next);
-      else if (templateId.startsWith("paid-")) setTemplateId(TEMPLATES[0].id);
+      if (templates.some((t) => t.id === next)) setTemplateId(next);
+      else if (templateId.startsWith("paid-")) setTemplateId(templates[0]?.id ?? DEFAULT_BULK_MAIL_TEMPLATES[0].id);
     }
     setPhase(next);
   }
@@ -233,41 +145,18 @@ function MailComposer() {
   const { data, isLoading, mutate, isValidating } = useSWR<RecipientsResponse>(swrKey, fetcher);
   const recipients = data?.recipients ?? [];
   const videos = data?.videos ?? [];
-  // Empty for "any" and the paid audiences — their video rows carry
+  // Empty for "any" and the customer audiences — their video rows carry
   // per-row resolved step labels instead of one shared phase label.
-  const activePhaseLabel = anyMode || paidMode ? "" : PHASES.find((p) => p.id === phase)?.label ?? phase;
-
-  const [templateId, setTemplateId] = useState<string>(TEMPLATES[0].id);
-  const activeTemplate = TEMPLATES.find((t) => t.id === templateId) ?? TEMPLATES[0];
-  // Follows the selected template's default; the checkbox next to the
-  // template select lets the admin override for this send.
-  const [includeVideoTable, setIncludeVideoTable] = useState<boolean>(TEMPLATES[0].videoTable);
-  useEffect(() => {
-    setIncludeVideoTable(activeTemplate.videoTable);
-  }, [activeTemplate]);
-  const [subject, setSubject] = useState<string>(() => templateFor("any").subject);
-  const [bodyText, setBodyText] = useState<string>(() => templateFor("any").body);
-  // Auto-sync the template to the selected step until the admin edits the
-  // copy, so the "stuck at the <step> step" line always matches the
-  // chosen audience. Once they type, we stop clobbering their message.
-  const [edited, setEdited] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [sending, setSending] = useState(false);
-
-  useEffect(() => {
-    if (edited) return;
-    const t = activeTemplate.build(audiencePhase);
-    setSubject(t.subject);
-    setBodyText(t.body);
-  }, [audiencePhase, edited, activeTemplate]);
+  const activePhaseLabel = anyMode || customerMode ? "" : PHASES.find((p) => p.id === phase)?.label ?? phase;
 
   const composed = subject.trim().length > 0 && bodyText.trim().length > 0;
   const canArm = composed && recipients.length > 0 && !sending;
 
   // Live branded preview — same renderer the send route uses, so what the
   // admin sees is exactly what recipients get. Personalized for a sample
-  // recipient (the first match): their name fills {{name}}, and their own
-  // stuck videos populate the table, since both are per-recipient at send.
+  // recipient (the first match): their name fills {{name}}, their own
+  // stuck videos populate the table, and {{stuck}} resolves for the
+  // selected audience, since all are per-send at delivery time.
   const sampleName = recipients[0]?.name || "there";
   const sampleUserId = recipients[0]?.userId;
   const previewHtml = useMemo(() => {
@@ -277,20 +166,43 @@ function MailComposer() {
     // {{video}} pluralization always uses the real count, even when the
     // table itself is switched off.
     const count = vids.length || 1;
+    const stuck = stuckLineFor(audiencePhase);
     return renderBulkMailHtml(
-      personalizeBulkMail(subject, sampleName, count),
-      personalizeBulkMail(bodyText, sampleName, count),
+      personalizeBulkMail(subject, sampleName, count, stuck),
+      personalizeBulkMail(bodyText, sampleName, count, stuck),
       includeVideoTable ? vids : [],
       activePhaseLabel,
     );
-  }, [subject, bodyText, sampleName, sampleUserId, videos, activePhaseLabel, includeVideoTable]);
+  }, [subject, bodyText, sampleName, sampleUserId, videos, activePhaseLabel, includeVideoTable, audiencePhase]);
 
   function resetTemplate() {
-    const t = activeTemplate.build(audiencePhase);
-    setSubject(t.subject);
-    setBodyText(t.body);
-    setEdited(false); // resume auto-syncing with the selected step
+    setSubject(activeTemplate.subject);
+    setBodyText(activeTemplate.body);
+    setIncludeVideoTable(activeTemplate.videoTable);
+    setEdited(false); // resume tracking the selected template
     setConfirming(false);
+  }
+
+  // Persist the current draft (subject/body/table flag) to the selected
+  // template so it becomes the new saved version for every admin.
+  async function saveTemplate() {
+    setSavingTemplate(true);
+    try {
+      const res = await fetch("/api/admin/bulk-mail/templates", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: templateId, subject: subject.trim(), body: bodyText.trim(), videoTable: includeVideoTable }),
+      });
+      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(d.error ?? `Save failed (${res.status})`);
+      toast.success(`Saved to “${activeTemplate.label}”`);
+      setEdited(false); // draft now equals the saved template again
+      mutateTemplates();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSavingTemplate(false);
+    }
   }
 
   async function send() {
@@ -341,10 +253,11 @@ function MailComposer() {
             <optgroup label="Customers">
               <option value="paid-no-setup">Paid users with no setup</option>
               <option value="paid-setup-no-video">Paid users with setup but zero video</option>
+              <option value="free-inactive-3d">Free/demo users with no activity in the past 3 days</option>
             </optgroup>
           </select>
 
-          {!paidMode && (
+          {!customerMode && (
             <>
               <span className="text-sm" style={{ color: "var(--c-55)" }}>idle for</span>
 
@@ -366,6 +279,8 @@ function MailComposer() {
             ? "Paying customers who haven't finished account setup (no API key saved) — no idle window, matched regardless of last activity."
             : phase === "paid-setup-no-video"
             ? "Paying customers with account setup done but no niche created yet (no channel analyzed) — no idle window."
+            : phase === "free-inactive-3d"
+            ? "Free or demo users (never paid) with no sign-in and no project activity in the past 3 days — includes accounts that never did anything."
             : anyMode
             ? "Targets owners of any unfinished video, whatever step it's on, idle for the selected duration."
             : "“Stuck at” = the user is currently at that step and has been idle for the selected duration."}
@@ -432,18 +347,27 @@ function MailComposer() {
               className="px-2.5 py-1.5 rounded-lg text-xs font-semibold outline-none bg-white text-zinc-900 cursor-pointer disabled:opacity-40"
               style={selectStyle}
             >
-              {TEMPLATES.map((t) => (
+              {templates.map((t) => (
                 <option key={t.id} value={t.id}>{t.label}</option>
               ))}
             </select>
             <button
               onClick={resetTemplate}
-              disabled={sending}
-              title="Restore the selected template for the selected condition"
+              disabled={sending || savingTemplate}
+              title="Restore the saved version of the selected template"
               className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg cursor-pointer disabled:opacity-40"
               style={{ background: "oklch(0 0 0 / 0.04)", color: "var(--c-60)", border: "1px solid var(--bd-7)" }}
             >
               <RefreshCw size={12} /> Reset to template
+            </button>
+            <button
+              onClick={saveTemplate}
+              disabled={sending || savingTemplate || !composed || !edited}
+              title="Save the current subject, message, and video-table setting as this template"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg cursor-pointer disabled:opacity-40"
+              style={{ background: "oklch(0.62 0.15 220 / 0.1)", color: "oklch(0.45 0.13 220)", border: "1px solid oklch(0.62 0.15 220 / 0.35)" }}
+            >
+              {savingTemplate ? (<><Spinner size={12} /> Saving…</>) : <>Save to template</>}
             </button>
           </div>
         </div>
@@ -468,7 +392,8 @@ function MailComposer() {
             className="w-full px-3 py-2 rounded-lg text-base outline-none bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400 resize-y placeholder:text-zinc-400"
           />
           <p className="text-[11px] mt-1" style={{ color: "var(--c-45)" }}>
-            <code>{"{{name}}"}</code> → recipient&apos;s first name (falls back to “there”); <code>{"{{video}}"}</code> → “video” / “videos” by count.
+            <code>{"{{name}}"}</code> → recipient&apos;s first name (falls back to “there”); <code>{"{{video}}"}</code> → “video” / “videos” by count;{" "}
+            <code>{"{{stuck}}"}</code> → audience-aware sentence (“…stuck at the topic step for a while.”).
           </p>
         </div>
 
@@ -549,7 +474,7 @@ function MailComposer() {
             style={{ border: "1px solid var(--bd-7)", background: "oklch(0 0 0 / 0.02)" }}
           >
             {recipients.map((r) => {
-              const label = anyMode || paidMode ? stepsFor(videos, r.userId) : activePhaseLabel;
+              const label = anyMode || customerMode ? stepsFor(videos, r.userId) : activePhaseLabel;
               return (
                 <li key={r.userId} className="px-3 py-2 flex items-center gap-3 flex-wrap" style={{ borderColor: "var(--bd-7)" }}>
                   <span className="text-sm font-medium min-w-0 truncate" style={{ color: "var(--c-90)" }}>{r.email}</span>
