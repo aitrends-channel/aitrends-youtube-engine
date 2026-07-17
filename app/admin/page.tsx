@@ -26,7 +26,7 @@ import { MemoryPanel } from "@/components/admin/MemoryPanel";
 const PHASE_PATHS: Record<number, string> = {
   1: "channel", 2: "channel", 3: "channel", 4: "channel", 5: "channel",
   6: "topic", 7: "visuals", 8: "visuals", 9: "prompts", 10: "prompts",
-  11: "visuals", 12: "visuals", 13: "prompts", 14: "generate", 15: "assemble",
+  11: "visuals", 12: "visuals", 13: "thumbnails", 14: "generate", 15: "assemble",
 };
 
 // True when the timestamp falls on the local calendar day `dayOffset`
@@ -48,21 +48,23 @@ function isOnLocalDay(iso: string | null, dayOffset: number): boolean {
 // "Completed today/yesterday" uses completedAt (assembly finish), so
 // completions that pre-date the timing migration won't match — those are
 // all old anyway. "Started" = project created.
-type StatusFilterRow = { currentState: number; selectedTopic: string | null; createdAt: string; completedAt: string | null };
+type StatusFilterRow = { currentState: number; isComplete: boolean; selectedTopic: string | null; createdAt: string; completedAt: string | null };
 const PROJECT_STATUS_FILTERS: { id: string; label: string; match: (p: StatusFilterRow) => boolean }[] = [
   { id: "all",           label: "All statuses",        match: () => true },
-  { id: "completed",     label: "Completed",           match: (p) => p.currentState >= 15 },
-  { id: "inprogress",    label: "In progress",         match: (p) => p.currentState > 1 && p.currentState < 15 },
-  { id: "completed-today",     label: "Completed today",     match: (p) => p.currentState >= 15 && isOnLocalDay(p.completedAt, 0) },
+  { id: "completed",     label: "Completed",           match: (p) => p.isComplete },
+  { id: "inprogress",    label: "In progress",         match: (p) => p.currentState > 1 && !p.isComplete },
+  { id: "completed-today",     label: "Completed today",     match: (p) => p.isComplete && isOnLocalDay(p.completedAt, 0) },
   { id: "started-today",       label: "Started today",       match: (p) => isOnLocalDay(p.createdAt, 0) },
-  { id: "completed-yesterday", label: "Completed yesterday", match: (p) => p.currentState >= 15 && isOnLocalDay(p.completedAt, -1) },
+  { id: "completed-yesterday", label: "Completed yesterday", match: (p) => p.isComplete && isOnLocalDay(p.completedAt, -1) },
   { id: "started-yesterday",   label: "Started yesterday",   match: (p) => isOnLocalDay(p.createdAt, -1) },
   { id: "channel",    label: "At Channel",    match: (p) => p.currentState <= 5 },
   { id: "topic",      label: "At Topic",      match: (p) => p.currentState === 6 && !p.selectedTopic },
   { id: "script",     label: "At Script",     match: (p) => p.currentState === 6 && !!p.selectedTopic },
   { id: "visuals",    label: "At Visuals",    match: (p) => [7, 8, 11, 12].includes(p.currentState) },
-  { id: "prompts",    label: "At Prompts",    match: (p) => [9, 10, 13].includes(p.currentState) },
+  { id: "prompts",    label: "At Prompts",    match: (p) => [9, 10].includes(p.currentState) },
+  { id: "thumbnail",  label: "At Thumbnail",  match: (p) => p.currentState === 13 },
   { id: "generate",   label: "At Generate",   match: (p) => p.currentState === 14 },
+  { id: "assemble",   label: "At Assemble",   match: (p) => p.currentState === 15 && !p.isComplete },
 ];
 
 const STATS_KEY = "/api/admin/stats";
@@ -381,6 +383,9 @@ interface AdminProject {
   channelName: string | null;
   selectedTopic: string | null;
   currentState: number;
+  // True only when the final MP4 exists (or terminal state 16) — a
+  // project resting at the Assemble step is NOT complete.
+  isComplete: boolean;
   phaseLabel: string;
   phasePath: string;
   progress: number;
@@ -5422,6 +5427,42 @@ export default function AdminPage() {
               and that's enough. Placed below the sub-tabs so the
               tab choice feels primary and the filter feels like a
               refinement on whatever view is active. */}
+          {/* Status breakdown strip — one pill per status/step with live
+              counts (computed over all videos, ignoring the search box).
+              Clicking a pill applies that filter; clicking the active
+              pill (or Total) clears it. Mirrors the Users tab's strip. */}
+          {!selectedCostProject && !selectedGeneralProject && (
+            <div className="flex flex-wrap gap-2 text-xs">
+              {PROJECT_STATUS_FILTERS.filter((f) => !f.id.includes("-")).map((f) => {
+                const isActive = projectStatusFilter === f.id;
+                const value = f.id === "all" ? projects.length : projects.filter(f.match).length;
+                const tone = f.id === "all"
+                  ? { accent: "oklch(0.55 0.15 220)", bg: "oklch(0 0 0 / 0.04)",         color: "var(--c-65)",           border: "oklch(0 0 0 / 0.08)" }
+                  : f.id === "completed"
+                    ? { accent: "oklch(0.55 0.15 145)", bg: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "oklch(0.55 0.15 145 / 0.3)" }
+                    : f.id === "inprogress"
+                      ? { accent: "oklch(0.72 0.18 75)", bg: "oklch(0.72 0.18 75 / 0.15)",  color: "oklch(0.6 0.18 75)",  border: "oklch(0.72 0.18 75 / 0.4)" }
+                      : { accent: "oklch(0.72 0.25 285)", bg: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "oklch(0.72 0.25 285 / 0.2)" };
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => { setProjectStatusFilter(isActive ? "all" : f.id); setProjectsPage(1); }}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full font-medium tabular-nums transition-all hover:opacity-80 cursor-pointer"
+                    style={{
+                      background: tone.bg,
+                      color: tone.color,
+                      border: `1px solid ${tone.border}`,
+                      boxShadow: isActive ? `0 0 0 2px ${tone.accent}` : "none",
+                    }}
+                  >
+                    <span>{f.id === "all" ? "Total" : f.label}</span>
+                    <span className="font-semibold">{value}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {!selectedCostProject && !selectedGeneralProject && (
             <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
               <div className="relative flex-1 min-w-[220px] max-w-md">
@@ -5468,7 +5509,7 @@ export default function AdminPage() {
           ) : selectedGeneralProject ? (
             (() => {
               const p = selectedGeneralProject;
-              const isComplete = p.currentState >= 15;
+              const isComplete = p.isComplete;
               type StatField = { label: string; value: React.ReactNode };
               const stats: StatField[] = [
                 { label: "User",            value: p.userEmail ?? "—" },
@@ -5597,7 +5638,7 @@ export default function AdminPage() {
                 </thead>
                 <tbody key={`projects-p${projectsPage}`}>
                   {pagedProjects.map((p) => {
-                    const isComplete = p.currentState >= 15;
+                    const isComplete = p.isComplete;
                     return (
                       <tr key={p.id}
                         onClick={() => setSelectedGeneralProject(p)}
