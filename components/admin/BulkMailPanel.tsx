@@ -135,16 +135,16 @@ Heclus Support`,
   // auto-selects the paired template (see switchPhase).
   {
     id: "paid-no-setup",
-    label: "Paid: get set up",
+    label: "Paid: finish account setup",
     build: () => ({
-      subject: "Your plan is active - let's get your first video out",
+      subject: "One step left to unlock your Heclus plan",
       body: `Hi {{name}},
 
-Thanks for joining Heclus - your plan is live and everything is ready on our side.
+Thanks for joining Heclus - your plan is active, but your account setup isn't finished yet, so none of it is working for you.
 
-I noticed you haven't set up your first channel yet, and I don't want you paying for something you're not getting videos out of. Setup takes about two minutes: paste any YouTube channel URL, and the pipeline takes it from there - script, voiceover, images, video clips, and thumbnails.
+It's one quick step: open the Setup page, add your API key (the page walks you through getting it), and you're live. From there your first video is as simple as pasting a YouTube channel URL - the pipeline handles the script, voiceover, images, video clips, and thumbnails.
 
-If anything was unclear, or you'd like me to walk you through your first video personally, just reply to this email. I read every response.
+If anything about the setup is unclear, reply to this email and I'll walk you through it personally. I read every response.
 
 Thanks,
 Alex
@@ -153,16 +153,16 @@ Heclus Support`,
   },
   {
     id: "paid-setup-no-video",
-    label: "Paid: finish first video",
+    label: "Paid: start first niche",
     build: () => ({
-      subject: "Your first video is closer than you think",
+      subject: "Your account is ready - your first video takes about two minutes",
       body: `Hi {{name}},
 
-You've already done the hard part - your channel is analyzed and your {{video}} is sitting mid-pipeline, saved exactly where you left off.
+Your account is fully set up - the only thing missing is your first niche.
 
-Most videos need only a few more minutes of pipeline time to cross the finish line, and your plan already covers it.
+Here's all it takes: paste any YouTube channel URL and Heclus analyzes it, then generates the script, voiceover, images, video clips, and thumbnails for you. A couple of minutes of your time, and your plan starts earning its keep.
 
-If something got in the way - a confusing step, a result you didn't like, an error - reply and tell me what happened. I'll personally make sure your first video gets exported.
+Not sure which channel to start with? Reply with your topic and I'll suggest a good niche to clone.
 
 Thanks,
 Alex
@@ -347,9 +347,9 @@ function MailComposer() {
         </div>
         <p className="text-[11px] mt-2" style={{ color: "var(--c-45)" }}>
           {phase === "paid-no-setup"
-            ? "Paying customers who never completed a channel setup — no idle window, matched regardless of last activity."
+            ? "Paying customers who haven't finished account setup (no API key saved) — no idle window, matched regardless of last activity."
             : phase === "paid-setup-no-video"
-            ? "Paying customers who set up a channel but have no completed video yet — no idle window."
+            ? "Paying customers with account setup done but no niche created yet (no channel analyzed) — no idle window."
             : anyMode
             ? "Targets owners of any unfinished video, whatever step it's on, idle for the selected duration."
             : "“Stuck at” = the user is currently at that step and has been idle for the selected duration."}

@@ -42,10 +42,13 @@ export type StuckPhaseId = (typeof STUCK_PHASES)[number]["id"];
 // User-first (start from paid accounts, not projects), so idleHours does
 // not apply — a paying customer with no output is worth contacting
 // regardless of when they last touched the app.
-//   • paid-no-setup       — paid, never completed a channel setup
-//                           (account_settings.niches_used = 0).
-//   • paid-setup-no-video — paid and set up a channel, but no completed
-//                           video (no assembled_url / state-16 project).
+// "Setup" here means ACCOUNT setup — the Setup page's API key
+// (account_settings.kie_api_key) — not channel setup.
+//   • paid-no-setup       — paid, but no API key saved yet: paying for
+//                           a product they can't run.
+//   • paid-setup-no-video — paid, account fully set up, but never
+//                           created a niche (niches_used = 0 — no
+//                           channel analyzed, so no videos either).
 export const PAID_AUDIENCES = [
   { id: "paid-no-setup",       label: "Paid, no setup yet" },
   { id: "paid-setup-no-video", label: "Paid, set up but no video" },
@@ -152,7 +155,7 @@ async function getPaidAudience(phase: PaidAudienceId): Promise<BulkMailAudience>
   const paidIds = paidUsers.map((u) => u.id);
 
   const [settingsRes, projectsRes] = await Promise.all([
-    supabase.from("account_settings").select("user_id, niches_used").in("user_id", paidIds),
+    supabase.from("account_settings").select("user_id, niches_used, kie_api_key").in("user_id", paidIds),
     supabase
       .from("projects")
       .select("id, user_id, current_state, updated_at, selected_topic, channel_name, assembled_url")
@@ -162,7 +165,12 @@ async function getPaidAudience(phase: PaidAudienceId): Promise<BulkMailAudience>
   if (settingsRes.error) throw new Error(`Failed to load settings: ${settingsRes.error.message}`);
   if (projectsRes.error) throw new Error(`Failed to load projects: ${projectsRes.error.message}`);
 
-  const nichesByUser = new Map((settingsRes.data ?? []).map((s) => [s.user_id as string, (s.niches_used as number) ?? 0]));
+  const settingsByUser = new Map(
+    (settingsRes.data ?? []).map((s) => [
+      s.user_id as string,
+      { niches: (s.niches_used as number) ?? 0, hasKey: Boolean((s.kie_api_key as string | null)?.trim()) },
+    ]),
+  );
   const allProjects = (projectsRes.data ?? []) as (ProjectRow & { assembled_url: string | null })[];
   const projectsByUser = new Map<string, (ProjectRow & { assembled_url: string | null })[]>();
   for (const p of allProjects) {
@@ -174,10 +182,12 @@ async function getPaidAudience(phase: PaidAudienceId): Promise<BulkMailAudience>
     Boolean(p.assembled_url) || (p.current_state ?? 0) >= BULK_MAIL_FINAL_STATE;
 
   const matched = paidUsers.filter((u) => {
-    const setUp = (nichesByUser.get(u.id) ?? 0) > 0;
-    if (phase === "paid-no-setup") return !setUp;
-    // paid-setup-no-video: set up, but nothing ever finished.
-    return setUp && !(projectsByUser.get(u.id) ?? []).some(isDone);
+    const s = settingsByUser.get(u.id);
+    const accountSetUp = s?.hasKey ?? false;
+    if (phase === "paid-no-setup") return !accountSetUp;
+    // paid-setup-no-video: account fully set up, but never created a
+    // niche — no channel analyzed, hence zero videos.
+    return accountSetUp && (s?.niches ?? 0) === 0;
   });
 
   // Unfinished projects of matched users feed the preview table (and the
