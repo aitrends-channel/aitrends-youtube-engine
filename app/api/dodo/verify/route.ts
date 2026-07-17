@@ -229,7 +229,11 @@ export async function POST(request: Request) {
     payment_id ??
     (result.payment_id as string | undefined) ??
     ((result.latest_payment as Record<string, unknown> | undefined)?.payment_id as string | undefined);
-  const ledgerAmountCents = Number(result.total_amount ?? result.amount ?? 0);
+  // Prefer Dodo's USD settlement amount over total_amount — the latter
+  // is denominated in the customer's local currency (see the webhook
+  // handler's ledger write for the full story).
+  const ledgerSettlement = Number(result.settlement_amount ?? 0);
+  const ledgerAmountCents = ledgerSettlement > 0 ? ledgerSettlement : Number(result.total_amount ?? result.amount ?? 0);
   if (ledgerPaymentId && ledgerAmountCents > 0) {
     const { error: revErr } = await supabase
       .from("revenue_events")
@@ -238,7 +242,9 @@ export async function POST(request: Request) {
         user_email: (user.email ?? "").toLowerCase() || null,
         event_type: "payment_succeeded",
         amount_cents: ledgerAmountCents,
-        currency: ((result.currency as string | undefined) ?? "usd").toLowerCase(),
+        currency: ledgerSettlement > 0
+          ? (((result.settlement_currency as string | undefined) ?? "usd").toLowerCase())
+          : (((result.currency as string | undefined) ?? "usd").toLowerCase()),
         plan: plan ?? null,
         dodo_payment_id: ledgerPaymentId,
         dodo_raw: result,

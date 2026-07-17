@@ -170,8 +170,16 @@ export async function POST(request: Request) {
     // error here doesn't roll back the user update above — the
     // customer is paid; logging is best-effort.
     const dodoPaymentId = (data.payment_id ?? data.id) as string | undefined;
-    const amountCents = Number(data.total_amount ?? data.amount ?? 0);
-    const currency = ((data.currency as string | undefined) ?? "usd").toLowerCase();
+    // total_amount is in the CUSTOMER'S currency (₹, ₦, ₫, …);
+    // settlement_amount is what Dodo actually settles to us in USD.
+    // Prefer it so the ledger is single-currency — summing raw
+    // total_amounts across currencies was inflating revenue stats
+    // (a ₦57k founder purchase counted as $57k).
+    const settlement = Number(data.settlement_amount ?? 0);
+    const amountCents = settlement > 0 ? settlement : Number(data.total_amount ?? data.amount ?? 0);
+    const currency = settlement > 0
+      ? (((data.settlement_currency as string | undefined) ?? "usd").toLowerCase())
+      : (((data.currency as string | undefined) ?? "usd").toLowerCase());
     if (dodoPaymentId && amountCents > 0) {
       const { error: revErr } = await supabase
         .from("revenue_events")
