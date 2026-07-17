@@ -93,11 +93,16 @@ Heclus Support`,
 // weaves the selected step into its copy; the others are step-agnostic.
 // Picking one replaces the current draft (same semantics as "Reset to
 // template") and resumes auto-syncing with the selected condition.
-const TEMPLATES: { id: string; label: string; build: (phaseId: string) => { subject: string; body: string } }[] = [
-  { id: "checkin", label: "Support check-in", build: templateFor },
+// videoTable: whether the branded email should append the recipient's
+// stuck-videos table. On for copy that talks about "your video"; off for
+// promos and setup nudges where a table (often empty) is just noise. The
+// admin can override per send with the checkbox next to the template.
+const TEMPLATES: { id: string; label: string; videoTable: boolean; build: (phaseId: string) => { subject: string; body: string } }[] = [
+  { id: "checkin", label: "Support check-in", videoTable: true, build: templateFor },
   {
     id: "nudge",
     label: "Re-engagement nudge",
+    videoTable: true,
     build: () => ({
       subject: "Your Heclus {{video}} is almost there",
       body: `Hi {{name}},
@@ -116,6 +121,7 @@ Heclus Support`,
   {
     id: "founder",
     label: "Founder offer",
+    videoTable: false,
     build: () => ({
       subject: "A full year of Heclus for $40",
       body: `Hi {{name}},
@@ -136,6 +142,7 @@ Heclus Support`,
   {
     id: "paid-no-setup",
     label: "Paid: finish account setup",
+    videoTable: false,
     build: () => ({
       subject: "One step left to unlock your Heclus plan",
       body: `Hi {{name}},
@@ -154,6 +161,7 @@ Heclus Support`,
   {
     id: "paid-setup-no-video",
     label: "Paid: start first niche",
+    videoTable: false,
     build: () => ({
       subject: "Your account is ready - your first video takes about two minutes",
       body: `Hi {{name}},
@@ -231,6 +239,12 @@ function MailComposer() {
 
   const [templateId, setTemplateId] = useState<string>(TEMPLATES[0].id);
   const activeTemplate = TEMPLATES.find((t) => t.id === templateId) ?? TEMPLATES[0];
+  // Follows the selected template's default; the checkbox next to the
+  // template select lets the admin override for this send.
+  const [includeVideoTable, setIncludeVideoTable] = useState<boolean>(TEMPLATES[0].videoTable);
+  useEffect(() => {
+    setIncludeVideoTable(activeTemplate.videoTable);
+  }, [activeTemplate]);
   const [subject, setSubject] = useState<string>(() => templateFor("any").subject);
   const [bodyText, setBodyText] = useState<string>(() => templateFor("any").body);
   // Auto-sync the template to the selected step until the admin edits the
@@ -260,14 +274,16 @@ function MailComposer() {
     const vids = videos
       .filter((v) => v.userId === sampleUserId)
       .map((v) => ({ title: v.title, currentState: v.currentState, step: v.step }));
+    // {{video}} pluralization always uses the real count, even when the
+    // table itself is switched off.
     const count = vids.length || 1;
     return renderBulkMailHtml(
       personalizeBulkMail(subject, sampleName, count),
       personalizeBulkMail(bodyText, sampleName, count),
-      vids,
+      includeVideoTable ? vids : [],
       activePhaseLabel,
     );
-  }, [subject, bodyText, sampleName, sampleUserId, videos, activePhaseLabel]);
+  }, [subject, bodyText, sampleName, sampleUserId, videos, activePhaseLabel, includeVideoTable]);
 
   function resetTemplate() {
     const t = activeTemplate.build(audiencePhase);
@@ -283,7 +299,7 @@ function MailComposer() {
       const res = await fetch("/api/admin/bulk-mail/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject: subject.trim(), bodyText: bodyText.trim(), phase: audiencePhase, idleHours }),
+        body: JSON.stringify({ subject: subject.trim(), bodyText: bodyText.trim(), phase: audiencePhase, idleHours, includeVideoTable }),
       });
       const d = (await res.json().catch(() => ({}))) as { sent?: number; failedCount?: number; error?: string };
       if (!res.ok) throw new Error(d.error ?? `Send failed (${res.status})`);
@@ -391,7 +407,21 @@ function MailComposer() {
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <p className="text-xs uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Email content</p>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <label
+              className="inline-flex items-center gap-1.5 text-xs font-semibold cursor-pointer select-none"
+              style={{ color: "var(--c-60)" }}
+              title="Append a table of the recipient's own stuck videos to the email"
+            >
+              <input
+                type="checkbox"
+                checked={includeVideoTable}
+                onChange={(e) => { setIncludeVideoTable(e.target.checked); setConfirming(false); }}
+                disabled={sending}
+                className="accent-zinc-700"
+              />
+              Video table
+            </label>
             {/* Picking a template intentionally replaces the draft — same
                 semantics as "Reset to template", just a different preset. */}
             <select
