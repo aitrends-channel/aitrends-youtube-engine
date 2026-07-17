@@ -5424,7 +5424,7 @@ export default function AdminPage() {
               refinement on whatever view is active. */}
           {!selectedCostProject && !selectedGeneralProject && (
             <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-              <div className="relative flex-1 min-w-[220px]">
+              <div className="relative flex-1 min-w-[220px] max-w-md">
                 <input
                   type="search"
                   value={projectSearch}
