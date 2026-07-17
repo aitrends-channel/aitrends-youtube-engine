@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/admin-server";
 import { getBulkMailAudience, isBulkMailPhase, clampIdleHours, STUCK_PHASES } from "@/lib/admin/bulk-mail-audience";
 import { sendEmail } from "@/lib/email/smtp";
 import { renderBulkMailHtml, personalizeBulkMail } from "@/lib/email/bulk-mail-template";
+import { stuckLineFor } from "@/lib/admin/bulk-mail-template-defaults";
 
 export const dynamic = "force-dynamic";
 // SMTP sends run serially to respect provider rate limits, so give the
@@ -53,6 +54,8 @@ export async function POST(req: Request) {
   // Fallback step label for the table's Step column (each video row also
   // carries its own resolved step — the "any" audience spans steps).
   const stepLabel = STUCK_PHASES.find((p) => p.id === body.phase)?.label ?? "";
+  // {{stuck}} token resolution — audience-aware sentence.
+  const stuckLine = stuckLineFor(body.phase);
 
   // Group each recipient's own matching videos so the email table is
   // specific to them.
@@ -76,8 +79,8 @@ export async function POST(req: Request) {
       // {{video}} pluralization uses the real count even when the table
       // itself is switched off.
       const count = userVideos.length || 1;
-      const persSubject = personalizeBulkMail(subject, r.name, count);
-      const persBody = personalizeBulkMail(bodyText, r.name, count);
+      const persSubject = personalizeBulkMail(subject, r.name, count, stuckLine);
+      const persBody = personalizeBulkMail(bodyText, r.name, count, stuckLine);
       await sendEmail({
         from: FROM,
         to: r.email,
