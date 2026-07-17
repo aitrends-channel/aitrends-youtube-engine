@@ -18,12 +18,15 @@ export async function POST(req: Request) {
   const guard = await requireAdmin();
   if (!guard.ok) return guard.response;
 
-  let body: { subject?: unknown; bodyText?: unknown; phase?: unknown; idleHours?: unknown };
+  let body: { subject?: unknown; bodyText?: unknown; phase?: unknown; idleHours?: unknown; includeVideoTable?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
+  // The composer decides per template whether the email appends the
+  // recipient's stuck-videos table. Defaults on (pre-flag behavior).
+  const includeVideoTable = body.includeVideoTable !== false;
   const subject = typeof body.subject === "string" ? body.subject.trim() : "";
   const bodyText = typeof body.bodyText === "string" ? body.bodyText.trim() : "";
   if (!subject) return NextResponse.json({ error: "Subject is required" }, { status: 400 });
@@ -70,6 +73,8 @@ export async function POST(req: Request) {
   for (const r of recipients) {
     try {
       const userVideos = videosByUser.get(r.userId) ?? [];
+      // {{video}} pluralization uses the real count even when the table
+      // itself is switched off.
       const count = userVideos.length || 1;
       const persSubject = personalizeBulkMail(subject, r.name, count);
       const persBody = personalizeBulkMail(bodyText, r.name, count);
@@ -78,7 +83,7 @@ export async function POST(req: Request) {
         to: r.email,
         subject: persSubject,
         text: persBody,
-        html: renderBulkMailHtml(persSubject, persBody, userVideos, stepLabel),
+        html: renderBulkMailHtml(persSubject, persBody, includeVideoTable ? userVideos : [], stepLabel),
       });
       sent += 1;
     } catch (e) {

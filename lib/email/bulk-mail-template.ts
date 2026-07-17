@@ -21,8 +21,11 @@ export function personalizeBulkMail(text: string, name: string, videoCount = 1):
 // Step-based completion %. current_state can't distinguish Topic/Script
 // (both 6) or Voiceover/Generate (both 14), so the *step label* is passed
 // in from the selected phase rather than derived here.
+// Same formula as the admin videos table (state / 15, capped at 99) so an
+// email never disagrees with the dashboard — every row in these emails is
+// an unfinished video, so 100% would always be a lie.
 export function progressPct(n: number): number {
-  return Math.max(0, Math.min(100, Math.round((n / 16) * 100)));
+  return Math.max(0, Math.min(99, Math.round((n / 15) * 100)));
 }
 
 export interface BulkMailVideoRow {
@@ -55,8 +58,14 @@ function renderVideoTable(videos: BulkMailVideoRow[], step: string): string {
                   <td style="padding:11px 12px;font-size:13px;color:#dcdcdc;border-top:1px solid rgba(255,255,255,0.06);">${escapeHtml(v.title)}</td>
                   <td style="padding:11px 12px;font-size:13px;color:#a0a0a0;border-top:1px solid rgba(255,255,255,0.06);white-space:nowrap;">${escapeHtml(v.step || step)}</td>
                   <td style="padding:11px 12px;border-top:1px solid rgba(255,255,255,0.06);white-space:nowrap;">
-                    <table cellpadding="0" cellspacing="0" border="0" style="display:inline-block;width:52px;background:#2a2a2a;border-radius:4px;vertical-align:middle;">
-                      <tr><td style="width:${pct}%;height:6px;background:#8b6cf7;border-radius:4px;font-size:0;line-height:0;">&nbsp;</td></tr>
+                    <!-- Two cells (fill + remainder): a lone td always
+                         stretches to the table width, which rendered every
+                         bar as 100% regardless of pct. -->
+                    <table cellpadding="0" cellspacing="0" border="0" style="display:inline-block;width:52px;background:#2a2a2a;border-radius:4px;vertical-align:middle;table-layout:fixed;">
+                      <tr>
+                        ${pct > 0 ? `<td style="width:${pct}%;height:6px;background:#8b6cf7;border-radius:4px;font-size:0;line-height:0;"></td>` : ""}
+                        ${pct < 100 ? `<td style="width:${100 - pct}%;height:6px;font-size:0;line-height:0;"></td>` : ""}
+                      </tr>
                     </table>
                     <span style="font-size:12px;color:#a0a0a0;padding-left:8px;vertical-align:middle;">${pct}%</span>
                   </td>
