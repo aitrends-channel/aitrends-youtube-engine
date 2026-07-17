@@ -558,9 +558,10 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
   stats: AdminStats | undefined;
   users: AdminUser[];
   projects: AdminProject[];
-  revenue: { totalCents: number; byPlan: Record<string, { cents: number; count: number }>; mrrCents: number; payingUserCount: number; launchedAt: string | null } | undefined;
+  revenue: { totalCents: number; byPlan: Record<string, { cents: number; count: number }>; mrrCents: number; payingUserCount: number; launchedAt: string | null; daily?: { date: string; amountCents: number; count: number }[] } | undefined;
   activity: ActivityPoint[];
 }) {
+  const [salesHover, setSalesHover] = useState<number | null>(null);
   const DAY = 24 * 60 * 60 * 1000;
   const now = Date.now();
   const customers = users.filter((u) => !u.isAdmin && u.status !== "Pending");
@@ -611,6 +612,95 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
   const arpu = revenue?.payingUserCount ? totalRevenue / revenue.payingUserCount : 0;
   const completionRate = pct(stats?.completed ?? 0, stats?.totalProjects ?? 0);
   const PLAN_LABEL: Record<string, string> = { founder: "Founder", starter: "Starter", pro: "Pro" };
+
+  // ── Sales activity (trailing 30 days) ────────────────────────────
+  const daily = revenue?.daily ?? [];
+  const sales7 = daily.slice(-7).reduce((s, d) => s + d.amountCents, 0) / 100;
+  const salesPrev7 = daily.slice(-14, -7).reduce((s, d) => s + d.amountCents, 0) / 100;
+  const sales7Count = daily.slice(-7).reduce((s, d) => s + d.count, 0);
+
+  // ── Recommendations — rule-based, from the same data the report
+  // shows, each tied to a concrete lever that exists in the product
+  // (bulk-mail templates, pricing, funnel stages). ─────────────────
+  const paidUsers = customers.filter((u) => u.status === "Paid");
+  const paidNoSetup = paidUsers.filter((u) => !u.hasSetup).length;
+  const paidNoNiche = paidUsers.filter((u) => u.hasSetup && u.nichesUsed === 0).length;
+  const dormantPaid = paidUsers.filter((u) => !u.lastSignIn || now - new Date(u.lastSignIn).getTime() > 14 * DAY).length;
+  const founderShare = pct(revenue?.byPlan?.founder?.cents ?? 0, revenue?.totalCents ?? 0);
+  const engagedUnpaid = customers.filter((u) => u.status !== "Paid" && completedEmails.has(u.email)).length;
+  const topStuck = stepCounts[0];
+
+  const recommendations: { severity: "high" | "medium" | "info"; title: string; detail: string }[] = [];
+  if (paidNoSetup > 0) recommendations.push({
+    severity: "high",
+    title: `${paidNoSetup} paying customer${paidNoSetup === 1 ? " is" : "s are"} unable to use the product (no account setup)`,
+    detail: "They paid but never saved an API key, so nothing works for them — the top refund/churn risk. Send the “Paid: finish account setup” template from the Emails tab; it auto-targets exactly this audience.",
+  });
+  if (paidNoNiche > 0) recommendations.push({
+    severity: "high",
+    title: `${paidNoNiche} paying customer${paidNoNiche === 1 ? " has" : "s have"} set up but never created a niche`,
+    detail: "Paying, ready to go, zero output — they won't renew without a first win. Send the “Paid: start first niche” template; it pitches the two-minute first run and offers niche suggestions by reply.",
+  });
+  if (salesPrev7 > 0 && sales7 === 0) recommendations.push({
+    severity: "high",
+    title: "No sales in the last 7 days",
+    detail: `The prior week collected $${salesPrev7.toFixed(2)}. Re-ignite demand: push the Founder offer's scarcity (spots left) on your channels and send the Founder-offer template to engaged unpaid users.`,
+  });
+  else if (salesPrev7 > 0 && sales7 < salesPrev7 * 0.6) recommendations.push({
+    severity: "medium",
+    title: `Sales down ${Math.round((1 - sales7 / salesPrev7) * 100)}% week-over-week ($${sales7.toFixed(0)} vs $${salesPrev7.toFixed(0)})`,
+    detail: "Momentum is cooling. The Founder offer converts best under scarcity — surface remaining spots in outreach, and target the re-engagement template at users with unfinished videos.",
+  });
+  if (worstDrop.lost > 0 && worstDrop.pctLost >= 30) recommendations.push({
+    severity: "medium",
+    title: `Funnel: ${worstDrop.pctLost}% of users stall between ${worstDrop.from} and ${worstDrop.to}`,
+    detail: worstDrop.to === "Account setup"
+      ? "Most signups never save an API key. Consider walking new users straight into Setup after signup, and mail the setup template to the “With no setup” bucket on the Users tab."
+      : worstDrop.to === "Created a niche"
+        ? "Users finish setup but never run a channel analysis. A first-run prompt (“paste any channel URL”) right after setup, plus the start-first-niche email, attacks this directly."
+        : `Users create niches but don't reach a finished video${topStuck ? ` — most unfinished videos sit at ${topStuck.label} (${topStuck.count})` : ""}. Use the stuck-at-step support check-in emails; each reply is also product feedback on that step.`,
+  });
+  if (dormantPaid > 0) recommendations.push({
+    severity: "medium",
+    title: `${dormantPaid} paying customer${dormantPaid === 1 ? "" : "s"} inactive for 14+ days`,
+    detail: "Silent churn in progress — they won't renew what they don't use. The re-engagement nudge template reminds them their work is saved exactly where they left off.",
+  });
+  if (founderShare >= 80 && (revenue?.totalCents ?? 0) > 0) recommendations.push({
+    severity: "info",
+    title: `${founderShare}% of revenue is the one-time Founder offer`,
+    detail: "Recurring base is thin: when Founder sells out (or the year ends), revenue resets unless these users convert to monthly plans. Plan the founder-cohort renewal path early, and keep Starter/Pro visible in-product.",
+  });
+  if (engagedUnpaid > 0) recommendations.push({
+    severity: "info",
+    title: `${engagedUnpaid} engaged free user${engagedUnpaid === 1 ? " has" : "s have"} completed a video but never paid`,
+    detail: "They've experienced the full value — the warmest upgrade prospects you have. A targeted Founder-offer email to this group should convert better than any cold channel.",
+  });
+  if (recommendations.length === 0) recommendations.push({
+    severity: "info",
+    title: "No major sales blockers detected",
+    detail: "Funnel, engagement, and sales momentum all look healthy at current volume.",
+  });
+  const SEV_ORDER = { high: 0, medium: 1, info: 2 } as const;
+  recommendations.sort((a, b) => SEV_ORDER[a.severity] - SEV_ORDER[b.severity]);
+  const SEV_TONE = {
+    high:   { bg: "oklch(0.6 0.19 25 / 0.07)",  border: "oklch(0.6 0.19 25 / 0.3)",  chip: "oklch(0.55 0.19 25)",  label: "High impact" },
+    medium: { bg: "oklch(0.72 0.18 65 / 0.08)", border: "oklch(0.72 0.18 65 / 0.3)", chip: "oklch(0.55 0.15 65)",  label: "Worth doing" },
+    info:   { bg: "oklch(0.55 0.15 220 / 0.06)", border: "oklch(0.55 0.15 220 / 0.25)", chip: "oklch(0.5 0.13 220)", label: "Strategic" },
+  } as const;
+
+  // Sales chart geometry (same idiom as the Revenue tab's chart).
+  const SW = 560, SPAD_L = 40, SPAD_R = 10, SPAD_T = 14, SPAD_B = 26, SH = 150;
+  const splotW = SW - SPAD_L - SPAD_R, splotH = SH - SPAD_T - SPAD_B;
+  const sn = daily.length;
+  const smax = Math.max(...daily.map((d) => d.amountCents / 100), 1);
+  const scs = daily.map((d, i) => ({
+    x: SPAD_L + (sn <= 1 ? splotW / 2 : (i * splotW) / (sn - 1)),
+    y: SPAD_T + (1 - d.amountCents / 100 / smax) * splotH,
+  }));
+  const sPath = scs.map((c, i) => `${i === 0 ? "M" : "L"}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" ");
+  const sArea = sn > 0
+    ? `${sPath} L${scs[sn - 1].x.toFixed(1)},${(SPAD_T + splotH).toFixed(1)} L${scs[0].x.toFixed(1)},${(SPAD_T + splotH).toFixed(1)} Z`
+    : "";
 
   const card = "p-4 rounded-2xl space-y-3";
   const cardStyle = { background: "oklch(0 0 0 / 0.015)", border: "1px solid oklch(0 0 0 / 0.07)" } as const;
@@ -668,6 +758,72 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
           <strong>{worstDrop.from}</strong> and <strong>{worstDrop.to}</strong>.
         </div>
       )}
+
+      {/* Sales activity — daily revenue line, trailing 30 days */}
+      <div className={card} style={cardStyle}>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <p className={h} style={hStyle}>Sales activity — last 30 days</p>
+          <span className="text-xs" style={{ color: "var(--c-50)" }}>
+            Last 7 days: <strong style={{ color: "oklch(0.72 0.18 65)" }}>${sales7.toFixed(2)}</strong> · {sales7Count} payment{sales7Count === 1 ? "" : "s"}
+            {salesPrev7 > 0 && (
+              <> · {sales7 >= salesPrev7 ? "+" : "−"}{Math.abs(Math.round(((sales7 - salesPrev7) / salesPrev7) * 100))}% vs prior week</>
+            )}
+          </span>
+        </div>
+        <div style={{ overflowX: "clip" }}>
+          <svg viewBox={`0 0 ${SW} ${SH}`} className="w-full" style={{ height: 150 }}
+            onMouseLeave={() => setSalesHover(null)}>
+            <defs>
+              <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.25" />
+                <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            {[0, 0.5, 1].map((t) => {
+              const y = SPAD_T + (1 - t) * splotH;
+              return (
+                <g key={t}>
+                  <line x1={SPAD_L} y1={y} x2={SW - SPAD_R} y2={y} strokeWidth="1" stroke="rgba(0,0,0,0.06)" />
+                  <text x={SPAD_L - 4} y={y + 3.5} textAnchor="end" fontSize="8.5" fill="#999">${Math.round(smax * t)}</text>
+                </g>
+              );
+            })}
+            {sArea && <path d={sArea} fill="url(#salesGrad)" />}
+            {sPath && <path d={sPath} fill="none" stroke="#f59e0b" strokeWidth="1.8" strokeLinejoin="round" />}
+            {scs.map((c, i) => (
+              <g key={i}>
+                {/* invisible hover strip per day */}
+                <rect x={c.x - splotW / Math.max(sn - 1, 1) / 2} y={0} width={splotW / Math.max(sn - 1, 1)} height={SH}
+                  fill="transparent" onMouseEnter={() => setSalesHover(i)} />
+                {daily[i].count > 0 && <circle cx={c.x} cy={c.y} r="2.4" fill="#f59e0b" />}
+              </g>
+            ))}
+            {salesHover !== null && daily[salesHover] && (() => {
+              const c = scs[salesHover];
+              const d = daily[salesHover];
+              const TX = Math.min(Math.max(c.x - 55, SPAD_L), SW - 120);
+              return (
+                <g pointerEvents="none">
+                  <line x1={c.x} y1={SPAD_T} x2={c.x} y2={SPAD_T + splotH} stroke="rgba(0,0,0,0.15)" strokeWidth="1" />
+                  <rect x={TX} y={SPAD_T} width="112" height="34" rx="6" fill="white" stroke="rgba(0,0,0,0.12)" />
+                  <text x={TX + 8} y={SPAD_T + 14} fontSize="9" fill="#666">
+                    {new Date(d.date + "T00:00:00Z").toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" })}
+                  </text>
+                  <text x={TX + 8} y={SPAD_T + 27} fontSize="9.5" fill="#666">
+                    <tspan fill="#f59e0b" fontWeight="700">${(d.amountCents / 100).toFixed(2)}</tspan>
+                    {" · "}{d.count} payment{d.count === 1 ? "" : "s"}
+                  </text>
+                </g>
+              );
+            })()}
+            {daily.map((d, i) => i % 5 === 0 && (
+              <text key={d.date} x={scs[i].x} y={SH - 4} textAnchor="middle" fontSize="8.5" fill="#999">
+                {new Date(d.date + "T00:00:00Z").toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" })}
+              </text>
+            ))}
+          </svg>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Activation funnel */}
@@ -738,6 +894,30 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
               ))}
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Recommendations — kept last so the report reads data first,
+          conclusions after. */}
+      <div className={card} style={cardStyle}>
+        <p className={h} style={hStyle}>Recommendations — issues affecting sales</p>
+        <div className="space-y-2">
+          {recommendations.map((r) => {
+            const tone = SEV_TONE[r.severity];
+            return (
+              <div key={r.title} className="rounded-xl px-4 py-3"
+                style={{ background: tone.bg, border: `1px solid ${tone.border}` }}>
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
+                    style={{ background: "white", color: tone.chip, border: `1px solid ${tone.border}` }}>
+                    {tone.label}
+                  </span>
+                  <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>{r.title}</p>
+                </div>
+                <p className="text-xs leading-relaxed" style={{ color: "var(--c-55)" }}>{r.detail}</p>
+              </div>
+            );
+          })}
         </div>
       </div>
     </section>
@@ -4585,6 +4765,7 @@ export default function AdminPage() {
     payingUserCount: number;
     launchedAt: string | null;
     last12Months: { month: string; amountCents: number }[];
+    daily: { date: string; amountCents: number; count: number }[];
     recentEvents: { amountCents: number; occurredAt: string | null; userEmail: string | null; plan: string | null; eventType: string | null; dodoPaymentId: string | null }[];
     eventCount: number;
   }>(authChecked ? "/api/admin/revenue" : null, fetcher);
