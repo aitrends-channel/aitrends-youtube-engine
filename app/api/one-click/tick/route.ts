@@ -46,6 +46,19 @@ async function handle(req: Request) {
   const results: { id: string; outcome: string; note?: string }[] = [];
 
   for (const p of projects) {
+    // Re-check status right before advancing: the batch was fetched a
+    // moment ago, and the user may have hit Pause/Stop since. This makes
+    // Pause take effect immediately instead of one step late.
+    const { data: fresh } = await supabase
+      .from("projects")
+      .select("auto_pilot, auto_pilot_status")
+      .eq("id", p.id)
+      .single();
+    if (!fresh?.auto_pilot || fresh.auto_pilot_status !== "running") {
+      results.push({ id: p.id, outcome: "skipped", note: fresh?.auto_pilot_status ?? "not running" });
+      continue;
+    }
+
     // Claim the tick immediately so overlapping cron runs don't
     // double-process the same project.
     await supabase.from("projects").update({ auto_pilot_last_tick: new Date().toISOString() }).eq("id", p.id);
