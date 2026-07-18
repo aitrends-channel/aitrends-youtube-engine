@@ -3,7 +3,6 @@
 import { useState, use, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ArrowUpRight, Zap } from "lucide-react";
-import { OneClickSetup } from "@/components/one-click/OneClickSetup";
 import { STUDIO_MODE_NAME } from "@/lib/one-click/config";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
@@ -300,8 +299,24 @@ export default function ChannelPage({ params }: PageProps) {
   // "oneclick" = autopilot (analysis runs here while the user is
   // present, then the server orchestrator drives every later step).
   const [genMode, setGenMode] = useState<"studio" | "oneclick">("studio");
-  const [showOneClickSetup, setShowOneClickSetup] = useState(false);
+  // null = not checked yet; refreshed whenever 1Click is selected and on
+  // window focus (so returning from /setup?tab=oneclick picks up the
+  // fresh preset without a reload).
+  const [oneClickConfigured, setOneClickConfigured] = useState<boolean | null>(null);
   const [oneClickEngaged, setOneClickEngaged] = useState(false);
+
+  useEffect(() => {
+    if (genMode !== "oneclick") return;
+    let alive = true;
+    const check = () =>
+      fetch("/api/one-click/config")
+        .then((r) => r.json())
+        .then((d) => { if (alive) setOneClickConfigured(Boolean(d?.configured)); })
+        .catch(() => { if (alive) setOneClickConfigured(false); });
+    check();
+    window.addEventListener("focus", check);
+    return () => { alive = false; window.removeEventListener("focus", check); };
+  }, [genMode]);
   const [topicMode, setTopicMode] = useState<"generate" | "custom">("generate");
   const [topicHint, setTopicHint] = useState("");
   const [customTopic, setCustomTopic] = useState("");
@@ -383,25 +398,6 @@ export default function ChannelPage({ params }: PageProps) {
     if (!isWorking) return;
     progressRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [isWorking]);
-
-  // 1Click entry point: make sure the user has a saved preset (open the
-  // setup modal on first use), then run the same analysis flow — the
-  // server orchestrator takes over once analysis lands the project at
-  // the topic step.
-  async function startOneClick() {
-    try {
-      const res = await fetch("/api/one-click/config");
-      const d = (await res.json().catch(() => ({}))) as { configured?: boolean };
-      if (!res.ok || !d.configured) {
-        setShowOneClickSetup(true);
-        return;
-      }
-    } catch {
-      setShowOneClickSetup(true);
-      return;
-    }
-    await runFullAnalysis();
-  }
 
   async function runFullAnalysis() {
     if (!channelUrl.trim()) return;
@@ -837,10 +833,10 @@ export default function ChannelPage({ params }: PageProps) {
                   );
                 })}
               </div>
-              {genMode === "oneclick" && !isAnalyzed && (
+              {genMode === "oneclick" && !isAnalyzed && oneClickConfigured && (
                 <button
                   type="button"
-                  onClick={() => setShowOneClickSetup(true)}
+                  onClick={() => router.push("/setup?tab=oneclick")}
                   className="text-xs font-medium underline underline-offset-2 cursor-pointer"
                   style={{ color: "oklch(0.72 0.25 285)" }}
                 >
@@ -871,7 +867,7 @@ export default function ChannelPage({ params }: PageProps) {
                 // is already on the project row, so the lock-by-isAnalyzed
                 // branch keeps things stable for Retry / Re-analyze.
                 const contentTypeMissing = !contentType;
-                const buttonDisabled = isWorking || !channelUrl.trim() || contentTypeMissing;
+                const buttonDisabled = isWorking || !channelUrl.trim() || contentTypeMissing || (genMode === "oneclick" && oneClickConfigured !== true);
                 const buttonLabel = isWorking
                   ? null
                   : hasError
@@ -887,6 +883,31 @@ export default function ChannelPage({ params }: PageProps) {
                         : genMode === "oneclick"
                           ? "Start 1Click"
                           : "Analyze";
+                // 1Click selected but never configured: the input area
+                // becomes a single call-to-action into the Setup page's
+                // 1Click tab. The URL field returns once a preset exists.
+                if (genMode === "oneclick" && !isAnalyzed && oneClickConfigured === false) {
+                  return (
+                    <div className="space-y-2">
+                      <button
+                        type="button"
+                        onClick={() => router.push("/setup?tab=oneclick")}
+                        className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 cursor-pointer"
+                        style={{
+                          background: "oklch(0.72 0.25 285)",
+                          color: "var(--bg-page-2)",
+                          boxShadow: "0 0 16px oklch(0.72 0.25 285 / 0.3)",
+                        }}
+                      >
+                        <Zap size={15} />
+                        Configure 1Click
+                      </button>
+                      <p className="text-xs" style={{ color: "var(--c-45)" }}>
+                        One-time setup: pick your voice, models, and output format — then every 1Click run is fully automatic.
+                      </p>
+                    </div>
+                  );
+                }
                 return (
                   <div className="flex gap-3">
                     <input
@@ -918,7 +939,7 @@ export default function ChannelPage({ params }: PageProps) {
                       onBlur={(e) => { (e.target as HTMLElement).style.borderColor = "var(--bd-8)"; }}
                     />
                     <button
-                      onClick={genMode === "oneclick" && !isAnalyzed ? startOneClick : runFullAnalysis}
+                      onClick={runFullAnalysis}
                       disabled={buttonDisabled}
                       className="shrink-0 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40"
                       style={{
@@ -1195,17 +1216,6 @@ export default function ChannelPage({ params }: PageProps) {
         </div>
       )}
 
-      <OneClickSetup
-        open={showOneClickSetup}
-        onClose={() => setShowOneClickSetup(false)}
-        onSaved={() => {
-          setShowOneClickSetup(false);
-          // Config now exists — continue the kickoff the user started
-          // (only when they haven't analyzed yet; from the "review
-          // preferences" link post-analysis this is a no-op).
-          if (!isAnalyzed && channelUrl.trim() && contentType) void runFullAnalysis();
-        }}
-      />
 
       {showNicheLimitModal && limitInfo && (
         <NicheLimitModal

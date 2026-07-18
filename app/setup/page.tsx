@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound } from "lucide-react";
+import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound, Zap } from "lucide-react";
+import { OneClickConfigPanel } from "@/components/one-click/OneClickConfigPanel";
 import { Spinner } from "@/components/ui/spinner";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import Image from "next/image";
@@ -292,6 +293,16 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState<Tier>("paid");
+  // Top-level split: API keys (the existing paid/free cards) vs the
+  // full-page 1Click preference editor. Deep-linkable via
+  // /setup?tab=oneclick (read from location to avoid the
+  // useSearchParams/Suspense dance on this client page).
+  const [mainTab, setMainTab] = useState<"keys" | "oneclick">("keys");
+  useEffect(() => {
+    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "oneclick") {
+      setMainTab("oneclick");
+    }
+  }, []);
   const [userEmail, setUserEmail] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
@@ -434,6 +445,28 @@ export default function SettingsPage() {
 
       <main className="flex-1 w-full max-w-none px-4 sm:px-8 lg:px-12 py-8 sm:py-14">
 
+        {/* Top-level tabs: API KEYS / 1CLICK */}
+        <div className="flex gap-1 mb-6 p-1 rounded-xl w-full"
+          style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+          {([["keys", "API Keys"], ["oneclick", "1Click"]] as const).map(([id, label]) => (
+            <button
+              key={id}
+              onClick={() => setMainTab(id)}
+              className="flex-1 py-2 rounded-lg text-xs font-bold tracking-widest uppercase transition-all cursor-pointer"
+              style={{
+                background: mainTab === id ? "oklch(0.72 0.25 285)" : "transparent",
+                color: mainTab === id ? "white" : "var(--c-45)",
+              }}
+            >
+              {id === "oneclick" ? <span className="inline-flex items-center gap-1.5"><Zap size={12} /> {label}</span> : label}
+            </button>
+          ))}
+        </div>
+
+        {mainTab === "oneclick" ? (
+          <OneClickConfigPanel />
+        ) : (
+        <>
         {/* Tabs: PAID / FREE */}
         <div className="flex gap-1 mb-10 p-1 rounded-xl w-full"
           style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
@@ -621,6 +654,8 @@ export default function SettingsPage() {
           {/* Add User — admin only */}
           {isAdmin && <AddUserSection />}
         </div>
+        </>
+        )}
 
       </main>
     </div>
