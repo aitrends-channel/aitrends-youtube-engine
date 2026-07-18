@@ -10,6 +10,7 @@ import { generateImages, generateVideos } from "@/lib/workflow/prompts-core";
 import { submitImageTask } from "@/lib/kie/images";
 import { getModelConfig } from "@/lib/kie/imageModels";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
+import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import { redis } from "@/lib/queue/client";
 import { sendEmail } from "@/lib/email/smtp";
 import type { VisualProfileOutput } from "@/lib/claude/schemas";
@@ -365,16 +366,40 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
       attempts["genImageModelIdx"] = imgIdx + 1;
       await supabase.from("projects").update({ auto_pilot_attempts: attempts }).eq("id", project.id);
     }
-    for (const b of toSubmitImg) {
-      try {
-        const taskId = await submitImageTask(b.image_prompt!.trim(), imageModel, imgAr, imgRes, project.user_id);
-        await supabase.from("project_beats")
-          .update({ image_status: "generating", image_task_id: taskId, image_model_id: imageModel })
-          .eq("project_id", project.id).eq("beat_number", b.beat_number);
-      } catch (err) {
-        // Hard failure to even submit (bad credits/model) → surface it.
-        return RESULT.attention(`Image generation failed: ${err instanceof Error ? err.message : "unknown error"}`);
+    // Mirror the manual generate flow's pacing, but honor the admin's
+    // image_generation_batch (product_config) instead of a hardcoded
+    // count, with a 1.5s gap between batches and per-beat retry on KIE's
+    // "call frequency too high" 429 (backoff 1s→2s→4s→8s). Firing all
+    // beats at once trips the rate limit.
+    const SUBMIT_BATCH = Math.max(1, (await getConcurrencyConfig()).image_generation_batch);
+    let hardError: string | null = null;
+    const submitOne = async (b: BeatRow): Promise<boolean> => {
+      const MAX_RETRIES = 4;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const taskId = await submitImageTask(b.image_prompt!.trim(), imageModel, imgAr, imgRes, project.user_id);
+          await supabase.from("project_beats")
+            .update({ image_status: "generating", image_task_id: taskId, image_model_id: imageModel })
+            .eq("project_id", project.id).eq("beat_number", b.beat_number);
+          return true;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "unknown error";
+          const rateLimited = /429|frequency|rate limit/i.test(msg);
+          if (rateLimited && attempt < MAX_RETRIES) {
+            await new Promise((r) => setTimeout(r, Math.min(8000, 1000 * 2 ** attempt)));
+            continue;
+          }
+          if (!rateLimited) hardError = msg; // credits/model error — surface it
+          return false;
+        }
       }
+      return false;
+    };
+    for (let i = 0; i < toSubmitImg.length; i += SUBMIT_BATCH) {
+      const batch = toSubmitImg.slice(i, i + SUBMIT_BATCH);
+      await Promise.all(batch.map(submitOne));
+      if (hardError) return RESULT.attention(`Image generation failed: ${hardError}`);
+      if (i + SUBMIT_BATCH < toSubmitImg.length) await new Promise((r) => setTimeout(r, 1500));
     }
     return RESULT.waiting(`Generating ${toSubmitImg.length} image${toSubmitImg.length === 1 ? "" : "s"}…`);
   }

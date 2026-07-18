@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { requireAdmin } from "@/lib/admin-server";
+import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 import {
   CONCURRENCY_DEFAULTS,
@@ -13,10 +14,12 @@ import {
 export const dynamic = "force-dynamic";
 
 
+// Read is open to any authenticated user — the generate/voiceover pages
+// need the batch sizes to pace their client-side submissions from the
+// same source (product_config.batched_processes) the server routes and
+// 1Click use. Writes stay admin-only (PATCH below).
 export async function GET() {
-  const guard = await requireAdmin();
-  if (!guard.ok) return guard.response;
-  const user = guard.user;
+  try { await getRequiredUser(); } catch (e) { return e as Response; }
 
   const { data, error } = await supabase
     .from("product_config")

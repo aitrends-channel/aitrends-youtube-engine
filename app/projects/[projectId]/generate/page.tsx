@@ -467,6 +467,10 @@ export default function GeneratePage({ params }: PageProps) {
   const { data: ttsModels, error: ttsError } = useSWR<KieModel[]>("/api/kie/models?type=tts", fetcher);
   const { data: imageModels } = useSWR<KieModel[]>("/api/kie/models?type=image", fetcher);
   const { data: videoModels } = useSWR<KieModel[]>("/api/kie/models?type=video", fetcher);
+  // Submit-batch size for pacing KIE image submissions — sourced from
+  // product_config.batched_processes.image_generation_batch (same DB
+  // value the server routes and 1Click use), not a hardcoded number.
+  const { data: pacing } = useSWR<{ image_generation_batch?: number }>("/api/admin/concurrency", fetcher);
   // KIE balance for the proactive credit display + warning banner.
   // Refreshes every 30s so the number stays roughly current without
   // hammering the credit endpoint.
@@ -1627,7 +1631,7 @@ export default function GeneratePage({ params }: PageProps) {
       // AND retry per-beat on 429 with backoff. The retry honors
       // Retry-After when present; otherwise it doubles 1s → 2s → 4s.
       // Real (non-rate-limit) errors throw immediately.
-      const SUBMIT_BATCH = 4;
+      const SUBMIT_BATCH = Math.max(1, pacing?.image_generation_batch ?? 3);
       const pending: { beatNumber: number; taskId: string }[] = [];
       let firstSubmitError: string | null = null;
 
