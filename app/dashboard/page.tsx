@@ -1594,7 +1594,7 @@ export default function HomePage() {
                       return (
                         <Link
                           key={p.id}
-                          href={`/projects/${p.id}/${path}`}
+                          href={(p.auto_pilot && !assembled && p.auto_pilot_status !== "stopped") ? `/projects/${p.id}/one-click` : `/projects/${p.id}/${path}`}
                           prefetch
                           onClick={() => setNavigatingTo(`open-video-${p.id}`)}
                           className={`block relative text-left p-6 rounded-2xl transition-all ${isNavigating ? "pointer-events-none" : "hover:scale-[1.01] active:scale-[0.99]"}`}

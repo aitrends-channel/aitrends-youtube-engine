@@ -700,8 +700,11 @@ export default function ChannelPage({ params }: PageProps) {
           setOneClickEngaged(true);
           toast.success("1Click engaged — we'll take it from here");
           // Kick the orchestrator now so it starts advancing immediately
-          // instead of waiting for the next cron tick. Fire-and-forget.
+          // instead of waiting for the next cron tick, then send the user
+          // to the live progress view to watch it run.
           void fetch("/api/one-click/tick", { method: "POST" }).catch(() => {});
+          router.push(`/projects/${effectiveProjectId}/one-click`);
+          return;
         } catch (err) {
           toast.error(err instanceof Error ? err.message : "1Click start failed");
         }
