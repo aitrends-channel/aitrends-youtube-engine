@@ -699,6 +699,9 @@ export default function ChannelPage({ params }: PageProps) {
           if (!res.ok) throw new Error(d.error ?? `1Click start failed (${res.status})`);
           setOneClickEngaged(true);
           toast.success("1Click engaged — we'll take it from here");
+          // Kick the orchestrator now so it starts advancing immediately
+          // instead of waiting for the next cron tick. Fire-and-forget.
+          void fetch("/api/one-click/tick", { method: "POST" }).catch(() => {});
         } catch (err) {
           toast.error(err instanceof Error ? err.message : "1Click start failed");
         }
