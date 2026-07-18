@@ -44,13 +44,10 @@ export const FREE_IMAGE_MODELS: KieModel[] = [
     tags: ["Free", "Aspect ratios"],
     description: "Free — standard SDXL, supports aspect ratios.",
   },
-  {
-    id: "gemini/flash-image",
-    name: "Nano Banana (Gemini)",
-    type: "image",
-    tags: ["Free", "Aspect ratios"],
-    description: "Free — Google's Nano Banana on your own AI Studio key's quota (Google enforces the limit).",
-  },
+  // NOTE: Gemini (gemini/flash-image) was briefly listed here but removed:
+  // Google's API free tier has a hard limit of 0 image requests (verified
+  // live July 2026) — every call 429s without billing enabled, so it can't
+  // honestly sit in a "Free" tab.
 ];
 
 export interface ModelConfig {
@@ -81,8 +78,6 @@ export const MODEL_CONFIGS: Record<string, ModelConfig> = {
   "cloudflare/flux-1-schnell":           { aspectRatios: ["1:1"] },
   "cloudflare/sdxl-lightning":           { aspectRatios: ["16:9", "1:1", "9:16", "4:3", "3:4"] },
   "cloudflare/sdxl-base":                { aspectRatios: ["16:9", "1:1", "9:16", "4:3", "3:4"] },
-  // Free Gemini (AI Studio, BYO key). Ratios from imageConfig.aspectRatio.
-  "gemini/flash-image":                  { aspectRatios: ["16:9", "21:9", "3:2", "4:3", "5:4", "1:1", "4:5", "3:4", "2:3", "9:16"] },
 };
 
 export function getModelConfig(modelId: string): ModelConfig {
