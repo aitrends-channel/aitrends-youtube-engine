@@ -7,19 +7,13 @@ import { SlidersHorizontal, X } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { ModelPicker } from "@/components/ModelPicker";
 import { VoicePickerGrid } from "@/components/VoicePickerGrid";
+import { AssembleSection } from "@/components/one-click/AssembleSection";
 import type { OneClickConfig } from "@/lib/one-click/config";
 import { emptyConfig } from "@/lib/one-click/config";
 import type { KieModel } from "@/lib/types";
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(r.status)));
 
-// Corner presets → logo position fractions (assemble-page semantics).
-const LOGO_POSITIONS: { id: string; label: string; x: number; y: number }[] = [
-  { id: "tl", label: "Top left",     x: 0.02, y: 0.02 },
-  { id: "tr", label: "Top right",    x: 0.88, y: 0.02 },
-  { id: "bl", label: "Bottom left",  x: 0.02, y: 0.88 },
-  { id: "br", label: "Bottom right", x: 0.88, y: 0.88 },
-];
 
 type ChainSlot = "primary" | "secondary" | "fallback";
 const SLOTS: { id: ChainSlot; label: string; optional: boolean }[] = [
@@ -152,10 +146,6 @@ export function OneClickConfigPanel() {
     }
   }
 
-  const inputCls = "w-full px-3 py-2.5 rounded-xl text-sm outline-none transition-all";
-  const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--bd-8)", color: "var(--c-90)" } as const;
-  const labelCls = "block text-xs font-semibold uppercase tracking-wider mb-1.5";
-  const labelStyle = { color: "var(--c-50)" } as const;
   const canSave = Boolean(cfg.tts.voiceId && cfg.images.primary && cfg.videos.primary);
 
   return (
@@ -261,67 +251,18 @@ export function OneClickConfigPanel() {
         />
       </section>
 
-      {/* Assembly */}
+      {/* Assembly — the assemble step's settings, 1:1 */}
       <section className="space-y-5 p-6 sm:p-8 rounded-2xl"
         style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
         <div>
           <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>Assembly</h2>
           <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>Applied when 1Click stitches the final video.</p>
         </div>
-
-        <label className="flex items-center gap-2.5 text-sm cursor-pointer select-none" style={{ color: "var(--c-70)" }}>
-          <input
-            type="checkbox"
-            checked={cfg.assemble.captionsEnabled}
-            onChange={(e) => setCfg({ ...cfg, assemble: { ...cfg.assemble, captionsEnabled: e.target.checked } })}
-            className="accent-[oklch(0.72_0.25_285)]"
-          />
-          Burn in captions
-        </label>
-
-        <div className="flex gap-4 items-end flex-wrap">
-          <div className="flex-1 min-w-[260px]">
-            <label className={labelCls} style={labelStyle}>Background music URL (optional — direct mp3 link)</label>
-            <input type="url" className={inputCls} style={inputStyle}
-              placeholder="https://…/track.mp3 — leave empty for no music"
-              value={cfg.assemble.bgMusicUrl ?? ""}
-              onChange={(e) => setCfg({ ...cfg, assemble: { ...cfg.assemble, bgMusicUrl: e.target.value || null } })}
-            />
-          </div>
-          <div className="w-44 shrink-0">
-            <label className={labelCls} style={labelStyle}>Music volume · {Math.round(cfg.assemble.bgMusicVolume * 100)}%</label>
-            <input type="range" min={0} max={100}
-              value={Math.round(cfg.assemble.bgMusicVolume * 100)}
-              onChange={(e) => setCfg({ ...cfg, assemble: { ...cfg.assemble, bgMusicVolume: Number(e.target.value) / 100 } })}
-              className="w-full accent-[oklch(0.72_0.25_285)]"
-            />
-          </div>
-        </div>
-
-        <div className="flex gap-4 items-end flex-wrap">
-          <div className="flex-1 min-w-[260px]">
-            <label className={labelCls} style={labelStyle}>Logo URL (optional)</label>
-            <input type="url" className={inputCls} style={inputStyle}
-              placeholder="https://…/logo.png — leave empty for no logo"
-              value={cfg.assemble.logoUrl ?? ""}
-              onChange={(e) => setCfg({ ...cfg, assemble: { ...cfg.assemble, logoUrl: e.target.value || null } })}
-            />
-          </div>
-          <div className="w-48 shrink-0">
-            <label className={labelCls} style={labelStyle}>Logo position</label>
-            <select
-              className={inputCls}
-              style={{ ...inputStyle, cursor: "pointer" }}
-              value={LOGO_POSITIONS.find((p) => Math.abs(p.x - cfg.assemble.logoX) < 0.01 && Math.abs(p.y - cfg.assemble.logoY) < 0.01)?.id ?? "tl"}
-              onChange={(e) => {
-                const p = LOGO_POSITIONS.find((x) => x.id === e.target.value) ?? LOGO_POSITIONS[0];
-                setCfg({ ...cfg, assemble: { ...cfg.assemble, logoX: p.x, logoY: p.y } });
-              }}
-            >
-              {LOGO_POSITIONS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-            </select>
-          </div>
-        </div>
+        <AssembleSection
+          value={cfg.assemble}
+          aspectRatio={cfg.output.aspectRatio}
+          onChange={(assemble) => setCfg({ ...cfg, assemble })}
+        />
       </section>
 
       {/* Sticky save bar */}

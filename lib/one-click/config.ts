@@ -110,10 +110,13 @@ export function validateConfig(raw: unknown): OneClickConfig | string {
       bgMusicUrl: c.assemble?.bgMusicUrl?.trim() || null,
       bgMusicVolume: clamp01(vol, 0.15),
       captionsEnabled: Boolean(c.assemble?.captionsEnabled),
-      captionsLanguage: c.assemble?.captionsLanguage?.trim() || undefined,
-      captionsStyle: c.assemble?.captionsStyle?.trim() || undefined,
-      captionsSize: c.assemble?.captionsSize?.trim() || undefined,
-      captionsPosition: c.assemble?.captionsPosition?.trim() || undefined,
+      // Persist explicit caption defaults so the stored config always
+      // matches what the UI shows (which falls back to these), and the
+      // orchestrator never has to guess.
+      captionsLanguage: c.assemble?.captionsLanguage?.trim() || "source",
+      captionsStyle: c.assemble?.captionsStyle?.trim() || "classic",
+      captionsSize: c.assemble?.captionsSize?.trim() || "medium",
+      captionsPosition: c.assemble?.captionsPosition?.trim() || "bottom",
       logoUrl: c.assemble?.logoUrl?.trim() || null,
       logoX: clamp01(Number(c.assemble?.logoX ?? 0.02), 0.02),
       logoY: clamp01(Number(c.assemble?.logoY ?? 0.02), 0.02),

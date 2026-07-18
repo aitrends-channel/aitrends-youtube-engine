@@ -24,8 +24,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "projectId, filename and contentType are required" }, { status: 400 });
   }
 
-  const { data: project } = await supabase.from("projects").select("id").eq("id", projectId).eq("user_id", user.id).single();
-  if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  // "one-click" is a settings-scope sentinel: assets uploaded from the
+  // 1Click config page (bgm/logo) belong to the user's preset, not to
+  // any project, so they live under <user>/one-click/… and skip the
+  // project-ownership check.
+  if (projectId !== "one-click") {
+    const { data: project } = await supabase.from("projects").select("id").eq("id", projectId).eq("user_id", user.id).single();
+    if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
 
   const ext = filename.split(".").pop() ?? "bin";
   const key = `${userFolderFor(user)}/${projectId}/${folder ?? "uploads"}/${Date.now()}.${ext}`;
