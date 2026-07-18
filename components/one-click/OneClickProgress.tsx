@@ -8,18 +8,14 @@ import { Check, Loader2, Circle, AlertTriangle, Download, Pause, Play, Square, R
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-// The steps in pipeline order, each with the current_state (and extra
-// signal) that marks it complete. Keep in sync with the orchestrator's
-// state machine.
-const STEPS: { key: string; label: string; done: (p: ProjectState) => boolean; active: (p: ProjectState) => boolean }[] = [
-  { key: "channel",  label: "Channel analysis", done: (p) => p.current_state > 5, active: (p) => p.current_state <= 5 },
-  { key: "topic",    label: "Topic",            done: (p) => p.current_state > 6 || (p.current_state === 6 && !!p.selected_topic), active: (p) => p.current_state === 6 && !p.selected_topic },
-  { key: "script",   label: "Script",           done: (p) => p.current_state >= 7, active: (p) => p.current_state === 6 && !!p.selected_topic },
-  { key: "visuals",  label: "Visuals",          done: (p) => p.current_state >= 9, active: (p) => p.current_state >= 7 && p.current_state <= 8 },
-  { key: "prompts",  label: "Prompts & voiceover", done: (p) => p.current_state >= 14, active: (p) => p.current_state >= 9 && p.current_state <= 13 },
-  { key: "generate", label: "Images & video",   done: (p) => p.assembly_status === "done" || p.current_state >= 15, active: (p) => p.current_state === 14 },
-  { key: "assemble", label: "Final video",      done: (p) => p.assembly_status === "done", active: (p) => p.current_state >= 15 && p.assembly_status !== "done" },
-];
+interface BeatLite {
+  imagePrompt?: string | null;
+  videoPrompt?: string | null;
+  imageUrl?: string | null;
+  videoUrl?: string | null;
+  voiceoverUrl?: string | null;
+}
+interface ThumbLite { imageUrl?: string | null }
 
 interface ProjectState {
   id: string;
@@ -27,20 +23,87 @@ interface ProjectState {
   selected_topic: string | null;
   word_count: number | null;
   assembly_status: string | null;
+  assembly_progress: string | null;
   assembled_url: string | null;
+  channel_name: string | null;
   auto_pilot: boolean;
   auto_pilot_status: string | null;
   auto_pilot_error: string | null;
+  beats?: BeatLite[];
+  thumbnails?: ThumbLite[];
 }
 
+// Per-beat / per-thumbnail counts, derived from the beats + thumbnails
+// the single-project GET returns. Drives the count + percentage each
+// generation step shows while it runs.
+interface Agg {
+  total: number;
+  imagePrompts: number;
+  videoPrompts: number;
+  voiceovers: number;
+  images: number;
+  videos: number;
+  assembleReady: number;
+  thumbsTotal: number;
+  thumbs: number;
+}
+function aggregate(p: ProjectState): Agg {
+  const beats = p.beats ?? [];
+  const thumbs = p.thumbnails ?? [];
+  const count = (pred: (b: BeatLite) => boolean) => beats.filter(pred).length;
+  return {
+    total: beats.length,
+    imagePrompts: count((b) => !!b.imagePrompt?.trim()),
+    videoPrompts: count((b) => !!b.videoPrompt?.trim()),
+    voiceovers: count((b) => !!b.voiceoverUrl),
+    images: count((b) => !!b.imageUrl),
+    videos: count((b) => !!b.videoUrl),
+    // Beats the assembler will actually use: per-beat mode needs BOTH a
+    // visual and a voiceover; beats without either are dropped.
+    assembleReady: count((b) => !!(b.imageUrl || b.videoUrl) && !!b.voiceoverUrl),
+    thumbsTotal: thumbs.length,
+    thumbs: thumbs.filter((t) => !!t.imageUrl).length,
+  };
+}
+
+interface Count { done: number; total: number }
+interface StepDef {
+  key: string;
+  label: string;
+  done: (p: ProjectState, a: Agg) => boolean;
+  count?: (a: Agg) => Count | null;
+  detail?: (p: ProjectState) => string | null;
+}
+
+// Pipeline order. Channel + Topic render full-width up top; the rest sit
+// in the 2-column grid below. Counted steps show N/total + a percentage.
+// Keep this order in sync with the orchestrator's state machine.
+const TOP_STEPS: StepDef[] = [
+  { key: "channel", label: "Channel analysis", done: (p) => p.current_state > 5 },
+  { key: "topic", label: "Topic", done: (p) => p.current_state > 6 || !!p.selected_topic, detail: (p) => p.selected_topic },
+];
+const GRID_STEPS: StepDef[] = [
+  { key: "script", label: "Script", done: (p) => p.current_state >= 7, detail: (p) => (p.word_count ? `${p.word_count.toLocaleString()} words` : null) },
+  { key: "visuals", label: "Visuals", done: (p) => p.current_state >= 9 },
+  { key: "imagePrompts", label: "Image prompts", count: (a) => (a.total ? { done: a.imagePrompts, total: a.total } : null), done: (_p, a) => a.total > 0 && a.imagePrompts >= a.total },
+  { key: "videoPrompts", label: "Video prompts", count: (a) => (a.total ? { done: a.videoPrompts, total: a.total } : null), done: (_p, a) => a.total > 0 && a.videoPrompts >= a.total },
+  { key: "voiceovers", label: "Voiceovers", count: (a) => (a.total ? { done: a.voiceovers, total: a.total } : null), done: (_p, a) => a.total > 0 && a.voiceovers >= a.total },
+  { key: "images", label: "Images", count: (a) => (a.total ? { done: a.images, total: a.total } : null), done: (_p, a) => a.total > 0 && a.images >= a.total },
+  { key: "videos", label: "Videos", count: (a) => (a.total ? { done: a.videos, total: a.total } : null), done: (_p, a) => a.total > 0 && a.videos >= a.total },
+  { key: "assemble", label: "Assemble", count: (a) => (a.total ? { done: a.assembleReady, total: a.total } : null), done: (p) => p.assembly_status === "done" || p.current_state >= 16, detail: (p) => (p.assembly_status && p.assembly_status !== "done" ? (p.assembly_progress || "Assembling…") : null) },
+  { key: "thumbnails", label: "Thumbnails", count: (a) => (a.thumbsTotal ? { done: a.thumbs, total: a.thumbsTotal } : null), done: (p) => p.current_state >= 16 || p.auto_pilot_status === "completed" },
+];
+const ALL_STEPS = [...TOP_STEPS, ...GRID_STEPS];
+
+type StepStatus = "done" | "active" | "attention" | "pending";
+
 // Live "watch it run" view for a 1Click project. Polls the project
-// state, self-nudges the orchestrator tick while open (so progress is
-// quick on screen; the cron is the backstop when the user leaves), and
-// renders the pipeline checklist with Pause/Stop.
+// state, self-nudges the orchestrator tick while open, and renders the
+// pipeline as standalone steps with per-step counts + progress.
 export function OneClickProgress({ projectId }: { projectId: string }) {
   const router = useRouter();
   // The single-project GET spreads the project fields at the top level
-  // (not under a `project` key), with error under `error`.
+  // (not under a `project` key) and includes beats + thumbnails arrays.
   const { data, mutate } = useSWR<ProjectState & { error?: string }>(
     `/api/projects/${projectId}`,
     fetcher,
@@ -50,6 +113,31 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
   const status = p?.auto_pilot_status ?? null;
   const running = status === "running" || status === null;
   const [acting, setActing] = useState(false);
+  const [busyStep, setBusyStep] = useState<string | null>(null);
+
+  // Manually (re)run a single step — click any grid step to generate it
+  // or retry a failed one. The endpoint resets that step's incomplete
+  // artifacts and re-enters the orchestrator there; the nudge runs it now.
+  async function runStep(step: string, label: string) {
+    if (busyStep) return;
+    setBusyStep(step);
+    try {
+      const res = await fetch("/api/one-click/step", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, step }),
+      });
+      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(d.error ?? `Request failed (${res.status})`);
+      toast.success(`Re-running ${label}…`);
+      void fetch("/api/one-click/tick", { method: "POST" }).catch(() => {});
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Request failed");
+    } finally {
+      setBusyStep(null);
+    }
+  }
 
   async function control(kind: "pause" | "resume" | "stop") {
     setActing(true);
@@ -95,72 +183,106 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
     );
   }
 
-  const complete = p.assembly_status === "done";
-  const done = complete || status === "completed";
-  const completedCount = STEPS.filter((s) => s.done(p)).length;
-  const pct = Math.round((completedCount / STEPS.length) * 100);
+  // "Done" is only the true finish line — the orchestrator sets state 16
+  // / status "completed" after the LAST thumbnail. Assembly finishing
+  // isn't done: thumbnails still run after it.
+  const done = status === "completed" || p.current_state >= 16;
+
+  // Done → replace the whole live view with the final video preview.
+  if (done && p.assembled_url) {
+    const filename = `${(p.channel_name ?? "").trim() || "video"}.mp4`;
+    return (
+      <div className="max-w-xl mx-auto px-5 py-10 sm:py-16">
+        <div className="text-center mb-6">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
+            style={{ background: "oklch(0.65 0.15 145 / 0.12)", border: "1px solid oklch(0.65 0.15 145 / 0.3)" }}>
+            <Check size={26} style={{ color: "oklch(0.65 0.15 145)" }} />
+          </div>
+          <h1 className="text-xl font-bold" style={{ color: "var(--c-90)" }}>Your video is ready</h1>
+          <p className="text-sm mt-1.5" style={{ color: "var(--c-50)" }}>1Click ran the whole pipeline for you.</p>
+        </div>
+
+        <video
+          key={p.assembled_url}
+          src={p.assembled_url}
+          controls
+          className="mx-auto block max-h-[70vh] rounded-xl w-full"
+          style={{ background: "var(--bg-page-2)", maxWidth: "100%" }}
+        />
+
+        <div className="flex items-center gap-3 mt-5">
+          <button
+            onClick={() => router.push(`/projects/${projectId}/assemble`)}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer transition-all"
+            style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}>
+            <RotateCcw size={14} /> Regenerate
+          </button>
+          <a
+            href={`/api/projects/${projectId}/export-video?url=${encodeURIComponent(p.assembled_url)}&filename=${encodeURIComponent(filename)}`}
+            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold text-center transition-all"
+            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+            <Download size={14} /> Export
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  const a = aggregate(p);
+  const doneFlags = ALL_STEPS.map((s) => s.done(p, a));
+  const firstActiveIdx = doneFlags.findIndex((d) => !d);
+  const completedCount = doneFlags.filter(Boolean).length;
+  const pct = Math.round((completedCount / ALL_STEPS.length) * 100);
+
+  const statusOf = (idx: number): StepStatus => {
+    if (doneFlags[idx]) return "done";
+    if (idx === firstActiveIdx) return status === "needs_attention" ? "attention" : running ? "active" : "pending";
+    return "pending";
+  };
 
   return (
-    <div className="max-w-xl mx-auto px-5 py-10 sm:py-16">
+    <div className="max-w-2xl mx-auto px-5 py-10 sm:py-14">
       <div className="text-center mb-6">
         <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
           style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-          {done
-            ? <Check size={26} style={{ color: "oklch(0.65 0.15 145)" }} />
-            : status === "paused"
-              ? <Pause size={22} style={{ color: "oklch(0.7 0.16 65)" }} />
+          {status === "paused"
+            ? <Pause size={22} style={{ color: "oklch(0.7 0.16 65)" }} />
+            : status === "needs_attention"
+              ? <AlertTriangle size={22} style={{ color: "oklch(0.6 0.19 25)" }} />
               : <Loader2 size={24} className="animate-spin" style={{ color: "oklch(0.72 0.25 285)" }} />}
         </div>
         <h1 className="text-xl font-bold" style={{ color: "var(--c-90)" }}>
-          {done ? "Your video is ready" : status === "needs_attention" ? "1Click needs your input" : status === "paused" ? "1Click paused" : "1Click is building your video"}
+          {status === "needs_attention" ? "1Click needs your input" : status === "paused" ? "1Click paused" : "1Click is building your video"}
         </h1>
         <p className="text-sm mt-1.5" style={{ color: "var(--c-50)" }}>
-          {done
-            ? "1Click ran the whole pipeline for you."
-            : "You can watch here or close the tab — we'll keep going and email you when it's done."}
+          You can watch here or close the tab — we&apos;ll keep going and email you when it&apos;s done.
         </p>
       </div>
 
-      {/* Step-count + progress bar */}
-      {!done && (
-        <div className="mb-5">
-          <div className="flex items-center justify-between text-xs mb-1.5" style={{ color: "var(--c-50)" }}>
-            <span className="font-semibold">Step {Math.min(completedCount + 1, STEPS.length)} of {STEPS.length}</span>
-            <span>{pct}%</span>
-          </div>
-          <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(1 0 0 / 0.06)" }}>
-            <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: "oklch(0.72 0.25 285)" }} />
-          </div>
+      {/* Overall progress */}
+      <div className="mb-5">
+        <div className="flex items-center justify-between text-xs mb-1.5" style={{ color: "var(--c-50)" }}>
+          <span className="font-semibold">Step {Math.min(completedCount + 1, ALL_STEPS.length)} of {ALL_STEPS.length}</span>
+          <span>{pct}%</span>
         </div>
-      )}
+        <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(1 0 0 / 0.06)" }}>
+          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: "oklch(0.72 0.25 285)" }} />
+        </div>
+      </div>
 
-      {/* Step checklist */}
-      <ol className="rounded-2xl overflow-hidden" style={{ background: "oklch(1 0 0 / 0.03)", border: "1px solid var(--bd-7)" }}>
-        {STEPS.map((s, i) => {
-          const isDone = s.done(p);
-          const isActive = !isDone && s.active(p) && running;
-          const isAttention = !isDone && s.active(p) && status === "needs_attention";
-          const detail = s.key === "topic" && p.selected_topic ? p.selected_topic
-            : s.key === "script" && p.word_count ? `${p.word_count.toLocaleString()} words`
-            : null;
-          return (
-            <li key={s.key} className="flex items-center gap-3 px-4 py-3"
-              style={{ borderTop: i === 0 ? "none" : "1px solid var(--bd-6)" }}>
-              <span className="shrink-0">
-                {isDone ? <Check size={16} style={{ color: "oklch(0.65 0.15 145)" }} />
-                  : isAttention ? <AlertTriangle size={16} style={{ color: "oklch(0.6 0.19 25)" }} />
-                  : isActive ? <Loader2 size={16} className="animate-spin" style={{ color: "oklch(0.72 0.25 285)" }} />
-                  : <Circle size={16} style={{ color: "var(--c-30)" }} />}
-              </span>
-              <span className="flex-1 text-sm font-medium"
-                style={{ color: isDone ? "var(--c-80)" : isActive || isAttention ? "var(--c-90)" : "var(--c-45)" }}>
-                {s.label}
-              </span>
-              {detail && <span className="text-xs truncate max-w-[45%]" style={{ color: "var(--c-45)" }}>{detail}</span>}
-            </li>
-          );
-        })}
-      </ol>
+      {/* Channel + Topic full-width, then the rest in a 2-column grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {TOP_STEPS.map((s, i) => (
+          <div key={s.key} className="sm:col-span-2">
+            <StepCard step={s} status={statusOf(i)} agg={a} project={p} />
+          </div>
+        ))}
+        {GRID_STEPS.map((s, gi) => (
+          <StepCard key={s.key} step={s} status={statusOf(TOP_STEPS.length + gi)} agg={a} project={p}
+            busy={busyStep === s.key}
+            onRun={() => runStep(s.key, s.label)} />
+        ))}
+      </div>
 
       {status === "needs_attention" && (
         <p className="text-sm mt-4 px-4 py-3 rounded-xl"
@@ -170,26 +292,8 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
       )}
 
       <div className="flex items-center justify-between gap-3 mt-6 flex-wrap">
-        {done ? (
+        {status === "paused" ? (
           <>
-            <a
-              href={`/projects/${projectId}/thumbnails`}
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
-              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-            >
-              Open video →
-            </a>
-            {p.assembled_url && (
-              <a href={p.assembled_url} download
-                className="inline-flex items-center gap-1.5 text-sm font-medium"
-                style={{ color: "oklch(0.65 0.15 145)" }}>
-                <Download size={14} /> Download
-              </a>
-            )}
-          </>
-        ) : status === "paused" ? (
-          <>
-            {/* Paused: Resume (primary) + Cancel (disengage entirely). */}
             <button onClick={() => control("resume")} disabled={acting}
               className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-40 transition-opacity hover:opacity-90"
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
@@ -203,8 +307,6 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
           </>
         ) : status === "needs_attention" ? (
           <>
-            {/* Retry — resume puts the run back to running so the tick
-                re-attempts the failed step from where it stalled. */}
             <button onClick={() => control("resume")} disabled={acting}
               className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-40 transition-opacity hover:opacity-90"
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
@@ -224,8 +326,6 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
             </button>
           </>
         ) : (
-          /* Running: Pause is the primary (and only) control — Cancel
-             appears once paused. */
           <button onClick={() => control("pause")} disabled={acting}
             className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-40 transition-opacity hover:opacity-90"
             style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
@@ -233,6 +333,73 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+// One step tile. Shows an icon, label, optional detail, and — for
+// counted steps — an N/total count, a percentage, and a mini progress
+// bar while it's generating. Clickable (when onRun is passed) to
+// generate/retry that specific step.
+function StepCard({ step, status, agg, project, busy, onRun }: {
+  step: StepDef; status: StepStatus; agg: Agg; project: ProjectState;
+  busy?: boolean; onRun?: () => void;
+}) {
+  const count = step.count?.(agg) ?? null;
+  const detail = step.detail?.(project) ?? null;
+  const cpct = count && count.total > 0 ? Math.round((count.done / count.total) * 100) : null;
+  const clickable = !!onRun;
+
+  const border =
+    status === "done" ? "oklch(0.65 0.15 145 / 0.3)"
+    : status === "active" ? "oklch(0.72 0.25 285 / 0.35)"
+    : status === "attention" ? "oklch(0.6 0.19 25 / 0.35)"
+    : "var(--bd-7)";
+  const bg =
+    status === "active" ? "oklch(0.72 0.25 285 / 0.06)"
+    : status === "attention" ? "oklch(0.6 0.19 25 / 0.05)"
+    : "oklch(1 0 0 / 0.03)";
+
+  return (
+    <div
+      className={`rounded-2xl px-4 py-3.5 h-full transition-all ${clickable ? "cursor-pointer hover:brightness-125" : ""}`}
+      style={{ background: bg, border: `1px solid ${border}`, opacity: busy ? 0.6 : 1 }}
+      role={clickable ? "button" : undefined}
+      title={clickable ? `Click to generate or retry — ${step.label}` : undefined}
+      onClick={clickable && !busy ? onRun : undefined}
+    >
+      <div className="flex items-center gap-2.5">
+        <span className="shrink-0">
+          {busy ? <Loader2 size={16} className="animate-spin" style={{ color: "oklch(0.72 0.25 285)" }} />
+            : status === "done" ? <Check size={16} style={{ color: "oklch(0.65 0.15 145)" }} />
+            : status === "attention" ? <AlertTriangle size={16} style={{ color: "oklch(0.6 0.19 25)" }} />
+            : status === "active" ? <Loader2 size={16} className="animate-spin" style={{ color: "oklch(0.72 0.25 285)" }} />
+            : <Circle size={16} style={{ color: "var(--c-30)" }} />}
+        </span>
+        <span className="flex-1 text-sm font-medium truncate"
+          style={{ color: status === "done" ? "var(--c-80)" : status === "active" || status === "attention" ? "var(--c-90)" : "var(--c-45)" }}>
+          {step.label}
+        </span>
+        {count && (
+          <span className="text-xs font-semibold tabular-nums shrink-0"
+            style={{ color: status === "done" ? "oklch(0.65 0.15 145)" : status === "active" ? "oklch(0.82 0.12 285)" : "var(--c-45)" }}>
+            {count.done}/{count.total}{cpct !== null ? ` · ${cpct}%` : ""}
+          </span>
+        )}
+      </div>
+
+      {/* Live count bar — always shown once totals are known, so numbers
+          are visible during generation, not only after it finishes. */}
+      {count && count.total > 0 && (
+        <div className="h-1.5 rounded-full overflow-hidden mt-2.5" style={{ background: "oklch(1 0 0 / 0.06)" }}>
+          <div className="h-full rounded-full transition-all"
+            style={{ width: `${cpct}%`, background: status === "done" ? "oklch(0.65 0.15 145)" : "oklch(0.72 0.25 285)" }} />
+        </div>
+      )}
+
+      {detail && (
+        <p className="text-xs mt-1.5 truncate" style={{ color: "var(--c-45)" }}>{detail}</p>
+      )}
     </div>
   );
 }
