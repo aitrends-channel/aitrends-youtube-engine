@@ -23,6 +23,12 @@ export interface ModelChain {
 
 export interface OneClickConfig {
   version: number;
+  /** How the topic gate is handled in a 1Click run:
+   *   "auto"   — the orchestrator picks the top generated idea and
+   *              continues without stopping (true hands-off).
+   *   "manual" — the run pauses at the topic step (needs_attention)
+   *              so the user chooses the topic, then resumes. */
+  topicMode: "auto" | "manual";
   tts: {
     /** TTS model id (e.g. elevenlabs model) */
     modelId: string;
@@ -61,6 +67,7 @@ export interface OneClickConfig {
 export function emptyConfig(): OneClickConfig {
   return {
     version: CONFIG_VERSION,
+    topicMode: "auto",
     tts: { modelId: "", voiceId: "" },
     // resolution uses the model pickers' tier values ("1K"/"2K"); the
     // orchestrator maps it to assembly output size.
@@ -85,6 +92,7 @@ export function emptyConfig(): OneClickConfig {
 export function validateConfig(raw: unknown): OneClickConfig | string {
   if (typeof raw !== "object" || raw === null) return "Config must be an object";
   const c = raw as Partial<OneClickConfig>;
+  const topicMode: "auto" | "manual" = c.topicMode === "manual" ? "manual" : "auto";
   if (!c.tts?.modelId?.trim() || !c.tts?.voiceId?.trim()) return "Pick a voiceover model and voice";
   if (!c.images?.primary?.trim()) return "Pick a primary image model";
   if (!c.videos?.primary?.trim()) return "Pick a primary video model";
@@ -93,6 +101,7 @@ export function validateConfig(raw: unknown): OneClickConfig | string {
   const clamp01 = (n: number, dflt: number) => (Number.isFinite(n) && n >= 0 && n <= 1 ? n : dflt);
   return {
     version: CONFIG_VERSION,
+    topicMode,
     tts: { modelId: c.tts.modelId.trim(), voiceId: c.tts.voiceId.trim() },
     output: { aspectRatio: c.output.aspectRatio.trim(), resolution: c.output.resolution.trim() },
     images: {

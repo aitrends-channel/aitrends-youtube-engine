@@ -171,6 +171,30 @@ export function OneClickConfigPanel() {
         )}
       </div>
 
+      {/* Topic — manual pick vs fully automatic */}
+      <section className="space-y-5 p-6 sm:p-8 rounded-2xl"
+        style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>Manually select topic</h2>
+            <p className="text-xs mt-1 max-w-lg" style={{ color: "var(--c-45)" }}>
+              On — the run pauses at the topic step so you choose from the generated ideas, then continues on
+              its own. Off — 1Click picks the top idea and runs straight through, fully hands-off.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCfg({ ...cfg, topicMode: cfg.topicMode === "manual" ? "auto" : "manual" })}
+            aria-pressed={cfg.topicMode === "manual"}
+            className="relative w-11 h-6 rounded-full transition-all shrink-0 cursor-pointer"
+            style={{ background: cfg.topicMode === "manual" ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
+          >
+            <span className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
+              style={{ background: "oklch(0.95 0 0)", left: cfg.topicMode === "manual" ? "calc(100% - 1.375rem)" : "0.125rem" }} />
+          </button>
+        </div>
+      </section>
+
       {/* Voice — the voiceover step's picker cards */}
       <section className="space-y-5 p-6 sm:p-8 rounded-2xl"
         style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
