@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, Circle, AlertTriangle, Download } from "lucide-react";
-import { OneClickControls } from "@/components/one-click/OneClickControls";
+import { toast } from "sonner";
+import { Check, Loader2, Circle, AlertTriangle, Download, Pause, Play, Square } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -47,6 +47,33 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
   const p = data?.project;
   const status = p?.auto_pilot_status ?? null;
   const running = status === "running" || status === null;
+  const [acting, setActing] = useState(false);
+
+  async function control(kind: "pause" | "resume" | "stop") {
+    setActing(true);
+    try {
+      const res = kind === "stop"
+        ? await fetch(`/api/one-click/start?projectId=${encodeURIComponent(projectId)}`, { method: "DELETE" })
+        : await fetch("/api/one-click/start", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ projectId, action: kind }),
+          });
+      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(d.error ?? `Request failed (${res.status})`);
+      if (kind === "stop") {
+        toast.success("1Click stopped — finish this video yourself anytime");
+        router.push(`/projects/${projectId}/channel`);
+        return;
+      }
+      toast.success(kind === "pause" ? "1Click paused" : "1Click resumed");
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Request failed");
+    } finally {
+      setActing(false);
+    }
+  }
 
   // Drive the orchestrator while this page is open and the run is
   // active — one nudge every 12s, on top of the 2-min cron backstop.
@@ -68,15 +95,19 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
 
   const complete = p.assembly_status === "done";
   const done = complete || status === "completed";
+  const completedCount = STEPS.filter((s) => s.done(p)).length;
+  const pct = Math.round((completedCount / STEPS.length) * 100);
 
   return (
     <div className="max-w-xl mx-auto px-5 py-10 sm:py-16">
-      <div className="text-center mb-8">
+      <div className="text-center mb-6">
         <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
           style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
           {done
             ? <Check size={26} style={{ color: "oklch(0.65 0.15 145)" }} />
-            : <Loader2 size={24} className="animate-spin" style={{ color: "oklch(0.72 0.25 285)" }} />}
+            : status === "paused"
+              ? <Pause size={22} style={{ color: "oklch(0.7 0.16 65)" }} />
+              : <Loader2 size={24} className="animate-spin" style={{ color: "oklch(0.72 0.25 285)" }} />}
         </div>
         <h1 className="text-xl font-bold" style={{ color: "var(--c-90)" }}>
           {done ? "Your video is ready" : status === "needs_attention" ? "1Click needs your input" : status === "paused" ? "1Click paused" : "1Click is building your video"}
@@ -87,6 +118,19 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
             : "You can watch here or close the tab — we'll keep going and email you when it's done."}
         </p>
       </div>
+
+      {/* Step-count + progress bar */}
+      {!done && (
+        <div className="mb-5">
+          <div className="flex items-center justify-between text-xs mb-1.5" style={{ color: "var(--c-50)" }}>
+            <span className="font-semibold">Step {Math.min(completedCount + 1, STEPS.length)} of {STEPS.length}</span>
+            <span>{pct}%</span>
+          </div>
+          <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(1 0 0 / 0.06)" }}>
+            <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: "oklch(0.72 0.25 285)" }} />
+          </div>
+        </div>
+      )}
 
       {/* Step checklist */}
       <ol className="rounded-2xl overflow-hidden" style={{ background: "oklch(1 0 0 / 0.03)", border: "1px solid var(--bd-7)" }}>
@@ -143,25 +187,40 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
           </>
         ) : (
           <>
-            {/* Live controls (pause/resume/stop). Stopping drops the user
-                into the normal wizard to finish by hand. */}
-            {p.auto_pilot && (
-              <OneClickControls
-                projectId={projectId}
-                status={status}
-                error={p.auto_pilot_error ?? null}
-                onChanged={() => mutate()}
-              />
+            {/* Pause/Resume — hidden while a step needs attention. */}
+            {status !== "needs_attention" && (
+              status === "paused"
+                ? (
+                  <button onClick={() => control("resume")} disabled={acting}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-40 transition-opacity hover:opacity-90"
+                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
+                    <Play size={14} /> Resume
+                  </button>
+                ) : (
+                  <button onClick={() => control("pause")} disabled={acting}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-40 transition-opacity hover:opacity-90"
+                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
+                    <Pause size={14} /> Pause
+                  </button>
+                )
             )}
+
             {status === "needs_attention" && (
               <button
                 onClick={() => router.push(`/projects/${projectId}/${p.selected_topic || p.current_state > 6 ? "topic" : "channel"}`)}
-                className="px-4 py-2 rounded-xl text-sm font-semibold cursor-pointer"
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer"
                 style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
               >
                 Finish in the editor →
               </button>
             )}
+
+            {/* Stop — always available while the run isn't done. */}
+            <button onClick={() => control("stop")} disabled={acting}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-40 transition-opacity hover:opacity-90 ml-auto"
+              style={{ background: "transparent", color: "oklch(0.7 0.22 25)", border: "1px solid oklch(0.6 0.22 25 / 0.4)" }}>
+              <Square size={13} /> Stop 1Click
+            </button>
           </>
         )}
       </div>
