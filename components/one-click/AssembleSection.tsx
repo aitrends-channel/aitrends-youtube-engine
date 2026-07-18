@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { presignedUpload } from "@/lib/upload-client";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import type { OneClickConfig } from "@/lib/one-click/config";
 
 // The assemble step's settings, reproduced 1:1 for the 1Click config:
@@ -44,6 +45,7 @@ export function AssembleSection({ value, aspectRatio, onChange }: {
   const bgmAudioRef = useRef<HTMLAudioElement>(null);
   const [bgmPlaying, setBgmPlaying] = useState(false);
   const [bgmUploading, setBgmUploading] = useState(false);
+  const [bgmDisclaimerOpen, setBgmDisclaimerOpen] = useState(false);
 
   async function uploadBgm(f: File) {
     setBgmUploading(true);
@@ -201,6 +203,14 @@ export function AssembleSection({ value, aspectRatio, onChange }: {
               <p className="text-xs font-medium truncate" style={{ color: "var(--c-80)" }} title={value.bgMusicUrl ?? ""}>
                 {value.bgMusicUrl?.split("/").pop() ?? "Saved track"}
               </p>
+              <button
+                type="button"
+                onClick={() => setBgmDisclaimerOpen(true)}
+                className="text-[10px] underline underline-offset-2 hover:opacity-80 cursor-pointer"
+                style={{ color: "oklch(0.7 0.22 25)" }}
+              >
+                Disclaimer
+              </button>
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
               <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>Vol</span>
@@ -240,12 +250,6 @@ export function AssembleSection({ value, aspectRatio, onChange }: {
             e.currentTarget.value = "";
           }}
         />
-        {value.bgMusicUrl && (
-          <p className="w-full text-[11px] leading-relaxed" style={{ color: "oklch(0.7 0.16 25)" }}>
-            Disclaimer: we don&apos;t take responsibility for copyright claims on background music. Ensure you
-            have the rights to use any track you add.
-          </p>
-        )}
       </div>
 
       {/* Channel logo — bar + drag/resize surface, as on the assemble step */}
@@ -477,6 +481,26 @@ export function AssembleSection({ value, aspectRatio, onChange }: {
           </div>
         )}
       </div>
+
+      <Dialog open={bgmDisclaimerOpen} onOpenChange={setBgmDisclaimerOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Background music disclaimer</DialogTitle>
+            <DialogDescription>
+              We do not take responsibility for copyright claims on background music. Please ensure you have the rights to use any track you upload.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setBgmDisclaimerOpen(false)}
+              className="px-4 py-2 rounded-lg text-sm font-semibold transition-all"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              Got it
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
