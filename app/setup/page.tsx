@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound, Zap } from "lucide-react";
+import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound, SlidersHorizontal } from "lucide-react";
 import { OneClickConfigPanel } from "@/components/one-click/OneClickConfigPanel";
 import { Spinner } from "@/components/ui/spinner";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -458,7 +458,7 @@ export default function SettingsPage() {
                 color: mainTab === id ? "white" : "var(--c-45)",
               }}
             >
-              {id === "oneclick" ? <span className="inline-flex items-center gap-1.5"><Zap size={12} /> {label}</span> : label}
+              {id === "oneclick" ? <span className="inline-flex items-center gap-1.5"><SlidersHorizontal size={12} /> {label}</span> : label}
             </button>
           ))}
         </div>

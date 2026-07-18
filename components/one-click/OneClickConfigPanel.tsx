@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { Zap, Play, Square } from "lucide-react";
+import { SlidersHorizontal, Play, Square } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import type { OneClickConfig, ModelChain } from "@/lib/one-click/config";
 import { emptyConfig } from "@/lib/one-click/config";
@@ -209,7 +209,7 @@ export function OneClickConfigPanel() {
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
             style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-            <Zap size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+            <SlidersHorizontal size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
           </div>
           <h1 className="text-2xl font-bold text-foreground">1Click</h1>
         </div>
