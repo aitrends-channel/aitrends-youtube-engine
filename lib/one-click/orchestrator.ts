@@ -1,6 +1,10 @@
 import { supabase } from "@/lib/supabase/client";
-import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
-import { buildScriptPrompt } from "@/lib/claude/prompts";
+import { getAnthropicClient, MODEL, VISION_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { buildScriptPrompt, buildVisualAnalysisPrompt } from "@/lib/claude/prompts";
+import { visualProfileInputSchema } from "@/lib/claude/anthropicSchemas";
+import { VisualProfileSchema } from "@/lib/claude/schemas";
+import { retryClaudeCall } from "@/lib/claude/retry";
+import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import type { OneClickConfig } from "@/lib/one-click/config";
 
 // 1Click orchestrator — advances one autopilot project by exactly one
@@ -93,8 +97,12 @@ export async function advanceProject(project: ProjectRow): Promise<AdvanceResult
     return await runScriptStep(project, cfg);
   }
 
+  // ── Visuals (states 7–8) ─────────────────────────────────────────
+  if (state >= 7 && state <= 8) {
+    return await runVisualsStep(project);
+  }
+
   // ── Later steps: not yet auto-driven ─────────────────────────────
-  if (state >= 7 && state <= 8) return RESULT.attention(MANUAL_STEP_NOTE("visuals"));
   if (state >= 9 && state <= 13) return RESULT.attention(MANUAL_STEP_NOTE("prompts & voiceover"));
   if (state === 14) return RESULT.attention(MANUAL_STEP_NOTE("generate"));
   if (state >= 15) return RESULT.done();
@@ -144,4 +152,77 @@ async function runScriptStep(project: ProjectRow, _cfg: OneClickConfig): Promise
   if (upErr) return RESULT.attention(`Couldn't save the script: ${upErr.message}`);
 
   return RESULT.advanced("script", `Wrote a ${wordCount}-word script`);
+}
+
+// Auto-capture reference frames from the channel's top videos (YouTube
+// still URLs → R2, no cost) and run the vision analysis to extract the
+// visual profile, mirroring the visuals page's video-style branch.
+// Advances to state 9. Low-risk: no KIE credits, one vision call.
+async function runVisualsStep(project: ProjectRow): Promise<AdvanceResult> {
+  const { data, error } = await supabase
+    .from("projects")
+    .select("channel_info")
+    .eq("id", project.id)
+    .single();
+  if (error) return RESULT.attention(`Couldn't read channel info: ${error.message}`);
+
+  const topVideos = (data?.channel_info as { topVideos?: { videoId?: string; title?: string }[] } | null)?.topVideos ?? [];
+  const videos = topVideos
+    .map((v) => ({ videoId: (v.videoId ?? "").trim(), title: (v.title ?? "").trim() }))
+    .filter((v) => v.videoId)
+    .slice(0, 10);
+  if (videos.length === 0) return RESULT.attention("No channel videos to sample for visual style — finish the visuals step in the editor.");
+
+  // Capture two auto-sampled frames per video (YouTube exposes 1/2/3.jpg)
+  // and upload to R2, skipping any that don't resolve.
+  const folder = `${userFolderFor({ id: project.user_id, email: null })}/${project.id}/auto-frames`;
+  const framesByVideo = await Promise.all(videos.map(async ({ videoId, title }) => {
+    const urls = (await Promise.all([1, 3].map(async (n) => {
+      try { return await uploadFromUrl(`${folder}/${videoId}-frame-${n}.jpg`, `https://img.youtube.com/vi/${videoId}/${n}.jpg`, "image/jpeg"); }
+      catch { return null; }
+    }))).filter((u): u is string => !!u);
+    return { videoId, title, thumbnailUrl: "", frameUrls: urls };
+  }));
+  const frameUrls = framesByVideo.flatMap((f) => f.frameUrls).slice(0, 20);
+  if (frameUrls.length === 0) return RESULT.attention("Couldn't capture reference frames — finish the visuals step in the editor.");
+
+  // Vision analysis — video-only branch, so the tool returns just the
+  // visualProfile and the step advances to state 9 (as the route does).
+  const schema = {
+    type: "object" as const,
+    properties: { visualProfile: visualProfileInputSchema.properties.visualProfile },
+    required: ["visualProfile"],
+  };
+  let profileInput: unknown;
+  try {
+    const { client } = await getAnthropicClient(project.user_id, "visual_analysis");
+    const res = await retryClaudeCall("one-click:visuals", () => client.messages.create({
+      model: VISION_MODEL,
+      max_tokens: 2048,
+      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      tools: [{ name: "save_visual_analysis", description: "Save the extracted visual style profile", input_schema: schema }],
+      tool_choice: { type: "tool", name: "save_visual_analysis" },
+      messages: [{
+        role: "user",
+        content: [
+          ...frameUrls.map((url) => ({ type: "image" as const, source: { type: "url" as const, url } })),
+          { type: "text" as const, text: buildVisualAnalysisPrompt({ video: true, thumbnails: false }) },
+        ],
+      }],
+    }), 5);
+    const toolUse = res.content.find((b) => b.type === "tool_use");
+    if (!toolUse || toolUse.type !== "tool_use") throw new Error("No visual profile returned");
+    profileInput = (toolUse.input as { visualProfile: unknown }).visualProfile;
+  } catch (err) {
+    return RESULT.attention(`Visual analysis failed: ${err instanceof Error ? err.message : "unknown error"}`);
+  }
+
+  const visualProfile = VisualProfileSchema.parse(profileInput);
+  const { error: upErr } = await supabase
+    .from("projects")
+    .update({ visual_profile: visualProfile, auto_frames: framesByVideo, current_state: 9 })
+    .eq("id", project.id);
+  if (upErr) return RESULT.attention(`Couldn't save the visual profile: ${upErr.message}`);
+
+  return RESULT.advanced("visuals", "Captured reference frames and extracted the visual style");
 }
