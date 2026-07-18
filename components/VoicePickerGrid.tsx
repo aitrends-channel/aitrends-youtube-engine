@@ -17,13 +17,40 @@ export function VoicePickerGrid({ voices, selectedId, onSelect, playingId, onPla
   searchLabel?: string;
 }) {
   const [search, setSearch] = useState("");
+  const [gender, setGender] = useState<"female" | "male">("female");
   const q = search.trim().toLowerCase();
+
+  // Gender comes from the voice's tags ("Female"/"Male"). Voices without
+  // a gender tag appear under both tabs so nothing becomes unreachable.
+  const matchesGender = (m: KieModel) => {
+    const tags = (m.tags ?? []).map((t) => t.toLowerCase());
+    const tagged = tags.includes("female") || tags.includes("male");
+    return !tagged || tags.includes(gender);
+  };
   const filtered = (voices ?? []).filter(
-    (m) => !q || m.name.toLowerCase().includes(q) || (m.tags ?? []).some((t) => t.toLowerCase().includes(q)),
+    (m) => matchesGender(m) && (!q || m.name.toLowerCase().includes(q) || (m.tags ?? []).some((t) => t.toLowerCase().includes(q))),
   );
 
   return (
     <div>
+      <div className="flex gap-1 mb-3 p-0.5 rounded-lg" style={{ background: "var(--bg-track)" }}>
+        {([["female", "Female"], ["male", "Male"]] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setGender(id)}
+            aria-pressed={gender === id}
+            className="flex-1 flex items-center justify-center px-2 py-1 rounded-md text-xs font-medium transition-all cursor-pointer"
+            style={gender === id ? {
+              background: "oklch(0.72 0.25 285 / 0.15)",
+              color: "oklch(0.88 0.12 285)",
+              boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.35)",
+            } : { background: "transparent", color: "var(--c-55)" }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
       <input
         type="search"
         value={search}
@@ -52,7 +79,7 @@ export function VoicePickerGrid({ voices, selectedId, onSelect, playingId, onPla
         ) : (
           <>
             {filtered.length === 0 && !q && (
-              <p className="text-xs px-1" style={{ color: "var(--c-40)" }}>No voices available</p>
+              <p className="text-xs px-1" style={{ color: "var(--c-40)" }}>No {gender} voices available</p>
             )}
             {filtered.map((m) => (
               <VoiceOption
