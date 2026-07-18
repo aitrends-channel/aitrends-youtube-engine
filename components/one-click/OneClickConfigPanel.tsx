@@ -231,12 +231,17 @@ export function OneClickConfigPanel() {
       {/* Video models — chain slots + the generate step's picker */}
       <section className="space-y-5 p-6 sm:p-8 rounded-2xl"
         style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
-        <div>
+        <div className="space-y-2.5">
           <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>Video models</h2>
-          <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>
+          <div className="rounded-xl px-4 py-3 text-sm leading-relaxed"
+            style={{
+              background: "oklch(0.72 0.25 285 / 0.08)",
+              border: "1px solid oklch(0.72 0.25 285 / 0.25)",
+              color: "var(--c-80)",
+            }}>
             Clips inherit the image aspect ratio, so there&apos;s nothing to re-pick here besides the models
             and clip duration.
-          </p>
+          </div>
         </div>
         <SlotTabs chain={cfg.videos} active={videoSlot} onActive={setVideoSlot}
           onClear={(s) => clearChain("videos", s)} />
