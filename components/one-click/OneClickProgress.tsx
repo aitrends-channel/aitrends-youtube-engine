@@ -39,12 +39,14 @@ interface ProjectState {
 // renders the pipeline checklist with Pause/Stop.
 export function OneClickProgress({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const { data, mutate } = useSWR<{ project: ProjectState }>(
+  // The single-project GET spreads the project fields at the top level
+  // (not under a `project` key), with error under `error`.
+  const { data, mutate } = useSWR<ProjectState & { error?: string }>(
     `/api/projects/${projectId}`,
     fetcher,
     { refreshInterval: 4000 },
   );
-  const p = data?.project;
+  const p = data && !data.error ? data : undefined;
   const status = p?.auto_pilot_status ?? null;
   const running = status === "running" || status === null;
   const [acting, setActing] = useState(false);
