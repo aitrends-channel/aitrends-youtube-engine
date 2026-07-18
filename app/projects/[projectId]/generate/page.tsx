@@ -172,7 +172,7 @@ function friendlyError(raw: string | undefined | null): string {
   // Free-provider (BYO) errors arrive already user-worded from the API —
   // pass them through before the KIE mappings below mislabel them (a
   // Google "Quota exceeded…" message is NOT a KIE rate limit).
-  if (msg.includes("ai studio") || msg.includes("cloudflare")) return (raw ?? "").trim();
+  if (msg.includes("cloudflare")) return (raw ?? "").trim();
   if (msg.includes("credits insufficient") || msg.includes("insufficient credits") || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit") || msg.includes("fund"))))
     return "Insufficient KIE credits — top up your account at kie.ai";
   if (msg.includes("credits remaining") || msg.includes("credit balance"))

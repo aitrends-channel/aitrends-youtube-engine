@@ -91,13 +91,6 @@ const KEY_FIELDS: KeyField[] = [
     placeholder: "AIza…",
     tier: "free",
   },
-  {
-    key: "gemini_api_key",
-    label: "Google AI Studio Key",
-    description: "Powers the Free Gemini image option (Nano Banana) on your own AI Studio quota — Google enforces the limit on your key, and it costs nothing within their free tier. Create the key at aistudio.google.com/apikey (one click, no billing setup needed).",
-    placeholder: "AIza…",
-    tier: "free",
-  },
 ];
 
 interface FormState {
@@ -106,7 +99,6 @@ interface FormState {
   cloudflare_account_id: string;
   cloudflare_api_token: string;
   google_tts_key: string;
-  gemini_api_key: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -115,7 +107,6 @@ const EMPTY_FORM: FormState = {
   cloudflare_account_id: "",
   cloudflare_api_token: "",
   google_tts_key: "",
-  gemini_api_key: "",
 };
 
 // One card per service: the walkthrough steps AND the key input(s)
@@ -213,21 +204,6 @@ const SERVICES: ServiceCard[] = [
       <>Paste the key below and hit <b>Save</b>.</>,
     ],
     fields: ["google_tts_key"],
-  },
-  {
-    tier: "free",
-    quota: "Google-enforced quota",
-    title: "Google AI Studio (Free Gemini images)",
-    sub: "Powers the Free Nano Banana image option — runs on your own AI Studio free quota (Google enforces the limit per key)",
-    href: "https://aistudio.google.com/apikey",
-    linkLabel: "aistudio.google.com/apikey",
-    steps: [
-      <>Open <ExtLink href="https://aistudio.google.com/apikey">aistudio.google.com/apikey</ExtLink> while signed into any Google account — no billing setup needed.</>,
-      <>Click <b>Create API key</b> and copy it (it starts with <span style={{ fontFamily: "monospace" }}>AIza</span>).</>,
-      <>Paste the key below and hit <b>Save</b>.</>,
-      <>Your key&apos;s live limits are shown at <ExtLink href="https://aistudio.google.com/rate-limit">aistudio.google.com/rate-limit</ExtLink> — Heclus surfaces Google&apos;s own message if you ever hit them.</>,
-    ],
-    fields: ["gemini_api_key"],
   },
 ];
 
