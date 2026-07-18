@@ -57,6 +57,43 @@ export async function POST(req: Request) {
   return NextResponse.json({ ok: true });
 }
 
+// Pause / resume a live run without disengaging autopilot. Paused
+// projects are skipped by the tick loop; resume puts them back in the
+// running pool from wherever they left off.
+export async function PATCH(req: Request) {
+  let user: User;
+  try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+
+  let body: { projectId?: unknown; action?: unknown };
+  try { body = await req.json(); } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+  const projectId = typeof body.projectId === "string" ? body.projectId : "";
+  const action = body.action === "pause" || body.action === "resume" ? body.action : null;
+  if (!projectId || !action) {
+    return NextResponse.json({ error: "projectId and action (pause|resume) are required" }, { status: 400 });
+  }
+
+  const { data: project } = await supabase
+    .from("projects").select("id, user_id").eq("id", projectId).maybeSingle();
+  if (!project || project.user_id !== user.id) {
+    return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
+
+  const { error } = await supabase
+    .from("projects")
+    .update({
+      auto_pilot: true,
+      auto_pilot_status: action === "pause" ? "paused" : "running",
+      // Clearing the error on resume gives the run a clean retry.
+      ...(action === "resume" ? { auto_pilot_error: null } : {}),
+    })
+    .eq("id", projectId);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({ ok: true, status: action === "pause" ? "paused" : "running" });
+}
+
 // Disengage: the project stays exactly where it is and the normal
 // wizard takes over from that step.
 export async function DELETE(req: Request) {

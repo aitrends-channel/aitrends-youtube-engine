@@ -13,7 +13,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("projects")
-    .select("id, created_at, channel_name, channel_url, current_state, selected_topic, assembly_status, assembled_url")
+    .select("id, created_at, channel_name, channel_url, current_state, selected_topic, assembly_status, assembled_url, auto_pilot, auto_pilot_status, auto_pilot_error")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
