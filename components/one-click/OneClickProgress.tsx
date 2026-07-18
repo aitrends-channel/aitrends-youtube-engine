@@ -187,43 +187,43 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
               </a>
             )}
           </>
-        ) : (
+        ) : status === "paused" ? (
           <>
-            {/* Pause/Resume — hidden while a step needs attention. */}
-            {status !== "needs_attention" && (
-              status === "paused"
-                ? (
-                  <button onClick={() => control("resume")} disabled={acting}
-                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-40 transition-opacity hover:opacity-90"
-                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
-                    <Play size={14} /> Resume
-                  </button>
-                ) : (
-                  <button onClick={() => control("pause")} disabled={acting}
-                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-40 transition-opacity hover:opacity-90"
-                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
-                    <Pause size={14} /> Pause
-                  </button>
-                )
-            )}
-
-            {status === "needs_attention" && (
-              <button
-                onClick={() => router.push(`/projects/${projectId}/${p.selected_topic || p.current_state > 6 ? "topic" : "channel"}`)}
-                className="px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer"
-                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-              >
-                Finish in the editor →
-              </button>
-            )}
-
-            {/* Stop — always available while the run isn't done. */}
+            {/* Paused: Resume (primary) + Cancel (disengage entirely). */}
+            <button onClick={() => control("resume")} disabled={acting}
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-40 transition-opacity hover:opacity-90"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+              <Play size={14} /> Resume
+            </button>
             <button onClick={() => control("stop")} disabled={acting}
               className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-40 transition-opacity hover:opacity-90 ml-auto"
               style={{ background: "transparent", color: "oklch(0.7 0.22 25)", border: "1px solid oklch(0.6 0.22 25 / 0.4)" }}>
-              <Square size={13} /> Stop 1Click
+              <Square size={13} /> Cancel 1Click
             </button>
           </>
+        ) : status === "needs_attention" ? (
+          <>
+            <button
+              onClick={() => router.push(`/projects/${projectId}/${p.selected_topic || p.current_state > 6 ? "topic" : "channel"}`)}
+              className="px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              Finish in the editor →
+            </button>
+            <button onClick={() => control("stop")} disabled={acting}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-40 transition-opacity hover:opacity-90 ml-auto"
+              style={{ background: "transparent", color: "oklch(0.7 0.22 25)", border: "1px solid oklch(0.6 0.22 25 / 0.4)" }}>
+              <Square size={13} /> Cancel 1Click
+            </button>
+          </>
+        ) : (
+          /* Running: Pause is the primary (and only) control — Cancel
+             appears once paused. */
+          <button onClick={() => control("pause")} disabled={acting}
+            className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-40 transition-opacity hover:opacity-90"
+            style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
+            <Pause size={14} /> Pause
+          </button>
         )}
       </div>
     </div>

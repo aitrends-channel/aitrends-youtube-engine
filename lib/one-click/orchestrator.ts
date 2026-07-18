@@ -6,8 +6,10 @@ import { VisualProfileSchema } from "@/lib/claude/schemas";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { PROMPT_MODEL } from "@/lib/claude/client";
-import { generateImages, generateVideos } from "@/app/api/workflow/prompts/route";
+import { generateImages, generateVideos } from "@/lib/workflow/prompts-core";
 import { submitImageTask } from "@/lib/kie/images";
+import { getModelConfig } from "@/lib/kie/imageModels";
+import { getVideoModelConfig } from "@/lib/kie/videoModels";
 import { redis } from "@/lib/queue/client";
 import { sendEmail } from "@/lib/email/smtp";
 import type { VisualProfileOutput } from "@/lib/claude/schemas";
@@ -331,14 +333,19 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
   const beats = (beatData ?? []) as BeatRow[];
   if (beats.length === 0) return RESULT.attention("No beats to generate — reopen the prompts step.");
 
-  const ar = cfg.output.aspectRatio;
-  const res = cfg.output.resolution;
-
   // ── Images ───────────────────────────────────────────────────────
   const imgDone = (b: BeatRow) => !!b.image_url;
   const imgPending = (b: BeatRow) => !imgDone(b) && (b.image_status === "generating" || b.image_status === "queued");
   const imgFailed = (b: BeatRow) => !imgDone(b) && !imgPending(b); // failed / null / never submitted
   const imageModel = chainModel(cfg.images, imgIdx);
+  // Only pass a resolution/aspect ratio the chosen model actually
+  // supports — a value it doesn't list makes KIE reject the submit
+  // (the cause of the "image generation failed"). Fall back to the
+  // model's first supported ratio, and drop resolution entirely for
+  // models without tiers.
+  const imgCfg = getModelConfig(imageModel);
+  const imgAr = imgCfg.aspectRatios.includes(cfg.output.aspectRatio) ? cfg.output.aspectRatio : (imgCfg.aspectRatios[0] ?? "16:9");
+  const imgRes = imgCfg.resolutions?.includes(cfg.output.resolution) ? cfg.output.resolution : (imgCfg.resolutions?.[0] ?? undefined);
 
   const toSubmitImg = beats.filter((b) => imgFailed(b) && b.image_prompt?.trim());
   if (toSubmitImg.length > 0) {
@@ -351,7 +358,7 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
     }
     for (const b of toSubmitImg) {
       try {
-        const taskId = await submitImageTask(b.image_prompt!.trim(), imageModel, ar, res, project.user_id);
+        const taskId = await submitImageTask(b.image_prompt!.trim(), imageModel, imgAr, imgRes, project.user_id);
         await supabase.from("project_beats")
           .update({ image_status: "generating", image_task_id: taskId, image_model_id: imageModel })
           .eq("project_id", project.id).eq("beat_number", b.beat_number);
@@ -370,6 +377,13 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
     const vidPending = (b: BeatRow) => !vidDone(b) && (b.video_status === "queued" || b.video_status === "submitting" || b.video_status === "rendering");
     const vidFailed = (b: BeatRow) => !vidDone(b) && !vidPending(b);
     const videoModel = chainModel(cfg.videos, vidIdx);
+    // Match the model's supported options; many video models take no
+    // aspect ratio (they inherit the source image) and their own
+    // resolution set, so pass only what's valid.
+    const vidCfg = getVideoModelConfig(videoModel);
+    const vidAr = vidCfg.aspectRatios.length && vidCfg.aspectRatios.includes(cfg.output.aspectRatio) ? cfg.output.aspectRatio : (vidCfg.aspectRatios[0] ?? null);
+    const vidRes = vidCfg.resolutions?.length ? (vidCfg.resolutions.includes(cfg.output.resolution) ? cfg.output.resolution : vidCfg.resolutions[0]) : null;
+    const vidDur = cfg.videos.duration != null ? String(cfg.videos.duration) : null;
 
     const toQueueVid = beats.filter((b) => vidFailed(b) && b.video_prompt?.trim());
     if (toQueueVid.length > 0) {
@@ -379,16 +393,14 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
         await supabase.from("projects").update({ auto_pilot_attempts: attempts }).eq("id", project.id);
       }
       await supabase.from("projects").update({
-        video_model_id: videoModel, video_aspect_ratio: ar,
-        video_duration: cfg.videos.duration != null ? String(cfg.videos.duration) : null,
-        video_resolution: res,
+        video_model_id: videoModel, video_aspect_ratio: vidAr,
+        video_duration: vidDur, video_resolution: vidRes,
       }).eq("id", project.id);
       for (const b of toQueueVid) {
         await supabase.from("project_beats").update({
           video_status: "queued", video_job_id: null, video_error: null,
-          video_model_id: videoModel, video_aspect_ratio: ar,
-          video_duration: cfg.videos.duration != null ? String(cfg.videos.duration) : null,
-          video_resolution: res,
+          video_model_id: videoModel, video_aspect_ratio: vidAr,
+          video_duration: vidDur, video_resolution: vidRes,
         }).eq("project_id", project.id).eq("beat_number", b.beat_number);
       }
       return RESULT.waiting(`Rendering ${toQueueVid.length} video clip${toQueueVid.length === 1 ? "" : "s"}…`);
@@ -398,7 +410,7 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
     if (beats.every(vidDone)) {
       const a = cfg.assemble;
       const options = {
-        aspectRatio: ar,
+        aspectRatio: cfg.output.aspectRatio,
         captionsEnabled: a.captionsEnabled,
         captionsLanguage: a.captionsLanguage,
         captionsStyle: a.captionsStyle,
@@ -409,7 +421,7 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
         logoUrl: a.logoUrl,
         logoX: a.logoX, logoY: a.logoY, logoSize: a.logoSize,
         // Map the picker's 1K/2K to a render preset the worker expects.
-        resolution: res === "2K" ? "1440p" : "1080p",
+        resolution: cfg.output.resolution === "2K" ? "1440p" : "1080p",
       };
       await redis.set(`assembly:${project.id}`, JSON.stringify(options), { ex: 7200 });
       await supabase.from("projects").update({

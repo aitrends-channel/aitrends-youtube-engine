@@ -92,12 +92,11 @@ export function OneClickControls({ projectId, status, error, onChanged }: {
           : <Zap size={12} />}
         {badge.label}
       </span>
-      {!needsAttention && (
-        isPaused
-          ? iconBtn(() => pauseResume("resume"), "Resume 1Click", <Play size={13} />)
-          : iconBtn(() => pauseResume("pause"), "Pause 1Click", <Pause size={13} />)
-      )}
-      {iconBtn(stop, "Stop 1Click (finish manually)", <Square size={12} />, true)}
+      {/* Pause is the primary control while running. Cancel (disengage)
+          only appears once paused or when a step needs attention. */}
+      {!needsAttention && !isPaused && iconBtn(() => pauseResume("pause"), "Pause 1Click", <Pause size={13} />)}
+      {isPaused && iconBtn(() => pauseResume("resume"), "Resume 1Click", <Play size={13} />)}
+      {(isPaused || needsAttention) && iconBtn(stop, "Cancel 1Click (finish manually)", <Square size={12} />, true)}
       {needsAttention && error && (
         <span className="text-[11px] w-full" style={{ color: "oklch(0.6 0.19 25)" }}>{error}</span>
       )}
