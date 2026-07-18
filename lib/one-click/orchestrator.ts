@@ -7,8 +7,11 @@ import { retryClaudeCall } from "@/lib/claude/retry";
 import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { PROMPT_MODEL } from "@/lib/claude/client";
 import { generateImages, generateVideos } from "@/app/api/workflow/prompts/route";
+import { submitImageTask } from "@/lib/kie/images";
+import { redis } from "@/lib/queue/client";
+import { sendEmail } from "@/lib/email/smtp";
 import type { VisualProfileOutput } from "@/lib/claude/schemas";
-import type { OneClickConfig } from "@/lib/one-click/config";
+import type { ModelChain, OneClickConfig } from "@/lib/one-click/config";
 
 // 1Click orchestrator — advances one autopilot project by exactly one
 // step per call, mirroring what each wizard page does but server-side
@@ -115,8 +118,8 @@ export async function advanceProject(project: ProjectRow): Promise<AdvanceResult
     return await runPromptsStep(project);
   }
 
-  // ── Later steps: not yet auto-driven ─────────────────────────────
-  if (state === 14) return RESULT.attention(MANUAL_STEP_NOTE("generate"));
+  // ── Generate + assemble (state 14 → complete) ────────────────────
+  if (state === 14) return await runGenerateStep(project, cfg);
   if (state >= 15) return RESULT.done();
 
   // ── Channel not finished (shouldn't happen — runs at kickoff) ────
@@ -272,4 +275,167 @@ async function runPromptsStep(project: ProjectRow): Promise<AdvanceResult> {
     return RESULT.attention("Prompt generation didn't complete — open the project to finish the prompts step.");
   }
   return RESULT.advanced("prompts", "Generated image and video prompts for every beat");
+}
+
+interface BeatRow {
+  beat_number: number;
+  image_prompt: string | null;
+  video_prompt: string | null;
+  image_url: string | null;
+  image_status: string | null;
+  image_task_id: string | null;
+  video_url: string | null;
+  video_status: string | null;
+}
+
+// nth model in a chain (0=primary,1=secondary,2=fallback), skipping
+// empty slots. Returns the last non-empty when idx overruns.
+function chainModel(chain: ModelChain, idx: number): string {
+  const models = [chain.primary, chain.secondary, chain.fallback].filter((m): m is string => !!m);
+  return models[Math.min(idx, models.length - 1)] ?? chain.primary;
+}
+function chainLength(chain: ModelChain): number {
+  return [chain.primary, chain.secondary, chain.fallback].filter(Boolean).length;
+}
+
+// State 14: generate every beat's image and video clip (real KIE spend),
+// applying the model fallback chains on failure, then queue assembly and
+// poll it to completion — all across ticks, since this work is async
+// (KIE webhook/cron for images, the video worker for clips + assembly).
+async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promise<AdvanceResult> {
+  // Assembly phase first: once assembly_status is set we only watch it.
+  const { data: proj } = await supabase
+    .from("projects")
+    .select("assembly_status, assembled_url, auto_pilot_attempts")
+    .eq("id", project.id)
+    .single();
+  const assemblyStatus = proj?.assembly_status as string | null;
+  if (assemblyStatus === "done" || proj?.assembled_url) {
+    await sendCompletionEmail(project.id, project.user_id).catch(() => {});
+    await supabase.from("projects").update({ current_state: 15 }).eq("id", project.id).lt("current_state", 15);
+    return RESULT.done();
+  }
+  if (assemblyStatus === "failed") return RESULT.attention("Assembly failed — open the project to retry the final render.");
+  if (assemblyStatus === "queued" || assemblyStatus === "processing") return RESULT.waiting("Assembling the final video…");
+
+  const attempts = (proj?.auto_pilot_attempts as Record<string, number> | null) ?? {};
+  const imgIdx = attempts["genImageModelIdx"] ?? 0;
+  const vidIdx = attempts["genVideoModelIdx"] ?? 0;
+
+  const { data: beatData, error: beatErr } = await supabase
+    .from("project_beats")
+    .select("beat_number, image_prompt, video_prompt, image_url, image_status, image_task_id, video_url, video_status")
+    .eq("project_id", project.id)
+    .order("beat_number");
+  if (beatErr) return RESULT.attention(`Couldn't read beats: ${beatErr.message}`);
+  const beats = (beatData ?? []) as BeatRow[];
+  if (beats.length === 0) return RESULT.attention("No beats to generate — reopen the prompts step.");
+
+  const ar = cfg.output.aspectRatio;
+  const res = cfg.output.resolution;
+
+  // ── Images ───────────────────────────────────────────────────────
+  const imgDone = (b: BeatRow) => !!b.image_url;
+  const imgPending = (b: BeatRow) => !imgDone(b) && (b.image_status === "generating" || b.image_status === "queued");
+  const imgFailed = (b: BeatRow) => !imgDone(b) && !imgPending(b); // failed / null / never submitted
+  const imageModel = chainModel(cfg.images, imgIdx);
+
+  const toSubmitImg = beats.filter((b) => imgFailed(b) && b.image_prompt?.trim());
+  if (toSubmitImg.length > 0) {
+    // If a whole prior batch failed (not just first submit), step the
+    // chain to the next model before resubmitting.
+    const anyPreviouslyFailed = toSubmitImg.some((b) => b.image_status === "failed");
+    if (anyPreviouslyFailed && imgIdx < chainLength(cfg.images) - 1) {
+      attempts["genImageModelIdx"] = imgIdx + 1;
+      await supabase.from("projects").update({ auto_pilot_attempts: attempts }).eq("id", project.id);
+    }
+    for (const b of toSubmitImg) {
+      try {
+        const taskId = await submitImageTask(b.image_prompt!.trim(), imageModel, ar, res, project.user_id);
+        await supabase.from("project_beats")
+          .update({ image_status: "generating", image_task_id: taskId, image_model_id: imageModel })
+          .eq("project_id", project.id).eq("beat_number", b.beat_number);
+      } catch (err) {
+        // Hard failure to even submit (bad credits/model) → surface it.
+        return RESULT.attention(`Image generation failed: ${err instanceof Error ? err.message : "unknown error"}`);
+      }
+    }
+    return RESULT.waiting(`Generating ${toSubmitImg.length} image${toSubmitImg.length === 1 ? "" : "s"}…`);
+  }
+
+  // ── Videos (queue once images exist; worker picks them up) ────────
+  const allImagesDone = beats.every(imgDone);
+  if (allImagesDone) {
+    const vidDone = (b: BeatRow) => !!b.video_url;
+    const vidPending = (b: BeatRow) => !vidDone(b) && (b.video_status === "queued" || b.video_status === "submitting" || b.video_status === "rendering");
+    const vidFailed = (b: BeatRow) => !vidDone(b) && !vidPending(b);
+    const videoModel = chainModel(cfg.videos, vidIdx);
+
+    const toQueueVid = beats.filter((b) => vidFailed(b) && b.video_prompt?.trim());
+    if (toQueueVid.length > 0) {
+      const anyPreviouslyFailed = toQueueVid.some((b) => b.video_status === "failed");
+      if (anyPreviouslyFailed && vidIdx < chainLength(cfg.videos) - 1) {
+        attempts["genVideoModelIdx"] = vidIdx + 1;
+        await supabase.from("projects").update({ auto_pilot_attempts: attempts }).eq("id", project.id);
+      }
+      await supabase.from("projects").update({
+        video_model_id: videoModel, video_aspect_ratio: ar,
+        video_duration: cfg.videos.duration != null ? String(cfg.videos.duration) : null,
+        video_resolution: res,
+      }).eq("id", project.id);
+      for (const b of toQueueVid) {
+        await supabase.from("project_beats").update({
+          video_status: "queued", video_job_id: null, video_error: null,
+          video_model_id: videoModel, video_aspect_ratio: ar,
+          video_duration: cfg.videos.duration != null ? String(cfg.videos.duration) : null,
+          video_resolution: res,
+        }).eq("project_id", project.id).eq("beat_number", b.beat_number);
+      }
+      return RESULT.waiting(`Rendering ${toQueueVid.length} video clip${toQueueVid.length === 1 ? "" : "s"}…`);
+    }
+
+    // ── All media done → trigger assembly ──────────────────────────
+    if (beats.every(vidDone)) {
+      const a = cfg.assemble;
+      const options = {
+        aspectRatio: ar,
+        captionsEnabled: a.captionsEnabled,
+        captionsLanguage: a.captionsLanguage,
+        captionsStyle: a.captionsStyle,
+        captionsSize: a.captionsSize,
+        captionsPosition: a.captionsPosition,
+        backgroundMusicUrl: a.bgMusicUrl,
+        backgroundMusicVolume: a.bgMusicVolume,
+        logoUrl: a.logoUrl,
+        logoX: a.logoX, logoY: a.logoY, logoSize: a.logoSize,
+        // Map the picker's 1K/2K to a render preset the worker expects.
+        resolution: res === "2K" ? "1440p" : "1080p",
+      };
+      await redis.set(`assembly:${project.id}`, JSON.stringify(options), { ex: 7200 });
+      await supabase.from("projects").update({
+        assembly_status: "queued", assembly_progress: "Queued…",
+        assembly_error: null, assembly_stop_requested: false,
+      }).eq("id", project.id);
+      return RESULT.waiting("All clips ready — assembling the final video…");
+    }
+    return RESULT.waiting("Rendering video clips…");
+  }
+
+  return RESULT.waiting("Generating images…");
+}
+
+// Best-effort "your video is ready" email via the support mailbox.
+async function sendCompletionEmail(projectId: string, userId: string): Promise<void> {
+  const { data: users } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+  const email = users?.users.find((u) => u.id === userId)?.email;
+  if (!email) return;
+  const { data: proj } = await supabase.from("projects").select("selected_topic").eq("id", projectId).single();
+  const topic = (proj?.selected_topic as string | null) ?? "your video";
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL_PRODUCTION ?? process.env.APP_URL ?? "https://app.heclus.io";
+  await sendEmail({
+    from: "support@heclus.com",
+    to: email,
+    subject: "Your Heclus video is ready 🎬",
+    text: `Hi,\n\n1Click just finished "${topic}" — it's ready to review and download.\n\nOpen it here: ${appUrl}/projects/${projectId}/assemble\n\nThanks,\nHeclus`,
+  });
 }
