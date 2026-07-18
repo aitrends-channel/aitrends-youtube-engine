@@ -3,4 +3,5 @@
 // "coming soon" tag and placeholder card instead of the live pickers,
 // usage bars, and setup fields. All functional free-tier code stays in
 // place behind this flag.
-export const FREE_TIER_COMING_SOON = false;
+// Back on while the free tier bakes; the launch is a one-line flip.
+export const FREE_TIER_COMING_SOON = true;
