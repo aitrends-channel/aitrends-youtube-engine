@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound, SlidersHorizontal } from "lucide-react";
+import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound, SlidersHorizontal, CreditCard, Gift } from "lucide-react";
 import { OneClickConfigPanel } from "@/components/one-click/OneClickConfigPanel";
 import { Spinner } from "@/components/ui/spinner";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -467,25 +467,30 @@ export default function SettingsPage() {
           <OneClickConfigPanel />
         ) : (
         <>
-        {/* Tabs: PAID / FREE */}
-        <div className="flex gap-1 mb-10 p-1 rounded-xl w-full"
-          style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-          {(["paid", "free"] as const).map((t) => (
+        {/* Sub-tabs: PAID / FREE — same segmented style as the generate
+            step's Images / Videos / Both switcher. */}
+        <div className="flex items-center gap-1 rounded-xl p-1 mb-10"
+          style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
+          {([
+            { key: "paid" as const, label: "Paid", icon: <CreditCard size={15} /> },
+            { key: "free" as const, label: "Free", icon: <Gift size={15} /> },
+          ]).map((t) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
-              className="flex-1 py-2 rounded-lg text-xs font-bold tracking-widest uppercase transition-all cursor-pointer"
-              style={{
-                background: tab === t ? "oklch(0.72 0.25 285)" : "transparent",
-                color: tab === t ? "white" : "var(--c-45)",
-              }}
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              aria-pressed={tab === t.key}
+              className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              style={tab === t.key
+                ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)" }
+                : { color: "var(--c-55)" }}
             >
-              {t === "free" && FREE_TIER_COMING_SOON ? (
+              {t.icon}
+              {t.key === "free" && FREE_TIER_COMING_SOON ? (
                 <span className="flex flex-col items-center leading-tight">
-                  <span>😄 Free</span>
+                  <span>Free</span>
                   <span className="text-[9px] font-semibold normal-case tracking-normal">coming soon</span>
                 </span>
-              ) : t}
+              ) : t.label}
             </button>
           ))}
         </div>

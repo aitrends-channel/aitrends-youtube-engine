@@ -1,18 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { SlidersHorizontal, Play, Square } from "lucide-react";
+import { SlidersHorizontal, X } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-import type { OneClickConfig, ModelChain } from "@/lib/one-click/config";
+import { ModelPicker } from "@/components/ModelPicker";
+import { VoiceOption } from "@/components/VoiceOption";
+import type { OneClickConfig } from "@/lib/one-click/config";
 import { emptyConfig } from "@/lib/one-click/config";
 import type { KieModel } from "@/lib/types";
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(r.status)));
-
-const ASPECT_RATIOS = ["16:9", "9:16", "1:1"];
-const RESOLUTIONS = ["1080p", "2K"];
 
 // Corner presets → logo position fractions (assemble-page semantics).
 const LOGO_POSITIONS: { id: string; label: string; x: number; y: number }[] = [
@@ -22,109 +21,69 @@ const LOGO_POSITIONS: { id: string; label: string; x: number; y: number }[] = [
   { id: "br", label: "Bottom right", x: 0.88, y: 0.88 },
 ];
 
-const CHAIN_BADGES = ["Primary", "Secondary", "Final fallback"] as const;
+type ChainSlot = "primary" | "secondary" | "fallback";
+const SLOTS: { id: ChainSlot; label: string; optional: boolean }[] = [
+  { id: "primary",   label: "Primary",        optional: false },
+  { id: "secondary", label: "Secondary",      optional: true },
+  { id: "fallback",  label: "Final fallback", optional: true },
+];
 
-function chainToList(c: ModelChain): string[] {
-  return [c.primary, c.secondary ?? "", c.fallback ?? ""].filter(Boolean);
-}
-function listToChain(ids: string[]): { primary: string; secondary: string | null; fallback: string | null } {
-  return { primary: ids[0] ?? "", secondary: ids[1] ?? null, fallback: ids[2] ?? null };
-}
-
-/** Model card in the house picker style (mirrors ModelPicker's
- *  ModelOption), extended with a chain-position badge. */
-function ModelCard({ model, badge, onClick, footer }: {
-  model: KieModel;
-  badge: string | null;
-  onClick: () => void;
-  footer?: React.ReactNode;
+/** Slot switcher above a ModelPicker: pick which chain position the
+ *  picker below is editing. Filled optional slots get a clear (×). */
+function SlotTabs({ chain, active, onActive, onClear }: {
+  chain: { primary: string; secondary?: string | null; fallback?: string | null };
+  active: ChainSlot;
+  onActive: (s: ChainSlot) => void;
+  onClear: (s: ChainSlot) => void;
 }) {
-  const selected = badge !== null;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="w-full text-left p-3 rounded-xl transition-all cursor-pointer"
-      style={selected ? {
-        background: "oklch(0.72 0.25 285 / 0.1)",
-        border: "1px solid oklch(0.72 0.25 285 / 0.35)",
-        color: "var(--c-90)",
-      } : {
-        background: "var(--bg-input)",
-        border: "1px solid var(--bd-7)",
-        color: "var(--c-60)",
-      }}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <p className="font-medium text-xs">{model.name}</p>
-        {selected && (
-          <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide"
-            style={{ background: "oklch(0.72 0.25 285)", color: "white" }}>
-            {badge}
-          </span>
-        )}
-      </div>
-      {model.description && <p className="text-xs mt-0.5 opacity-60">{model.description}</p>}
-      {(model.tags?.length || model.costPerUnit) && (
-        <div className="flex gap-1 mt-2 flex-wrap">
-          {model.tags?.map((tag) => (
-            <span key={tag} className="px-1.5 py-0.5 rounded text-xs"
-              style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>
-              {tag}
-            </span>
-          ))}
-          {model.costPerUnit && (
-            <span className="px-1.5 py-0.5 rounded text-xs"
-              style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" }}>
-              {model.costPerUnit} cr{model.type === "video" ? "/s" : ""}
-            </span>
-          )}
-        </div>
-      )}
-      {footer}
-    </button>
+    <div className="flex items-center gap-1 rounded-xl p-1"
+      style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
+      {SLOTS.map((s) => {
+        const value = chain[s.id];
+        const isActive = active === s.id;
+        return (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => onActive(s.id)}
+            aria-pressed={isActive}
+            className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            style={isActive
+              ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)" }
+              : { color: "var(--c-55)" }}
+          >
+            {s.label}
+            {value ? (
+              <span className="text-[10px] px-1.5 py-0.5 rounded font-bold"
+                style={{ background: "oklch(0.72 0.25 285 / 0.2)", color: "oklch(0.88 0.12 285)" }}>
+                set
+              </span>
+            ) : s.optional ? (
+              <span className="text-[10px] opacity-60">none</span>
+            ) : null}
+            {value && s.optional && (
+              <span
+                role="button"
+                title="Clear this slot"
+                onClick={(e) => { e.stopPropagation(); onClear(s.id); }}
+                className="w-4 h-4 rounded flex items-center justify-center hover:opacity-70"
+                style={{ background: "oklch(0 0 0 / 0.2)" }}
+              >
+                <X size={10} />
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
-/** Click models in order to build the fallback chain: 1st = Primary,
- *  2nd = Secondary, 3rd = Final fallback. Clicking a selected card
- *  removes it and the rest shift up. */
-function ChainGrid({ title, models, chain, onChange }: {
-  title: string;
-  models: KieModel[] | undefined;
-  chain: ModelChain;
-  onChange: (c: { primary: string; secondary: string | null; fallback: string | null }) => void;
-}) {
-  const ids = chainToList(chain);
-  function toggle(id: string) {
-    const at = ids.indexOf(id);
-    if (at >= 0) onChange(listToChain(ids.filter((x) => x !== id)));
-    else if (ids.length < 3) onChange(listToChain([...ids, id]));
-    else toast.info("Chain is full — remove one to swap");
-  }
-  return (
-    <section className="space-y-3">
-      <div>
-        <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>{title}</h2>
-        <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>
-          Click up to three in order — 1st is Primary, 2nd Secondary, 3rd Final fallback. If a model fails
-          mid-run, 1Click automatically retries with the next one.
-        </p>
-      </div>
-      <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-        {(models ?? []).map((m) => {
-          const at = ids.indexOf(m.id);
-          return (
-            <ModelCard key={m.id} model={m} badge={at >= 0 ? CHAIN_BADGES[at] : null} onClick={() => toggle(m.id)} />
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-// Full-page 1Click preferences editor — lives on the Setup page's
-// 1Click tab. One preset per user; runs snapshot it at kickoff.
+// Full-page 1Click preferences editor — the Setup page's 1Click tab.
+// Reuses the product's real pickers: the voiceover step's VoiceOption
+// cards and the generate step's ModelPicker (tabs, search, cost/speed
+// chips), wrapped in Primary/Secondary/Final-fallback slot tabs.
 export function OneClickConfigPanel() {
   const { data: cfgData, mutate } = useSWR<{ configured: boolean; config: OneClickConfig }>(
     "/api/one-click/config", fetcher,
@@ -136,25 +95,9 @@ export function OneClickConfigPanel() {
   const [cfg, setCfg] = useState<OneClickConfig>(emptyConfig());
   const [hydrated, setHydrated] = useState(false);
   const [saving, setSaving] = useState(false);
-
-  // Voice preview player — one at a time.
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
-  function togglePreview(v: KieModel) {
-    if (playingVoice === v.id) {
-      audioRef.current?.pause();
-      setPlayingVoice(null);
-      return;
-    }
-    if (!v.previewUrl) return;
-    audioRef.current?.pause();
-    const a = new Audio(v.previewUrl);
-    a.onended = () => setPlayingVoice(null);
-    a.play().catch(() => setPlayingVoice(null));
-    audioRef.current = a;
-    setPlayingVoice(v.id);
-  }
-  useEffect(() => () => audioRef.current?.pause(), []);
+  const [imageSlot, setImageSlot] = useState<ChainSlot>("primary");
+  const [videoSlot, setVideoSlot] = useState<ChainSlot>("primary");
 
   useEffect(() => {
     if (hydrated || !cfgData) return;
@@ -170,6 +113,25 @@ export function OneClickConfigPanel() {
     });
     if (voices && imageModels && videoModels) setHydrated(true);
   }, [hydrated, cfgData, voices, imageModels, videoModels]);
+
+  /** Assign a model to a chain slot, evicting it from any other slot so
+   *  a chain never repeats a model. */
+  function setChain(kind: "images" | "videos", slot: ChainSlot, id: string) {
+    setCfg((prev) => {
+      const next = { ...prev[kind] };
+      // Evict the model from any other slot first.
+      if (slot !== "primary" && next.primary === id) next.primary = "";
+      if (slot !== "secondary" && next.secondary === id) next.secondary = null;
+      if (slot !== "fallback" && next.fallback === id) next.fallback = null;
+      if (slot === "primary") next.primary = id;
+      else if (slot === "secondary") next.secondary = id;
+      else next.fallback = id;
+      return { ...prev, [kind]: next };
+    });
+  }
+  function clearChain(kind: "images" | "videos", slot: ChainSlot) {
+    setCfg((prev) => ({ ...prev, [kind]: { ...prev[kind], [slot]: null } }));
+  }
 
   async function save() {
     setSaving(true);
@@ -196,12 +158,6 @@ export function OneClickConfigPanel() {
   const labelStyle = { color: "var(--c-50)" } as const;
   const canSave = Boolean(cfg.tts.voiceId && cfg.images.primary && cfg.videos.primary);
 
-  const pill = (active: boolean) => ({
-    background: active ? "oklch(0.72 0.25 285 / 0.12)" : "var(--bg-progress)",
-    border: `1px solid ${active ? "oklch(0.72 0.25 285 / 0.35)" : "var(--bd-8)"}`,
-    color: active ? "oklch(0.72 0.25 285)" : "var(--c-55)",
-  });
-
   return (
     <div className="space-y-10 pb-28">
       {/* Heading */}
@@ -225,7 +181,7 @@ export function OneClickConfigPanel() {
         )}
       </div>
 
-      {/* Voice */}
+      {/* Voice — the voiceover step's picker cards */}
       <section className="space-y-3">
         <div>
           <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>Voiceover voice</h2>
@@ -233,67 +189,73 @@ export function OneClickConfigPanel() {
         </div>
         <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
           {(voices ?? []).map((v) => (
-            <ModelCard
+            <VoiceOption
               key={v.id}
               model={v}
-              badge={cfg.tts.voiceId === v.id ? "Selected" : null}
-              onClick={() => setCfg({ ...cfg, tts: { modelId: v.id, voiceId: v.id } })}
-              footer={v.previewUrl ? (
-                <span
-                  role="button"
-                  tabIndex={0}
-                  onClick={(e) => { e.stopPropagation(); togglePreview(v); }}
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); togglePreview(v); } }}
-                  className="inline-flex items-center gap-1.5 mt-2 px-2 py-1 rounded-lg text-[11px] font-semibold cursor-pointer"
-                  style={{ background: "var(--bg-track)", color: "var(--c-55)" }}
-                >
-                  {playingVoice === v.id ? <Square size={10} /> : <Play size={10} />}
-                  {playingVoice === v.id ? "Stop" : "Preview"}
-                </span>
-              ) : undefined}
+              selected={cfg.tts.voiceId === v.id}
+              onSelect={() => setCfg({ ...cfg, tts: { modelId: v.id, voiceId: v.id } })}
+              isPlaying={playingVoice === v.id}
+              onPlayToggle={setPlayingVoice}
             />
           ))}
+          {!voices && (
+            <div className="flex items-center gap-2 py-4 text-sm" style={{ color: "var(--c-45)" }}>
+              <Spinner size={14} /> Loading voices…
+            </div>
+          )}
         </div>
       </section>
 
-      {/* Output format */}
+      {/* Image models — the generate step's picker + chain slots */}
       <section className="space-y-3">
         <div>
-          <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>Output format</h2>
+          <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>Image models</h2>
           <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>
-            One format for everything — images, clips, and the final video — so nothing gets letterboxed.
+            Pick a model per slot — if the primary fails mid-run, 1Click automatically retries with the next
+            one. Aspect ratio and resolution chosen here become the output format for the whole video.
           </p>
         </div>
-        <div className="flex gap-6 flex-wrap">
-          <div>
-            <label className={labelCls} style={labelStyle}>Aspect ratio</label>
-            <div className="flex gap-2">
-              {ASPECT_RATIOS.map((r) => (
-                <button key={r} type="button" onClick={() => setCfg({ ...cfg, output: { ...cfg.output, aspectRatio: r } })}
-                  className="px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer" style={pill(cfg.output.aspectRatio === r)}>
-                  {r}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className={labelCls} style={labelStyle}>Resolution</label>
-            <div className="flex gap-2">
-              {RESOLUTIONS.map((r) => (
-                <button key={r} type="button" onClick={() => setCfg({ ...cfg, output: { ...cfg.output, resolution: r } })}
-                  className="px-4 py-2 rounded-xl text-sm font-medium transition-all cursor-pointer" style={pill(cfg.output.resolution === r)}>
-                  {r}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+        <SlotTabs chain={cfg.images} active={imageSlot} onActive={setImageSlot}
+          onClear={(s) => clearChain("images", s)} />
+        <ModelPicker
+          type="image"
+          models={imageModels}
+          selectedModelId={cfg.images[imageSlot] ?? null}
+          onSelectModel={(id) => setChain("images", imageSlot, id)}
+          selectedAspectRatio={cfg.output.aspectRatio}
+          onSelectAspectRatio={(r) => setCfg({ ...cfg, output: { ...cfg.output, aspectRatio: r } })}
+          selectedResolution={cfg.output.resolution || null}
+          onSelectResolution={(r) => setCfg({ ...cfg, output: { ...cfg.output, resolution: r ?? "1K" } })}
+          tip=""
+        />
       </section>
 
-      <ChainGrid title="Image models" models={imageModels} chain={cfg.images}
-        onChange={(images) => setCfg({ ...cfg, images })} />
-      <ChainGrid title="Video models" models={videoModels} chain={cfg.videos}
-        onChange={(videos) => setCfg({ ...cfg, videos })} />
+      {/* Video models — chain slots + the generate step's picker */}
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>Video models</h2>
+          <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>
+            Clips inherit the image aspect ratio, so there&apos;s nothing to re-pick here besides the models
+            and clip duration.
+          </p>
+        </div>
+        <SlotTabs chain={cfg.videos} active={videoSlot} onActive={setVideoSlot}
+          onClear={(s) => clearChain("videos", s)} />
+        <ModelPicker
+          type="video"
+          models={videoModels}
+          selectedModelId={cfg.videos[videoSlot] ?? null}
+          onSelectModel={(id) => setChain("videos", videoSlot, id)}
+          selectedAspectRatio={cfg.output.aspectRatio}
+          onSelectAspectRatio={() => {}}
+          hideAspectRatio
+          selectedDuration={cfg.videos.duration ?? 5}
+          onSelectDuration={(d) => setCfg({ ...cfg, videos: { ...cfg.videos, duration: d } })}
+          selectedResolution={cfg.output.resolution || null}
+          onSelectResolution={(r) => setCfg({ ...cfg, output: { ...cfg.output, resolution: r ?? "1K" } })}
+          tip=""
+        />
+      </section>
 
       {/* Assembly */}
       <section className="space-y-4">

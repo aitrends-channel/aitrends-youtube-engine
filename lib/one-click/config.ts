@@ -36,7 +36,10 @@ export interface OneClickConfig {
     resolution: string;  // e.g. "1080p" | "1K" | "2K"
   };
   images: ModelChain;
-  videos: ModelChain;
+  videos: ModelChain & {
+    /** Seconds per clip, from the video model's duration options. */
+    duration?: number | string;
+  };
   assemble: {
     bgMusicUrl: string | null;
     bgMusicVolume: number; // 0..1
@@ -59,7 +62,9 @@ export function emptyConfig(): OneClickConfig {
   return {
     version: CONFIG_VERSION,
     tts: { modelId: "", voiceId: "" },
-    output: { aspectRatio: "16:9", resolution: "1080p" },
+    // resolution uses the model pickers' tier values ("1K"/"2K"); the
+    // orchestrator maps it to assembly output size.
+    output: { aspectRatio: "16:9", resolution: "1K" },
     images: { primary: "", secondary: null, fallback: null },
     videos: { primary: "", secondary: null, fallback: null },
     assemble: {
@@ -99,6 +104,7 @@ export function validateConfig(raw: unknown): OneClickConfig | string {
       primary: c.videos.primary.trim(),
       secondary: c.videos.secondary?.trim() || null,
       fallback: c.videos.fallback?.trim() || null,
+      duration: c.videos.duration ?? 5,
     },
     assemble: {
       bgMusicUrl: c.assemble?.bgMusicUrl?.trim() || null,
