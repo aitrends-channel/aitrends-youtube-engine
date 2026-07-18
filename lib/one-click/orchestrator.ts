@@ -260,13 +260,22 @@ async function runPromptsStep(project: ProjectRow): Promise<AdvanceResult> {
   if (error || !script) return RESULT.attention("The script is missing — can't generate prompts.");
   if (!visualProfile) return RESULT.attention("The visual profile is missing — can't generate prompts.");
 
-  const noop = () => {};
+  // generateImages/generateVideos report failures through send() as
+  // {type:"error"} events rather than always throwing — capture those
+  // so the real reason surfaces instead of a generic message.
+  let sendErr: string | null = null;
+  const capture = (data: object) => {
+    const d = data as { type?: string; message?: string };
+    if (d.type === "error" && d.message) sendErr = d.message;
+  };
   try {
     // Image prompts create the beats and set current_state back to 13
     // while running, then to 14 on completion.
-    await generateImages(project.id, project.user_id, script, visualProfile, noop, PROMPT_MODEL);
+    await generateImages(project.id, project.user_id, script, visualProfile, capture, PROMPT_MODEL);
+    if (sendErr) return RESULT.attention(`Image prompt generation failed: ${sendErr}`);
     // Video prompts fill each beat's video_prompt (doesn't touch state).
-    await generateVideos(project.id, project.user_id, noop, PROMPT_MODEL);
+    await generateVideos(project.id, project.user_id, capture, PROMPT_MODEL);
+    if (sendErr) return RESULT.attention(`Video prompt generation failed: ${sendErr}`);
   } catch (err) {
     return RESULT.attention(`Prompt generation failed: ${err instanceof Error ? err.message : "unknown error"}`);
   }
@@ -274,7 +283,7 @@ async function runPromptsStep(project: ProjectRow): Promise<AdvanceResult> {
   // Confirm the run actually landed at the generate step.
   const { data: after } = await supabase.from("projects").select("current_state").eq("id", project.id).single();
   if ((after?.current_state ?? 0) < 14) {
-    return RESULT.attention("Prompt generation didn't complete — open the project to finish the prompts step.");
+    return RESULT.attention("Prompt generation didn't finish — open the project's Prompts step to complete it, then resume.");
   }
   return RESULT.advanced("prompts", "Generated image and video prompts for every beat");
 }

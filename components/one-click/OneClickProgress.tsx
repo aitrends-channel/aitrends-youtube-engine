@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, Loader2, Circle, AlertTriangle, Download, Pause, Play, Square } from "lucide-react";
+import { Check, Loader2, Circle, AlertTriangle, Download, Pause, Play, Square, RotateCcw } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -162,10 +162,10 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
         })}
       </ol>
 
-      {status === "needs_attention" && p.auto_pilot_error && (
+      {status === "needs_attention" && (
         <p className="text-sm mt-4 px-4 py-3 rounded-xl"
           style={{ background: "oklch(0.6 0.19 25 / 0.08)", border: "1px solid oklch(0.6 0.19 25 / 0.25)", color: "oklch(0.55 0.19 25)" }}>
-          {p.auto_pilot_error}
+          {p.auto_pilot_error || "This step couldn't be completed automatically. Retry it, finish it in the editor, or cancel 1Click."}
         </p>
       )}
 
@@ -203,10 +203,17 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
           </>
         ) : status === "needs_attention" ? (
           <>
+            {/* Retry — resume puts the run back to running so the tick
+                re-attempts the failed step from where it stalled. */}
+            <button onClick={() => control("resume")} disabled={acting}
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-40 transition-opacity hover:opacity-90"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+              <RotateCcw size={14} /> Retry step
+            </button>
             <button
               onClick={() => router.push(`/projects/${projectId}/${p.selected_topic || p.current_state > 6 ? "topic" : "channel"}`)}
               className="px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer"
-              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+              style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
             >
               Finish in the editor →
             </button>

@@ -67,7 +67,7 @@ async function handle(req: Request) {
       const r = await advanceProject(p);
       const patch: Record<string, unknown> =
         r.kind === "attention"
-          ? { auto_pilot_status: "needs_attention", auto_pilot_error: r.note }
+          ? { auto_pilot_status: "needs_attention", auto_pilot_error: r.note || "This step couldn't be completed automatically. Open the project to finish it." }
           : r.kind === "done"
             ? { auto_pilot_status: "completed", auto_pilot_error: null }
             : { auto_pilot_error: null }; // advanced / waiting stay "running"
