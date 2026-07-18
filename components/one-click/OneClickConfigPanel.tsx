@@ -182,7 +182,8 @@ export function OneClickConfigPanel() {
       </div>
 
       {/* Voice — the voiceover step's picker cards */}
-      <section className="space-y-3">
+      <section className="space-y-4 p-5 sm:p-6 rounded-2xl"
+        style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
         <div>
           <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>Voiceover voice</h2>
           <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>Every 1Click video narrates with this voice.</p>
@@ -197,7 +198,8 @@ export function OneClickConfigPanel() {
       </section>
 
       {/* Image models — the generate step's picker + chain slots */}
-      <section className="space-y-3">
+      <section className="space-y-4 p-5 sm:p-6 rounded-2xl"
+        style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
         <div>
           <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>Image models</h2>
           <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>
@@ -222,7 +224,8 @@ export function OneClickConfigPanel() {
       </section>
 
       {/* Video models — chain slots + the generate step's picker */}
-      <section className="space-y-3">
+      <section className="space-y-4 p-5 sm:p-6 rounded-2xl"
+        style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
         <div>
           <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>Video models</h2>
           <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>
