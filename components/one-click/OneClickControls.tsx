@@ -51,15 +51,20 @@ export function OneClickControls({ projectId, status, error, onChanged }: {
     }
   }
 
+  // completed / stopped are terminal — no controls. Everything else
+  // (running, paused, needs_attention, and any null/unknown status on a
+  // freshly-engaged project) shows the controls so Stop is always
+  // reachable, defaulting the label to "running".
+  if (status === "completed" || status === "stopped") return null;
   const badge = (() => {
     switch (status) {
-      case "running":         return { label: "1Click running", bg: "oklch(0.72 0.25 285 / 0.12)", fg: "oklch(0.72 0.25 285)", bd: "oklch(0.72 0.25 285 / 0.3)", spin: true };
-      case "paused":          return { label: "1Click paused",  bg: "oklch(0.72 0.18 65 / 0.12)",  fg: "oklch(0.7 0.16 65)",   bd: "oklch(0.72 0.18 65 / 0.3)",  spin: false };
-      case "needs_attention": return { label: "Needs attention", bg: "oklch(0.6 0.19 25 / 0.1)",   fg: "oklch(0.6 0.19 25)",   bd: "oklch(0.6 0.19 25 / 0.3)",   spin: false };
-      default:                return null; // completed / stopped → no controls
+      case "paused":          return { label: "1Click paused",   bg: "oklch(0.72 0.18 65 / 0.12)", fg: "oklch(0.7 0.16 65)",  bd: "oklch(0.72 0.18 65 / 0.3)", spin: false };
+      case "needs_attention": return { label: "Needs attention", bg: "oklch(0.6 0.19 25 / 0.1)",   fg: "oklch(0.6 0.19 25)",  bd: "oklch(0.6 0.19 25 / 0.3)",  spin: false };
+      default:                return { label: "1Click running",  bg: "oklch(0.72 0.25 285 / 0.12)", fg: "oklch(0.72 0.25 285)", bd: "oklch(0.72 0.25 285 / 0.3)", spin: true };
     }
   })();
-  if (!badge) return null;
+  const isPaused = status === "paused";
+  const needsAttention = status === "needs_attention";
 
   const iconBtn = (onClick: () => void, title: string, node: React.ReactNode, danger = false) => (
     <button
@@ -87,13 +92,13 @@ export function OneClickControls({ projectId, status, error, onChanged }: {
           : <Zap size={12} />}
         {badge.label}
       </span>
-      {status !== "needs_attention" && (
-        status === "paused"
+      {!needsAttention && (
+        isPaused
           ? iconBtn(() => pauseResume("resume"), "Resume 1Click", <Play size={13} />)
           : iconBtn(() => pauseResume("pause"), "Pause 1Click", <Pause size={13} />)
       )}
       {iconBtn(stop, "Stop 1Click (finish manually)", <Square size={12} />, true)}
-      {status === "needs_attention" && error && (
+      {needsAttention && error && (
         <span className="text-[11px] w-full" style={{ color: "oklch(0.6 0.19 25)" }}>{error}</span>
       )}
     </div>

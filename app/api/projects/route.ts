@@ -11,14 +11,20 @@ export async function GET() {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
-  const { data, error } = await supabase
-    .from("projects")
-    .select("id, created_at, channel_name, channel_url, current_state, selected_topic, assembly_status, assembled_url, auto_pilot, auto_pilot_status, auto_pilot_error")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false });
+  const BASE_COLS = "id, created_at, channel_name, channel_url, current_state, selected_topic, assembly_status, assembled_url";
+  const run = (cols: string) =>
+    supabase.from("projects").select(cols).eq("user_id", user.id).order("created_at", { ascending: false });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  let res = await run(`${BASE_COLS}, auto_pilot, auto_pilot_status, auto_pilot_error`);
+  // 42703 = auto_pilot columns missing (migration 097 not applied yet).
+  // Fall back to the base columns so the dashboard keeps working — the
+  // 1Click controls just won't render until the migration runs.
+  if (res.error && res.error.code === "42703") {
+    res = await run(BASE_COLS);
+  }
+
+  if (res.error) return NextResponse.json({ error: res.error.message }, { status: 500 });
+  return NextResponse.json(res.data);
 }
 
 export async function POST(req: Request) {
