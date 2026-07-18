@@ -2,7 +2,8 @@
 
 import { useState, use, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowUpRight } from "lucide-react";
+import { AlertCircle, ArrowUpRight, Zap, SlidersHorizontal } from "lucide-react";
+import { STUDIO_MODE_NAME } from "@/lib/one-click/config";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
 import { StepCostCard } from "@/components/StepCostCard";
@@ -294,6 +295,28 @@ export default function ChannelPage({ params }: PageProps) {
   // visit so the user has to opt in (no silent default like "long"
   // that would commit a wrong-flavor pipeline behind their back).
   const [contentType, setContentType] = useState<"long" | "shorts" | "both" | null>(null);
+  // Generation mode: "studio" = the classic step-by-step wizard;
+  // "oneclick" = autopilot (analysis runs here while the user is
+  // present, then the server orchestrator drives every later step).
+  const [genMode, setGenMode] = useState<"studio" | "oneclick">("studio");
+  // null = not checked yet; refreshed whenever 1Click is selected and on
+  // window focus (so returning from /setup?tab=oneclick picks up the
+  // fresh preset without a reload).
+  const [oneClickConfigured, setOneClickConfigured] = useState<boolean | null>(null);
+  const [oneClickEngaged, setOneClickEngaged] = useState(false);
+
+  useEffect(() => {
+    if (genMode !== "oneclick") return;
+    let alive = true;
+    const check = () =>
+      fetch("/api/one-click/config")
+        .then((r) => r.json())
+        .then((d) => { if (alive) setOneClickConfigured(Boolean(d?.configured)); })
+        .catch(() => { if (alive) setOneClickConfigured(false); });
+    check();
+    window.addEventListener("focus", check);
+    return () => { alive = false; window.removeEventListener("focus", check); };
+  }, [genMode]);
   const [topicMode, setTopicMode] = useState<"generate" | "custom">("generate");
   const [topicHint, setTopicHint] = useState("");
   const [customTopic, setCustomTopic] = useState("");
@@ -634,6 +657,32 @@ export default function ChannelPage({ params }: PageProps) {
       return data;
     })();
 
+    // 1Click: engage right from the analysis step. The analyze call above
+    // runs server-side and lands the project at state 6 with topic ideas;
+    // the orchestrator waits for that while we hand the user straight to
+    // the live view, so they watch from channel analysis onward instead of
+    // sitting on this page until the DNA phase finishes.
+    if (genMode === "oneclick") {
+      apiPromise.catch(() => {}); // fired; the server completes it after we navigate away
+      try {
+        const res = await fetch("/api/one-click/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId: effectiveProjectId }),
+        });
+        const d = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) throw new Error(d.error ?? `1Click start failed (${res.status})`);
+        setOneClickEngaged(true);
+        toast.success("1Click engaged — we'll take it from here");
+        void fetch("/api/one-click/tick", { method: "POST" }).catch(() => {});
+        router.push(`/projects/${effectiveProjectId}/one-click`);
+        return;
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "1Click start failed");
+        // Engage failed — fall through to the normal awaited analysis flow.
+      }
+    }
+
     try {
       // Phase 1 (Refining): show running until the API returns OR 4s elapses,
       // whichever is longer. Then mark done and start phase 2.
@@ -661,6 +710,7 @@ export default function ChannelPage({ params }: PageProps) {
       }
 
       setStep("dna", "done");
+
       // Stay on the channel page after analysis instead of auto-routing
       // to /topic. The user advances via the persistent "Continue →" bar
       // at the bottom of the page, which lets them re-analyze with a
@@ -755,10 +805,61 @@ export default function ChannelPage({ params }: PageProps) {
               )}
             </div>
 
+            {/* Generation mode — Studio (classic wizard) vs 1Click
+                (autopilot). Locked once analysis has run, same as the
+                content type. */}
             <div className="space-y-2">
               <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
-                YouTube Channel URL
+                Generation Mode
               </label>
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  { value: "studio" as const, label: STUDIO_MODE_NAME, desc: "Guide every step yourself — full control." },
+                  { value: "oneclick" as const, label: "1Click", desc: "Fully automatic. Start it, close the tab, get an email when your video is ready." },
+                ]).map((opt) => {
+                  const selected = genMode === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setGenMode(opt.value)}
+                      disabled={isAnalyzed || isWorking || oneClickEngaged}
+                      className="px-4 py-2.5 rounded-xl text-sm text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{
+                        background: selected ? "oklch(0.72 0.25 285 / 0.12)" : "var(--bg-progress)",
+                        border: `1px solid ${selected ? "oklch(0.72 0.25 285 / 0.3)" : "var(--bd-8)"}`,
+                        color: selected ? "oklch(0.72 0.25 285)" : "var(--c-55)",
+                      }}
+                    >
+                      <p className="font-medium flex items-center gap-1.5">
+                        {opt.value === "oneclick" && <Zap size={13} />}
+                        {opt.label}
+                      </p>
+                      <p className="text-xs mt-0.5 opacity-70">{opt.desc}</p>
+                    </button>
+                  );
+                })}
+              </div>
+              {genMode === "oneclick" && !isAnalyzed && oneClickConfigured && (
+                <button
+                  type="button"
+                  onClick={() => router.push("/setup?tab=oneclick")}
+                  className="text-xs font-medium underline underline-offset-2 cursor-pointer"
+                  style={{ color: "oklch(0.72 0.25 285)" }}
+                >
+                  Review 1Click preferences
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              {/* Label hidden in the unconfigured-1Click state — that
+                  branch renders only the Configure CTA. */}
+              {!(genMode === "oneclick" && !isAnalyzed && oneClickConfigured === false) && (
+                <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
+                  YouTube Channel URL
+                </label>
+              )}
               {/* On a failed analysis we lock the channel URL so the user
                   can't swap channels mid-error (the project row is
                   already tied to this URL) but keep the action button
@@ -777,7 +878,7 @@ export default function ChannelPage({ params }: PageProps) {
                 // is already on the project row, so the lock-by-isAnalyzed
                 // branch keeps things stable for Retry / Re-analyze.
                 const contentTypeMissing = !contentType;
-                const buttonDisabled = isWorking || !channelUrl.trim() || contentTypeMissing;
+                const buttonDisabled = isWorking || !channelUrl.trim() || contentTypeMissing || (genMode === "oneclick" && oneClickConfigured !== true);
                 const buttonLabel = isWorking
                   ? null
                   : hasError
@@ -790,7 +891,29 @@ export default function ChannelPage({ params }: PageProps) {
                         // channel fetch result is still in state, so
                         // clicking resumes from there.
                         ? "Continue"
-                        : "Analyze";
+                        : genMode === "oneclick"
+                          ? "Start 1Click"
+                          : "Analyze";
+                // 1Click selected but never configured: the input area
+                // becomes a single call-to-action into the Setup page's
+                // 1Click tab. The URL field returns once a preset exists.
+                if (genMode === "oneclick" && !isAnalyzed && oneClickConfigured === false) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => router.push("/setup?tab=oneclick")}
+                      className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 cursor-pointer"
+                      style={{
+                        background: "oklch(0.72 0.25 285)",
+                        color: "var(--bg-page-2)",
+                        boxShadow: "0 0 16px oklch(0.72 0.25 285 / 0.3)",
+                      }}
+                    >
+                      <SlidersHorizontal size={15} />
+                      Configure 1Click
+                    </button>
+                  );
+                }
                 return (
                   <div className="flex gap-3">
                     <input
@@ -1070,16 +1193,35 @@ export default function ChannelPage({ params }: PageProps) {
           style={{ background: "var(--bg-header-2)", borderTop: "1px solid var(--bd-6)", backdropFilter: "blur(12px)" }}
         >
           <div className="px-4 sm:px-8">
-            <button
-              onClick={() => router.push(`/projects/${projectId}/topic`)}
-              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
-              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
-            >
-              Continue →
-            </button>
+            {oneClickEngaged ? (
+              // Autopilot owns the rest of the pipeline — invite the user
+              // to walk away instead of continuing manually.
+              <div className="flex items-center gap-3 flex-wrap">
+                <p className="flex-1 min-w-[240px] text-sm font-medium flex items-center gap-2" style={{ color: "oklch(0.72 0.25 285)" }}>
+                  <Zap size={15} />
+                  1Click engaged — generation continues in the background. You can close this tab; we&apos;ll email you when your video is ready.
+                </p>
+                <button
+                  onClick={() => router.push("/dashboard")}
+                  className="shrink-0 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+                >
+                  Go to Dashboard
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => router.push(`/projects/${projectId}/topic`)}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+              >
+                Continue →
+              </button>
+            )}
           </div>
         </div>
       )}
+
 
       {showNicheLimitModal && limitInfo && (
         <NicheLimitModal

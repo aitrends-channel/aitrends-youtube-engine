@@ -17,6 +17,7 @@ import type { ApiKeysStatus } from "@/app/api/me/api-keys-status/route";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
+import { OneClickControls } from "@/components/one-click/OneClickControls";
 
 
 // ── Demo dashboard helpers ────────────────────────────────────────────────────
@@ -76,6 +77,9 @@ interface Project {
   selected_topic?: string;
   assembly_status?: string | null;
   assembled_url?: string | null;
+  auto_pilot?: boolean;
+  auto_pilot_status?: string | null;
+  auto_pilot_error?: string | null;
 }
 
 interface ChannelGroup {
@@ -1590,7 +1594,7 @@ export default function HomePage() {
                       return (
                         <Link
                           key={p.id}
-                          href={`/projects/${p.id}/${path}`}
+                          href={(p.auto_pilot && !assembled && p.auto_pilot_status !== "stopped") ? `/projects/${p.id}/one-click` : `/projects/${p.id}/${path}`}
                           prefetch
                           onClick={() => setNavigatingTo(`open-video-${p.id}`)}
                           className={`block relative text-left p-6 rounded-2xl transition-all ${isNavigating ? "pointer-events-none" : "hover:scale-[1.01] active:scale-[0.99]"}`}
@@ -1647,6 +1651,20 @@ export default function HomePage() {
                             style={{ color: p.selected_topic ? "var(--c-88)" : "var(--c-40)" }}>
                             {p.selected_topic ?? "No topic selected"}
                           </p>
+
+                          {/* 1Click live controls — only for autopilot
+                              projects still in flight (running / paused /
+                              needs attention). */}
+                          {p.auto_pilot && !isComplete && (
+                            <div className="mb-4">
+                              <OneClickControls
+                                projectId={p.id}
+                                status={p.auto_pilot_status ?? null}
+                                error={p.auto_pilot_error ?? null}
+                                onChanged={() => mutateProjects()}
+                              />
+                            </div>
+                          )}
 
                           <div className="space-y-1.5">
                             <div className="flex justify-between text-xs" style={{ color: "var(--c-38)" }}>
