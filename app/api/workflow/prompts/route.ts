@@ -269,7 +269,7 @@ function sseStream(handler: (send: (data: object) => void) => Promise<void>): Re
 // the script BEFORE sending so each Claude call's output stays under
 // the per-call max_tokens ceiling. The startBeat parameter keeps
 // numbering continuous across chunks.
-async function generateImages(
+export async function generateImages(
   projectId: string,
   userId: string,
   script: string,
@@ -787,7 +787,7 @@ async function generateImages(
 }
 
 // ── Step 2: Video prompts ──────────────────────────────────────────────────
-async function generateVideos(projectId: string, userId: string, send: (data: object) => void, model: string) {
+export async function generateVideos(projectId: string, userId: string, send: (data: object) => void, model: string) {
   const runId = await claimPromptsRun(projectId, userId, "videos");
   try {
   const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(userId, "video_prompts");

@@ -5,6 +5,9 @@ import { visualProfileInputSchema } from "@/lib/claude/anthropicSchemas";
 import { VisualProfileSchema } from "@/lib/claude/schemas";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
+import { PROMPT_MODEL } from "@/lib/claude/client";
+import { generateImages, generateVideos } from "@/app/api/workflow/prompts/route";
+import type { VisualProfileOutput } from "@/lib/claude/schemas";
 import type { OneClickConfig } from "@/lib/one-click/config";
 
 // 1Click orchestrator — advances one autopilot project by exactly one
@@ -107,8 +110,12 @@ export async function advanceProject(project: ProjectRow): Promise<AdvanceResult
     return await runVisualsStep(project);
   }
 
+  // ── Prompts (states 9–13): image + video prompts per beat ────────
+  if (state >= 9 && state <= 13) {
+    return await runPromptsStep(project);
+  }
+
   // ── Later steps: not yet auto-driven ─────────────────────────────
-  if (state >= 9 && state <= 13) return RESULT.attention(MANUAL_STEP_NOTE("prompts & voiceover"));
   if (state === 14) return RESULT.attention(MANUAL_STEP_NOTE("generate"));
   if (state >= 15) return RESULT.done();
 
@@ -230,4 +237,39 @@ async function runVisualsStep(project: ProjectRow): Promise<AdvanceResult> {
   if (upErr) return RESULT.attention(`Couldn't save the visual profile: ${upErr.message}`);
 
   return RESULT.advanced("visuals", "Captured reference frames and extracted the visual style");
+}
+
+// Generate per-beat image prompts (which also creates project_beats) and
+// video prompts, reusing the prompts route's own functions with a no-op
+// send. Claude-token work (no KIE image/video credits — those come at
+// the generate step). generateImages restores current_state to 14 on
+// completion, so a successful run lands the project at the generate step.
+async function runPromptsStep(project: ProjectRow): Promise<AdvanceResult> {
+  const { data, error } = await supabase
+    .from("projects")
+    .select("script, visual_profile")
+    .eq("id", project.id)
+    .single();
+  const script = (data?.script as string | null)?.trim();
+  const visualProfile = data?.visual_profile as VisualProfileOutput | null;
+  if (error || !script) return RESULT.attention("The script is missing — can't generate prompts.");
+  if (!visualProfile) return RESULT.attention("The visual profile is missing — can't generate prompts.");
+
+  const noop = () => {};
+  try {
+    // Image prompts create the beats and set current_state back to 13
+    // while running, then to 14 on completion.
+    await generateImages(project.id, project.user_id, script, visualProfile, noop, PROMPT_MODEL);
+    // Video prompts fill each beat's video_prompt (doesn't touch state).
+    await generateVideos(project.id, project.user_id, noop, PROMPT_MODEL);
+  } catch (err) {
+    return RESULT.attention(`Prompt generation failed: ${err instanceof Error ? err.message : "unknown error"}`);
+  }
+
+  // Confirm the run actually landed at the generate step.
+  const { data: after } = await supabase.from("projects").select("current_state").eq("id", project.id).single();
+  if ((after?.current_state ?? 0) < 14) {
+    return RESULT.attention("Prompt generation didn't complete — open the project to finish the prompts step.");
+  }
+  return RESULT.advanced("prompts", "Generated image and video prompts for every beat");
 }
