@@ -239,7 +239,7 @@ export function OneClickConfigPanel() {
               border: "1px solid oklch(0.72 0.25 285 / 0.25)",
               color: "var(--c-80)",
             }}>
-            Clips inherit the image aspect ratio.
+            Pick your 3 preferred models: clips inherit the image aspect ratio.
           </div>
         </div>
         <SlotTabs chain={cfg.videos} active={videoSlot} onActive={setVideoSlot}
