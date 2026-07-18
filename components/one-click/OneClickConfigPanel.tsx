@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { SlidersHorizontal, X } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { ModelPicker } from "@/components/ModelPicker";
-import { VoiceOption } from "@/components/VoiceOption";
+import { VoicePickerGrid } from "@/components/VoicePickerGrid";
 import type { OneClickConfig } from "@/lib/one-click/config";
 import { emptyConfig } from "@/lib/one-click/config";
 import type { KieModel } from "@/lib/types";
@@ -187,23 +187,13 @@ export function OneClickConfigPanel() {
           <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>Voiceover voice</h2>
           <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>Every 1Click video narrates with this voice.</p>
         </div>
-        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-          {(voices ?? []).map((v) => (
-            <VoiceOption
-              key={v.id}
-              model={v}
-              selected={cfg.tts.voiceId === v.id}
-              onSelect={() => setCfg({ ...cfg, tts: { modelId: v.id, voiceId: v.id } })}
-              isPlaying={playingVoice === v.id}
-              onPlayToggle={setPlayingVoice}
-            />
-          ))}
-          {!voices && (
-            <div className="flex items-center gap-2 py-4 text-sm" style={{ color: "var(--c-45)" }}>
-              <Spinner size={14} /> Loading voices…
-            </div>
-          )}
-        </div>
+        <VoicePickerGrid
+          voices={voices}
+          selectedId={cfg.tts.voiceId || null}
+          onSelect={(id) => setCfg({ ...cfg, tts: { modelId: id, voiceId: id } })}
+          playingId={playingVoice}
+          onPlayToggle={setPlayingVoice}
+        />
       </section>
 
       {/* Image models — the generate step's picker + chain slots */}
@@ -227,6 +217,7 @@ export function OneClickConfigPanel() {
           selectedResolution={cfg.output.resolution || null}
           onSelectResolution={(r) => setCfg({ ...cfg, output: { ...cfg.output, resolution: r ?? "1K" } })}
           tip=""
+          hideCategoryTabs
         />
       </section>
 
@@ -254,6 +245,7 @@ export function OneClickConfigPanel() {
           selectedResolution={cfg.output.resolution || null}
           onSelectResolution={(r) => setCfg({ ...cfg, output: { ...cfg.output, resolution: r ?? "1K" } })}
           tip=""
+          hideCategoryTabs
         />
       </section>
 
