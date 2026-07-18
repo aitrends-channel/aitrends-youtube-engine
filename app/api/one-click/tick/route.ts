@@ -45,23 +45,43 @@ async function handle(req: Request) {
   const projects = data ?? [];
   const results: { id: string; outcome: string; note?: string }[] = [];
 
+  // Per-project lock. A single pipeline step (script / visuals / prompts
+  // generation) routinely runs longer than the 12s UI self-nudge, so
+  // without a lock two overlapping ticks call advanceProject on the SAME
+  // project concurrently. For the prompts step that's fatal: generateImages
+  // claims a run_id at start and the second run's claim makes the first
+  // abort with "cancelled — the step was cleared while in flight". It also
+  // risks double KIE spend on the generate / thumbnail steps.
+  //
+  // We lease the project using auto_pilot_last_tick AS the lock:
+  //   • claim = a conditional UPDATE that only matches when the row is
+  //     free (last_tick NULL) or the previous lease is stale (older than
+  //     LEASE_MS — recovers a tick that crashed or timed out mid-step).
+  //   • the auto_pilot_status='running' guard in the same UPDATE makes a
+  //     Pause/Stop between the batch read and the claim take effect (the
+  //     claim matches nothing and we skip).
+  //   • release = null the column when the step returns, so the next
+  //     scheduled tick advances immediately instead of waiting the lease.
+  // The UPDATE…WHERE is atomic at the row level, so exactly one concurrent
+  // tick wins the claim; the losers get an empty result and skip.
+  const LEASE_MS = 6 * 60 * 1000; // > tick maxDuration (300s): only a dead tick's lease goes stale
+  const staleCutoff = new Date(Date.now() - LEASE_MS).toISOString();
+
   for (const p of projects) {
-    // Re-check status right before advancing: the batch was fetched a
-    // moment ago, and the user may have hit Pause/Stop since. This makes
-    // Pause take effect immediately instead of one step late.
-    const { data: fresh } = await supabase
+    const { data: claimed } = await supabase
       .from("projects")
-      .select("auto_pilot, auto_pilot_status")
+      .update({ auto_pilot_last_tick: new Date().toISOString() })
       .eq("id", p.id)
-      .single();
-    if (!fresh?.auto_pilot || fresh.auto_pilot_status !== "running") {
-      results.push({ id: p.id, outcome: "skipped", note: fresh?.auto_pilot_status ?? "not running" });
+      .eq("auto_pilot", true)
+      .eq("auto_pilot_status", "running")
+      .or(`auto_pilot_last_tick.is.null,auto_pilot_last_tick.lt.${staleCutoff}`)
+      .select("id");
+    if (!claimed || claimed.length === 0) {
+      // Someone else holds the lock, or the run was paused/stopped since
+      // the batch was read.
+      results.push({ id: p.id, outcome: "skipped", note: "locked or not running" });
       continue;
     }
-
-    // Claim the tick immediately so overlapping cron runs don't
-    // double-process the same project.
-    await supabase.from("projects").update({ auto_pilot_last_tick: new Date().toISOString() }).eq("id", p.id);
 
     try {
       const r = await advanceProject(p);
@@ -71,12 +91,14 @@ async function handle(req: Request) {
           : r.kind === "done"
             ? { auto_pilot_status: "completed", auto_pilot_error: null }
             : { auto_pilot_error: null }; // advanced / waiting stay "running"
-      await supabase.from("projects").update(patch).eq("id", p.id);
+      // Release the lock (null last_tick) alongside the outcome write so
+      // the next tick can pick this project up right away.
+      await supabase.from("projects").update({ ...patch, auto_pilot_last_tick: null }).eq("id", p.id);
       results.push({ id: p.id, outcome: r.kind, note: "note" in r ? r.note : undefined });
     } catch (err) {
       const note = err instanceof Error ? err.message : "Step failed";
       await supabase.from("projects")
-        .update({ auto_pilot_status: "needs_attention", auto_pilot_error: note })
+        .update({ auto_pilot_status: "needs_attention", auto_pilot_error: note, auto_pilot_last_tick: null })
         .eq("id", p.id);
       results.push({ id: p.id, outcome: "error", note });
     }

@@ -1,19 +1,27 @@
+import { createHash } from "crypto";
 import { supabase } from "@/lib/supabase/client";
 import { getAnthropicClient, MODEL, VISION_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
 import { buildScriptPrompt, buildVisualAnalysisPrompt } from "@/lib/claude/prompts";
 import { visualProfileInputSchema } from "@/lib/claude/anthropicSchemas";
 import { VisualProfileSchema } from "@/lib/claude/schemas";
 import { retryClaudeCall } from "@/lib/claude/retry";
-import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
+import { uploadFromUrl, uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { PROMPT_MODEL } from "@/lib/claude/client";
-import { generateImages, generateVideos } from "@/lib/workflow/prompts-core";
-import { submitImageTask } from "@/lib/kie/images";
+import { generateImages, generateVideos, generateThumbnails } from "@/lib/workflow/prompts-core";
+import { submitImageTask, generateImage } from "@/lib/kie/images";
+import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
+import { isGoogleVoice } from "@/lib/google/tts";
+import { isQwenVoice } from "@/lib/replicate/tts";
+import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
 import { getModelConfig } from "@/lib/kie/imageModels";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
 import { getConcurrencyConfig } from "@/lib/concurrency-config";
+import { logProjectCost } from "@/lib/costs";
+import { incrementFreeUsage } from "@/lib/freeUsage";
 import { redis } from "@/lib/queue/client";
+import { isProTier } from "@/lib/plans-gating";
 import { sendEmail } from "@/lib/email/smtp";
-import type { VisualProfileOutput } from "@/lib/claude/schemas";
+import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { ModelChain, OneClickConfig } from "@/lib/one-click/config";
 
 // 1Click orchestrator — advances one autopilot project by exactly one
@@ -121,12 +129,48 @@ export async function advanceProject(project: ProjectRow): Promise<AdvanceResult
     return await runPromptsStep(project);
   }
 
-  // ── Generate + assemble (state 14 → complete) ────────────────────
+  // ── Generate + assemble (state 14) ───────────────────────────────
   if (state === 14) return await runGenerateStep(project, cfg);
-  if (state >= 15) return RESULT.done();
+  // ── Thumbnails (state 15, after assembly) → complete (16) ────────
+  if (state === 15) return await runThumbnailsStep(project, cfg);
+  // Safety net: a project already at state 16 (e.g. resumed after the
+  // thumbnails step already completed it). runThumbnailsStep sends the
+  // email on the real completion path, so don't re-send here.
+  if (state >= 16) return RESULT.done();
 
-  // ── Channel not finished (shouldn't happen — runs at kickoff) ────
-  return RESULT.attention("Channel analysis hasn't completed — open the project to finish setup.");
+  // ── Channel analysis (states 1–5) still running ──────────────────
+  // 1Click now engages right from the analysis step: the channel page
+  // fires /api/workflow/analyze (which lands the project at state 6 with
+  // topic ideas) and hands off to the live view immediately. So while
+  // state < 6 we WAIT for that server-side call rather than erroring.
+  // Bound the wait so a failed/never-arriving analysis eventually
+  // surfaces instead of spinning forever.
+  const { data: waitRow } = await supabase
+    .from("projects").select("auto_pilot_attempts").eq("id", project.id).single();
+  const waitAtt = (waitRow?.auto_pilot_attempts as Record<string, number> | null) ?? {};
+  const waits = (waitAtt["channelWaits"] ?? 0) + 1;
+  if (waits > 40) {
+    return RESULT.attention("Channel analysis didn't complete — reopen the project to finish setup.");
+  }
+  waitAtt["channelWaits"] = waits;
+  await supabase.from("projects").update({ auto_pilot_attempts: waitAtt }).eq("id", project.id);
+  return RESULT.waiting("Analyzing your channel…");
+}
+
+// DEV/TEST-only script cap. When ONECLICK_DEV_SCRIPT_WORDS is a positive
+// integer, prompt generation runs on only the FIRST N words of the
+// script — so generateImages creates just a couple of beats and the whole
+// pipeline (prompts, voiceovers, images, videos, assembly) runs on that
+// tiny subset (cheap KIE spend, fast end-to-end). This caps work at the
+// source instead of generating everything and deleting it. Unset / 0 /
+// prod → returns the script unchanged. Env-driven so it can never ship on.
+function devSliceScript(script: string): string {
+  const n = parseInt(process.env.ONECLICK_DEV_SCRIPT_WORDS ?? "", 10);
+  if (!Number.isInteger(n) || n <= 0) return script;
+  const words = script.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= n) return script;
+  console.log(`[one-click] DEV script cap: using first ${n} of ${words.length} words for prompts`);
+  return words.slice(0, n).join(" ");
 }
 
 // Generate the script the same way the script route does (buildScriptPrompt
@@ -270,9 +314,14 @@ async function runPromptsStep(project: ProjectRow): Promise<AdvanceResult> {
     if (d.type === "error" && d.message) sendErr = d.message;
   };
   try {
+    // DEV/TEST cap: feed only the first N words of the script to prompt
+    // generation, so just a couple of beats are ever created and the rest
+    // of the pipeline runs on that subset. No-op unless
+    // ONECLICK_DEV_SCRIPT_WORDS is set.
+    const genScript = devSliceScript(script);
     // Image prompts create the beats and set current_state back to 13
     // while running, then to 14 on completion.
-    await generateImages(project.id, project.user_id, script, visualProfile, capture, PROMPT_MODEL);
+    await generateImages(project.id, project.user_id, genScript, visualProfile, capture, PROMPT_MODEL);
     if (sendErr) return RESULT.attention(`Image prompt generation failed: ${sendErr}`);
     // Video prompts fill each beat's video_prompt (doesn't touch state).
     await generateVideos(project.id, project.user_id, capture, PROMPT_MODEL);
@@ -310,6 +359,116 @@ function chainLength(chain: ModelChain): number {
   return [chain.primary, chain.secondary, chain.fallback].filter(Boolean).length;
 }
 
+// KIE image models reject prompts past a model-specific maximum with
+// "KIE 500: The text length cannot exceed the maximum limit". Unlike a
+// 429 this is deterministic — retrying the identical prompt fails the
+// same way — so recovery means SHORTENING the prompt. We retry at
+// progressively smaller caps; the floor (400) sits comfortably under
+// every KIE image model's limit. Applies to both beat images and
+// thumbnails, so it lives here rather than in each loop.
+const PROMPT_LENGTH_CAPS = [1500, 800, 400];
+function isPromptLengthError(msg: string): boolean {
+  return /text length|maximum limit|too long|prompt.*exceed/i.test(msg);
+}
+// Cap a prompt to `max` chars, preferring to cut at the last sentence/
+// clause/word boundary so the truncated prompt still reads cleanly.
+function capPrompt(prompt: string, max: number): string {
+  if (prompt.length <= max) return prompt;
+  const slice = prompt.slice(0, max);
+  const cut = Math.max(slice.lastIndexOf(". "), slice.lastIndexOf(", "), slice.lastIndexOf(" "));
+  return (cut > max * 0.5 ? slice.slice(0, cut) : slice).trim();
+}
+
+// Hash a beat's script segment the same way the manual tts/beats route
+// does, so "up to date" checks agree across the two flows.
+function hashSegment(text: string): string {
+  return createHash("sha256").update(text.trim()).digest("hex");
+}
+
+// Generate per-beat voiceover audio (voiceover_url) with the user's
+// configured voice — a 1:1 mirror of /api/generate/tts/beats: same
+// stale-beat rule, same overlap-dedupe, batched by tts_beat_batch, same
+// cost accounting. The assembler runs in per-beat mode whenever ANY beat
+// has a voiceover_url and DROPS beats that lack one, so every beat must
+// be voiced before assembly. Returns an AdvanceResult to short-circuit
+// runGenerateStep while work remains, or null once all beats are voiced.
+async function ensureVoiceovers(project: ProjectRow, cfg: OneClickConfig): Promise<AdvanceResult | null> {
+  const voiceId = cfg.tts?.voiceId?.trim();
+  if (!voiceId) return RESULT.attention("No voiceover voice is configured for 1Click — set one in your 1Click preferences, then resume.");
+
+  const { data: beatData, error } = await supabase
+    .from("project_beats")
+    .select("beat_number, script_segment, voiceover_url, voiceover_status, voiceover_voice_id, voiceover_script_hash")
+    .eq("project_id", project.id)
+    .order("beat_number");
+  if (error) return RESULT.attention(`Couldn't read beats for voiceover: ${error.message}`);
+  const allBeats = beatData ?? [];
+  if (allBeats.length === 0) return RESULT.attention("No beats to voice — reopen the prompts step.");
+
+  // Same stale rule as selectStaleBeats in the manual tts/beats route.
+  const toGenerate = allBeats.filter((b) => {
+    const seg = (b.script_segment as string | null)?.trim();
+    if (!seg) return false; // skip blank segments (they produce no audio)
+    if (!b.voiceover_url) return true;
+    if (b.voiceover_status === "failed" || b.voiceover_status === "queued") return true;
+    if (b.voiceover_voice_id !== voiceId) return true;
+    if (b.voiceover_script_hash !== hashSegment(seg)) return true;
+    return false;
+  });
+  if (toGenerate.length === 0) return null; // all voiced → proceed to images
+
+  // Index by beat number so each beat can dedupe overlap against the
+  // previous beat's segment (as the route does).
+  const segByNumber = new Map<number, string | null>();
+  for (const b of allBeats) segByNumber.set(b.beat_number as number, b.script_segment as string | null);
+
+  const BATCH_SIZE = Math.max(1, (await getConcurrencyConfig()).tts_beat_batch);
+  const folder = userFolderFor({ id: project.user_id, email: null });
+  let hardError: string | null = null;
+
+  const genOne = async (beatNumber: number): Promise<void> => {
+    const rawSegment = (segByNumber.get(beatNumber) ?? "").trim();
+    if (!rawSegment) return;
+    // Trim any leading overlap with the previous beat so the boundary
+    // phrase isn't spoken twice; keep raw text if dedupe empties it.
+    const segment = dedupeOverlap(rawSegment, segByNumber.get(beatNumber - 1) ?? null);
+    const ttsText = segment || rawSegment;
+    try {
+      await supabase.from("project_beats").update({ voiceover_status: "generating" })
+        .eq("project_id", project.id).eq("beat_number", beatNumber);
+      const { audio, charsConsumed } = await generateTTS(ttsText, voiceId, undefined, undefined, project.user_id);
+      // Same cost accounting as the route: ElevenLabs bills the ledger;
+      // BYO Google / Heclus-paid Qwen count against free-usage caps.
+      if (charsConsumed && !isGoogleVoice(voiceId) && !isQwenVoice(voiceId)) {
+        void logProjectCost({ projectId: project.id, userId: project.user_id, step: "tts", provider: "elevenlabs", model: TTS_MODEL, units: charsConsumed, unitKind: "elevenlabs_chars" });
+      } else if (charsConsumed && isGoogleVoice(voiceId)) {
+        void incrementFreeUsage(project.user_id, "tts_chars", charsConsumed);
+      } else if (charsConsumed && isQwenVoice(voiceId)) {
+        void incrementFreeUsage(project.user_id, "qwen_tts_chars", charsConsumed);
+      }
+      const storagePath = `${folder}/${project.id}/voiceovers/beat-${beatNumber}_${Date.now()}.mp3`;
+      const publicUrl = await uploadBuffer(storagePath, audio, "audio/mpeg");
+      await supabase.from("project_beats").update({
+        voiceover_url: publicUrl, voiceover_status: "done",
+        voiceover_voice_id: voiceId, voiceover_script_hash: hashSegment(rawSegment), voiceover_error: null,
+      }).eq("project_id", project.id).eq("beat_number", beatNumber);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "TTS failed";
+      hardError = message;
+      await supabase.from("project_beats").update({ voiceover_status: "failed", voiceover_error: message })
+        .eq("project_id", project.id).eq("beat_number", beatNumber);
+    }
+  };
+
+  // Batched, mirroring tts_beat_batch. Per-beat persistence means a tick
+  // that times out mid-run resumes cleanly on the next one.
+  for (let i = 0; i < toGenerate.length; i += BATCH_SIZE) {
+    await Promise.all(toGenerate.slice(i, i + BATCH_SIZE).map((b) => genOne(b.beat_number as number)));
+    if (hardError) return RESULT.attention(`Voiceover generation failed: ${hardError}`);
+  }
+  return RESULT.waiting(`Generating ${toGenerate.length} voiceover${toGenerate.length === 1 ? "" : "s"}…`);
+}
+
 // State 14: generate every beat's image and video clip (real KIE spend),
 // applying the model fallback chains on failure, then queue assembly and
 // poll it to completion — all across ticks, since this work is async
@@ -323,9 +482,11 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
     .single();
   const assemblyStatus = proj?.assembly_status as string | null;
   if (assemblyStatus === "done" || proj?.assembled_url) {
-    await sendCompletionEmail(project.id, project.user_id).catch(() => {});
+    // Video assembled — advance to the thumbnails step (state 15), which
+    // the orchestrator runs next. Completion + email happen after
+    // thumbnails (state 16).
     await supabase.from("projects").update({ current_state: 15 }).eq("id", project.id).lt("current_state", 15);
-    return RESULT.done();
+    return RESULT.advanced("assemble", "Final video assembled");
   }
   if (assemblyStatus === "failed") return RESULT.attention("Assembly failed — open the project to retry the final render.");
   if (assemblyStatus === "queued" || assemblyStatus === "processing") return RESULT.waiting("Assembling the final video…");
@@ -342,6 +503,12 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
   if (beatErr) return RESULT.attention(`Couldn't read beats: ${beatErr.message}`);
   const beats = (beatData ?? []) as BeatRow[];
   if (beats.length === 0) return RESULT.attention("No beats to generate — reopen the prompts step.");
+
+  // ── Voiceovers ────────────────────────────────────────────────────
+  // Narrate every beat before touching images/videos. The assembler
+  // drops any beat without a voiceover_url, so this must finish first.
+  const voResult = await ensureVoiceovers(project, cfg);
+  if (voResult) return voResult;
 
   // ── Images ───────────────────────────────────────────────────────
   const imgDone = (b: BeatRow) => !!b.image_url;
@@ -374,22 +541,30 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
     const SUBMIT_BATCH = Math.max(1, (await getConcurrencyConfig()).image_generation_batch);
     let hardError: string | null = null;
     const submitOne = async (b: BeatRow): Promise<boolean> => {
-      const MAX_RETRIES = 4;
+      const basePrompt = b.image_prompt!.trim();
+      const MAX_RETRIES = 5;
+      let capIdx = 0; // 0 = full prompt; >0 = capped at PROMPT_LENGTH_CAPS[capIdx-1]
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        const prompt = capIdx === 0 ? basePrompt : capPrompt(basePrompt, PROMPT_LENGTH_CAPS[capIdx - 1]);
         try {
-          const taskId = await submitImageTask(b.image_prompt!.trim(), imageModel, imgAr, imgRes, project.user_id);
+          const taskId = await submitImageTask(prompt, imageModel, imgAr, imgRes, project.user_id);
           await supabase.from("project_beats")
-            .update({ image_status: "generating", image_task_id: taskId, image_model_id: imageModel })
+            .update({ image_status: "generating", image_task_id: taskId, image_model_id: imageModel, image_prompt: prompt })
             .eq("project_id", project.id).eq("beat_number", b.beat_number);
           return true;
         } catch (err) {
           const msg = err instanceof Error ? err.message : "unknown error";
+          // Prompt too long → shorten and retry (deterministic, no backoff).
+          if (isPromptLengthError(msg) && capIdx < PROMPT_LENGTH_CAPS.length) {
+            capIdx++;
+            continue;
+          }
           const rateLimited = /429|frequency|rate limit/i.test(msg);
           if (rateLimited && attempt < MAX_RETRIES) {
             await new Promise((r) => setTimeout(r, Math.min(8000, 1000 * 2 ** attempt)));
             continue;
           }
-          if (!rateLimited) hardError = msg; // credits/model error — surface it
+          hardError = msg; // credits / model / length-exhausted — surface it
           return false;
         }
       }
@@ -407,10 +582,37 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
   // ── Videos (queue once images exist; worker picks them up) ────────
   const allImagesDone = beats.every(imgDone);
   if (allImagesDone) {
+    // Video prompts must exist before any clip can be queued. Because
+    // generateImages advances current_state to 14 on its OWN completion —
+    // before generateVideos runs — a project can reach the generate step
+    // with beats that have no video_prompt (an earlier prompts run whose
+    // video half didn't finish: cancelled tick, timeout, etc.). Without a
+    // prompt, a beat is filtered out of toQueueVid below and the step
+    // loops "Rendering video clips…" forever with nothing ever sent to
+    // KIE. Self-heal by generating the missing prompts here, exactly as
+    // the prompts step would, then let the next tick queue them.
+    const missingVideoPrompts = beats.some((b) => !b.video_prompt?.trim());
+    if (missingVideoPrompts) {
+      let sendErr: string | null = null;
+      const capture = (d: object) => { const e = d as { type?: string; message?: string }; if (e.type === "error" && e.message) sendErr = e.message; };
+      try {
+        await generateVideos(project.id, project.user_id, capture, PROMPT_MODEL);
+        if (sendErr) return RESULT.attention(`Video prompt generation failed: ${sendErr}`);
+      } catch (err) {
+        return RESULT.attention(`Video prompt generation failed: ${err instanceof Error ? err.message : "unknown error"}`);
+      }
+      return RESULT.waiting("Preparing video prompts…");
+    }
+
     const vidDone = (b: BeatRow) => !!b.video_url;
     const vidPending = (b: BeatRow) => !vidDone(b) && (b.video_status === "queued" || b.video_status === "submitting" || b.video_status === "rendering");
     const vidFailed = (b: BeatRow) => !vidDone(b) && !vidPending(b);
     const videoModel = chainModel(cfg.videos, vidIdx);
+    // The worker silently skips any queued beat whose video_model_id is
+    // empty — so guard here rather than queue clips that never render.
+    if (!videoModel?.trim()) {
+      return RESULT.attention("No video model is configured for 1Click — set one in your 1Click preferences, then resume.");
+    }
     // Match the model's supported options; many video models take no
     // aspect ratio (they inherit the source image) and their own
     // resolution set, so pass only what's valid.
@@ -430,12 +632,20 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
         video_model_id: videoModel, video_aspect_ratio: vidAr,
         video_duration: vidDur, video_resolution: vidRes,
       }).eq("id", project.id);
-      for (const b of toQueueVid) {
-        await supabase.from("project_beats").update({
-          video_status: "queued", video_job_id: null, video_error: null,
-          video_model_id: videoModel, video_aspect_ratio: vidAr,
-          video_duration: vidDur, video_resolution: vidRes,
-        }).eq("project_id", project.id).eq("beat_number", b.beat_number);
+      // Queue in batches sized by product_config.video_worker — the same
+      // admin knob that caps how many clips the worker renders at once —
+      // so clips follow the same batched pattern as images (which use
+      // image_generation_batch) instead of flipping every beat to
+      // "queued" in a single burst.
+      const VIDEO_BATCH = Math.max(1, (await getConcurrencyConfig()).video_worker);
+      const queueOne = (b: BeatRow) => supabase.from("project_beats").update({
+        video_status: "queued", video_job_id: null, video_error: null,
+        video_model_id: videoModel, video_aspect_ratio: vidAr,
+        video_duration: vidDur, video_resolution: vidRes,
+      }).eq("project_id", project.id).eq("beat_number", b.beat_number);
+      for (let i = 0; i < toQueueVid.length; i += VIDEO_BATCH) {
+        await Promise.all(toQueueVid.slice(i, i + VIDEO_BATCH).map(queueOne));
+        if (i + VIDEO_BATCH < toQueueVid.length) await new Promise((r) => setTimeout(r, 500));
       }
       return RESULT.waiting(`Rendering ${toQueueVid.length} video clip${toQueueVid.length === 1 ? "" : "s"}…`);
     }
@@ -443,24 +653,49 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
     // ── All media done → trigger assembly ──────────────────────────
     if (beats.every(vidDone)) {
       const a = cfg.assemble;
+      // Map the picker's 1K/2K to a worker render preset, and gate
+      // Pro-only resolutions exactly like the manual assemble route:
+      // a non-Pro run downgrades to 1080p instead of being rejected.
+      const { data: userData } = await supabase.auth.admin.getUserById(project.user_id);
+      const wantsHi = cfg.output.resolution === "2K";
+      const resolution = wantsHi && isProTier(userData?.user) ? "1440p" : "1080p";
       const options = {
         aspectRatio: cfg.output.aspectRatio,
+        // Per-beat voiceover mode is active (every beat has voiceover_url),
+        // so the worker ignores voiceoverType — send "original" to match
+        // the manual assemble route's hard-coded value.
+        voiceoverType: "original",
         captionsEnabled: a.captionsEnabled,
         captionsLanguage: a.captionsLanguage,
         captionsStyle: a.captionsStyle,
         captionsSize: a.captionsSize,
         captionsPosition: a.captionsPosition,
+        trimSilenceEnabled: true,
         backgroundMusicUrl: a.bgMusicUrl,
         backgroundMusicVolume: a.bgMusicVolume,
         logoUrl: a.logoUrl,
         logoX: a.logoX, logoY: a.logoY, logoSize: a.logoSize,
-        // Map the picker's 1K/2K to a render preset the worker expects.
-        resolution: cfg.output.resolution === "2K" ? "1440p" : "1080p",
+        resolution,
       };
+      // Redis is the worker handoff; the project row is the durable
+      // copy (hydration / resume) — write both, exactly as the manual
+      // assemble route does.
       await redis.set(`assembly:${project.id}`, JSON.stringify(options), { ex: 7200 });
       await supabase.from("projects").update({
         assembly_status: "queued", assembly_progress: "Queued…",
         assembly_error: null, assembly_stop_requested: false,
+        background_music_url: a.bgMusicUrl ?? null,
+        background_music_volume: typeof a.bgMusicVolume === "number" ? a.bgMusicVolume : 0.15,
+        logo_url: a.logoUrl ?? null,
+        logo_x: typeof a.logoX === "number" ? a.logoX : 0.85,
+        logo_y: typeof a.logoY === "number" ? a.logoY : 0.05,
+        logo_size: typeof a.logoSize === "number" ? a.logoSize : 0.1,
+        trim_silence_enabled: true,
+        captions_enabled: a.captionsEnabled,
+        captions_language: a.captionsLanguage ?? "source",
+        captions_style: a.captionsStyle ?? "classic",
+        captions_size: a.captionsSize ?? "medium",
+        captions_position: a.captionsPosition ?? "bottom",
       }).eq("id", project.id);
       return RESULT.waiting("All clips ready — assembling the final video…");
     }
@@ -468,6 +703,103 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
   }
 
   return RESULT.waiting("Generating images…");
+}
+
+// State 15 (video assembled): generate thumbnail concepts + images
+// automatically, then mark complete (state 16). Concepts reuse the
+// prompts route's generateThumbnails (Claude); images reuse generateImage
+// batched by the admin's thumbnail_batch with 429 retry, mirroring the
+// manual thumbnail-images route. Runs across ticks — concepts first,
+// then images, then done.
+async function runThumbnailsStep(project: ProjectRow, cfg: OneClickConfig): Promise<AdvanceResult> {
+  const { data, error } = await supabase
+    .from("projects")
+    .select("script, visual_profile, thumbnail_analysis")
+    .eq("id", project.id)
+    .single();
+  const script = (data?.script as string | null)?.trim();
+  const visualProfile = data?.visual_profile as VisualProfileOutput | null;
+  if (error || !script || !visualProfile) {
+    // Video is already done; don't block on thumbnails — surface it.
+    return RESULT.attention("Couldn't start thumbnails (missing script or visual profile) — generate them in the editor.");
+  }
+
+  // 1) Concepts — create project_thumbnails rows if none exist yet.
+  const { data: existing } = await supabase
+    .from("project_thumbnails")
+    .select("position, image_url")
+    .eq("project_id", project.id)
+    .order("position");
+  let thumbs = existing ?? [];
+  if (thumbs.length === 0) {
+    let sendErr: string | null = null;
+    const capture = (d: object) => { const e = d as { type?: string; message?: string }; if (e.type === "error" && e.message) sendErr = e.message; };
+    try {
+      await generateThumbnails(project.id, project.user_id, script, visualProfile,
+        (data?.thumbnail_analysis as ThumbnailAnalysisOutput | undefined) ?? undefined, capture, PROMPT_MODEL);
+      if (sendErr) return RESULT.attention(`Thumbnail concepts failed: ${sendErr}`);
+    } catch (err) {
+      return RESULT.attention(`Thumbnail concepts failed: ${err instanceof Error ? err.message : "unknown error"}`);
+    }
+    const { data: created } = await supabase
+      .from("project_thumbnails").select("position, image_url").eq("project_id", project.id).order("position");
+    thumbs = created ?? [];
+    if (thumbs.length === 0) return RESULT.attention("No thumbnail concepts were generated — open the editor to create them.");
+    return RESULT.waiting("Generating thumbnail concepts…");
+  }
+
+  // 2) Images — generate any thumbnail still missing an image, batched
+  // by thumbnail_batch, with 429 retry (same pacing as images).
+  const missing = thumbs.filter((t) => !t.image_url);
+  if (missing.length > 0) {
+    const model = chainModel(cfg.images, 0);
+    const mCfg = getModelConfig(model);
+    const ar = mCfg.aspectRatios.includes("16:9") ? "16:9" : (mCfg.aspectRatios[0] ?? "16:9");
+    const resv = mCfg.resolutions?.includes(cfg.output.resolution) ? cfg.output.resolution : (mCfg.resolutions?.[0] ?? undefined);
+    const batchSize = Math.max(1, (await getConcurrencyConfig()).thumbnail_batch);
+
+    let hardError: string | null = null;
+    const genOne = async (position: number): Promise<void> => {
+      const { data: row } = await supabase
+        .from("project_thumbnails").select("text_overlay, style_prompt, visual_concept").eq("project_id", project.id).eq("position", position).maybeSingle();
+      const basePrompt = [(row?.style_prompt as string | null), (row?.visual_concept as string | null)].filter(Boolean).join(". ").trim() || "YouTube thumbnail";
+      await supabase.from("project_thumbnails").update({ image_status: "generating" }).eq("project_id", project.id).eq("position", position);
+      let capIdx = 0;
+      for (let attempt = 0; attempt <= 5; attempt++) {
+        const prompt = capIdx === 0 ? basePrompt : capPrompt(basePrompt, PROMPT_LENGTH_CAPS[capIdx - 1]);
+        try {
+          const { url } = await generateImage(prompt, model, ar, resv, project.user_id);
+          const folder = userFolderFor({ id: project.user_id, email: null });
+          const publicUrl = await uploadFromUrl(`${folder}/${project.id}/thumbnails/pos-${position}_${attempt}.png`, url, "image/png");
+          await supabase.from("project_thumbnails").update({ image_url: publicUrl, image_status: "done" }).eq("project_id", project.id).eq("position", position);
+          return;
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "unknown error";
+          // Prompt too long → shorten and retry (deterministic, no backoff).
+          if (isPromptLengthError(msg) && capIdx < PROMPT_LENGTH_CAPS.length) { capIdx++; continue; }
+          if (/429|frequency|rate limit/i.test(msg) && attempt < 5) { await new Promise((r) => setTimeout(r, Math.min(8000, 1000 * 2 ** attempt))); continue; }
+          hardError = msg;
+          await supabase.from("project_thumbnails").update({ image_status: "failed" }).eq("project_id", project.id).eq("position", position);
+          return;
+        }
+      }
+    };
+    for (let i = 0; i < missing.length; i += batchSize) {
+      await Promise.all(missing.slice(i, i + batchSize).map((t) => genOne(t.position as number)));
+      if (hardError) return RESULT.attention(`Thumbnail generation failed: ${hardError}`);
+      if (i + batchSize < missing.length) await new Promise((r) => setTimeout(r, 1500));
+    }
+    return RESULT.waiting(`Generating ${missing.length} thumbnail${missing.length === 1 ? "" : "s"}…`);
+  }
+
+  // 3) All thumbnails done → mark the project complete and finish the
+  // run in one step. Returning done() flips auto_pilot_status to
+  // "completed", so the tick won't pick this project up again — which
+  // is why the email is sent here (the only path to state 16) and the
+  // dispatch's state>=16 branch is just an idempotent safety net.
+  await supabase.from("projects").update({ current_state: 16 }).eq("id", project.id);
+  await sendCompletionEmail(project.id, project.user_id).catch(() => {});
+  return RESULT.done();
 }
 
 // Best-effort "your video is ready" email via the support mailbox.
