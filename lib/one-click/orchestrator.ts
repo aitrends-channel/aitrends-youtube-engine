@@ -94,6 +94,11 @@ export async function advanceProject(project: ProjectRow): Promise<AdvanceResult
 
   // ── Script (state 6, topic chosen) ───────────────────────────────
   if (state === 6 && project.selected_topic) {
+    // Manual mode: pause for the user to write/edit the script. The run
+    // resumes once the script step advances current_state past 6.
+    if (cfg.scriptMode === "manual" && !project.script) {
+      return RESULT.attention("Write or edit your script to continue — 1Click resumes once it's ready.");
+    }
     return await runScriptStep(project, cfg);
   }
 

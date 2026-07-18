@@ -29,6 +29,11 @@ export interface OneClickConfig {
    *   "manual" — the run pauses at the topic step (needs_attention)
    *              so the user chooses the topic, then resumes. */
   topicMode: "auto" | "manual";
+  /** How the script step is handled in a 1Click run:
+   *   "auto"   — the orchestrator writes the script and continues.
+   *   "manual" — the run pauses at the script step so the user writes
+   *              or edits it, then resumes. */
+  scriptMode: "auto" | "manual";
   tts: {
     /** TTS model id (e.g. elevenlabs model) */
     modelId: string;
@@ -68,6 +73,7 @@ export function emptyConfig(): OneClickConfig {
   return {
     version: CONFIG_VERSION,
     topicMode: "auto",
+    scriptMode: "auto",
     tts: { modelId: "", voiceId: "" },
     // resolution uses the model pickers' tier values ("1K"/"2K"); the
     // orchestrator maps it to assembly output size.
@@ -93,6 +99,7 @@ export function validateConfig(raw: unknown): OneClickConfig | string {
   if (typeof raw !== "object" || raw === null) return "Config must be an object";
   const c = raw as Partial<OneClickConfig>;
   const topicMode: "auto" | "manual" = c.topicMode === "manual" ? "manual" : "auto";
+  const scriptMode: "auto" | "manual" = c.scriptMode === "manual" ? "manual" : "auto";
   if (!c.tts?.modelId?.trim() || !c.tts?.voiceId?.trim()) return "Pick a voiceover model and voice";
   if (!c.images?.primary?.trim()) return "Pick a primary image model";
   if (!c.videos?.primary?.trim()) return "Pick a primary video model";
@@ -102,6 +109,7 @@ export function validateConfig(raw: unknown): OneClickConfig | string {
   return {
     version: CONFIG_VERSION,
     topicMode,
+    scriptMode,
     tts: { modelId: c.tts.modelId.trim(), voiceId: c.tts.voiceId.trim() },
     output: { aspectRatio: c.output.aspectRatio.trim(), resolution: c.output.resolution.trim() },
     images: {

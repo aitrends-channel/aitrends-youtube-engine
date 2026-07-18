@@ -74,6 +74,31 @@ function SlotTabs({ chain, active, onActive, onClear }: {
   );
 }
 
+// Labeled toggle row (title + description + switch), matching the
+// captions toggle style. Used for the topic/script manual-vs-auto gates.
+function SwitchRow({ title, desc, on, onToggle }: {
+  title: string; desc: string; on: boolean; onToggle: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div>
+        <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>{title}</h2>
+        <p className="text-xs mt-1 max-w-lg" style={{ color: "var(--c-45)" }}>{desc}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-pressed={on}
+        className="relative w-11 h-6 rounded-full transition-all shrink-0 cursor-pointer"
+        style={{ background: on ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
+      >
+        <span className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
+          style={{ background: "oklch(0.95 0 0)", left: on ? "calc(100% - 1.375rem)" : "0.125rem" }} />
+      </button>
+    </div>
+  );
+}
+
 // Full-page 1Click preferences editor — the Setup page's 1Click tab.
 // Reuses the product's real pickers: the voiceover step's VoiceOption
 // cards and the generate step's ModelPicker (tabs, search, cost/speed
@@ -171,28 +196,22 @@ export function OneClickConfigPanel() {
         )}
       </div>
 
-      {/* Topic — manual pick vs fully automatic */}
+      {/* Topic & Script — manual vs fully automatic per step */}
       <section className="space-y-5 p-6 sm:p-8 rounded-2xl"
         style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>Manually select topic</h2>
-            <p className="text-xs mt-1 max-w-lg" style={{ color: "var(--c-45)" }}>
-              On — the run pauses at the topic step so you choose from the generated ideas, then continues on
-              its own. Off — 1Click picks the top idea and runs straight through, fully hands-off.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setCfg({ ...cfg, topicMode: cfg.topicMode === "manual" ? "auto" : "manual" })}
-            aria-pressed={cfg.topicMode === "manual"}
-            className="relative w-11 h-6 rounded-full transition-all shrink-0 cursor-pointer"
-            style={{ background: cfg.topicMode === "manual" ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
-          >
-            <span className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
-              style={{ background: "oklch(0.95 0 0)", left: cfg.topicMode === "manual" ? "calc(100% - 1.375rem)" : "0.125rem" }} />
-          </button>
-        </div>
+        <SwitchRow
+          title="Manually select topic?"
+          desc="On — the run pauses at the topic step so you choose from the generated ideas, then continues on its own. Off — 1Click picks the top idea and runs straight through."
+          on={cfg.topicMode === "manual"}
+          onToggle={() => setCfg({ ...cfg, topicMode: cfg.topicMode === "manual" ? "auto" : "manual" })}
+        />
+        <div style={{ borderTop: "1px solid var(--bd-6)" }} />
+        <SwitchRow
+          title="Write the script myself?"
+          desc="On — the run pauses at the script step so you write or edit the script, then resumes. Off — 1Click generates the script with AI and continues automatically."
+          on={cfg.scriptMode === "manual"}
+          onToggle={() => setCfg({ ...cfg, scriptMode: cfg.scriptMode === "manual" ? "auto" : "manual" })}
+        />
       </section>
 
       {/* Voice — the voiceover step's picker cards */}
