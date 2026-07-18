@@ -846,9 +846,13 @@ export default function ChannelPage({ params }: PageProps) {
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
-                YouTube Channel URL
-              </label>
+              {/* Label hidden in the unconfigured-1Click state — that
+                  branch renders only the Configure CTA. */}
+              {!(genMode === "oneclick" && !isAnalyzed && oneClickConfigured === false) && (
+                <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
+                  YouTube Channel URL
+                </label>
+              )}
               {/* On a failed analysis we lock the channel URL so the user
                   can't swap channels mid-error (the project row is
                   already tied to this URL) but keep the action button
@@ -888,24 +892,19 @@ export default function ChannelPage({ params }: PageProps) {
                 // 1Click tab. The URL field returns once a preset exists.
                 if (genMode === "oneclick" && !isAnalyzed && oneClickConfigured === false) {
                   return (
-                    <div className="space-y-2">
-                      <button
-                        type="button"
-                        onClick={() => router.push("/setup?tab=oneclick")}
-                        className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 cursor-pointer"
-                        style={{
-                          background: "oklch(0.72 0.25 285)",
-                          color: "var(--bg-page-2)",
-                          boxShadow: "0 0 16px oklch(0.72 0.25 285 / 0.3)",
-                        }}
-                      >
-                        <SlidersHorizontal size={15} />
-                        Configure 1Click
-                      </button>
-                      <p className="text-xs" style={{ color: "var(--c-45)" }}>
-                        One-time setup: pick your voice, models, and output format — then every 1Click run is fully automatic.
-                      </p>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => router.push("/setup?tab=oneclick")}
+                      className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 cursor-pointer"
+                      style={{
+                        background: "oklch(0.72 0.25 285)",
+                        color: "var(--bg-page-2)",
+                        boxShadow: "0 0 16px oklch(0.72 0.25 285 / 0.3)",
+                      }}
+                    >
+                      <SlidersHorizontal size={15} />
+                      Configure 1Click
+                    </button>
                   );
                 }
                 return (
