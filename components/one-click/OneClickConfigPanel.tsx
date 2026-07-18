@@ -209,8 +209,7 @@ export function OneClickConfigPanel() {
               color: "var(--c-80)",
             }}>
             Pick your 3 preferred models: if the primary fails mid-run, 1Click automatically retries with the next
-            one. <span className="font-semibold" style={{ color: "oklch(0.88 0.12 285)" }}>Aspect ratio and
-            resolution chosen here become the output format for the whole video.</span>
+            one.
           </div>
         </div>
         <SlotTabs chain={cfg.images} active={imageSlot} onActive={setImageSlot}
