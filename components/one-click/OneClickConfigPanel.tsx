@@ -200,12 +200,18 @@ export function OneClickConfigPanel() {
       {/* Image models — the generate step's picker + chain slots */}
       <section className="space-y-5 p-6 sm:p-8 rounded-2xl"
         style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
-        <div>
+        <div className="space-y-2.5">
           <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>Image models</h2>
-          <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>
+          <div className="rounded-xl px-4 py-3 text-sm leading-relaxed"
+            style={{
+              background: "oklch(0.72 0.25 285 / 0.08)",
+              border: "1px solid oklch(0.72 0.25 285 / 0.25)",
+              color: "var(--c-80)",
+            }}>
             Pick a model per slot — if the primary fails mid-run, 1Click automatically retries with the next
-            one. Aspect ratio and resolution chosen here become the output format for the whole video.
-          </p>
+            one. <span className="font-semibold" style={{ color: "oklch(0.88 0.12 285)" }}>Aspect ratio and
+            resolution chosen here become the output format for the whole video.</span>
+          </div>
         </div>
         <SlotTabs chain={cfg.images} active={imageSlot} onActive={setImageSlot}
           onClear={(s) => clearChain("images", s)} />
