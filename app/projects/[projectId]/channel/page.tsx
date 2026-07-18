@@ -2,7 +2,7 @@
 
 import { useState, use, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowUpRight, Zap } from "lucide-react";
+import { AlertCircle, ArrowUpRight, Zap, SlidersHorizontal } from "lucide-react";
 import { STUDIO_MODE_NAME } from "@/lib/one-click/config";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
@@ -899,7 +899,7 @@ export default function ChannelPage({ params }: PageProps) {
                           boxShadow: "0 0 16px oklch(0.72 0.25 285 / 0.3)",
                         }}
                       >
-                        <Zap size={15} />
+                        <SlidersHorizontal size={15} />
                         Configure 1Click
                       </button>
                       <p className="text-xs" style={{ color: "var(--c-45)" }}>
