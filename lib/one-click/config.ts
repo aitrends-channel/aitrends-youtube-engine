@@ -2,8 +2,8 @@ import { supabase } from "@/lib/supabase/client";
 
 // 1Click preference config — the user's saved answers to every wizard
 // gate, so autopilot can run the whole pipeline unattended. Stored in
-// one_click_configs.config (JSONB) with a version field; evolve fields
-// here freely, bump CONFIG_VERSION when a breaking reshape happens.
+// account_settings.one_click_config (JSONB) with a version field; evolve
+// fields here freely, bump CONFIG_VERSION when a breaking reshape happens.
 
 export const CONFIG_VERSION = 1;
 
@@ -169,24 +169,26 @@ export function validateConfig(raw: unknown): OneClickConfig | string {
 /** The user's default 1Click preset, or null when they've never
  *  configured 1Click (the setup UI opens in that case). */
 export async function getOneClickConfig(userId: string): Promise<OneClickConfig | null> {
+  // Stored on account_settings.one_click_config (migration 100 unified it
+  // from the old one_click_configs table).
   const { data, error } = await supabase
-    .from("one_click_configs")
-    .select("config")
+    .from("account_settings")
+    .select("one_click_config")
     .eq("user_id", userId)
-    .eq("is_default", true)
     .maybeSingle();
   if (error) {
     console.warn("[one-click] config fetch failed:", error.message);
     return null;
   }
-  return (data?.config as OneClickConfig | undefined) ?? null;
+  return (data?.one_click_config as OneClickConfig | undefined) ?? null;
 }
 
 export async function saveOneClickConfig(userId: string, config: OneClickConfig): Promise<void> {
+  // Upsert onto account_settings — the user may not have a row yet.
   const { error } = await supabase
-    .from("one_click_configs")
+    .from("account_settings")
     .upsert(
-      { user_id: userId, is_default: true, config, updated_at: new Date().toISOString() },
+      { user_id: userId, one_click_config: config },
       { onConflict: "user_id", ignoreDuplicates: false },
     );
   if (error) throw new Error(error.message);

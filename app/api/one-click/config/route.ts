@@ -54,10 +54,10 @@ export async function PUT(req: Request) {
     await saveOneClickConfig(user.id, result);
     return NextResponse.json({ ok: true, config: result });
   } catch (err) {
-    // 42P01 = table missing (migration 097 not applied yet).
+    // 42703 = column missing (migration 100 not applied yet).
     const msg = err instanceof Error ? err.message : "Failed to save 1Click config";
-    const hint = msg.includes("one_click_configs")
-      ? "1Click table missing — run supabase/migrations/097_one_click.sql first."
+    const hint = msg.includes("one_click_config")
+      ? "1Click settings column missing — run supabase/migrations/100_unify_one_click_config.sql first."
       : msg;
     return NextResponse.json({ error: hint }, { status: 500 });
   }
