@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -4753,6 +4753,23 @@ export default function AdminPage() {
     fetcher
   );
 
+  // Per-user video counts for the Users table (Total / Completed / In
+  // progress), derived once from the projects list. Same completion +
+  // in-progress predicate as the status-filter rows. Declared here — with
+  // the other hooks, before any early return — so hook order stays stable.
+  const videoCountsByEmail = useMemo(() => {
+    const m = new Map<string, { total: number; completed: number; inProgress: number }>();
+    for (const p of (data?.projects ?? [])) {
+      if (!p.userEmail) continue;
+      const c = m.get(p.userEmail) ?? { total: 0, completed: 0, inProgress: 0 };
+      c.total++;
+      if (p.isComplete) c.completed++;
+      else if (p.currentState > 1) c.inProgress++;
+      m.set(p.userEmail, c);
+    }
+    return m;
+  }, [data?.projects]);
+
   // Revenue tab reads everything (Total/MRR/ARR/paying count + chart)
   // from the immutable revenue_events ledger so the numbers survive
   // user deletion. MRR and ARR are rolling-window actual-revenue
@@ -4802,6 +4819,7 @@ export default function AdminPage() {
   // Track which user row is mid-flag so the kebab button shows a
   // spinner and the menu item disables itself during the request.
   const [flaggingProdTest, setFlaggingProdTest] = useState<string | null>(null);
+  const [settingSub, setSettingSub] = useState<string | null>(null);
   const [usersPage, setUsersPage] = useState(1);
   const [userSearch, setUserSearch] = useState("");
   // "zero-video" / "no-setup" are cross-cutting slices (they overlap the
@@ -4930,6 +4948,27 @@ export default function AdminPage() {
       toast.error(err instanceof Error ? err.message : "Failed to flag account");
     } finally {
       setFlaggingProdTest(null);
+    }
+  }
+
+  // Flag a non-admin user's subscription state (Paid / Expired / Demo·free).
+  async function handleSetSubscription(email: string, status: "paid" | "expired" | "demo") {
+    setSettingSub(email);
+    try {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(email)}/subscription`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to update subscription");
+      const label = status === "paid" ? "Paid" : status === "expired" ? "Subscription expired" : "Demo/free";
+      toast.success(`${email} set to ${label}`);
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update subscription");
+    } finally {
+      setSettingSub(null);
     }
   }
 
@@ -5589,7 +5628,7 @@ export default function AdminPage() {
               <table className="w-full border-collapse min-w-[520px]">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
-                    {["Email", "Plan", "Niches", "Niches overwrite", "Last Sign-in", ""].map((h) => (
+                    {["Email", "Plan", "Plan status", "Videos", "Niches", "Niches overwrite", "Last Sign-in", ""].map((h) => (
                       <th key={h} className="text-left py-3 px-4 text-xs font-medium uppercase tracking-wider"
                         style={{ color: "var(--c-40)" }}>
                         {h}
@@ -5656,6 +5695,52 @@ export default function AdminPage() {
                             >
                               {planBadge.label}
                             </button>
+                          );
+                        })()}
+                      </td>
+                      <td className="py-3 px-4">
+                        {(() => {
+                          // Subscription status, using the same predicate as
+                          // lib/subscription.subscriptionExpired: ever-
+                          // subscribed = paidAt/planExpiresAt present; expired
+                          // when not currently Paid OR the paid-through date
+                          // has lapsed; otherwise Paid; never-subscribed =
+                          // Demo/free. Admins bypass the paywall entirely.
+                          if (u.isAdmin) return <span className="text-xs" style={{ color: "var(--c-35)" }}>—</span>;
+                          if (u.status === "Pending") return <span className="text-xs" style={{ color: "var(--c-35)" }}>—</span>;
+                          const everSubscribed = !!(u.paidAt || u.planExpiresAt);
+                          const expiresMs = u.planExpiresAt ? Date.parse(u.planExpiresAt) : NaN;
+                          const timeExpired = Number.isFinite(expiresMs) && expiresMs <= Date.now();
+                          const badge = !everSubscribed
+                            ? { label: "Free", bg: "oklch(0 0 0 / 0.05)", color: "var(--c-55)", border: "oklch(0 0 0 / 0.12)" }
+                            : (u.status !== "Paid" || timeExpired)
+                              ? { label: "Expired", bg: "oklch(0.6 0.16 55 / 0.12)", color: "oklch(0.55 0.16 55)", border: "oklch(0.6 0.16 55 / 0.3)" }
+                              : { label: "Active", bg: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "oklch(0.55 0.15 145 / 0.3)" };
+                          return (
+                            <span className="inline-flex items-center h-6 px-2.5 rounded-full text-xs font-medium"
+                              style={{ background: badge.bg, color: badge.color, border: `1px solid ${badge.border}` }}>
+                              {badge.label}
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td className="py-3 px-4 whitespace-nowrap">
+                        {u.status === "Pending" ? (
+                          <span className="text-sm" style={{ color: "var(--c-35)" }}>—</span>
+                        ) : (() => {
+                          const c = videoCountsByEmail.get(u.email) ?? { total: 0, completed: 0, inProgress: 0 };
+                          const cell = (label: string, value: number) => (
+                            <div className="flex flex-col items-center">
+                              <span className="text-[10px] uppercase tracking-wide" style={{ color: "var(--c-40)" }}>{label}</span>
+                              <span className="text-sm font-semibold tabular-nums" style={{ color: "var(--c-78)" }}>{value}</span>
+                            </div>
+                          );
+                          return (
+                            <div className="flex items-start gap-4">
+                              {cell("Total", c.total)}
+                              {cell("Compl", c.completed)}
+                              {cell("InProg", c.inProgress)}
+                            </div>
                           );
                         })()}
                       </td>
@@ -5770,6 +5855,41 @@ export default function AdminPage() {
                                       >
                                         <FlaskConical size={12} />
                                         Flag as production test account
+                                      </button>
+                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
+                                      <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.55 0 0)" }}>Subscription</div>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => { setOpenUserMenu(null); handleSetSubscription(u.email, "paid"); }}
+                                        disabled={settingSub === u.email}
+                                        className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0_0_0_/_0.04)] flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                        style={{ color: "oklch(0.45 0.15 145)" }}
+                                      >
+                                        <CreditCard size={12} />
+                                        Mark as Paid
+                                      </button>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => { setOpenUserMenu(null); handleSetSubscription(u.email, "expired"); }}
+                                        disabled={settingSub === u.email}
+                                        className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0_0_0_/_0.04)] flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                        style={{ color: "oklch(0.55 0.16 60)" }}
+                                      >
+                                        <Clock size={12} />
+                                        Mark as Subscription expired
+                                      </button>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => { setOpenUserMenu(null); handleSetSubscription(u.email, "demo"); }}
+                                        disabled={settingSub === u.email}
+                                        className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0_0_0_/_0.04)] flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                                        style={{ color: "oklch(0.5 0 0)" }}
+                                      >
+                                        <Sparkles size={12} />
+                                        Mark as Demo/free
                                       </button>
                                       <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
                                       <button

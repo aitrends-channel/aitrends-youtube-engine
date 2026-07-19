@@ -699,6 +699,7 @@ export default function HomePage() {
     at_limit: boolean;
     plan: string;
     is_admin: boolean;
+    subscription_expired?: boolean;
   }>("/api/usage", fetcher);
 
   // User-only API keys check (admins skip the gate since they can use
@@ -722,7 +723,12 @@ export default function HomePage() {
   const hasOverride = nicheLimitOverride !== null;
 
   function requireSubscription(action: () => void) {
-    if (isPaid || isAdmin) {
+    // An expired subscription (app_metadata.paid can lag true after the
+    // period lapses) must route to the renew/subscribe modal — NOT fall
+    // through to the API-keys gate. subscription_expired is the same
+    // predicate the spend-gated server routes use.
+    const expired = usage?.subscription_expired === true;
+    if ((isPaid && !expired) || isAdmin) {
       action();
     } else {
       setPendingAction(() => action);
@@ -1081,8 +1087,9 @@ export default function HomePage() {
         <>{(() => {
           const allProjects = channelGroups.flatMap(g => g.projects);
           const total = allProjects.length;
-          const completed = allProjects.filter(p => p.assembly_status === "done").length;
-          const inProgress = allProjects.filter(p => p.assembly_status !== "done" && p.current_state > 0).length;
+          // Complete = final assembled MP4 exists (thumbnails don't count).
+          const completed = allProjects.filter(p => !!p.assembled_url).length;
+          const inProgress = allProjects.filter(p => !p.assembled_url && p.current_state > 0).length;
           const niches = channelGroups.length;
 
           return (
@@ -1647,7 +1654,10 @@ export default function HomePage() {
                   <div className="grid gap-7"
                     style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))" }}>
                     {group.projects.map((p) => {
-                      const assembled = p.assembly_status === "done";
+                      // A video is complete once its final assembled MP4
+                      // exists — thumbnails are an extra step that doesn't
+                      // affect progress/completion.
+                      const assembled = !!p.assembled_url;
                       const path = assembled
                         ? "thumbnails"
                         : (p.current_state === 6 && p.selected_topic)

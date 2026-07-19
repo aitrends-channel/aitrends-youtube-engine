@@ -198,7 +198,11 @@ export async function GET() {
       })),
   ];
 
-  const projectList = projects.map((p) => {
+  // Build the client-facing list from nonAdminProjects (not all projects)
+  // so the Projects/Videos tab and the per-user Videos column count the
+  // SAME set the Stats tab's `completed`/`videosInProgress` use — admin/
+  // test projects were inflating the Videos-tab totals vs the Stats tab.
+  const projectList = nonAdminProjects.map((p) => {
     // assembled_url is the authoritative "complete" signal — once
     // the worker uploads the final MP4 the project is done, even if
     // current_state drifted (re-assemble flows, manual DB edits, or
@@ -209,10 +213,11 @@ export async function GET() {
     // fixes the "100% progress · Setup phase" mismatch admins were
     // seeing in the videos table.
     const rawState = p.current_state ?? 1;
-    // Complete = final MP4 exists (or state 16, the thumbnails-done
-    // terminal). Resting state 15 WITHOUT a video means the user is
-    // still at the Assemble step — not complete.
-    const isComplete = Boolean(p.assembled_url) || rawState >= 16;
+    // Complete = the video successfully assembled to completion, i.e. the
+    // final MP4 exists (assembled_url). Thumbnails (state 16) are a
+    // separate post-assembly step, and a state-16 row with no MP4 never
+    // actually assembled — so completion is keyed purely on assembled_url.
+    const isComplete = Boolean(p.assembled_url);
     const state = isComplete ? 15 : rawState;
     const userEmail = p.user_id ? (userIdToEmail.get(p.user_id) ?? "Unknown") : "Unknown";
     // Wall-clock assembly duration in seconds, or null when the
@@ -256,10 +261,11 @@ export async function GET() {
     };
   });
 
-  // Same completion rule as the rows above: an MP4 (or terminal state
-  // 16) — resting at the Assemble step no longer counts as complete.
-  const completed = nonAdminProjects.filter((p) => p.assembled_url || (p.current_state ?? 0) >= 16).length;
-  const videosInProgress = nonAdminProjects.filter((p) => (p.current_state ?? 1) > 1 && !p.assembled_url && (p.current_state ?? 0) < 16).length;
+  // Completed = successfully assembled to completion (a final MP4 exists),
+  // matching isComplete on the rows above. In progress = started but not
+  // yet assembled.
+  const completed = nonAdminProjects.filter((p) => Boolean(p.assembled_url)).length;
+  const videosInProgress = nonAdminProjects.filter((p) => (p.current_state ?? 1) > 1 && !p.assembled_url).length;
 
   // Last 30 days activity
   const activityDates = Array.from({ length: 30 }, (_, i) => {
