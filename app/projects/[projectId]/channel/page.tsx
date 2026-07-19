@@ -503,6 +503,64 @@ export default function ChannelPage({ params }: PageProps) {
       }
     }
 
+    // 1Click: engage straight away — the moment the (fast) channel fetch
+    // and its dedup/consent gates pass. We create the project, save the
+    // channel, engage autopilot, kick off transcript + Claude analysis
+    // SERVER-SIDE (/api/one-click/analyze), and hand the user to the live
+    // view immediately. The orchestrator waits at state < 6 until that
+    // server analysis lands, so the whole slow pipeline runs off-screen.
+    if (genMode === "oneclick") {
+      try {
+        let ocProjectId = projectId;
+        if (ocProjectId === "new") {
+          const createRes = await fetch("/api/projects", { method: "POST" });
+          const created = await createRes.json();
+          if (createRes.status === 403 && created.limitReached) {
+            setIsWorking(false);
+            setLimitInfo({ nichesUsed: created.nichesUsed ?? 0, nicheLimit: created.limit ?? 0, currentPlan: created.plan ?? "starter" });
+            setShowNicheLimitModal(true);
+            return;
+          }
+          if (!created.id) { toast.error("Failed to create project"); setIsWorking(false); return; }
+          ocProjectId = created.id;
+        }
+        await fetch(`/api/projects/${ocProjectId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            channel_url: channelUrl,
+            channel_name: fetchedInfo!.channelName,
+            channel_info: fetchedInfo,
+            ...(contentType ? { content_type: contentType } : {}),
+          }),
+        });
+        const startRes = await fetch("/api/one-click/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId: ocProjectId }),
+        });
+        const startData = (await startRes.json().catch(() => ({}))) as { error?: string };
+        if (!startRes.ok) throw new Error(startData.error ?? `1Click start failed (${startRes.status})`);
+        // Kick server-side analysis + the orchestrator, then hand off.
+        const hint = topicMode === "custom" ? customTopic.trim() : undefined;
+        void fetch("/api/one-click/analyze", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId: ocProjectId, topicHint: hint }),
+          keepalive: true,
+        }).catch(() => {});
+        void fetch("/api/one-click/tick", { method: "POST" }).catch(() => {});
+        setOneClickEngaged(true);
+        toast.success("1Click engaged — we'll take it from here");
+        router.push(`/projects/${ocProjectId}/one-click`);
+        return;
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "1Click start failed");
+        setIsWorking(false);
+        return;
+      }
+    }
+
     // Step 2: Fetch video metadata
     setStep("transcripts", "running");
     if (!fetchedInfo!.topVideos.length) {
@@ -657,31 +715,8 @@ export default function ChannelPage({ params }: PageProps) {
       return data;
     })();
 
-    // 1Click: engage right from the analysis step. The analyze call above
-    // runs server-side and lands the project at state 6 with topic ideas;
-    // the orchestrator waits for that while we hand the user straight to
-    // the live view, so they watch from channel analysis onward instead of
-    // sitting on this page until the DNA phase finishes.
-    if (genMode === "oneclick") {
-      apiPromise.catch(() => {}); // fired; the server completes it after we navigate away
-      try {
-        const res = await fetch("/api/one-click/start", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId: effectiveProjectId }),
-        });
-        const d = (await res.json().catch(() => ({}))) as { error?: string };
-        if (!res.ok) throw new Error(d.error ?? `1Click start failed (${res.status})`);
-        setOneClickEngaged(true);
-        toast.success("1Click engaged — we'll take it from here");
-        void fetch("/api/one-click/tick", { method: "POST" }).catch(() => {});
-        router.push(`/projects/${effectiveProjectId}/one-click`);
-        return;
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "1Click start failed");
-        // Engage failed — fall through to the normal awaited analysis flow.
-      }
-    }
+    // (1Click already engaged + redirected above, right after the channel
+    // fetch — it never reaches this studio-only analysis flow.)
 
     try {
       // Phase 1 (Refining): show running until the API returns OR 4s elapses,

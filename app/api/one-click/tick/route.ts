@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
-import { advanceProject } from "@/lib/one-click/orchestrator";
+import { advanceProject, sendAttentionEmail } from "@/lib/one-click/orchestrator";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import type { OneClickConfig } from "@/lib/one-click/config";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -83,6 +84,11 @@ async function handle(req: Request) {
       continue;
     }
 
+    // Notification preference for this run (default on). This runs at the
+    // running → needs_attention transition, which happens once (the next
+    // tick skips a non-running project), so the email isn't repeated.
+    const notifyOnAttention = (p.auto_pilot_config as OneClickConfig | null)?.notifications?.onAttention !== false;
+
     try {
       const r = await advanceProject(p);
       const patch: Record<string, unknown> =
@@ -94,12 +100,20 @@ async function handle(req: Request) {
       // Release the lock (null last_tick) alongside the outcome write so
       // the next tick can pick this project up right away.
       await supabase.from("projects").update({ ...patch, auto_pilot_last_tick: null }).eq("id", p.id);
+      if (r.kind === "attention" && notifyOnAttention) {
+        void sendAttentionEmail(p.id, p.user_id, patch.auto_pilot_error as string)
+          .catch((e) => console.error(`[one-click] attention email failed for ${p.id}:`, e instanceof Error ? e.message : e));
+      }
       results.push({ id: p.id, outcome: r.kind, note: "note" in r ? r.note : undefined });
     } catch (err) {
       const note = err instanceof Error ? err.message : "Step failed";
       await supabase.from("projects")
         .update({ auto_pilot_status: "needs_attention", auto_pilot_error: note, auto_pilot_last_tick: null })
         .eq("id", p.id);
+      if (notifyOnAttention) {
+        void sendAttentionEmail(p.id, p.user_id, note)
+          .catch((e) => console.error(`[one-click] attention email failed for ${p.id}:`, e instanceof Error ? e.message : e));
+      }
       results.push({ id: p.id, outcome: "error", note });
     }
   }

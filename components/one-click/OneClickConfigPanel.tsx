@@ -214,6 +214,43 @@ export function OneClickConfigPanel() {
         />
       </section>
 
+      {/* Script length — full script vs first-N-words */}
+      <section className="space-y-5 p-6 sm:p-8 rounded-2xl"
+        style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
+        <SwitchRow
+          title="Use the full script?"
+          desc="On — 1Click uses the entire generated script. Off — it uses only the first few words you set below, for shorter, cheaper videos."
+          on={cfg.scriptLimit?.fullScript ?? false}
+          onToggle={() => setCfg({ ...cfg, scriptLimit: { fullScript: !(cfg.scriptLimit?.fullScript ?? false), words: cfg.scriptLimit?.words ?? 20 } })}
+        />
+        {!(cfg.scriptLimit?.fullScript ?? false) && (
+          <>
+            <div style={{ borderTop: "1px solid var(--bd-6)" }} />
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>Script length</h2>
+                <p className="text-xs mt-1 max-w-lg" style={{ color: "var(--c-45)" }}>Number of words from the start of the script to use for the whole video.</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={cfg.scriptLimit?.words ?? 20}
+                  onChange={(e) => {
+                    const n = Math.max(1, Math.floor(Number(e.target.value) || 0));
+                    setCfg({ ...cfg, scriptLimit: { fullScript: false, words: n } });
+                  }}
+                  className="w-24 px-3 py-2 rounded-lg text-sm outline-none text-right"
+                  style={{ background: "oklch(1 0 0 / 0.06)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}
+                />
+                <span className="text-sm" style={{ color: "var(--c-45)" }}>words</span>
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+
       {/* Voice — the voiceover step's picker cards */}
       <section className="space-y-5 p-6 sm:p-8 rounded-2xl"
         style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
@@ -305,6 +342,28 @@ export function OneClickConfigPanel() {
           value={cfg.assemble}
           aspectRatio={cfg.output.aspectRatio}
           onChange={(assemble) => setCfg({ ...cfg, assemble })}
+        />
+      </section>
+
+      {/* Email notifications — when 1Click should email the user */}
+      <section className="space-y-5 p-6 sm:p-8 rounded-2xl"
+        style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
+        <div>
+          <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>Email notifications</h2>
+          <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>Choose when 1Click emails you about a run.</p>
+        </div>
+        <SwitchRow
+          title="Email when input is needed or something fails?"
+          desc="On — you get an email whenever a run pauses for manual input or hits an error that needs your attention."
+          on={cfg.notifications?.onAttention ?? true}
+          onToggle={() => setCfg({ ...cfg, notifications: { onAttention: !(cfg.notifications?.onAttention ?? true), onComplete: cfg.notifications?.onComplete ?? true } })}
+        />
+        <div style={{ borderTop: "1px solid var(--bd-6)" }} />
+        <SwitchRow
+          title="Email when the video is ready?"
+          desc="On — you get an email the moment 1Click finishes and your final video is ready to review."
+          on={cfg.notifications?.onComplete ?? true}
+          onToggle={() => setCfg({ ...cfg, notifications: { onAttention: cfg.notifications?.onAttention ?? true, onComplete: !(cfg.notifications?.onComplete ?? true) } })}
         />
       </section>
 
