@@ -1,12 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, Loader2, Circle, AlertTriangle, Download, Pause, Play, Square, RotateCcw } from "lucide-react";
+import { Check, Loader2, Circle, AlertTriangle, Download, Pause, Play, Square, RotateCcw, Film, X, Clock } from "lucide-react";
+import { IMAGE_MODELS, FREE_IMAGE_MODELS } from "@/lib/kie/imageModels";
+import { VIDEO_MODELS } from "@/lib/kie/videoModels";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+// id → friendly model name (e.g. "bytedance/seedance-2" → "Seedance 2").
+const MODEL_NAMES: Record<string, string> = {};
+for (const m of [...IMAGE_MODELS, ...FREE_IMAGE_MODELS, ...VIDEO_MODELS]) MODEL_NAMES[m.id] = m.name;
+function modelName(id?: string | null): string | null {
+  return id ? (MODEL_NAMES[id] ?? id) : null;
+}
 
 interface BeatLite {
   imagePrompt?: string | null;
@@ -14,6 +23,10 @@ interface BeatLite {
   imageUrl?: string | null;
   videoUrl?: string | null;
   voiceoverUrl?: string | null;
+  imageModelId?: string | null;
+  videoModelId?: string | null;
+  imageStatus?: string | null;
+  videoStatus?: string | null;
 }
 interface ThumbLite { imageUrl?: string | null }
 
@@ -26,11 +39,26 @@ interface ProjectState {
   assembly_progress: string | null;
   assembled_url: string | null;
   channel_name: string | null;
+  video_aspect_ratio: string | null;
   auto_pilot: boolean;
   auto_pilot_status: string | null;
   auto_pilot_error: string | null;
+  auto_pilot_config?: { output?: { aspectRatio?: string } } | null;
+  auto_pilot_started_at?: string | null;
+  auto_pilot_completed_at?: string | null;
   beats?: BeatLite[];
   thumbnails?: ThumbLite[];
+}
+
+// Human "3m 12s" from a millisecond duration.
+function formatDuration(ms: number): string {
+  const s = Math.round(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h) return `${h}h ${m}m`;
+  if (m) return `${m}m ${sec}s`;
+  return `${sec}s`;
 }
 
 // Per-beat / per-thumbnail counts, derived from the beats + thumbnails
@@ -46,6 +74,18 @@ interface Agg {
   assembleReady: number;
   thumbsTotal: number;
   thumbs: number;
+  imageModel: string | null;
+  videoModel: string | null;
+}
+// The model currently in use for a media step: prefer a beat that's
+// actively generating (that's the live model — it updates the moment the
+// fallback chain steps to a new one), else the last beat that recorded a
+// model. Returns the friendly name.
+function currentModel(beats: BeatLite[], idKey: "imageModelId" | "videoModelId", statusKey: "imageStatus" | "videoStatus", active: string[]): string | null {
+  const live = beats.find((b) => b[idKey] && active.includes(b[statusKey] ?? ""));
+  if (live) return modelName(live[idKey]);
+  for (let i = beats.length - 1; i >= 0; i--) if (beats[i][idKey]) return modelName(beats[i][idKey]);
+  return null;
 }
 function aggregate(p: ProjectState): Agg {
   const beats = p.beats ?? [];
@@ -63,6 +103,8 @@ function aggregate(p: ProjectState): Agg {
     assembleReady: count((b) => !!(b.imageUrl || b.videoUrl) && !!b.voiceoverUrl),
     thumbsTotal: thumbs.length,
     thumbs: thumbs.filter((t) => !!t.imageUrl).length,
+    imageModel: currentModel(beats, "imageModelId", "imageStatus", ["generating", "queued"]),
+    videoModel: currentModel(beats, "videoModelId", "videoStatus", ["queued", "submitting", "rendering"]),
   };
 }
 
@@ -72,7 +114,7 @@ interface StepDef {
   label: string;
   done: (p: ProjectState, a: Agg) => boolean;
   count?: (a: Agg) => Count | null;
-  detail?: (p: ProjectState) => string | null;
+  detail?: (p: ProjectState, a: Agg) => string | null;
 }
 
 // Pipeline order. Channel + Topic render full-width up top; the rest sit
@@ -88,12 +130,15 @@ const GRID_STEPS: StepDef[] = [
   { key: "imagePrompts", label: "Image prompts", count: (a) => (a.total ? { done: a.imagePrompts, total: a.total } : null), done: (_p, a) => a.total > 0 && a.imagePrompts >= a.total },
   { key: "videoPrompts", label: "Video prompts", count: (a) => (a.total ? { done: a.videoPrompts, total: a.total } : null), done: (_p, a) => a.total > 0 && a.videoPrompts >= a.total },
   { key: "voiceovers", label: "Voiceovers", count: (a) => (a.total ? { done: a.voiceovers, total: a.total } : null), done: (_p, a) => a.total > 0 && a.voiceovers >= a.total },
-  { key: "images", label: "Images", count: (a) => (a.total ? { done: a.images, total: a.total } : null), done: (_p, a) => a.total > 0 && a.images >= a.total },
-  { key: "videos", label: "Videos", count: (a) => (a.total ? { done: a.videos, total: a.total } : null), done: (_p, a) => a.total > 0 && a.videos >= a.total },
+  { key: "images", label: "Images", count: (a) => (a.total ? { done: a.images, total: a.total } : null), done: (_p, a) => a.total > 0 && a.images >= a.total, detail: (_p, a) => (a.imageModel ? `Model: ${a.imageModel}` : null) },
+];
+// Heavier final stages get their own full-width lane (one per row).
+const LANE_STEPS: StepDef[] = [
+  { key: "videos", label: "Videos", count: (a) => (a.total ? { done: a.videos, total: a.total } : null), done: (_p, a) => a.total > 0 && a.videos >= a.total, detail: (_p, a) => (a.videoModel ? `Model: ${a.videoModel}` : null) },
   { key: "assemble", label: "Assemble", count: (a) => (a.total ? { done: a.assembleReady, total: a.total } : null), done: (p) => p.assembly_status === "done" || p.current_state >= 16, detail: (p) => (p.assembly_status && p.assembly_status !== "done" ? (p.assembly_progress || "Assembling…") : null) },
   { key: "thumbnails", label: "Thumbnails", count: (a) => (a.thumbsTotal ? { done: a.thumbs, total: a.thumbsTotal } : null), done: (p) => p.current_state >= 16 || p.auto_pilot_status === "completed" },
 ];
-const ALL_STEPS = [...TOP_STEPS, ...GRID_STEPS];
+const ALL_STEPS = [...TOP_STEPS, ...GRID_STEPS, ...LANE_STEPS];
 
 type StepStatus = "done" | "active" | "attention" | "pending";
 
@@ -114,6 +159,23 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
   const running = status === "running" || status === null;
   const [acting, setActing] = useState(false);
   const [busyStep, setBusyStep] = useState<string | null>(null);
+
+  // Live elapsed timer. Ticks every second while the run is active. Start
+  // time is the DB stamp (auto_pilot_started_at); if that column isn't
+  // present yet (migration 098 unapplied), fall back to when this view
+  // first saw the run so a timer still shows.
+  const [nowTs, setNowTs] = useState<number>(() => Date.now());
+  const seenStartRef = useRef<number | null>(null);
+  const timerRunning = (status === "running" || status === null) && !!p?.auto_pilot && !(p && p.current_state >= 16);
+  useEffect(() => {
+    if (p?.auto_pilot && seenStartRef.current === null) seenStartRef.current = Date.now();
+  }, [p?.auto_pilot]);
+  useEffect(() => {
+    if (!timerRunning) return;
+    setNowTs(Date.now());
+    const id = setInterval(() => setNowTs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [timerRunning]);
 
   // Manually (re)run a single step — click any grid step to generate it
   // or retry a failed one. The endpoint resets that step's incomplete
@@ -191,8 +253,18 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
   // Done → replace the whole live view with the final video preview.
   if (done && p.assembled_url) {
     const filename = `${(p.channel_name ?? "").trim() || "video"}.mp4`;
+    // Follow the aspect ratio the run was configured/rendered at, exactly
+    // like the assemble step: bound the preview width to 82vh × ratio so a
+    // portrait video doesn't stretch full-width and the buttons line up
+    // with the actual video edges.
+    const ar = p.auto_pilot_config?.output?.aspectRatio || p.video_aspect_ratio || "16:9";
+    const [arW, arH] = ar.split(":").map(Number);
+    const previewMaxW = arW && arH ? `min(100%, calc(82vh * ${arW} / ${arH}))` : "100%";
+    const startMs = p.auto_pilot_started_at ? Date.parse(p.auto_pilot_started_at) : NaN;
+    const endMs = p.auto_pilot_completed_at ? Date.parse(p.auto_pilot_completed_at) : NaN;
+    const durationMs = Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs ? endMs - startMs : null;
     return (
-      <div className="max-w-xl mx-auto px-5 py-10 sm:py-16">
+      <div className="max-w-3xl mx-auto px-5 py-10 sm:py-16">
         <div className="text-center mb-6">
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
             style={{ background: "oklch(0.65 0.15 145 / 0.12)", border: "1px solid oklch(0.65 0.15 145 / 0.3)" }}>
@@ -200,29 +272,50 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
           </div>
           <h1 className="text-xl font-bold" style={{ color: "var(--c-90)" }}>Your video is ready</h1>
           <p className="text-sm mt-1.5" style={{ color: "var(--c-50)" }}>1Click ran the whole pipeline for you.</p>
+          {durationMs != null && (
+            <p className="text-xs mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full"
+              style={{ background: "oklch(1 0 0 / 0.05)", border: "1px solid var(--bd-7)", color: "var(--c-55)" }}>
+              <Clock size={12} /> Generated in {formatDuration(durationMs)}
+            </p>
+          )}
         </div>
 
-        <video
-          key={p.assembled_url}
-          src={p.assembled_url}
-          controls
-          className="mx-auto block max-h-[70vh] rounded-xl w-full"
-          style={{ background: "var(--bg-page-2)", maxWidth: "100%" }}
-        />
+        <div className="mx-auto" style={{ maxWidth: previewMaxW }}>
+          <video
+            key={p.assembled_url}
+            src={p.assembled_url}
+            controls
+            className="block w-full max-h-[82vh] rounded-xl"
+            style={{ background: "var(--bg-page-2)", aspectRatio: arW && arH ? `${arW} / ${arH}` : undefined }}
+          />
 
-        <div className="flex items-center gap-3 mt-5">
-          <button
-            onClick={() => router.push(`/projects/${projectId}/assemble`)}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer transition-all"
-            style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}>
-            <RotateCcw size={14} /> Regenerate
-          </button>
-          <a
-            href={`/api/projects/${projectId}/export-video?url=${encodeURIComponent(p.assembled_url)}&filename=${encodeURIComponent(filename)}`}
-            className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold text-center transition-all"
-            style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
-            <Download size={14} /> Export
-          </a>
+          <div className="grid grid-cols-2 gap-3 mt-5">
+            <a
+              href={`/api/projects/${projectId}/export-video?url=${encodeURIComponent(p.assembled_url)}&filename=${encodeURIComponent(filename)}`}
+              className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold text-center transition-all"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}>
+              <Download size={14} /> Export
+            </a>
+            <button
+              onClick={() => router.push(`/projects/${projectId}/assemble`)}
+              className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer transition-all"
+              style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
+              <Film size={14} /> View in studio
+            </button>
+            <button
+              onClick={() => runStep("assemble", "Assemble")}
+              disabled={!!busyStep}
+              className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-40 transition-all"
+              style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}>
+              <RotateCcw size={14} /> Regenerate
+            </button>
+            <button
+              onClick={() => router.push("/dashboard")}
+              className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer transition-all"
+              style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-6)" }}>
+              <X size={14} /> Close
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -259,11 +352,22 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
         </p>
       </div>
 
-      {/* Overall progress */}
+      {/* Overall progress — with the live elapsed timer inline */}
       <div className="mb-5">
         <div className="flex items-center justify-between text-xs mb-1.5" style={{ color: "var(--c-50)" }}>
           <span className="font-semibold">Step {Math.min(completedCount + 1, ALL_STEPS.length)} of {ALL_STEPS.length}</span>
-          <span>{pct}%</span>
+          <span className="flex items-center gap-2 tabular-nums">
+            {(() => {
+              const runStartTs = p.auto_pilot_started_at ? Date.parse(p.auto_pilot_started_at) : (seenStartRef.current ?? nowTs);
+              const elapsedMs = Math.max(0, nowTs - runStartTs);
+              return (
+                <span className="inline-flex items-center gap-1" style={{ color: "oklch(0.82 0.12 285)" }}>
+                  <Clock size={11} /> {formatDuration(elapsedMs)}{status === "paused" ? " · paused" : ""}
+                </span>
+              );
+            })()}
+            <span>{pct}%</span>
+          </span>
         </div>
         <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(1 0 0 / 0.06)" }}>
           <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: "oklch(0.72 0.25 285)" }} />
@@ -281,6 +385,13 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
           <StepCard key={s.key} step={s} status={statusOf(TOP_STEPS.length + gi)} agg={a} project={p}
             busy={busyStep === s.key}
             onRun={() => runStep(s.key, s.label)} />
+        ))}
+        {LANE_STEPS.map((s, li) => (
+          <div key={s.key} className="sm:col-span-2">
+            <StepCard step={s} status={statusOf(TOP_STEPS.length + GRID_STEPS.length + li)} agg={a} project={p}
+              busy={busyStep === s.key}
+              onRun={() => runStep(s.key, s.label)} />
+          </div>
         ))}
       </div>
 
@@ -346,24 +457,22 @@ function StepCard({ step, status, agg, project, busy, onRun }: {
   busy?: boolean; onRun?: () => void;
 }) {
   const count = step.count?.(agg) ?? null;
-  const detail = step.detail?.(project) ?? null;
+  const detail = step.detail?.(project, agg) ?? null;
   const cpct = count && count.total > 0 ? Math.round((count.done / count.total) * 100) : null;
   const clickable = !!onRun;
 
-  const border =
-    status === "done" ? "oklch(0.65 0.15 145 / 0.3)"
-    : status === "active" ? "oklch(0.72 0.25 285 / 0.35)"
-    : status === "attention" ? "oklch(0.6 0.19 25 / 0.35)"
-    : "var(--bd-7)";
+  // White border on every card (matches the 1Click config panel's section
+  // wraps); status is conveyed by the background tint + the icon.
   const bg =
-    status === "active" ? "oklch(0.72 0.25 285 / 0.06)"
-    : status === "attention" ? "oklch(0.6 0.19 25 / 0.05)"
-    : "oklch(1 0 0 / 0.03)";
+    status === "active" ? "oklch(0.72 0.25 285 / 0.08)"
+    : status === "attention" ? "oklch(0.6 0.19 25 / 0.07)"
+    : status === "done" ? "oklch(0.65 0.15 145 / 0.06)"
+    : "oklch(1 0 0 / 0.05)";
 
   return (
     <div
       className={`rounded-2xl px-4 py-3.5 h-full transition-all ${clickable ? "cursor-pointer hover:brightness-125" : ""}`}
-      style={{ background: bg, border: `1px solid ${border}`, opacity: busy ? 0.6 : 1 }}
+      style={{ background: bg, border: "1px solid oklch(1 0 0 / 0.4)", opacity: busy ? 0.6 : 1 }}
       role={clickable ? "button" : undefined}
       title={clickable ? `Click to generate or retry — ${step.label}` : undefined}
       onClick={clickable && !busy ? onRun : undefined}

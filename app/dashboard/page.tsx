@@ -643,6 +643,9 @@ export default function HomePage() {
     | { type: "video"; id: string; label: string }
     | { type: "niche"; channelName: string; projectIds: string[]; count: number };
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  // "New Video" opens a Studio-vs-1Click chooser before creating the fork.
+  const [newVideoGroup, setNewVideoGroup] = useState<ChannelGroup | null>(null);
+  const [startingOneClick, setStartingOneClick] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
@@ -763,8 +766,64 @@ export default function HomePage() {
     router.push(`/projects/new-fork/topic?from=${source.id}`);
   }
 
+  // 1Click path for a new video in an existing niche: fork the niche's
+  // channel (analysis/ideas/visual profile already done), engage autopilot,
+  // and hand straight off to the live view — 1Click takes over immediately.
+  async function doOneClickVideoForChannel(group: ChannelGroup) {
+    const source = [...group.projects].sort((a, b) => b.current_state - a.current_state)[0];
+    setStartingOneClick(true);
+    try {
+      const full = await (await fetch(`/api/projects/${source.id}`)).json();
+      const forkRes = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fork: {
+            channelUrl:        full.channel_url,
+            channelName:       full.channel_name,
+            channelAnalysis:   full.channel_analysis,
+            channelInfo:       full.channel_info,
+            transcripts:       full.transcripts,
+            visualProfile:     full.visual_profile,
+            thumbnailAnalysis: full.thumbnail_analysis,
+            videoIdeas:        full.video_ideas,
+            // No selectedTopic — 1Click picks per the user's config.
+          },
+        }),
+      });
+      const newProject = await forkRes.json();
+      if (forkRes.status === 403 && newProject.limitReached) {
+        toast.error("You've reached your niche limit. Upgrade your plan to add more.");
+        return;
+      }
+      if (!newProject.id) { toast.error("Couldn't create the video."); return; }
+      const startRes = await fetch("/api/one-click/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: newProject.id }),
+      });
+      const d = (await startRes.json().catch(() => ({}))) as { error?: string; code?: string };
+      if (!startRes.ok) {
+        if (d.code === "not_configured") {
+          toast.error("Set up 1Click first, then try again.");
+          router.push("/setup?tab=oneclick");
+          return;
+        }
+        throw new Error(d.error ?? `1Click start failed (${startRes.status})`);
+      }
+      void fetch("/api/one-click/tick", { method: "POST" }).catch(() => {});
+      toast.success("1Click engaged — we'll take it from here");
+      router.push(`/projects/${newProject.id}/one-click`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "1Click start failed");
+    } finally {
+      setStartingOneClick(false);
+    }
+  }
+
   function createVideoForChannel(group: ChannelGroup) {
-    requireSubscription(() => requireApiKeys(() => doCreateVideoForChannel(group)));
+    // Gate on subscription + API keys, then let the user pick Studio vs 1Click.
+    requireSubscription(() => requireApiKeys(() => setNewVideoGroup(group)));
   }
 
   async function deleteOne(id: string): Promise<{ id: string; ok: boolean; error?: string; warnings?: string[] }> {
@@ -1819,6 +1878,41 @@ export default function HomePage() {
               ) : "Delete"}
             </button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New Video: Studio vs 1Click chooser */}
+      <Dialog open={!!newVideoGroup} onOpenChange={(open) => { if (!open && !startingOneClick) setNewVideoGroup(null); }}>
+        <DialogContent className="sm:max-w-md" showCloseButton={!startingOneClick}>
+          <DialogHeader>
+            <DialogTitle>New video</DialogTitle>
+            <DialogDescription>
+              How should we make this video for {newVideoGroup?.channelName ? `“${newVideoGroup.channelName}”` : "this niche"}?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-3">
+            <button
+              onClick={() => { const g = newVideoGroup; setNewVideoGroup(null); if (g) doCreateVideoForChannel(g); }}
+              disabled={startingOneClick}
+              className="text-left p-4 rounded-xl border transition-all hover:border-zinc-400 disabled:opacity-50"
+              style={{ borderColor: "rgb(228 228 231)", background: "white" }}
+            >
+              <div className="text-sm font-semibold text-zinc-900">Studio</div>
+              <div className="text-xs mt-0.5 text-zinc-500">Build it step by step yourself — topic, script, visuals, and generation, with full control.</div>
+            </button>
+            <button
+              onClick={() => { if (newVideoGroup) doOneClickVideoForChannel(newVideoGroup); }}
+              disabled={startingOneClick}
+              className="text-left p-4 rounded-xl border transition-all hover:opacity-95 disabled:opacity-60"
+              style={{ borderColor: "oklch(0.72 0.25 285)", background: "oklch(0.72 0.25 285 / 0.08)" }}
+            >
+              <div className="text-sm font-semibold flex items-center gap-2" style={{ color: "oklch(0.5 0.22 285)" }}>
+                {startingOneClick && <span className="w-3.5 h-3.5 border-2 rounded-full animate-spin" style={{ borderColor: "oklch(0.72 0.25 285 / 0.4)", borderTopColor: "oklch(0.72 0.25 285)" }} />}
+                1Click {startingOneClick ? "— engaging…" : ""}
+              </div>
+              <div className="text-xs mt-0.5 text-zinc-500">Hands-off — 1Click takes over immediately and runs the whole pipeline to a finished video.</div>
+            </button>
+          </div>
         </DialogContent>
       </Dialog>
 
