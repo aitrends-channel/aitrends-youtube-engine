@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
-import { Settings, LogOut, BarChart3, Trash2, Download, KeyRound } from "lucide-react";
+import { Settings, LogOut, BarChart3, Trash2, Download, KeyRound, SlidersHorizontal, Zap, ChevronRight } from "lucide-react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { ADMIN_EMAILS } from "@/lib/admin";
@@ -646,6 +646,9 @@ export default function HomePage() {
   // "New Video" opens a Studio-vs-1Click chooser before creating the fork.
   const [newVideoGroup, setNewVideoGroup] = useState<ChannelGroup | null>(null);
   const [startingOneClick, setStartingOneClick] = useState(false);
+  // When 1Click is picked but not configured, the modal swaps to a
+  // "set up first" view instead of navigating away.
+  const [oneClickNeedsSetup, setOneClickNeedsSetup] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
@@ -773,6 +776,15 @@ export default function HomePage() {
     const source = [...group.projects].sort((a, b) => b.current_state - a.current_state)[0];
     setStartingOneClick(true);
     try {
+      // Check 1Click is configured BEFORE forking — otherwise a not-yet-
+      // configured user would leave an orphan project behind. If it isn't
+      // set up, swap the modal to the "set up first" view (no fork, no nav).
+      const cfgRes = await fetch("/api/one-click/config");
+      const cfg = (await cfgRes.json().catch(() => ({}))) as { configured?: boolean };
+      if (!cfgRes.ok || !cfg.configured) {
+        setOneClickNeedsSetup(true);
+        return;
+      }
       const full = await (await fetch(`/api/projects/${source.id}`)).json();
       const forkRes = await fetch("/api/projects", {
         method: "POST",
@@ -1882,37 +1894,79 @@ export default function HomePage() {
       </Dialog>
 
       {/* New Video: Studio vs 1Click chooser */}
-      <Dialog open={!!newVideoGroup} onOpenChange={(open) => { if (!open && !startingOneClick) setNewVideoGroup(null); }}>
-        <DialogContent className="sm:max-w-md" showCloseButton={!startingOneClick}>
-          <DialogHeader>
-            <DialogTitle>New video</DialogTitle>
-            <DialogDescription>
-              How should we make this video for {newVideoGroup?.channelName ? `“${newVideoGroup.channelName}”` : "this niche"}?
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-3">
-            <button
-              onClick={() => { const g = newVideoGroup; setNewVideoGroup(null); if (g) doCreateVideoForChannel(g); }}
-              disabled={startingOneClick}
-              className="text-left p-4 rounded-xl border transition-all hover:border-zinc-400 disabled:opacity-50"
-              style={{ borderColor: "rgb(228 228 231)", background: "white" }}
-            >
-              <div className="text-sm font-semibold text-zinc-900">Studio</div>
-              <div className="text-xs mt-0.5 text-zinc-500">Build it step by step yourself — topic, script, visuals, and generation, with full control.</div>
-            </button>
-            <button
-              onClick={() => { if (newVideoGroup) doOneClickVideoForChannel(newVideoGroup); }}
-              disabled={startingOneClick}
-              className="text-left p-4 rounded-xl border transition-all hover:opacity-95 disabled:opacity-60"
-              style={{ borderColor: "oklch(0.72 0.25 285)", background: "oklch(0.72 0.25 285 / 0.08)" }}
-            >
-              <div className="text-sm font-semibold flex items-center gap-2" style={{ color: "oklch(0.5 0.22 285)" }}>
-                {startingOneClick && <span className="w-3.5 h-3.5 border-2 rounded-full animate-spin" style={{ borderColor: "oklch(0.72 0.25 285 / 0.4)", borderTopColor: "oklch(0.72 0.25 285)" }} />}
-                1Click {startingOneClick ? "— engaging…" : ""}
+      <Dialog
+        open={!!newVideoGroup}
+        onOpenChange={(open) => { if (!open && !startingOneClick) { setNewVideoGroup(null); setOneClickNeedsSetup(false); } }}
+      >
+        <DialogContent className="sm:max-w-sm" showCloseButton={!startingOneClick}>
+          {oneClickNeedsSetup ? (
+            <>
+              <DialogHeader>
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-1" style={{ background: "oklch(0.72 0.25 285 / 0.12)" }}>
+                  <Zap size={20} style={{ color: "oklch(0.55 0.22 285)" }} />
+                </div>
+                <DialogTitle>Set up 1Click first</DialogTitle>
+                <DialogDescription>
+                  Choose your voice, models, and output once. Then 1Click can make videos hands-off.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-2 mt-1">
+                <button
+                  onClick={() => router.push("/setup?tab=oneclick")}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+                >
+                  Set up 1Click
+                </button>
+                <button
+                  onClick={() => setOneClickNeedsSetup(false)}
+                  className="w-full py-2.5 rounded-xl text-sm font-medium text-zinc-500 hover:text-zinc-800 transition-colors"
+                >
+                  Back
+                </button>
               </div>
-              <div className="text-xs mt-0.5 text-zinc-500">Hands-off — 1Click takes over immediately and runs the whole pipeline to a finished video.</div>
-            </button>
-          </div>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>New video</DialogTitle>
+                <DialogDescription>Choose how to create it.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-2.5 mt-1">
+                <button
+                  onClick={() => { const g = newVideoGroup; setNewVideoGroup(null); if (g) doCreateVideoForChannel(g); }}
+                  disabled={startingOneClick}
+                  className="group flex items-center gap-3 p-3.5 rounded-xl border border-zinc-200 text-left transition-all hover:bg-zinc-50 disabled:opacity-50"
+                >
+                  <span className="w-9 h-9 shrink-0 rounded-lg bg-zinc-100 flex items-center justify-center">
+                    <SlidersHorizontal size={17} className="text-zinc-600" />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-zinc-900">Studio</span>
+                    <span className="block text-xs text-zinc-500">Build it yourself, step by step.</span>
+                  </span>
+                  <ChevronRight size={16} className="text-zinc-300 group-hover:text-zinc-400" />
+                </button>
+                <button
+                  onClick={() => { if (newVideoGroup) doOneClickVideoForChannel(newVideoGroup); }}
+                  disabled={startingOneClick}
+                  className="group flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all hover:opacity-95 disabled:opacity-60"
+                  style={{ borderColor: "oklch(0.72 0.25 285 / 0.4)", background: "oklch(0.72 0.25 285 / 0.06)" }}
+                >
+                  <span className="w-9 h-9 shrink-0 rounded-lg flex items-center justify-center" style={{ background: "oklch(0.72 0.25 285 / 0.15)" }}>
+                    {startingOneClick
+                      ? <span className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: "oklch(0.55 0.22 285 / 0.4)", borderTopColor: "oklch(0.55 0.22 285)" }} />
+                      : <Zap size={17} style={{ color: "oklch(0.55 0.22 285)" }} />}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-zinc-900">{startingOneClick ? "Starting 1Click…" : "1Click"}</span>
+                    <span className="block text-xs text-zinc-500">Hands-off. We make the whole video.</span>
+                  </span>
+                  {!startingOneClick && <ChevronRight size={16} style={{ color: "oklch(0.72 0.25 285 / 0.5)" }} />}
+                </button>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
