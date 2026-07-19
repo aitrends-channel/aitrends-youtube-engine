@@ -34,6 +34,10 @@ export interface OneClickConfig {
    *   "manual" — the run pauses at the script step so the user writes
    *              or edits it, then resumes. */
   scriptMode: "auto" | "manual";
+  /** How much of the generated script to actually use. When fullScript is
+   *  false, only the first `words` words feed the rest of the pipeline
+   *  (prompts, beats, voiceovers, images, videos, assembly). */
+  scriptLimit: { fullScript: boolean; words: number };
   tts: {
     /** TTS model id (e.g. elevenlabs model) */
     modelId: string;
@@ -64,6 +68,13 @@ export interface OneClickConfig {
     logoY: number;    // 0..1 fraction from top
     logoSize: number; // logo width as fraction of video width
   };
+  /** Email notification preferences for a 1Click run. */
+  notifications: {
+    /** Email when the run needs manual input or hits an error. */
+    onAttention: boolean;
+    /** Email when the process completes and the video is ready. */
+    onComplete: boolean;
+  };
 }
 
 /** Starting values for the setup form. Model ids intentionally empty —
@@ -74,6 +85,7 @@ export function emptyConfig(): OneClickConfig {
     version: CONFIG_VERSION,
     topicMode: "auto",
     scriptMode: "auto",
+    scriptLimit: { fullScript: false, words: 20 },
     tts: { modelId: "", voiceId: "" },
     // resolution uses the model pickers' tier values ("1K"/"2K"); the
     // orchestrator maps it to assembly output size.
@@ -89,6 +101,7 @@ export function emptyConfig(): OneClickConfig {
       logoY: 0.02,
       logoSize: 0.1,
     },
+    notifications: { onAttention: true, onComplete: true },
   };
 }
 
@@ -100,6 +113,11 @@ export function validateConfig(raw: unknown): OneClickConfig | string {
   const c = raw as Partial<OneClickConfig>;
   const topicMode: "auto" | "manual" = c.topicMode === "manual" ? "manual" : "auto";
   const scriptMode: "auto" | "manual" = c.scriptMode === "manual" ? "manual" : "auto";
+  const scriptWords = Math.floor(Number(c.scriptLimit?.words ?? 20));
+  const scriptLimit = {
+    fullScript: Boolean(c.scriptLimit?.fullScript),
+    words: Number.isFinite(scriptWords) && scriptWords > 0 ? Math.min(scriptWords, 100000) : 20,
+  };
   if (!c.tts?.modelId?.trim() || !c.tts?.voiceId?.trim()) return "Pick a voiceover model and voice";
   if (!c.images?.primary?.trim()) return "Pick a primary image model";
   if (!c.videos?.primary?.trim()) return "Pick a primary video model";
@@ -110,6 +128,7 @@ export function validateConfig(raw: unknown): OneClickConfig | string {
     version: CONFIG_VERSION,
     topicMode,
     scriptMode,
+    scriptLimit,
     tts: { modelId: c.tts.modelId.trim(), voiceId: c.tts.voiceId.trim() },
     output: { aspectRatio: c.output.aspectRatio.trim(), resolution: c.output.resolution.trim() },
     images: {
@@ -138,6 +157,11 @@ export function validateConfig(raw: unknown): OneClickConfig | string {
       logoX: clamp01(Number(c.assemble?.logoX ?? 0.02), 0.02),
       logoY: clamp01(Number(c.assemble?.logoY ?? 0.02), 0.02),
       logoSize: clamp01(Number(c.assemble?.logoSize ?? 0.1), 0.1),
+    },
+    // Default both on — notify unless the user explicitly turns it off.
+    notifications: {
+      onAttention: c.notifications?.onAttention !== false,
+      onComplete: c.notifications?.onComplete !== false,
     },
   };
 }

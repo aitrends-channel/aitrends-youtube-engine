@@ -4,11 +4,13 @@ import { getAnthropicClient, MODEL, VISION_MODEL, SYSTEM_PROMPT } from "@/lib/cl
 import { buildScriptPrompt, buildVisualAnalysisPrompt } from "@/lib/claude/prompts";
 import { visualProfileInputSchema } from "@/lib/claude/anthropicSchemas";
 import { VisualProfileSchema } from "@/lib/claude/schemas";
+import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { uploadFromUrl, uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { PROMPT_MODEL } from "@/lib/claude/client";
 import { generateImages, generateVideos, generateThumbnails } from "@/lib/workflow/prompts-core";
 import { submitImageTask, generateImage } from "@/lib/kie/images";
+import { finishImageTask } from "@/lib/kie/finishImageTask";
 import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
 import { isGoogleVoice } from "@/lib/google/tts";
 import { isQwenVoice } from "@/lib/replicate/tts";
@@ -126,7 +128,7 @@ export async function advanceProject(project: ProjectRow): Promise<AdvanceResult
 
   // ── Prompts (states 9–13): image + video prompts per beat ────────
   if (state >= 9 && state <= 13) {
-    return await runPromptsStep(project);
+    return await runPromptsStep(project, cfg);
   }
 
   // ── Generate + assemble (state 14) ───────────────────────────────
@@ -157,25 +159,23 @@ export async function advanceProject(project: ProjectRow): Promise<AdvanceResult
   return RESULT.waiting("Analyzing your channel…");
 }
 
-// DEV/TEST-only script cap. When ONECLICK_DEV_SCRIPT_WORDS is a positive
-// integer, prompt generation runs on only the FIRST N words of the
-// script — so generateImages creates just a couple of beats and the whole
-// pipeline (prompts, voiceovers, images, videos, assembly) runs on that
-// tiny subset (cheap KIE spend, fast end-to-end). This caps work at the
-// source instead of generating everything and deleting it. Unset / 0 /
-// prod → returns the script unchanged. Env-driven so it can never ship on.
-function devSliceScript(script: string): string {
-  const n = parseInt(process.env.ONECLICK_DEV_SCRIPT_WORDS ?? "", 10);
-  if (!Number.isInteger(n) || n <= 0) return script;
+// Apply the user's 1Click script-length setting: use the whole script when
+// fullScript is on, otherwise only the first N words. This drives how much
+// of the script feeds the rest of the pipeline (prompts, beats, voiceovers,
+// images, videos, assembly). Defaults to 20 words when unset.
+function sliceScriptForConfig(script: string, cfg: OneClickConfig): string {
+  const limit = cfg.scriptLimit;
+  if (!limit || limit.fullScript) return script;
+  const n = Number.isInteger(limit.words) && limit.words > 0 ? limit.words : 20;
   const words = script.trim().split(/\s+/).filter(Boolean);
   if (words.length <= n) return script;
-  console.log(`[one-click] DEV script cap: using first ${n} of ${words.length} words for prompts`);
+  console.log(`[one-click] script length: using first ${n} of ${words.length} words`);
   return words.slice(0, n).join(" ");
 }
 
 // Generate the script the same way the script route does (buildScriptPrompt
 // + Claude), non-streaming, then persist and advance to state 7.
-async function runScriptStep(project: ProjectRow, _cfg: OneClickConfig): Promise<AdvanceResult> {
+async function runScriptStep(project: ProjectRow, cfg: OneClickConfig): Promise<AdvanceResult> {
   const topic = project.selected_topic!;
 
   const { data, error } = await supabase
@@ -206,6 +206,11 @@ async function runScriptStep(project: ProjectRow, _cfg: OneClickConfig): Promise
   }
   if (!script) return RESULT.attention("The script came back empty — open the project and retry.");
 
+  // Apply the user's script-length setting so the ENTIRE downstream flow
+  // (prompts, beats, voiceovers, images, videos, thumbnails) and the UI
+  // word count are based on the chosen length. Full-script → unchanged.
+  script = sliceScriptForConfig(script, cfg);
+
   const wordCount = script.split(/\s+/).filter(Boolean).length;
   const { error: upErr } = await supabase
     .from("projects")
@@ -235,18 +240,29 @@ async function runVisualsStep(project: ProjectRow): Promise<AdvanceResult> {
     .slice(0, 10);
   if (videos.length === 0) return RESULT.attention("No channel videos to sample for visual style — finish the visuals step in the editor.");
 
-  // Capture two auto-sampled frames per video (YouTube exposes 1/2/3.jpg)
-  // and upload to R2, skipping any that don't resolve.
+  // Capture two auto-sampled frames per video (YouTube exposes 1/2/3.jpg).
+  // Fetch each frame ONCE server-side, then (a) upload the bytes to R2 for
+  // the stored auto_frames, and (b) keep the bytes as base64 for the vision
+  // call. Passing base64 — instead of R2 URLs — means Anthropic never has
+  // to download the images itself, which is what was timing out ("the
+  // request timed out while trying to download the file").
   const folder = `${userFolderFor({ id: project.user_id, email: null })}/${project.id}/auto-frames`;
-  const framesByVideo = await Promise.all(videos.map(async ({ videoId, title }) => {
-    const urls = (await Promise.all([1, 3].map(async (n) => {
-      try { return await uploadFromUrl(`${folder}/${videoId}-frame-${n}.jpg`, `https://img.youtube.com/vi/${videoId}/${n}.jpg`, "image/jpeg"); }
-      catch { return null; }
-    }))).filter((u): u is string => !!u);
-    return { videoId, title, thumbnailUrl: "", frameUrls: urls };
+  const captured = await Promise.all(videos.map(async ({ videoId, title }) => {
+    const frames = (await Promise.all([1, 3].map(async (n) => {
+      try {
+        const res = await fetch(`https://img.youtube.com/vi/${videoId}/${n}.jpg`);
+        if (!res.ok) return null;
+        const buf = await res.arrayBuffer();
+        if (buf.byteLength < 100) return null; // 404s can return a near-empty body
+        const r2Url = await uploadBuffer(`${folder}/${videoId}-frame-${n}.jpg`, buf, "image/jpeg");
+        return { r2Url, base64: Buffer.from(buf).toString("base64") };
+      } catch { return null; }
+    }))).filter((f): f is { r2Url: string; base64: string } => !!f);
+    return { videoId, title, thumbnailUrl: "", frameUrls: frames.map((f) => f.r2Url), base64s: frames.map((f) => f.base64) };
   }));
-  const frameUrls = framesByVideo.flatMap((f) => f.frameUrls).slice(0, 20);
-  if (frameUrls.length === 0) return RESULT.attention("Couldn't capture reference frames — finish the visuals step in the editor.");
+  const framesByVideo = captured.map(({ videoId, title, thumbnailUrl, frameUrls }) => ({ videoId, title, thumbnailUrl, frameUrls }));
+  const base64Frames = captured.flatMap((c) => c.base64s).slice(0, 12);
+  if (base64Frames.length === 0) return RESULT.attention("Couldn't capture reference frames — finish the visuals step in the editor.");
 
   // Vision analysis — video-only branch, so the tool returns just the
   // visualProfile and the step advances to state 9 (as the route does).
@@ -255,10 +271,10 @@ async function runVisualsStep(project: ProjectRow): Promise<AdvanceResult> {
     properties: { visualProfile: visualProfileInputSchema.properties.visualProfile },
     required: ["visualProfile"],
   };
-  let profileInput: unknown;
+  let visualProfile: VisualProfileOutput;
   try {
     const { client } = await getAnthropicClient(project.user_id, "visual_analysis");
-    const res = await retryClaudeCall("one-click:visuals", () => client.messages.create({
+    const callModel = () => client.messages.create({
       model: VISION_MODEL,
       max_tokens: 2048,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
@@ -267,19 +283,52 @@ async function runVisualsStep(project: ProjectRow): Promise<AdvanceResult> {
       messages: [{
         role: "user",
         content: [
-          ...frameUrls.map((url) => ({ type: "image" as const, source: { type: "url" as const, url } })),
+          ...base64Frames.map((data) => ({ type: "image" as const, source: { type: "base64" as const, media_type: "image/jpeg" as const, data } })),
           { type: "text" as const, text: buildVisualAnalysisPrompt({ video: true, thumbnails: false }) },
         ],
       }],
-    }), 5);
-    const toolUse = res.content.find((b) => b.type === "tool_use");
-    if (!toolUse || toolUse.type !== "tool_use") throw new Error("No visual profile returned");
-    profileInput = (toolUse.input as { visualProfile: unknown }).visualProfile;
+    });
+
+    // KIE+Opus/Haiku sometimes ignore tool_choice and emit the JSON as a
+    // text block (or a fake <tool_calls> wrapper) instead of a tool_use.
+    // Mirror the manual visual-analysis route: two attempts to land a real
+    // tool_use, then a text-mode fallback parser.
+    let toolInput: Record<string, unknown> | null = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await retryClaudeCall(`one-click:visuals (try ${attempt + 1})`, callModel, 5);
+      const toolUse = res.content.find((b) => b.type === "tool_use");
+      if (toolUse && toolUse.type === "tool_use") { toolInput = toolUse.input as Record<string, unknown>; break; }
+      if (attempt === 1) {
+        const textBlock = res.content.find((b) => b.type === "text");
+        const raw = textBlock && textBlock.type === "text" ? textBlock.text : "";
+        toolInput = extractToolInputFromText(raw) as Record<string, unknown> | null;
+      }
+    }
+    if (!toolInput) {
+      throw new Error("No visual analysis returned — the model produced neither a tool call nor parseable JSON.");
+    }
+
+    // The model returns either { visualProfile: {...} } (happy path) or the
+    // profile fields flat at the root. Handle both, exactly as the manual
+    // route does — the raw `.visualProfile` assumption was what produced the
+    // cryptic "expected object" Zod error when the model returned it flat.
+    const rawProfile =
+      (toolInput.visualProfile && typeof toolInput.visualProfile === "object")
+        ? (toolInput.visualProfile as Record<string, unknown>)
+        : (typeof toolInput.artStyle === "string" && Array.isArray(toolInput.colorPalette))
+          ? toolInput
+          : null;
+    if (!rawProfile) {
+      throw new Error(`Visual analysis returned an unrecognized shape (keys: ${Object.keys(toolInput).join(", ") || "(empty)"}).`);
+    }
+
+    // Validate INSIDE the try so a schema mismatch surfaces as a clean
+    // needs_attention message instead of a raw ZodError bubbling to the tick.
+    visualProfile = VisualProfileSchema.parse(rawProfile);
   } catch (err) {
     return RESULT.attention(`Visual analysis failed: ${err instanceof Error ? err.message : "unknown error"}`);
   }
 
-  const visualProfile = VisualProfileSchema.parse(profileInput);
   const { error: upErr } = await supabase
     .from("projects")
     .update({ visual_profile: visualProfile, auto_frames: framesByVideo, current_state: 9 })
@@ -294,7 +343,7 @@ async function runVisualsStep(project: ProjectRow): Promise<AdvanceResult> {
 // send. Claude-token work (no KIE image/video credits — those come at
 // the generate step). generateImages restores current_state to 14 on
 // completion, so a successful run lands the project at the generate step.
-async function runPromptsStep(project: ProjectRow): Promise<AdvanceResult> {
+async function runPromptsStep(project: ProjectRow, cfg: OneClickConfig): Promise<AdvanceResult> {
   const { data, error } = await supabase
     .from("projects")
     .select("script, visual_profile")
@@ -314,11 +363,10 @@ async function runPromptsStep(project: ProjectRow): Promise<AdvanceResult> {
     if (d.type === "error" && d.message) sendErr = d.message;
   };
   try {
-    // DEV/TEST cap: feed only the first N words of the script to prompt
-    // generation, so just a couple of beats are ever created and the rest
-    // of the pipeline runs on that subset. No-op unless
-    // ONECLICK_DEV_SCRIPT_WORDS is set.
-    const genScript = devSliceScript(script);
+    // Respect the user's script-length setting (belt-and-braces for a
+    // manually-written script that runScriptStep didn't slice). Full-script
+    // → unchanged; otherwise only the first N words feed prompt generation.
+    const genScript = sliceScriptForConfig(script, cfg);
     // Image prompts create the beats and set current_state back to 13
     // while running, then to 14 on completion.
     await generateImages(project.id, project.user_id, genScript, visualProfile, capture, PROMPT_MODEL);
@@ -345,8 +393,10 @@ interface BeatRow {
   image_url: string | null;
   image_status: string | null;
   image_task_id: string | null;
+  image_model_id: string | null;
   video_url: string | null;
   video_status: string | null;
+  video_job_id: string | null;
 }
 
 // nth model in a chain (0=primary,1=secondary,2=fallback), skipping
@@ -495,13 +545,14 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
   const imgIdx = attempts["genImageModelIdx"] ?? 0;
   const vidIdx = attempts["genVideoModelIdx"] ?? 0;
 
+  const BEAT_COLS = "beat_number, image_prompt, video_prompt, image_url, image_status, image_task_id, image_model_id, video_url, video_status, video_job_id";
   const { data: beatData, error: beatErr } = await supabase
     .from("project_beats")
-    .select("beat_number, image_prompt, video_prompt, image_url, image_status, image_task_id, video_url, video_status")
+    .select(BEAT_COLS)
     .eq("project_id", project.id)
     .order("beat_number");
   if (beatErr) return RESULT.attention(`Couldn't read beats: ${beatErr.message}`);
-  const beats = (beatData ?? []) as BeatRow[];
+  let beats = (beatData ?? []) as BeatRow[];
   if (beats.length === 0) return RESULT.attention("No beats to generate — reopen the prompts step.");
 
   // ── Voiceovers ────────────────────────────────────────────────────
@@ -577,6 +628,25 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
       if (i + SUBMIT_BATCH < toSubmitImg.length) await new Promise((r) => setTimeout(r, 1500));
     }
     return RESULT.waiting(`Generating ${toSubmitImg.length} image${toSubmitImg.length === 1 ? "" : "s"}…`);
+  }
+
+  // Reconcile in-flight images against KIE NOW rather than waiting on the
+  // 5-min finish-images cron — mirrors the manual generate page's image
+  // poller (finishImageTask pulls a KIE-finished image into the DB). Without
+  // this, an image "done on KIE" stays "generating" in the UI for minutes.
+  const inFlightImg = beats.filter((b) => !imgDone(b) && b.image_task_id && (b.image_status === "generating" || b.image_status === "queued"));
+  if (inFlightImg.length > 0) {
+    await Promise.all(inFlightImg.map((b) =>
+      finishImageTask({
+        projectId: project.id, beatNumber: b.beat_number, taskId: b.image_task_id!,
+        modelId: b.image_model_id ?? imageModel, userId: project.user_id, userEmail: null,
+      }).catch(() => {}), // pending / transient KIE error — the next tick retries
+    ));
+    // Re-read so allImagesDone (and the UI's counts) reflect anything that
+    // just finished, letting this same tick move on to videos.
+    const { data: refreshed } = await supabase
+      .from("project_beats").select(BEAT_COLS).eq("project_id", project.id).order("beat_number");
+    if (refreshed) beats = refreshed as BeatRow[];
   }
 
   // ── Videos (queue once images exist; worker picks them up) ────────
@@ -699,18 +769,108 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
       }).eq("id", project.id);
       return RESULT.waiting("All clips ready — assembling the final video…");
     }
+
+    // ── Stall recovery for stuck video beats ───────────────────────
+    // A pending beat (queued/submitting/rendering) is left to the worker,
+    // but the worker can drop it: an orphaned commit (KIE finished but the
+    // URL was never written — "done on KIE, not a failure"), a crash, or a
+    // queued beat it never picks up. The failed-beat re-queue above never
+    // touches these, so the run would spin "Rendering…" forever. Recover
+    // by re-queuing the stragglers once progress has clearly stalled.
+    //
+    // Guard: only intervene once SOME clips have finished. That proves the
+    // model works and is reasonably fast, so a long gap is genuinely stuck
+    // — and it avoids re-queuing a legitimately slow first render (where
+    // nothing is done yet) and double-charging KIE.
+    const pendingVids = beats.filter((b) => !vidDone(b) && b.video_prompt?.trim());
+    const doneVids = beats.filter(vidDone).length;
+    const snap = (attempts["vidDoneSnap"] as number | undefined) ?? -1;
+    if (doneVids > snap) {
+      // Progress since the last tick — reset the stall clock.
+      attempts["vidDoneSnap"] = doneVids;
+      delete attempts["vidStallSince"];
+      attempts["vidRequeues"] = 0;
+      await supabase.from("projects").update({ auto_pilot_attempts: attempts }).eq("id", project.id);
+      return RESULT.waiting("Rendering video clips…");
+    }
+
+    // Beats never actually sent to KIE — queued/submitting but with NO
+    // video_job_id — are the "worker never picked it up / dropped it"
+    // case ("done on 4, the 5th never sent"). When other clips have
+    // finished, that's clearly a drop rather than a slow render, so we
+    // re-send those fast (short window). Beats that DO have a job id are
+    // genuinely rendering on KIE — leave them to the worker/webhook.
+    const notSubmitted = pendingVids.filter((b) => !b.video_job_id);
+    const fast = notSubmitted.length > 0 && doneVids > 0;
+    const STALL_MS = fast ? 90 * 1000 : 5 * 60 * 1000;
+    const stallSince = attempts["vidStallSince"]; // epoch ms
+    if (!stallSince) {
+      attempts["vidStallSince"] = Date.now();
+      await supabase.from("projects").update({ auto_pilot_attempts: attempts }).eq("id", project.id);
+    } else if (doneVids > 0 && Date.now() - stallSince > STALL_MS) {
+      const requeues = ((attempts["vidRequeues"] as number | undefined) ?? 0) + 1;
+      if (requeues > 3) {
+        return RESULT.attention(`Video generation stalled — ${doneVids}/${beats.length} clips rendered but the rest didn't finish. Retry the Videos step, or open the project to finish them.`);
+      }
+      attempts["vidRequeues"] = requeues;
+      delete attempts["vidStallSince"];
+      await supabase.from("projects").update({ auto_pilot_attempts: attempts }).eq("id", project.id);
+      // Re-queue the stuck beats fresh (clear job id so the worker
+      // resubmits). Fast path only re-sends the never-submitted ones so
+      // we don't disturb clips actively rendering on KIE.
+      const toRequeue = fast ? notSubmitted : pendingVids;
+      for (const b of toRequeue) {
+        await supabase.from("project_beats").update({
+          video_status: "queued", video_job_id: null, video_error: null,
+          video_model_id: videoModel, video_aspect_ratio: vidAr,
+          video_duration: vidDur, video_resolution: vidRes,
+        }).eq("project_id", project.id).eq("beat_number", b.beat_number);
+      }
+      return RESULT.waiting(`Re-sent ${toRequeue.length} video clip${toRequeue.length === 1 ? "" : "s"} that weren't picked up…`);
+    }
     return RESULT.waiting("Rendering video clips…");
   }
 
   return RESULT.waiting("Generating images…");
 }
 
+// Finish the run: mark state 16, stamp completion time, send the "video
+// ready" email (if opted in), and return done(). Reused by the normal
+// thumbnails-done path AND the thumbnail-give-up fallbacks — a finished
+// video must never be trapped by a thumbnail hiccup.
+async function completeRun(project: ProjectRow, cfg: OneClickConfig): Promise<AdvanceResult> {
+  await supabase.from("projects").update({ current_state: 16 }).eq("id", project.id);
+  // Best-effort + separate so a missing migration-098 column can't block it.
+  await supabase.from("projects")
+    .update({ auto_pilot_completed_at: new Date().toISOString() })
+    .eq("id", project.id)
+    .then(undefined, () => {});
+  if (cfg.notifications?.onComplete !== false) {
+    await sendCompletionEmail(project.id, project.user_id).catch((e) =>
+      console.error(`[one-click] completion email failed for ${project.id}:`, e instanceof Error ? e.message : e));
+  } else {
+    console.log(`[one-click] completion email skipped for ${project.id} (notifications.onComplete=false)`);
+  }
+  return RESULT.done();
+}
+
+// Bump a named attempt counter and report whether the cap is reached.
+async function bumpAttempt(projectId: string, key: string, cap: number): Promise<boolean> {
+  const { data: row } = await supabase.from("projects").select("auto_pilot_attempts").eq("id", projectId).single();
+  const att = (row?.auto_pilot_attempts as Record<string, number> | null) ?? {};
+  const n = (att[key] ?? 0) + 1;
+  att[key] = n;
+  await supabase.from("projects").update({ auto_pilot_attempts: att }).eq("id", projectId);
+  return n >= cap;
+}
+
 // State 15 (video assembled): generate thumbnail concepts + images
 // automatically, then mark complete (state 16). Concepts reuse the
 // prompts route's generateThumbnails (Claude); images reuse generateImage
 // batched by the admin's thumbnail_batch with 429 retry, mirroring the
-// manual thumbnail-images route. Runs across ticks — concepts first,
-// then images, then done.
+// manual thumbnail-images route. Thumbnails are the LAST step and the video
+// is already assembled, so a persistent thumbnail failure must NOT trap the
+// finished video — after a few retries we complete the run without them.
 async function runThumbnailsStep(project: ProjectRow, cfg: OneClickConfig): Promise<AdvanceResult> {
   const { data, error } = await supabase
     .from("projects")
@@ -720,8 +880,10 @@ async function runThumbnailsStep(project: ProjectRow, cfg: OneClickConfig): Prom
   const script = (data?.script as string | null)?.trim();
   const visualProfile = data?.visual_profile as VisualProfileOutput | null;
   if (error || !script || !visualProfile) {
-    // Video is already done; don't block on thumbnails — surface it.
-    return RESULT.attention("Couldn't start thumbnails (missing script or visual profile) — generate them in the editor.");
+    // The video is already assembled — don't trap it. Complete without
+    // thumbnails; the user can generate them in the editor.
+    console.warn(`[one-click] thumbnails skipped for ${project.id}: missing script/visual profile`);
+    return await completeRun(project, cfg);
   }
 
   // 1) Concepts — create project_thumbnails rows if none exist yet.
@@ -734,17 +896,30 @@ async function runThumbnailsStep(project: ProjectRow, cfg: OneClickConfig): Prom
   if (thumbs.length === 0) {
     let sendErr: string | null = null;
     const capture = (d: object) => { const e = d as { type?: string; message?: string }; if (e.type === "error" && e.message) sendErr = e.message; };
+    let failure: string | null = null;
     try {
       await generateThumbnails(project.id, project.user_id, script, visualProfile,
         (data?.thumbnail_analysis as ThumbnailAnalysisOutput | undefined) ?? undefined, capture, PROMPT_MODEL);
-      if (sendErr) return RESULT.attention(`Thumbnail concepts failed: ${sendErr}`);
+      if (sendErr) failure = sendErr;
     } catch (err) {
-      return RESULT.attention(`Thumbnail concepts failed: ${err instanceof Error ? err.message : "unknown error"}`);
+      failure = err instanceof Error ? err.message : "unknown error";
     }
-    const { data: created } = await supabase
-      .from("project_thumbnails").select("position, image_url").eq("project_id", project.id).order("position");
-    thumbs = created ?? [];
-    if (thumbs.length === 0) return RESULT.attention("No thumbnail concepts were generated — open the editor to create them.");
+    if (!failure) {
+      const { data: created } = await supabase
+        .from("project_thumbnails").select("position, image_url").eq("project_id", project.id).order("position");
+      thumbs = created ?? [];
+      if (thumbs.length === 0) failure = "no concepts returned";
+    }
+    if (failure) {
+      // Retry a few times (Claude/KIE occasionally returns a malformed
+      // shape), then finish WITHOUT thumbnails — the video is done, so a
+      // thumbnail hiccup shouldn't block completion.
+      if (await bumpAttempt(project.id, "thumbConceptAttempts", 3)) {
+        console.warn(`[one-click] thumbnails skipped for ${project.id} — concepts failed: ${failure}`);
+        return await completeRun(project, cfg);
+      }
+      return RESULT.waiting("Generating thumbnail concepts…");
+    }
     return RESULT.waiting("Generating thumbnail concepts…");
   }
 
@@ -786,34 +961,148 @@ async function runThumbnailsStep(project: ProjectRow, cfg: OneClickConfig): Prom
     };
     for (let i = 0; i < missing.length; i += batchSize) {
       await Promise.all(missing.slice(i, i + batchSize).map((t) => genOne(t.position as number)));
-      if (hardError) return RESULT.attention(`Thumbnail generation failed: ${hardError}`);
+      if (hardError) {
+        // Retry a few times, then complete without the remaining thumbnail
+        // images — the finished video must not be trapped.
+        if (await bumpAttempt(project.id, "thumbImageAttempts", 3)) {
+          console.warn(`[one-click] thumbnails partially generated for ${project.id} — image gen failed: ${hardError}`);
+          return await completeRun(project, cfg);
+        }
+        return RESULT.waiting("Retrying thumbnail images…");
+      }
       if (i + batchSize < missing.length) await new Promise((r) => setTimeout(r, 1500));
     }
     return RESULT.waiting(`Generating ${missing.length} thumbnail${missing.length === 1 ? "" : "s"}…`);
   }
 
-  // 3) All thumbnails done → mark the project complete and finish the
-  // run in one step. Returning done() flips auto_pilot_status to
-  // "completed", so the tick won't pick this project up again — which
-  // is why the email is sent here (the only path to state 16) and the
-  // dispatch's state>=16 branch is just an idempotent safety net.
-  await supabase.from("projects").update({ current_state: 16 }).eq("id", project.id);
-  await sendCompletionEmail(project.id, project.user_id).catch(() => {});
-  return RESULT.done();
+  // 3) All thumbnails done → finish the run.
+  return await completeRun(project, cfg);
 }
 
-// Best-effort "your video is ready" email via the support mailbox.
-async function sendCompletionEmail(projectId: string, userId: string): Promise<void> {
+// Look up a user's email by id (service-role listUsers). Shared by the
+// completion + attention emails.
+async function getUserEmail(userId: string): Promise<string | null> {
   const { data: users } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-  const email = users?.users.find((u) => u.id === userId)?.email;
-  if (!email) return;
+  return users?.users.find((u) => u.id === userId)?.email ?? null;
+}
+
+const APP_URL = () => process.env.NEXT_PUBLIC_APP_URL_PRODUCTION ?? process.env.APP_URL ?? "https://app.heclus.io";
+// Brand theme color (hex approximation of the app's oklch(0.72 0.25 285))
+// — email clients don't support oklch, so we use the closest hex.
+const BRAND = "#7c5cff";
+
+// Escape user/AI-supplied text before interpolating into the HTML email.
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// Fetch the white Heclus logo so it can be embedded inline (cid:) in the
+// email — remote <img src> URLs get blocked by many clients, so we attach
+// the bytes instead. Fail-soft: null → the header falls back to text only.
+async function fetchLogoAttachment(): Promise<{ filename: string; content: Buffer; cid: string; contentType: string } | null> {
+  try {
+    const res = await fetch(`${APP_URL()}/heclus-icon-white.png`);
+    if (!res.ok) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.byteLength < 100) return null;
+    return { filename: "heclus.png", content: buf, cid: "heclus-logo", contentType: "image/png" };
+  } catch {
+    return null;
+  }
+}
+
+// Branded, email-client-safe HTML shell (table layout + inline styles):
+// a theme-purple header band carrying the white Heclus logo (embedded via
+// cid), then the message on white, a purple button, an optional note box +
+// secondary link. `logoCid` set → render the inline logo; otherwise the
+// header shows just the "Heclus" wordmark.
+function emailHtml(opts: {
+  heading: string; intro: string; note?: string;
+  buttonLabel: string; buttonUrl: string; secondary?: { label: string; url: string };
+  logoCid?: string;
+}): string {
+  const { heading, intro, note, buttonLabel, buttonUrl, secondary, logoCid } = opts;
+  const logoImg = logoCid
+    ? `<td style="vertical-align:middle;"><img src="cid:${logoCid}" alt="Heclus" width="26" height="26" style="display:block;border:0;outline:none;" /></td><td style="vertical-align:middle;padding-left:9px;">`
+    : `<td style="vertical-align:middle;">`;
+  return `<div style="margin:0;padding:0;background:#0b0b0f;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0b0b0f;padding:32px 12px;">
+    <tr><td align="center">
+      <table role="presentation" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+        <tr><td style="background:${BRAND};padding:20px 32px;">
+          <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+            ${logoImg}<span style="font-size:17px;font-weight:800;color:#ffffff;letter-spacing:0.3px;">Heclus</span></td>
+          </tr></table>
+        </td></tr>
+        <tr><td style="padding:28px 32px 0;"><h1 style="margin:0;font-size:20px;line-height:1.3;color:#18181b;">${esc(heading)}</h1></td></tr>
+        <tr><td style="padding:12px 32px 0;"><p style="margin:0;font-size:14px;line-height:1.6;color:#52525b;">${intro}</p>${note ? `<div style="margin:14px 0 0;font-size:13px;line-height:1.6;color:#71717a;background:#f4f4f5;border-radius:10px;padding:12px 14px;">${esc(note)}</div>` : ""}</td></tr>
+        <tr><td style="padding:24px 32px 0;"><a href="${buttonUrl}" style="display:inline-block;background:${BRAND};color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:10px;">${esc(buttonLabel)}</a></td></tr>
+        ${secondary ? `<tr><td style="padding:14px 32px 0;"><a href="${secondary.url}" style="font-size:13px;color:${BRAND};text-decoration:none;">${esc(secondary.label)}</a></td></tr>` : ""}
+        <tr><td style="padding:28px 32px 28px;"><p style="margin:0;font-size:12px;line-height:1.5;color:#a1a1aa;">You're receiving this because 1Click autopilot is running on your Heclus account.</p></td></tr>
+      </table>
+    </td></tr>
+  </table>
+</div>`;
+}
+
+// "Your video is ready" email — customized HTML with a "View video" button
+// that opens the finished video in the browser. Throws on failure so the
+// caller can log it (a hands-off run must not silently drop this).
+async function sendCompletionEmail(projectId: string, userId: string): Promise<void> {
+  const email = await getUserEmail(userId);
+  if (!email) { console.warn(`[one-click] completion email: no address for user ${userId}`); return; }
+  const { data: proj } = await supabase.from("projects").select("selected_topic, assembled_url").eq("id", projectId).single();
+  const topic = (proj?.selected_topic as string | null) ?? "your video";
+  const assembledUrl = (proj?.assembled_url as string | null) ?? null;
+  const appUrl = APP_URL();
+  const projectUrl = `${appUrl}/projects/${projectId}/one-click`;
+  // "View video" opens the finished video directly in the browser; fall
+  // back to the project's final-preview page if the URL isn't stored.
+  const viewUrl = assembledUrl ?? projectUrl;
+  const logo = await fetchLogoAttachment();
+  const { messageId } = await sendEmail({
+    from: "notify@heclus.com",
+    to: email,
+    subject: `Your video "${topic}" is ready`,
+    text: `Your 1Click video "${topic}" is ready.\n\nView video: ${viewUrl}\nOpen in Heclus: ${projectUrl}\n\nHeclus`,
+    attachments: logo ? [logo] : undefined,
+    html: emailHtml({
+      heading: "Your video is ready",
+      intro: `1Click just finished <strong style="color:#18181b;">“${esc(topic)}”</strong>. It's ready to watch, review, and export.`,
+      buttonLabel: "View video",
+      buttonUrl: viewUrl,
+      secondary: { label: "Open in Heclus", url: projectUrl },
+      logoCid: logo?.cid,
+    }),
+  });
+  console.log(`[one-click] completion email sent to ${email} for ${projectId} (msg ${messageId})`);
+}
+
+// "1Click needs you" email — customized HTML. Sent when a run pauses for
+// manual input or hits an error, gated on the user's notification pref.
+export async function sendAttentionEmail(projectId: string, userId: string, note: string): Promise<void> {
+  const email = await getUserEmail(userId);
+  if (!email) { console.warn(`[one-click] attention email: no address for user ${userId}`); return; }
   const { data: proj } = await supabase.from("projects").select("selected_topic").eq("id", projectId).single();
   const topic = (proj?.selected_topic as string | null) ?? "your video";
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL_PRODUCTION ?? process.env.APP_URL ?? "https://app.heclus.io";
-  await sendEmail({
-    from: "support@heclus.com",
+  const appUrl = APP_URL();
+  const projectUrl = `${appUrl}/projects/${projectId}/one-click`;
+  const logo = await fetchLogoAttachment();
+  const cleanNote = note.replace(/\s*—\s*/g, " - "); // no em-dashes in email
+  const { messageId } = await sendEmail({
+    from: "notify@heclus.com",
     to: email,
-    subject: "Your Heclus video is ready 🎬",
-    text: `Hi,\n\n1Click just finished "${topic}" — it's ready to review and download.\n\nOpen it here: ${appUrl}/projects/${projectId}/assemble\n\nThanks,\nHeclus`,
+    subject: `Your 1Click run needs you: "${topic}"`,
+    text: `1Click paused on "${topic}" and needs your attention:\n\n${cleanNote}\n\nOpen it: ${projectUrl}\n\nHeclus`,
+    attachments: logo ? [logo] : undefined,
+    html: emailHtml({
+      heading: "1Click needs your input",
+      intro: `1Click paused on <strong style="color:#18181b;">“${esc(topic)}”</strong> and needs your attention:`,
+      note: cleanNote,
+      buttonLabel: "Open project",
+      buttonUrl: projectUrl,
+      logoCid: logo?.cid,
+    }),
   });
+  console.log(`[one-click] attention email sent to ${email} for ${projectId} (msg ${messageId})`);
 }

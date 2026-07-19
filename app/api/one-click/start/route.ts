@@ -54,6 +54,17 @@ export async function POST(req: Request) {
     .eq("id", projectId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // Stamp the run start for end-to-end timing. Best-effort + separate so an
+  // unapplied migration 098 (missing column, 42703) can't fail engage. Only
+  // set on a fresh engage (started_at still null) so re-engaging doesn't
+  // reset the clock.
+  await supabase
+    .from("projects")
+    .update({ auto_pilot_started_at: new Date().toISOString(), auto_pilot_completed_at: null })
+    .eq("id", projectId)
+    .is("auto_pilot_started_at", null)
+    .then(undefined, () => {}); // ignore 42703 until the migration is applied
+
   return NextResponse.json({ ok: true });
 }
 
