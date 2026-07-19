@@ -1,9 +1,9 @@
 import { createHash } from "crypto";
 import { supabase } from "@/lib/supabase/client";
 import { getAnthropicClient, MODEL, VISION_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
-import { buildScriptPrompt, buildVisualAnalysisPrompt } from "@/lib/claude/prompts";
-import { visualProfileInputSchema } from "@/lib/claude/anthropicSchemas";
-import { VisualProfileSchema } from "@/lib/claude/schemas";
+import { buildScriptPrompt, buildVisualAnalysisPrompt, buildVideoIdeasPrompt } from "@/lib/claude/prompts";
+import { visualProfileInputSchema, videoIdeasInputSchema } from "@/lib/claude/anthropicSchemas";
+import { VisualProfileSchema, VideoIdeasSchema } from "@/lib/claude/schemas";
 import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { uploadFromUrl, uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
@@ -91,17 +91,38 @@ export async function advanceProject(project: ProjectRow): Promise<AdvanceResult
     if (cfg.topicMode === "manual") {
       return RESULT.attention("Pick a topic to continue — 1Click resumes automatically once you choose one.");
     }
-    // Auto mode: channel analysis already generated video_ideas at
-    // kickoff. Pick the top idea as the topic.
+    // Auto mode: pick a topic that no other video in this niche has used
+    // already. Channel analysis generated video_ideas at kickoff; if every
+    // suggestion is taken, generate more (mirrors the topic step's
+    // "Generate more ideas") and pick from the fresh ones.
     const { data, error } = await supabase
       .from("projects")
-      .select("video_ideas")
+      .select("video_ideas, channel_url, channel_name")
       .eq("id", project.id)
       .single();
     if (error) return RESULT.attention(`Couldn't read generated ideas: ${error.message}`);
-    const ideas = Array.isArray(data?.video_ideas) ? (data!.video_ideas as string[]) : [];
-    const topic = ideas.find((t) => t && t.trim());
-    if (!topic) return RESULT.attention("No topic ideas were generated — open the project and pick a topic.");
+    let ideas = Array.isArray(data?.video_ideas) ? (data!.video_ideas as string[]) : [];
+
+    // Topics already used by sibling videos in the same channel/niche.
+    const norm = (t: string) => t.toLowerCase().trim();
+    const usedTopics = await usedTopicsForChannel(
+      project.user_id, project.id,
+      (data?.channel_url as string | null) ?? null,
+      (data?.channel_name as string | null) ?? null,
+    );
+    const used = new Set(usedTopics.map(norm));
+    const pick = (list: string[]) => list.find((t) => t && t.trim() && !used.has(norm(t))) ?? null;
+
+    let topic = pick(ideas);
+    if (!topic) {
+      // Every suggested idea is taken — generate more, excluding the ones
+      // we already have AND the ones already used.
+      ideas = await generateMoreTopics(project.id, project.user_id, ideas, [...ideas, ...usedTopics]);
+      topic = pick(ideas);
+    }
+    if (!topic) {
+      return RESULT.attention("Couldn't find a fresh topic that hasn't been used — open the project to pick or add one.");
+    }
 
     const { error: upErr } = await supabase
       .from("projects")
@@ -157,6 +178,69 @@ export async function advanceProject(project: ProjectRow): Promise<AdvanceResult
   waitAtt["channelWaits"] = waits;
   await supabase.from("projects").update({ auto_pilot_attempts: waitAtt }).eq("id", project.id);
   return RESULT.waiting("Analyzing your channel…");
+}
+
+// Topics already used by OTHER videos in the same channel/niche, so 1Click
+// never repeats a topic that a video already exists for. Scopes by
+// channel_url (canonical), falling back to channel_name; returns [] when
+// neither is set (can't reliably scope → don't over-exclude).
+async function usedTopicsForChannel(
+  userId: string, projectId: string, channelUrl: string | null, channelName: string | null,
+): Promise<string[]> {
+  let q = supabase
+    .from("projects")
+    .select("selected_topic")
+    .eq("user_id", userId)
+    .neq("id", projectId)
+    .not("selected_topic", "is", null);
+  if (channelUrl) q = q.eq("channel_url", channelUrl);
+  else if (channelName) q = q.eq("channel_name", channelName);
+  else return [];
+  const { data } = await q;
+  return (data ?? []).map((r) => (r.selected_topic as string | null) ?? "").filter(Boolean);
+}
+
+// Generate more topic ideas for a project, excluding ones already on hand
+// or already used — a 1:1 mirror of /api/workflow/ideas. Appends the fresh,
+// deduped ideas to video_ideas and returns the combined list.
+async function generateMoreTopics(
+  projectId: string, userId: string, existingIdeas: string[], exclude: string[],
+): Promise<string[]> {
+  const { data: proj } = await supabase
+    .from("projects").select("channel_analysis, channel_info").eq("id", projectId).single();
+  if (!proj?.channel_analysis) return existingIdeas;
+  const topVideos = (proj.channel_info as { topVideos?: Array<{ title?: string }> } | null)?.topVideos ?? [];
+  const topTitles = topVideos.map((v) => (v.title ?? "").trim()).filter(Boolean);
+  try {
+    const { client } = await getAnthropicClient(userId, "ideas");
+    const res = await client.messages.create({
+      model: MODEL,
+      max_tokens: 2048,
+      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+      tools: [{ name: "save_video_ideas", description: "Save the generated video ideas", input_schema: videoIdeasInputSchema }],
+      tool_choice: { type: "tool", name: "save_video_ideas" },
+      messages: [{ role: "user", content: buildVideoIdeasPrompt(proj.channel_analysis as Parameters<typeof buildVideoIdeasPrompt>[0], undefined, topTitles, exclude) }],
+    });
+    const toolUse = res.content.find((b) => b.type === "tool_use");
+    if (!toolUse || toolUse.type !== "tool_use") return existingIdeas;
+    const parsed = VideoIdeasSchema.safeParse(toolUse.input);
+    if (!parsed.success) return existingIdeas;
+    // Dedupe against everything we already have or excluded.
+    const seen = new Set([...existingIdeas, ...exclude].map((t) => t.toLowerCase().trim()));
+    const fresh = parsed.data.ideas.filter((t) => {
+      const k = t.toLowerCase().trim();
+      if (!k || seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+    if (fresh.length === 0) return existingIdeas;
+    const combined = [...existingIdeas, ...fresh];
+    await supabase.from("projects").update({ video_ideas: combined }).eq("id", projectId);
+    return combined;
+  } catch (err) {
+    console.warn(`[one-click] generateMoreTopics failed for ${projectId}:`, err instanceof Error ? err.message : err);
+    return existingIdeas;
+  }
 }
 
 // Apply the user's 1Click script-length setting: use the whole script when
