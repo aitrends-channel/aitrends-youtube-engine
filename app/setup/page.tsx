@@ -10,7 +10,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import Image from "next/image";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { FREE_TIER_COMING_SOON } from "@/lib/free-tier-flag";
+import { FREE_TIER_COMING_SOON, FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
 
 type Tier = "paid" | "free";
 
@@ -160,7 +160,7 @@ const SERVICES: ServiceCard[] = [
   {
     tier: "free",
     quota: "50k–100k chars/month",
-    title: "Qwen Voices (Free voiceover — on us)",
+    title: "ai33 Voices (Free voiceover — on us)",
     sub: "Included with every account — runs on Heclus's own infrastructure, nothing to connect",
     perk: true,
     steps: [
@@ -189,22 +189,6 @@ const SERVICES: ServiceCard[] = [
       <>Paste the Account ID and the token below and hit <b>Save</b>.</>,
     ],
     fields: ["cloudflare_account_id", "cloudflare_api_token"],
-  },
-  {
-    tier: "free",
-    quota: "1M chars/month",
-    title: "Google Cloud TTS (Free voiceover)",
-    sub: "Powers the Free voiceover option — 1,000,000 characters/month free on your own account",
-    href: "https://console.cloud.google.com",
-    linkLabel: "console.cloud.google.com",
-    steps: [
-      <>Create a Google Cloud project at <ExtLink href="https://console.cloud.google.com/projectcreate">console.cloud.google.com/projectcreate</ExtLink> — any name works.</>,
-      <>Enable billing for it at <ExtLink href="https://console.cloud.google.com/billing">console.cloud.google.com/billing</ExtLink>. Don&apos;t worry: the first 1M characters each month are free and never charged.</>,
-      <>Turn on the Text-to-Speech API: open <ExtLink href="https://console.cloud.google.com/apis/library/texttospeech.googleapis.com">this page</ExtLink> and click <b>Enable</b>.</>,
-      <>Create your key: open the <ExtLink href="https://console.cloud.google.com/apis/credentials">Credentials page</ExtLink> → <b>+ Create credentials</b> → <b>API key</b> → copy it.</>,
-      <>Paste the key below and hit <b>Save</b>.</>,
-    ],
-    fields: ["google_tts_key"],
   },
 ];
 
@@ -580,7 +564,7 @@ export default function SettingsPage() {
                 : { color: "var(--c-55)" }}
             >
               {t.icon}
-              {t.key === "free" && FREE_TIER_COMING_SOON ? (
+              {t.key === "free" && FREE_TTS_COMING_SOON ? (
                 <span className="flex flex-col items-center leading-tight">
                   <span>Free</span>
                   <span className="text-[9px] font-semibold normal-case tracking-normal">coming soon</span>
@@ -606,7 +590,7 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          {tab === "free" && FREE_TIER_COMING_SOON ? (
+          {tab === "free" && FREE_TTS_COMING_SOON ? (
             <FreeComingSoonCard />
           ) : loading ? (
             <div className="flex items-center gap-2 py-6" style={{ color: "var(--c-40)" }}>
@@ -618,7 +602,14 @@ export default function SettingsPage() {
               {/* items-start keeps cards their natural height instead of
                   stretching to the tallest sibling in the row. */}
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 items-start">
-                {SERVICES.filter((svc) => svc.tier === tab).map((svc, idx) => (
+                {SERVICES.filter((svc) => {
+                  if (svc.tier !== tab) return false;
+                  // Free IMAGES (Cloudflare) is still coming soon — hide its
+                  // card while that flag is on, so the live Free tab shows
+                  // only the ai33 voiceover perk.
+                  if (tab === "free" && FREE_TIER_COMING_SOON && svc.fields.includes("cloudflare_account_id")) return false;
+                  return true;
+                }).map((svc, idx) => (
                   <div key={svc.title} className="p-5 rounded-2xl space-y-4"
                     style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
                     {/* Card header */}
