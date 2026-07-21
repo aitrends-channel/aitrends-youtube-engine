@@ -550,7 +550,9 @@ export default function SettingsPage() {
         {mainTab === "oneclick" ? (
           <OneClickConfigPanel />
         ) : mainTab === "consistency" ? (
-          <CharacterConsistencyDefaults />
+          <div className="w-full max-w-2xl mx-auto">
+            <CharacterConsistencyDefaults />
+          </div>
         ) : (
         <>
         {/* Sub-tabs: PAID / FREE — same segmented style as the generate
