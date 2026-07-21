@@ -25,11 +25,15 @@ export async function POST(req: Request) {
   if (!projectId || !step) {
     return NextResponse.json({ error: "projectId and step are required" }, { status: 400 });
   }
-  // Image + video prompt steps run on the fast PROMPT_MODEL (Haiku) —
-  // Opus's ~5-min/call latency through KIE caused the timeouts and
-  // queue-stalls. Thumbnails stay on Opus (`model`): a single quality-
-  // sensitive call that produces visual concepts, not a long multi-chunk
-  // grind, so its latency was never the problem.
+  // NOTE: PROMPT_MODEL currently === MODEL === Opus (see lib/claude/client.ts) —
+  // image + video prompt steps run on Opus, NOT Haiku. That's why the
+  // image step's per-chunk max_tokens headroom and the truncation-split
+  // recovery in generateImages (lib/workflow/prompts-core.ts) exist: Opus
+  // intermittently emits the verbose <tool_calls> text fallback that
+  // overruns the ceiling. If you ever point PROMPT_MODEL at FAST_MODEL
+  // (Haiku), that fallback largely disappears and the chunk sizing can be
+  // revisited. Thumbnails use `model` (also Opus): a single
+  // quality-sensitive call, not a multi-chunk grind.
   const model = MODEL;
 
   if (step === "images") {
