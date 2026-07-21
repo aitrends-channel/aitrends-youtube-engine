@@ -12,6 +12,11 @@ export interface AppSettings {
   cloudflare_account_id: string;
   cloudflare_api_token: string;
   google_tts_key: string;
+  /** Global default character-consistency text appended to every image
+   *  prompt at generation time. Non-secret free text; empty string = no
+   *  default text. Per-project overrides live on the projects row — see
+   *  lib/character-consistency.ts for the resolution. */
+  character_consistency_text: string;
 }
 
 const cacheMap = new Map<string, { data: AppSettings; at: number }>();
@@ -27,7 +32,7 @@ export async function getSettings(userId: string): Promise<AppSettings> {
 
   const { data, error } = await supabase
     .from("account_settings")
-    .select("kie_api_key, elevenlabs_api_key, cloudflare_account_id, cloudflare_api_token, google_tts_key")
+    .select("kie_api_key, elevenlabs_api_key, cloudflare_account_id, cloudflare_api_token, google_tts_key, character_consistency_text")
     .eq("user_id", userId)
     .single();
 
@@ -42,6 +47,9 @@ export async function getSettings(userId: string): Promise<AppSettings> {
     cloudflare_account_id: data?.cloudflare_account_id?.trim() || "",
     cloudflare_api_token: data?.cloudflare_api_token?.trim() || "",
     google_tts_key: data?.google_tts_key?.trim() || "",
+    // Free text, not a secret — preserve as stored (only the surrounding
+    // whitespace is trimmed at append time, not here).
+    character_consistency_text: data?.character_consistency_text ?? "",
   };
   cacheMap.set(userId, { data: result, at: Date.now() });
   return result;

@@ -1,6 +1,7 @@
 import { getSettings } from "@/lib/settings";
 import { isGoogleVoice, generateGoogleTTS } from "@/lib/google/tts";
 import { isQwenVoice, generateQwenTTS } from "@/lib/replicate/tts";
+import { isAi33Voice, generateAi33TTS } from "@/lib/ai33/tts";
 import type { KieModel } from "@/lib/types";
 
 // Direct ElevenLabs TTS. Used to go through KIE's proxy (commit b5b38ac)
@@ -335,6 +336,15 @@ export async function generateTTS(
   if (isQwenVoice(voiceId)) {
     onProgress?.(0, 1);
     const result = await generateQwenTTS(text, voiceId, userId);
+    onProgress?.(1, 1);
+    return result;
+  }
+
+  // Free path — ai33.pro (OpenSpeaker) voices ("ai33/" prefix) run on
+  // Heclus's own ai33 token as a perk, capped per user per month.
+  if (isAi33Voice(voiceId)) {
+    onProgress?.(0, 1);
+    const result = await generateAi33TTS(text, voiceId, userId);
     onProgress?.(1, 1);
     return result;
   }

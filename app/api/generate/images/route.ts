@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateImage } from "@/lib/kie/images";
+import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
@@ -40,6 +41,12 @@ export async function POST(req: Request) {
       await supabase.from("projects").update({ images_progress: 0 }).eq("id", projectId).eq("user_id", user.id);
     }
 
+    // Character-consistency text (per-project override, else the user's
+    // account default). Resolved once per request and appended to each
+    // beat prompt only for the KIE call — the stored image_prompt stays
+    // clean.
+    const consistency = await resolveConsistency(user.id, projectId);
+
     const results: { beatNumber: number; url: string }[] = [];
     const failures: { beatNumber: number; error: string }[] = [];
     // Admin-tunable: product_config.batched_processes.image_generation_batch.
@@ -58,7 +65,8 @@ export async function POST(req: Request) {
           // the user's actual experience (queue + generation + cdn
           // fetch), not just the raw model inference time.
           const t0 = Date.now();
-          const { url: imageUrl, creditsConsumed } = await generateImage(beat.imagePrompt, modelId, aspectRatio, resolution, user.id);
+          const sentPrompt = applyConsistency(beat.imagePrompt, consistency.text, consistency.append);
+          const { url: imageUrl, creditsConsumed } = await generateImage(sentPrompt, modelId, aspectRatio, resolution, user.id);
           const elapsedMs = Date.now() - t0;
           if (creditsConsumed) {
             void logProjectCost({

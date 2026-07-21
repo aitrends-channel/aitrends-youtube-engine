@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { submitImageTask } from "@/lib/kie/images";
+import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { KieUpstreamError } from "@/lib/kie/client";
 import { generateCloudflareImage, isCloudflareModel, CloudflareError } from "@/lib/cloudflare/images";
 import { incrementFreeUsage } from "@/lib/freeUsage";
@@ -35,6 +36,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Beat ${beatNumber} has no image prompt` }, { status: 400 });
     }
 
+    // Append the character-consistency text (per-project override, else
+    // account default) to the client-supplied prompt just for the
+    // generator call. The stored image_prompt is never touched here.
+    const consistency = await resolveConsistency(user.id, projectId);
+    const sentPrompt = applyConsistency(imagePrompt, consistency.text, consistency.append);
+
     // Free path (BYO Cloudflare Workers AI). Cloudflare returns image bytes
     // synchronously — no task id / webhook — so we generate, upload, and
     // mark the beat done inline. Runs on the user's own free quota; no KIE
@@ -47,7 +54,7 @@ export async function POST(req: Request) {
 
       let buffer: ArrayBuffer, contentType: string;
       try {
-        ({ buffer, contentType } = await generateCloudflareImage(imagePrompt, modelId, aspectRatio, user.id));
+        ({ buffer, contentType } = await generateCloudflareImage(sentPrompt, modelId, aspectRatio, user.id));
       } catch (err) {
         // The beat was just marked "generating" with no task id — nothing
         // (webhook, cron, poll) will ever rescue it, so flip it to failed
@@ -80,7 +87,7 @@ export async function POST(req: Request) {
     // dropped en route.
     const callBackUrl = `${getAppUrl(req)}/api/webhooks/kie/image`;
 
-    const taskId = await submitImageTask(imagePrompt, modelId, aspectRatio, resolution, user.id, callBackUrl);
+    const taskId = await submitImageTask(sentPrompt, modelId, aspectRatio, resolution, user.id, callBackUrl);
     console.log(`[images/submit] beat=${beatNumber} model=${modelId} taskId=${taskId}`);
 
     // Single atomic UPDATE so the webhook can never fire in a window
