@@ -372,15 +372,16 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState<Tier>("paid");
-  // Top-level split: API keys (the existing paid/free cards) vs the
-  // full-page 1Click preference editor. Deep-linkable via
-  // /setup?tab=oneclick (read from location to avoid the
-  // useSearchParams/Suspense dance on this client page).
-  const [mainTab, setMainTab] = useState<"keys" | "oneclick">("keys");
+  // Top-level split: API keys (the existing paid/free cards), the
+  // full-page 1Click preference editor, and the account-level
+  // Character Consistency default. Deep-linkable via
+  // /setup?tab=oneclick or /setup?tab=consistency (read from location
+  // to avoid the useSearchParams/Suspense dance on this client page).
+  const [mainTab, setMainTab] = useState<"keys" | "oneclick" | "consistency">("keys");
   useEffect(() => {
-    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("tab") === "oneclick") {
-      setMainTab("oneclick");
-    }
+    if (typeof window === "undefined") return;
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "oneclick" || t === "consistency") setMainTab(t);
   }, []);
   const [userEmail, setUserEmail] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -524,10 +525,10 @@ export default function SettingsPage() {
 
       <main className="flex-1 w-full max-w-none px-4 sm:px-8 lg:px-12 py-8 sm:py-14">
 
-        {/* Top-level tabs: API KEYS / 1CLICK */}
+        {/* Top-level tabs: API KEYS / 1CLICK / CHARACTER CONSISTENCY */}
         <div className="flex gap-1 mb-6 p-1 rounded-xl w-full"
           style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-          {([["keys", "API Keys"], ["oneclick", "1Click"]] as const).map(([id, label]) => (
+          {([["keys", "API Keys"], ["oneclick", "1Click"], ["consistency", "Character Consistency"]] as const).map(([id, label]) => (
             <button
               key={id}
               onClick={() => setMainTab(id)}
@@ -537,13 +538,19 @@ export default function SettingsPage() {
                 color: mainTab === id ? "white" : "var(--c-45)",
               }}
             >
-              {id === "oneclick" ? <span className="inline-flex items-center gap-1.5"><SlidersHorizontal size={12} /> {label}</span> : label}
+              {id === "oneclick" ? (
+                <span className="inline-flex items-center gap-1.5"><SlidersHorizontal size={12} /> {label}</span>
+              ) : id === "consistency" ? (
+                <span className="inline-flex items-center gap-1.5"><Users size={12} /> {label}</span>
+              ) : label}
             </button>
           ))}
         </div>
 
         {mainTab === "oneclick" ? (
           <OneClickConfigPanel />
+        ) : mainTab === "consistency" ? (
+          <CharacterConsistencyDefaults />
         ) : (
         <>
         {/* Sub-tabs: PAID / FREE — same segmented style as the generate
@@ -741,10 +748,6 @@ export default function SettingsPage() {
               </button>
             </form>
           )}
-
-          {/* Character-consistency defaults — applies to every project's
-              image prompts unless overridden per project. */}
-          <CharacterConsistencyDefaults />
 
           {/* Add User — admin only */}
           {isAdmin && <AddUserSection />}
