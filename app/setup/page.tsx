@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound, SlidersHorizontal, CreditCard, Gift } from "lucide-react";
+import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound, SlidersHorizontal, CreditCard, Gift, Users } from "lucide-react";
 import { OneClickConfigPanel } from "@/components/one-click/OneClickConfigPanel";
 import { Spinner } from "@/components/ui/spinner";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -274,6 +274,101 @@ function AddUserSection() {
           </button>
         </div>
       </form>
+    </div>
+  );
+}
+
+// Account-level character-consistency default. A single statement
+// appended to EVERY image prompt across all projects (each project can
+// still override or detach it in its Prompts step). Free text, not a
+// secret — persisted (including when cleared to empty) via /api/settings.
+function CharacterConsistencyDefaults() {
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((data) => {
+        setText((data?.character_consistency_text as string) ?? "");
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ character_consistency_text: text }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Save failed");
+      toast.success("Character consistency default saved.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save default");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" } as const;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+          <Users size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Character Consistency</h2>
+          <p className="text-xs" style={{ color: "var(--c-45)" }}>
+            A reusable statement added to <b>every</b> image prompt to keep your
+            character and style the same. Applies to all projects. Each project
+            can change or turn it off in its Prompts step.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 py-4" style={{ color: "var(--c-40)" }}>
+          <Spinner size={16} />
+          <span className="text-sm">Loading…</span>
+        </div>
+      ) : (
+        <div className="p-5 rounded-2xl space-y-4"
+          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+          <div className="space-y-2">
+            <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>
+              Consistency text
+            </label>
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              rows={4}
+              placeholder="e.g. Recurring character: a 30-year-old woman, red curly hair, green parka. Flat 2D illustration style, warm palette. Keep her face, hairstyle and outfit identical across every image."
+              className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all resize-y"
+              style={inputStyle}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+            style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+          >
+            {saving ? <Spinner size={14} /> : <Save size={14} />}
+            {saving ? "Saving…" : "Save Default"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -655,6 +750,10 @@ export default function SettingsPage() {
               </button>
             </form>
           )}
+
+          {/* Character-consistency defaults — applies to every project's
+              image prompts unless overridden per project. */}
+          <CharacterConsistencyDefaults />
 
           {/* Add User — admin only */}
           {isAdmin && <AddUserSection />}

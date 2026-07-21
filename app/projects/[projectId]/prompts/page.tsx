@@ -166,7 +166,7 @@ function EditablePrompt({
   );
 }
 
-function BeatCard({ beat, projectId, onSaved }: { beat: Beat; projectId: string; onSaved: () => Promise<unknown> | void }) {
+function BeatCard({ beat, projectId, onSaved, consistencyPreview }: { beat: Beat; projectId: string; onSaved: () => Promise<unknown> | void; consistencyPreview?: string | null }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -205,6 +205,15 @@ function BeatCard({ beat, projectId, onSaved }: { beat: Beat; projectId: string;
               </p>
               <CopyButton text={beat.imagePrompt} />
             </div>
+            {consistencyPreview && (
+              <div className="mb-2 rounded-lg px-3 py-2"
+                style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px dashed oklch(0.72 0.25 285 / 0.3)" }}>
+                <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "oklch(0.72 0.25 285)" }}>
+                  + Character consistency (added before the prompt)
+                </p>
+                <p className="text-xs leading-relaxed" style={{ color: "var(--c-60)" }}>{consistencyPreview}</p>
+              </div>
+            )}
             <EditablePrompt
               value={beat.imagePrompt}
               field="image"
@@ -627,6 +636,164 @@ async function streamStep(
   return doneReceived;
 }
 
+// Per-project character-consistency override. A single statement
+// appended to every image prompt at generation time, plus an
+// append/detach switch. NULL text on the project row = inherit the
+// account default (set in Settings); a value (including "") overrides it
+// for this project only. Nothing here is baked into the stored beat
+// prompts — it's applied only when a prompt is sent to the image
+// generator, so edits take effect on the next generate without
+// regenerating the prompts.
+function CharacterConsistencyPanel({
+  projectId,
+  project,
+  mutate,
+  defText,
+}: {
+  projectId: string;
+  project: { character_consistency_text?: string | null; character_consistency_append?: boolean | null } | undefined;
+  mutate: () => void;
+  /** Account-level default, shown as a placeholder while text inherits. */
+  defText: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // null = inherit account default; string (incl. "") = per-project override.
+  const [text, setText] = useState<string | null>(null);
+  // true = append the text to prompts; false = detached (not applied).
+  const [append, setAppend] = useState(true);
+  const [hydrated, setHydrated] = useState(false);
+
+  // Seed the local editor from the project row once it lands.
+  useEffect(() => {
+    if (hydrated || !project) return;
+    setText((project.character_consistency_text as string | null | undefined) ?? null);
+    setAppend((project.character_consistency_append as boolean | null | undefined) ?? true);
+    setHydrated(true);
+  }, [project, hydrated]);
+
+  async function persist(nextText: string | null, nextAppend: boolean) {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ character_consistency_text: nextText, character_consistency_append: nextAppend }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Save failed");
+      }
+      toast.success("Character consistency saved for this project.");
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" } as const;
+  const hasOverride = text !== null;
+  const badge = !append ? "Detached" : hasOverride ? "Custom" : "Account default";
+
+  return (
+    <div className="rounded-xl overflow-hidden self-start w-full"
+      style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors"
+      >
+        <span className="text-xs font-semibold" style={{ color: "var(--c-70)" }}>Character consistency</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded-full"
+          style={append
+            ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.4)" }
+            : { background: "var(--bg-panel)", color: "var(--c-45)", border: "1px solid var(--bd-card)" }}>
+          {badge}
+        </span>
+        <span className="ml-auto" style={{ color: "var(--c-45)" }}>
+          {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </span>
+      </button>
+
+      {open && (
+        <div className="px-3 pb-3 space-y-3" style={{ borderTop: "1px solid var(--bd-card)" }}>
+          <p className="text-[11px] leading-relaxed pt-3" style={{ color: "var(--c-45)" }}>
+            Added to every image prompt to keep your character consistent.
+            Leave blank to use your account default. Applies on the next
+            image generation.
+          </p>
+
+          {/* Add / detach switch */}
+          <div className="rounded-lg p-1 flex gap-1 w-fit"
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+            {([
+              { on: true, label: "Add" },
+              { on: false, label: "Detach" },
+            ]).map((opt) => {
+              const active = append === opt.on;
+              return (
+                <button
+                  key={opt.label}
+                  onClick={() => setAppend(opt.on)}
+                  className="px-3 py-1 rounded-md text-xs font-medium transition-all"
+                  style={active ? {
+                    background: "oklch(0.72 0.25 285 / 0.15)",
+                    border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                    color: "oklch(0.88 0.12 285)",
+                  } : {
+                    background: "transparent",
+                    border: "1px solid transparent",
+                    color: "var(--c-55)",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium" style={{ color: "var(--c-50)" }}>Consistency text</label>
+            <textarea
+              value={text ?? ""}
+              onChange={(e) => setText(e.target.value)}
+              rows={3}
+              disabled={!append}
+              placeholder={text === null && defText ? `Inheriting: ${defText}` : "Recurring character and style kept identical across every image…"}
+              className="w-full px-3 py-2 rounded-lg text-xs outline-none transition-all resize-y disabled:opacity-50"
+              style={inputStyle}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => persist(text, append)}
+              disabled={saving}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            {hasOverride && (
+              <button
+                onClick={() => { setText(null); persist(null, append); }}
+                disabled={saving}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 disabled:opacity-50"
+                style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-card)" }}
+              >
+                Reset to account default
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 
 type Tab = "beats" | "video";
@@ -649,6 +816,24 @@ export default function PromptsPage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
   const { project, mutate } = useProject(projectId);
+
+  // Account-level character-consistency default, fetched once. Feeds both
+  // the per-project panel (placeholder) and the per-beat "will be
+  // appended" preview so the user can see what gets added at generation.
+  const [accountConsistencyText, setAccountConsistencyText] = useState("");
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((data) => setAccountConsistencyText((data?.character_consistency_text as string) ?? ""))
+      .catch(() => {});
+  }, []);
+  // Effective text that will be appended to every image prompt for this
+  // project: per-project override if set, else the account default —
+  // unless the project has detached it. NULL = nothing appended.
+  const projConsistencyText = project?.character_consistency_text as string | null | undefined;
+  const projConsistencyAppend = (project?.character_consistency_append as boolean | null | undefined) ?? true;
+  const effectiveConsistency = (projConsistencyText ?? accountConsistencyText ?? "").trim();
+  const consistencyPreview = projConsistencyAppend && effectiveConsistency ? effectiveConsistency : null;
 
   // Bump current_state to 13 the first time the user lands here so the
   // Visuals phase ticks done in the WizardNav. The visuals phase's
@@ -1487,6 +1672,7 @@ export default function PromptsPage({ params }: PageProps) {
               );
             })}
           </div>
+          <CharacterConsistencyPanel projectId={projectId} project={project} mutate={mutate} defText={accountConsistencyText} />
           {hasImageBeats
             && !anyRunning
             && !remoteRunInProgress
@@ -1571,7 +1757,7 @@ export default function PromptsPage({ params }: PageProps) {
 
             <div className="px-5 sm:px-8 pt-6 pb-6 space-y-3">
               {activeTab === "beats" && beats.map((beat) => (
-                <BeatCard key={beat.beatNumber} beat={beat} projectId={projectId} onSaved={mutate} />
+                <BeatCard key={beat.beatNumber} beat={beat} projectId={projectId} onSaved={mutate} consistencyPreview={consistencyPreview} />
               ))}
               {activeTab === "video" && (
                 videoBeats.length > 0 ? videoBeats.map((beat) => (

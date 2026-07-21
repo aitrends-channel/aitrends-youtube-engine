@@ -10,6 +10,7 @@ import { uploadFromUrl, uploadBuffer, userFolderFor } from "@/lib/supabase/stora
 import { PROMPT_MODEL } from "@/lib/claude/client";
 import { generateImages, generateVideos, generateThumbnails } from "@/lib/workflow/prompts-core";
 import { submitImageTask, generateImage } from "@/lib/kie/images";
+import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { finishImageTask } from "@/lib/kie/finishImageTask";
 import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
 import { isGoogleVoice } from "@/lib/google/tts";
@@ -674,6 +675,11 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
     // "call frequency too high" 429 (backoff 1s→2s→4s→8s). Firing all
     // beats at once trips the rate limit.
     const SUBMIT_BATCH = Math.max(1, (await getConcurrencyConfig()).image_generation_batch);
+    // Character-consistency text (per-project override, else account
+    // default), appended to each capped base prompt only for the KIE
+    // submit — we persist the base below (without the text) so retries
+    // never double-append and the stored prompt stays clean.
+    const consistency = await resolveConsistency(project.user_id, project.id);
     let hardError: string | null = null;
     const submitOne = async (b: BeatRow): Promise<boolean> => {
       const basePrompt = b.image_prompt!.trim();
@@ -681,8 +687,9 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
       let capIdx = 0; // 0 = full prompt; >0 = capped at PROMPT_LENGTH_CAPS[capIdx-1]
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         const prompt = capIdx === 0 ? basePrompt : capPrompt(basePrompt, PROMPT_LENGTH_CAPS[capIdx - 1]);
+        const sentPrompt = applyConsistency(prompt, consistency.text, consistency.append);
         try {
-          const taskId = await submitImageTask(prompt, imageModel, imgAr, imgRes, project.user_id);
+          const taskId = await submitImageTask(sentPrompt, imageModel, imgAr, imgRes, project.user_id);
           await supabase.from("project_beats")
             .update({ image_status: "generating", image_task_id: taskId, image_model_id: imageModel, image_prompt: prompt })
             .eq("project_id", project.id).eq("beat_number", b.beat_number);
