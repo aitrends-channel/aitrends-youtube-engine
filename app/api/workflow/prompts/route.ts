@@ -494,13 +494,37 @@ async function generateImages(
   // Running counter — only mutated inside the gated persist step.
   let runningBeatNumber = nextBeatNumber;
 
-  async function processChunk(taskIdx: number): Promise<number> {
-    const { content, chunkIndex, totalChunks } = chunksToProcess[taskIdx];
-
-    await assertPromptsRunActive(projectId, runId);
+  // Generate + validate beats for one span of script text. On a
+  // max_tokens truncation the span is split in half and each half is
+  // regenerated recursively — a beat-dense span (e.g. a 200-word chunk
+  // that expands to 40+ beats and, in Opus's verbose <tool_calls> text
+  // fallback, overruns the 12288 ceiling) would otherwise truncate
+  // DETERMINISTICALLY: assertComplete threw, the run failed, and the
+  // resume path re-queued the exact same span → the retry re-truncated
+  // → the user was stuck ("Response was cut off during chunk 6/8. Please
+  // try again." on every attempt). Splitting shrinks each Claude call's
+  // output until it fits, so a dense span self-heals instead of trapping
+  // the run. Returns beats with the model's LOCAL 1..k numbering; the
+  // caller reassigns global beat numbers by array index, so duplicate
+  // local numbers across split halves don't matter.
+  async function genBeatsForText(
+    text: string,
+    chunkIndex: number,
+    totalChunks: number,
+    depth: number,
+  ): Promise<ReturnType<typeof ImagePromptsSchema.parse>["beats"]> {
+    // Depth 4 halves a 200-word chunk down to ~12-word pieces
+    // (200→100→50→25→12); a piece that small overrunning 12288 tokens
+    // means the model is looping, so we stop splitting and surface the
+    // truncation rather than fan out indefinitely. MIN_SPLIT_WORDS keeps
+    // us from splitting a span so short the halves can't form coherent
+    // beats.
+    const MAX_SPLIT_DEPTH = 4;
+    const MIN_SPLIT_WORDS = 24;
+    const label = `image prompts chunk ${chunkIndex + 1}/${totalChunks}${depth > 0 ? ` (split d${depth})` : ""}`;
 
     const t0 = Date.now();
-    console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} start (parallel) words=${content.split(/\s+/).length}`);
+    console.log(`[image-prompts] ${label} start words=${text.split(/\s+/).filter(Boolean).length}`);
 
     // Streaming + tool_use on Opus. Streaming keeps KIE's connection
     // warm with continuous delta events. The cached prefix block hits
@@ -518,10 +542,10 @@ async function generateImages(
     // set (the client then polls forever, pinned at ~95%). 3 bounds a
     // chunk's worst case to ~3 min, under the poll-loop stall watchdog.
     // Truncation (max_tokens) is deliberately NOT thrown here — a
-    // truncated response still carries partial content and should fail
-    // fast via assertComplete below rather than burn identical retries.
+    // truncated response still carries partial content and is handled by
+    // the split path below rather than burning identical retries.
     const { res, input } = await retryClaudeCall(
-      `image prompts chunk ${chunkIndex + 1}/${totalChunks}`,
+      label,
       async (): Promise<{ res: Anthropic.Messages.Message; input: Record<string, unknown> | null }> => {
         // 12288. Two competing constraints, measured directly against KIE:
         //   • first-token latency is fast for every ceiling BELOW 16384
@@ -574,7 +598,7 @@ async function generateImages(
             role: "user",
             content: [
               { type: "text", text: cachedUserBlock, cache_control: { type: "ephemeral" } },
-              { type: "text", text: buildImagePromptsDynamic(content) },
+              { type: "text", text: buildImagePromptsDynamic(text) },
             ],
           }],
         }, { signal: ac.signal });
@@ -658,7 +682,7 @@ async function generateImages(
       3
     );
 
-    console.log(`[image-prompts] chunk ${chunkIndex + 1}/${totalChunks} claude done in ${Date.now() - t0}ms stop=${res.stop_reason}`);
+    console.log(`[image-prompts] ${label} claude done in ${Date.now() - t0}ms stop=${res.stop_reason}`);
     void logAnthropicCost({
       projectId,
       userId,
@@ -668,7 +692,25 @@ async function generateImages(
       usage: res.usage,
       kieCreditsConsumed: takeLastCreditsConsumed(),
     });
-    assertComplete(res.stop_reason, `image prompts chunk ${chunkIndex + 1}/${totalChunks}`);
+
+    // Truncated: split the span and regenerate each half so the dense
+    // section self-heals instead of hard-failing the run (see the
+    // header comment). Only give up — surfacing the cut-off error via
+    // assertComplete — once the span is too small to split further,
+    // which for a legitimately-sized script effectively never happens.
+    if (res.stop_reason === "max_tokens") {
+      const words = text.trim().split(/\s+/).filter(Boolean);
+      if (depth < MAX_SPLIT_DEPTH && words.length > MIN_SPLIT_WORDS) {
+        const mid = Math.ceil(words.length / 2);
+        console.warn(`[image-prompts] ${label} truncated (${words.length} words) — splitting into ${mid} + ${words.length - mid} and regenerating`);
+        send({ type: "status", message: "A dense section exceeded the limit — splitting it into smaller pieces…" });
+        const left = await genBeatsForText(words.slice(0, mid).join(" "), chunkIndex, totalChunks, depth + 1);
+        const right = await genBeatsForText(words.slice(mid).join(" "), chunkIndex, totalChunks, depth + 1);
+        return [...left, ...right];
+      }
+      // Span already minimal — this is a real, unrecoverable truncation.
+      assertComplete(res.stop_reason, label);
+    }
 
     if (!input) throw new Error(`No image prompts returned for chunk ${chunkIndex + 1}. Try again — any beats saved so far are preserved.`);
     if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Chunk ${chunkIndex + 1} returned no beats. Try again — any beats saved so far are preserved.`);
@@ -681,14 +723,22 @@ async function generateImages(
           .filter((k) => !b[k] || (typeof b[k] === "string" && (b[k] as string).trim() === ""));
         return missing.length ? `beat#${b.beatNumber ?? i}: missing=${missing.join(",")}` : null;
       }).filter(Boolean);
-      console.error(`[image-prompts] chunk ${chunkIndex + 1} schema validation failed`, {
+      console.error(`[image-prompts] ${label} schema validation failed`, {
         beatCount: rawBeats.length,
         blankFields,
         zodIssues: parsed.error.issues,
       });
       throw new Error(`Chunk ${chunkIndex + 1} returned beats with missing fields (${blankFields.slice(0, 3).join("; ") || "schema mismatch"}). Try again — any beats saved so far are preserved.`);
     }
-    const localBeats = parsed.data.beats;
+    return parsed.data.beats;
+  }
+
+  async function processChunk(taskIdx: number): Promise<number> {
+    const { content, chunkIndex, totalChunks } = chunksToProcess[taskIdx];
+
+    await assertPromptsRunActive(projectId, runId);
+
+    const localBeats = await genBeatsForText(content, chunkIndex, totalChunks, 0);
 
     // Wait my turn before assigning beat numbers and persisting.
     if (taskIdx > 0) await persistGates[taskIdx - 1].promise;
@@ -703,10 +753,13 @@ async function generateImages(
       // in-flight chunk lands. The next-chunk assert at the top of
       // processChunk still prevents follow-on chunks from starting.
 
-      // The model numbered beats 1..k locally; shift them into the
-      // global sequence starting at runningBeatNumber.
-      const offset = runningBeatNumber - 1;
-      const finalBeats = localBeats.map((b) => ({ ...b, beatNumber: b.beatNumber + offset }));
+      // Assign global beat numbers by array position rather than trusting
+      // the model's local numbering. localBeats is already in script order
+      // (a single call's 1..k, or the concatenation of split halves each
+      // restarting at 1 — which would collide if we added an offset to the
+      // model's number). Index-based numbering keeps the global sequence
+      // gapless and monotonic regardless of how many splits produced it.
+      const finalBeats = localBeats.map((b, i) => ({ ...b, beatNumber: runningBeatNumber + i }));
 
       const { error: insertError } = await supabase.from("project_beats").insert(
         finalBeats.map((b) => ({
@@ -1106,11 +1159,15 @@ export async function POST(req: Request) {
   if (!projectId || !step) {
     return NextResponse.json({ error: "projectId and step are required" }, { status: 400 });
   }
-  // Image + video prompt steps run on the fast PROMPT_MODEL (Haiku) —
-  // Opus's ~5-min/call latency through KIE caused the timeouts and
-  // queue-stalls. Thumbnails stay on Opus (`model`): a single quality-
-  // sensitive call that produces visual concepts, not a long multi-chunk
-  // grind, so its latency was never the problem.
+  // NOTE: PROMPT_MODEL currently === MODEL === Opus (see lib/claude/client.ts) —
+  // image + video prompt steps run on Opus, NOT Haiku. That's why the
+  // image step's per-chunk max_tokens headroom and the truncation-split
+  // recovery in generateImages exist: Opus intermittently emits the
+  // verbose <tool_calls> text fallback that overruns the ceiling. If you
+  // ever point PROMPT_MODEL at FAST_MODEL (Haiku), that fallback largely
+  // disappears and the chunk sizing can be revisited. Thumbnails use
+  // `model` (also Opus): a single quality-sensitive call, not a
+  // multi-chunk grind.
   const model = MODEL;
 
   if (step === "images") {
