@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -4820,6 +4820,7 @@ export default function AdminPage() {
   // spinner and the menu item disables itself during the request.
   const [flaggingProdTest, setFlaggingProdTest] = useState<string | null>(null);
   const [settingSub, setSettingSub] = useState<string | null>(null);
+  const [settingPlan, setSettingPlan] = useState<string | null>(null);
   const [usersPage, setUsersPage] = useState(1);
   const [userSearch, setUserSearch] = useState("");
   // "zero-video" / "no-setup" are cross-cutting slices (they overlap the
@@ -4969,6 +4970,28 @@ export default function AdminPage() {
       toast.error(err instanceof Error ? err.message : "Failed to update subscription");
     } finally {
       setSettingSub(null);
+    }
+  }
+
+  // Switch a non-admin user's paid plan tier (Starter / Pro / Founder).
+  // Setting a tier marks them an active subscriber on that plan.
+  async function handleSetPlan(email: string, plan: "starter" | "pro" | "founder") {
+    setSettingPlan(email);
+    try {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(email)}/plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to update plan");
+      const label = plan.charAt(0).toUpperCase() + plan.slice(1);
+      toast.success(`${email} set to ${label}`);
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update plan");
+    } finally {
+      setSettingPlan(null);
     }
   }
 
@@ -5801,7 +5824,7 @@ export default function AdminPage() {
                                 />
                                 <div
                                   role="menu"
-                                  className="absolute right-0 top-full mt-1 z-20 rounded-lg overflow-hidden min-w-[160px]"
+                                  className="absolute right-0 top-full mt-1 z-20 rounded-lg overflow-hidden min-w-[240px] py-1.5"
                                   style={{
                                     background: "white",
                                     border: "1px solid oklch(0 0 0 / 0.08)",
@@ -5891,6 +5914,30 @@ export default function AdminPage() {
                                         <Sparkles size={12} />
                                         Mark as Demo/free
                                       </button>
+                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
+                                      <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.55 0 0)" }}>Plan</div>
+                                      {([
+                                        { slug: "starter" as const, label: "Starter", Icon: Rocket, color: "oklch(0.45 0.15 145)" },
+                                        { slug: "pro" as const,     label: "Pro",     Icon: Star,   color: "oklch(0.45 0.15 220)" },
+                                        { slug: "founder" as const, label: "Founder", Icon: Gem,    color: "oklch(0.5 0.18 300)" },
+                                      ]).map(({ slug, label, Icon, color }) => {
+                                        const current = (u.plan ?? "").toLowerCase().trim() === slug;
+                                        return (
+                                          <button
+                                            key={slug}
+                                            type="button"
+                                            role="menuitem"
+                                            onClick={() => { setOpenUserMenu(null); handleSetPlan(u.email, slug); }}
+                                            disabled={settingPlan === u.email || current}
+                                            className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0_0_0_/_0.04)] flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                                            style={{ color }}
+                                          >
+                                            <Icon size={12} />
+                                            <span className="flex-1">Set plan: {label}</span>
+                                            {current && <Check size={12} />}
+                                          </button>
+                                        );
+                                      })}
                                       <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
                                       <button
                                         type="button"

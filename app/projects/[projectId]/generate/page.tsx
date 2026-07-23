@@ -1746,7 +1746,9 @@ export default function GeneratePage({ params }: PageProps) {
           if (pollResults[i].status === "fulfilled") {
             const { status, error } = (pollResults[i] as PromiseFulfilledResult<{ beatNumber: number; taskId: string; status: string; error?: string }>).value;
             if (status === "done") { successCount++; setImagesProgress(successCount); toRemove.push(i); }
-            else if (status === "failed" || status === "error") {
+            else if (status === "failed") {
+              // TERMINAL: KIE itself reported the task failed. Surface it
+              // and stop polling this beat.
               const reason = error ?? "Unknown error";
               if (!firstPollError) firstPollError = reason;
               // Overwrite the banner — only the most recent error
@@ -1754,6 +1756,13 @@ export default function GeneratePage({ params }: PageProps) {
               setImageRunError(friendlyError(reason));
               toRemove.push(i);
             }
+            // status === "error" (a transient route/upstream failure — a
+            // 429, or a large-asset finish that ran long and returned
+            // non-200) is NOT terminal. KIE is still holding the result,
+            // so we leave the beat in `remaining` and keep polling it.
+            // Treating this as terminal — removing the beat and flashing
+            // an error — is exactly what made the UI "stop" while KIE
+            // kept generating. "pending" likewise just keeps polling.
           }
         }
         for (let i = toRemove.length - 1; i >= 0; i--) remaining.splice(toRemove[i], 1);

@@ -7,7 +7,7 @@ import { Readable } from "stream";
 import { ReadableStream as NodeReadableStream } from "stream/web";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
-import { uploadBuffer, userFolderFor, objectExists, getObjectToFile, r2KeyFromUrl } from "@/lib/supabase/storage";
+import { uploadBuffer, userFolderFor, objectExists, getObjectToFile, r2KeyFromUrl, getPublicUrl } from "@/lib/supabase/storage";
 import type { User } from "@supabase/supabase-js";
 
 // fluent-ffmpeg + ffmpeg-static loaded via createRequire so the ESM
@@ -182,7 +182,14 @@ export async function POST(req: Request, { params }: { params: { projectId: stri
   // independently.
   const variant = trimSilence ? "trim" : "orig";
   const storagePath = `${userFolderFor(user)}/${projectId}/voiceover-preview-${hash}-${variant}.mp3`;
-  const cachedUrl = `${process.env.R2_PUBLIC_URL?.replace(/\/$/, "")}/${storagePath}`;
+  // Build the cache-hit URL with the SAME sanitized helper the upload
+  // path uses (getPublicUrl → publicUrlBase), not raw process.env. The
+  // raw env var can carry a stray leading "=" (the documented
+  // R2_PUBLIC_URL corruption), which produced a malformed "=https://…"
+  // URL that the browser <audio> element couldn't load — surfacing as
+  // "Audio failed to load" on cache hits while first-time builds (which
+  // go through uploadBuffer) worked fine.
+  const cachedUrl = getPublicUrl(storagePath);
 
   // Cache hit: same beat URLs + variant → same hash → file already in
   // R2. Checked via the S3 API — a HEAD against the public r2.dev URL
