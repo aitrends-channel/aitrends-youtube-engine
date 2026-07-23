@@ -23,6 +23,9 @@ export async function GET() {
       cloudflare_account_id: mask(s.cloudflare_account_id),
       cloudflare_api_token: mask(s.cloudflare_api_token),
       google_tts_key: mask(s.google_tts_key),
+      // Not a secret — returned in full so the prompts step can show the
+      // inherited account default as a placeholder / prefill.
+      character_consistency_text: s.character_consistency_text,
     });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to load settings" }, { status: 500 });
@@ -40,6 +43,7 @@ export async function POST(req: Request) {
       cloudflare_account_id: string;
       cloudflare_api_token: string;
       google_tts_key: string;
+      character_consistency_text: string;
     }>;
 
     const update: Record<string, string> = {};
@@ -48,6 +52,10 @@ export async function POST(req: Request) {
     if (body.cloudflare_account_id?.trim()) update.cloudflare_account_id = body.cloudflare_account_id.trim();
     if (body.cloudflare_api_token?.trim()) update.cloudflare_api_token = body.cloudflare_api_token.trim();
     if (body.google_tts_key?.trim()) update.google_tts_key = body.google_tts_key.trim();
+    // Consistency text is free text, not a secret — persist it whenever
+    // the key is present (unlike the API keys above, an empty string is a
+    // valid value here: it clears a previously-set default).
+    if (body.character_consistency_text !== undefined) update.character_consistency_text = body.character_consistency_text;
 
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ error: "No keys provided" }, { status: 400 });

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
-import { Settings, LogOut, BarChart3, Trash2, Download, KeyRound } from "lucide-react";
+import { Settings, LogOut, BarChart3, Trash2, Download, KeyRound, SlidersHorizontal, Zap, ChevronRight } from "lucide-react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { ADMIN_EMAILS } from "@/lib/admin";
@@ -17,6 +17,7 @@ import type { ApiKeysStatus } from "@/app/api/me/api-keys-status/route";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
+import { OneClickControls } from "@/components/one-click/OneClickControls";
 
 
 // ── Demo dashboard helpers ────────────────────────────────────────────────────
@@ -76,6 +77,9 @@ interface Project {
   selected_topic?: string;
   assembly_status?: string | null;
   assembled_url?: string | null;
+  auto_pilot?: boolean;
+  auto_pilot_status?: string | null;
+  auto_pilot_error?: string | null;
 }
 
 interface ChannelGroup {
@@ -639,6 +643,12 @@ export default function HomePage() {
     | { type: "video"; id: string; label: string }
     | { type: "niche"; channelName: string; projectIds: string[]; count: number };
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  // "New Video" opens a Studio-vs-1Click chooser before creating the fork.
+  const [newVideoGroup, setNewVideoGroup] = useState<ChannelGroup | null>(null);
+  const [startingOneClick, setStartingOneClick] = useState(false);
+  // When 1Click is picked but not configured, the modal swaps to a
+  // "set up first" view instead of navigating away.
+  const [oneClickNeedsSetup, setOneClickNeedsSetup] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
@@ -689,6 +699,7 @@ export default function HomePage() {
     at_limit: boolean;
     plan: string;
     is_admin: boolean;
+    subscription_expired?: boolean;
   }>("/api/usage", fetcher);
 
   // User-only API keys check (admins skip the gate since they can use
@@ -712,7 +723,12 @@ export default function HomePage() {
   const hasOverride = nicheLimitOverride !== null;
 
   function requireSubscription(action: () => void) {
-    if (isPaid || isAdmin) {
+    // An expired subscription (app_metadata.paid can lag true after the
+    // period lapses) must route to the renew/subscribe modal — NOT fall
+    // through to the API-keys gate. subscription_expired is the same
+    // predicate the spend-gated server routes use.
+    const expired = usage?.subscription_expired === true;
+    if ((isPaid && !expired) || isAdmin) {
       action();
     } else {
       setPendingAction(() => action);
@@ -759,8 +775,73 @@ export default function HomePage() {
     router.push(`/projects/new-fork/topic?from=${source.id}`);
   }
 
+  // 1Click path for a new video in an existing niche: fork the niche's
+  // channel (analysis/ideas/visual profile already done), engage autopilot,
+  // and hand straight off to the live view — 1Click takes over immediately.
+  async function doOneClickVideoForChannel(group: ChannelGroup) {
+    const source = [...group.projects].sort((a, b) => b.current_state - a.current_state)[0];
+    setStartingOneClick(true);
+    try {
+      // Check 1Click is configured BEFORE forking — otherwise a not-yet-
+      // configured user would leave an orphan project behind. If it isn't
+      // set up, swap the modal to the "set up first" view (no fork, no nav).
+      const cfgRes = await fetch("/api/one-click/config");
+      const cfg = (await cfgRes.json().catch(() => ({}))) as { configured?: boolean };
+      if (!cfgRes.ok || !cfg.configured) {
+        setOneClickNeedsSetup(true);
+        return;
+      }
+      const full = await (await fetch(`/api/projects/${source.id}`)).json();
+      const forkRes = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fork: {
+            channelUrl:        full.channel_url,
+            channelName:       full.channel_name,
+            channelAnalysis:   full.channel_analysis,
+            channelInfo:       full.channel_info,
+            transcripts:       full.transcripts,
+            visualProfile:     full.visual_profile,
+            thumbnailAnalysis: full.thumbnail_analysis,
+            videoIdeas:        full.video_ideas,
+            // No selectedTopic — 1Click picks per the user's config.
+          },
+        }),
+      });
+      const newProject = await forkRes.json();
+      if (forkRes.status === 403 && newProject.limitReached) {
+        toast.error("You've reached your niche limit. Upgrade your plan to add more.");
+        return;
+      }
+      if (!newProject.id) { toast.error("Couldn't create the video."); return; }
+      const startRes = await fetch("/api/one-click/start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: newProject.id }),
+      });
+      const d = (await startRes.json().catch(() => ({}))) as { error?: string; code?: string };
+      if (!startRes.ok) {
+        if (d.code === "not_configured") {
+          toast.error("Set up 1Click first, then try again.");
+          router.push("/setup?tab=oneclick");
+          return;
+        }
+        throw new Error(d.error ?? `1Click start failed (${startRes.status})`);
+      }
+      void fetch("/api/one-click/tick", { method: "POST" }).catch(() => {});
+      toast.success("1Click engaged — we'll take it from here");
+      router.push(`/projects/${newProject.id}/one-click`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "1Click start failed");
+    } finally {
+      setStartingOneClick(false);
+    }
+  }
+
   function createVideoForChannel(group: ChannelGroup) {
-    requireSubscription(() => requireApiKeys(() => doCreateVideoForChannel(group)));
+    // Gate on subscription + API keys, then let the user pick Studio vs 1Click.
+    requireSubscription(() => requireApiKeys(() => setNewVideoGroup(group)));
   }
 
   async function deleteOne(id: string): Promise<{ id: string; ok: boolean; error?: string; warnings?: string[] }> {
@@ -1006,8 +1087,9 @@ export default function HomePage() {
         <>{(() => {
           const allProjects = channelGroups.flatMap(g => g.projects);
           const total = allProjects.length;
-          const completed = allProjects.filter(p => p.assembly_status === "done").length;
-          const inProgress = allProjects.filter(p => p.assembly_status !== "done" && p.current_state > 0).length;
+          // Complete = final assembled MP4 exists (thumbnails don't count).
+          const completed = allProjects.filter(p => !!p.assembled_url).length;
+          const inProgress = allProjects.filter(p => !p.assembled_url && p.current_state > 0).length;
           const niches = channelGroups.length;
 
           return (
@@ -1572,7 +1654,10 @@ export default function HomePage() {
                   <div className="grid gap-7"
                     style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))" }}>
                     {group.projects.map((p) => {
-                      const assembled = p.assembly_status === "done";
+                      // A video is complete once its final assembled MP4
+                      // exists — thumbnails are an extra step that doesn't
+                      // affect progress/completion.
+                      const assembled = !!p.assembled_url;
                       const path = assembled
                         ? "thumbnails"
                         : (p.current_state === 6 && p.selected_topic)
@@ -1590,7 +1675,7 @@ export default function HomePage() {
                       return (
                         <Link
                           key={p.id}
-                          href={`/projects/${p.id}/${path}`}
+                          href={(p.auto_pilot && !assembled && p.auto_pilot_status !== "stopped") ? `/projects/${p.id}/one-click` : `/projects/${p.id}/${path}`}
                           prefetch
                           onClick={() => setNavigatingTo(`open-video-${p.id}`)}
                           className={`block relative text-left p-6 rounded-2xl transition-all ${isNavigating ? "pointer-events-none" : "hover:scale-[1.01] active:scale-[0.99]"}`}
@@ -1647,6 +1732,20 @@ export default function HomePage() {
                             style={{ color: p.selected_topic ? "var(--c-88)" : "var(--c-40)" }}>
                             {p.selected_topic ?? "No topic selected"}
                           </p>
+
+                          {/* 1Click live controls — only for autopilot
+                              projects still in flight (running / paused /
+                              needs attention). */}
+                          {p.auto_pilot && !isComplete && (
+                            <div className="mb-4">
+                              <OneClickControls
+                                projectId={p.id}
+                                status={p.auto_pilot_status ?? null}
+                                error={p.auto_pilot_error ?? null}
+                                onChanged={() => mutateProjects()}
+                              />
+                            </div>
+                          )}
 
                           <div className="space-y-1.5">
                             <div className="flex justify-between text-xs" style={{ color: "var(--c-38)" }}>
@@ -1801,6 +1900,83 @@ export default function HomePage() {
               ) : "Delete"}
             </button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New Video: Studio vs 1Click chooser */}
+      <Dialog
+        open={!!newVideoGroup}
+        onOpenChange={(open) => { if (!open && !startingOneClick) { setNewVideoGroup(null); setOneClickNeedsSetup(false); } }}
+      >
+        <DialogContent className="sm:max-w-sm" showCloseButton={!startingOneClick}>
+          {oneClickNeedsSetup ? (
+            <>
+              <DialogHeader>
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-1" style={{ background: "oklch(0.72 0.25 285 / 0.12)" }}>
+                  <Zap size={20} style={{ color: "oklch(0.55 0.22 285)" }} />
+                </div>
+                <DialogTitle>Set up 1Click first</DialogTitle>
+                <DialogDescription>
+                  Choose your voice, models, and output once. Then 1Click can make videos hands-off.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-2 mt-1">
+                <button
+                  onClick={() => router.push("/setup?tab=oneclick")}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+                >
+                  Set up 1Click
+                </button>
+                <button
+                  onClick={() => setOneClickNeedsSetup(false)}
+                  className="w-full py-2.5 rounded-xl text-sm font-medium text-zinc-500 hover:text-zinc-800 transition-colors"
+                >
+                  Back
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>New video</DialogTitle>
+                <DialogDescription>Choose how to create it.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-2.5 mt-1">
+                <button
+                  onClick={() => { const g = newVideoGroup; setNewVideoGroup(null); if (g) doCreateVideoForChannel(g); }}
+                  disabled={startingOneClick}
+                  className="group flex items-center gap-3 p-3.5 rounded-xl border border-zinc-200 text-left transition-all hover:bg-zinc-50 disabled:opacity-50"
+                >
+                  <span className="w-9 h-9 shrink-0 rounded-lg bg-zinc-100 flex items-center justify-center">
+                    <SlidersHorizontal size={17} className="text-zinc-600" />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-zinc-900">Studio</span>
+                    <span className="block text-xs text-zinc-500">Build it yourself, step by step.</span>
+                  </span>
+                  <ChevronRight size={16} className="text-zinc-300 group-hover:text-zinc-400" />
+                </button>
+                <button
+                  onClick={() => { if (newVideoGroup) doOneClickVideoForChannel(newVideoGroup); }}
+                  disabled={startingOneClick}
+                  className="group flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all hover:opacity-95 disabled:opacity-60"
+                  style={{ borderColor: "oklch(0.72 0.25 285 / 0.4)", background: "oklch(0.72 0.25 285 / 0.06)" }}
+                >
+                  <span className="w-9 h-9 shrink-0 rounded-lg flex items-center justify-center" style={{ background: "oklch(0.72 0.25 285 / 0.15)" }}>
+                    {startingOneClick
+                      ? <span className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: "oklch(0.55 0.22 285 / 0.4)", borderTopColor: "oklch(0.55 0.22 285)" }} />
+                      : <Zap size={17} style={{ color: "oklch(0.55 0.22 285)" }} />}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-zinc-900">{startingOneClick ? "Starting 1Click…" : "1Click"}</span>
+                    <span className="block text-xs text-zinc-500">Hands-off. We make the whole video.</span>
+                  </span>
+                  {!startingOneClick && <ChevronRight size={16} style={{ color: "oklch(0.72 0.25 285 / 0.5)" }} />}
+                </button>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

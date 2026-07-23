@@ -3,13 +3,14 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound } from "lucide-react";
+import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound, SlidersHorizontal, CreditCard, Gift, Users } from "lucide-react";
+import { OneClickConfigPanel } from "@/components/one-click/OneClickConfigPanel";
 import { Spinner } from "@/components/ui/spinner";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import Image from "next/image";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { FREE_TIER_COMING_SOON } from "@/lib/free-tier-flag";
+import { FREE_TIER_COMING_SOON, FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
 
 type Tier = "paid" | "free";
 
@@ -159,7 +160,7 @@ const SERVICES: ServiceCard[] = [
   {
     tier: "free",
     quota: "50k–100k chars/month",
-    title: "Qwen Voices (Free voiceover — on us)",
+    title: "ai33 Voices (Free voiceover — on us)",
     sub: "Included with every account — runs on Heclus's own infrastructure, nothing to connect",
     perk: true,
     steps: [
@@ -188,22 +189,6 @@ const SERVICES: ServiceCard[] = [
       <>Paste the Account ID and the token below and hit <b>Save</b>.</>,
     ],
     fields: ["cloudflare_account_id", "cloudflare_api_token"],
-  },
-  {
-    tier: "free",
-    quota: "1M chars/month",
-    title: "Google Cloud TTS (Free voiceover)",
-    sub: "Powers the Free voiceover option — 1,000,000 characters/month free on your own account",
-    href: "https://console.cloud.google.com",
-    linkLabel: "console.cloud.google.com",
-    steps: [
-      <>Create a Google Cloud project at <ExtLink href="https://console.cloud.google.com/projectcreate">console.cloud.google.com/projectcreate</ExtLink> — any name works.</>,
-      <>Enable billing for it at <ExtLink href="https://console.cloud.google.com/billing">console.cloud.google.com/billing</ExtLink>. Don&apos;t worry: the first 1M characters each month are free and never charged.</>,
-      <>Turn on the Text-to-Speech API: open <ExtLink href="https://console.cloud.google.com/apis/library/texttospeech.googleapis.com">this page</ExtLink> and click <b>Enable</b>.</>,
-      <>Create your key: open the <ExtLink href="https://console.cloud.google.com/apis/credentials">Credentials page</ExtLink> → <b>+ Create credentials</b> → <b>API key</b> → copy it.</>,
-      <>Paste the key below and hit <b>Save</b>.</>,
-    ],
-    fields: ["google_tts_key"],
   },
 ];
 
@@ -277,6 +262,101 @@ function AddUserSection() {
   );
 }
 
+// Account-level character-consistency default. A single statement
+// appended to EVERY image prompt across all projects (each project can
+// still override or detach it in its Prompts step). Free text, not a
+// secret — persisted (including when cleared to empty) via /api/settings.
+function CharacterConsistencyDefaults() {
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((data) => {
+        setText((data?.character_consistency_text as string) ?? "");
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ character_consistency_text: text }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Save failed");
+      toast.success("Character consistency default saved.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save default");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" } as const;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+          <Users size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Character Consistency</h2>
+          <p className="text-xs" style={{ color: "var(--c-45)" }}>
+            A reusable statement added to <b>every</b> image prompt to keep your
+            character and style the same. Applies to all projects. Each project
+            can change or turn it off in its Prompts step.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 py-4" style={{ color: "var(--c-40)" }}>
+          <Spinner size={16} />
+          <span className="text-sm">Loading…</span>
+        </div>
+      ) : (
+        <div className="p-5 rounded-2xl space-y-4"
+          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+          <div className="space-y-2">
+            <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>
+              Consistency text
+            </label>
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              rows={4}
+              placeholder="e.g. Recurring character: a 30-year-old woman, red curly hair, green parka. Flat 2D illustration style, warm palette. Keep her face, hairstyle and outfit identical across every image."
+              className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all resize-y"
+              style={inputStyle}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+            style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+          >
+            {saving ? <Spinner size={14} /> : <Save size={14} />}
+            {saving ? "Saving…" : "Save Default"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const router = useRouter();
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -292,6 +372,17 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState<Tier>("paid");
+  // Top-level split: API keys (the existing paid/free cards), the
+  // full-page 1Click preference editor, and the account-level
+  // Character Consistency default. Deep-linkable via
+  // /setup?tab=oneclick or /setup?tab=consistency (read from location
+  // to avoid the useSearchParams/Suspense dance on this client page).
+  const [mainTab, setMainTab] = useState<"keys" | "oneclick" | "consistency">("keys");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "oneclick" || t === "consistency") setMainTab(t);
+  }, []);
   const [userEmail, setUserEmail] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
@@ -434,25 +525,60 @@ export default function SettingsPage() {
 
       <main className="flex-1 w-full max-w-none px-4 sm:px-8 lg:px-12 py-8 sm:py-14">
 
-        {/* Tabs: PAID / FREE */}
-        <div className="flex gap-1 mb-10 p-1 rounded-xl w-full"
+        {/* Top-level tabs: API KEYS / 1CLICK / CHARACTER CONSISTENCY */}
+        <div className="flex gap-1 mb-6 p-1 rounded-xl w-full"
           style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-          {(["paid", "free"] as const).map((t) => (
+          {([["keys", "API Keys"], ["oneclick", "1Click"], ["consistency", "Character Consistency"]] as const).map(([id, label]) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
+              key={id}
+              onClick={() => setMainTab(id)}
               className="flex-1 py-2 rounded-lg text-xs font-bold tracking-widest uppercase transition-all cursor-pointer"
               style={{
-                background: tab === t ? "oklch(0.72 0.25 285)" : "transparent",
-                color: tab === t ? "white" : "var(--c-45)",
+                background: mainTab === id ? "oklch(0.72 0.25 285)" : "transparent",
+                color: mainTab === id ? "white" : "var(--c-45)",
               }}
             >
-              {t === "free" && FREE_TIER_COMING_SOON ? (
+              {id === "oneclick" ? (
+                <span className="inline-flex items-center gap-1.5"><SlidersHorizontal size={12} /> {label}</span>
+              ) : id === "consistency" ? (
+                <span className="inline-flex items-center gap-1.5"><Users size={12} /> {label}</span>
+              ) : label}
+            </button>
+          ))}
+        </div>
+
+        {mainTab === "oneclick" ? (
+          <OneClickConfigPanel />
+        ) : mainTab === "consistency" ? (
+          <div className="w-full max-w-2xl mx-auto">
+            <CharacterConsistencyDefaults />
+          </div>
+        ) : (
+        <>
+        {/* Sub-tabs: PAID / FREE — same segmented style as the generate
+            step's Images / Videos / Both switcher. */}
+        <div className="flex items-center gap-1 rounded-xl p-1 mb-10"
+          style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
+          {([
+            { key: "paid" as const, label: "Paid", icon: <CreditCard size={15} /> },
+            { key: "free" as const, label: "Free", icon: <Gift size={15} /> },
+          ]).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              aria-pressed={tab === t.key}
+              className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              style={tab === t.key
+                ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)" }
+                : { color: "var(--c-55)" }}
+            >
+              {t.icon}
+              {t.key === "free" && FREE_TTS_COMING_SOON ? (
                 <span className="flex flex-col items-center leading-tight">
-                  <span>😄 Free</span>
+                  <span>Free</span>
                   <span className="text-[9px] font-semibold normal-case tracking-normal">coming soon</span>
                 </span>
-              ) : t}
+              ) : t.label}
             </button>
           ))}
         </div>
@@ -473,7 +599,7 @@ export default function SettingsPage() {
             </p>
           </div>
 
-          {tab === "free" && FREE_TIER_COMING_SOON ? (
+          {tab === "free" && FREE_TTS_COMING_SOON ? (
             <FreeComingSoonCard />
           ) : loading ? (
             <div className="flex items-center gap-2 py-6" style={{ color: "var(--c-40)" }}>
@@ -485,7 +611,14 @@ export default function SettingsPage() {
               {/* items-start keeps cards their natural height instead of
                   stretching to the tallest sibling in the row. */}
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 items-start">
-                {SERVICES.filter((svc) => svc.tier === tab).map((svc, idx) => (
+                {SERVICES.filter((svc) => {
+                  if (svc.tier !== tab) return false;
+                  // Free IMAGES (Cloudflare) is still coming soon — hide its
+                  // card while that flag is on, so the live Free tab shows
+                  // only the ai33 voiceover perk.
+                  if (tab === "free" && FREE_TIER_COMING_SOON && svc.fields.includes("cloudflare_account_id")) return false;
+                  return true;
+                }).map((svc, idx) => (
                   <div key={svc.title} className="p-5 rounded-2xl space-y-4"
                     style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
                     {/* Card header */}
@@ -621,6 +754,8 @@ export default function SettingsPage() {
           {/* Add User — admin only */}
           {isAdmin && <AddUserSection />}
         </div>
+        </>
+        )}
 
       </main>
     </div>

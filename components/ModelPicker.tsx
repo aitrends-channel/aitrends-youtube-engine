@@ -41,6 +41,10 @@ interface CommonProps {
   /** Override the "Tip: if a model keeps failing…" hint, or pass an
    *  empty string to hide it entirely. */
   tip?: string;
+  /** Hide the All / Fastest / Cheapest / Free category tabs and pin the
+   *  list to "all". Used by the 1Click config, where category browsing
+   *  is noise and the Free tab's BYO gating doesn't apply. */
+  hideCategoryTabs?: boolean;
 }
 
 interface ImageModelPickerProps extends CommonProps {
@@ -242,6 +246,7 @@ export function ModelPicker(props: ModelPickerProps) {
         Select Model
       </p>
 
+      {!props.hideCategoryTabs && (
       <div className="flex gap-1 mb-2 p-0.5 rounded-lg" style={{ background: "var(--bg-track)" }}>
         {(["all", "fastest", "cheapest", "free"] as const).map((t) => (
           <button
@@ -265,8 +270,9 @@ export function ModelPicker(props: ModelPickerProps) {
           </button>
         ))}
       </div>
+      )}
 
-      {tab === "free" ? (
+      {tab === "free" && !props.hideCategoryTabs ? (
         FREE_TIER_COMING_SOON ? (
           // TEMPORARY (lib/free-tier-flag.ts): free tier paused — warm
           // "coming soon" card, same copy the tab originally shipped

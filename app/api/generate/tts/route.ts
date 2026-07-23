@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
 import { isGoogleVoice } from "@/lib/google/tts";
 import { isQwenVoice } from "@/lib/replicate/tts";
+import { isAi33Voice } from "@/lib/ai33/tts";
 import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
@@ -47,7 +48,7 @@ export async function POST(req: Request) {
           // Google BYO voices draw the user's own free monthly quota — count
           // them into free_usage for the Free-tab usage bar; only ElevenLabs
           // voices are a real cost-ledger charge.
-          if (charsConsumed && !isGoogleVoice(voiceId) && !isQwenVoice(voiceId)) {
+          if (charsConsumed && !isGoogleVoice(voiceId) && !isQwenVoice(voiceId) && !isAi33Voice(voiceId)) {
             void logProjectCost({
               projectId,
               userId: user.id,
@@ -62,6 +63,9 @@ export async function POST(req: Request) {
           } else if (charsConsumed && isQwenVoice(voiceId)) {
             // Heclus-paid perk — counted against the per-user monthly cap.
             void incrementFreeUsage(user.id, "qwen_tts_chars", charsConsumed);
+          } else if (charsConsumed && isAi33Voice(voiceId)) {
+            // Heclus-paid perk — counted against the per-user monthly cap.
+            void incrementFreeUsage(user.id, "ai33_tts_chars", charsConsumed);
           }
 
           send({ type: "status", message: "Uploading audio..." });

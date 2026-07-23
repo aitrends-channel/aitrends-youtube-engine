@@ -18,7 +18,9 @@ import { SequentialVoiceoverPreview } from "@/components/voiceover/SequentialVoi
 import { BeatAudioPlayer } from "@/components/voiceover/BeatAudioPlayer";
 import { GOOGLE_VOICES, isGoogleVoice } from "@/lib/google/tts";
 import { QWEN_VOICES, isQwenVoice } from "@/lib/replicate/tts";
-import { FREE_TIER_COMING_SOON } from "@/lib/free-tier-flag";
+import { AI33_VOICES, isAi33Voice } from "@/lib/ai33/tts";
+import { VoiceOption } from "@/components/VoiceOption";
+import { FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
 import { RotateCw, ChevronUp, ChevronDown, Download } from "lucide-react";
 
 // Per-beat voiceover step. Each beat shows its own row with status,
@@ -43,129 +45,6 @@ interface LiveBeatState {
   status: BeatStatus;
   url?: string;
   error?: string;
-}
-
-// ── Voice picker (mirrors the generate page's VoiceOption) ──────────
-function VoiceOption({
-  model, selected, onSelect, isPlaying, onPlayToggle,
-}: {
-  model: KieModel; selected: boolean; onSelect: () => void;
-  isPlaying: boolean; onPlayToggle: (id: string | null) => void;
-}) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  useEffect(() => {
-    if (!isPlaying && audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      audioRef.current = null;
-    }
-  }, [isPlaying]);
-  useEffect(() => () => { audioRef.current?.pause(); }, []);
-  async function togglePreview(e: React.MouseEvent) {
-    e.stopPropagation();
-    if (!model.previewUrl) return;
-    if (isPlaying) {
-      onPlayToggle(null);
-      return;
-    }
-    onSelect();
-
-    // Same-origin dynamic previews (the free Google voices → our /preview
-    // route) are auth'd and take a couple seconds to synthesize. Fetch
-    // them explicitly so we can (a) play reliably from a blob and (b)
-    // surface the error — "connect your key", quota, etc. — instead of
-    // failing silently. ElevenLabs previews are CROSS-ORIGIN static mp3s,
-    // where fetch() would trip CORS, so those keep the direct-Audio path.
-    const isDynamic = model.previewUrl.startsWith("/");
-    if (!isDynamic) {
-      const audio = new Audio(model.previewUrl);
-      audioRef.current = audio;
-      audio.onended = () => onPlayToggle(null);
-      audio.onerror = () => onPlayToggle(null);
-      audio.play().catch(() => onPlayToggle(null));
-      onPlayToggle(model.id);
-      return;
-    }
-
-    onPlayToggle(model.id); // show the "playing" state while it loads
-    try {
-      const res = await fetch(model.previewUrl);
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error || `Preview failed (${res.status})`);
-      }
-      const url = URL.createObjectURL(await res.blob());
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      const cleanup = () => { onPlayToggle(null); URL.revokeObjectURL(url); };
-      audio.onended = cleanup;
-      audio.onerror = cleanup;
-      await audio.play();
-    } catch (err) {
-      onPlayToggle(null);
-      toast.error(err instanceof Error ? err.message : "Voice preview failed");
-    }
-  }
-  return (
-    <div
-      role="button"
-      onClick={onSelect}
-      className="cursor-pointer p-3 rounded-xl transition-all select-none"
-      style={selected ? {
-        background: "oklch(0.72 0.25 285 / 0.1)",
-        border: "1px solid oklch(0.72 0.25 285 / 0.3)",
-        color: "var(--c-90)",
-      } : {
-        background: "var(--bg-input)",
-        // Voice picker items keep the subtle default border — the white
-        // card border is only for the step's content panels.
-        border: "1px solid var(--bd-7)",
-        color: "var(--c-60)",
-      }}
-    >
-      <div className="flex items-center gap-2">
-        <p className="font-medium text-xs flex-1 truncate">
-          {model.name}
-          {(model.id.startsWith("google/") || model.id.startsWith("qwen/")) && (
-            <span style={{ color: "var(--primary)" }}> - free</span>
-          )}
-        </p>
-        {model.previewUrl && (
-          <button
-            onClick={togglePreview}
-            title={isPlaying ? "Stop preview" : "Preview voice"}
-            className="w-6 h-6 rounded flex items-center justify-center shrink-0 transition-colors"
-            style={{
-              background: isPlaying ? "oklch(0.72 0.25 285 / 0.15)" : "oklch(0.2 0 0)",
-              color: isPlaying ? "oklch(0.72 0.25 285)" : "var(--c-45)",
-              border: "1px solid var(--bd-10)",
-            }}
-          >
-            {isPlaying ? (
-              <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
-                <rect x="0.5" y="0" width="2.5" height="8" rx="0.5" />
-                <rect x="5" y="0" width="2.5" height="8" rx="0.5" />
-              </svg>
-            ) : (
-              <svg width="7" height="9" viewBox="0 0 7 9" fill="currentColor">
-                <path d="M0 0.5L7 4.5L0 8.5V0.5Z" />
-              </svg>
-            )}
-          </button>
-        )}
-      </div>
-      {model.tags && model.tags.length > 0 && (
-        <div className="flex gap-1 mt-1.5 flex-wrap">
-          {model.tags.map((tag) => (
-            <span key={tag} className="px-1.5 py-0.5 rounded text-xs"
-              style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ── Status pill ─────────────────────────────────────────────────────
@@ -319,7 +198,7 @@ export default function VoiceoverPage({ params }: PageProps) {
   // opened and refreshed after generation so the bar reflects new chars.
   // Declared after `generating` so the effect below can depend on it without
   // a temporal-dead-zone error.
-  const [freeTtsUsage, setFreeTtsUsage] = useState<{ ttsChars: number; ttsCap: number; qwenTtsChars: number; qwenTtsCap: number } | null>(null);
+  const [freeTtsUsage, setFreeTtsUsage] = useState<{ ttsChars: number; ttsCap: number; qwenTtsChars: number; qwenTtsCap: number; ai33TtsChars: number; ai33TtsCap: number } | null>(null);
   useEffect(() => {
     if (voiceTab !== "free") return;
     let cancelled = false;
@@ -327,7 +206,7 @@ export default function VoiceoverPage({ params }: PageProps) {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (cancelled || !d || typeof d.ttsChars !== "number") return;
-        setFreeTtsUsage({ ttsChars: d.ttsChars, ttsCap: d.ttsCap ?? 1_000_000, qwenTtsChars: d.qwenTtsChars ?? 0, qwenTtsCap: d.qwenTtsCap ?? 50_000 });
+        setFreeTtsUsage({ ttsChars: d.ttsChars, ttsCap: d.ttsCap ?? 1_000_000, qwenTtsChars: d.qwenTtsChars ?? 0, qwenTtsCap: d.qwenTtsCap ?? 50_000, ai33TtsChars: d.ai33TtsChars ?? 0, ai33TtsCap: d.ai33TtsCap ?? 50_000 });
       })
       .catch(() => { /* fail-soft: bar just shows "…" */ });
     return () => { cancelled = true; };
@@ -846,7 +725,7 @@ export default function VoiceoverPage({ params }: PageProps) {
     // Free Google voices aren't in the ElevenLabs catalog (ttsModels) — they
     // carry a "google/" prefix and are validated by the backend against the
     // user's connected key, so accept them here without a catalog match.
-    const valid = !!selectedVoice && (isGoogleVoice(selectedVoice) || isQwenVoice(selectedVoice) || (ttsModels ? ttsModels.some((m) => m.id === selectedVoice) : true));
+    const valid = !!selectedVoice && (isGoogleVoice(selectedVoice) || isQwenVoice(selectedVoice) || isAi33Voice(selectedVoice) || (ttsModels ? ttsModels.some((m) => m.id === selectedVoice) : true));
     if (valid) return true;
     setConfirm({
       title: "Select a voice first",
@@ -1048,7 +927,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                       cloned · generated · professional
                     </span>
                   </span>
-                ) : tab === "free" && FREE_TIER_COMING_SOON ? (
+                ) : tab === "free" && FREE_TTS_COMING_SOON ? (
                   <span className="flex flex-col items-center leading-tight">
                     <span>😄 Free</span>
                     <span className="text-[9px] font-semibold normal-case">coming soon</span>
@@ -1057,10 +936,8 @@ export default function VoiceoverPage({ params }: PageProps) {
               ))}
             </div>
             {voiceTab === "free" ? (
-              FREE_TIER_COMING_SOON ? (
-                // TEMPORARY (lib/free-tier-flag.ts): free tier paused —
-                // the tab's original "coming soon" card. The functional
-                // Google-TTS branches below stay intact for the flip back.
+              FREE_TTS_COMING_SOON ? (
+                // TEMPORARY (lib/free-tier-flag.ts): free voiceover paused.
                 <div className="rounded-xl px-4 py-8 text-center"
                   style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
                   <p className="text-base font-bold" style={{ color: "var(--primary)" }}>
@@ -1077,37 +954,33 @@ export default function VoiceoverPage({ params }: PageProps) {
                   </p>
                 </div>
               ) : (
-              // Two free providers, stacked. Qwen (Replicate) runs on
-              // HECLUS's token — a perk, capped per user per month, no
-              // setup needed. Google is BYO on the user's own key and
-              // 1M chars/month quota, so only that section gates on
-              // the key being connected.
+              // Free voiceover = the ai33 perk only. Runs on HECLUS's own
+              // ai33 token, capped per user per month, no setup needed.
               <div className="scroll-themed space-y-4 max-h-[26rem] overflow-y-auto pr-1">
-                {freeTtsUsage && freeTtsUsage.qwenTtsCap <= 0 ? (
-                  // Plan gate: qwenTtsCap 0 = Qwen isn't included in this
-                  // plan (Founder). The server enforces the same rule, so
-                  // this card is honest, not just cosmetic.
+                {freeTtsUsage && freeTtsUsage.ai33TtsCap <= 0 ? (
+                  // Plan gate: ai33TtsCap 0 = not included in this plan
+                  // (Founder). The server enforces the same rule.
                   <div className="rounded-xl px-4 py-5 text-center"
                     style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
                     <p className="text-sm font-medium" style={{ color: "var(--c-70)" }}>
-                      Qwen voices aren&apos;t included in the Founder plan
+                      Free voices aren&apos;t included in the Founder plan
                     </p>
                     <p className="text-xs mt-1.5" style={{ color: "var(--c-45)" }}>
-                      Use the free Google voices below on your own key, or a paid voice.
+                      Pick a paid voice, or upgrade your plan.
                     </p>
                   </div>
                 ) : (
                 <div className="space-y-2">
                   <FreeQuotaBar
-                    label="Qwen voices"
+                    label="ai33 voices"
                     badge="Heclus perks 🎁"
                     badgeNote="You use, we pay"
-                    used={freeTtsUsage?.qwenTtsChars ?? 0}
-                    cap={freeTtsUsage?.qwenTtsCap ?? 50_000}
+                    used={freeTtsUsage?.ai33TtsChars ?? 0}
+                    cap={freeTtsUsage?.ai33TtsCap ?? 50_000}
                     loaded={!!freeTtsUsage}
                   />
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {QWEN_VOICES.map((m) => (
+                    {AI33_VOICES.map((m) => (
                       <VoiceOption
                         key={m.id}
                         model={m}
@@ -1119,47 +992,6 @@ export default function VoiceoverPage({ params }: PageProps) {
                     ))}
                   </div>
                 </div>
-                )}
-
-                {googleTtsSet === false ? (
-                  // No Google Cloud TTS key yet — section-level setup
-                  // prompt; the Qwen voices above still work without it.
-                  <div
-                    className="rounded-xl px-4 py-6 text-center"
-                    style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}
-                  >
-                    <p className="text-sm font-medium" style={{ color: "var(--c-70)" }}>
-                      Want more free voices? Connect your Google Cloud TTS key
-                    </p>
-                    <a
-                      href="/setup"
-                      className="mt-3 inline-flex items-center px-4 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-90"
-                      style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
-                    >
-                      Go to setup
-                    </a>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <FreeQuotaBar
-                      label="Google Cloud TTS"
-                      used={freeTtsUsage?.ttsChars ?? 0}
-                      cap={freeTtsUsage?.ttsCap ?? 1_000_000}
-                      loaded={!!freeTtsUsage}
-                    />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {GOOGLE_VOICES.map((m) => (
-                        <VoiceOption
-                          key={m.id}
-                          model={m}
-                          selected={selectedVoice === m.id}
-                          onSelect={() => setSelectedVoice(m.id)}
-                          isPlaying={previewingId === m.id}
-                          onPlayToggle={setPreviewingId}
-                        />
-                      ))}
-                    </div>
-                  </div>
                 )}
               </div>
               )
@@ -1231,7 +1063,7 @@ export default function VoiceoverPage({ params }: PageProps) {
               // Resolve the name from the ElevenLabs catalog OR the free
               // Google catalog so a selected free voice shows its name too.
               const model = selectedVoice
-                ? (ttsModels?.find((m) => m.id === selectedVoice) ?? GOOGLE_VOICES.find((m) => m.id === selectedVoice) ?? QWEN_VOICES.find((m) => m.id === selectedVoice))
+                ? (ttsModels?.find((m) => m.id === selectedVoice) ?? GOOGLE_VOICES.find((m) => m.id === selectedVoice) ?? QWEN_VOICES.find((m) => m.id === selectedVoice) ?? AI33_VOICES.find((m) => m.id === selectedVoice))
                 : null;
               const tag = model?.tags?.[0];
               return (

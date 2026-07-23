@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { submitImageTask, checkImageTask } from "@/lib/kie/images";
+import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { KieUpstreamError } from "@/lib/kie/client";
 import { generateCloudflareImage, isCloudflareModel, CloudflareError } from "@/lib/cloudflare/images";
 import { incrementFreeUsage } from "@/lib/freeUsage";
@@ -65,6 +66,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Beat ${beatNumber} has no image prompt` }, { status: 400 });
     }
 
+    // Character-consistency text appended to the prompt only for the
+    // generator call — the (possibly edited) imagePrompt is what we
+    // persist to image_prompt below, kept clean.
+    const consistency = await resolveConsistency(user.id, projectId);
+    const sentPrompt = applyConsistency(imagePrompt, consistency.text, consistency.append);
+
     // 1. Snapshot existing image so we can delete it after the new
     //    one is live in the DB.
     const { data: beatRow } = await supabase
@@ -84,7 +91,18 @@ export async function POST(req: Request) {
         .eq("project_id", projectId)
         .eq("beat_number", beatNumber);
 
-      const { buffer, contentType } = await generateCloudflareImage(imagePrompt, modelId, aspectRatio, user.id);
+      let buffer: ArrayBuffer, contentType: string;
+      try {
+        ({ buffer, contentType } = await generateCloudflareImage(sentPrompt, modelId, aspectRatio, user.id));
+      } catch (err) {
+        // No task id → nothing will rescue a "generating" beat; flip to
+        // failed before surfacing the error so it doesn't spin forever.
+        await supabase.from("project_beats")
+          .update({ image_status: "failed", image_task_id: null })
+          .eq("project_id", projectId)
+          .eq("beat_number", beatNumber);
+        throw err;
+      }
       const folder = userFolderFor({ id: user.id, email: user.email ?? null });
       const storagePath = `${folder}/${projectId}/images/beat-${beatNumber}_${Date.now()}.jpg`;
       const publicUrl = await uploadBuffer(storagePath, buffer, contentType);
@@ -115,7 +133,7 @@ export async function POST(req: Request) {
     //    as "how long this model took". Powers the picker's
     //    "Fastest" tab ranking.
     const submitT0 = Date.now();
-    const taskId = await submitImageTask(imagePrompt, modelId, aspectRatio, resolution, user.id);
+    const taskId = await submitImageTask(sentPrompt, modelId, aspectRatio, resolution, user.id);
     console.log(`[images/regenerate] beat=${beatNumber} model=${modelId} taskId=${taskId}`);
 
     // 3. Mark in-flight. A page refresh between submit and complete

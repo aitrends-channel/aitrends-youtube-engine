@@ -44,6 +44,10 @@ export const FREE_IMAGE_MODELS: KieModel[] = [
     tags: ["Free", "Aspect ratios"],
     description: "Free — standard SDXL, supports aspect ratios.",
   },
+  // NOTE: Gemini (gemini/flash-image) was briefly listed here but removed:
+  // Google's API free tier has a hard limit of 0 image requests (verified
+  // live July 2026) — every call 429s without billing enabled, so it can't
+  // honestly sit in a "Free" tab.
 ];
 
 export interface ModelConfig {
