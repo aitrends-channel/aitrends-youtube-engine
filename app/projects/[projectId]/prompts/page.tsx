@@ -8,7 +8,7 @@ import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown, Download, Check } from "lucide-react";
 import type { Beat } from "@/lib/types";
 
 // ── Sub-components ─────────────────────────────────────────────────────────
@@ -209,7 +209,7 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview }: { beat: Beat
               <div className="mb-2 rounded-lg px-3 py-2"
                 style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px dashed oklch(0.72 0.25 285 / 0.3)" }}>
                 <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "oklch(0.72 0.25 285)" }}>
-                  + Character consistency (added before the prompt)
+                  + Prefix (added before the prompt)
                 </p>
                 <p className="text-xs leading-relaxed" style={{ color: "var(--c-60)" }}>{consistencyPreview}</p>
               </div>
@@ -636,15 +636,19 @@ async function streamStep(
   return doneReceived;
 }
 
-// Per-project character-consistency override. A single statement
-// appended to every image prompt at generation time, plus an
-// append/detach switch. NULL text on the project row = inherit the
-// account default (set in Settings); a value (including "") overrides it
-// for this project only. Nothing here is baked into the stored beat
-// prompts — it's applied only when a prompt is sent to the image
-// generator, so edits take effect on the next generate without
+// Per-project prompt prefix (stored in the character_consistency_*
+// columns, which predate the rename). A single statement placed in front
+// of every image prompt at generation time. NULL text on the project row
+// = inherit the account default (set in Settings); a value (including "")
+// overrides it for this project only. Nothing here is baked into the
+// stored beat prompts — it's applied only when a prompt is sent to the
+// image generator, so edits take effect on the next generate without
 // regenerating the prompts.
-function CharacterConsistencyPanel({
+//
+// Two controls: Save (writes the text and applies it) and Remove, which
+// appears only when a prefix exists and clears it from the database. The
+// old Add/Detach switch is gone — Save implies "apply".
+function PrefixPanel({
   projectId,
   project,
   mutate,
@@ -672,7 +676,7 @@ function CharacterConsistencyPanel({
     setHydrated(true);
   }, [project, hydrated]);
 
-  async function persist(nextText: string | null, nextAppend: boolean) {
+  async function persist(nextText: string | null, nextAppend: boolean, successMsg: string) {
     setSaving(true);
     try {
       const res = await fetch(`/api/projects/${projectId}`, {
@@ -684,7 +688,7 @@ function CharacterConsistencyPanel({
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Save failed");
       }
-      toast.success("Character consistency saved for this project.");
+      toast.success(successMsg);
       mutate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save");
@@ -693,9 +697,34 @@ function CharacterConsistencyPanel({
     }
   }
 
+  // Clear the project's stored prefix AND switch off application, then
+  // persist both — so Remove takes the prefix out of the database rather
+  // than only detaching it locally until the next Save. append:false is
+  // what stops an inherited account default from taking over once the
+  // project's own text is null (applyConsistency returns the base prompt
+  // untouched when apply is false).
+  async function remove() {
+    setText(null);
+    setAppend(false);
+    await persist(null, false, "Prefix removed.");
+  }
+
   const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" } as const;
-  const hasOverride = text !== null;
-  const badge = !append ? "Detached" : hasOverride ? "Custom" : "Account default";
+  // Fixed label. It names what the panel is for rather than reporting
+  // state — the pill's colour still tracks whether a prefix is applied,
+  // and the panel body carries the detail.
+  const badge = "Add prefix";
+
+  // Remove is offered only when a prefix actually exists, judged on the
+  // SAVED row rather than the editor draft — otherwise merely typing would
+  // surface a Remove button for a prefix that was never stored.
+  const savedText = (project?.character_consistency_text as string | null | undefined) ?? null;
+  const savedAppend = (project?.character_consistency_append as boolean | null | undefined) ?? true;
+  const hasPrefix = savedAppend && (savedText ?? defText).trim().length > 0;
+
+  // Nothing to save while the field holds no override (null = inheriting)
+  // or while the draft still matches what's stored.
+  const canSave = text !== null && text !== savedText;
 
   return (
     <div className="rounded-xl overflow-hidden self-start w-full"
@@ -704,12 +733,16 @@ function CharacterConsistencyPanel({
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors"
       >
-        <span className="text-xs font-semibold" style={{ color: "var(--c-70)" }}>Character consistency</span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded-full"
+        {/* No title on the left — the badge is the only header label, so it
+            doubles as the affordance for opening the panel. */}
+        <span className="text-[10px] px-3 py-1.5 rounded-full"
           style={append
             ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.4)" }
             : { background: "var(--bg-panel)", color: "var(--c-45)", border: "1px solid var(--bd-card)" }}>
           {badge}
+        </span>
+        <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: "oklch(0.65 0.24 25)" }}>
+          New
         </span>
         <span className="ml-auto" style={{ color: "var(--c-45)" }}>
           {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -719,72 +752,47 @@ function CharacterConsistencyPanel({
       {open && (
         <div className="px-3 pb-3 space-y-3" style={{ borderTop: "1px solid var(--bd-card)" }}>
           <p className="text-[11px] leading-relaxed pt-3" style={{ color: "var(--c-45)" }}>
-            Added to every image prompt to keep your character consistent.
-            Leave blank to use your account default. Applies on the next
-            image generation.
+            Leads every image prompt from the next generation on. Blank
+            uses your account default.
           </p>
 
-          {/* Add / detach switch */}
-          <div className="rounded-lg p-1 flex gap-1 w-fit"
-            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-            {([
-              { on: true, label: "Add" },
-              { on: false, label: "Detach" },
-            ]).map((opt) => {
-              const active = append === opt.on;
-              return (
-                <button
-                  key={opt.label}
-                  onClick={() => setAppend(opt.on)}
-                  className="px-3 py-1 rounded-md text-xs font-medium transition-all"
-                  style={active ? {
-                    background: "oklch(0.72 0.25 285 / 0.15)",
-                    border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                    color: "oklch(0.88 0.12 285)",
-                  } : {
-                    background: "transparent",
-                    border: "1px solid transparent",
-                    color: "var(--c-55)",
-                  }}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
-
           <div className="space-y-1.5">
-            <label className="text-[11px] font-medium" style={{ color: "var(--c-50)" }}>Consistency text</label>
+            <label className="text-[11px] font-medium" style={{ color: "var(--c-50)" }}>Prefix text</label>
+            {/* Always editable. With the Add button gone there's no switch
+                to turn application back on, so disabling this while removed
+                would leave no route back to having a prefix — Save is that
+                route, and it re-applies. */}
             <textarea
               value={text ?? ""}
               onChange={(e) => setText(e.target.value)}
               rows={3}
-              disabled={!append}
-              placeholder={text === null && defText ? `Inheriting: ${defText}` : "Recurring character and style kept identical across every image…"}
-              className="w-full px-3 py-2 rounded-lg text-xs outline-none transition-all resize-y disabled:opacity-50"
+              placeholder={text === null && defText ? `Inheriting: ${defText}` : "Text placed in front of every image prompt…"}
+              className="w-full px-3 py-2 rounded-lg text-xs outline-none transition-all resize-y"
               style={inputStyle}
               onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
               onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
             />
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Saving always re-applies the prefix (append:true) — it's the
+                only way back after a Remove. */}
             <button
-              onClick={() => persist(text, append)}
-              disabled={saving}
+              onClick={() => persist(text, true, "Prefix saved for this project.")}
+              disabled={saving || !canSave}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50"
               style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
             >
               {saving ? "Saving…" : "Save"}
             </button>
-            {hasOverride && (
+            {hasPrefix && (
               <button
-                onClick={() => { setText(null); persist(null, append); }}
+                onClick={remove}
                 disabled={saving}
                 className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 disabled:opacity-50"
                 style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-card)" }}
               >
-                Reset to account default
+                {saving ? "Removing…" : "Remove"}
               </button>
             )}
           </div>
@@ -875,6 +883,12 @@ export default function PromptsPage({ params }: PageProps) {
   const [imageStopState, setImageStopState] = useState<{ stoppedAt: number; snapshot: number } | null>(null);
   const [videoStopState, setVideoStopState] = useState<{ stoppedAt: number; snapshot: number } | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("beats");
+  const [exportingDocx, setExportingDocx] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  // Which prompt kinds go into the export. Both on = the whole set; the
+  // format buttons are disabled while neither is ticked.
+  const [exportImage, setExportImage] = useState(true);
+  const [exportVideo, setExportVideo] = useState(true);
   const [navigating, setNavigating] = useState(false);
   // Image prompt style — General is the current behaviour; Cinematic
   // adds filmic cues on top of the visual profile at generation time.
@@ -908,6 +922,42 @@ export default function PromptsPage({ params }: PageProps) {
       });
       mutate();
     } catch { /* best-effort — the next generate click still sends the current selection */ }
+  }
+
+  // Download every beat's image + video prompt. Both formats hit the same
+  // scope:"prompts" export, so the file holds only the prompts — not the
+  // ideas/script/thumbnail sections the Generate step's full export has.
+  async function exportPrompts(format: "pdf" | "docx") {
+    setExportMenuOpen(false);
+    setExportingDocx(true);
+    try {
+      const res = await fetch(`/api/export/${format}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          scope: "prompts",
+          parts: { image: exportImage, video: exportVideo },
+        }),
+      });
+      if (!res.ok) throw new Error((await res.text().catch(() => "")) || "Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      // Mirrors the server's filenameBase — a blob download takes its name
+      // from here, not from Content-Disposition.
+      const suffix = exportImage && exportVideo
+        ? "prompts"
+        : exportImage ? "image_prompts" : "video_prompts";
+      a.download = `${(project?.channel_name ?? "export").replace(/\s+/g, "_")}_${suffix}.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setExportingDocx(false);
+    }
   }
   // Per-step AbortControllers so the user's Stop click can kill the
   // local SSE fetch alongside the server-side run-id PATCH. Without
@@ -1672,7 +1722,7 @@ export default function PromptsPage({ params }: PageProps) {
               );
             })}
           </div>
-          <CharacterConsistencyPanel projectId={projectId} project={project} mutate={mutate} defText={accountConsistencyText} />
+          <PrefixPanel projectId={projectId} project={project} mutate={mutate} defText={accountConsistencyText} />
           {hasImageBeats
             && !anyRunning
             && !remoteRunInProgress
@@ -1721,7 +1771,8 @@ export default function PromptsPage({ params }: PageProps) {
           <div className="pb-24">
           <div className="rounded-2xl overflow-hidden"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-            <div className="mx-5 sm:mx-8 mt-4 rounded-xl p-1 flex gap-1 self-start w-fit"
+            <div className="mx-5 sm:mx-8 mt-4 flex items-center justify-between gap-3 flex-wrap">
+            <div className="rounded-xl p-1 flex gap-1 w-fit"
               style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
               {tabs.map((tab) => {
                 const active = activeTab === tab.id;
@@ -1753,6 +1804,72 @@ export default function PromptsPage({ params }: PageProps) {
                   </button>
                 );
               })}
+            </div>
+            {/* Export dropdown. The backdrop sits behind the menu so a click
+                anywhere else dismisses it without a document listener. */}
+            <div className="relative">
+              <button
+                onClick={() => setExportMenuOpen((v) => !v)}
+                disabled={exportingDocx}
+                title="Download the beat prompts as PDF or Word"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 disabled:opacity-50"
+                style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)", color: "var(--c-70)" }}
+              >
+                <Download size={13} />
+                {exportingDocx ? "Exporting…" : "Export"}
+                <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: "oklch(0.65 0.24 25)" }}>
+                  New
+                </span>
+                <ChevronDown size={13} />
+              </button>
+              {exportMenuOpen && !exportingDocx && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setExportMenuOpen(false)} />
+                  <div className="absolute right-0 mt-1 z-20 rounded-lg overflow-hidden min-w-[11rem]"
+                    style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", boxShadow: "0 8px 24px oklch(0 0 0 / 0.35)" }}>
+                    {/* What to include. Ticking both gives the full set. */}
+                    <div className="px-1 py-1">
+                      {([
+                        { on: exportImage, set: setExportImage, label: "Image prompts" },
+                        { on: exportVideo, set: setExportVideo, label: "Video prompts" },
+                      ]).map((opt) => (
+                        <button
+                          key={opt.label}
+                          onClick={() => opt.set((v) => !v)}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-medium transition-colors hover:opacity-80"
+                          style={{ color: "var(--c-70)" }}
+                        >
+                          <span className="w-3.5 h-3.5 rounded flex items-center justify-center shrink-0"
+                            style={opt.on
+                              ? { background: "oklch(0.72 0.25 285)", border: "1px solid white" }
+                              : { background: "transparent", border: "1px solid white" }}>
+                            {opt.on && <Check size={10} strokeWidth={3} color="white" />}
+                          </span>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ borderTop: "1px solid var(--bd-card)" }}>
+                      {([
+                        { format: "pdf" as const, label: "PDF" },
+                        { format: "docx" as const, label: "Word" },
+                      ]).map((opt) => (
+                        <button
+                          key={opt.format}
+                          onClick={() => exportPrompts(opt.format)}
+                          disabled={!exportImage && !exportVideo}
+                          title={!exportImage && !exportVideo ? "Tick at least one prompt kind" : undefined}
+                          className="w-full text-left px-3 py-2 text-xs font-medium transition-colors hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
+                          style={{ color: "var(--c-70)" }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
             </div>
 
             <div className="px-5 sm:px-8 pt-6 pb-6 space-y-3">
