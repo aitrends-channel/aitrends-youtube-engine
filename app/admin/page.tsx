@@ -473,10 +473,18 @@ interface ActivityPoint {
   users: number;
 }
 
+// Hourly buckets for the Usage tab's "Today" range — see the comment on
+// usageToday in /api/admin/stats. `hour` is a UTC "HH:00" label.
+interface UsagePoint {
+  hour: string;
+  videos: number;
+}
+
 interface AdminStatsResponse {
   stats: AdminStats;
   activity: ActivityPoint[];
   activityMonthly: ActivityPoint[];
+  usageToday: UsagePoint[];
   users: AdminUser[];
   projects: AdminProject[];
 }
@@ -4864,12 +4872,19 @@ export default function AdminPage() {
   const [revDateTo, setRevDateTo] = useState("");
   const [revPlanFilter, setRevPlanFilter] = useState("");
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "activity" | "users" | "projects" | "revenue" | "reports" | "logs" | "emails" | "support" | "reviews" | "memory" | "setup"
+    "stats" | "activity" | "usage" | "users" | "projects" | "revenue" | "reports" | "logs" | "emails" | "support" | "reviews" | "memory" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "activity", "users", "projects", "revenue", "reports", "logs", "emails", "support", "reviews", "memory", "setup"],
+    ["stats", "activity", "usage", "users", "projects", "revenue", "reports", "logs", "emails", "support", "reviews", "memory", "setup"],
   );
+  // Usage tab range. "today" reads the hourly series; 7d/30d slice the
+  // daily one. Persisted like the other tab selections so a refresh
+  // doesn't bounce the admin back to a range they didn't pick.
+  const [usageRange, setUsageRange] = usePersistentTab<"today" | "7d" | "30d">(
+    "usage.range", "7d", ["today", "7d", "30d"],
+  );
+  const [usageHoveredIdx, setUsageHoveredIdx] = useState<number | null>(null);
 
   // Per-project cost rollups for the Videos → Cost sub-tab. Only
   // fetched when that sub-tab is selected so the DB isn't hit on
@@ -5236,6 +5251,7 @@ export default function AdminPage() {
           const TAB_ITEMS = [
             { id: "stats",    label: "Stats",    icon: BarChart3 },
             { id: "activity", label: "Activity", icon: TrendingUp },
+            { id: "usage",    label: "Usage",    icon: Activity },
             { id: "users",    label: "Users",    icon: Users },
             { id: "projects", label: "Videos",   icon: Clapperboard },
             { id: "revenue",  label: "Revenue",  icon: DollarSign },
@@ -5547,6 +5563,161 @@ export default function AdminPage() {
                   ))}
                 </svg>
               </div>
+            </div>
+          );
+        })()}
+
+        {/* Usage chart — videos created per day (single series, so no
+            legend box; the heading names it). Reuses the same amber the
+            Activity chart uses for videos so the colour keeps meaning
+            the same thing across tabs. */}
+        {(() => {
+          const daily = data?.activity ?? [];
+          const isToday = usageRange === "today";
+          // Normalised to {label, full, videos} so the chart body doesn't
+          // branch on hourly-vs-daily below.
+          const pts = isToday
+            ? (data?.usageToday ?? []).map((h) => ({
+                label: h.hour,
+                full: `${h.hour} UTC`,
+                videos: h.videos,
+              }))
+            : (usageRange === "7d" ? daily.slice(-7) : daily.slice(-30)).map((d) => ({
+                label: new Date(d.date + "T00:00:00").toLocaleDateString("en", { month: "short", day: "numeric" }),
+                full: new Date(d.date + "T00:00:00").toLocaleDateString("en", { weekday: "short", month: "short", day: "numeric" }),
+                videos: d.videos,
+              }));
+
+          const UW = 560, UPAD_L = 30, UPAD_R = 10, UPAD_T = 14, UPAD_B = 26;
+          const UH = 360;
+          const uPlotW = UW - UPAD_L - UPAD_R;
+          const uPlotH = UH - UPAD_T - UPAD_B;
+          const un = pts.length;
+          const uMax = Math.max(...pts.map((p) => p.videos), 1);
+          const uCoords = pts.map((p, i) => ({
+            x: UPAD_L + (un <= 1 ? uPlotW / 2 : (i * uPlotW) / (un - 1)),
+            y: UPAD_T + (1 - p.videos / uMax) * uPlotH,
+          }));
+          const uBase = (UPAD_T + uPlotH).toFixed(1);
+          const uLine = uCoords.map((c, i) => `${i === 0 ? "M" : "L"}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" ");
+          const uArea = uCoords.length
+            ? `${uLine} L${uCoords[uCoords.length - 1].x.toFixed(1)},${uBase} L${uCoords[0].x.toFixed(1)},${uBase} Z`
+            : "";
+          const uTotal = pts.reduce((s, p) => s + p.videos, 0);
+          const uSlotW = un > 1 ? uPlotW / (un - 1) : uPlotW;
+          // Thin the x labels so they never collide; 8 ticks fits 560px.
+          const uShowEvery = un <= 8 ? 1 : Math.ceil(un / 8);
+          // Integer ticks only — videos are whole numbers, and a
+          // proportional [0, .5, 1] split prints "0 1 1" when the max is 1.
+          const uTicks = uMax <= 2
+            ? Array.from({ length: uMax + 1 }, (_, i) => i)
+            : [0, Math.round(uMax / 2), uMax];
+          const rangeLabel = isToday ? "Today · by hour (UTC)" : usageRange === "7d" ? "Last 7 days" : "Last 30 days";
+
+          return (
+            <div id="usage" className="p-5 rounded-2xl space-y-4" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "usage" ? undefined : "none" }}>
+              <div className="flex items-end justify-between flex-wrap gap-3">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "oklch(0.50 0 0)" }}>
+                    Videos created — {rangeLabel}
+                  </p>
+                  <p className="text-2xl font-semibold leading-none" style={{ color: "oklch(0.25 0 0)" }}>
+                    {uTotal}
+                    <span className="text-xs font-normal ml-1.5" style={{ color: "oklch(0.50 0 0)" }}>
+                      total
+                    </span>
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+                  {([["today", "Today"], ["7d", "7 days"], ["30d", "1 month"]] as const).map(([v, label]) => (
+                    <button key={v} onClick={() => { setUsageRange(v); setUsageHoveredIdx(null); }}
+                      className="px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer"
+                      style={usageRange === v
+                        ? { background: "oklch(0.72 0.25 285)", color: "white" }
+                        : { color: "oklch(0.45 0 0)" }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ overflowX: "clip" }}>
+                <svg viewBox={`0 0 ${UW} ${UH}`} className="w-full" style={{ height: 360 }}>
+                  <defs>
+                    <linearGradient id="usageGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.18" />
+                      <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
+                    </linearGradient>
+                  </defs>
+
+                  {/* Grid + y labels */}
+                  {uTicks.map((t) => {
+                    const y = UPAD_T + (1 - t / uMax) * uPlotH;
+                    return (
+                      <g key={t}>
+                        <line x1={UPAD_L} y1={y} x2={UW - UPAD_R} y2={y} strokeWidth="1" stroke="rgba(0,0,0,0.06)" />
+                        <text x={UPAD_L - 4} y={y + 3.5} textAnchor="end" fontSize="8.5" fill="#999">{t}</text>
+                      </g>
+                    );
+                  })}
+
+                  <path d={uArea} fill="url(#usageGrad)" />
+                  <path d={uLine} fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+
+                  {uCoords.map((c, i) => (
+                    <circle key={i} cx={c.x} cy={c.y} r={usageHoveredIdx === i ? 4 : 2.5} fill="#f59e0b" style={{ transition: "r 0.1s" }} />
+                  ))}
+
+                  {/* Hover hit strips — wider than the dots so the
+                      tooltip is reachable without pixel-hunting. */}
+                  {uCoords.map((c, i) => (
+                    <rect
+                      key={i}
+                      x={Math.max(c.x - uSlotW / 2, UPAD_L)}
+                      y={UPAD_T}
+                      width={Math.min(uSlotW, uPlotW)}
+                      height={uPlotH}
+                      fill="transparent"
+                      style={{ cursor: "crosshair" }}
+                      onMouseEnter={() => setUsageHoveredIdx(i)}
+                      onMouseLeave={() => setUsageHoveredIdx(null)}
+                    />
+                  ))}
+
+                  {usageHoveredIdx !== null && usageHoveredIdx < un && (() => {
+                    const c = uCoords[usageHoveredIdx];
+                    const pt = pts[usageHoveredIdx];
+                    const TW = 116, TH = 42, TR = 6;
+                    const TX = Math.min(Math.max(c.x - TW / 2, UPAD_L), UW - UPAD_R - TW);
+                    const TY = Math.max(c.y - TH - 10, 2);
+                    return (
+                      <g pointerEvents="none">
+                        <line x1={c.x} y1={UPAD_T} x2={c.x} y2={UPAD_T + uPlotH} strokeWidth="1" stroke="rgba(0,0,0,0.14)" strokeDasharray="3 3" />
+                        <rect x={TX} y={TY} width={TW} height={TH} rx={TR} ry={TR} fill="white" stroke="rgba(0,0,0,0.10)" strokeWidth="1" />
+                        <text x={TX + TW / 2} y={TY + 16} textAnchor="middle" fontSize="9.5" fill="#333" fontWeight="600">{pt.full}</text>
+                        <circle cx={TX + 13} cy={TY + 30} r="3" fill="#f59e0b" />
+                        <text x={TX + 21} y={TY + 33} fontSize="9" fill="#666">
+                          Videos: <tspan fill="#333" fontWeight="700">{pt.videos}</tspan>
+                        </text>
+                      </g>
+                    );
+                  })()}
+
+                  {/* X-axis labels */}
+                  {pts.map((p, i) => i % uShowEvery === 0 && (
+                    <text key={i} x={uCoords[i].x} y={UH - 4} textAnchor="middle" fontSize="8.5" fill="#999">
+                      {p.label}
+                    </text>
+                  ))}
+                </svg>
+              </div>
+
+              {un === 0 && (
+                <p className="text-xs text-center py-2" style={{ color: "oklch(0.55 0 0)" }}>
+                  No usage data for this range yet.
+                </p>
+              )}
             </div>
           );
         })()}

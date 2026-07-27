@@ -18,7 +18,7 @@ import { SequentialVoiceoverPreview } from "@/components/voiceover/SequentialVoi
 import { BeatAudioPlayer } from "@/components/voiceover/BeatAudioPlayer";
 import { GOOGLE_VOICES, isGoogleVoice } from "@/lib/google/tts";
 import { QWEN_VOICES, isQwenVoice } from "@/lib/replicate/tts";
-import { AI33_VOICES, isAi33Voice } from "@/lib/ai33/tts";
+import { AI33_VOICES, ai33VoicesByGender, isAi33Voice } from "@/lib/ai33/tts";
 import { VoiceOption } from "@/components/VoiceOption";
 import { FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
 import { RotateCw, ChevronUp, ChevronDown, Download } from "lucide-react";
@@ -160,6 +160,9 @@ export default function VoiceoverPage({ params }: PageProps) {
   // else first model of the active gender tab.
   const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
   const [voiceTab, setVoiceTab] = useState<"female" | "male" | "custom" | "free">("female");
+  // Gender split *inside* the Free tab. Separate from voiceTab so switching
+  // Female/Male among the free voices doesn't knock you out of the Free tab.
+  const [freeGenderTab, setFreeGenderTab] = useState<"female" | "male">("female");
   const [previewingId, setPreviewingId] = useState<string | null>(null);
   // Sticky bit so a subsequent project SWR update doesn't overwrite an
   // explicit user pick. Only the very first resolution honors
@@ -979,8 +982,29 @@ export default function VoiceoverPage({ params }: PageProps) {
                     cap={freeTtsUsage?.ai33TtsCap ?? 50_000}
                     loaded={!!freeTtsUsage}
                   />
+                  {/* Female / Male subtabs — same pill treatment as the
+                      top-level voice tabs, one level in. */}
+                  <div className="flex gap-1">
+                    {(["female", "male"] as const).map((g) => (
+                      <button
+                        key={g}
+                        onClick={() => setFreeGenderTab(g)}
+                        disabled={effectivelyGenerating}
+                        className="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium capitalize transition-all disabled:opacity-40"
+                        style={freeGenderTab === g ? {
+                          background: "oklch(0.72 0.25 285 / 0.15)",
+                          border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                          color: "oklch(0.88 0.12 285)",
+                        } : {
+                          background: "var(--bg-input)",
+                          border: "1px solid var(--bd-card)",
+                          color: "var(--c-50)",
+                        }}
+                      >{g}</button>
+                    ))}
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {AI33_VOICES.map((m) => (
+                    {ai33VoicesByGender(freeGenderTab === "female" ? "Female" : "Male").map((m) => (
                       <VoiceOption
                         key={m.id}
                         model={m}
