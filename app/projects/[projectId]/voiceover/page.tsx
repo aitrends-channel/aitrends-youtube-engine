@@ -81,7 +81,12 @@ function StatusPill({ status }: { status: BeatStatus }) {
 // Monthly free-quota usage bar shared by the free voice providers
 // (Qwen perk cap, Google BYO 1M). Mirrors the free-image daily bar
 // in ModelPicker.
-function FreeQuotaBar({ label, used, cap, loaded, badge, badgeNote }: { label: string; used: number; cap: number; loaded: boolean; badge?: string; badgeNote?: string }) {
+// Compact two-row layout: the badge and its note share row one with the
+// used/cap figure, and the bar sits INLINE on row two between the
+// "Monthly quota" caption and the percentage. It was four stacked rows
+// (title, badge+figure, caption+percent, full-width bar) which ate
+// vertical space above the voice grid for very little information.
+function FreeQuotaBar({ used, cap, loaded, badge, badgeNote }: { used: number; cap: number; loaded: boolean; badge?: string; badgeNote?: string }) {
   // Exact percent — big caps mean real usage is often <1%, where
   // rounding to an integer shows a misleading "0%".
   const pctRaw = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
@@ -95,42 +100,41 @@ function FreeQuotaBar({ label, used, cap, loaded, badge, badgeNote }: { label: s
   const fillWidth = used > 0 ? Math.max(pctRaw, 1) : 0;
   const near = pctRaw >= 90;
   return (
-    <div className="rounded-xl px-1 py-1 space-y-2">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <span className="flex items-start gap-2">
-          <span className="text-xs font-semibold" style={{ color: "var(--c-55)" }}>{label}</span>
+    <div className="rounded-xl px-1 py-1 space-y-1.5">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <span className="flex items-center gap-1.5 min-w-0">
           {badge && (
-            <span className="flex flex-col items-center shrink-0" style={{ marginLeft: "30px" }}>
-              <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
-                style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
-                {badge}
-              </span>
-              {badgeNote && (
-                <span className="text-[8px] mt-0.5 whitespace-nowrap" style={{ color: "var(--c-45)" }}>
-                  {badgeNote}
-                </span>
-              )}
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0"
+              style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
+              {badge}
+            </span>
+          )}
+          {badgeNote && (
+            <span className="text-[9px] whitespace-nowrap" style={{ color: "var(--c-45)" }}>
+              {badgeNote}
             </span>
           )}
         </span>
-        <span className="text-[10px] tabular-nums" style={{ color: "var(--c-45)" }}>
+        <span className="text-[10px] tabular-nums shrink-0" style={{ color: "var(--c-45)" }}>
           {loaded ? `${used.toLocaleString()} / ${cap.toLocaleString()}` : "…"}
         </span>
       </div>
-      <div className="flex items-center justify-between text-[10px]" style={{ color: "var(--c-45)" }}>
-        <span>Monthly quota</span>
-        <span className="tabular-nums">{loaded ? pctLabel : ""}</span>
-      </div>
-      <div className="h-2.5 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
-        <div
-          className="h-full rounded-full transition-all"
-          style={{
-            width: `${fillWidth}%`,
-            background: near
-              ? "oklch(0.72 0.18 65)"
-              : "linear-gradient(90deg, oklch(0.7 0.19 150), oklch(0.6 0.2 145))",
-          }}
-        />
+      <div className="flex items-center gap-2 text-[10px]" style={{ color: "var(--c-45)" }}>
+        <span className="shrink-0">Monthly quota</span>
+        {/* min-w-0 so the track can shrink instead of pushing the
+            percentage out of the row on narrow viewports. */}
+        <div className="h-2 rounded-full overflow-hidden flex-1 min-w-0" style={{ background: "var(--bg-track)" }}>
+          <div
+            className="h-full rounded-full transition-all"
+            style={{
+              width: `${fillWidth}%`,
+              background: near
+                ? "oklch(0.72 0.18 65)"
+                : "linear-gradient(90deg, oklch(0.7 0.19 150), oklch(0.6 0.2 145))",
+            }}
+          />
+        </div>
+        <span className="tabular-nums shrink-0">{loaded ? pctLabel : ""}</span>
       </div>
     </div>
   );
@@ -975,7 +979,6 @@ export default function VoiceoverPage({ params }: PageProps) {
                 ) : (
                 <div className="space-y-2">
                   <FreeQuotaBar
-                    label="ai33 voices"
                     badge="Heclus perks 🎁"
                     badgeNote="You use, we pay"
                     used={freeTtsUsage?.ai33TtsChars ?? 0}
