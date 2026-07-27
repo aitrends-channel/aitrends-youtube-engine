@@ -96,14 +96,28 @@ function releaseSlot(): void {
 }
 
 // Verified live: POST returns { success, task_id }; GET /v3/task/{id}
-// returns { success, data: { status, metadata: { v3: { audio_url } },
-// progress, ... } }. A throttled poll returns { success:false, message:
-// "Task polling temporarily busy" } — transient, keep waiting.
+// returns { success, data: { status, metadata, progress, ... } }. A
+// throttled poll returns { success:false, message: "Task polling
+// temporarily busy" } — transient, keep waiting.
+//
+// WHERE THE AUDIO URL LIVES: this has moved on us. It used to arrive at
+// metadata.v3.audio_url; as of 2026-07-27 live responses put it at
+// metadata.audio_url for BOTH shapes — elevenlabs (type "tts") and
+// minimax (type "minimax_tts") — with metadata.v3 cut down to
+// { provider, raw_voice_id }. Reading one hard-coded path meant a silent
+// upstream move took down every free voice at once with "finished but
+// returned no audio URL". audioUrlFrom now checks the known paths and
+// then falls back to a scan, so the next move degrades to nothing.
 interface Ai33TaskData {
   id?: string;
   status?: string;
   progress?: number;
-  metadata?: { v3?: { audio_url?: string } };
+  metadata?: {
+    audio_url?: string;
+    v3?: { audio_url?: string };
+    data?: { audio_url?: string };
+  };
+  audio_url?: string;
   error?: string | null;
   message?: string | null;
 }
@@ -115,9 +129,35 @@ interface Ai33TaskResponse {
   data?: Ai33TaskData;
 }
 
+// Depth-bounded hunt for any *audio*_*url* key holding an http string, so
+// a future reshuffle of the payload doesn't need a code change to work.
+function findAudioUrl(value: unknown, depth = 0): string | null {
+  if (depth > 5 || value === null || typeof value !== "object") return null;
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (/audio/i.test(k) && /url/i.test(k) && typeof v === "string" && v.startsWith("http")) {
+      return v;
+    }
+  }
+  // Keys first at each level, then recurse — a shallower match wins over a
+  // deeper one.
+  for (const v of Object.values(value as Record<string, unknown>)) {
+    const nested = findAudioUrl(v, depth + 1);
+    if (nested) return nested;
+  }
+  return null;
+}
+
 function audioUrlFrom(data: Ai33TaskData): string | null {
-  const url = data.metadata?.v3?.audio_url;
-  return typeof url === "string" && url.startsWith("http") ? url : null;
+  const known = [
+    data.metadata?.audio_url,
+    data.metadata?.v3?.audio_url,
+    data.metadata?.data?.audio_url,
+    data.audio_url,
+  ];
+  for (const url of known) {
+    if (typeof url === "string" && url.startsWith("http")) return url;
+  }
+  return findAudioUrl(data);
 }
 
 const DONE = ["success", "succeeded", "completed", "complete", "done", "finished", "finish"];
