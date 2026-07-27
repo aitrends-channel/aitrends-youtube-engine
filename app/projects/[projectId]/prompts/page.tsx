@@ -8,7 +8,7 @@ import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown, Download, Check } from "lucide-react";
 import type { Beat } from "@/lib/types";
 
 // ── Sub-components ─────────────────────────────────────────────────────────
@@ -883,6 +883,12 @@ export default function PromptsPage({ params }: PageProps) {
   const [imageStopState, setImageStopState] = useState<{ stoppedAt: number; snapshot: number } | null>(null);
   const [videoStopState, setVideoStopState] = useState<{ stoppedAt: number; snapshot: number } | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("beats");
+  const [exportingDocx, setExportingDocx] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  // Which prompt kinds go into the export. Both on = the whole set; the
+  // format buttons are disabled while neither is ticked.
+  const [exportImage, setExportImage] = useState(true);
+  const [exportVideo, setExportVideo] = useState(true);
   const [navigating, setNavigating] = useState(false);
   // Image prompt style — General is the current behaviour; Cinematic
   // adds filmic cues on top of the visual profile at generation time.
@@ -916,6 +922,42 @@ export default function PromptsPage({ params }: PageProps) {
       });
       mutate();
     } catch { /* best-effort — the next generate click still sends the current selection */ }
+  }
+
+  // Download every beat's image + video prompt. Both formats hit the same
+  // scope:"prompts" export, so the file holds only the prompts — not the
+  // ideas/script/thumbnail sections the Generate step's full export has.
+  async function exportPrompts(format: "pdf" | "docx") {
+    setExportMenuOpen(false);
+    setExportingDocx(true);
+    try {
+      const res = await fetch(`/api/export/${format}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          scope: "prompts",
+          parts: { image: exportImage, video: exportVideo },
+        }),
+      });
+      if (!res.ok) throw new Error((await res.text().catch(() => "")) || "Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      // Mirrors the server's filenameBase — a blob download takes its name
+      // from here, not from Content-Disposition.
+      const suffix = exportImage && exportVideo
+        ? "prompts"
+        : exportImage ? "image_prompts" : "video_prompts";
+      a.download = `${(project?.channel_name ?? "export").replace(/\s+/g, "_")}_${suffix}.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setExportingDocx(false);
+    }
   }
   // Per-step AbortControllers so the user's Stop click can kill the
   // local SSE fetch alongside the server-side run-id PATCH. Without
@@ -1729,7 +1771,8 @@ export default function PromptsPage({ params }: PageProps) {
           <div className="pb-24">
           <div className="rounded-2xl overflow-hidden"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-            <div className="mx-5 sm:mx-8 mt-4 rounded-xl p-1 flex gap-1 self-start w-fit"
+            <div className="mx-5 sm:mx-8 mt-4 flex items-center justify-between gap-3 flex-wrap">
+            <div className="rounded-xl p-1 flex gap-1 w-fit"
               style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
               {tabs.map((tab) => {
                 const active = activeTab === tab.id;
@@ -1761,6 +1804,72 @@ export default function PromptsPage({ params }: PageProps) {
                   </button>
                 );
               })}
+            </div>
+            {/* Export dropdown. The backdrop sits behind the menu so a click
+                anywhere else dismisses it without a document listener. */}
+            <div className="relative">
+              <button
+                onClick={() => setExportMenuOpen((v) => !v)}
+                disabled={exportingDocx}
+                title="Download the beat prompts as PDF or Word"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 disabled:opacity-50"
+                style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)", color: "var(--c-70)" }}
+              >
+                <Download size={13} />
+                {exportingDocx ? "Exporting…" : "Export"}
+                <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: "oklch(0.65 0.24 25)" }}>
+                  New
+                </span>
+                <ChevronDown size={13} />
+              </button>
+              {exportMenuOpen && !exportingDocx && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setExportMenuOpen(false)} />
+                  <div className="absolute right-0 mt-1 z-20 rounded-lg overflow-hidden min-w-[11rem]"
+                    style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", boxShadow: "0 8px 24px oklch(0 0 0 / 0.35)" }}>
+                    {/* What to include. Ticking both gives the full set. */}
+                    <div className="px-1 py-1">
+                      {([
+                        { on: exportImage, set: setExportImage, label: "Image prompts" },
+                        { on: exportVideo, set: setExportVideo, label: "Video prompts" },
+                      ]).map((opt) => (
+                        <button
+                          key={opt.label}
+                          onClick={() => opt.set((v) => !v)}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-medium transition-colors hover:opacity-80"
+                          style={{ color: "var(--c-70)" }}
+                        >
+                          <span className="w-3.5 h-3.5 rounded flex items-center justify-center shrink-0"
+                            style={opt.on
+                              ? { background: "oklch(0.72 0.25 285)", border: "1px solid white" }
+                              : { background: "transparent", border: "1px solid white" }}>
+                            {opt.on && <Check size={10} strokeWidth={3} color="white" />}
+                          </span>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ borderTop: "1px solid var(--bd-card)" }}>
+                      {([
+                        { format: "pdf" as const, label: "PDF" },
+                        { format: "docx" as const, label: "Word" },
+                      ]).map((opt) => (
+                        <button
+                          key={opt.format}
+                          onClick={() => exportPrompts(opt.format)}
+                          disabled={!exportImage && !exportVideo}
+                          title={!exportImage && !exportVideo ? "Tick at least one prompt kind" : undefined}
+                          className="w-full text-left px-3 py-2 text-xs font-medium transition-colors hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
+                          style={{ color: "var(--c-70)" }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
             </div>
 
             <div className="px-5 sm:px-8 pt-6 pb-6 space-y-3">
