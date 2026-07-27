@@ -209,7 +209,7 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview }: { beat: Beat
               <div className="mb-2 rounded-lg px-3 py-2"
                 style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px dashed oklch(0.72 0.25 285 / 0.3)" }}>
                 <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "oklch(0.72 0.25 285)" }}>
-                  + Character consistency (added before the prompt)
+                  + Prefix (added before the prompt)
                 </p>
                 <p className="text-xs leading-relaxed" style={{ color: "var(--c-60)" }}>{consistencyPreview}</p>
               </div>
@@ -636,15 +636,19 @@ async function streamStep(
   return doneReceived;
 }
 
-// Per-project character-consistency override. A single statement
-// appended to every image prompt at generation time, plus an
-// append/detach switch. NULL text on the project row = inherit the
-// account default (set in Settings); a value (including "") overrides it
-// for this project only. Nothing here is baked into the stored beat
-// prompts — it's applied only when a prompt is sent to the image
-// generator, so edits take effect on the next generate without
+// Per-project prompt prefix (stored in the character_consistency_*
+// columns, which predate the rename). A single statement placed in front
+// of every image prompt at generation time. NULL text on the project row
+// = inherit the account default (set in Settings); a value (including "")
+// overrides it for this project only. Nothing here is baked into the
+// stored beat prompts — it's applied only when a prompt is sent to the
+// image generator, so edits take effect on the next generate without
 // regenerating the prompts.
-function CharacterConsistencyPanel({
+//
+// Two controls: Save (writes the text and applies it) and Remove, which
+// appears only when a prefix exists and clears it from the database. The
+// old Add/Detach switch is gone — Save implies "apply".
+function PrefixPanel({
   projectId,
   project,
   mutate,
@@ -672,7 +676,7 @@ function CharacterConsistencyPanel({
     setHydrated(true);
   }, [project, hydrated]);
 
-  async function persist(nextText: string | null, nextAppend: boolean) {
+  async function persist(nextText: string | null, nextAppend: boolean, successMsg: string) {
     setSaving(true);
     try {
       const res = await fetch(`/api/projects/${projectId}`, {
@@ -684,7 +688,7 @@ function CharacterConsistencyPanel({
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Save failed");
       }
-      toast.success("Character consistency saved for this project.");
+      toast.success(successMsg);
       mutate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save");
@@ -693,9 +697,34 @@ function CharacterConsistencyPanel({
     }
   }
 
+  // Clear the project's stored prefix AND switch off application, then
+  // persist both — so Remove takes the prefix out of the database rather
+  // than only detaching it locally until the next Save. append:false is
+  // what stops an inherited account default from taking over once the
+  // project's own text is null (applyConsistency returns the base prompt
+  // untouched when apply is false).
+  async function remove() {
+    setText(null);
+    setAppend(false);
+    await persist(null, false, "Prefix removed.");
+  }
+
   const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" } as const;
-  const hasOverride = text !== null;
-  const badge = !append ? "Detached" : hasOverride ? "Custom" : "Account default";
+  // Fixed label. It names what the panel is for rather than reporting
+  // state — the pill's colour still tracks whether a prefix is applied,
+  // and the panel body carries the detail.
+  const badge = "Add prefix";
+
+  // Remove is offered only when a prefix actually exists, judged on the
+  // SAVED row rather than the editor draft — otherwise merely typing would
+  // surface a Remove button for a prefix that was never stored.
+  const savedText = (project?.character_consistency_text as string | null | undefined) ?? null;
+  const savedAppend = (project?.character_consistency_append as boolean | null | undefined) ?? true;
+  const hasPrefix = savedAppend && (savedText ?? defText).trim().length > 0;
+
+  // Nothing to save while the field holds no override (null = inheriting)
+  // or while the draft still matches what's stored.
+  const canSave = text !== null && text !== savedText;
 
   return (
     <div className="rounded-xl overflow-hidden self-start w-full"
@@ -704,12 +733,16 @@ function CharacterConsistencyPanel({
         onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors"
       >
-        <span className="text-xs font-semibold" style={{ color: "var(--c-70)" }}>Character consistency</span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded-full"
+        {/* No title on the left — the badge is the only header label, so it
+            doubles as the affordance for opening the panel. */}
+        <span className="text-[10px] px-3 py-1.5 rounded-full"
           style={append
             ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.4)" }
             : { background: "var(--bg-panel)", color: "var(--c-45)", border: "1px solid var(--bd-card)" }}>
           {badge}
+        </span>
+        <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: "oklch(0.65 0.24 25)" }}>
+          New
         </span>
         <span className="ml-auto" style={{ color: "var(--c-45)" }}>
           {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -719,72 +752,47 @@ function CharacterConsistencyPanel({
       {open && (
         <div className="px-3 pb-3 space-y-3" style={{ borderTop: "1px solid var(--bd-card)" }}>
           <p className="text-[11px] leading-relaxed pt-3" style={{ color: "var(--c-45)" }}>
-            Added to every image prompt to keep your character consistent.
-            Leave blank to use your account default. Applies on the next
-            image generation.
+            Leads every image prompt from the next generation on. Blank
+            uses your account default.
           </p>
 
-          {/* Add / detach switch */}
-          <div className="rounded-lg p-1 flex gap-1 w-fit"
-            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-            {([
-              { on: true, label: "Add" },
-              { on: false, label: "Detach" },
-            ]).map((opt) => {
-              const active = append === opt.on;
-              return (
-                <button
-                  key={opt.label}
-                  onClick={() => setAppend(opt.on)}
-                  className="px-3 py-1 rounded-md text-xs font-medium transition-all"
-                  style={active ? {
-                    background: "oklch(0.72 0.25 285 / 0.15)",
-                    border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                    color: "oklch(0.88 0.12 285)",
-                  } : {
-                    background: "transparent",
-                    border: "1px solid transparent",
-                    color: "var(--c-55)",
-                  }}
-                >
-                  {opt.label}
-                </button>
-              );
-            })}
-          </div>
-
           <div className="space-y-1.5">
-            <label className="text-[11px] font-medium" style={{ color: "var(--c-50)" }}>Consistency text</label>
+            <label className="text-[11px] font-medium" style={{ color: "var(--c-50)" }}>Prefix text</label>
+            {/* Always editable. With the Add button gone there's no switch
+                to turn application back on, so disabling this while removed
+                would leave no route back to having a prefix — Save is that
+                route, and it re-applies. */}
             <textarea
               value={text ?? ""}
               onChange={(e) => setText(e.target.value)}
               rows={3}
-              disabled={!append}
-              placeholder={text === null && defText ? `Inheriting: ${defText}` : "Recurring character and style kept identical across every image…"}
-              className="w-full px-3 py-2 rounded-lg text-xs outline-none transition-all resize-y disabled:opacity-50"
+              placeholder={text === null && defText ? `Inheriting: ${defText}` : "Text placed in front of every image prompt…"}
+              className="w-full px-3 py-2 rounded-lg text-xs outline-none transition-all resize-y"
               style={inputStyle}
               onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
               onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
             />
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Saving always re-applies the prefix (append:true) — it's the
+                only way back after a Remove. */}
             <button
-              onClick={() => persist(text, append)}
-              disabled={saving}
+              onClick={() => persist(text, true, "Prefix saved for this project.")}
+              disabled={saving || !canSave}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50"
               style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
             >
               {saving ? "Saving…" : "Save"}
             </button>
-            {hasOverride && (
+            {hasPrefix && (
               <button
-                onClick={() => { setText(null); persist(null, append); }}
+                onClick={remove}
                 disabled={saving}
                 className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 disabled:opacity-50"
                 style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-card)" }}
               >
-                Reset to account default
+                {saving ? "Removing…" : "Remove"}
               </button>
             )}
           </div>
@@ -1672,7 +1680,7 @@ export default function PromptsPage({ params }: PageProps) {
               );
             })}
           </div>
-          <CharacterConsistencyPanel projectId={projectId} project={project} mutate={mutate} defText={accountConsistencyText} />
+          <PrefixPanel projectId={projectId} project={project} mutate={mutate} defText={accountConsistencyText} />
           {hasImageBeats
             && !anyRunning
             && !remoteRunInProgress
