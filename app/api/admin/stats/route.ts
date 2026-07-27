@@ -296,6 +296,29 @@ export async function GET() {
     users: usersByDay.get(date) ?? 0,
   }));
 
+  // Usage tab → "Today" filter. The daily series above has one point
+  // per day, so a today-only range would render as a single dot with
+  // no line. Today therefore gets its own hourly series, bucketed by
+  // UTC hour to stay consistent with the UTC day keys above. The array
+  // stops at the current hour rather than padding out to 23:00 — a
+  // flat zero tail across hours that haven't happened yet reads as "no
+  // usage" instead of "not yet".
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const videosByHour = new Map<number, number>();
+  for (const p of nonAdminProjects) {
+    if (!p.created_at) continue;
+    if (!afterCutoff(p.created_at)) continue;
+    const created = new Date(p.created_at);
+    if (created.toISOString().slice(0, 10) !== todayKey) continue;
+    if (!p.assembled_url && (p.current_state ?? 0) < 15) continue;
+    const hour = created.getUTCHours();
+    videosByHour.set(hour, (videosByHour.get(hour) ?? 0) + 1);
+  }
+  const usageToday = Array.from({ length: new Date().getUTCHours() + 1 }, (_, h) => ({
+    hour: `${String(h).padStart(2, "0")}:00`,
+    videos: videosByHour.get(h) ?? 0,
+  }));
+
   // Monthly activity — last 12 months
   const monthlyDates = Array.from({ length: 12 }, (_, i) => {
     const d = new Date();
@@ -349,6 +372,7 @@ export async function GET() {
     },
     activity,
     activityMonthly,
+    usageToday,
     users: userList,
     projects: projectList,
   });
