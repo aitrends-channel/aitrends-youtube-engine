@@ -158,7 +158,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
   };
   const nicheLimit = 1;
 
-  const cardStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" };
+  const cardStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" };
 
   const W = 600, PAD_X = 16, PAD_T = 16, PAD_B = 32, H = 160;
   const plotH = H - PAD_T - PAD_B;
@@ -290,7 +290,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
       </div>
 
       {!hasStartedDemo ? (
-        <div className="rounded-2xl px-6 py-16 flex flex-col items-center justify-center text-center" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+        <div className="rounded-2xl px-6 py-16 flex flex-col items-center justify-center text-center" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
           <p className="text-sm font-medium mb-1" style={{ color: "var(--c-45)" }}>No niches yet</p>
           <p className="text-xs mb-6" style={{ color: "var(--c-30)" }}>Try the demo to see how a niche looks, or subscribe to create your first one.</p>
           <div className="flex items-center gap-3">
@@ -346,9 +346,9 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
               onClick={() => { setNavigatingTo("resume-demo"); router.push(href); }}
               disabled={navigatingTo === "resume-demo"}
               className="text-left p-4 sm:p-6 rounded-2xl transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer disabled:opacity-70"
-              style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}
+              style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-card)"; }}
             >
               <div className="flex items-start justify-between mb-3">
                 <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
@@ -398,7 +398,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
 
       {/* Static niche group — locked/grayed */}
       <div style={{ opacity: 0.18, pointerEvents: "none", userSelect: "none" }} >
-        <div className="rounded-2xl px-4 sm:px-6 py-6 sm:py-8" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+        <div className="rounded-2xl px-4 sm:px-6 py-6 sm:py-8" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
           <div className="flex items-center justify-between gap-3 mb-5">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-bold shrink-0"
@@ -426,7 +426,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
               <div
                 key={v.title}
                 className="text-left p-4 sm:p-6 rounded-2xl"
-                style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}
+                style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
               >
                 <div className="flex items-start justify-between mb-3">
                   <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
@@ -753,11 +753,35 @@ export default function HomePage() {
   // one. From there the 1Click path analyses and engages autopilot itself.
   // Studio goes to the wizard's channel step as always. 1Click goes to the
   // 1Click view, which collects the content type + channel itself and then
-  // runs setup (if needed) and the kickoff without leaving that page.
-  function doCreateProject(mode: "studio" | "oneclick" = "studio") {
-    setNewNicheChooser(false);
-    setNavigatingTo("new-niche");
-    router.push(mode === "oneclick" ? "/one-click?new=1" : "/projects/new/channel");
+  // runs the kickoff without leaving that page.
+  async function doCreateProject(mode: "studio" | "oneclick" = "studio") {
+    if (mode === "studio") {
+      setNewNicheChooser(false);
+      setNavigatingTo("new-niche");
+      router.push("/projects/new/channel");
+      return;
+    }
+    // First-run gate, same as the existing-niche path: a user who has never
+    // configured 1Click gets told what's about to happen instead of landing
+    // in a setup stepper unannounced.
+    setStartingOneClick(true);
+    try {
+      const cfgRes = await fetch("/api/one-click/config");
+      const cfg = (await cfgRes.json().catch(() => ({}))) as { configured?: boolean };
+      if (!cfgRes.ok || !cfg.configured) {
+        setOneClickNeedsSetup(true);
+        return;
+      }
+      setNewNicheChooser(false);
+      setNavigatingTo("new-niche");
+      router.push("/one-click?new=1");
+    } catch {
+      // Can't tell either way — let the 1Click view sort it out.
+      setNewNicheChooser(false);
+      router.push("/one-click?new=1");
+    } finally {
+      setStartingOneClick(false);
+    }
   }
 
   function requireApiKeys(action: () => void) {
@@ -1080,7 +1104,7 @@ export default function HomePage() {
               {projects === undefined ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   {[0, 1, 2, 3].map((i) => (
-                    <div key={i} className="rounded-xl px-5 py-4 space-y-2" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                    <div key={i} className="rounded-xl px-5 py-4 space-y-2" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div className="h-8 w-10 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.08)" }} />
                       <div className="h-3 w-20 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.06)" }} />
                       <div className="h-2.5 w-14 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.05)" }} />
@@ -1163,7 +1187,7 @@ export default function HomePage() {
                           : "Free";
                       return (
                         <div className="rounded-xl px-5 py-4 flex items-center justify-between gap-3"
-                          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                           <div className="min-w-0 space-y-1">
                             <p className="leading-none">
                               <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{nichesUsed}</span>
@@ -1232,14 +1256,14 @@ export default function HomePage() {
 
                     {/* Total Videos — plain */}
                     <div className="rounded-xl px-5 py-4 flex flex-col items-center justify-center text-center"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{total}</p>
                       <p className="text-xs" style={{ color: "var(--c-42)" }}>Total Videos</p>
                     </div>
 
                     {/* Completed */}
                     <div className="rounded-xl px-5 py-4 flex items-center justify-between"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div>
                         <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{completed}</p>
                         <p className="text-xs" style={{ color: "var(--c-42)" }}>Completed</p>
@@ -1253,7 +1277,7 @@ export default function HomePage() {
 
                     {/* In Progress */}
                     <div className="rounded-xl px-5 py-4 flex items-center justify-between"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div>
                         <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{inProgress}</p>
                         <p className="text-xs" style={{ color: "var(--c-42)" }}>In Progress</p>
@@ -1271,7 +1295,7 @@ export default function HomePage() {
               <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "40px", marginBottom: "10px" }}>Niches/Video Chart</h3>
               {/* Bar chart — videos per niche */}
               {projects === undefined ? (
-                <div className="rounded-2xl px-6 py-5" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                <div className="rounded-2xl px-6 py-5" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                   <div className="flex items-center justify-between mb-5">
                     <div className="space-y-2">
                       <div className="h-4 w-32 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.08)" }} />
@@ -1286,7 +1310,7 @@ export default function HomePage() {
                   </div>
                 </div>
               ) : channelGroups.length === 0 ? (
-                <div className="rounded-2xl px-6 py-10 flex flex-col items-center justify-center text-center" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                <div className="rounded-2xl px-6 py-10 flex flex-col items-center justify-center text-center" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                   <p className="text-sm font-medium" style={{ color: "var(--c-40)" }}>No niches yet</p>
                   <p className="text-xs mt-1" style={{ color: "var(--c-30)" }}>Create your first niche to see video counts here</p>
                 </div>
@@ -1338,7 +1362,7 @@ export default function HomePage() {
                 const plotH = H - PAD_T - PAD_B;
 
                 return (
-                  <div className="rounded-2xl px-4 sm:px-6 py-5" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                  <div className="rounded-2xl px-4 sm:px-6 py-5" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                     <div className="flex items-center justify-between mb-5">
                       <div>
                         <p className="text-sm font-semibold" style={{ color: "var(--c-75)" }}>Videos per niche</p>
@@ -1502,7 +1526,7 @@ export default function HomePage() {
                   );
                 }
 
-                const cardStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" };
+                const cardStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" };
 
                 return (
                   <div style={{ marginTop: "40px" }}>
@@ -1578,7 +1602,7 @@ export default function HomePage() {
           <div className="space-y-12">
             {channelGroups.map((group) => {
               return (
-                <div key={group.channelName} className="rounded-2xl px-4 sm:px-6" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)", paddingTop: "34px", paddingBottom: "34px" }}>
+                <div key={group.channelName} className="rounded-2xl px-4 sm:px-6" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)", paddingTop: "34px", paddingBottom: "34px" }}>
                   {/* Channel header */}
                   <div className="flex items-center justify-between gap-3 mb-5">
                     <div className="flex items-center gap-3 min-w-0">
@@ -1660,9 +1684,9 @@ export default function HomePage() {
                           prefetch
                           onClick={() => setNavigatingTo(`open-video-${p.id}`)}
                           className={`block relative text-left p-6 rounded-2xl transition-all ${isNavigating ? "pointer-events-none" : "hover:scale-[1.01] active:scale-[0.99]"}`}
-                          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}
+                          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
                           onMouseEnter={(e) => { if (!isNavigating) (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
-                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)"; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-card)"; }}
                         >
                           <div className="flex items-start justify-between mb-3">
                             <div className="flex items-center gap-1.5">
@@ -1778,7 +1802,7 @@ export default function HomePage() {
                 <div className="grid gap-7" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))" }}>
                   {[0, 1, 2].map((i) => (
                     <div key={i} className="p-6 rounded-2xl space-y-4"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div className="flex items-start justify-between">
                         <div className="h-5 w-20 rounded-full animate-pulse" style={{ background: "var(--bg-elevated)" }} />
                         <div className="h-4 w-14 rounded animate-pulse" style={{ background: "var(--bg-elevated)" }} />
@@ -1808,7 +1832,7 @@ export default function HomePage() {
               className="w-16 h-16 rounded-2xl flex items-center justify-center transition-all hover:scale-105 active:scale-95 disabled:opacity-50 cursor-pointer"
               style={{
                 background: "oklch(0.72 0.25 285 / 0.08)",
-                border: "2px dashed oklch(0.72 0.25 285 / 0.35)",
+                border: "1px dashed oklch(0.72 0.25 285 / 0.35)",
                 color: "oklch(0.72 0.25 285)",
               }}
             >
@@ -1908,8 +1932,13 @@ export default function HomePage() {
               <div className="grid gap-2 mt-1">
                 <button
                   onClick={() => {
-                    // Carry the niche through so the stepper can start the
-                    // video itself when setup finishes.
+                    // Continue the flow the user was in, so setup finishes
+                    // into the thing they were trying to start.
+                    if (newNicheChooser) {
+                      setNewNicheChooser(false);
+                      router.push("/one-click?new=1");
+                      return;
+                    }
                     const src = newVideoGroup
                       ? [...newVideoGroup.projects].sort((a, b) => b.current_state - a.current_state)[0]
                       : null;

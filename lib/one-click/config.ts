@@ -23,6 +23,10 @@ export interface ModelChain {
 
 export interface OneClickConfig {
   version: number;
+  /** What kind of videos this account makes. Asked once during setup and
+   *  reused by every run, so a configured user only has to supply a channel
+   *  when starting a new niche. Written to projects.content_type at kickoff. */
+  contentType: "long" | "shorts" | "both";
   /** How the topic gate is handled in a 1Click run:
    *   "auto"   — the orchestrator picks the top generated idea and
    *              continues without stopping (true hands-off).
@@ -83,6 +87,7 @@ export interface OneClickConfig {
 export function emptyConfig(): OneClickConfig {
   return {
     version: CONFIG_VERSION,
+    contentType: "long",
     topicMode: "auto",
     scriptMode: "auto",
     scriptLimit: { fullScript: false, words: 20 },
@@ -111,6 +116,8 @@ export function emptyConfig(): OneClickConfig {
 export function validateConfig(raw: unknown): OneClickConfig | string {
   if (typeof raw !== "object" || raw === null) return "Config must be an object";
   const c = raw as Partial<OneClickConfig>;
+  const contentType: "long" | "shorts" | "both" =
+    c.contentType === "shorts" || c.contentType === "both" ? c.contentType : "long";
   const topicMode: "auto" | "manual" = c.topicMode === "manual" ? "manual" : "auto";
   const scriptMode: "auto" | "manual" = c.scriptMode === "manual" ? "manual" : "auto";
   const scriptWords = Math.floor(Number(c.scriptLimit?.words ?? 20));
@@ -126,6 +133,7 @@ export function validateConfig(raw: unknown): OneClickConfig | string {
   const clamp01 = (n: number, dflt: number) => (Number.isFinite(n) && n >= 0 && n <= 1 ? n : dflt);
   return {
     version: CONFIG_VERSION,
+    contentType,
     topicMode,
     scriptMode,
     scriptLimit,

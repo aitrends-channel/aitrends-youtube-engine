@@ -4,30 +4,31 @@ import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { OneClickConfigPanel } from "@/components/one-click/OneClickConfigPanel";
 import { OneClickShell } from "@/components/one-click/OneClickShell";
-import { NewNicheModal } from "@/components/one-click/NewNicheModal";
+import { useChannelUrl } from "@/components/one-click/ChannelStep";
 import {
   forkAndStartOneClick,
   createAndStartOneClickForChannel,
-  type KickoffChannelInfo,
 } from "@/lib/one-click/kickoff";
+import type { OneClickConfig } from "@/lib/one-click/config";
 import { Spinner } from "@/components/ui/spinner";
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(r.status)));
 
-type NichePlan = { channelUrl: string; contentType: "long" | "shorts" | "both"; info: KickoffChannelInfo };
-
-// The 1Click entry view. Three ways in, all ending at the live run:
+// The 1Click entry view. Ways in, all ending at the live run:
 //
-//   ?new=1              brand-new niche: collect content type + channel in a
-//                       modal here, then (setup if needed) create + engage.
-//   ?from=<projectId>   existing niche: fork it and engage once setup is done.
-//   ?next=<path>        hand back to a flow that owns its own kickoff.
-//   (none)              someone opened this directly to edit their defaults.
+//   ?new=1              brand-new niche
+//   ?from=<projectId>   new video in an existing niche
+//   ?next=<path>        hand back to a flow that owns its own kickoff
+//   (none)              opened directly to edit defaults
 //
-// Project-less on purpose: the config is checked BEFORE anything is created,
-// so an abandoned setup can't leave an orphan project behind or burn a niche
+// Setup, when needed, runs here as a stepper — content type is its FIRST
+// screen, so it's saved once as an account default. A configured user
+// starting a new niche is then only asked for a channel, in a modal ON THIS
+// VIEW. Project-less on purpose: nothing is created until setup is done, so
+// an abandoned setup can't leave an orphan project behind or burn a niche
 // slot against the user's plan limit.
 export default function OneClickSetupPage() {
   const router = useRouter();
@@ -36,18 +37,28 @@ export default function OneClickSetupPage() {
   const from = params.get("from");
   const next = params.get("next");
 
-  const { data: cfg, mutate: mutateCfg } = useSWR<{ configured: boolean }>("/api/one-click/config", fetcher);
+  const { data: cfg, mutate: mutateCfg } = useSWR<{ configured: boolean; config: OneClickConfig }>(
+    "/api/one-click/config", fetcher,
+  );
   const [starting, setStarting] = useState(false);
-  // Set once the modal has a validated channel. Held here so setup can run
-  // in between without losing what the user already told us.
-  const [plan, setPlan] = useState<NichePlan | null>(null);
 
   const needsSetup = cfg ? !cfg.configured : false;
+  const contentType = cfg?.config?.contentType ?? "long";
+  const channel = useChannelUrl(contentType);
 
-  async function launch(p: NichePlan) {
+  // A configured user with a new niche pending only needs to name a channel.
+  const askForChannel = isNewNiche && !!cfg && !needsSetup && !starting;
+
+  async function startNewNiche() {
+    const plan = await channel.resolve();
+    if (!plan) return;
     setStarting(true);
     try {
-      const projectId = await createAndStartOneClickForChannel(p);
+      const projectId = await createAndStartOneClickForChannel({
+        channelUrl: plan.channelUrl,
+        contentType,
+        info: plan.info,
+      });
       toast.success("1Click engaged. We'll take it from here.");
       router.replace(`/projects/${projectId}/one-click`);
     } catch (err) {
@@ -56,21 +67,9 @@ export default function OneClickSetupPage() {
     }
   }
 
-  // The modal has a channel: run setup first if it's missing, otherwise go.
-  function handleNicheReady(p: NichePlan) {
-    setPlan(p);
-    if (!needsSetup) void launch(p);
-  }
-
   async function handleSaved() {
-    // New niche waiting on setup — start it now, same view.
-    if (plan) { await mutateCfg(); void launch(plan); return; }
-    // Hand back to a flow that does its own kickoff (the channel step).
-    if (next) {
-      toast.success("1Click is ready.");
-      router.replace(next);
-      return;
-    }
+    await mutateCfg();
+    // Existing niche: the channel is already on the project, so go.
     if (from) {
       setStarting(true);
       try {
@@ -83,14 +82,16 @@ export default function OneClickSetupPage() {
       }
       return;
     }
+    // New niche: now configured, so the channel modal below takes over.
+    if (isNewNiche) return;
+    if (next) {
+      toast.success("1Click is ready.");
+      router.replace(next);
+      return;
+    }
     toast.success("1Click is ready. Start a video from your dashboard.");
     router.push("/dashboard");
   }
-
-  // Collect the channel before anything else on the new-niche path.
-  const showNicheModal = isNewNiche && !plan && !starting;
-  // Setup runs after the modal (or immediately, on the other paths).
-  const showSetup = !starting && needsSetup && (!isNewNiche || !!plan);
 
   return (
     <OneClickShell status={!cfg ? undefined : starting ? "Starting" : needsSetup ? "Setup" : "Configured"}>
@@ -98,24 +99,6 @@ export default function OneClickSetupPage() {
         <div className="flex items-center justify-center gap-2 py-20 text-sm" style={{ color: "var(--c-45)" }}>
           <Spinner size={14} /> {starting ? "Starting your video…" : "Loading…"}
         </div>
-      ) : showNicheModal ? (
-        <NewNicheModal onReady={handleNicheReady} />
-      ) : showSetup ? (
-        <>
-          <div className="mb-6 rounded-2xl px-4 py-3 text-sm leading-relaxed"
-            style={{
-              background: "oklch(0.72 0.25 285 / 0.08)",
-              border: "1px solid oklch(0.72 0.25 285 / 0.25)",
-              color: "var(--c-80)",
-            }}>
-            {plan || from
-              ? "Answer a few screens and your video starts straight after. You only do this once."
-              : next
-                ? "Answer a few screens and we pick up right where you left off. You only do this once."
-                : "Answer a few screens and 1Click can make whole videos hands-off. You only do this once."}
-          </div>
-          <OneClickConfigPanel mode="stepper" onSaved={handleSaved} />
-        </>
       ) : (
         <>
           <div className="mb-6 rounded-2xl px-4 py-3 text-sm leading-relaxed"
@@ -124,11 +107,39 @@ export default function OneClickSetupPage() {
               border: "1px solid oklch(0.72 0.25 285 / 0.25)",
               color: "var(--c-80)",
             }}>
-            1Click is set up. Adjust anything below and the changes apply to future runs.
+            {!needsSetup
+              ? "1Click is set up. Adjust anything below and the changes apply to future runs."
+              : isNewNiche || from
+                ? "Answer a few screens and your video starts straight after. You only do this once."
+                : next
+                  ? "Answer a few screens and we pick up right where you left off. You only do this once."
+                  : "Answer a few screens and 1Click can make whole videos hands-off. You only do this once."}
           </div>
           <OneClickConfigPanel mode="stepper" onSaved={handleSaved} />
         </>
       )}
+
+      {/* Channel prompt — a modal on THIS view, not on the dashboard. Content
+          type isn't asked here: it's already saved in the config. */}
+      <Dialog open={askForChannel} onOpenChange={(open) => { if (!open) router.push("/dashboard"); }}>
+        <DialogContent className="sm:max-w-md bg-[var(--bg-panel)] text-[var(--c-90)] ring-[var(--bd-card)]">
+          <DialogHeader>
+            <DialogTitle>New niche with 1Click</DialogTitle>
+            <DialogDescription className="text-[var(--c-55)]">
+              Paste the channel to model. Your saved 1Click defaults cover everything else.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="mt-1">{channel.node}</div>
+          <button
+            onClick={startNewNiche}
+            disabled={!channel.ready}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 cursor-pointer"
+            style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+          >
+            Start 1Click
+          </button>
+        </DialogContent>
+      </Dialog>
     </OneClickShell>
   );
 }
