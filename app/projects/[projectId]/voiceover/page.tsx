@@ -18,7 +18,7 @@ import { SequentialVoiceoverPreview } from "@/components/voiceover/SequentialVoi
 import { BeatAudioPlayer } from "@/components/voiceover/BeatAudioPlayer";
 import { GOOGLE_VOICES, isGoogleVoice } from "@/lib/google/tts";
 import { QWEN_VOICES, isQwenVoice } from "@/lib/replicate/tts";
-import { AI33_VOICES, ai33VoicesByGender, isAi33Voice } from "@/lib/ai33/tts";
+import { AI33_VOICES, AI33_FREE_PROVIDERS, ai33VoicesByGender, isAi33Voice } from "@/lib/ai33/tts";
 import { VoiceOption } from "@/components/VoiceOption";
 import { FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
 import { RotateCw, ChevronUp, ChevronDown, Download } from "lucide-react";
@@ -167,7 +167,29 @@ export default function VoiceoverPage({ params }: PageProps) {
   // Gender split *inside* the Free tab. Separate from voiceTab so switching
   // Female/Male among the free voices doesn't knock you out of the Free tab.
   const [freeGenderTab, setFreeGenderTab] = useState<"female" | "male">("female");
+  // Provider split, one level ABOVE the gender split: "all" merges every
+  // provider (the previous behavior), or narrow to one vendor's catalog.
+  // Both are server-side filters on /api/generate/tts/voices.
+  const [freeProviderTab, setFreeProviderTab] = useState<"all" | (typeof AI33_FREE_PROVIDERS)[number]["id"]>("all");
   const [previewingId, setPreviewingId] = useState<string | null>(null);
+  // Live ai33 catalog for the Free tab. The tab used to render the 25
+  // hardcoded AI33_VOICES; it now pages through /api/generate/tts/voices
+  // (thousands of English voices across elevenlabs/minimax/fishaudio/
+  // edge). `freeLive` false means the server fell back to the static
+  // list — shown with a note rather than silently.
+  const [freeVoices, setFreeVoices] = useState<KieModel[]>([]);
+  const [freeVoicesLoading, setFreeVoicesLoading] = useState(false);
+  const [freeHasMore, setFreeHasMore] = useState(false);
+  const [freeLive, setFreeLive] = useState(true);
+  const [freePage, setFreePage] = useState(1);
+  // Raw input vs. the debounced value that actually hits the API, so
+  // typing doesn't fire a request per keystroke.
+  const [freeSearch, setFreeSearch] = useState("");
+  const [freeSearchQuery, setFreeSearchQuery] = useState("");
+  // Names for ai33 voices the picker hasn't loaded a page containing —
+  // a project's saved voice is usually somewhere deep in the catalog.
+  // Keyed by voice id, filled lazily by the resolve effect below.
+  const [resolvedFreeVoices, setResolvedFreeVoices] = useState<Record<string, KieModel>>({});
   // Sticky bit so a subsequent project SWR update doesn't overwrite an
   // explicit user pick. Only the very first resolution honors
   // projectVoiceId / auto-pick; after that the picker owns the state.
@@ -231,6 +253,83 @@ export default function VoiceoverPage({ params }: PageProps) {
       .catch(() => { /* leave null — don't gate on a failed check */ });
     return () => { cancelled = true; };
   }, [voiceTab]);
+
+  // Debounce the Free tab's search box. Resets to page 1 here (not in a
+  // separate effect) so a pending page-3 fetch can't fire against the
+  // new query first.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setFreeSearchQuery((prev) => (prev === freeSearch ? prev : freeSearch));
+      setFreePage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [freeSearch]);
+
+  // Name the selected ai33 voice when it's not in the static catalog or
+  // the loaded page — one lookup per id, cached in state.
+  useEffect(() => {
+    if (!selectedVoice || !isAi33Voice(selectedVoice)) return;
+    if (resolvedFreeVoices[selectedVoice]) return;
+    if (AI33_VOICES.some((m) => m.id === selectedVoice)) return;
+    if (freeVoices.some((m) => m.id === selectedVoice)) return;
+    let cancelled = false;
+    fetch(`/api/generate/tts/voices?id=${encodeURIComponent(selectedVoice)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { voice?: KieModel | null } | null) => {
+        if (cancelled || !d?.voice) return;
+        setResolvedFreeVoices((prev) => ({ ...prev, [selectedVoice]: d.voice! }));
+      })
+      .catch(() => { /* banner falls back to the id-only label */ });
+    return () => { cancelled = true; };
+  }, [selectedVoice, freeVoices, resolvedFreeVoices]);
+
+  // Fetch the live free catalog: refetch on gender/search change (page
+  // already reset to 1 by the handlers), append on "Load more".
+  useEffect(() => {
+    if (voiceTab !== "free" || FREE_TTS_COMING_SOON) return;
+    let cancelled = false;
+    setFreeVoicesLoading(true);
+    const params = new URLSearchParams({ gender: freeGenderTab, page: String(freePage) });
+    if (freeProviderTab !== "all") params.set("provider", freeProviderTab);
+    if (freeSearchQuery.trim()) params.set("search", freeSearchQuery.trim());
+    // Endpoint unreachable — fall back to the static catalog so the tab
+    // still offers voices, scoped to the selected provider to match what
+    // the server would have returned.
+    const offlineFallback = () => {
+      const byGender = ai33VoicesByGender(freeGenderTab === "female" ? "Female" : "Male");
+      return freeProviderTab === "all"
+        ? byGender
+        : byGender.filter((m) => m.id.startsWith(`ai33/${freeProviderTab}_`));
+    };
+    fetch(`/api/generate/tts/voices?${params.toString()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { voices?: KieModel[]; hasMore?: boolean; live?: boolean } | null) => {
+        if (cancelled) return;
+        if (!d || !Array.isArray(d.voices)) {
+          setFreeLive(false);
+          setFreeHasMore(false);
+          setFreeVoices(offlineFallback());
+          return;
+        }
+        setFreeLive(d.live !== false);
+        setFreeHasMore(!!d.hasMore);
+        setFreeVoices((prev) => {
+          if (freePage === 1) return d.voices!;
+          // Append, keeping ids unique — the catalog repeats a premade
+          // block across pages (see listAi33Voices).
+          const seen = new Set(prev.map((m) => m.id));
+          return [...prev, ...d.voices!.filter((m) => !seen.has(m.id))];
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFreeLive(false);
+        setFreeHasMore(false);
+        setFreeVoices(offlineFallback());
+      })
+      .finally(() => { if (!cancelled) setFreeVoicesLoading(false); });
+    return () => { cancelled = true; };
+  }, [voiceTab, freeProviderTab, freeGenderTab, freeSearchQuery, freePage]);
   const [exportingVoiceover, setExportingVoiceover] = useState(false);
   const [stopped, setStopped] = useState(false);
   // Mirror `stopped` into a ref so the SSE handler (a long-lived async
@@ -985,13 +1084,38 @@ export default function VoiceoverPage({ params }: PageProps) {
                     cap={freeTtsUsage?.ai33TtsCap ?? 50_000}
                     loaded={!!freeTtsUsage}
                   />
+                  {/* Provider subtabs, one level above the gender split.
+                      "All" merges every provider in catalog order; the
+                      rest narrow to a single vendor. flex-wrap so five
+                      pills don't squeeze on a narrow panel. */}
+                  <div className="flex gap-1 flex-wrap">
+                    {([{ id: "all", label: "All" } as const, ...AI33_FREE_PROVIDERS]).map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => { setFreeProviderTab(p.id); setFreePage(1); }}
+                        disabled={effectivelyGenerating}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40"
+                        style={freeProviderTab === p.id ? {
+                          background: "oklch(0.72 0.25 285 / 0.15)",
+                          border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                          color: "oklch(0.88 0.12 285)",
+                        } : {
+                          background: "var(--bg-input)",
+                          border: "1px solid var(--bd-card)",
+                          color: "var(--c-50)",
+                        }}
+                      >{p.label}</button>
+                    ))}
+                  </div>
                   {/* Female / Male subtabs — same pill treatment as the
-                      top-level voice tabs, one level in. */}
+                      top-level voice tabs, one level in. Switching resets
+                      to page 1: the gender is a server-side filter, not a
+                      client-side split of one loaded list. */}
                   <div className="flex gap-1">
                     {(["female", "male"] as const).map((g) => (
                       <button
                         key={g}
-                        onClick={() => setFreeGenderTab(g)}
+                        onClick={() => { setFreeGenderTab(g); setFreePage(1); }}
                         disabled={effectivelyGenerating}
                         className="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium capitalize transition-all disabled:opacity-40"
                         style={freeGenderTab === g ? {
@@ -1006,18 +1130,79 @@ export default function VoiceoverPage({ params }: PageProps) {
                       >{g}</button>
                     ))}
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {ai33VoicesByGender(freeGenderTab === "female" ? "Female" : "Male").map((m) => (
-                      <VoiceOption
-                        key={m.id}
-                        model={m}
-                        selected={selectedVoice === m.id}
-                        onSelect={() => setSelectedVoice(m.id)}
-                        isPlaying={previewingId === m.id}
-                        onPlayToggle={setPreviewingId}
-                      />
-                    ))}
+                  {/* Search runs server-side against the whole catalog
+                      (name + description), not just the loaded page. */}
+                  <input
+                    type="search"
+                    value={freeSearch}
+                    onChange={(e) => setFreeSearch(e.target.value)}
+                    placeholder="Search free voices — name, accent, style…"
+                    aria-label="Search free voices"
+                    className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none transition-colors"
+                    style={{
+                      background: "var(--bg-input)",
+                      border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+                      color: "var(--c-70)",
+                    }}
+                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] tabular-nums" style={{ color: "var(--c-45)" }}>
+                      {freeVoices.length > 0 && `${freeVoices.length} loaded`}
+                    </span>
+                    {!freeLive && (
+                      <span className="text-[10px]" style={{ color: "var(--c-45)" }}>
+                        Live catalog unreachable — showing the built-in set
+                      </span>
+                    )}
                   </div>
+                  {freeVoicesLoading && freeVoices.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-10 gap-2">
+                      <span className="block w-6 h-6 border-2 rounded-full animate-spin"
+                        style={{ borderColor: "oklch(0.72 0.25 285 / 0.3)", borderTopColor: "oklch(0.72 0.25 285)" }} />
+                      <p className="text-xs" style={{ color: "var(--c-40)" }}>Loading voices…</p>
+                    </div>
+                  ) : freeVoices.length === 0 ? (
+                    <p className="text-xs text-center py-6" style={{ color: "var(--c-40)" }}>
+                      {(() => {
+                        const providerLabel = AI33_FREE_PROVIDERS.find((p) => p.id === freeProviderTab)?.label;
+                        if (freeSearchQuery.trim()) {
+                          return `No ${providerLabel ?? "free"} voices match “${freeSearchQuery.trim()}”`;
+                        }
+                        return providerLabel
+                          ? `No ${providerLabel} voices available right now`
+                          : "No free voices available right now";
+                      })()}
+                    </p>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {freeVoices.map((m) => (
+                          <VoiceOption
+                            key={m.id}
+                            model={m}
+                            selected={selectedVoice === m.id}
+                            onSelect={() => setSelectedVoice(m.id)}
+                            isPlaying={previewingId === m.id}
+                            onPlayToggle={setPreviewingId}
+                          />
+                        ))}
+                      </div>
+                      {freeHasMore && (
+                        <button
+                          onClick={() => setFreePage((p) => p + 1)}
+                          disabled={freeVoicesLoading}
+                          className="w-full px-3 py-2 rounded-lg text-xs font-medium transition-all disabled:opacity-50"
+                          style={{
+                            background: "var(--bg-input)",
+                            border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+                            color: "oklch(0.88 0.12 285)",
+                          }}
+                        >
+                          {freeVoicesLoading ? "Loading…" : "Load more voices"}
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
                 )}
               </div>
@@ -1089,8 +1274,11 @@ export default function VoiceoverPage({ params }: PageProps) {
             {(() => {
               // Resolve the name from the ElevenLabs catalog OR the free
               // Google catalog so a selected free voice shows its name too.
+              // freeVoices (the live ai33 page currently loaded) comes
+              // before the static AI33_VOICES — most live ai33 voices
+              // aren't in the static list at all.
               const model = selectedVoice
-                ? (ttsModels?.find((m) => m.id === selectedVoice) ?? GOOGLE_VOICES.find((m) => m.id === selectedVoice) ?? QWEN_VOICES.find((m) => m.id === selectedVoice) ?? AI33_VOICES.find((m) => m.id === selectedVoice))
+                ? (ttsModels?.find((m) => m.id === selectedVoice) ?? freeVoices.find((m) => m.id === selectedVoice) ?? resolvedFreeVoices[selectedVoice] ?? GOOGLE_VOICES.find((m) => m.id === selectedVoice) ?? QWEN_VOICES.find((m) => m.id === selectedVoice) ?? AI33_VOICES.find((m) => m.id === selectedVoice))
                 : null;
               const tag = model?.tags?.[0];
               return (
@@ -1105,7 +1293,10 @@ export default function VoiceoverPage({ params }: PageProps) {
                     </span>
                     <span className="text-sm font-semibold truncate" style={{ color: "oklch(0.92 0.08 285)" }}>
                       {model?.name ?? (selectedVoice
-                        ? (ttsModels ? "Unknown voice" : "Loading…")
+                        // An ai33 id that hasn't resolved yet is a known
+                        // free voice, not an unknown one — the lookup is
+                        // one request behind, so don't cry wolf.
+                        ? (isAi33Voice(selectedVoice) ? "Free voice" : ttsModels ? "Unknown voice" : "Loading…")
                         : "None selected")}
                     </span>
                     {tag && (
