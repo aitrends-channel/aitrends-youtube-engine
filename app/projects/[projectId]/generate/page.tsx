@@ -19,6 +19,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { ModelPicker } from "@/components/ModelPicker";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
+import { friendlyError, isModelTerminalError } from "@/lib/errors/friendly";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
 import { getModelConfig } from "@/lib/kie/imageModels";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
@@ -157,62 +158,6 @@ function isCreditError(raw: string | undefined | null): boolean {
 // the same model is hopeless — the only fix is switching models —
 // so we sweep any other queued/rendering beats to failed instead of
 // letting them burn through one by one.
-function isModelTerminalError(raw: string | undefined | null): boolean {
-  const msg = (raw ?? "").toLowerCase();
-  return msg.includes("this field is required")
-    || msg.includes("invalid model")
-    || msg.includes("rejected the request")
-    || msg.includes("temporarily paused")
-    || msg.includes("video quality cannot be empty")
-    || msg.includes("video model rejected");
-}
-
-function friendlyError(raw: string | undefined | null): string {
-  const msg = (raw ?? "").toLowerCase();
-  // Free-provider (BYO) errors arrive already user-worded from the API —
-  // pass them through before the KIE mappings below mislabel them (a
-  // Google "Quota exceeded…" message is NOT a KIE rate limit).
-  if (msg.includes("cloudflare")) return (raw ?? "").trim();
-  if (msg.includes("credits insufficient") || msg.includes("insufficient credits") || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit") || msg.includes("fund"))))
-    return "Insufficient KIE credits — top up your account at kie.ai";
-  if (msg.includes("credits remaining") || msg.includes("credit balance"))
-    return "Insufficient KIE credits — top up your account at kie.ai";
-  if (msg.includes("quota_exceeded") || msg.includes("quota exceeded"))
-    return "KIE rate limit reached — wait a minute and try again, or switch to a different model";
-  if (msg.includes("invalid_api_key") || msg.includes("invalid api key") || msg.includes("unauthorized") || (msg.includes("api key") && msg.includes("invalid")))
-    return "API key is invalid — go to Settings to update it";
-  if (msg.includes("api key") && (msg.includes("missing") || msg.includes("not set") || msg.includes("required")))
-    return "API key not set — go to Settings to add it";
-  if (msg.includes("internal error") || msg.includes("internal server error") || msg.includes("fail code 500"))
-    return "The selected model is temporarily unavailable — try a different one";
-  if (msg.includes("temporarily paused") || msg.includes("interface is paused") || msg.includes("model is paused") || msg.includes("paused by kie"))
-    return "KIE has temporarily paused this model — try a different one";
-  if (msg.includes("this field is required"))
-    return "Video model rejected the request — try a different video model";
-  if (msg.includes("timed out") || msg.includes("timeout"))
-    return "Still generating — this can take longer than usual on some models. Refresh the page to check status; the job will finish on KIE in the background.";
-  if (msg.includes("no task id") || msg.includes("no taskid"))
-    return "Failed to queue task — the model may be unavailable, try another";
-  // KIE / Veo safety filters flag anything the model interprets as a
-  // reference to a real person, brand, copyrighted character, or
-  // sensitive content. It's a per-beat problem — the same model with
-  // a different prompt usually works — so we route the user to
-  // rephrasing rather than to changing the model.
-  if (msg.includes("safety filter") || msg.includes("safety_filter")
-    || msg.includes("prominent public figure")
-    || msg.includes("content policy") || msg.includes("policy violation")
-    || msg.includes("blocked by moderation") || msg.includes("moderated"))
-    return "Content policy block — the prompt references something the model refuses to render (real person, brand, or restricted topic). Rephrase this beat's prompt in Prompt Studio, then retry.";
-  if (msg.includes("nsfw") || msg.includes("unsafe content") || msg.includes("adult content"))
-    return "Content policy block — the prompt was flagged as unsafe. Rephrase this beat's prompt in Prompt Studio, then retry.";
-  if (msg.includes("no url") || msg.includes("no image url") || msg.includes("completed but no url"))
-    return "Image was generated but could not be retrieved — try again";
-  if (msg.includes("rate limit") || msg.includes("too many requests"))
-    return "Too many requests — wait a moment and try again";
-  if (raw && raw.length > 0) return raw;
-  return "Something went wrong — please try again";
-}
-
 interface PageProps {
   params: { projectId: string };
 }
