@@ -348,7 +348,7 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
           {status === "needs_attention" ? "1Click needs your input" : status === "paused" ? "1Click paused" : "1Click is building your video"}
         </h1>
         <p className="text-sm mt-1.5" style={{ color: "var(--c-50)" }}>
-          You can watch here or close the tab — we&apos;ll keep going and email you when it&apos;s done.
+          Feel free to close this tab. We keep working and email you when your video is ready.
         </p>
       </div>
 
@@ -374,26 +374,30 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
         </div>
       </div>
 
-      {/* Channel + Topic full-width, then the rest in a 2-column grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {TOP_STEPS.map((s, i) => (
-          <div key={s.key} className="sm:col-span-2">
-            <StepCard step={s} status={statusOf(i)} agg={a} project={p} />
-          </div>
-        ))}
-        {GRID_STEPS.map((s, gi) => (
-          <StepCard key={s.key} step={s} status={statusOf(TOP_STEPS.length + gi)} agg={a} project={p}
-            busy={busyStep === s.key}
-            onRun={() => runStep(s.key, s.label)} />
-        ))}
-        {LANE_STEPS.map((s, li) => (
-          <div key={s.key} className="sm:col-span-2">
-            <StepCard step={s} status={statusOf(TOP_STEPS.length + GRID_STEPS.length + li)} agg={a} project={p}
-              busy={busyStep === s.key}
-              onRun={() => runStep(s.key, s.label)} />
-          </div>
-        ))}
-      </div>
+      {/* One step at a time, like the setup stepper — but this one advances
+          itself: the 4s poll above moves firstActiveIdx on as the
+          orchestrator completes each step, so there's nothing to click.
+          Showing all eleven at once made the run read as a checklist the
+          user was meant to work through. */}
+      {(() => {
+        // firstActiveIdx is -1 once everything is done; hold on the last
+        // step so the view ends on "Thumbnails ✓" rather than going blank.
+        const idx = firstActiveIdx === -1 ? ALL_STEPS.length - 1 : firstActiveIdx;
+        const current = ALL_STEPS[idx];
+        // Channel and Topic have no manual re-run endpoint; the rest do,
+        // which is what makes a stuck step recoverable.
+        const canRun = !TOP_STEPS.some((s) => s.key === current.key);
+        return (
+          <StepCard
+            step={current}
+            status={statusOf(idx)}
+            agg={a}
+            project={p}
+            busy={busyStep === current.key}
+            onRun={canRun ? () => runStep(current.key, current.label) : undefined}
+          />
+        );
+      })()}
 
       {status === "needs_attention" && (
         <p className="text-sm mt-4 px-4 py-3 rounded-xl"
