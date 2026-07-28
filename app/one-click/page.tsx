@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { toast } from "sonner";
@@ -30,7 +30,10 @@ const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promi
 // VIEW. Project-less on purpose: nothing is created until setup is done, so
 // an abandoned setup can't leave an orphan project behind or burn a niche
 // slot against the user's plan limit.
-export default function OneClickSetupPage() {
+//
+// Suspense-wrapped below: useSearchParams() opts this page out of
+// prerendering unless it sits under a boundary.
+function OneClickSetup() {
   const router = useRouter();
   const params = useSearchParams();
   const isNewNiche = params.get("new") === "1";
@@ -141,5 +144,21 @@ export default function OneClickSetupPage() {
         </DialogContent>
       </Dialog>
     </OneClickShell>
+  );
+}
+
+export default function OneClickSetupPage() {
+  return (
+    <Suspense
+      fallback={
+        <OneClickShell>
+          <div className="flex items-center justify-center gap-2 py-20 text-sm" style={{ color: "var(--c-45)" }}>
+            <Spinner size={14} /> Loading…
+          </div>
+        </OneClickShell>
+      }
+    >
+      <OneClickSetup />
+    </Suspense>
   );
 }
