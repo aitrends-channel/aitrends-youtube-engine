@@ -60,6 +60,11 @@ function av(voiceId: string, label: string, tags: string[], previewUrl: string):
 // GET /v3/voices?provider=…). Adjust freely — ids and preview URLs are
 // the real values returned by the API.
 //
+// The voiceover step's Free tab renders the LIVE catalog now
+// (listAi33Voices below); this list is the offline fallback for it, plus
+// the catalog the one-click panel and the saved-voice-id → name lookup
+// still read directly.
+//
 // Every id, gender tag and preview URL below was cross-checked against a
 // live GET /v3/voices response. Two rules when adding more:
 //   1. Only use preview URLs on storage.googleapis.com / the minimax CDN.
@@ -104,6 +109,341 @@ export const AI33_VOICES: KieModel[] = [
 export function ai33VoicesByGender(gender: "Female" | "Male"): KieModel[] {
   const other = gender === "Female" ? "Male" : "Female";
   return AI33_VOICES.filter((v) => v.tags?.includes(gender) || !v.tags?.includes(other));
+}
+
+// ── Live catalog ────────────────────────────────────────────────────
+// The Free tab used to render the 25 static entries above and nothing
+// else, which was a rounding error against what ai33 actually exposes.
+// Verified live 2026-07-28, English-only totals per provider:
+// elevenlabs 9,319 · minimax 100 · fishaudio 50 · edge 47. So the tab
+// now pages through GET /v3/voices and AI33_VOICES is demoted to the
+// offline fallback (still the source of truth for the one-click panel
+// and for resolving a saved voice id to a name).
+//
+// GET /v3/voices contract, all confirmed against live responses:
+//   • `provider` is REQUIRED — omitting it 400s with
+//     unsupported_voice_provider and lists the accepted values
+//     (elevenlabs, minimax, clone, edge, kokoro, vbee, fishaudio).
+//   • `language=en` matches en / en-US / en-GB / … across providers,
+//     including minimax's spelled-out "English". `gender` is
+//     case-insensitive. `search` is free text over name/description.
+//   • `page` + `page_size` paginate; the envelope is
+//     { success, format_version, data: [...], pagination:
+//       { page, page_size, total, has_more } }.
+//   • QUIRK: elevenlabs prepends its ~21 premade voices to EVERY page,
+//     so data.length exceeds page_size and those 21 repeat page over
+//     page. Dedupe by voice_id across pages, and take has_more from
+//     `pagination` rather than inferring it from data.length.
+//
+// Providers are limited to the four where a live POST
+// /v3/text-to-speech actually returned audio. kokoro is out: it lists
+// 28 English voices but synthesis rejects with provider_unavailable
+// ("Kokoro is undermantain"). vbee is out: Vietnamese-first, its only
+// English entries are beta clones. clone is out: the account has none.
+// `id` is ai33's provider key (also the prefix on every one of its voice
+// ids); `label` is what the Free tab's provider subtabs show.
+export const AI33_FREE_PROVIDERS = [
+  { id: "elevenlabs", label: "ElevenLabs" },
+  { id: "minimax", label: "MiniMax" },
+  { id: "fishaudio", label: "Fish Audio" },
+  { id: "edge", label: "Edge" },
+] as const;
+
+export type Ai33Provider = (typeof AI33_FREE_PROVIDERS)[number]["id"];
+
+export function isAi33Provider(value: string): value is Ai33Provider {
+  return AI33_FREE_PROVIDERS.some((p) => p.id === value);
+}
+
+// One page = one page from each provider, concatenated (~135-145 cards on
+// page 1, ~55 after — the small providers run dry first). With a single
+// provider selected it's just that provider's page.
+const PROVIDER_PAGE_SIZE = 40;
+
+// Hosts that return SIGNED preview links with an expiry baked into the
+// payload — the mp3 goes dead and the card is left with a dud play
+// button. Everything else ai33 hands back is a plain static CDN object
+// (storage.googleapis.com, cdn.hailuoai.video, filecdn.minimax.chat,
+// platform.r2.fish.audio, cdn.ai33.pro, vbee's S3 bucket), so this is a
+// denylist of the known-expiring hosts rather than an allowlist that
+// would silently drop a new CDN. Costs ~15 of elevenlabs' 47 rows per
+// page; against 9,319 available that's not worth proxying.
+const EXPIRING_PREVIEW_HOSTS = new Set(["api.us.elevenlabs.io", "api.elevenlabs.io"]);
+
+interface Ai33VoiceRow {
+  voice_id?: string;
+  name?: string | null;
+  description?: string | null;
+  language?: string | null;
+  locale?: string | null;
+  gender?: string | null;
+  accent?: string | null;
+  category?: string | null;
+  use_cases?: string[] | null;
+  descriptives?: string[] | null;
+  tags?: string[] | null;
+  preview_url?: string | null;
+}
+
+interface Ai33VoicesResponse {
+  success?: boolean;
+  message?: string | null;
+  data?: Ai33VoiceRow[];
+  pagination?: { page?: number; page_size?: number; total?: number; has_more?: boolean };
+}
+
+export interface Ai33VoicePage {
+  voices: KieModel[];
+  /** Another page exists for at least one provider. */
+  hasMore: boolean;
+  /** false = these are the static AI33_VOICES, not the live catalog. */
+  live: boolean;
+}
+
+// Safety net for the API's `language` filter, which is applied
+// per-provider upstream and can't be assumed uniform. Matches "en",
+// "en-US", and minimax/kokoro's spelled-out "English"/"American
+// English"; rejects vbee's "Vietnamese" + "northern" locale.
+function isEnglish(row: Ai33VoiceRow): boolean {
+  const fields = `${row.locale ?? ""} ${row.language ?? ""}`.toLowerCase();
+  if (fields.includes("english")) return true;
+  return fields.split(/\s+/).some((t) => t === "en" || t.startsWith("en-"));
+}
+
+function usablePreview(url: string | null | undefined): string | null {
+  if (!url || !url.startsWith("http")) return null;
+  try {
+    if (EXPIRING_PREVIEW_HOSTS.has(new URL(url).hostname)) return null;
+  } catch {
+    return null;
+  }
+  return url;
+}
+
+function titleCase(s: string): string {
+  return s.replace(/[_-]/g, " ").replace(/^./, (c) => c.toUpperCase());
+}
+
+// Tokens that say nothing a card doesn't already show: the gender pill
+// covers gender, and age/language/category noise isn't worth a pill.
+const NOISE_TAGS = new Set([
+  "male", "female", "neutral", "unknown",
+  "young", "old", "adult", "child", "teen", "senior", "middle_aged", "middle-aged",
+  "premade", "standard", "open-source", "high_quality",
+]);
+
+// Fish Audio puts everything descriptive in `tags` and leaves
+// descriptives/use_cases/accent/locale empty — without this every one of
+// its cards would show a lone gender pill. Language codes ("en",
+// "en-US") are dropped along with the noise tokens above.
+function descriptorFromTags(tags: string[] | null | undefined): string | null {
+  for (const raw of tags ?? []) {
+    const t = raw.trim();
+    if (!t) continue;
+    const lower = t.toLowerCase();
+    if (NOISE_TAGS.has(lower)) continue;
+    if (/^[a-z]{2,3}(-[a-z0-9]+)?$/i.test(t)) continue; // en, en-US, zh-Hant
+    return titleCase(t);
+  }
+  return null;
+}
+
+// ElevenLabs library names carry their own descriptor after a dash
+// ("Bella - Professional, Bright, Warm"). The card truncates the name
+// to one line, so the descriptor is split off and shown as a tag pill
+// instead of being cut off mid-word.
+function splitName(raw: string): { name: string; descriptor: string | null } {
+  const parts = raw.split(/\s+-\s+/);
+  if (parts.length < 2) return { name: raw.trim(), descriptor: null };
+  const name = parts[0].trim();
+  const descriptor = parts.slice(1).join(" - ").trim();
+  return { name: name || raw.trim(), descriptor: descriptor || null };
+}
+
+// Edge voices carry Microsoft's raw shortname as their name
+// ("en-AU-WilliamMultilingualNeural"), which reads as an id on a card.
+// Pull the human part out: → "William". The locale still shows as the
+// voice's tag, so nothing is lost.
+//
+// The Multilingual/Expressive variant is kept as a suffix rather than
+// dropped: en-US ships both AndrewNeural and AndrewMultilingualNeural
+// (same for Ava, Brian, Emma, Neerja), and without it those render as
+// two identical "Andrew" cards with no way to tell them apart.
+function prettifyEdgeName(raw: string): string {
+  const m = raw.match(/^[a-z]{2,3}(?:-[A-Za-z]+)*?-([A-Za-z]+?)(Multilingual|Expressive)?Neural$/);
+  if (!m) return raw;
+  return m[2] ? `${m[1]} (${m[2].toLowerCase()})` : m[1];
+}
+
+// requirePreview=false is for resolving a single already-selected voice
+// to its name, where a dead preview link is no reason to hide it.
+function rowToModel(row: Ai33VoiceRow, requirePreview = true): KieModel | null {
+  const voiceId = (row.voice_id ?? "").trim();
+  if (!voiceId) return null;
+  const previewUrl = usablePreview(row.preview_url);
+  if (!previewUrl && requirePreview) return null;
+
+  const rawName = (row.name ?? voiceId).trim();
+  const { name, descriptor } = splitName(
+    voiceId.startsWith("edge_") ? prettifyEdgeName(rawName) : rawName,
+  );
+  const g = (row.gender ?? "").toLowerCase();
+  // Gender tag stays first — the Free tab's Male/Female subtabs and the
+  // selected-voice banner both read tags[0].
+  const genderTag = g === "female" ? "Female" : g === "male" ? "Male" : "Neutral";
+
+  // One descriptor pill, so a card is never more than two tags wide.
+  // Falls back through the structured fields when the name carries no
+  // descriptor of its own (minimax, edge, fishaudio).
+  const fallbackDescriptor =
+    [...(row.descriptives ?? []), ...(row.use_cases ?? []), row.accent]
+      .filter((s): s is string => !!s && s.trim().length > 0)
+      .map((s) => titleCase(s.trim()))[0]
+    ?? descriptorFromTags(row.tags)
+    // Locale last and NOT title-cased — "en-AU" is the canonical form,
+    // "En-AU" just looks like a typo.
+    ?? row.locale?.trim()
+    ?? null;
+  const detail = descriptor ?? fallbackDescriptor;
+  const tags = [genderTag, ...(detail ? [detail.length > 44 ? `${detail.slice(0, 43)}…` : detail] : [])];
+
+  return {
+    id: `ai33/${voiceId}`,
+    name,
+    type: "tts",
+    tags,
+    ...(previewUrl ? { previewUrl } : {}),
+  };
+}
+
+async function fetchProviderPage(
+  provider: string,
+  page: number,
+  opts: { gender?: "Female" | "Male"; search?: string },
+  token: string,
+): Promise<{ rows: Ai33VoiceRow[]; hasMore: boolean }> {
+  const params = new URLSearchParams({
+    provider,
+    language: "en",
+    page: String(page),
+    page_size: String(PROVIDER_PAGE_SIZE),
+  });
+  if (opts.gender) params.set("gender", opts.gender.toLowerCase());
+  const search = opts.search?.trim();
+  if (search) params.set("search", search);
+
+  try {
+    const res = await fetch(`${AI33_BASE}/v3/voices?${params.toString()}`, {
+      headers: { "xi-api-key": token },
+      // Catalogs change rarely; don't hit ai33 on every picker render or
+      // every keystroke of a search that resolves to the same query.
+      next: { revalidate: 900 },
+    });
+    if (!res.ok) {
+      console.warn(`[ai33] /v3/voices ${provider} failed (${res.status})`);
+      return { rows: [], hasMore: false };
+    }
+    const body = (await res.json().catch(() => null)) as Ai33VoicesResponse | null;
+    if (!body || body.success === false || !Array.isArray(body.data)) {
+      console.warn(`[ai33] /v3/voices ${provider} returned no data: ${body?.message ?? "unknown"}`);
+      return { rows: [], hasMore: false };
+    }
+    return { rows: body.data.filter(isEnglish), hasMore: body.pagination?.has_more === true };
+  } catch (e) {
+    console.warn(`[ai33] /v3/voices ${provider} fetch failed:`, e instanceof Error ? e.message : e);
+    return { rows: [], hasMore: false };
+  }
+}
+
+/** One page of the live ai33 English catalog — from a single provider
+ *  when `provider` is set, otherwise every provider we can actually
+ *  synthesize with, concatenated in AI33_FREE_PROVIDERS order. Degrades
+ *  to the static AI33_VOICES (flagged `live: false`) when the token is
+ *  missing or every fetch fails, so the Free tab never renders empty. */
+export async function listAi33Voices(opts: {
+  provider?: Ai33Provider;
+  gender?: "Female" | "Male";
+  search?: string;
+  page?: number;
+} = {}): Promise<Ai33VoicePage> {
+  const token = (process.env.AI33_API_TOKEN ?? "").trim();
+  const staticFallback = (): Ai33VoicePage => {
+    const base = opts.gender ? ai33VoicesByGender(opts.gender) : AI33_VOICES;
+    // The static catalog only covers elevenlabs and minimax, so a
+    // provider-scoped fallback can legitimately come back empty.
+    return {
+      voices: opts.provider ? base.filter((v) => v.id.startsWith(`ai33/${opts.provider}_`)) : base,
+      hasMore: false,
+      live: false,
+    };
+  };
+  if (!token) return staticFallback();
+
+  const page = Math.max(1, Math.floor(opts.page ?? 1));
+  const providers = opts.provider ? [opts.provider] : AI33_FREE_PROVIDERS.map((p) => p.id);
+  const pages = await Promise.all(
+    providers.map((p) => fetchProviderPage(p, page, opts, token)),
+  );
+
+  // Provider order is the display order. Dedupe across providers AND
+  // across pages-within-a-provider (elevenlabs repeats its premade
+  // block on every page).
+  const seen = new Set<string>();
+  const voices: KieModel[] = [];
+  for (const { rows } of pages) {
+    for (const row of rows) {
+      const model = rowToModel(row);
+      if (!model || seen.has(model.id)) continue;
+      seen.add(model.id);
+      voices.push(model);
+    }
+  }
+
+  // Nothing at all on the first page means ai33 is unreachable rather
+  // than "this search has no hits" — fall back so the tab stays usable.
+  // A later page legitimately coming back empty just ends the list.
+  if (!voices.length && page === 1 && !opts.search) return staticFallback();
+
+  return { voices, hasMore: pages.some((p) => p.hasMore), live: true };
+}
+
+/** Resolve ONE ai33 voice id to its catalog entry, for naming a voice a
+ *  project already has saved. Needed because a saved voice is usually
+ *  nowhere in the page the picker happens to have loaded (the catalog is
+ *  thousands deep), and AI33_VOICES only covers the 25 static ones —
+ *  without this the selected-voice banner reads "Unknown voice".
+ *
+ *  ai33 has no by-id endpoint (GET /v3/voices/{id} 404s and `voice_id=`
+ *  is ignored), but `search=<voice_id>` matches the id exactly — verified
+ *  for elevenlabs, minimax, fishaudio and edge ids. */
+export async function resolveAi33Voice(voiceId: string): Promise<KieModel | null> {
+  if (!isAi33Voice(voiceId)) return null;
+  const fromStatic = AI33_VOICES.find((v) => v.id === voiceId);
+  if (fromStatic) return fromStatic;
+
+  const token = (process.env.AI33_API_TOKEN ?? "").trim();
+  if (!token) return null;
+
+  const rawId = voiceId.replace(/^ai33\//, "");
+  // ai33 ids are "<provider>_<upstream id>" — the provider is required
+  // on the query, so read it off the prefix.
+  const provider = rawId.split("_")[0];
+  if (!provider) return null;
+
+  const params = new URLSearchParams({ provider, search: rawId, page_size: "5" });
+  try {
+    const res = await fetch(`${AI33_BASE}/v3/voices?${params.toString()}`, {
+      headers: { "xi-api-key": token },
+      next: { revalidate: 900 },
+    });
+    if (!res.ok) return null;
+    const body = (await res.json().catch(() => null)) as Ai33VoicesResponse | null;
+    const hit = (body?.data ?? []).find((r) => r.voice_id === rawId);
+    return hit ? rowToModel(hit, false) : null;
+  } catch (e) {
+    console.warn("[ai33] voice resolve failed:", e instanceof Error ? e.message : e);
+    return null;
+  }
 }
 
 export function isAi33Voice(voiceId: string): boolean {
