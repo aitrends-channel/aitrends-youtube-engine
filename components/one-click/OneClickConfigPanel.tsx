@@ -136,6 +136,8 @@ export function OneClickConfigPanel({
   const [imageSlot, setImageSlot] = useState<ChainSlot>("primary");
   const [videoSlot, setVideoSlot] = useState<ChainSlot>("primary");
   const [step, setStep] = useState(0);
+  // True while a screen's beforeNext gate is running (a channel lookup).
+  const [advancing, setAdvancing] = useState(false);
 
   useEffect(() => {
     if (hydrated || !cfgData) return;
@@ -207,7 +209,49 @@ export function OneClickConfigPanel({
 
   // One entry per screen. `ready` gates Next in stepper mode so the user
   // can't walk past a choice the config can't be saved without.
-  const screens: { id: string; title: string; hint: string; ready: boolean; node: ReactNode }[] = [
+  const screens: { id: string; title: string; hint: string; ready: boolean; node: ReactNode; beforeNext?: () => Promise<boolean> }[] = [
+    {
+      id: "contentType",
+      title: "Content type",
+      hint: "What kind of videos should 1Click make?",
+      ready: true,
+      node: (
+        <section key="contentType" className="space-y-5 p-6 sm:p-8 rounded-2xl" style={sectionStyle}>
+          <div>
+            <h2 className="text-base font-bold" style={{ color: "var(--c-90)" }}>What kind of videos?</h2>
+            <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>
+              This shapes the whole pipeline, from transcripts to the final cut. Every 1Click run uses it.
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {([
+              { value: "long" as const, label: "Long-form", desc: "Standard landscape videos." },
+              { value: "shorts" as const, label: "Shorts", desc: "Vertical short-form clips." },
+              { value: "both" as const, label: "Both", desc: "A mix of long-form and shorts." },
+            ]).map((t) => {
+              const active = (cfg.contentType ?? "long") === t.value;
+              return (
+                <button
+                  key={t.value}
+                  type="button"
+                  onClick={() => setCfg({ ...cfg, contentType: t.value })}
+                  className="text-left px-3.5 py-2.5 rounded-xl transition-all hover:opacity-90 cursor-pointer"
+                  style={active
+                    ? { background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.45)" }
+                    : { background: "var(--bg-input)", border: "1px solid var(--bd-10)" }}
+                >
+                  <span className="block text-sm font-semibold"
+                    style={{ color: active ? "oklch(0.88 0.12 285)" : "var(--c-90)" }}>
+                    {t.label}
+                  </span>
+                  <span className="block text-xs mt-0.5" style={{ color: "var(--c-45)" }}>{t.desc}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ),
+    },
     {
       id: "gates",
       title: "Topic & script",
@@ -432,14 +476,28 @@ export function OneClickConfigPanel({
 
   // ── Stepper: one screen after the other ────────────────────────────────
   if (mode === "stepper") {
-    const idx = Math.min(step, screens.length - 1);
-    const current = screens[idx];
-    const isLast = idx === screens.length - 1;
+    const allScreens = screens;
+    const idx = Math.min(step, allScreens.length - 1);
+    const current = allScreens[idx];
+    const isLast = idx === allScreens.length - 1;
+
+    async function goNext() {
+      if (current.beforeNext) {
+        setAdvancing(true);
+        try {
+          const ok = await current.beforeNext();
+          if (!ok) return;
+        } finally {
+          setAdvancing(false);
+        }
+      }
+      setStep((v) => Math.min(allScreens.length - 1, v + 1));
+    }
     return (
       <div className="space-y-6">
         <div className="space-y-3">
           <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
-            Step {idx + 1} of {screens.length}
+            Step {idx + 1} of {allScreens.length}
           </p>
           <div>
             <h2 className="text-xl font-bold" style={{ color: "var(--c-90)" }}>{current.title}</h2>
@@ -447,7 +505,7 @@ export function OneClickConfigPanel({
           </div>
           {/* Segmented progress — one bar per screen. */}
           <div className="flex items-center gap-1.5">
-            {screens.map((s, i) => (
+            {allScreens.map((s, i) => (
               <span key={s.id} className="h-1 flex-1 rounded-full transition-all"
                 style={{ background: i <= idx ? "oklch(0.72 0.25 285)" : "var(--bg-track)" }} />
             ))}
@@ -460,7 +518,7 @@ export function OneClickConfigPanel({
           <button
             type="button"
             onClick={() => setStep((s) => Math.max(0, s - 1))}
-            disabled={idx === 0 || saving}
+            disabled={idx === 0 || saving || advancing}
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-30 cursor-pointer"
             style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)", color: "var(--c-70)" }}
           >
@@ -481,13 +539,13 @@ export function OneClickConfigPanel({
           ) : (
             <button
               type="button"
-              onClick={() => setStep((s) => Math.min(screens.length - 1, s + 1))}
-              disabled={!current.ready}
+              onClick={goNext}
+              disabled={!current.ready || advancing}
               title={current.ready ? undefined : "Make a choice on this screen to continue"}
               className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 cursor-pointer"
               style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
             >
-              Next <ArrowRight size={14} />
+              {advancing ? (<><Spinner size={13} /> Checking…</>) : (<>Next <ArrowRight size={14} /></>)}
             </button>
           )}
         </div>

@@ -39,6 +39,9 @@ interface ProjectState {
   assembly_progress: string | null;
   assembled_url: string | null;
   channel_name: string | null;
+  /** Present from creation on a forked video (new video in an existing
+   *  niche), which is how we know channel analysis isn't part of its run. */
+  channel_analysis?: unknown;
   video_aspect_ratio: string | null;
   auto_pilot: boolean;
   auto_pilot_status: string | null;
@@ -159,6 +162,8 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
   const running = status === "running" || status === null;
   const [acting, setActing] = useState(false);
   const [busyStep, setBusyStep] = useState<string | null>(null);
+  // null until the first project load — see STEPS below.
+  const inheritedAnalysisRef = useRef<boolean | null>(null);
 
   // Live elapsed timer. Ticks every second while the run is active. Start
   // time is the DB stamp (auto_pilot_started_at); if that column isn't
@@ -322,10 +327,19 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
   }
 
   const a = aggregate(p);
-  const doneFlags = ALL_STEPS.map((s) => s.done(p, a));
+  // A new video in an existing niche starts at state 6 with the channel
+  // analysis already copied across, so that step was never part of its run.
+  // A brand-new niche starts below 6 with no analysis and does run it.
+  // Captured on first load (same approach as seenStartRef) so a fresh
+  // niche's pipeline doesn't renumber itself once its analysis lands.
+  if (inheritedAnalysisRef.current === null) {
+    inheritedAnalysisRef.current = Boolean(p.channel_analysis) && (p.current_state ?? 1) >= 6;
+  }
+  const STEPS = inheritedAnalysisRef.current ? ALL_STEPS.slice(1) : ALL_STEPS;
+  const doneFlags = STEPS.map((s) => s.done(p, a));
   const firstActiveIdx = doneFlags.findIndex((d) => !d);
   const completedCount = doneFlags.filter(Boolean).length;
-  const pct = Math.round((completedCount / ALL_STEPS.length) * 100);
+  const pct = Math.round((completedCount / STEPS.length) * 100);
 
   const statusOf = (idx: number): StepStatus => {
     if (doneFlags[idx]) return "done";
@@ -355,7 +369,7 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
       {/* Overall progress — with the live elapsed timer inline */}
       <div className="mb-5">
         <div className="flex items-center justify-between text-xs mb-1.5" style={{ color: "var(--c-50)" }}>
-          <span className="font-semibold">Step {Math.min(completedCount + 1, ALL_STEPS.length)} of {ALL_STEPS.length}</span>
+          <span className="font-semibold">Step {Math.min(completedCount + 1, STEPS.length)} of {STEPS.length}</span>
           <span className="flex items-center gap-2 tabular-nums">
             {(() => {
               const runStartTs = p.auto_pilot_started_at ? Date.parse(p.auto_pilot_started_at) : (seenStartRef.current ?? nowTs);
@@ -382,8 +396,8 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
       {(() => {
         // firstActiveIdx is -1 once everything is done; hold on the last
         // step so the view ends on "Thumbnails ✓" rather than going blank.
-        const idx = firstActiveIdx === -1 ? ALL_STEPS.length - 1 : firstActiveIdx;
-        const current = ALL_STEPS[idx];
+        const idx = firstActiveIdx === -1 ? STEPS.length - 1 : firstActiveIdx;
+        const current = STEPS[idx];
         // Channel and Topic have no manual re-run endpoint; the rest do,
         // which is what makes a stuck step recoverable.
         const canRun = !TOP_STEPS.some((s) => s.key === current.key);
