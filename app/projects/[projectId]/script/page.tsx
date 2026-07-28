@@ -8,6 +8,7 @@ import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
 import { useStreamingScript } from "@/hooks/useStreamingScript";
 import { getEffectiveScriptTargetWordCount } from "@/lib/claude/prompts";
+import { friendlyError } from "@/lib/errors/friendly";
 import { toast } from "sonner";
 import { RefreshCw } from "lucide-react";
 import {
@@ -149,7 +150,9 @@ export default function ScriptPage({ params }: PageProps) {
   }, [project]);
 
   useEffect(() => {
-    if (error) toast.error(error);
+    // Never surface a raw provider payload — friendlyError maps upstream
+    // errors (LLM 500s, rate limits, key problems) to something actionable.
+    if (error) toast.error(friendlyError(error));
   }, [error]);
 
 
@@ -190,7 +193,7 @@ export default function ScriptPage({ params }: PageProps) {
       });
       toast.success("Script saved");
     } catch {
-      toast.error("Failed to save");
+      toast.error("Couldn\u2019t save your script \u2014 check your connection and try again");
     } finally {
       setSaving(false);
     }

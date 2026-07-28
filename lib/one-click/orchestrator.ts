@@ -13,6 +13,7 @@ import { submitImageTask, generateImage } from "@/lib/kie/images";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { finishImageTask } from "@/lib/kie/finishImageTask";
 import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
+import { friendlyError } from "@/lib/errors/friendly";
 import { isGoogleVoice } from "@/lib/google/tts";
 import { isQwenVoice } from "@/lib/replicate/tts";
 import { isAi33Voice } from "@/lib/ai33/tts";
@@ -288,7 +289,7 @@ async function runScriptStep(project: ProjectRow, cfg: OneClickConfig): Promise<
       .join("")
       .trim();
   } catch (err) {
-    return RESULT.attention(`Script generation failed: ${err instanceof Error ? err.message : "unknown error"}`);
+    return RESULT.attention(`Script generation failed. ${friendlyError(err instanceof Error ? err.message : null)}`);
   }
   if (!script) return RESULT.attention("The script came back empty — open the project and retry.");
 
@@ -412,7 +413,7 @@ async function runVisualsStep(project: ProjectRow): Promise<AdvanceResult> {
     // needs_attention message instead of a raw ZodError bubbling to the tick.
     visualProfile = VisualProfileSchema.parse(rawProfile);
   } catch (err) {
-    return RESULT.attention(`Visual analysis failed: ${err instanceof Error ? err.message : "unknown error"}`);
+    return RESULT.attention(`Visual analysis failed. ${friendlyError(err instanceof Error ? err.message : null)}`);
   }
 
   const { error: upErr } = await supabase
@@ -461,7 +462,7 @@ async function runPromptsStep(project: ProjectRow, cfg: OneClickConfig): Promise
     await generateVideos(project.id, project.user_id, capture, PROMPT_MODEL);
     if (sendErr) return RESULT.attention(`Video prompt generation failed: ${sendErr}`);
   } catch (err) {
-    return RESULT.attention(`Prompt generation failed: ${err instanceof Error ? err.message : "unknown error"}`);
+    return RESULT.attention(`Prompt generation failed. ${friendlyError(err instanceof Error ? err.message : null)}`);
   }
 
   // Confirm the run actually landed at the generate step.
@@ -763,7 +764,7 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
         await generateVideos(project.id, project.user_id, capture, PROMPT_MODEL);
         if (sendErr) return RESULT.attention(`Video prompt generation failed: ${sendErr}`);
       } catch (err) {
-        return RESULT.attention(`Video prompt generation failed: ${err instanceof Error ? err.message : "unknown error"}`);
+        return RESULT.attention(`Video prompt generation failed. ${friendlyError(err instanceof Error ? err.message : null)}`);
       }
       return RESULT.waiting("Preparing video prompts…");
     }
