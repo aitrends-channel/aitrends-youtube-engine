@@ -85,7 +85,7 @@ export function VoiceOption({
       <div className="flex items-center gap-2">
         <p className="font-medium text-xs flex-1 truncate">
           {model.name}
-          {(model.id.startsWith("google/") || model.id.startsWith("qwen/")) && (
+          {(model.id.startsWith("google/") || model.id.startsWith("qwen/") || model.id.startsWith("ai33/")) && (
             <span style={{ color: "var(--primary)" }}> - free</span>
           )}
         </p>

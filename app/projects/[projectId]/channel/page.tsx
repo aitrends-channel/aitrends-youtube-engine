@@ -1,8 +1,8 @@
 ﻿"use client";
 
 import { useState, use, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
-import { AlertCircle, ArrowUpRight, Zap, SlidersHorizontal } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { AlertCircle, ArrowUpRight, Wand2, SlidersHorizontal } from "lucide-react";
 import { STUDIO_MODE_NAME } from "@/lib/one-click/config";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
@@ -298,7 +298,13 @@ export default function ChannelPage({ params }: PageProps) {
   // Generation mode: "studio" = the classic step-by-step wizard;
   // "oneclick" = autopilot (analysis runs here while the user is
   // present, then the server orchestrator drives every later step).
-  const [genMode, setGenMode] = useState<"studio" | "oneclick">("studio");
+  // Preselected from ?mode=oneclick, which the dashboard's "New niche"
+  // chooser sets so this page opens on the mode the user already picked
+  // instead of making them choose twice.
+  const searchParams = useSearchParams();
+  const [genMode, setGenMode] = useState<"studio" | "oneclick">(
+    searchParams.get("mode") === "oneclick" ? "oneclick" : "studio",
+  );
   // null = not checked yet; refreshed whenever 1Click is selected and on
   // window focus (so returning from /setup?tab=oneclick picks up the
   // fresh preset without a reload).
@@ -867,7 +873,7 @@ export default function ChannelPage({ params }: PageProps) {
                       }}
                     >
                       <p className="font-medium flex items-center gap-1.5">
-                        {opt.value === "oneclick" && <Zap size={13} />}
+                        {opt.value === "oneclick" && <Wand2 size={13} />}
                         {opt.label}
                       </p>
                       <p className="text-xs mt-0.5 opacity-70">{opt.desc}</p>
@@ -878,7 +884,7 @@ export default function ChannelPage({ params }: PageProps) {
               {genMode === "oneclick" && !isAnalyzed && oneClickConfigured && (
                 <button
                   type="button"
-                  onClick={() => router.push("/setup?tab=oneclick")}
+                  onClick={() => router.push(`/one-click?next=${encodeURIComponent(window.location.pathname + "?mode=oneclick")}`)}
                   className="text-xs font-medium underline underline-offset-2 cursor-pointer"
                   style={{ color: "oklch(0.72 0.25 285)" }}
                 >
@@ -936,7 +942,7 @@ export default function ChannelPage({ params }: PageProps) {
                   return (
                     <button
                       type="button"
-                      onClick={() => router.push("/setup?tab=oneclick")}
+                      onClick={() => router.push(`/one-click?next=${encodeURIComponent(window.location.pathname + "?mode=oneclick")}`)}
                       className="w-full flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 cursor-pointer"
                       style={{
                         background: "oklch(0.72 0.25 285)",
@@ -1233,7 +1239,7 @@ export default function ChannelPage({ params }: PageProps) {
               // to walk away instead of continuing manually.
               <div className="flex items-center gap-3 flex-wrap">
                 <p className="flex-1 min-w-[240px] text-sm font-medium flex items-center gap-2" style={{ color: "oklch(0.72 0.25 285)" }}>
-                  <Zap size={15} />
+                  <Wand2 size={15} />
                   1Click engaged — generation continues in the background. You can close this tab; we&apos;ll email you when your video is ready.
                 </p>
                 <button

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Zap, Pause, Play, Square } from "lucide-react";
+import { Wand2, Pause, Play, Square } from "lucide-react";
 
 // Live-run controls for a 1Click project: a status badge plus
 // Pause/Resume and Stop. Rendered on the dashboard card for any
@@ -89,7 +89,7 @@ export function OneClickControls({ projectId, status, error, onChanged }: {
         style={{ background: badge.bg, color: badge.fg, border: `1px solid ${badge.bd}` }}>
         {badge.spin
           ? <span className="w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin" />
-          : <Zap size={12} />}
+          : <Wand2 size={12} />}
         {badge.label}
       </span>
       {/* Pause is the primary control while running. Cancel (disengage)
