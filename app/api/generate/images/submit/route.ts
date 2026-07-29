@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { submitImageTask } from "@/lib/kie/images";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { KieUpstreamError } from "@/lib/kie/client";
-import { generateCloudflareImage, isCloudflareModel, CloudflareError } from "@/lib/cloudflare/images";
 import { incrementFreeUsage } from "@/lib/freeUsage";
 import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
@@ -42,45 +41,6 @@ export async function POST(req: Request) {
     const consistency = await resolveConsistency(user.id, projectId);
     const sentPrompt = applyConsistency(imagePrompt, consistency.text, consistency.append);
 
-    // Free path (BYO Cloudflare Workers AI). Cloudflare returns image bytes
-    // synchronously — no task id / webhook — so we generate, upload, and
-    // mark the beat done inline. Runs on the user's own free quota; no KIE
-    // credits and no cost-ledger entry.
-    if (isCloudflareModel(modelId)) {
-      await supabase.from("project_beats")
-        .update({ image_status: "generating", image_model_id: modelId, image_task_id: null })
-        .eq("project_id", projectId)
-        .eq("beat_number", beatNumber);
-
-      let buffer: ArrayBuffer, contentType: string;
-      try {
-        ({ buffer, contentType } = await generateCloudflareImage(sentPrompt, modelId, aspectRatio, user.id));
-      } catch (err) {
-        // The beat was just marked "generating" with no task id — nothing
-        // (webhook, cron, poll) will ever rescue it, so flip it to failed
-        // before surfacing the error or it spins forever in the UI.
-        await supabase.from("project_beats")
-          .update({ image_status: "failed", image_task_id: null })
-          .eq("project_id", projectId)
-          .eq("beat_number", beatNumber);
-        throw err;
-      }
-      const folder = userFolderFor({ id: user.id, email: user.email ?? null });
-      const storagePath = `${folder}/${projectId}/images/beat-${beatNumber}_${Date.now()}.jpg`;
-      const publicUrl = await uploadBuffer(storagePath, buffer, contentType);
-
-      await supabase.from("project_beats")
-        .update({ image_url: publicUrl, image_status: "done", image_task_id: null })
-        .eq("project_id", projectId)
-        .eq("beat_number", beatNumber);
-
-      // Awaited (not fire-and-forget): on serverless the function can be
-      // frozen the moment we return, cutting off an un-awaited RPC.
-      await incrementFreeUsage(user.id, "image", 1);
-      console.log(`[images/submit] beat=${beatNumber} model=${modelId} (free/cloudflare) done`);
-      return NextResponse.json({ done: true, beatNumber, imageUrl: publicUrl });
-    }
-
     // Webhook URL — KIE POSTs here the moment the image finishes, so
     // we don't depend on the cron tick or the browser polling. Cron and
     // page-resume effect remain as backstops in case the webhook is
@@ -117,14 +77,6 @@ export async function POST(req: Request) {
         .update({ image_status: "failed" })
         .eq("project_id", projectId)
         .eq("beat_number", beatNumber);
-    }
-
-    if (err instanceof CloudflareError) {
-      // 401 = key not connected, 429 = free quota spent; both are user-
-      // config issues, not server failures, so don't 500 / page on them.
-      console.warn(`[images/submit] Cloudflare error on beat ${beatNumber}: ${err.message}`);
-      const status = err.status === 401 ? 401 : err.status === 429 ? 429 : 502;
-      return NextResponse.json({ error: err.message, code: "cloudflare_free" }, { status });
     }
 
     if (err instanceof KieUpstreamError) {

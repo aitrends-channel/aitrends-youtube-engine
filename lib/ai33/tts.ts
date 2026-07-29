@@ -1,6 +1,7 @@
 import type { KieModel } from "@/lib/types";
 import { getFreeUsageThisMonth } from "@/lib/freeUsage";
 import { supabase } from "@/lib/supabase/client";
+import { AI33_TTS_CAP_STARTER, AI33_TTS_CAP_PRO, resolveQuotaCap } from "@/lib/quota-config";
 
 // ai33.pro (OpenSpeaker) TTS — a Heclus-paid voiceover perk, mirroring the
 // Qwen path (lib/replicate/tts.ts). It runs on HECLUS's own ai33 key
@@ -25,12 +26,14 @@ export class Ai33TTSError extends Error {
   }
 }
 
-// Heclus-paid perk budget per user per month, in characters — tiered by
-// plan. Founders get no ai33 access (cap 0); admins count as Pro.
-// Env-overridable without a deploy.
-export const AI33_TTS_CAP_STARTER = Number(process.env.AI33_TTS_CAP_STARTER ?? 50_000);
-export const AI33_TTS_CAP_PRO = Number(process.env.AI33_TTS_CAP_PRO ?? 100_000);
+// Env baseline for the perk budget. The live cap comes from the admin
+// dashboard (Config → Quotas) via resolveQuotaCap; these are the
+// fallback. Defined in lib/quota-config.ts to keep the import one-way,
+// re-exported here because that's where callers look for them.
+export { AI33_TTS_CAP_STARTER, AI33_TTS_CAP_PRO };
 
+/** Synchronous env-only cap. Kept for callers that can't await; the
+ *  admin-configured value is what generateAi33TTS actually enforces. */
 export function ai33CapForPlan(plan: string | null | undefined, isAdmin = false): number {
   if (isAdmin) return AI33_TTS_CAP_PRO;
   const p = (plan ?? "").trim().toLowerCase();
@@ -638,14 +641,17 @@ export async function generateAi33TTS(
     throw new Ai33TTSError("Free ai33 voices aren't configured on this server yet (AI33_API_TOKEN).", 503);
   }
 
-  // Per-user monthly perk budget, tiered by plan — Heclus pays for these
-  // characters, so enforce OUR cap up front. Founders have no allowance.
+  // Per-user monthly perk budget, allocated per plan by the admin. We pay
+  // for these characters, so enforce the cap up front.
   const { data: userData } = await supabase.auth.admin.getUserById(userId);
   const meta = (userData?.user?.app_metadata ?? {}) as { plan?: string; is_admin?: boolean };
-  const cap = ai33CapForPlan(meta.plan, meta.is_admin === true);
+  const cap = await resolveQuotaCap("ai33_tts_chars", meta.plan, meta.is_admin === true);
   if (cap <= 0) {
+    // 0 = the plan opts out. Any plan can be set to 0, so don't hardcode
+    // "Founder" in the message.
+    const planLabel = (meta.plan ?? "").trim() || "your";
     throw new Ai33TTSError(
-      "ai33 voices aren't included in the Founder plan — pick a Google voice (free on your own key) or a paid voice.",
+      `Free ai33 voices aren't included in the ${planLabel} plan — pick a Google voice (free on your own key) or a paid voice.`,
       403,
     );
   }

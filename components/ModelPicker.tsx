@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Search } from "lucide-react";
 import type { KieModel } from "@/lib/types";
-import { getModelConfig, FREE_IMAGE_MODELS } from "@/lib/kie/imageModels";
+import { getModelConfig } from "@/lib/kie/imageModels";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
 import { FREE_TIER_COMING_SOON } from "@/lib/free-tier-flag";
 
@@ -16,11 +16,6 @@ import { FREE_TIER_COMING_SOON } from "@/lib/free-tier-flag";
 // durations (video).
 
 type ModelTab = "all" | "fastest" | "cheapest" | "free";
-
-// Fallback cap shown before /api/free-usage responds (the response's
-// imageCap wins once it lands). Kept local so this client component
-// doesn't import the server-only freeUsage lib (service-role client).
-const FREE_IMAGE_DAILY_CAP_UI = 500;
 
 interface CommonProps {
   models: KieModel[] | undefined;
@@ -153,45 +148,6 @@ export function ModelPicker(props: ModelPickerProps) {
   const [tab, setTab] = useState<ModelTab>("all");
   const [query, setQuery] = useState("");
 
-  // Free-tier daily usage, fetched when the Free image tab is open, to
-  // drive the usage/progress bar.
-  const [freeUsage, setFreeUsage] = useState<{ image: number; imageCap: number } | null>(null);
-  useEffect(() => {
-    if (tab !== "free" || type !== "image") return;
-    let cancelled = false;
-    const load = () =>
-      fetch("/api/free-usage")
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => { if (!cancelled && d) setFreeUsage(d as { image: number; imageCap: number }); })
-        .catch(() => { /* bar just shows "…" — non-critical */ });
-    load();
-    // Poll while the Free tab is open so the bar reflects generations that
-    // just happened (the picker gets no direct signal when a beat finishes).
-    const id = setInterval(load, 5000);
-    const onFocus = () => load();
-    window.addEventListener("focus", onFocus);
-    return () => { cancelled = true; clearInterval(id); window.removeEventListener("focus", onFocus); };
-  }, [tab, type]);
-
-  // Free-tier BYO key status, fetched when the Free tab opens, to gate the
-  // tab behind "set up your free tools first" until the user has connected
-  // their own Cloudflare (images) / Google Cloud TTS (voice) credentials.
-  const [freeKeys, setFreeKeys] = useState<{ cloudflareSet: boolean; googleTtsSet: boolean } | null>(null);
-  useEffect(() => {
-    if (tab !== "free") return;
-    let cancelled = false;
-    fetch("/api/me/api-keys-status")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (cancelled || !d) return;
-        setFreeKeys({ cloudflareSet: !!d.cloudflareSet, googleTtsSet: !!d.googleTtsSet });
-      })
-      .catch(() => { /* leave null — don't gate on a failed check */ });
-    return () => { cancelled = true; };
-  }, [tab]);
-  // For images we need Cloudflare; only gate once we know it's missing.
-  const needsFreeSetup = tab === "free" && type === "image" && freeKeys !== null && !freeKeys.cloudflareSet;
-
   const searchQ = query.trim().toLowerCase();
   const matchesSearch = (m: KieModel) =>
     !searchQ ||
@@ -273,90 +229,23 @@ export function ModelPicker(props: ModelPickerProps) {
       )}
 
       {tab === "free" && !props.hideCategoryTabs ? (
-        FREE_TIER_COMING_SOON ? (
-          // TEMPORARY (lib/free-tier-flag.ts): free tier paused — warm
-          // "coming soon" card, same copy the tab originally shipped
-          // with. The functional branches below stay intact for when
-          // the flag flips back.
-          <div className="rounded-xl px-4 py-8 text-center"
-            style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
-            <p className="text-base font-bold" style={{ color: "var(--primary)" }}>
-              Great Good News!
-            </p>
-            <p className="text-sm font-medium mt-2" style={{ color: "var(--c-70)" }}>
-              Thank you for choosing us and for being part of our journey.
-            </p>
-            <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
-              We&apos;re building free resources to help you streamline your
-              production, reduce costs, and achieve more with less. Stay with us
-              as we continue to grow into the one-stop solution you&apos;ve been
-              looking for.
-            </p>
-          </div>
-        ) : type === "image" ? (
-          // Free image models grouped under their provider (Cloudflare),
-          // sharing one daily quota — they all draw from the same account's
-          // free Neuron pool. A second provider would get its own section.
-          needsFreeSetup ? (
-            <FreeSetupPrompt />
-          ) : (() => {
-            const used = freeUsage?.image ?? 0;
-            const cap = freeUsage?.imageCap ?? FREE_IMAGE_DAILY_CAP_UI;
-            const pctRaw = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
-            // Any nonzero usage gets at least a ~1% sliver so the green is
-            // actually visible even at a handful of images out of the cap.
-            const fillWidth = used > 0 ? Math.max(pctRaw, 1) : 0;
-            const near = pctRaw >= 90;
-            return (
-              <div className="rounded-xl p-3 space-y-2.5 mt-[5px]" style={{ border: "1px solid var(--bd-card)" }}>
-                {/* Section header: provider name (left) + shared daily-quota
-                    usage bar (right). */}
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-xs font-semibold" style={{ color: "var(--c-55)" }}>Cloudflare</span>
-                  <div className="w-[150px] shrink-0">
-                    <div className="flex items-center justify-between text-[10px] mb-1">
-                      <span style={{ color: "var(--c-45)" }}>Daily quota</span>
-                      <span className="tabular-nums" style={{ color: "var(--c-45)" }}>
-                        {freeUsage ? `${used} / ${cap}` : "…"}
-                      </span>
-                    </div>
-                    <div className="h-2 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{
-                          width: `${fillWidth}%`,
-                          background: near
-                            ? "oklch(0.72 0.18 65)"
-                            : "linear-gradient(90deg, oklch(0.7 0.19 150), oklch(0.6 0.2 145))",
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-                {FREE_IMAGE_MODELS.map((m) => (
-                  <ModelOption
-                    key={m.id}
-                    model={m}
-                    selected={selectedModelId === m.id}
-                    disabled={disabled}
-                    onSelect={() => onSelectModel(m.id)}
-                  />
-                ))}
-              </div>
-            );
-          })()
-        ) : (
-          // No free video provider — video generation stays on paid models.
-          <div className="rounded-xl px-4 py-8 text-center"
-            style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
-            <p className="text-sm font-medium" style={{ color: "var(--c-70)" }}>
-              Free video is coming soon.
-            </p>
-            <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
-              We&apos;re still working on it. Check back soon.
-            </p>
-          </div>
-        )
+        // Free tier is a teaser for now — the BYO implementations behind
+        // it were removed.
+        <div className="rounded-xl px-4 py-8 text-center"
+          style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+          <p className="text-base font-bold" style={{ color: "var(--primary)" }}>
+            Great Good News!
+          </p>
+          <p className="text-sm font-medium mt-2" style={{ color: "var(--c-70)" }}>
+            Thank you for choosing us and for being part of our journey.
+          </p>
+          <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
+            We&apos;re building free resources to help you streamline your
+            production, reduce costs, and achieve more with less. Stay with us
+            as we continue to grow into the one-stop solution you&apos;ve been
+            looking for.
+          </p>
+        </div>
       ) : (
       <>
       <div className="relative mb-2">
@@ -480,10 +369,8 @@ export function ModelPicker(props: ModelPickerProps) {
       )}
 
       {/* Aspect ratio + resolution — OUTSIDE the tab ternary so the Free tab
-          gets them too. Config-driven per selected model: free SDXL offers
-          16:9/1:1/9:16/4:3/3:4, free FLUX Schnell only 1:1, and Cloudflare
-          free models have no resolution tiers (so that block stays hidden
-          for them). */}
+          gets them too. Config-driven per selected model; a model with no
+          resolution tiers keeps that block hidden. */}
       {props.hideAspectRatio ? null : props.lockAspectRatio ? (
         <>
           <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
@@ -538,29 +425,6 @@ export function ModelPicker(props: ModelPickerProps) {
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-// Shown on the Free tab when the user hasn't connected their own BYO
-// free-tier credentials yet (Cloudflare for images). Sends them to the
-// setup page instead of a picker that would 401 on the first generation.
-function FreeSetupPrompt() {
-  return (
-    <div
-      className="rounded-xl px-4 py-8 text-center"
-      style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}
-    >
-      <p className="text-sm font-medium" style={{ color: "var(--c-70)" }}>
-        You must set up your free tools first
-      </p>
-      <a
-        href="/setup"
-        className="mt-3 inline-flex items-center px-4 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-90"
-        style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
-      >
-        Go to setup
-      </a>
     </div>
   );
 }

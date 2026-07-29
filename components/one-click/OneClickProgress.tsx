@@ -5,14 +5,14 @@ import useSWR from "swr";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Check, Loader2, Circle, AlertTriangle, Download, Pause, Play, Square, RotateCcw, Film, X, Clock } from "lucide-react";
-import { IMAGE_MODELS, FREE_IMAGE_MODELS } from "@/lib/kie/imageModels";
+import { IMAGE_MODELS } from "@/lib/kie/imageModels";
 import { VIDEO_MODELS } from "@/lib/kie/videoModels";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 // id → friendly model name (e.g. "bytedance/seedance-2" → "Seedance 2").
 const MODEL_NAMES: Record<string, string> = {};
-for (const m of [...IMAGE_MODELS, ...FREE_IMAGE_MODELS, ...VIDEO_MODELS]) MODEL_NAMES[m.id] = m.name;
+for (const m of [...IMAGE_MODELS, ...VIDEO_MODELS]) MODEL_NAMES[m.id] = m.name;
 function modelName(id?: string | null): string | null {
   return id ? (MODEL_NAMES[id] ?? id) : null;
 }

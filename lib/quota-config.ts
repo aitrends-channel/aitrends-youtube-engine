@@ -1,0 +1,196 @@
+import { supabase } from "@/lib/supabase/client";
+import { type FreeUsageKind } from "@/lib/freeUsage";
+
+// Free/perk allowances, allocated per plan. Stored on
+// product_config.free_quotas (migration 104), editable in the admin
+// dashboard under Config → Quotas.
+//
+// The ai33 env baseline lives here rather than in lib/ai33/tts.ts (which
+// re-exports it) to keep the dependency one-way. Both directions would
+// mean whichever module loaded first evaluated QUOTA_DEFAULTS against an
+// uninitialized const and threw.
+export const AI33_TTS_CAP_STARTER = Number(process.env.AI33_TTS_CAP_STARTER ?? 50_000);
+export const AI33_TTS_CAP_PRO = Number(process.env.AI33_TTS_CAP_PRO ?? 100_000);
+
+/** What ai33 bills us per 1M characters, in USD — powers the "costs us
+ *  ≈$X/user/month" figure on the quota row. Env-only and unset by default:
+ *  a guessed rate on an admin cost readout is worse than no rate, so the
+ *  row says the var is unset rather than showing a made-up number. */
+const rawAi33Rate = Number(process.env.AI33_TTS_USD_PER_MILLION_CHARS);
+export const AI33_TTS_USD_PER_MILLION_CHARS =
+  Number.isFinite(rawAi33Rate) && rawAi33Rate > 0 ? rawAi33Rate : null;
+
+/** Quota kinds are free_usage counter kinds, so a cap always has a
+ *  matching usage number. Only the perks we pay for are allocated here —
+ *  Google TTS and Cloudflare images run on the user's own key, and Qwen
+ *  isn't reachable in the picker. */
+export type QuotaKind = Extract<FreeUsageKind, "ai33_tts_chars">;
+
+export type QuotaAllocation = {
+  /** Allowance per plan slug. A slug with no entry gets nothing — every
+   *  plan that should have an allowance carries its own explicit number,
+   *  so a plan is never handed Heclus-paid spend by omission. */
+  byPlan: Record<string, number>;
+};
+
+export type QuotaConfig = Record<QuotaKind, QuotaAllocation>;
+
+export const QUOTA_VALUE_MAX = 50_000_000;
+
+/** The live-Dodo checkout verification harness, not a customer tier — it
+ *  gets no quota cell and resolves to 0. */
+export const QUOTA_EXCLUDED_PLAN_SLUG = "production-test";
+
+export type QuotaPeriod = "monthly" | "daily";
+/** "heclus" = our token pays per unit, so the cap is real spend. "byo" =
+ *  the user's own key enforces the limit and this is a display gauge. */
+export type QuotaFunding = "heclus" | "byo";
+
+export const QUOTA_FIELDS: {
+  key: QuotaKind;
+  label: string;
+  unit: string;
+  period: QuotaPeriod;
+  funding: QuotaFunding;
+  /** USD the provider bills us per 1M units; null when the rate isn't
+   *  configured, in which case the row shows no cost estimate. */
+  usdPerMillionUnits: number | null;
+  /** False for gauge-only quotas, where the provider enforces the real
+   *  limit and there's nothing for an admin to allocate per plan. */
+  perPlan: boolean;
+  description: string;
+}[] = [
+  {
+    key: "ai33_tts_chars",
+    label: "Free voiceover (ai33)",
+    unit: "chars",
+    period: "monthly",
+    funding: "heclus",
+    usdPerMillionUnits: AI33_TTS_USD_PER_MILLION_CHARS,
+    perPlan: true,
+    description: "Chars of free voiceover per user each month. We pay for these.",
+  },
+];
+
+/** The env/constant baseline — how the product behaved before this config
+ *  existed. Used only when the product_config row can't be read, so an
+ *  unapplied migration 104 doesn't zero the perk for every user. Not
+ *  exposed in the admin UI. */
+export const QUOTA_DEFAULTS: QuotaConfig = {
+  ai33_tts_chars: {
+    byPlan: { founder: 0, starter: AI33_TTS_CAP_STARTER, pro: AI33_TTS_CAP_PRO },
+  },
+};
+
+function coerceValue(raw: unknown): number | null {
+  const n = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(n)) return null;
+  const i = Math.floor(n);
+  if (i < 0 || i > QUOTA_VALUE_MAX) return null;
+  return i;
+}
+
+/** Anything missing or out of range falls back per-field, so one bad
+ *  number can't brick every quota. */
+export function coerceQuotaConfig(raw: unknown): QuotaConfig {
+  const out: QuotaConfig = {
+    ai33_tts_chars: { byPlan: { ...QUOTA_DEFAULTS.ai33_tts_chars.byPlan } },
+  };
+  if (!raw || typeof raw !== "object") return out;
+
+  for (const f of QUOTA_FIELDS) {
+    const entry = (raw as Record<string, unknown>)[f.key];
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+
+    // A stored byPlan REPLACES the baseline map instead of merging, so an
+    // admin clearing a plan's allowance actually zeroes it — merging would
+    // silently resurrect the baseline number.
+    if (e.byPlan && typeof e.byPlan === "object") {
+      const byPlan: Record<string, number> = {};
+      for (const [slug, v] of Object.entries(e.byPlan as Record<string, unknown>)) {
+        const key = slug.trim().toLowerCase();
+        if (!key) continue;
+        const n = coerceValue(v);
+        if (n !== null) byPlan[key] = n;
+      }
+      out[f.key].byPlan = byPlan;
+    }
+  }
+  return out;
+}
+
+const CACHE_TTL_MS = 15_000;
+let cached: { at: number; value: QuotaConfig } | null = null;
+
+/** Cached so per-synthesis cap checks don't hammer Supabase. Falls back
+ *  to defaults on error — a misconfigured DB must never block a
+ *  generation the env-var path would have allowed. */
+export async function getQuotaConfig(): Promise<QuotaConfig> {
+  const now = Date.now();
+  if (cached && now - cached.at < CACHE_TTL_MS) return cached.value;
+
+  try {
+    const { data } = await supabase
+      .from("product_config")
+      .select("free_quotas")
+      .eq("service", "_global")
+      .single();
+    const value = coerceQuotaConfig((data as { free_quotas?: unknown } | null)?.free_quotas);
+    cached = { at: now, value };
+    return value;
+  } catch {
+    return QUOTA_DEFAULTS;
+  }
+}
+
+export function invalidateQuotaConfigCache(): void {
+  cached = null;
+}
+
+/** Admins resolve as Pro, matching the pre-config behaviour. A plan with
+ *  no configured allowance gets 0 — fail closed, since these characters
+ *  are spend we cover. */
+export function capFromConfig(
+  config: QuotaConfig,
+  kind: QuotaKind,
+  plan: string | null | undefined,
+  isAdmin = false,
+): number {
+  const slug = isAdmin ? "pro" : (plan ?? "").trim().toLowerCase();
+  const allowance = config[kind].byPlan[slug];
+  return typeof allowance === "number" ? allowance : 0;
+}
+
+export async function resolveQuotaCap(
+  kind: QuotaKind,
+  plan: string | null | undefined,
+  isAdmin = false,
+): Promise<number> {
+  return capFromConfig(await getQuotaConfig(), kind, plan, isAdmin);
+}
+
+export function validateQuotaInput(input: unknown): { ok: true; value: QuotaConfig } | { ok: false; error: string } {
+  if (!input || typeof input !== "object") return { ok: false, error: "Body must be an object" };
+
+  for (const f of QUOTA_FIELDS) {
+    const entry = (input as Record<string, unknown>)[f.key];
+    if (entry === undefined) continue;
+    if (!entry || typeof entry !== "object") {
+      return { ok: false, error: `${f.label}: expected an object with a "byPlan" map` };
+    }
+    const e = entry as Record<string, unknown>;
+    if (e.byPlan !== undefined) {
+      if (!e.byPlan || typeof e.byPlan !== "object" || Array.isArray(e.byPlan)) {
+        return { ok: false, error: `${f.label}: byPlan must be an object keyed by plan slug` };
+      }
+      for (const [slug, v] of Object.entries(e.byPlan as Record<string, unknown>)) {
+        if (coerceValue(v) === null) {
+          return { ok: false, error: `${f.label} → ${slug}: must be a whole number between 0 and ${QUOTA_VALUE_MAX.toLocaleString()}` };
+        }
+      }
+    }
+  }
+
+  return { ok: true, value: coerceQuotaConfig(input) };
+}

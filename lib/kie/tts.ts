@@ -1,5 +1,4 @@
 import { getSettings } from "@/lib/settings";
-import { isGoogleVoice, generateGoogleTTS } from "@/lib/google/tts";
 import { isQwenVoice, generateQwenTTS } from "@/lib/replicate/tts";
 import { isAi33Voice, generateAi33TTS } from "@/lib/ai33/tts";
 import type { KieModel } from "@/lib/types";
@@ -322,13 +321,10 @@ export async function generateTTS(
   onStatus?: (msg: string) => void,
   userId?: string,
 ): Promise<{ audio: ArrayBuffer; charsConsumed: number }> {
-  // Free path — Google Cloud TTS voices carry a "google/" prefix and run on
-  // the user's own free quota. Delegate entirely; same return contract.
-  if (isGoogleVoice(voiceId)) {
-    onProgress?.(0, 1);
-    const result = await generateGoogleTTS(text, voiceId, userId);
-    onProgress?.(1, 1);
-    return result;
+  // Google TTS was removed. Projects saved before then still carry
+  // "google/" ids, so fail with something the user can act on.
+  if (voiceId.startsWith("google/")) {
+    throw new Error("That free Google voice is no longer available — pick a new voice on the Voiceover step.");
   }
 
   // Free path — Qwen3-TTS voices ("qwen/" prefix) run on Replicate under

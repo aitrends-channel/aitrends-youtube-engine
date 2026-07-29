@@ -10,7 +10,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import Image from "next/image";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { FREE_TIER_COMING_SOON, FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
+import { FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
 
 type Tier = "paid" | "free";
 
@@ -71,43 +71,16 @@ const KEY_FIELDS: KeyField[] = [
     placeholder: "sk_…",
     tier: "paid",
   },
-  {
-    key: "cloudflare_account_id",
-    label: "Cloudflare Account ID",
-    description: "Powers the Free image option (Cloudflare Workers AI · FLUX Schnell) on your own free daily quota. It's the long hex string in your Cloudflare dashboard URL — dash.cloudflare.com/<Account ID>. See the Instructions tab for the full walkthrough.",
-    placeholder: "e.g. 1a2b3c4d5e6f7a8b9c0d…",
-    tier: "free",
-  },
-  {
-    key: "cloudflare_api_token",
-    label: "Cloudflare API Token",
-    description: "Goes with the Account ID above. Create it at dash.cloudflare.com → My Profile → API Tokens → Create Token, using the \"Workers AI\" template.",
-    placeholder: "paste your Workers AI token",
-    tier: "free",
-  },
-  {
-    key: "google_tts_key",
-    label: "Google Cloud TTS Key",
-    description: "Powers the Free voiceover option (Google Cloud Text-to-Speech) — 1,000,000 characters/month free on your own account. Requires a Google Cloud project with billing enabled (you're not charged within the free tier) and the Text-to-Speech API turned on. See the Instructions tab.",
-    placeholder: "AIza…",
-    tier: "free",
-  },
 ];
 
 interface FormState {
   kie_api_key: string;
   elevenlabs_api_key: string;
-  cloudflare_account_id: string;
-  cloudflare_api_token: string;
-  google_tts_key: string;
 }
 
 const EMPTY_FORM: FormState = {
   kie_api_key: "",
   elevenlabs_api_key: "",
-  cloudflare_account_id: "",
-  cloudflare_api_token: "",
-  google_tts_key: "",
 };
 
 // One card per service: the walkthrough steps AND the key input(s)
@@ -174,21 +147,6 @@ const SERVICES: ServiceCard[] = [
       </>,
     ],
     fields: [],
-  },
-  {
-    tier: "free",
-    quota: "500 imgs/month",
-    title: "Cloudflare Workers AI (Free images)",
-    sub: "Powers the Free image option — free daily quota on your own account (~500–2,000 images/day)",
-    href: "https://dash.cloudflare.com",
-    linkLabel: "dash.cloudflare.com",
-    steps: [
-      <>Create a free account at <ExtLink href="https://dash.cloudflare.com/sign-up">dash.cloudflare.com/sign-up</ExtLink> — no credit card needed.</>,
-      <>Copy your <b>Account ID</b>: after you log in at <ExtLink href="https://dash.cloudflare.com">dash.cloudflare.com</ExtLink>, the address bar shows <span style={{ fontFamily: "monospace" }}>dash.cloudflare.com/&lt;Account ID&gt;</span> — copy that 32-character code.</>,
-      <>Create an API token: open <ExtLink href="https://dash.cloudflare.com/profile/api-tokens">the API Tokens page</ExtLink> → <b>Create Token</b> → pick the <b>Workers AI</b> template → <b>Continue to summary</b> → <b>Create Token</b> → copy it.</>,
-      <>Paste the Account ID and the token below and hit <b>Save</b>.</>,
-    ],
-    fields: ["cloudflare_account_id", "cloudflare_api_token"],
   },
 ];
 
@@ -611,14 +569,7 @@ export default function SettingsPage() {
               {/* items-start keeps cards their natural height instead of
                   stretching to the tallest sibling in the row. */}
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 items-start">
-                {SERVICES.filter((svc) => {
-                  if (svc.tier !== tab) return false;
-                  // Free IMAGES (Cloudflare) is still coming soon — hide its
-                  // card while that flag is on, so the live Free tab shows
-                  // only the ai33 voiceover perk.
-                  if (tab === "free" && FREE_TIER_COMING_SOON && svc.fields.includes("cloudflare_account_id")) return false;
-                  return true;
-                }).map((svc, idx) => (
+                {SERVICES.filter((svc) => svc.tier === tab).map((svc, idx) => (
                   <div key={svc.title} className="p-5 rounded-2xl space-y-4"
                     style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
                     {/* Card header */}

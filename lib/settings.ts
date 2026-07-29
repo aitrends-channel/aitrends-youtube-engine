@@ -9,9 +9,6 @@ export interface AppSettings {
   /** BYO free-tier providers. Each user brings their own account so they
    *  get their own free daily/monthly quota — no env fallback (never a
    *  shared aiTrends key). Empty string = not connected. */
-  cloudflare_account_id: string;
-  cloudflare_api_token: string;
-  google_tts_key: string;
   /** Global default character-consistency text appended to every image
    *  prompt at generation time. Non-secret free text; empty string = no
    *  default text. Per-project overrides live on the projects row — see
@@ -32,7 +29,7 @@ export async function getSettings(userId: string): Promise<AppSettings> {
 
   const { data, error } = await supabase
     .from("account_settings")
-    .select("kie_api_key, elevenlabs_api_key, cloudflare_account_id, cloudflare_api_token, google_tts_key, character_consistency_text")
+    .select("kie_api_key, elevenlabs_api_key, character_consistency_text")
     .eq("user_id", userId)
     .single();
 
@@ -44,9 +41,6 @@ export async function getSettings(userId: string): Promise<AppSettings> {
     kie_api_key: data?.kie_api_key?.trim() || process.env.KIE_API_KEY || "",
     elevenlabs_api_key: data?.elevenlabs_api_key?.trim() || process.env.ELEVENLABS_API_KEY || "",
     // BYO free providers — strictly per-user, no shared env fallback.
-    cloudflare_account_id: data?.cloudflare_account_id?.trim() || "",
-    cloudflare_api_token: data?.cloudflare_api_token?.trim() || "",
-    google_tts_key: data?.google_tts_key?.trim() || "",
     // Free text, not a secret — preserve as stored (only the surrounding
     // whitespace is trimmed at append time, not here).
     character_consistency_text: data?.character_consistency_text ?? "",

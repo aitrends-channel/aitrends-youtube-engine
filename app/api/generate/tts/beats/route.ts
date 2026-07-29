@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from "crypto";
 import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
-import { isGoogleVoice } from "@/lib/google/tts";
 import { isQwenVoice } from "@/lib/replicate/tts";
 import { isAi33Voice } from "@/lib/ai33/tts";
 import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
@@ -298,10 +297,7 @@ export async function POST(req: Request) {
               const { audio: audioBuf, charsConsumed } = await generateTTS(ttsText, voiceId, undefined, undefined, user.id);
               // Free Google voices run on the user's own BYO quota — no
               // ElevenLabs spend, so don't record a cost-ledger charge.
-              // Instead count the chars into free_usage so the voiceover
-              // Free tab can show the monthly usage bar (mirrors how the
-              // free image path increments its own daily counter).
-              if (charsConsumed && !isGoogleVoice(voiceId) && !isQwenVoice(voiceId) && !isAi33Voice(voiceId)) {
+              if (charsConsumed && !isQwenVoice(voiceId) && !isAi33Voice(voiceId)) {
                 void logProjectCost({
                   projectId,
                   userId: user.id,
@@ -311,8 +307,6 @@ export async function POST(req: Request) {
                   units: charsConsumed,
                   unitKind: "elevenlabs_chars",
                 });
-              } else if (charsConsumed && isGoogleVoice(voiceId)) {
-                void incrementFreeUsage(user.id, "tts_chars", charsConsumed);
               } else if (charsConsumed && isQwenVoice(voiceId)) {
                 // Heclus-paid perk — counted against the per-user monthly cap.
                 void incrementFreeUsage(user.id, "qwen_tts_chars", charsConsumed);

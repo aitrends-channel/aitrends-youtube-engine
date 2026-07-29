@@ -14,7 +14,6 @@ import { resolveConsistency, applyConsistency } from "@/lib/character-consistenc
 import { finishImageTask } from "@/lib/kie/finishImageTask";
 import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
 import { friendlyError } from "@/lib/errors/friendly";
-import { isGoogleVoice } from "@/lib/google/tts";
 import { isQwenVoice } from "@/lib/replicate/tts";
 import { isAi33Voice } from "@/lib/ai33/tts";
 import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
@@ -574,12 +573,10 @@ async function ensureVoiceovers(project: ProjectRow, cfg: OneClickConfig): Promi
       await supabase.from("project_beats").update({ voiceover_status: "generating" })
         .eq("project_id", project.id).eq("beat_number", beatNumber);
       const { audio, charsConsumed } = await generateTTS(ttsText, voiceId, undefined, undefined, project.user_id);
-      // Same cost accounting as the route: ElevenLabs bills the ledger;
-      // BYO Google / Heclus-paid Qwen count against free-usage caps.
-      if (charsConsumed && !isGoogleVoice(voiceId) && !isQwenVoice(voiceId) && !isAi33Voice(voiceId)) {
+      // Same cost accounting as the route: ElevenLabs bills the ledger,
+      // perk voices count against their free-usage caps.
+      if (charsConsumed && !isQwenVoice(voiceId) && !isAi33Voice(voiceId)) {
         void logProjectCost({ projectId: project.id, userId: project.user_id, step: "tts", provider: "elevenlabs", model: TTS_MODEL, units: charsConsumed, unitKind: "elevenlabs_chars" });
-      } else if (charsConsumed && isGoogleVoice(voiceId)) {
-        void incrementFreeUsage(project.user_id, "tts_chars", charsConsumed);
       } else if (charsConsumed && isQwenVoice(voiceId)) {
         void incrementFreeUsage(project.user_id, "qwen_tts_chars", charsConsumed);
       } else if (charsConsumed && isAi33Voice(voiceId)) {

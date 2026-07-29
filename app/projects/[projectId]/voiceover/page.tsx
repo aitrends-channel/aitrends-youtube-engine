@@ -16,7 +16,6 @@ import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
 import { SequentialVoiceoverPreview } from "@/components/voiceover/SequentialVoiceoverPreview";
 import { BeatAudioPlayer } from "@/components/voiceover/BeatAudioPlayer";
-import { GOOGLE_VOICES, isGoogleVoice } from "@/lib/google/tts";
 import { QWEN_VOICES, isQwenVoice } from "@/lib/replicate/tts";
 import { AI33_VOICES, AI33_FREE_PROVIDERS, ai33VoicesByGender, isAi33Voice } from "@/lib/ai33/tts";
 import { VoiceOption } from "@/components/VoiceOption";
@@ -222,38 +221,28 @@ export default function VoiceoverPage({ params }: PageProps) {
   // stream ends and SWR catches up.
   const [liveBeats, setLiveBeats] = useState<Map<number, LiveBeatState>>(new Map());
   const [generating, setGenerating] = useState(false);
-  // Google-TTS free monthly usage for the Free tab's usage bar (mirrors the
-  // free-image daily bar in ModelPicker). Fetched lazily when the Free tab is
-  // opened and refreshed after generation so the bar reflects new chars.
-  // Declared after `generating` so the effect below can depend on it without
-  // a temporal-dead-zone error.
-  const [freeTtsUsage, setFreeTtsUsage] = useState<{ ttsChars: number; ttsCap: number; qwenTtsChars: number; qwenTtsCap: number; ai33TtsChars: number; ai33TtsCap: number } | null>(null);
+  // Free monthly usage for the Free tab's usage bar. Fetched lazily when the
+  // Free tab is opened and refreshed after generation so the bar reflects new
+  // chars. Declared after `generating` so the effect below can depend on it
+  // without a temporal-dead-zone error.
+  //
+  // ai33TtsCap is the admin-allocated quota (product_config.free_quotas), so
+  // the bar shows exactly what the server enforces — never a local guess.
+  const [freeTtsUsage, setFreeTtsUsage] = useState<{ qwenTtsChars: number; qwenTtsCap: number; ai33TtsChars: number; ai33TtsCap: number } | null>(null);
   useEffect(() => {
     if (voiceTab !== "free") return;
     let cancelled = false;
     fetch("/api/free-usage")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (cancelled || !d || typeof d.ttsChars !== "number") return;
-        setFreeTtsUsage({ ttsChars: d.ttsChars, ttsCap: d.ttsCap ?? 1_000_000, qwenTtsChars: d.qwenTtsChars ?? 0, qwenTtsCap: d.qwenTtsCap ?? 50_000, ai33TtsChars: d.ai33TtsChars ?? 0, ai33TtsCap: d.ai33TtsCap ?? 50_000 });
+        // Gate on the cap we actually render: without it there's no honest
+        // number to show, so stay unloaded rather than invent one.
+        if (cancelled || !d || typeof d.ai33TtsCap !== "number") return;
+        setFreeTtsUsage({ qwenTtsChars: d.qwenTtsChars ?? 0, qwenTtsCap: d.qwenTtsCap ?? 0, ai33TtsChars: d.ai33TtsChars ?? 0, ai33TtsCap: d.ai33TtsCap });
       })
       .catch(() => { /* fail-soft: bar just shows "…" */ });
     return () => { cancelled = true; };
   }, [voiceTab, generating]);
-  // Whether the user has connected their own Google Cloud TTS key. Gates the
-  // Free tab behind "set up your free tools first" until it's present. null =
-  // not-yet-known (don't gate); false = confirmed missing (gate).
-  const [googleTtsSet, setGoogleTtsSet] = useState<boolean | null>(null);
-  useEffect(() => {
-    if (voiceTab !== "free") return;
-    let cancelled = false;
-    fetch("/api/me/api-keys-status")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (!cancelled && d) setGoogleTtsSet(!!d.googleTtsSet); })
-      .catch(() => { /* leave null — don't gate on a failed check */ });
-    return () => { cancelled = true; };
-  }, [voiceTab]);
-
   // Debounce the Free tab's search box. Resets to page 1 here (not in a
   // separate effect) so a pending page-3 fetch can't fire against the
   // new query first.
@@ -831,7 +820,7 @@ export default function VoiceoverPage({ params }: PageProps) {
     // Free Google voices aren't in the ElevenLabs catalog (ttsModels) — they
     // carry a "google/" prefix and are validated by the backend against the
     // user's connected key, so accept them here without a catalog match.
-    const valid = !!selectedVoice && (isGoogleVoice(selectedVoice) || isQwenVoice(selectedVoice) || isAi33Voice(selectedVoice) || (ttsModels ? ttsModels.some((m) => m.id === selectedVoice) : true));
+    const valid = !!selectedVoice && (isQwenVoice(selectedVoice) || isAi33Voice(selectedVoice) || (ttsModels ? ttsModels.some((m) => m.id === selectedVoice) : true));
     if (valid) return true;
     setConfirm({
       title: "Select a voice first",
@@ -1064,12 +1053,12 @@ export default function VoiceoverPage({ params }: PageProps) {
               // ai33 token, capped per user per month, no setup needed.
               <div className="scroll-themed space-y-4 max-h-[26rem] overflow-y-auto pr-1">
                 {freeTtsUsage && freeTtsUsage.ai33TtsCap <= 0 ? (
-                  // Plan gate: ai33TtsCap 0 = not included in this plan
-                  // (Founder). The server enforces the same rule.
+                  // Plan gate: cap 0 = the admin allocated this plan no ai33
+                  // quota. Any plan can be set to 0, so don't name one.
                   <div className="rounded-xl px-4 py-5 text-center"
                     style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
                     <p className="text-sm font-medium" style={{ color: "var(--c-70)" }}>
-                      Free voices aren&apos;t included in the Founder plan
+                      Free voices aren&apos;t included in your plan
                     </p>
                     <p className="text-xs mt-1.5" style={{ color: "var(--c-45)" }}>
                       Pick a paid voice, or upgrade your plan.
@@ -1081,7 +1070,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                     badge="Heclus perks 🎁"
                     badgeNote="You use, we pay"
                     used={freeTtsUsage?.ai33TtsChars ?? 0}
-                    cap={freeTtsUsage?.ai33TtsCap ?? 50_000}
+                    cap={freeTtsUsage?.ai33TtsCap ?? 0}
                     loaded={!!freeTtsUsage}
                   />
                   {/* Provider subtabs, one level above the gender split.
@@ -1278,7 +1267,7 @@ export default function VoiceoverPage({ params }: PageProps) {
               // before the static AI33_VOICES — most live ai33 voices
               // aren't in the static list at all.
               const model = selectedVoice
-                ? (ttsModels?.find((m) => m.id === selectedVoice) ?? freeVoices.find((m) => m.id === selectedVoice) ?? resolvedFreeVoices[selectedVoice] ?? GOOGLE_VOICES.find((m) => m.id === selectedVoice) ?? QWEN_VOICES.find((m) => m.id === selectedVoice) ?? AI33_VOICES.find((m) => m.id === selectedVoice))
+                ? (ttsModels?.find((m) => m.id === selectedVoice) ?? freeVoices.find((m) => m.id === selectedVoice) ?? resolvedFreeVoices[selectedVoice] ?? QWEN_VOICES.find((m) => m.id === selectedVoice) ?? AI33_VOICES.find((m) => m.id === selectedVoice))
                 : null;
               const tag = model?.tags?.[0];
               return (

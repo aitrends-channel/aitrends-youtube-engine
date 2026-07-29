@@ -22,6 +22,7 @@ import { TtsCostLens } from "@/components/admin/TtsCostLens";
 import { SupportPanel } from "@/components/admin/SupportPanel";
 import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
 import { MemoryPanel } from "@/components/admin/MemoryPanel";
+import { QuotasPanel } from "@/components/admin/quotas";
 
 const PHASE_PATHS: Record<number, string> = {
   1: "channel", 2: "channel", 3: "channel", 4: "channel", 5: "channel",
@@ -1209,8 +1210,8 @@ function SetupSection({
   keysLoading: boolean;
   mutateKeys: () => void;
 }) {
-  const [setupTab, setSetupTab] = usePersistentTab<"keys" | "models" | "anthropic" | "concurrency" | "plans">(
-    "config", "keys", ["keys", "models", "anthropic", "concurrency", "plans"],
+  const [setupTab, setSetupTab] = usePersistentTab<"keys" | "models" | "anthropic" | "concurrency" | "plans" | "quotas">(
+    "config", "keys", ["keys", "models", "anthropic", "concurrency", "plans", "quotas"],
   );
   const [serviceInput, setServiceInput] = useState<Service>("youtube_data_api_key");
   const [keyInput, setKeyInput] = useState("");
@@ -1396,6 +1397,7 @@ function SetupSection({
           { id: "anthropic", label: "Anthropic" },
           { id: "concurrency", label: "Batched process" },
           { id: "plans", label: "Payment" },
+          { id: "quotas", label: "Quotas" },
         ] as const).map((t) => (
           <button
             key={t.id}
@@ -1419,6 +1421,7 @@ function SetupSection({
       {setupTab === "anthropic" && <AnthropicRoutingPanel />}
       {setupTab === "concurrency" && <ConcurrencyPanel />}
       {setupTab === "plans" && <PlansPanel />}
+      {setupTab === "quotas" && <QuotasPanel />}
 
       {setupTab === "keys" && <>
 
