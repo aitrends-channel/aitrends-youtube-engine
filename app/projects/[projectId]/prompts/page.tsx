@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect, useRef, use, type ReactNode } from "react";
+import { useState, useEffect, useRef, useCallback, use, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { StepCostCard } from "@/components/StepCostCard";
@@ -653,12 +653,16 @@ function PrefixPanel({
   project,
   mutate,
   defText,
+  onAccountSaved,
 }: {
   projectId: string;
   project: { character_consistency_text?: string | null; character_consistency_append?: boolean | null } | undefined;
   mutate: () => void;
   /** Account-level default, shown as a placeholder while text inherits. */
   defText: string;
+  /** Re-reads the account default after an all-videos save, so the
+   *  placeholder and the per-beat preview reflect the new value. */
+  onAccountSaved: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -667,6 +671,13 @@ function PrefixPanel({
   // true = append the text to prompts; false = detached (not applied).
   const [append, setAppend] = useState(true);
   const [hydrated, setHydrated] = useState(false);
+  // Where Save writes: this project's row, or the account default that every
+  // project inherits. Resets to "this" on each mount — promoting a prefix to
+  // every video should be a deliberate click, never a sticky default.
+  const [scope, setScope] = useState<"this" | "all">("this");
+  // Set by Edit on the account-prefix view, so the editor replaces the
+  // read-only block for the rest of this visit.
+  const [editing, setEditing] = useState(false);
 
   // Seed the local editor from the project row once it lands.
   useEffect(() => {
@@ -697,6 +708,45 @@ function PrefixPanel({
     }
   }
 
+  // "All videos" writes the text to the account default, then clears this
+  // project's override so it inherits it — otherwise the project row would
+  // keep shadowing the very default the user just set, and later edits to
+  // the account default wouldn't reach this project.
+  async function saveForAllVideos(next: string) {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ character_consistency_text: next }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Save failed");
+      }
+      const proj = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ character_consistency_text: null, character_consistency_append: true }),
+      });
+      if (!proj.ok) {
+        const data = await proj.json().catch(() => ({}));
+        throw new Error(data.error ?? "Saved for all videos, but this project kept its own prefix");
+      }
+      setText(null);
+      setAppend(true);
+      // Back to the read-only view, now showing the saved text.
+      setEditing(false);
+      toast.success("Prefix saved for all videos.");
+      onAccountSaved();
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   // Clear the project's stored prefix AND switch off application, then
   // persist both — so Remove takes the prefix out of the database rather
   // than only detaching it locally until the next Save. append:false is
@@ -709,11 +759,33 @@ function PrefixPanel({
     await persist(null, false, "Prefix removed.");
   }
 
+  // Clears the ACCOUNT default. Scoped wider than remove() above — this
+  // takes the prefix off every project that inherits it, which is why the
+  // button says so and the toast confirms the scope.
+  async function removeAccountPrefix() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ character_consistency_text: "" }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Remove failed");
+      }
+      setText(null);
+      toast.success("Prefix removed from all videos.");
+      onAccountSaved();
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" } as const;
-  // Fixed label. It names what the panel is for rather than reporting
-  // state — the pill's colour still tracks whether a prefix is applied,
-  // and the panel body carries the detail.
-  const badge = "Add prefix";
 
   // Remove is offered only when a prefix actually exists, judged on the
   // SAVED row rather than the editor draft — otherwise merely typing would
@@ -722,9 +794,24 @@ function PrefixPanel({
   const savedAppend = (project?.character_consistency_append as boolean | null | undefined) ?? true;
   const hasPrefix = savedAppend && (savedText ?? defText).trim().length > 0;
 
+  // An account-scoped prefix this project is inheriting is shown as-is
+  // rather than as an empty editor: there's nothing to add, only something
+  // to change. The editor takes over once Edit is pressed.
+  const accountPrefix = defText.trim();
+  const showAccountPrefix = accountPrefix.length > 0 && savedText === null && !editing;
+
+  // The pill's colour tracks whether a prefix is applied; the label reflects
+  // whether there's one to change or one to add.
+  const badge = showAccountPrefix ? "Prefix" : "Add prefix";
+
   // Nothing to save while the field holds no override (null = inheriting)
-  // or while the draft still matches what's stored.
-  const canSave = text !== null && text !== savedText;
+  // or while the draft still matches what's stored. For "all videos" the
+  // comparison is against the account default instead, and an existing
+  // project override counts as work to do (it has to be cleared).
+  const draft = (text ?? "").trim();
+  const canSave = scope === "all"
+    ? draft.length > 0 && (draft !== defText.trim() || savedText !== null)
+    : text !== null && text !== savedText;
 
   return (
     <div className="rounded-xl overflow-hidden self-start w-full"
@@ -749,7 +836,42 @@ function PrefixPanel({
         </span>
       </button>
 
-      {open && (
+      {open && showAccountPrefix && (
+        <div className="px-3 pb-3 space-y-3" style={{ borderTop: "1px solid var(--bd-card)" }}>
+          <p className="text-[11px] leading-relaxed pt-3" style={{ color: "var(--c-45)" }}>
+            Leads every image prompt, on all videos.
+          </p>
+
+          <p className="px-3 py-2 rounded-lg text-xs leading-relaxed whitespace-pre-wrap"
+            style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}>
+            {accountPrefix}
+          </p>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => { setText(accountPrefix); setScope("all"); setEditing(true); }}
+              disabled={saving}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+            >
+              Edit
+            </button>
+            <button
+              onClick={removeAccountPrefix}
+              disabled={saving}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 disabled:opacity-50"
+              style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-card)" }}
+            >
+              {saving ? "Removing…" : "Remove"}
+            </button>
+            <span className="text-[10px]" style={{ color: "var(--c-42)" }}>
+              Remove takes it off every video.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {open && !showAccountPrefix && (
         <div className="px-3 pb-3 space-y-3" style={{ borderTop: "1px solid var(--bd-card)" }}>
           <p className="text-[11px] leading-relaxed pt-3" style={{ color: "var(--c-45)" }}>
             Leads every image prompt from the next generation on. Blank
@@ -765,7 +887,7 @@ function PrefixPanel({
             <textarea
               value={text ?? ""}
               onChange={(e) => setText(e.target.value)}
-              rows={3}
+              rows={7}
               placeholder={text === null && defText ? `Inheriting: ${defText}` : "Text placed in front of every image prompt…"}
               className="w-full px-3 py-2 rounded-lg text-xs outline-none transition-all resize-y"
               style={inputStyle}
@@ -774,11 +896,69 @@ function PrefixPanel({
             />
           </div>
 
+          {/* Scope switch. "All videos" promotes the text to the account
+              default, so it leads prompts on every project instead of just
+              this one. */}
+          <div className="flex items-center justify-center gap-2.5 py-0.5">
+            <span className="text-[11px] font-medium" style={{ color: "var(--c-45)" }}>For:</span>
+            <button
+              onClick={() => setScope("this")}
+              disabled={saving}
+              className="text-[11px] font-medium transition-colors disabled:opacity-50"
+              style={{ color: scope === "this" ? "oklch(0.88 0.12 285)" : "var(--c-45)" }}
+            >
+              This video
+            </button>
+            <button
+              onClick={() => setScope(scope === "this" ? "all" : "this")}
+              disabled={saving}
+              role="switch"
+              aria-checked={scope === "all"}
+              aria-label="Apply this prefix to all videos"
+              className="relative rounded-full transition-all shrink-0 disabled:opacity-50"
+              style={{
+                width: 34,
+                height: 18,
+                background: scope === "all" ? "oklch(0.72 0.25 285)" : "var(--bg-panel)",
+                border: "1px solid var(--bd-card)",
+              }}
+            >
+              <span
+                className="absolute rounded-full transition-all"
+                style={{
+                  width: 12,
+                  height: 12,
+                  top: 2,
+                  left: scope === "all" ? 18 : 3,
+                  background: scope === "all" ? "white" : "var(--c-45)",
+                }}
+              />
+            </button>
+            <button
+              onClick={() => setScope("all")}
+              disabled={saving}
+              className="text-[11px] font-medium transition-colors disabled:opacity-50"
+              style={{ color: scope === "all" ? "oklch(0.88 0.12 285)" : "var(--c-45)" }}
+            >
+              All videos
+            </button>
+          </div>
+
+          {scope === "all" && (
+            <p className="text-[11px] leading-relaxed" style={{ color: "oklch(0.72 0.25 285)" }}>
+              Saves as your account default, so it leads prompts on every
+              project. This project stops keeping its own copy and follows the
+              default from here on.
+            </p>
+          )}
+
           <div className="flex items-center gap-2 flex-wrap">
             {/* Saving always re-applies the prefix (append:true) — it's the
                 only way back after a Remove. */}
             <button
-              onClick={() => persist(text, true, "Prefix saved for this project.")}
+              onClick={() => scope === "all"
+                ? saveForAllVideos(draft)
+                : persist(text, true, "Prefix saved for this project.")}
               disabled={saving || !canSave}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50"
               style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
@@ -829,12 +1009,13 @@ export default function PromptsPage({ params }: PageProps) {
   // the per-project panel (placeholder) and the per-beat "will be
   // appended" preview so the user can see what gets added at generation.
   const [accountConsistencyText, setAccountConsistencyText] = useState("");
-  useEffect(() => {
+  const refreshAccountConsistency = useCallback(() => {
     fetch("/api/settings")
       .then((r) => r.json())
       .then((data) => setAccountConsistencyText((data?.character_consistency_text as string) ?? ""))
       .catch(() => {});
   }, []);
+  useEffect(() => { refreshAccountConsistency(); }, [refreshAccountConsistency]);
   // Effective text that will be appended to every image prompt for this
   // project: per-project override if set, else the account default —
   // unless the project has detached it. NULL = nothing appended.
@@ -1722,7 +1903,7 @@ export default function PromptsPage({ params }: PageProps) {
               );
             })}
           </div>
-          <PrefixPanel projectId={projectId} project={project} mutate={mutate} defText={accountConsistencyText} />
+          <PrefixPanel projectId={projectId} project={project} mutate={mutate} defText={accountConsistencyText} onAccountSaved={refreshAccountConsistency} />
           {hasImageBeats
             && !anyRunning
             && !remoteRunInProgress

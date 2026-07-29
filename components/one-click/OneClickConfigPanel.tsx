@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { SlidersHorizontal, X, ArrowLeft, ArrowRight } from "lucide-react";
+import { Wand2, X, ArrowLeft, ArrowRight } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { ModelPicker } from "@/components/ModelPicker";
 import { VoicePickerGrid } from "@/components/VoicePickerGrid";
@@ -205,7 +205,7 @@ export function OneClickConfigPanel({
   // is currently hidden behind a flag.
   const freeVoices = AI33_VOICES;
 
-  const sectionStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid white" } as const;
+  const sectionStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.14)" } as const;
 
   // One entry per screen. `ready` gates Next in stepper mode so the user
   // can't walk past a choice the config can't be saved without.
@@ -561,7 +561,7 @@ export function OneClickConfigPanel({
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
             style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-            <SlidersHorizontal size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+            <Wand2 size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
           </div>
           <h1 className="text-2xl font-bold text-foreground">1Click</h1>
         </div>

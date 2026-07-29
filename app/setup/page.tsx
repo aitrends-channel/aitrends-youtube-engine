@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound, SlidersHorizontal, CreditCard, Gift, Users, Brain } from "lucide-react";
+import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound, CreditCard, Gift, Brain, Wand2, Pilcrow } from "lucide-react";
 import { OneClickConfigPanel } from "@/components/one-click/OneClickConfigPanel";
 import { Spinner } from "@/components/ui/spinner";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -133,7 +133,7 @@ const SERVICES: ServiceCard[] = [
   {
     tier: "free",
     quota: "50k–100k chars/month",
-    title: "ai33 Voices (Free voiceover — on us)",
+    title: "Free Voices (Free voiceover — on us)",
     sub: "Included with every account — runs on Heclus's own infrastructure, nothing to connect",
     perk: true,
     steps: [
@@ -389,12 +389,22 @@ function CharacterConsistencyDefaults() {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  // True when the field was prefilled from a project rather than from a
+  // saved account default — the value is real but not yet global.
+  const [fromProject, setFromProject] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings")
       .then((r) => r.json())
       .then((data) => {
-        setText((data?.character_consistency_text as string) ?? "");
+        const saved = (data?.character_consistency_text as string) ?? "";
+        const suggestion = (data?.character_consistency_suggestion as string) ?? "";
+        if (saved.trim()) {
+          setText(saved);
+        } else if (suggestion) {
+          setText(suggestion);
+          setFromProject(true);
+        }
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -410,7 +420,10 @@ function CharacterConsistencyDefaults() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Save failed");
-      toast.success("Character consistency default saved.");
+      // It's the account default now, so the "came from a project" hint no
+      // longer applies.
+      setFromProject(false);
+      toast.success("Prompt prefix default saved.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save default");
     } finally {
@@ -425,10 +438,10 @@ function CharacterConsistencyDefaults() {
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-          <Users size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+          <Pilcrow size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-foreground">Character Consistency</h2>
+          <h2 className="text-lg font-bold text-foreground">Prompt Prefix</h2>
           <p className="text-xs" style={{ color: "var(--c-45)" }}>
             A reusable statement added to <b>every</b> image prompt to keep your
             character and style the same. Applies to all projects. Each project
@@ -459,6 +472,12 @@ function CharacterConsistencyDefaults() {
               onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
               onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
             />
+            {fromProject && (
+              <p className="text-[11px] leading-relaxed" style={{ color: "oklch(0.72 0.25 285)" }}>
+                Filled in from the last prefix you set on a project. Save it to
+                make it your default for every new project.
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -502,6 +521,20 @@ export default function SettingsPage() {
     const t = new URLSearchParams(window.location.search).get("tab");
     if (t === "oneclick" || t === "consistency" || t === "model") setMainTab(t);
   }, []);
+
+  // Claude tab is Pro-only. null = not yet known, so the tab stays hidden
+  // and a ?tab=model deep link isn't bounced before the answer arrives.
+  // /api/me/claude-model is the same isProTier check the server enforces.
+  const [isPro, setIsPro] = useState<boolean | null>(null);
+  useEffect(() => {
+    fetch("/api/me/claude-model")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setIsPro(d?.isPro === true))
+      .catch(() => setIsPro(false));
+  }, []);
+  useEffect(() => {
+    if (isPro === false && mainTab === "model") setMainTab("keys");
+  }, [isPro, mainTab]);
   const [userEmail, setUserEmail] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
@@ -647,7 +680,9 @@ export default function SettingsPage() {
         {/* Top-level tabs: API KEYS / 1CLICK / CHARACTER CONSISTENCY */}
         <div className="flex gap-1 mb-6 p-1 rounded-xl w-full"
           style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-          {([["keys", "API Keys"], ["oneclick", "1Click"], ["consistency", "Character Consistency"], ["model", "Claude"]] as const).map(([id, label]) => (
+          {([["keys", "API Keys"], ["oneclick", "1Click"], ["consistency", "Prompt Prefix"], ["model", "Claude"]] as const)
+            .filter(([id]) => id !== "model" || isPro === true)
+            .map(([id, label]) => (
             <button
               key={id}
               onClick={() => setMainTab(id)}
@@ -658,9 +693,10 @@ export default function SettingsPage() {
               }}
             >
               {id === "oneclick" ? (
-                <span className="inline-flex items-center gap-1.5"><SlidersHorizontal size={12} /> {label}</span>
+                // Wand2 — matches the 1Click workflow shell/controls.
+                <span className="inline-flex items-center gap-1.5"><Wand2 size={12} /> {label}</span>
               ) : id === "consistency" ? (
-                <span className="inline-flex items-center gap-1.5"><Users size={12} /> {label}</span>
+                <span className="inline-flex items-center gap-1.5"><Pilcrow size={12} /> {label}</span>
               ) : id === "model" ? (
                 <span className="inline-flex items-center gap-1.5"><Brain size={12} /> {label}</span>
               ) : label}
@@ -680,19 +716,20 @@ export default function SettingsPage() {
           </div>
         ) : (
         <>
-        {/* Sub-tabs: PAID / FREE — same segmented style as the generate
-            step's Images / Videos / Both switcher. */}
-        <div className="flex items-center gap-1 rounded-xl p-1 mb-10"
+        {/* Sub-tabs: PAID / FREE. Sized to content and left-aligned — a
+            two-option switcher stretched full-width read like a primary
+            nav rather than a filter on the cards below. */}
+        <div className="inline-flex items-center gap-1 rounded-lg p-0.5 mb-8 w-fit"
           style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
           {([
-            { key: "paid" as const, label: "Paid", icon: <CreditCard size={15} /> },
-            { key: "free" as const, label: "Free", icon: <Gift size={15} /> },
+            { key: "paid" as const, label: "Paid", icon: <CreditCard size={13} /> },
+            { key: "free" as const, label: "Free", icon: <Gift size={13} /> },
           ]).map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
               aria-pressed={tab === t.key}
-              className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               style={tab === t.key
                 ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)" }
                 : { color: "var(--c-55)" }}
@@ -701,7 +738,7 @@ export default function SettingsPage() {
               {t.key === "free" && FREE_TTS_COMING_SOON ? (
                 <span className="flex flex-col items-center leading-tight">
                   <span>Free</span>
-                  <span className="text-[9px] font-semibold normal-case tracking-normal">coming soon</span>
+                  <span className="text-[8px] font-semibold normal-case tracking-normal">coming soon</span>
                 </span>
               ) : t.label}
             </button>
@@ -719,8 +756,8 @@ export default function SettingsPage() {
               <h1 className="text-2xl font-bold text-foreground">API Keys</h1>
             </div>
             <p className="text-sm leading-relaxed" style={{ color: "var(--c-50)" }}>
-              Each card walks you through one service and takes its keys right there — takes ~5 minutes.
-              Keys are saved securely and take effect immediately.
+              One card per service, with its keys right there. Saved securely and
+              live immediately.
             </p>
           </div>
 
@@ -738,7 +775,7 @@ export default function SettingsPage() {
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 items-start">
                 {SERVICES.filter((svc) => svc.tier === tab).map((svc, idx) => (
                   <div key={svc.title} className="p-5 rounded-2xl space-y-4"
-                    style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
+                    style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.14)" }}>
                     {/* Card header */}
                     <div className="flex items-start gap-3">
                       <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 text-xs font-bold"

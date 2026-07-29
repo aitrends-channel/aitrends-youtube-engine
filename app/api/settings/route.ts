@@ -17,12 +17,34 @@ export async function GET() {
 
   try {
     const s = await getSettings(user.id);
+
+    // A user who only ever set a prefix in a project's Prompts step has no
+    // account default, so the Setup field would open blank and look like
+    // they never wrote one. Surface their most recent project-level prefix
+    // as a suggestion the Setup panel can prefill — saving it is what
+    // actually promotes it to the account default.
+    let character_consistency_suggestion = "";
+    if (!s.character_consistency_text.trim()) {
+      const { data: recent } = await supabase
+        .from("projects")
+        .select("character_consistency_text")
+        .eq("user_id", user.id)
+        .not("character_consistency_text", "is", null)
+        .neq("character_consistency_text", "")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      character_consistency_suggestion = ((recent?.character_consistency_text as string | null) ?? "").trim();
+    }
+
     return NextResponse.json({
       kie_api_key: mask(s.kie_api_key),
       elevenlabs_api_key: mask(s.elevenlabs_api_key),
       // Not a secret — returned in full so the prompts step can show the
       // inherited account default as a placeholder / prefill.
       character_consistency_text: s.character_consistency_text,
+      // Empty whenever an account default already exists.
+      character_consistency_suggestion,
     });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to load settings" }, { status: 500 });
