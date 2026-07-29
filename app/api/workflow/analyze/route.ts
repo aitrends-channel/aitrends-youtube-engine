@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { getAnthropicClient, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { resolveDefaultModel } from "@/lib/claude/models";
 import { logSystemEvent } from "@/lib/system-logger";
 
 export const maxDuration = 800;
@@ -21,7 +22,8 @@ export async function POST(req: Request) {
   try {
     const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "analyze");
     const { projectId, transcripts, topicMode, topicHint } = await req.json();
-    const model = MODEL;
+    const modelParams = await resolveDefaultModel();
+    const model = modelParams.model;
 
     if (!transcripts?.length) {
       return NextResponse.json({ error: "Video transcripts are required" }, { status: 400 });
@@ -40,7 +42,7 @@ export async function POST(req: Request) {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       const analysisResponse = await retryClaudeCall(`channel analysis attempt ${attempt}/${MAX_ATTEMPTS}`, () =>
         anthropic.messages.create({
-          model: model,
+          ...modelParams,
           // 4096 was tight for the full styleDNA nested object plus all
           // top-level required fields — Claude was selectively dropping
           // targetAudience / wordsPerSecond / targetWordCount / styleDNA
@@ -141,7 +143,7 @@ export async function POST(req: Request) {
     if (topicMode === "generate") {
       const ideasResponse = await retryClaudeCall("video ideas", () =>
         anthropic.messages.create({
-        model: model,
+        ...modelParams,
         max_tokens: 2048,
         system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
         tools: [{

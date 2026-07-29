@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { requireActiveSubscription } from "@/lib/subscription";
-import { PROMPT_MODEL, MODEL } from "@/lib/claude/client";
+import { resolveModelForUser } from "@/lib/claude/models";
+import type { WorkflowStep } from "@/lib/claude/routing";
 import { supabase } from "@/lib/supabase/client";
 import { sseStream, generateImages, generateVideos, generateThumbnails } from "@/lib/workflow/prompts-core";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
@@ -25,16 +26,19 @@ export async function POST(req: Request) {
   if (!projectId || !step) {
     return NextResponse.json({ error: "projectId and step are required" }, { status: 400 });
   }
-  // NOTE: PROMPT_MODEL currently === MODEL === Opus (see lib/claude/client.ts) —
-  // image + video prompt steps run on Opus, NOT Haiku. That's why the
-  // image step's per-chunk max_tokens headroom and the truncation-split
-  // recovery in generateImages (lib/workflow/prompts-core.ts) exist: Opus
-  // intermittently emits the verbose <tool_calls> text fallback that
-  // overruns the ceiling. If you ever point PROMPT_MODEL at FAST_MODEL
-  // (Haiku), that fallback largely disappears and the chunk sizing can be
-  // revisited. Thumbnails use `model` (also Opus): a single
-  // quality-sensitive call, not a multi-chunk grind.
-  const model = MODEL;
+  // These steps honour a Pro user's own model pick (Setup → Claude model),
+  // falling back to the admin default — resolveModelForUser owns that whole
+  // decision, including the client_kie-only rule.
+  //
+  // The default is an Opus tier, which is why the image step's per-chunk
+  // max_tokens headroom and the truncation-split recovery in generateImages
+  // (lib/workflow/prompts-core.ts) exist: Opus intermittently emits the
+  // verbose <tool_calls> text fallback that overruns the ceiling. A user on
+  // Haiku sees that fallback largely disappear — the recovery path just goes
+  // unused, so the sizing is safe either way.
+  const routingStep: WorkflowStep =
+    step === "images" ? "image_prompts" : step === "videos" ? "video_prompts" : "thumbnails";
+  const model = (await resolveModelForUser(user.id, routingStep, user)).model;
 
   if (step === "images") {
     if (!body.script || !body.visualProfile) {
@@ -57,12 +61,12 @@ export async function POST(req: Request) {
       if ((proj?.prompt_style as string | null) === "cinematic") promptStyle = "cinematic";
     }
     return sseStream((send) =>
-      generateImages(projectId, user.id, body.script!, body.visualProfile!, send, PROMPT_MODEL, promptStyle)
+      generateImages(projectId, user.id, body.script!, body.visualProfile!, send, model, promptStyle)
     );
   }
 
   if (step === "videos") {
-    return sseStream((send) => generateVideos(projectId, user.id, send, PROMPT_MODEL));
+    return sseStream((send) => generateVideos(projectId, user.id, send, model));
   }
 
   if (step === "thumbnails") {

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound, SlidersHorizontal, CreditCard, Gift, Users } from "lucide-react";
+import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound, SlidersHorizontal, CreditCard, Gift, Users, Brain } from "lucide-react";
 import { OneClickConfigPanel } from "@/components/one-click/OneClickConfigPanel";
 import { Spinner } from "@/components/ui/spinner";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -220,6 +220,167 @@ function AddUserSection() {
   );
 }
 
+// Account-level Claude model choice for the prompt-generation steps.
+// Only rendered when an admin has allowlisted models (Config → Anthropic →
+// Model) — the GET returns an empty options array otherwise and the whole
+// panel hides rather than showing an empty picker.
+interface ClaudeModelChoice {
+  id: string;
+  label: string;
+  note: string;
+  tierLabel: string;
+}
+
+function ClaudeModelDefault() {
+  const [options, setOptions] = useState<ClaudeModelChoice[]>([]);
+  const [selected, setSelected] = useState("");
+  const [isPro, setIsPro] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/me/claude-model")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return;
+        setOptions((d.options as ClaudeModelChoice[]) ?? []);
+        setSelected((d.selected as string) ?? "");
+        setIsPro(d.isPro === true);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  // `null` = the account default. Saves immediately: one click, one field,
+  // nothing to batch behind a Save button.
+  async function pick(model: string | null) {
+    if (!isPro) return;
+    setSaving(model ?? "__default__");
+    try {
+      const res = await fetch("/api/me/claude-model", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? "Save failed");
+      setSelected(model ?? "");
+      toast.success(model ? "Model updated." : "Using the account default.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save model");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-6" style={{ color: "var(--c-40)" }}>
+        <Spinner size={16} />
+        <span className="text-sm">Loading…</span>
+      </div>
+    );
+  }
+
+  const rows: { key: string; value: string | null; title: string; note: string }[] = [
+    {
+      key: "__default__",
+      value: null,
+      title: "Account default",
+      note: "Whatever Heclus has tuned as the best all-round choice. Recommended.",
+    },
+    ...options.map((o) => ({
+      key: o.id,
+      value: o.id as string | null,
+      title: `${o.tierLabel} — ${o.label}`,
+      note: o.note,
+    })),
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+          <Brain size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Claude Model</h2>
+          <p className="text-xs" style={{ color: "var(--c-45)" }}>
+            Which Claude model writes your image, video, and thumbnail prompts. Faster
+            models cost you fewer KIE credits per run; stronger ones follow a
+            brief more closely.
+          </p>
+        </div>
+      </div>
+
+      {/* No allowlisted models = nobody can choose yet. Say so plainly
+          rather than rendering a picker with a single inert row. */}
+      {options.length === 0 ? (
+        <div className="p-4 rounded-xl text-xs leading-relaxed"
+          style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-55)" }}>
+          <p className="text-sm font-semibold text-foreground mb-1.5">
+            Not available yet
+          </p>
+          Choosing your own prompt model hasn&apos;t been switched on. Every run
+          currently uses the model Heclus has tuned as the best all-round
+          choice — nothing is missing from your generations, and there&apos;s
+          nothing you need to do here.
+        </div>
+      ) : !isPro && (
+        <div className="p-3 rounded-xl text-xs leading-relaxed"
+          style={{ background: "oklch(0.72 0.25 285 / 0.08)", border: "1px solid oklch(0.72 0.25 285 / 0.25)", color: "var(--c-70)" }}>
+          Choosing your own model is a <b>Pro</b> feature. Your runs use the
+          account default in the meantime.
+        </div>
+      )}
+
+      <div className={options.length === 0 ? "hidden" : "space-y-2"}>
+        {rows.map((r) => {
+          const on = (r.value ?? "") === selected;
+          const busy = saving === r.key;
+          return (
+            <button
+              key={r.key}
+              onClick={() => pick(r.value)}
+              disabled={!isPro || saving !== null}
+              className="w-full text-left p-3 rounded-xl transition-all cursor-pointer disabled:cursor-not-allowed flex items-start gap-3"
+              style={{
+                background: on ? "oklch(0.72 0.25 285 / 0.1)" : "oklch(1 0 0 / 0.04)",
+                border: `1px solid ${on ? "oklch(0.72 0.25 285 / 0.45)" : "var(--bd-card)"}`,
+                opacity: !isPro && !on ? 0.55 : 1,
+              }}
+            >
+              <span className="mt-0.5 shrink-0">
+                {busy ? <Spinner size={14} /> : (
+                  <span className="w-3.5 h-3.5 rounded-full block"
+                    style={{
+                      border: `1px solid ${on ? "oklch(0.72 0.25 285)" : "var(--bd-10)"}`,
+                      background: on ? "oklch(0.72 0.25 285)" : "transparent",
+                    }} />
+                )}
+              </span>
+              <span className="min-w-0">
+                <span className="text-sm font-semibold text-foreground">{r.title}</span>
+                <span className="block text-xs mt-0.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
+                  {r.note}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {options.length > 0 && (
+        <p className="text-[11px] leading-relaxed" style={{ color: "var(--c-40)" }}>
+          Channel analysis and script generation always run on the account default —
+          those set up everything downstream, so we keep them on the model tuned for them.
+        </p>
+      )}
+    </div>
+  );
+}
+
 // Account-level character-consistency default. A single statement
 // appended to EVERY image prompt across all projects (each project can
 // still override or detach it in its Prompts step). Free text, not a
@@ -335,11 +496,11 @@ export default function SettingsPage() {
   // Character Consistency default. Deep-linkable via
   // /setup?tab=oneclick or /setup?tab=consistency (read from location
   // to avoid the useSearchParams/Suspense dance on this client page).
-  const [mainTab, setMainTab] = useState<"keys" | "oneclick" | "consistency">("keys");
+  const [mainTab, setMainTab] = useState<"keys" | "oneclick" | "consistency" | "model">("keys");
   useEffect(() => {
     if (typeof window === "undefined") return;
     const t = new URLSearchParams(window.location.search).get("tab");
-    if (t === "oneclick" || t === "consistency") setMainTab(t);
+    if (t === "oneclick" || t === "consistency" || t === "model") setMainTab(t);
   }, []);
   const [userEmail, setUserEmail] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -486,7 +647,7 @@ export default function SettingsPage() {
         {/* Top-level tabs: API KEYS / 1CLICK / CHARACTER CONSISTENCY */}
         <div className="flex gap-1 mb-6 p-1 rounded-xl w-full"
           style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-          {([["keys", "API Keys"], ["oneclick", "1Click"], ["consistency", "Character Consistency"]] as const).map(([id, label]) => (
+          {([["keys", "API Keys"], ["oneclick", "1Click"], ["consistency", "Character Consistency"], ["model", "Claude"]] as const).map(([id, label]) => (
             <button
               key={id}
               onClick={() => setMainTab(id)}
@@ -500,6 +661,8 @@ export default function SettingsPage() {
                 <span className="inline-flex items-center gap-1.5"><SlidersHorizontal size={12} /> {label}</span>
               ) : id === "consistency" ? (
                 <span className="inline-flex items-center gap-1.5"><Users size={12} /> {label}</span>
+              ) : id === "model" ? (
+                <span className="inline-flex items-center gap-1.5"><Brain size={12} /> {label}</span>
               ) : label}
             </button>
           ))}
@@ -510,6 +673,10 @@ export default function SettingsPage() {
         ) : mainTab === "consistency" ? (
           <div className="w-full max-w-2xl mx-auto">
             <CharacterConsistencyDefaults />
+          </div>
+        ) : mainTab === "model" ? (
+          <div className="w-full max-w-2xl mx-auto">
+            <ClaudeModelDefault />
           </div>
         ) : (
         <>

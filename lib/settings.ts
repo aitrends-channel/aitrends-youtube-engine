@@ -14,6 +14,11 @@ export interface AppSettings {
    *  default text. Per-project overrides live on the projects row — see
    *  lib/character-consistency.ts for the resolution. */
   character_consistency_text: string;
+  /** User-chosen Claude model for the prompt steps. Empty string = no pick,
+   *  use the admin default. Only honoured for Pro plans, allowlisted ids,
+   *  and client_kie routing — see resolveModelForUser in lib/claude/models.ts.
+   *  Not a secret. */
+  claude_model: string;
 }
 
 const cacheMap = new Map<string, { data: AppSettings; at: number }>();
@@ -29,7 +34,7 @@ export async function getSettings(userId: string): Promise<AppSettings> {
 
   const { data, error } = await supabase
     .from("account_settings")
-    .select("kie_api_key, elevenlabs_api_key, character_consistency_text")
+    .select("kie_api_key, elevenlabs_api_key, character_consistency_text, claude_model")
     .eq("user_id", userId)
     .single();
 
@@ -44,6 +49,9 @@ export async function getSettings(userId: string): Promise<AppSettings> {
     // Free text, not a secret — preserve as stored (only the surrounding
     // whitespace is trimmed at append time, not here).
     character_consistency_text: data?.character_consistency_text ?? "",
+    // No env fallback — a model preference is strictly per-user, and an
+    // unset value has to mean "use the admin default", not a shared one.
+    claude_model: (data?.claude_model as string | null)?.trim() || "",
   };
   cacheMap.set(userId, { data: result, at: Date.now() });
   return result;

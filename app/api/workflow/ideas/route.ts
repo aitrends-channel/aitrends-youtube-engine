@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { getAnthropicClient, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { resolveDefaultModel } from "@/lib/claude/models";
 import { videoIdeasInputSchema } from "@/lib/claude/anthropicSchemas";
 import { buildVideoIdeasPrompt } from "@/lib/claude/prompts";
 import { VideoIdeasSchema } from "@/lib/claude/schemas";
@@ -17,7 +18,8 @@ export async function POST(req: Request) {
   try {
     const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "ideas");
     const { projectId } = await req.json() as { projectId: string };
-    const model = MODEL;
+    const modelParams = await resolveDefaultModel();
+    const model = modelParams.model;
 
     const { data: project, error } = await supabase
       .from("projects")
@@ -44,7 +46,7 @@ export async function POST(req: Request) {
     const existingIdeas: string[] = Array.isArray(project.video_ideas) ? project.video_ideas as string[] : [];
 
     const response = await anthropic.messages.create({
-      model: model,
+      ...modelParams,
       max_tokens: 2048,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       tools: [{

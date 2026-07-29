@@ -1,13 +1,13 @@
 import { createHash } from "crypto";
 import { supabase } from "@/lib/supabase/client";
-import { getAnthropicClient, MODEL, VISION_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { getAnthropicClient, VISION_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { resolveDefaultModel, resolveModelForUser } from "@/lib/claude/models";
 import { buildScriptPrompt, buildVisualAnalysisPrompt, buildVideoIdeasPrompt } from "@/lib/claude/prompts";
 import { visualProfileInputSchema, videoIdeasInputSchema } from "@/lib/claude/anthropicSchemas";
 import { VisualProfileSchema, VideoIdeasSchema } from "@/lib/claude/schemas";
 import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { uploadFromUrl, uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
-import { PROMPT_MODEL } from "@/lib/claude/client";
 import { generateImages, generateVideos, generateThumbnails } from "@/lib/workflow/prompts-core";
 import { submitImageTask, generateImage } from "@/lib/kie/images";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
@@ -216,7 +216,7 @@ async function generateMoreTopics(
   try {
     const { client } = await getAnthropicClient(userId, "ideas");
     const res = await client.messages.create({
-      model: MODEL,
+      ...await resolveDefaultModel(),
       max_tokens: 2048,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       tools: [{ name: "save_video_ideas", description: "Save the generated video ideas", input_schema: videoIdeasInputSchema }],
@@ -278,7 +278,7 @@ async function runScriptStep(project: ProjectRow, cfg: OneClickConfig): Promise<
   try {
     const { client: anthropic } = await getAnthropicClient(project.user_id, "script");
     const res = await anthropic.messages.create({
-      model: MODEL,
+      ...await resolveDefaultModel(),
       max_tokens: 8192,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: buildScriptPrompt(analysis, topic) }],
@@ -455,10 +455,10 @@ async function runPromptsStep(project: ProjectRow, cfg: OneClickConfig): Promise
     const genScript = sliceScriptForConfig(script, cfg);
     // Image prompts create the beats and set current_state back to 13
     // while running, then to 14 on completion.
-    await generateImages(project.id, project.user_id, genScript, visualProfile, capture, PROMPT_MODEL);
+    await generateImages(project.id, project.user_id, genScript, visualProfile, capture, (await resolveModelForUser(project.user_id, "image_prompts")).model);
     if (sendErr) return RESULT.attention(`Image prompt generation failed: ${sendErr}`);
     // Video prompts fill each beat's video_prompt (doesn't touch state).
-    await generateVideos(project.id, project.user_id, capture, PROMPT_MODEL);
+    await generateVideos(project.id, project.user_id, capture, (await resolveModelForUser(project.user_id, "video_prompts")).model);
     if (sendErr) return RESULT.attention(`Video prompt generation failed: ${sendErr}`);
   } catch (err) {
     return RESULT.attention(`Prompt generation failed. ${friendlyError(err instanceof Error ? err.message : null)}`);
@@ -758,7 +758,7 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
       let sendErr: string | null = null;
       const capture = (d: object) => { const e = d as { type?: string; message?: string }; if (e.type === "error" && e.message) sendErr = e.message; };
       try {
-        await generateVideos(project.id, project.user_id, capture, PROMPT_MODEL);
+        await generateVideos(project.id, project.user_id, capture, (await resolveModelForUser(project.user_id, "video_prompts")).model);
         if (sendErr) return RESULT.attention(`Video prompt generation failed: ${sendErr}`);
       } catch (err) {
         return RESULT.attention(`Video prompt generation failed. ${friendlyError(err instanceof Error ? err.message : null)}`);
@@ -991,7 +991,7 @@ async function runThumbnailsStep(project: ProjectRow, cfg: OneClickConfig): Prom
     let failure: string | null = null;
     try {
       await generateThumbnails(project.id, project.user_id, script, visualProfile,
-        (data?.thumbnail_analysis as ThumbnailAnalysisOutput | undefined) ?? undefined, capture, PROMPT_MODEL);
+        (data?.thumbnail_analysis as ThumbnailAnalysisOutput | undefined) ?? undefined, capture, (await resolveModelForUser(project.user_id, "thumbnails")).model);
       if (sendErr) failure = sendErr;
     } catch (err) {
       failure = err instanceof Error ? err.message : "unknown error";

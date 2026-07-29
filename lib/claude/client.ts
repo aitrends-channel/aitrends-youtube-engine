@@ -230,6 +230,15 @@ export interface AnthropicClientHandle {
 // opt in via product_config, and (b) as a manual fallback when a KIE
 // call has exhausted its retries — see /api/workflow/visual-analysis.
 // Throws if the Heclus Anthropic key isn't configured.
+//
+// ‼️ This client spends HECLUS's money, so it must never carry a
+// user-chosen model. resolveModelForUser already refuses to honour a user
+// pick unless the step routes client_kie, which covers routing configured
+// up front. What it CANNOT cover is a mid-call switch like (b): the model
+// was resolved while the step was still on KIE. If you add a direct
+// fallback to a step in USER_CHOICE_STEPS (image/video/thumbnail prompts),
+// re-resolve with resolveDefaultModel() before retrying on this client —
+// don't reuse the model the KIE attempt was using.
 export async function getHeclusDirectClient(): Promise<Anthropic> {
   const anthropicKey = await getActiveProductKey("anthropic_api_key");
   if (!anthropicKey) {
@@ -315,7 +324,11 @@ export async function getAnthropicClient(userId: string, step?: WorkflowStep): P
   };
 }
 
-export const MODEL = "claude-opus-4-7";
+// The default model for the workflow steps is now admin-configurable —
+// see lib/claude/models.ts (resolveDefaultModel / getDefaultClaudeModel)
+// and Config → Anthropic → Model. The old MODEL and PROMPT_MODEL consts
+// lived here; CLAUDE_MODEL_FALLBACK in that module carries the value they
+// held, so there's one place to edit when the shipped default moves.
 
 // Fast model for high-volume structured output where Opus's latency
 // (and Opus + KIE's intermittent 500 storms) becomes the bottleneck.
@@ -325,15 +338,14 @@ export const MODEL = "claude-opus-4-7";
 // adherence) wins on overall reliability for that workload.
 export const FAST_MODEL = "claude-haiku-4-5";
 
-// Model for the prompt-generation steps (image + video prompts). Kept on
-// Opus (per user preference for prompt quality). We briefly moved this to
-// Haiku to shrink per-call latency, but staging showed KIE still returning
-// silent/dead streams under Haiku too — the stalls are a KIE-side problem,
-// not model latency — so the switch bought nothing and cost quality. To
-// avoid KIE queueing under Opus's longer calls, prompt-chunk concurrency
-// is pinned to 1 (see CONCURRENCY_DEFAULTS). Point this back at a faster
-// model here if KIE stabilizes and per-call latency becomes the bottleneck.
-export const PROMPT_MODEL = MODEL;
+// The prompt-generation steps (image + video prompts) follow the same
+// admin-selected default. They were briefly moved to Haiku to shrink
+// per-call latency, but staging showed KIE still returning silent/dead
+// streams under Haiku too — the stalls are a KIE-side problem, not model
+// latency — so the switch bought nothing and cost quality. Prompt-chunk
+// concurrency stays pinned to 1 (see CONCURRENCY_DEFAULTS) to avoid KIE
+// queueing under Opus's longer calls; revisit that if the default is ever
+// set to a faster model and KIE stabilizes.
 
 // Vision analysis runs on Opus 4.7 (per user request). We previously
 // ran Haiku here because Opus + ~10 image blocks could exceed the

@@ -2380,21 +2380,35 @@ const WORKFLOW_STEP_LIST: WorkflowStep[] = [
   "image_prompts", "video_prompts", "thumbnails",
 ];
 
+interface ClaudeModelOption {
+  id: string;
+  label: string;
+  note: string;
+  tier: "quality" | "balanced" | "fast";
+  thinkingOnByDefault: boolean;
+}
+
 interface RoutingResponse {
   routing: Routing;
   per_step: Partial<Record<WorkflowStep, Routing>>;
   steps: WorkflowStep[];
+  model: string;
+  models: ClaudeModelOption[];
+  model_fallback: string;
+  user_selectable_models: string[];
+  user_choice_steps: WorkflowStep[];
 }
 
 function AnthropicRoutingPanel() {
   const swr = useSWR<RoutingResponse>("/api/admin/anthropic-routing", fetcher, { revalidateOnFocus: false });
-  const [subTab, setSubTab] = usePersistentTab<"general" | "per_step">(
-    "config.anthropic", "general", ["general", "per_step"],
+  const [subTab, setSubTab] = usePersistentTab<"general" | "per_step" | "model">(
+    "config.anthropic", "general", ["general", "per_step", "model"],
   );
 
-  const subTabs: { id: "general" | "per_step"; label: string }[] = [
+  const subTabs: { id: "general" | "per_step" | "model"; label: string }[] = [
     { id: "general",  label: "General"  },
     { id: "per_step", label: "Per step" },
+    { id: "model",    label: "Model"    },
   ];
 
   return (
@@ -2421,6 +2435,7 @@ function AnthropicRoutingPanel() {
 
       {subTab === "general" && <GeneralRoutingPanel swr={swr} />}
       {subTab === "per_step" && <PerStepRoutingPanel swr={swr} />}
+      {subTab === "model" && <DefaultModelPanel swr={swr} />}
     </div>
   );
 }
@@ -2667,6 +2682,262 @@ function GeneralRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
         onConfirm={() => { if (pending) applyRouting(pending); }}
         onCancel={() => setPending(null)}
       />
+    </div>
+  );
+}
+
+/**
+ * Config → Anthropic → Model. Sets the default Claude model for the
+ * workflow steps (channel analysis, ideas, script, image/video/thumbnail
+ * prompts). Visual analysis stays pinned in code — it's a separate knob.
+ */
+function DefaultModelPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingResponse>> }) {
+  const { data, mutate, isLoading } = swr;
+
+  const [sel, setSel] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (!data?.model || hydratedRef.current) return;
+    hydratedRef.current = true;
+    setSel(data.model);
+  }, [data]);
+
+  const models = data?.models ?? [];
+  const active = data?.model;
+  const dirty = sel !== null && sel !== active;
+  const selected = models.find((m) => m.id === sel);
+
+  async function save() {
+    if (!sel) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/anthropic-routing", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: sel }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? "Failed to save");
+      toast.success(`Default model set to ${selected?.label ?? sel}`);
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs leading-relaxed" style={{ color: "var(--c-50)" }}>
+        The Claude model behind channel analysis, video ideas, script, and the
+        image / video / thumbnail prompt steps. Applies to all users globally
+        and takes effect within 15 seconds.
+      </p>
+
+      {isLoading && <p className="text-xs" style={{ color: "var(--c-42)" }}>Loading…</p>}
+
+      <div className="space-y-2">
+        {models.map((m) => {
+          const isSel = sel === m.id;
+          return (
+            <button
+              key={m.id}
+              onClick={() => setSel(m.id)}
+              disabled={saving}
+              className="w-full text-left p-3 rounded-xl transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+              style={{
+                background: isSel ? "oklch(0.72 0.25 285 / 0.08)" : "oklch(0 0 0 / 0.02)",
+                border: `1px solid ${isSel ? "oklch(0.72 0.25 285 / 0.45)" : "oklch(0 0 0 / 0.07)"}`,
+              }}
+            >
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>{m.label}</span>
+                <code className="text-[10px] tabular-nums" style={{ color: "var(--c-42)" }}>{m.id}</code>
+                {m.id === active && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+                    style={{ background: "oklch(0.6 0.15 150 / 0.12)", color: "oklch(0.45 0.15 150)" }}>
+                    live
+                  </span>
+                )}
+                {m.id === data?.model_fallback && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+                    style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-50)" }}>
+                    shipped default
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] mt-1 leading-relaxed" style={{ color: "var(--c-50)" }}>{m.note}</p>
+              {m.thinkingOnByDefault && (
+                // These models think by default and that shares the request's
+                // max_tokens with the answer. We send thinking: disabled so
+                // the tighter steps (1.5-2k budgets) behave as tuned.
+                <p className="text-[11px] mt-1.5 leading-relaxed" style={{ color: "oklch(0.55 0.13 250)" }}>
+                  Thinking is off — it would otherwise eat into the token budget the
+                  shorter steps are tuned for.
+                </p>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <button
+        onClick={save}
+        disabled={!dirty || saving || isLoading}
+        className="px-3.5 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
+        style={{
+          background: dirty && !saving ? "oklch(0.72 0.25 285)" : "oklch(0 0 0 / 0.06)",
+          color: dirty && !saving ? "white" : "var(--c-50)",
+        }}
+      >
+        {saving && <Spinner size={12} />}
+        {saving ? "Saving…" : "Save model"}
+      </button>
+
+      <UserSelectableModelsPanel swr={swr} />
+    </div>
+  );
+}
+
+/**
+ * The allowlist half of the Model tab: which models a Pro user may choose
+ * for themselves on /setup. Empty = the feature is off.
+ */
+function UserSelectableModelsPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingResponse>> }) {
+  const { data, mutate } = swr;
+
+  const [sel, setSel] = useState<string[] | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (!data?.models || hydratedRef.current) return;
+    hydratedRef.current = true;
+    setSel(data.user_selectable_models ?? []);
+  }, [data]);
+
+  const models = data?.models ?? [];
+  const server = data?.user_selectable_models ?? [];
+  const current = sel ?? [];
+  const dirty = sel !== null &&
+    (current.length !== server.length || current.some((id) => !server.includes(id)));
+
+  function toggle(id: string) {
+    setSel((prev) => {
+      const base = prev ?? [];
+      return base.includes(id) ? base.filter((x) => x !== id) : [...base, id];
+    });
+  }
+
+  async function save() {
+    if (sel === null) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/anthropic-routing", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_selectable_models: sel }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? "Failed to save");
+      toast.success(sel.length ? "User model choices saved" : "User model choice turned off");
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const stepList = (data?.user_choice_steps ?? []).map((s) => s.replace(/_/g, " ")).join(", ");
+
+  return (
+    <div className="pt-5 mt-1 space-y-3" style={{ borderTop: "1px solid oklch(0 0 0 / 0.08)" }}>
+      <div>
+        <h4 className="text-sm font-bold" style={{ color: "var(--c-90)" }}>
+          Let Pro users choose their own model
+        </h4>
+        <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-50)" }}>
+          Tick the models a Pro user may pick on their Setup page. Their choice
+          only applies to the{" "}
+          <span className="font-semibold">{stepList || "prompt"}</span> steps, and
+          only while those steps run on the user&apos;s own KIE key — so a user can
+          never pick a model that Heclus pays for. Tick nothing to turn this off.
+        </p>
+      </div>
+
+      {/* Bulk toggle. Indeterminate whenever the selection is partial, so
+          the box reflects "some" rather than lying about all-or-nothing. */}
+      <label
+        className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer"
+        style={{ background: "oklch(0 0 0 / 0.03)", border: "1px solid oklch(0 0 0 / 0.06)" }}
+      >
+        <input
+          type="checkbox"
+          checked={models.length > 0 && current.length === models.length}
+          ref={(el) => {
+            if (el) el.indeterminate = current.length > 0 && current.length < models.length;
+          }}
+          disabled={saving || models.length === 0}
+          onChange={() =>
+            setSel(current.length === models.length ? [] : models.map((m) => m.id))
+          }
+          className="cursor-pointer"
+        />
+        <span className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>
+          All
+        </span>
+        <span className="text-[11px]" style={{ color: "var(--c-42)" }}>
+          {current.length} of {models.length} selected
+        </span>
+      </label>
+
+      <div className="space-y-2">
+        {models.map((m) => {
+          const on = current.includes(m.id);
+          return (
+            <label
+              key={m.id}
+              className="flex items-start gap-2.5 p-2.5 rounded-lg cursor-pointer transition-all"
+              style={{
+                background: on ? "oklch(0.72 0.25 285 / 0.06)" : "oklch(0 0 0 / 0.02)",
+                border: `1px solid ${on ? "oklch(0.72 0.25 285 / 0.35)" : "oklch(0 0 0 / 0.07)"}`,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={on}
+                disabled={saving}
+                onChange={() => toggle(m.id)}
+                className="mt-0.5 cursor-pointer"
+              />
+              <span className="min-w-0">
+                <span className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>{m.label}</span>
+                <code className="text-[10px] ml-2" style={{ color: "var(--c-42)" }}>{m.id}</code>
+                <span className="block text-[11px] mt-0.5 leading-relaxed" style={{ color: "var(--c-50)" }}>
+                  {m.note}
+                </span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+
+      <button
+        onClick={save}
+        disabled={!dirty || saving}
+        className="px-3.5 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
+        style={{
+          background: dirty && !saving ? "oklch(0.72 0.25 285)" : "oklch(0 0 0 / 0.06)",
+          color: dirty && !saving ? "white" : "var(--c-50)",
+        }}
+      >
+        {saving && <Spinner size={12} />}
+        {saving ? "Saving…" : "Save choices"}
+      </button>
     </div>
   );
 }

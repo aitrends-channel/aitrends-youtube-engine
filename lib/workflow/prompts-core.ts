@@ -4,7 +4,8 @@
 
 import { createHash, randomUUID } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
-import { getAnthropicClient, MODEL, PROMPT_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { getAnthropicClient, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { modelParamsFor } from "@/lib/claude/models";
 import {
   buildImagePromptsCached,
   buildImagePromptsDynamic,
@@ -589,7 +590,7 @@ export async function generateImages(
           );
         };
         const stream = anthropic.messages.stream({
-          model: model,
+          ...modelParamsFor(model),
           max_tokens: 12288,
           system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
           tools: [{ name: "save_image_prompts", description: "Save image prompts for every visual beat in the chunk", input_schema: imagePromptsInputSchema }],
@@ -927,7 +928,7 @@ export async function generateVideos(projectId: string, userId: string, send: (d
     for (let attempt = 0; attempt < 2; attempt++) {
       res = await retryClaudeCall(`video batch ${i + 1}/${chunks.length} (try ${attempt + 1})`, () =>
         anthropic.messages.create({
-          model: model,
+          ...modelParamsFor(model),
           max_tokens: 8192,
           system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
           tools: [{ name: "save_video_prompts", description: "Save video prompts for all beats", input_schema: videoPromptsInputSchema }],
@@ -1089,7 +1090,7 @@ export async function generateThumbnails(
   for (let attempt = 0; attempt < 2; attempt++) {
     res = await retryClaudeCall(`thumbnail concepts (try ${attempt + 1})`, () =>
       anthropic.messages.create({
-        model: model,
+        ...modelParamsFor(model),
         max_tokens: 8192,
         system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
         tools: [{ name: "save_thumbnails", description: "Save 5 thumbnail concepts", input_schema: thumbnailsInputSchema }],
