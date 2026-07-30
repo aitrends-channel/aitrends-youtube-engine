@@ -146,8 +146,8 @@ async function isProTierById(userId: string, user?: User | null): Promise<boolea
   if (user) return isAdminUser(user) || PRO_TIER_PLANS.has(planSlugOf(user));
   try {
     const { data } = await supabase.auth.admin.getUserById(userId);
-    const meta = (data?.user?.app_metadata ?? {}) as { plan?: unknown; is_admin?: unknown };
-    if (meta.is_admin === true) return true;
+    if (isAdminUser(data?.user)) return true;
+    const meta = (data?.user?.app_metadata ?? {}) as { plan?: unknown };
     const slug = typeof meta.plan === "string" && meta.plan.trim() ? meta.plan.trim().toLowerCase() : "starter";
     return PRO_TIER_PLANS.has(slug);
   } catch {

@@ -1,6 +1,7 @@
 import type { KieModel } from "@/lib/types";
 import { getFreeUsageThisMonth } from "@/lib/freeUsage";
 import { supabase } from "@/lib/supabase/client";
+import { isAdminUser } from "@/lib/admin";
 import { AI33_TTS_CAP_STARTER, AI33_TTS_CAP_PRO, resolveQuotaCap } from "@/lib/quota-config";
 
 // ai33.pro (OpenSpeaker) TTS — a Heclus-paid voiceover perk, mirroring the
@@ -644,14 +645,17 @@ export async function generateAi33TTS(
   // Per-user monthly perk budget, allocated per plan by the admin. We pay
   // for these characters, so enforce the cap up front.
   const { data: userData } = await supabase.auth.admin.getUserById(userId);
-  const meta = (userData?.user?.app_metadata ?? {}) as { plan?: string; is_admin?: boolean };
-  const cap = await resolveQuotaCap("ai33_tts_chars", meta.plan, meta.is_admin === true);
+  const meta = (userData?.user?.app_metadata ?? {}) as { plan?: string };
+  // isAdminUser, not the raw app_metadata.is_admin flag — legacy
+  // ADMIN_EMAILS admins carry no flag and no plan, so the flag alone
+  // resolved them to 0 and blocked the perk they're supposed to get.
+  const cap = await resolveQuotaCap("ai33_tts_chars", meta.plan, isAdminUser(userData?.user));
   if (cap <= 0) {
     // 0 = the plan opts out. Any plan can be set to 0, so don't hardcode
     // "Founder" in the message.
-    const planLabel = (meta.plan ?? "").trim() || "your";
+    const plan = (meta.plan ?? "").trim();
     throw new Ai33TTSError(
-      `Free ai33 voices aren't included in the ${planLabel} plan — pick a Google voice (free on your own key) or a paid voice.`,
+      `Free ai33 voices aren't included in ${plan ? `the ${plan} plan` : "your plan"} — pick a Google voice (free on your own key) or a paid voice.`,
       403,
     );
   }
