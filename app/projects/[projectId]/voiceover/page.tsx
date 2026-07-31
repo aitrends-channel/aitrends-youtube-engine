@@ -1561,7 +1561,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                     {([
                       { id: "all", label: "All" },
                       ...AI33_FREE_PROVIDERS,
-                      { id: "custom", label: "Custom" },
+                      { id: "custom", label: "Cloned voices" },
                     ] as const).map((p) => (
                       <button
                         key={p.id}
