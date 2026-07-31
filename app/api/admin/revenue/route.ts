@@ -34,9 +34,16 @@ interface RevenueRow {
 // $40 price point the rounding error is cents. Revisit if non-USD
 // volume ever becomes material.
 const USD_RATE: Record<string, number> = { usd: 1, eur: 1.09, gbp: 1.27 };
+// Any other currency is a local-currency total, not a settlement amount.
+// A 1:1 fallback there reads Rp 39,220,713 as $392,207, so those rows
+// count as 0 and surface in `unconverted` instead.
 function usdCents(r: RevenueRow): number {
-  const rate = USD_RATE[(r.currency ?? "usd").toLowerCase()] ?? 1;
+  const rate = USD_RATE[(r.currency ?? "usd").toLowerCase()];
+  if (rate === undefined) return 0;
   return Math.round((r.amount_cents ?? 0) * rate);
+}
+function isConvertible(r: RevenueRow): boolean {
+  return USD_RATE[(r.currency ?? "usd").toLowerCase()] !== undefined;
 }
 
 export async function GET() {
@@ -189,9 +196,16 @@ export async function GET() {
     dodoPaymentId: r.dodo_payment_id,
   }));
 
+  const unconvertedRows = rows.filter((r) => !isConvertible(r));
+  const unconverted = {
+    count: unconvertedRows.length,
+    currencies: [...new Set(unconvertedRows.map((r) => (r.currency ?? "").toLowerCase()))].sort(),
+  };
+
   return NextResponse.json({
     totalCents,
     byPlan,
+    unconverted,
     mrrCents,
     arrCents,
     payingUserCount,
