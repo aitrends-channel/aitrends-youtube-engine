@@ -176,11 +176,11 @@ export default function VoiceoverPage({ params }: PageProps) {
   const [lastPaidTab, setLastPaidTab] = useState<"female" | "male" | "custom">("female");
   // Gender split *inside* the Free tab. Separate from voiceTab so switching
   // Female/Male among the free voices doesn't knock you out of the Free tab.
-  const [freeGenderTab, setFreeGenderTab] = useState<"female" | "male" | "custom">("female");
+  const [freeGenderTab, setFreeGenderTab] = useState<"female" | "male">("female");
   // Provider split, one level ABOVE the gender split: "all" merges every
   // provider (the previous behavior), or narrow to one vendor's catalog.
   // Both are server-side filters on /api/generate/tts/voices.
-  const [freeProviderTab, setFreeProviderTab] = useState<"all" | (typeof AI33_FREE_PROVIDERS)[number]["id"]>("all");
+  const [freeProviderTab, setFreeProviderTab] = useState<"all" | "custom" | (typeof AI33_FREE_PROVIDERS)[number]["id"]>("all");
   const [previewingId, setPreviewingId] = useState<string | null>(null);
   // Live ai33 catalog for the Free tab. The tab used to render the 25
   // hardcoded AI33_VOICES; it now pages through /api/generate/tts/voices
@@ -481,7 +481,7 @@ export default function VoiceoverPage({ params }: PageProps) {
   // already reset to 1 by the handlers), append on "Load more".
   useEffect(() => {
     // Custom lists the user's own clones from our DB, not ai33's catalog.
-    if (voiceTab !== "free" || freeGenderTab === "custom" || FREE_TTS_COMING_SOON) return;
+    if (voiceTab !== "free" || freeProviderTab === "custom" || FREE_TTS_COMING_SOON) return;
     let cancelled = false;
     setFreeVoicesLoading(true);
     const params = new URLSearchParams({ gender: freeGenderTab, page: String(freePage) });
@@ -1553,13 +1553,16 @@ export default function VoiceoverPage({ params }: PageProps) {
                   <div className="space-y-1.5">
                   {/* Provider subtabs, one level above the gender split.
                       "All" merges every provider in catalog order; the
-                      rest narrow to a single vendor. flex-wrap so five
-                      pills don't squeeze on a narrow panel. Hidden under
-                      Custom, which lists the user's clones rather than a
-                      slice of ai33's catalog. */}
-                  {freeGenderTab !== "custom" && (
+                      rest narrow to a single vendor. Custom sits here too:
+                      a clone is its own ai33 provider, not a gender.
+                      flex-wrap so the pills don't squeeze on a narrow
+                      panel. */}
                   <div className="flex gap-1 flex-wrap">
-                    {([{ id: "all", label: "All" } as const, ...AI33_FREE_PROVIDERS]).map((p) => (
+                    {([
+                      { id: "all", label: "All" },
+                      ...AI33_FREE_PROVIDERS,
+                      { id: "custom", label: "Custom" },
+                    ] as const).map((p) => (
                       <button
                         key={p.id}
                         onClick={() => { setFreeProviderTab(p.id); setFreePage(1); }}
@@ -1577,24 +1580,21 @@ export default function VoiceoverPage({ params }: PageProps) {
                       >{p.label}</button>
                     ))}
                   </div>
-                  )}
                   {/* Female / Male narrows whatever the provider row above
                       selected, so it's indented under it rather than
                       reading as a second sibling filter. Switching resets
                       to page 1: the gender is a server-side filter, not a
-                      client-side split of one loaded list. Custom breaks
-                      that scoping — clones are the user's own, not a
-                      provider's — so the indent drops with it. */}
-                  <div className={`flex gap-1 flex-wrap items-center ${freeGenderTab === "custom" ? "" : "pl-2.5 ml-0.5"}`}
-                    style={freeGenderTab === "custom" ? undefined : { borderLeft: "1px solid var(--bd-card)" }}>
-                    {freeGenderTab !== "custom" && (
-                      <span className="text-[10px]" style={{ color: "var(--c-40)" }}>
-                        {freeProviderTab === "all"
-                          ? "All providers"
-                          : AI33_FREE_PROVIDERS.find((p) => p.id === freeProviderTab)?.label}
-                      </span>
-                    )}
-                    {(["female", "male", "custom"] as const).map((g) => (
+                      client-side split of one loaded list. Custom has no
+                      gender split — those are the user's own voices. */}
+                  {freeProviderTab !== "custom" && (
+                  <div className="flex gap-1 flex-wrap items-center pl-2.5 ml-0.5"
+                    style={{ borderLeft: "1px solid var(--bd-card)" }}>
+                    <span className="text-[10px]" style={{ color: "var(--c-40)" }}>
+                      {freeProviderTab === "all"
+                        ? "All providers"
+                        : AI33_FREE_PROVIDERS.find((p) => p.id === freeProviderTab)?.label}
+                    </span>
+                    {(["female", "male"] as const).map((g) => (
                       <button
                         key={g}
                         onClick={() => { setFreeGenderTab(g); setFreePage(1); }}
@@ -1612,8 +1612,9 @@ export default function VoiceoverPage({ params }: PageProps) {
                       >{g}</button>
                     ))}
                   </div>
+                  )}
                   </div>
-                  {freeGenderTab === "custom" ? (
+                  {freeProviderTab === "custom" ? (
                     clonePanel
                   ) : (
                   <>
