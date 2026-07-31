@@ -20,11 +20,13 @@ const rawAi33Rate = Number(process.env.AI33_TTS_USD_PER_MILLION_CHARS);
 export const AI33_TTS_USD_PER_MILLION_CHARS =
   Number.isFinite(rawAi33Rate) && rawAi33Rate > 0 ? rawAi33Rate : null;
 
-/** Quota kinds are free_usage counter kinds, so a cap always has a
- *  matching usage number. Only the perks we pay for are allocated here —
- *  Google TTS and Cloudflare images run on the user's own key, and Qwen
- *  isn't reachable in the picker. */
-export type QuotaKind = Extract<FreeUsageKind, "ai33_tts_chars">;
+/** Mostly free_usage counter kinds, so a cap has a matching usage number.
+ *  "voice_clones" is the exception: it caps how many clones a user may
+ *  HOLD (a row count in cloned_voices), not consumption over a period, so
+ *  it has no counter. Only perks we pay for are allocated here — Google
+ *  TTS and Cloudflare images run on the user's own key, and Qwen isn't
+ *  reachable in the picker. */
+export type QuotaKind = Extract<FreeUsageKind, "ai33_tts_chars"> | "voice_clones";
 
 export type QuotaAllocation = {
   /** Allowance per plan slug. A slug with no entry gets nothing — every
@@ -41,7 +43,9 @@ export const QUOTA_VALUE_MAX = 50_000_000;
  *  gets no quota cell and resolves to 0. */
 export const QUOTA_EXCLUDED_PLAN_SLUG = "production-test";
 
-export type QuotaPeriod = "monthly" | "daily";
+/** "total" is a standing allowance rather than a per-period one — it
+ *  resets only when the user frees a slot. */
+export type QuotaPeriod = "monthly" | "daily" | "total";
 /** "heclus" = our token pays per unit, so the cap is real spend. "byo" =
  *  the user's own key enforces the limit and this is a display gauge. */
 export type QuotaFunding = "heclus" | "byo";
@@ -70,6 +74,18 @@ export const QUOTA_FIELDS: {
     perPlan: true,
     description: "Chars of free voiceover per user each month. We pay for these.",
   },
+  {
+    key: "voice_clones",
+    label: "Custom voice clones",
+    unit: "voices",
+    period: "total",
+    funding: "heclus",
+    // Priced per clone by ai33, not per unit, so there's no /1M rate to
+    // show — the row stays cost-free rather than printing a fake figure.
+    usdPerMillionUnits: null,
+    perPlan: true,
+    description: "How many cloned voices a user can keep at once. Each one holds a slot on our ai33 account.",
+  },
 ];
 
 /** The env/constant baseline — how the product behaved before this config
@@ -79,6 +95,9 @@ export const QUOTA_FIELDS: {
 export const QUOTA_DEFAULTS: QuotaConfig = {
   ai33_tts_chars: {
     byPlan: { founder: 0, starter: AI33_TTS_CAP_STARTER, pro: AI33_TTS_CAP_PRO },
+  },
+  voice_clones: {
+    byPlan: { founder: 0, starter: 2, pro: 5 },
   },
 };
 
@@ -95,6 +114,7 @@ function coerceValue(raw: unknown): number | null {
 export function coerceQuotaConfig(raw: unknown): QuotaConfig {
   const out: QuotaConfig = {
     ai33_tts_chars: { byPlan: { ...QUOTA_DEFAULTS.ai33_tts_chars.byPlan } },
+    voice_clones: { byPlan: { ...QUOTA_DEFAULTS.voice_clones.byPlan } },
   };
   if (!raw || typeof raw !== "object") return out;
 

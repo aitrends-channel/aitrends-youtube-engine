@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
 import { isQwenVoice } from "@/lib/replicate/tts";
 import { isAi33Voice } from "@/lib/ai33/tts";
+import { canUseVoice } from "@/lib/cloned-voices";
 import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
@@ -22,6 +23,12 @@ export async function POST(req: Request) {
 
   if (!projectId || !script || !voiceId) {
     return Response.json({ error: "projectId, script, and voiceId are required" }, { status: 400 });
+  }
+
+  // Cloned voices sit on Heclus's shared provider account, so an id alone
+  // would otherwise let any user synthesize with someone else's clone.
+  if (!(await canUseVoice(user.id, voiceId))) {
+    return Response.json({ error: "That voice isn't available on your account." }, { status: 403 });
   }
 
   const encoder = new TextEncoder();

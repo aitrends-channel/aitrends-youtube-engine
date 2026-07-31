@@ -6,10 +6,14 @@ import type { KieModel } from "@/lib/types";
 
 // ── Voice picker (mirrors the generate page's VoiceOption) ──────────
 export function VoiceOption({
-  model, selected, onSelect, isPlaying, onPlayToggle,
+  model, selected, onSelect, isPlaying, onPlayToggle, action,
 }: {
   model: KieModel; selected: boolean; onSelect: () => void;
   isPlaying: boolean; onPlayToggle: (id: string | null) => void;
+  /** Optional control beside the preview button — used for per-voice
+   *  actions like deleting a clone. Must stop its own propagation, since
+   *  the whole card selects on click. */
+  action?: React.ReactNode;
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   useEffect(() => {
@@ -85,7 +89,11 @@ export function VoiceOption({
       <div className="flex items-center gap-2">
         <p className="font-medium text-xs flex-1 truncate">
           {model.name}
-          {(model.id.startsWith("google/") || model.id.startsWith("qwen/") || model.id.startsWith("ai33/")) && (
+          {/* Cloned voices are ai33-hosted too, so they'd otherwise read
+              as "free" — label them by what they are to the user. */}
+          {model.id.startsWith("ai33/clone_") ? (
+            <span style={{ color: "var(--primary)" }}> - Custom</span>
+          ) : (model.id.startsWith("google/") || model.id.startsWith("qwen/") || model.id.startsWith("ai33/")) && (
             <span style={{ color: "var(--primary)" }}> - free</span>
           )}
         </p>
@@ -112,6 +120,7 @@ export function VoiceOption({
             )}
           </button>
         )}
+        {action}
       </div>
       {model.tags && model.tags.length > 0 && (
         <div className="flex gap-1 mt-1.5 flex-wrap">

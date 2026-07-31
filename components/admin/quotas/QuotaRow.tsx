@@ -26,6 +26,9 @@ export function QuotaRow({
 }) {
   const canSave = dirty && valid && !saving && !savingOther;
   const isPerk = field.funding === "heclus";
+  const unitLabel = field.period === "total"
+    ? field.unit
+    : `${field.unit}/${field.period === "daily" ? "day" : "month"}`;
   const rate = field.usdPerMillionUnits;
 
   // Cost per user on each plan that actually has an allowance — the number
@@ -56,7 +59,7 @@ export function QuotaRow({
               {isPerk ? "Heclus pays" : "Gauge only"}
             </span>
             <span className="text-[10px]" style={{ color: "var(--c-42)" }}>
-              {field.unit}/{field.period === "daily" ? "day" : "month"}
+              {unitLabel}
             </span>
             {rate !== null && (
               <span className="text-[10px] font-semibold tabular-nums" style={{ color: "oklch(0.5 0.15 220)" }}>
@@ -89,7 +92,7 @@ export function QuotaRow({
               key={p.slug}
               label={p.name}
               hint={p.slug}
-              unit={`${field.unit}/${field.period === "daily" ? "day" : "month"}`}
+              unit={unitLabel}
               value={draftByPlan[p.slug] ?? ""}
               savedValue={typeof saved?.byPlan[p.slug] === "number" ? saved.byPlan[p.slug] : undefined}
               disabled={disabled}

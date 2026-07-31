@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "crypto";
 import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
 import { isQwenVoice } from "@/lib/replicate/tts";
 import { isAi33Voice } from "@/lib/ai33/tts";
+import { canUseVoice } from "@/lib/cloned-voices";
 import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
@@ -102,6 +103,14 @@ export async function POST(req: Request) {
   }
   const projectId = body.projectId;
   const voiceId = body.voiceId;
+  // Cloned voices sit on Heclus's shared provider account — an id alone
+  // can't be treated as permission to use one.
+  if (!(await canUseVoice(user.id, voiceId))) {
+    return new Response(JSON.stringify({ error: "That voice isn't available on your account." }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   const explicitBeats = body.beatNumbers && body.beatNumbers.length > 0 ? new Set(body.beatNumbers) : null;
   const skipRunClaim = body.skipRunClaim === true;
 

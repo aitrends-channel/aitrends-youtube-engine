@@ -454,6 +454,63 @@ export function isAi33Voice(voiceId: string): boolean {
   return voiceId.startsWith("ai33/");
 }
 
+// Voice cloning, per ai33's own API docs:
+//   POST   /v3/text-to-speech/voice-clone       voice_name + audio_file
+//   DELETE /v3/text-to-speech/voice-clone/{id}
+// The returned id is used as "clone_<voice_id>" for synthesis, which makes
+// it an ordinary "ai33/clone_…" voice here — no dispatch change needed.
+// The clone lands on HECLUS's ai33 account, so ownership is ours to track
+// (see lib/cloned-voices.ts).
+export const AI33_CLONE_MAX_BYTES = 10 * 1024 * 1024;
+export const AI33_CLONE_MIN_SECONDS = 3;
+export const AI33_CLONE_MAX_SECONDS = 30;
+
+/** Returns the ai33-side voice id, already in "clone_…" form. */
+export async function cloneAi33Voice(opts: {
+  name: string;
+  audio: Blob;
+  filename: string;
+  removeBackground?: boolean;
+}): Promise<string> {
+  const token = (process.env.AI33_API_TOKEN ?? "").trim();
+  if (!token) throw new Ai33TTSError("Voice cloning isn't configured on this server yet (AI33_API_TOKEN).", 503);
+
+  const form = new FormData();
+  form.append("voice_name", opts.name);
+  form.append("audio_file", opts.audio, opts.filename);
+  if (opts.removeBackground) form.append("remove_background", "true");
+
+  const res = await fetch(`${AI33_BASE}/v3/text-to-speech/voice-clone`, {
+    method: "POST",
+    headers: { "xi-api-key": token },
+    body: form,
+  });
+  const body = (await res.json().catch(() => null)) as
+    | { success?: boolean; message?: string; data?: { voice_id?: string } }
+    | null;
+  if (!res.ok || body?.success === false || !body?.data?.voice_id) {
+    throw new Ai33TTSError(body?.message ?? `ai33 voice-clone failed (${res.status})`, res.status);
+  }
+  const rawId = body.data.voice_id;
+  return rawId.startsWith("clone_") ? rawId : `clone_${rawId}`;
+}
+
+export async function deleteAi33Clone(providerVoiceId: string): Promise<void> {
+  const token = (process.env.AI33_API_TOKEN ?? "").trim();
+  if (!token) throw new Ai33TTSError("Voice cloning isn't configured on this server yet (AI33_API_TOKEN).", 503);
+
+  // The path takes the bare upstream id, not the "clone_" synthesis form.
+  const upstreamId = providerVoiceId.replace(/^clone_/, "");
+  const res = await fetch(`${AI33_BASE}/v3/text-to-speech/voice-clone/${encodeURIComponent(upstreamId)}`, {
+    method: "DELETE",
+    headers: { "xi-api-key": token },
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { message?: string } | null;
+    throw new Ai33TTSError(body?.message ?? `ai33 clone delete failed (${res.status})`, res.status);
+  }
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const AI33_BASE = (process.env.AI33_API_BASE ?? "https://api.ai33.pro").replace(/\/+$/, "");
