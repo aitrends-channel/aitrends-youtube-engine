@@ -225,15 +225,46 @@ export async function POST(request: Request) {
   // delivery stopped and payments granted access via this verify path
   // but never appeared in revenue stats. Fail-soft: the customer is
   // paid regardless; ledger logging is best-effort.
-  const ledgerPaymentId =
-    payment_id ??
-    (result.payment_id as string | undefined) ??
-    ((result.latest_payment as Record<string, unknown> | undefined)?.payment_id as string | undefined);
-  // Prefer Dodo's USD settlement amount over total_amount — the latter
-  // is denominated in the customer's local currency (see the webhook
-  // handler's ledger write for the full story).
-  const ledgerSettlement = Number(result.settlement_amount ?? 0);
-  const ledgerAmountCents = ledgerSettlement > 0 ? ledgerSettlement : Number(result.total_amount ?? result.amount ?? 0);
+  //
+  // Subscription checkouts give us only a subscription_id, and Dodo's
+  // subscription object holds no payment reference or usable amount —
+  // hence the lookup by subscription.
+  const resolveLedgerPayment = async (): Promise<Record<string, unknown> | null> => {
+    if (payment_id) return result;
+
+    const subId = subscriptionIdFromResult ?? subscription_id;
+    if (!subId) return null;
+
+    const listRes = await fetch(`${dodoBase}/payments?subscription_id=${encodeURIComponent(subId)}`, {
+      headers: { Authorization: `Bearer ${secretKey}` },
+    }).catch(() => null);
+    if (!listRes?.ok) return null;
+
+    const list = await listRes.json().catch(() => null);
+    const items = (list?.items ?? list?.data ?? []) as Record<string, unknown>[];
+    const succeeded = items.find((p) => p.status === "succeeded");
+    const pid = succeeded?.payment_id as string | undefined;
+    if (!pid) return null;
+
+    // Only the single-payment endpoint returns settlement_amount.
+    const oneRes = await fetch(`${dodoBase}/payments/${pid}`, {
+      headers: { Authorization: `Bearer ${secretKey}` },
+    }).catch(() => null);
+    return (oneRes?.ok ? await oneRes.json().catch(() => succeeded) : succeeded) ?? null;
+  };
+
+  const paymentForLedger = await resolveLedgerPayment();
+  const ledgerPaymentId = paymentForLedger?.payment_id as string | undefined;
+  const ledgerSettlement = Number(paymentForLedger?.settlement_amount ?? 0);
+  const ledgerAmountCents = ledgerSettlement > 0
+    ? ledgerSettlement
+    : Number(paymentForLedger?.total_amount ?? paymentForLedger?.amount ?? 0);
+  if (!ledgerPaymentId || !(ledgerAmountCents > 0)) {
+    console.warn(
+      `[dodo-verify] no ledger row written — plan=${plan} ${idLabel} ` +
+      `resolved_payment=${ledgerPaymentId ?? "none"} amount=${ledgerAmountCents}`,
+    );
+  }
   if (ledgerPaymentId && ledgerAmountCents > 0) {
     const { error: revErr } = await supabase
       .from("revenue_events")
@@ -243,12 +274,12 @@ export async function POST(request: Request) {
         event_type: "payment_succeeded",
         amount_cents: ledgerAmountCents,
         currency: ledgerSettlement > 0
-          ? (((result.settlement_currency as string | undefined) ?? "usd").toLowerCase())
-          : (((result.currency as string | undefined) ?? "usd").toLowerCase()),
+          ? (((paymentForLedger?.settlement_currency as string | undefined) ?? "usd").toLowerCase())
+          : (((paymentForLedger?.currency as string | undefined) ?? "usd").toLowerCase()),
         plan: plan ?? null,
         dodo_payment_id: ledgerPaymentId,
-        dodo_raw: result,
-        occurred_at: (result.created_at as string | undefined) ?? new Date().toISOString(),
+        dodo_raw: paymentForLedger,
+        occurred_at: (paymentForLedger?.created_at as string | undefined) ?? new Date().toISOString(),
       });
     if (revErr && revErr.code !== "23505") {
       console.warn("[dodo-verify] revenue_events insert failed:", revErr.message);

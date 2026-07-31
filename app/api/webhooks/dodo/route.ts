@@ -29,13 +29,29 @@ export async function POST(request: Request) {
   // card), then the legacy single DODO_WEBHOOK_SECRET env var as a
   // bootstrap fallback.
   const settings = await getPaymentSettings();
-  const candidateSecrets = [
-    settings.webhookSecretTest,
-    settings.webhookSecretProduction,
-    process.env.DODO_WEBHOOK_SECRET ?? null,
-  ].filter((s): s is string => !!s);
+  const configured = [
+    ["webhookSecretTest", settings.webhookSecretTest],
+    ["webhookSecretProduction", settings.webhookSecretProduction],
+    ["DODO_WEBHOOK_SECRET", process.env.DODO_WEBHOOK_SECRET ?? null],
+  ] as const;
+
+  // A URL pasted into a secret field HMACs to nothing, so every delivery
+  // 401s exactly like a forgery would. Name the bad field instead.
+  const candidateSecrets: string[] = [];
+  for (const [name, value] of configured) {
+    if (!value) continue;
+    if (/^https?:\/\//i.test(value) || /\s/.test(value)) {
+      console.error(`[dodo-webhook] ${name} is a URL, not a signing secret (expected whsec_…) — ignoring it`);
+      continue;
+    }
+    if (!value.startsWith("whsec_")) {
+      console.warn(`[dodo-webhook] ${name} has no whsec_ prefix; trying it as a raw base64 secret`);
+    }
+    candidateSecrets.push(value);
+  }
 
   if (candidateSecrets.length === 0) {
+    console.error("[dodo-webhook] no usable whsec_ signing secret configured — rejecting delivery");
     return NextResponse.json({ error: "Webhook not configured" }, { status: 500 });
   }
 

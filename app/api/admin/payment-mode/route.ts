@@ -98,11 +98,22 @@ export async function PATCH(req: Request) {
     update.dodo_base_url_production = normalized;
   }
 
+  // A URL saved here silently 401s every Dodo delivery.
+  const rejectIfUrl = (field: string, value: string | null) =>
+    value && /^https?:\/\//i.test(value)
+      ? NextResponse.json(
+          { error: `${field} must be the Dodo signing secret (whsec_…), not the webhook URL` },
+          { status: 400 },
+        )
+      : null;
+
   if (body.webhookSecretTest !== undefined) {
     const normalized = normalizeNullableString(body.webhookSecretTest);
     if (normalized === undefined) {
       return NextResponse.json({ error: "webhookSecretTest must be string, null, or ''" }, { status: 400 });
     }
+    const bad = rejectIfUrl("webhookSecretTest", normalized);
+    if (bad) return bad;
     update.dodo_webhook_secret_test = normalized;
   }
 
@@ -111,6 +122,8 @@ export async function PATCH(req: Request) {
     if (normalized === undefined) {
       return NextResponse.json({ error: "webhookSecretProduction must be string, null, or ''" }, { status: 400 });
     }
+    const bad = rejectIfUrl("webhookSecretProduction", normalized);
+    if (bad) return bad;
     update.dodo_webhook_secret_production = normalized;
   }
 
