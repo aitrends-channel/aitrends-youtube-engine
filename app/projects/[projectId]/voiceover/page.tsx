@@ -163,6 +163,8 @@ export default function VoiceoverPage({ params }: PageProps) {
   // else first model of the active gender tab.
   const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
   const [voiceTab, setVoiceTab] = useState<"female" | "male" | "custom" | "free">("female");
+  // Which paid tab to restore when coming back from Free.
+  const [lastPaidTab, setLastPaidTab] = useState<"female" | "male" | "custom">("female");
   // Gender split *inside* the Free tab. Separate from voiceTab so switching
   // Female/Male among the free voices doesn't knock you out of the Free tab.
   const [freeGenderTab, setFreeGenderTab] = useState<"female" | "male">("female");
@@ -997,38 +999,76 @@ export default function VoiceoverPage({ params }: PageProps) {
                 </span>
               )}
             </div>
-            {/* Gender / custom tabs. Custom only renders when the user's
-                ElevenLabs account has added/cloned voices. */}
-            <div className="flex gap-1 mb-2">
-              {([...(["female", "male"] as const), ...(hasCustomVoices ? (["custom"] as const) : []), ...(["free"] as const)]).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => { setVoiceTab(tab); setVoiceSearch(""); }}
-                  disabled={effectivelyGenerating}
-                  className="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium capitalize transition-all disabled:opacity-40"
-                  style={voiceTab === tab ? {
-                    background: "oklch(0.72 0.25 285 / 0.15)",
-                    border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                    color: "oklch(0.88 0.12 285)",
-                  } : {
-                    background: "var(--bg-input)",
-                    border: "1px solid var(--bd-card)",
-                    color: "var(--c-50)",
-                  }}
-                >{tab === "custom" ? (
-                  <span className="flex flex-col items-center leading-tight">
-                    <span>Custom</span>
-                    <span className="text-[9px] font-normal normal-case" style={{ opacity: 0.7 }}>
-                      cloned · generated · professional
+            {/* Paid / Free decide the catalog; Female / Male / Custom are
+                sub-pills of Paid, mirroring how Free nests its own
+                provider and gender pills. Custom only renders when the
+                user's ElevenLabs account has added/cloned voices. */}
+            <div className="space-y-1.5 mb-2">
+              <div className="flex gap-1">
+                {([
+                  { group: "paid", active: voiceTab !== "free" },
+                  { group: "free", active: voiceTab === "free" },
+                ] as const).map(({ group, active }) => (
+                  <button
+                    key={group}
+                    onClick={() => {
+                      setVoiceTab(group === "free"
+                        ? "free"
+                        : (lastPaidTab === "custom" && !hasCustomVoices ? "female" : lastPaidTab));
+                      setVoiceSearch("");
+                    }}
+                    disabled={effectivelyGenerating}
+                    className="flex-1 px-2 py-2 rounded-lg text-xs font-semibold capitalize transition-all disabled:opacity-40"
+                    style={active ? {
+                      background: "oklch(0.72 0.25 285 / 0.15)",
+                      border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                      color: "oklch(0.88 0.12 285)",
+                    } : {
+                      background: "var(--bg-input)",
+                      border: "1px solid var(--bd-card)",
+                      color: "var(--c-50)",
+                    }}
+                  >{group === "free" && FREE_TTS_COMING_SOON ? (
+                    <span className="flex flex-col items-center leading-tight">
+                      <span>😄 Free</span>
+                      <span className="text-[9px] font-semibold normal-case">coming soon</span>
                     </span>
-                  </span>
-                ) : tab === "free" && FREE_TTS_COMING_SOON ? (
-                  <span className="flex flex-col items-center leading-tight">
-                    <span>😄 Free</span>
-                    <span className="text-[9px] font-semibold normal-case">coming soon</span>
-                  </span>
-                ) : tab}</button>
-              ))}
+                  ) : group === "free" ? "😄 Free" : group}</button>
+                ))}
+              </div>
+              {voiceTab !== "free" && (
+                <>
+                <p className="text-[10px] font-semibold" style={{ color: "var(--c-40)" }}>
+                  ElevenLabs
+                </p>
+                <div className="flex gap-1 flex-wrap">
+                  {([...(["female", "male"] as const), ...(hasCustomVoices ? (["custom"] as const) : [])]).map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => { setVoiceTab(tab); setLastPaidTab(tab); setVoiceSearch(""); }}
+                      disabled={effectivelyGenerating}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-medium capitalize transition-all disabled:opacity-40"
+                      style={voiceTab === tab ? {
+                        background: "oklch(0.72 0.25 285 / 0.15)",
+                        border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                        color: "oklch(0.88 0.12 285)",
+                      } : {
+                        background: "var(--bg-input)",
+                        border: "1px solid var(--bd-card)",
+                        color: "var(--c-50)",
+                      }}
+                    >{tab === "custom" ? (
+                      <span className="flex flex-col items-center leading-tight">
+                        <span>Custom</span>
+                        <span className="text-[9px] font-normal normal-case" style={{ opacity: 0.7 }}>
+                          cloned · generated · professional
+                        </span>
+                      </span>
+                    ) : tab}</button>
+                  ))}
+                </div>
+                </>
+              )}
             </div>
             {voiceTab === "free" ? (
               FREE_TTS_COMING_SOON ? (
@@ -1100,13 +1140,13 @@ export default function VoiceoverPage({ params }: PageProps) {
                       top-level voice tabs, one level in. Switching resets
                       to page 1: the gender is a server-side filter, not a
                       client-side split of one loaded list. */}
-                  <div className="flex gap-1">
+                  <div className="flex gap-1 flex-wrap">
                     {(["female", "male"] as const).map((g) => (
                       <button
                         key={g}
                         onClick={() => { setFreeGenderTab(g); setFreePage(1); }}
                         disabled={effectivelyGenerating}
-                        className="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium capitalize transition-all disabled:opacity-40"
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium capitalize transition-all disabled:opacity-40"
                         style={freeGenderTab === g ? {
                           background: "oklch(0.72 0.25 285 / 0.15)",
                           border: "1px solid oklch(0.72 0.25 285 / 0.4)",
