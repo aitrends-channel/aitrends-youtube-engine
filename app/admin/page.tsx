@@ -4785,6 +4785,7 @@ export default function AdminPage() {
     daily: { date: string; amountCents: number; count: number }[];
     recentEvents: { amountCents: number; occurredAt: string | null; userEmail: string | null; plan: string | null; eventType: string | null; dodoPaymentId: string | null }[];
     eventCount: number;
+    unconverted: { count: number; currencies: string[] };
   }>(authChecked ? "/api/admin/revenue" : null, fetcher);
 
   const { data: productKeysRaw, isLoading: keysLoading, mutate: mutateKeys } = useSWR<ProductApiKey[]>(
@@ -6719,6 +6720,15 @@ export default function AdminPage() {
                 </div>
                 <h2 className="text-lg font-bold text-foreground">Revenue</h2>
               </div>
+
+              {(revenue?.unconverted?.count ?? 0) > 0 && (
+                <p className="text-xs px-3 py-2 rounded-lg"
+                  style={{ background: "oklch(0.75 0.15 65 / 0.12)", border: "1px solid oklch(0.75 0.15 65 / 0.3)", color: "oklch(0.45 0.12 65)" }}>
+                  {revenue!.unconverted.count} payment{revenue!.unconverted.count === 1 ? "" : "s"} counted as $0 —
+                  stored in {revenue!.unconverted.currencies.join(", ").toUpperCase()} with no USD settlement amount.
+                  Every figure below is short by that much.
+                </p>
+              )}
 
               {/* Summary cards. The Total card carries a per-plan
                   breakdown line sourced from the same ledger. */}
