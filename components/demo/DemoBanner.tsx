@@ -122,7 +122,7 @@ export function DemoBanner() {
                         style={{ color: "var(--c-60)" }}
                       >
                         <Settings size={13} />
-                        <span>Setup</span>
+                        <span>Config</span>
                       </button>
                       <button
                         onClick={() => { setShowMenu(false); handleSignOut(); }}

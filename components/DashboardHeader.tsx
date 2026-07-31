@@ -149,7 +149,7 @@ export function DashboardHeader({ rightExtra }: DashboardHeaderProps) {
                   style={{ color: "var(--c-60)" }}
                 >
                   <Settings size={15} />
-                  <span>Setup</span>
+                  <span>Config</span>
                 </Link>
                 <Link
                   href="/account"

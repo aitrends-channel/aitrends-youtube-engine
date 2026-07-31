@@ -997,7 +997,7 @@ export default function HomePage() {
                         style={{ color: "var(--c-60)" }}
                       >
                         <Settings size={15} />
-                        <span>Setup</span>
+                        <span>Config</span>
                       </Link>
                     ) : (
                       <button
@@ -1006,7 +1006,7 @@ export default function HomePage() {
                         style={{ color: "var(--c-60)" }}
                       >
                         <Settings size={15} />
-                        <span>Setup</span>
+                        <span>Config</span>
                       </button>
                     )}
                     <Link

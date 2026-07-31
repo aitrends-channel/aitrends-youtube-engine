@@ -314,7 +314,7 @@ export function DemoNav({ currentStep }: DemoNavProps) {
                       style={{ color: "var(--c-60)" }}
                     >
                       <Settings size={13} />
-                      <span>Setup</span>
+                      <span>Config</span>
                     </button>
                     <Link
                       href="/account"
