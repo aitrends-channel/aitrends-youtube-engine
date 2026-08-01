@@ -102,8 +102,12 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
     );
   }, [plans, defaultPlan, selectedPlan, usageLoading, isRenewal, previousPlan]);
 
-  // Founder visibility gated by the single 'active' flag from the server.
-  const founderAvailable = founderActive === null || founderActive === true;
+  // Founder visibility gates on the server's 'active' flag AND the slot
+  // count: sold out is unavailable even if the flag hasn't been flipped
+  // yet, since claim_founder_spot would reject the purchase anyway.
+  // A null count means "not known", which must not hide the card.
+  const founderSoldOut = spotsLeft !== null && spotsLeft <= 0;
+  const founderAvailable = (founderActive === null || founderActive === true) && !founderSoldOut;
 
   const visiblePlans = useMemo(() => {
     if (!plans) return [];

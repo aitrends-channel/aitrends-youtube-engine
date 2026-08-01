@@ -9,7 +9,7 @@ import {
 } from "@/lib/ai33/tts";
 import { listClonedVoices, clonedVoiceId } from "@/lib/cloned-voices";
 import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
-import { resolveQuotaCap } from "@/lib/quota-config";
+import { resolveQuotaCap, QUOTA_UNLIMITED } from "@/lib/quota-config";
 import { planSlugOf } from "@/lib/plans-gating";
 import { isAdminUser } from "@/lib/admin";
 
@@ -58,13 +58,14 @@ export async function POST(request: Request) {
   // Counted before the upstream call: a clone we can't attribute is a slot
   // burned on the shared account that no user can see or delete.
   const [existing, cap] = await Promise.all([listClonedVoices(user.id), cloneCapFor(user)]);
-  if (cap <= 0) {
+  // 0 = not included; -1 = unlimited. Only a positive cap is a count.
+  if (cap === 0) {
     return NextResponse.json(
       { error: "Voice cloning isn't included on your plan." },
       { status: 403 },
     );
   }
-  if (existing.length >= cap) {
+  if (cap !== QUOTA_UNLIMITED && existing.length >= cap) {
     return NextResponse.json(
       { error: `You've used all ${cap} of your cloned voices. Delete one to make room.` },
       { status: 409 },

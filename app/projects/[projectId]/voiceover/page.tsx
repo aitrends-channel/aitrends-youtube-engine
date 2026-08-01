@@ -19,9 +19,12 @@ import { BeatAudioPlayer } from "@/components/voiceover/BeatAudioPlayer";
 import { QWEN_VOICES, isQwenVoice } from "@/lib/replicate/tts";
 import { AI33_VOICES, AI33_FREE_PROVIDERS, ai33VoicesByGender, isAi33Voice, AI33_CLONE_MAX_SECONDS, AI33_CLONE_MIN_SECONDS } from "@/lib/ai33/tts";
 import { trimAudioFile } from "@/lib/audio/trim";
+import { SubscriptionModal } from "@/components/SubscriptionModal";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+
 import { VoiceOption } from "@/components/VoiceOption";
 import { FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
-import { RotateCw, ChevronUp, ChevronDown, Download, Trash2, Plus, X } from "lucide-react";
+import { RotateCw, ChevronUp, ChevronDown, Download, Trash2, Plus, X, Upload as UploadIcon, Mic } from "lucide-react";
 
 // Per-beat voiceover step. Each beat shows its own row with status,
 // playback, and per-beat retry. A bulk Generate button kicks off all
@@ -213,6 +216,21 @@ export default function VoiceoverPage({ params }: PageProps) {
   const [clonePreviewUrl, setClonePreviewUrl] = useState<string | null>(null);
   const [cloneTrimmed, setCloneTrimmed] = useState(false);
   const [showCloneForm, setShowCloneForm] = useState(false);
+  // cloneMax starts at 0, so "no allowance" and "not fetched yet" would
+  // otherwise look identical and refuse a Pro user mid-load.
+  const [clonesLoaded, setClonesLoaded] = useState(false);
+  // Same pattern as the assemble step's Pro-locked resolutions: let the
+  // user upgrade in place rather than only being told no. Mounted lazily —
+  // most sessions never open it.
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    createSupabaseBrowserClient().auth.getUser().then(({ data }) => {
+      if (!cancelled && data.user?.email) setUserEmail(data.user.email);
+    }).catch(() => { /* the modal falls back to an empty email */ });
+    return () => { cancelled = true; };
+  }, []);
   const [recording, setRecording] = useState(false);
   const [recordSecs, setRecordSecs] = useState(0);
   const cloneFileInputRef = useRef<HTMLInputElement>(null);
@@ -288,11 +306,9 @@ export default function VoiceoverPage({ params }: PageProps) {
         setCloneError(d?.error ?? `Couldn't load your cloned voices (${r.status}).`);
         return;
       }
-      const loaded = d.voices ?? [];
-      setClones(loaded);
+      setClones(d.voices ?? []);
       setCloneMax(d.max ?? 0);
-      // Nothing to list yet, so lead with the form rather than a button.
-      if (loaded.length === 0) setShowCloneForm(true);
+      setClonesLoaded(true);
     } catch (e) {
       setCloneError(`Couldn't load your cloned voices: ${(e as Error).message}`);
     }
@@ -349,7 +365,7 @@ export default function VoiceoverPage({ params }: PageProps) {
     setCloneDuration(secs ?? null);
     // Too long is fixed by trimming; too short can only be re-recorded.
     if (secs !== undefined && secs < AI33_CLONE_MIN_SECONDS) {
-      setCloneError(`That sample is only ${Math.round(secs)}s — ai33 needs at least ${AI33_CLONE_MIN_SECONDS}s.`);
+      setCloneError(`That sample is only ${Math.round(secs)}s — at least ${AI33_CLONE_MIN_SECONDS}s is needed.`);
     }
   }, []);
 
@@ -411,7 +427,7 @@ export default function VoiceoverPage({ params }: PageProps) {
 
     // Over-length is already trimmed at selection; only too-short blocks.
     if (cloneDuration !== null && cloneDuration < AI33_CLONE_MIN_SECONDS) {
-      setCloneError(`That sample is only ${Math.round(cloneDuration)}s — ai33 needs at least ${AI33_CLONE_MIN_SECONDS}s.`);
+      setCloneError(`That sample is only ${Math.round(cloneDuration)}s — at least ${AI33_CLONE_MIN_SECONDS}s is needed.`);
       return;
     }
 
@@ -1138,21 +1154,22 @@ export default function VoiceoverPage({ params }: PageProps) {
   // The Custom tab's body: the user's own clones, plus the clone form
   // while they're under the cap. Declared here rather than inline so the
   // Free tab's provider/gender branch stays readable.
-  // cloneMax is the admin per-plan allocation (Config → Quotas); 0 means
-  // cloning isn't part of the plan at all.
-  const clonesAtCap = clones.length >= cloneMax;
+  // cloneMax is the admin per-plan allocation (Config → Quotas): 0 means
+  // cloning isn't part of the plan, -1 means no ceiling.
+  const cloneUnlimited = cloneMax < 0;
+  const clonesAtCap = !cloneUnlimited && clones.length >= cloneMax;
 
   // Clones live on Heclus's ai33 account but only ever list back to the
   // user who made them.
   const clonePanel = (
-    <div className="rounded-xl p-3 space-y-2"
+    <div className="rounded-xl p-4 space-y-3"
       style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px] font-semibold" style={{ color: "var(--c-60)" }}>
           Your cloned voices
         </p>
         <span className="text-[10px] tabular-nums" style={{ color: "var(--c-45)" }}>
-          {clones.length}/{cloneMax}
+          {cloneUnlimited ? clones.length : `${clones.length}/${cloneMax}`}
         </span>
       </div>
 
@@ -1163,7 +1180,7 @@ export default function VoiceoverPage({ params }: PageProps) {
       )}
 
       {clones.length > 0 && (
-        <div className="space-y-1">
+        <div className="space-y-1.5">
           {/* Same card as every other voice in the picker, so a clone
               previews and selects identically. previewUrl is the clip it
               was cloned from — ai33 exposes no preview for clones. */}
@@ -1208,8 +1225,8 @@ export default function VoiceoverPage({ params }: PageProps) {
       )}
 
       {/* The toggle is always present under the cap, so the form can be
-          dismissed as well as opened — including from the empty state,
-          where it starts open because it's the whole point of the tab. */}
+          dismissed as well as opened. Always starts collapsed, empty
+          state included. */}
       {clonesAtCap ? (
         // Kept visible but disabled, so the option is discoverable and the
         // reason is stated — rather than the button just vanishing.
@@ -1255,16 +1272,7 @@ export default function VoiceoverPage({ params }: PageProps) {
           ><Plus size={12} />Clone a voice</button>
         )}
         {showCloneForm && (
-        <div className="space-y-1.5">
-          <input
-            type="text"
-            value={cloneName}
-            onChange={(e) => setCloneName(e.target.value)}
-            placeholder="Voice name"
-            disabled={cloning}
-            className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none"
-            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", color: "var(--c-70)" }}
-          />
+        <div className="space-y-2.5">
           <input
             ref={cloneFileInputRef}
             type="file"
@@ -1272,11 +1280,30 @@ export default function VoiceoverPage({ params }: PageProps) {
             onChange={(e) => { const f = e.target.files?.[0]; if (f) void acceptCloneSample(f); }}
             className="hidden"
           />
-          <div className="flex gap-1">
+          {/* Name/Record/Upload and preview/Clone share one grid, so Clone
+              lands exactly under Upload and the preview spans the columns
+              above it. Flex with max-widths couldn't guarantee the columns
+              lined up.
+
+              On large screens a 1fr spacer column opens up between the name
+              and the buttons, pushing them to the right edge; the buttons
+              are placed explicitly so nothing flows into the spacer. Narrow
+              panels keep the buttons beside the name, where the room is
+              needed. */}
+          <div className="grid gap-2 items-center grid-cols-[minmax(0,11.5rem)_max-content_max-content] lg:grid-cols-[minmax(0,11.5rem)_1fr_max-content_max-content]">
+            <input
+              type="text"
+              value={cloneName}
+              onChange={(e) => setCloneName(e.target.value)}
+              placeholder="Voice name"
+              disabled={cloning}
+              className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none"
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", color: "var(--c-70)" }}
+            />
             <button
               onClick={recording ? stopRecording : startRecording}
               disabled={cloning}
-              className="flex-1 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40"
+              className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 lg:col-start-3"
               style={recording ? {
                 background: "oklch(0.7 0.19 25 / 0.15)",
                 border: "1px solid oklch(0.7 0.19 25 / 0.4)",
@@ -1286,25 +1313,42 @@ export default function VoiceoverPage({ params }: PageProps) {
                 border: "1px solid var(--bd-card)",
                 color: "var(--c-60)",
               }}
-            >{recording ? `Stop · ${recordSecs}s` : "🎙 Record"}</button>
+            >{recording
+              ? <>Stop · {recordSecs}s</>
+              : <><Mic size={11} />Record</>}</button>
             <button
               onClick={() => cloneFileInputRef.current?.click()}
               disabled={cloning || recording}
-              className="flex-1 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40"
+              className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 lg:col-start-4"
               style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
-            >Choose file</button>
+            ><UploadIcon size={11} />Upload</button>
+
+            {cloneFile && !recording && (
+              <>
+                <p className="col-span-3 lg:col-span-4 text-[10px] truncate" style={{ color: "var(--c-50)" }}>
+                  {cloneFile.name}{cloneDuration !== null && ` · ${Math.round(cloneDuration)}s`}
+                  {cloneTrimmed && ` · trimmed to first ${AI33_CLONE_MAX_SECONDS}s`}
+                </p>
+                {/* Own cell even without a URL, so Clone can't slide into
+                    the first column. */}
+                <div className="col-span-2 lg:col-span-3 min-w-0">
+                  {clonePreviewUrl && (
+                    <audio src={clonePreviewUrl} controls className="w-full" style={{ height: "28px" }} />
+                  )}
+                </div>
+                <button
+                  onClick={submitClone}
+                  disabled={cloning || !cloneName.trim() || !cloneFile || !cloneConsent}
+                  className="px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all disabled:opacity-40 lg:col-start-4"
+                  style={{
+                    background: "oklch(0.72 0.25 285 / 0.15)",
+                    border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                    color: "oklch(0.88 0.12 285)",
+                  }}
+                >{cloning ? "Cloning…" : "Clone"}</button>
+              </>
+            )}
           </div>
-          {cloneFile && !recording && (
-            <div className="space-y-1">
-              <p className="text-[10px] truncate" style={{ color: "var(--c-50)" }}>
-                {cloneFile.name}{cloneDuration !== null && ` · ${Math.round(cloneDuration)}s`}
-                {cloneTrimmed && ` · trimmed to first ${AI33_CLONE_MAX_SECONDS}s`}
-              </p>
-              {clonePreviewUrl && (
-                <audio src={clonePreviewUrl} controls className="w-full" style={{ height: "28px" }} />
-              )}
-            </div>
-          )}
           <label className="flex items-start gap-1.5 text-[10px] leading-snug" style={{ color: "var(--c-45)" }}>
             <input
               type="checkbox"
@@ -1315,23 +1359,13 @@ export default function VoiceoverPage({ params }: PageProps) {
             />
             <span>I have the speaker&apos;s permission to clone this voice.</span>
           </label>
-          <button
-            onClick={submitClone}
-            disabled={cloning || !cloneName.trim() || !cloneFile || !cloneConsent}
-            className="w-full px-3 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40"
-            style={{
-              background: "oklch(0.72 0.25 285 / 0.15)",
-              border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-              color: "oklch(0.88 0.12 285)",
-            }}
-          >{cloning ? "Cloning…" : "Clone a voice"}</button>
           {/* A greyed-out button with no reason is a dead end. Recording
               only satisfies one of three requirements, so show all three
               rather than naming one at a time. */}
           {cloning ? (
             <p className="text-[10px]" style={{ color: "var(--c-40)" }}>Uploading your sample to clone…</p>
           ) : (
-            <div className="space-y-0.5">
+            <div className="space-y-1">
               {([
                 ["Sample recorded or chosen", !!cloneFile],
                 ["Voice named", !!cloneName.trim()],
@@ -1542,9 +1576,11 @@ export default function VoiceoverPage({ params }: PageProps) {
                   <div className="flex items-center justify-between gap-2 text-[10px]">
                     <span style={{ color: "var(--c-45)" }}>Custom voice clones</span>
                     <span className="tabular-nums" style={{ color: clonesAtCap ? "oklch(0.72 0.19 25)" : "var(--c-45)" }}>
-                      {cloneMax > 0
-                        ? `${clones.length} / ${cloneMax} used`
-                        : "not included on your plan"}
+                      {cloneUnlimited
+                        ? `${clones.length} used · unlimited`
+                        : cloneMax > 0
+                          ? `${clones.length} / ${cloneMax} used`
+                          : "not included on your plan"}
                     </span>
                   </div>
                   {/* Provider + gender/custom pills are one filter group,
@@ -1561,13 +1597,13 @@ export default function VoiceoverPage({ params }: PageProps) {
                     {([
                       { id: "all", label: "All" },
                       ...AI33_FREE_PROVIDERS,
-                      { id: "custom", label: "Cloned voices" },
+                      { id: "custom", label: "Cloned voices", pro: true },
                     ] as const).map((p) => (
                       <button
                         key={p.id}
                         onClick={() => { setFreeProviderTab(p.id); setFreePage(1); }}
                         disabled={effectivelyGenerating}
-                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40"
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium inline-flex items-center gap-1 transition-all disabled:opacity-40"
                         style={freeProviderTab === p.id ? {
                           background: "oklch(0.72 0.25 285 / 0.15)",
                           border: "1px solid oklch(0.72 0.25 285 / 0.4)",
@@ -1577,7 +1613,12 @@ export default function VoiceoverPage({ params }: PageProps) {
                           border: "1px solid var(--bd-card)",
                           color: "var(--c-50)",
                         }}
-                      >{p.label}</button>
+                      >{p.label}{"pro" in p && p.pro && (
+                        <span className="px-1 rounded text-[9px] font-bold uppercase tracking-wide"
+                          style={{ background: "oklch(0.75 0.15 85 / 0.18)", color: "oklch(0.78 0.14 85)" }}>
+                          pro
+                        </span>
+                      )}</button>
                     ))}
                   </div>
                   {/* Female / Male narrows whatever the provider row above
@@ -1615,7 +1656,26 @@ export default function VoiceoverPage({ params }: PageProps) {
                   )}
                   </div>
                   {freeProviderTab === "custom" ? (
-                    clonePanel
+                    clonesLoaded && cloneMax === 0 ? (
+                      <div className="rounded-xl px-4 py-5 text-center"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+                        <p className="text-sm font-medium" style={{ color: "var(--c-70)" }}>
+                          This feature is available to only pro users
+                        </p>
+                        <p className="text-xs mt-1.5" style={{ color: "var(--c-45)" }}>
+                          Upgrade to Pro to clone your own voice.
+                        </p>
+                        <button
+                          onClick={() => setShowUpgradeModal(true)}
+                          className="mt-3 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                          style={{
+                            background: "oklch(0.72 0.25 285 / 0.15)",
+                            border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                            color: "oklch(0.88 0.12 285)",
+                          }}
+                        >Upgrade to Pro</button>
+                      </div>
+                    ) : clonePanel
                   ) : (
                   <>
                   {/* Search runs server-side against the whole catalog
@@ -2292,6 +2352,16 @@ export default function VoiceoverPage({ params }: PageProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {showUpgradeModal && (
+        <SubscriptionModal
+          email={userEmail}
+          defaultPlan="pro"
+          hideTryDemo
+          onClose={() => setShowUpgradeModal(false)}
+          onSuccess={() => setShowUpgradeModal(false)}
+        />
       )}
     </div>
   );

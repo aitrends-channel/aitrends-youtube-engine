@@ -63,7 +63,7 @@ export function QuotaRow({
             </span>
             {rate !== null && (
               <span className="text-[10px] font-semibold tabular-nums" style={{ color: "oklch(0.5 0.15 220)" }}>
-                ai33 bills ${rate.toFixed(2)}/1M {field.unit}
+                provider bills ${rate.toFixed(2)}/1M {field.unit}
               </span>
             )}
           </div>
@@ -93,10 +93,11 @@ export function QuotaRow({
               label={p.name}
               hint={p.slug}
               unit={unitLabel}
+              allowUnlimited={field.allowUnlimited === true}
               value={draftByPlan[p.slug] ?? ""}
               savedValue={typeof saved?.byPlan[p.slug] === "number" ? saved.byPlan[p.slug] : undefined}
               disabled={disabled}
-              locked={p.isFounder}
+              locked={p.isFounder || field.perPlanEditable === false}
               onChange={(v) => onOverrideChange(p.slug, v)}
             />
           ))}

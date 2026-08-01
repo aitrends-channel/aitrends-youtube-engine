@@ -9,8 +9,8 @@ import { type FreeUsageKind } from "@/lib/freeUsage";
 // re-exports it) to keep the dependency one-way. Both directions would
 // mean whichever module loaded first evaluated QUOTA_DEFAULTS against an
 // uninitialized const and threw.
-export const AI33_TTS_CAP_STARTER = Number(process.env.AI33_TTS_CAP_STARTER ?? 50_000);
-export const AI33_TTS_CAP_PRO = Number(process.env.AI33_TTS_CAP_PRO ?? 100_000);
+export const AI33_TTS_CAP_STARTER = Number(process.env.AI33_TTS_CAP_STARTER ?? 100_000);
+export const AI33_TTS_CAP_PRO = Number(process.env.AI33_TTS_CAP_PRO ?? 200_000);
 
 /** What ai33 bills us per 1M characters, in USD — powers the "costs us
  *  ≈$X/user/month" figure on the quota row. Env-only and unset by default:
@@ -39,6 +39,12 @@ export type QuotaConfig = Record<QuotaKind, QuotaAllocation>;
 
 export const QUOTA_VALUE_MAX = 50_000_000;
 
+/** No ceiling. Only valid on fields flagged allowUnlimited — character
+ *  allowances are real per-unit spend and must stay bounded, whereas a
+ *  clone is a one-off that only holds an upstream slot. 0 still means
+ *  "not included on this plan", so the two aren't confusable. */
+export const QUOTA_UNLIMITED = -1;
+
 /** The live-Dodo checkout verification harness, not a customer tier — it
  *  gets no quota cell and resolves to 0. */
 export const QUOTA_EXCLUDED_PLAN_SLUG = "production-test";
@@ -62,11 +68,16 @@ export const QUOTA_FIELDS: {
   /** False for gauge-only quotas, where the provider enforces the real
    *  limit and there's nothing for an admin to allocate per plan. */
   perPlan: boolean;
+  /** Whether QUOTA_UNLIMITED (-1) is an accepted value for this field. */
+  allowUnlimited?: boolean;
+  /** False renders the per-plan cells read-only: the allocation is fixed
+   *  by product policy rather than something to tune per environment. */
+  perPlanEditable?: boolean;
   description: string;
 }[] = [
   {
     key: "ai33_tts_chars",
-    label: "Free voiceover (ai33)",
+    label: "Free voiceover",
     unit: "chars",
     period: "monthly",
     funding: "heclus",
@@ -84,7 +95,12 @@ export const QUOTA_FIELDS: {
     // show — the row stays cost-free rather than printing a fake figure.
     usdPerMillionUnits: null,
     perPlan: true,
-    description: "How many cloned voices a user can keep at once. Each one holds a slot on our ai33 account.",
+    allowUnlimited: true,
+    // Fixed policy for now: unlimited on Pro, off everywhere else. Shown
+    // read-only so the numbers are visible without inviting a tweak that
+    // would quietly widen who can clone.
+    perPlanEditable: false,
+    description: "How many cloned voices a user can keep at once. Each one holds a slot on our shared voice-provider account. -1 = unlimited, 0 = not included.",
   },
 ];
 
@@ -97,14 +113,18 @@ export const QUOTA_DEFAULTS: QuotaConfig = {
     byPlan: { founder: 0, starter: AI33_TTS_CAP_STARTER, pro: AI33_TTS_CAP_PRO },
   },
   voice_clones: {
-    byPlan: { founder: 0, starter: 2, pro: 5 },
+    // Unlimited for Pro; Starter is 0 for now, so the feature ships to Pro
+    // only. Both are admin-tunable, so opening it to Starter — unlimited or
+    // capped — is a config change, not a deploy.
+    byPlan: { founder: 0, starter: 0, pro: QUOTA_UNLIMITED },
   },
 };
 
-function coerceValue(raw: unknown): number | null {
+function coerceValue(raw: unknown, allowUnlimited = false): number | null {
   const n = typeof raw === "number" ? raw : Number(raw);
   if (!Number.isFinite(n)) return null;
   const i = Math.floor(n);
+  if (allowUnlimited && i === QUOTA_UNLIMITED) return QUOTA_UNLIMITED;
   if (i < 0 || i > QUOTA_VALUE_MAX) return null;
   return i;
 }
@@ -131,7 +151,7 @@ export function coerceQuotaConfig(raw: unknown): QuotaConfig {
       for (const [slug, v] of Object.entries(e.byPlan as Record<string, unknown>)) {
         const key = slug.trim().toLowerCase();
         if (!key) continue;
-        const n = coerceValue(v);
+        const n = coerceValue(v, f.allowUnlimited);
         if (n !== null) byPlan[key] = n;
       }
       out[f.key].byPlan = byPlan;
@@ -205,8 +225,12 @@ export function validateQuotaInput(input: unknown): { ok: true; value: QuotaConf
         return { ok: false, error: `${f.label}: byPlan must be an object keyed by plan slug` };
       }
       for (const [slug, v] of Object.entries(e.byPlan as Record<string, unknown>)) {
-        if (coerceValue(v) === null) {
-          return { ok: false, error: `${f.label} → ${slug}: must be a whole number between 0 and ${QUOTA_VALUE_MAX.toLocaleString()}` };
+        if (coerceValue(v, f.allowUnlimited) === null) {
+          const range = `a whole number between 0 and ${QUOTA_VALUE_MAX.toLocaleString()}`;
+          return {
+            ok: false,
+            error: `${f.label} → ${slug}: must be ${range}${f.allowUnlimited ? ", or -1 for unlimited" : ""}`,
+          };
         }
       }
     }

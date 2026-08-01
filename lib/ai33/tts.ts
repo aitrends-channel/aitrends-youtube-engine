@@ -20,10 +20,23 @@ import { AI33_TTS_CAP_STARTER, AI33_TTS_CAP_PRO, resolveQuotaCap } from "@/lib/q
 // wrapped to satisfy generateTTS's synchronous { audio, charsConsumed }
 // contract, exactly like the Qwen path blocks on Replicate.
 
+// Every message on this class can reach a customer — via a toast on
+// preview, or the SSE error during generation. The provider is our
+// supplier, not something users should ever read, and upstream messages
+// get passed through verbatim, so scrub at the boundary rather than
+// trusting each call site. Server logs keep the real name.
+const PROVIDER_NAME = /\bai33(\.pro)?\b|\bopenspeaker\b/gi;
+function scrubProvider(message: string): string {
+  return message.replace(PROVIDER_NAME, "the free voice service").trim();
+}
+
 export class Ai33TTSError extends Error {
   constructor(message: string, public status?: number) {
-    super(message);
-    this.name = "Ai33TTSError";
+    super(scrubProvider(message));
+    // Neutral runtime name: anything that stringifies the error rather
+    // than reading .message (String(err), `${err}`) prints "<name>: <msg>",
+    // which would leak the provider despite the scrubbed message.
+    this.name = "FreeVoiceError";
   }
 }
 
@@ -473,7 +486,7 @@ export async function cloneAi33Voice(opts: {
   removeBackground?: boolean;
 }): Promise<string> {
   const token = (process.env.AI33_API_TOKEN ?? "").trim();
-  if (!token) throw new Ai33TTSError("Voice cloning isn't configured on this server yet (AI33_API_TOKEN).", 503);
+  if (!token) throw new Ai33TTSError("Voice cloning isn't available right now.", 503);
 
   const form = new FormData();
   form.append("voice_name", opts.name);
@@ -489,7 +502,7 @@ export async function cloneAi33Voice(opts: {
     | { success?: boolean; message?: string; data?: { voice_id?: string } }
     | null;
   if (!res.ok || body?.success === false || !body?.data?.voice_id) {
-    throw new Ai33TTSError(body?.message ?? `ai33 voice-clone failed (${res.status})`, res.status);
+    throw new Ai33TTSError(body?.message ?? `Voice cloning failed (${res.status}).`, res.status);
   }
   const rawId = body.data.voice_id;
   return rawId.startsWith("clone_") ? rawId : `clone_${rawId}`;
@@ -497,7 +510,7 @@ export async function cloneAi33Voice(opts: {
 
 export async function deleteAi33Clone(providerVoiceId: string): Promise<void> {
   const token = (process.env.AI33_API_TOKEN ?? "").trim();
-  if (!token) throw new Ai33TTSError("Voice cloning isn't configured on this server yet (AI33_API_TOKEN).", 503);
+  if (!token) throw new Ai33TTSError("Voice cloning isn't available right now.", 503);
 
   // The path takes the bare upstream id, not the "clone_" synthesis form.
   const upstreamId = providerVoiceId.replace(/^clone_/, "");
@@ -507,7 +520,7 @@ export async function deleteAi33Clone(providerVoiceId: string): Promise<void> {
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { message?: string } | null;
-    throw new Ai33TTSError(body?.message ?? `ai33 clone delete failed (${res.status})`, res.status);
+    throw new Ai33TTSError(body?.message ?? `Couldn't delete that voice (${res.status}).`, res.status);
   }
 }
 
@@ -627,14 +640,14 @@ async function submitTask(text: string, voiceId: string, token: string): Promise
       });
     } catch (err) {
       if (attempt < MAX_RETRIES) { await sleep(Math.min(10_000, 2000 * 2 ** attempt)); continue; }
-      throw new Ai33TTSError(`ai33 network error: ${err instanceof Error ? err.message : String(err)}`);
+      throw new Ai33TTSError(`Network error reaching the voice service: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     if (res.status === 401 || res.status === 403) {
-      throw new Ai33TTSError("ai33 auth failed — the server's AI33_API_TOKEN is missing or invalid.", res.status);
+      throw new Ai33TTSError("Free voices aren't available right now.", res.status);
     }
     if (res.status === 402) {
-      throw new Ai33TTSError("ai33 account is out of credit. Free ai33 voices are temporarily unavailable.", 402);
+      throw new Ai33TTSError("Free voices are temporarily unavailable.", 402);
     }
     if (res.status === 429 || res.status >= 500) {
       if (attempt < MAX_RETRIES) {
@@ -645,16 +658,16 @@ async function submitTask(text: string, voiceId: string, token: string): Promise
         await sleep(waitMs);
         continue;
       }
-      throw new Ai33TTSError(`ai33 error ${res.status} persisted after retries. Try again.`, res.status);
+      throw new Ai33TTSError(`Free voices failed (${res.status}) after retries. Try again.`, res.status);
     }
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      throw new Ai33TTSError(`ai33 error ${res.status}: ${body.replace(/\s+/g, " ").trim().slice(0, 300)}`, res.status);
+      throw new Ai33TTSError(`Free voices failed (${res.status}): ${body.replace(/\s+/g, " ").trim().slice(0, 300)}`, res.status);
     }
 
     const data = (await res.json().catch(() => null)) as Ai33TaskResponse | null;
     const taskId = data?.task_id ?? data?.id;
-    if (!taskId) throw new Ai33TTSError("ai33 returned no task_id.");
+    if (!taskId) throw new Ai33TTSError("The voice service returned no task.");
     return taskId;
   }
 }
@@ -664,11 +677,11 @@ async function pollAndDownload(taskId: string, token: string): Promise<ArrayBuff
   const deadline = Date.now() + 120_000;
   const pollUrl = `${AI33_BASE}/v3/task/${encodeURIComponent(taskId)}`;
   for (;;) {
-    if (Date.now() > deadline) throw new Ai33TTSError("ai33 TTS timed out. Try again.", 504);
+    if (Date.now() > deadline) throw new Ai33TTSError("Voice generation timed out. Try again.", 504);
     await sleep(2500);
     const poll = await fetch(pollUrl, { headers: { "xi-api-key": token } }).catch(() => null);
     if (!poll || poll.status === 429 || poll.status >= 500) continue; // transient — keep waiting
-    if (!poll.ok) throw new Ai33TTSError(`ai33 poll failed (${poll.status}).`, poll.status);
+    if (!poll.ok) throw new Ai33TTSError(`Voice generation check failed (${poll.status}).`, poll.status);
     const body = (await poll.json().catch(() => null)) as Ai33TaskResponse | null;
     if (!body) continue;
     // Throttled poll ("Task polling temporarily busy") comes back as
@@ -678,12 +691,12 @@ async function pollAndDownload(taskId: string, token: string): Promise<ArrayBuff
     const verdict = classify(data);
     if (verdict === "pending") continue;
     if (verdict === "failed") {
-      throw new Ai33TTSError(`ai33 TTS failed: ${(data.error ?? data.message ?? "unknown error").toString().slice(0, 300)}`);
+      throw new Ai33TTSError(`Voice generation failed: ${(data.error ?? data.message ?? "unknown error").toString().slice(0, 300)}`);
     }
     const url = audioUrlFrom(data);
-    if (!url) throw new Ai33TTSError("ai33 TTS finished but returned no audio URL.");
+    if (!url) throw new Ai33TTSError("Voice generation finished but returned no audio.");
     const audioRes = await fetch(url);
-    if (!audioRes.ok) throw new Ai33TTSError(`Failed to download ai33 audio (${audioRes.status}).`);
+    if (!audioRes.ok) throw new Ai33TTSError(`Failed to download the generated audio (${audioRes.status}).`);
     return audioRes.arrayBuffer();
   }
 }
@@ -696,7 +709,7 @@ export async function generateAi33TTS(
   if (!userId) throw new Ai33TTSError("Sign in to use free voiceover.", 401);
   const token = (process.env.AI33_API_TOKEN ?? "").trim();
   if (!token) {
-    throw new Ai33TTSError("Free ai33 voices aren't configured on this server yet (AI33_API_TOKEN).", 503);
+    throw new Ai33TTSError("Free voices aren't available right now.", 503);
   }
 
   // Per-user monthly perk budget, allocated per plan by the admin. We pay
@@ -712,14 +725,14 @@ export async function generateAi33TTS(
     // "Founder" in the message.
     const plan = (meta.plan ?? "").trim();
     throw new Ai33TTSError(
-      `Free ai33 voices aren't included in ${plan ? `the ${plan} plan` : "your plan"} — pick a Google voice (free on your own key) or a paid voice.`,
+      `Free voices aren't included in ${plan ? `the ${plan} plan` : "your plan"} — pick a paid voice, or upgrade your plan.`,
       403,
     );
   }
   const used = await getFreeUsageThisMonth(userId, "ai33_tts_chars");
   if (used + text.length > cap) {
     throw new Ai33TTSError(
-      `This voiceover needs ${text.length.toLocaleString()} characters but you have ${Math.max(0, cap - used).toLocaleString()} left on this month's free ai33 quota. It resets next month — or pick a Google or paid voice.`,
+      `This voiceover needs ${text.length.toLocaleString()} characters but you have ${Math.max(0, cap - used).toLocaleString()} left on this month's free quota. It resets next month — or pick a paid voice.`,
       429,
     );
   }
