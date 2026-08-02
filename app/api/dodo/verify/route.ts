@@ -191,6 +191,38 @@ export async function POST(request: Request) {
     : periodEndFromResult;
 
   const baseDodo = (user.app_metadata?.dodo ?? {}) as Record<string, unknown>;
+
+  // An upgrade is a fresh checkout, not a plan change on the existing
+  // subscription — so the previous one keeps billing unless we stop it.
+  // A Starter who moved to Pro was left holding both: $21 and $39 renewing
+  // 90 minutes apart, invisible to us because the id below gets
+  // overwritten. Soft-cancel the superseded one so it does not bill again
+  // while leaving the period they already paid for intact.
+  //
+  // Fail-soft and after the fact: the customer has paid for the new plan,
+  // so a Dodo error here must not fail the upgrade. It is logged loudly
+  // instead, since the consequence is a double charge.
+  // Awaited, not fire-and-forget: the function can be suspended once it
+  // responds, and a skipped cancel means a real double charge.
+  const previousSubId = (baseDodo.subscription_id as string | undefined) ?? null;
+  if (previousSubId && subscriptionIdFromResult && previousSubId !== subscriptionIdFromResult) {
+    try {
+      const res = await fetch(`${dodoBase}/subscriptions/${previousSubId}`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${secretKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ cancel_at_next_billing_date: true }),
+      });
+      if (res.ok) {
+        console.log(`[dodo-verify] superseded sub ${previousSubId} set to cancel at period end (new: ${subscriptionIdFromResult})`);
+      } else {
+        const body = await res.text().catch(() => "");
+        console.error(`[dodo-verify] DOUBLE BILLING RISK: could not cancel superseded sub ${previousSubId} (${res.status}) ${body.slice(0, 200)}`);
+      }
+    } catch (e) {
+      console.error(`[dodo-verify] DOUBLE BILLING RISK: cancel of superseded sub ${previousSubId} threw:`, e instanceof Error ? e.message : e);
+    }
+  }
+
   const mergedDodo = {
     ...baseDodo,
     event: "payment.verified",
