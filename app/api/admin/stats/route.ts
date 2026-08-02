@@ -34,7 +34,7 @@ export async function GET() {
     // without any client-side resorting. The daily/monthly
     // aggregation below adds into per-date Map buckets, which is
     // commutative — order doesn't change the chart numbers.
-    supabase.from("projects").select("id, user_id, channel_name, current_state, selected_topic, created_at, assembled_url, assembly_started_at, assembly_finished_at").order("created_at", { ascending: false }),
+    supabase.from("projects").select("id, user_id, channel_name, current_state, selected_topic, created_at, assembled_url, assembly_started_at, assembly_finished_at, assembled_duration_ms").order("created_at", { ascending: false }),
     supabase.from("account_settings").select("user_id, niches_used, niche_limit_override, kie_api_key"),
     getPlans(),
     supabase.from("product_config").select("activity_cutoff_at").eq("service", "_global").maybeSingle(),
@@ -258,6 +258,12 @@ export async function GET() {
       // completions that pre-date migration 049_assembly_timing.
       completedAt: isComplete ? (finished ?? null) : null,
       assembleSeconds,
+      // How long the finished video runs, in seconds. Null for anything
+      // assembled before migration 113 added the column, and for videos
+      // promoted from a preview rather than a full assembly run.
+      lengthSeconds: typeof p.assembled_duration_ms === "number" && p.assembled_duration_ms > 0
+        ? Math.round(p.assembled_duration_ms / 1000)
+        : null,
     };
   });
 
