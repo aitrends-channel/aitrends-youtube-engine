@@ -1157,7 +1157,10 @@ export default function VoiceoverPage({ params }: PageProps) {
   // cloneMax is the admin per-plan allocation (Config → Quotas): 0 means
   // cloning isn't part of the plan, -1 means no ceiling.
   const cloneUnlimited = cloneMax < 0;
-  const clonesAtCap = !cloneUnlimited && clones.length >= cloneMax;
+  // Gated on clonesLoaded: cloneMax starts at 0, so without it every render
+  // before the fetch resolves reports "at cap" and flashes the red
+  // not-included copy at users who in fact have unlimited.
+  const clonesAtCap = clonesLoaded && !cloneUnlimited && clones.length >= cloneMax;
 
   // Clones live on Heclus's ai33 account but only ever list back to the
   // user who made them.
@@ -1169,7 +1172,7 @@ export default function VoiceoverPage({ params }: PageProps) {
           Your cloned voices
         </p>
         <span className="text-[10px] tabular-nums" style={{ color: "var(--c-45)" }}>
-          {cloneUnlimited ? clones.length : `${clones.length}/${cloneMax}`}
+          {!clonesLoaded ? "…" : cloneUnlimited ? clones.length : `${clones.length}/${cloneMax}`}
         </span>
       </div>
 
@@ -1576,11 +1579,13 @@ export default function VoiceoverPage({ params }: PageProps) {
                   <div className="flex items-center justify-between gap-2 text-[10px]">
                     <span style={{ color: "var(--c-45)" }}>Custom voice clones</span>
                     <span className="tabular-nums" style={{ color: clonesAtCap ? "oklch(0.72 0.19 25)" : "var(--c-45)" }}>
-                      {cloneUnlimited
-                        ? `${clones.length} used · unlimited`
-                        : cloneMax > 0
-                          ? `${clones.length} / ${cloneMax} used`
-                          : "not included on your plan"}
+                      {!clonesLoaded
+                        ? "…"
+                        : cloneUnlimited
+                          ? `${clones.length} used · unlimited`
+                          : cloneMax > 0
+                            ? `${clones.length} / ${cloneMax} used`
+                            : "not included on your plan"}
                     </span>
                   </div>
                   {/* Provider + gender/custom pills are one filter group,
