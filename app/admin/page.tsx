@@ -199,6 +199,18 @@ function formatAssembleTime(seconds: number | null): string {
   return mRem === 0 ? `${h}h` : `${h}h ${mRem}m`;
 }
 
+// Video runtime as a timestamp — 8:04, or 1:02:30 past the hour. Distinct
+// from formatAssembleTime's "3m 12s" on purpose: one is a clock reading of
+// the video, the other is how long we spent making it.
+function formatVideoLength(seconds: number | null): string {
+  if (seconds === null || seconds === undefined) return "—";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const mm = h > 0 ? String(m).padStart(2, "0") : String(m);
+  return `${h > 0 ? `${h}:` : ""}${mm}:${String(s).padStart(2, "0")}`;
+}
+
 // Compact number formatting for cost cells. Keeps the table dense:
 //   42       → "42"
 //   1500     → "1.5k"
@@ -407,6 +419,9 @@ interface AdminProject {
   // (done/stopped/failed). Null when the project hasn't completed
   // an assembly yet, or pre-dates migration 049_assembly_timing.
   assembleSeconds: number | null;
+  // Runtime of the finished video in seconds. Null for videos assembled
+  // before migration 113 added the column.
+  lengthSeconds: number | null;
 }
 
 // Per-project usage rollup returned by /api/admin/project-costs.
@@ -6358,7 +6373,7 @@ export default function AdminPage() {
               <table className="w-full border-collapse min-w-[640px]">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
-                    {["User", "Project ID", "Channel", "Topic", "Phase", "Progress", "Assemble Time", "Created", ""].map((h) => (
+                    {["User", "Project ID", "Channel", "Topic", "Phase", "Progress", "Length", "Assemble Time", "Created", ""].map((h) => (
                       <th key={h} className="text-left py-3 px-4 text-xs font-medium uppercase tracking-wider"
                         style={{ color: "var(--c-40)" }}>
                         {h}
@@ -6455,6 +6470,15 @@ export default function AdminPage() {
                             </div>
                             <span className="text-xs" style={{ color: "var(--c-40)" }}>{p.progress}%</span>
                           </div>
+                        </td>
+                        <td
+                          className="py-3 px-4 text-sm tabular-nums font-mono"
+                          style={{ color: p.lengthSeconds !== null ? "var(--c-72)" : "var(--c-35)" }}
+                          title={p.lengthSeconds !== null
+                            ? `${p.lengthSeconds} seconds of finished video`
+                            : isComplete ? "Assembled before video length was recorded" : "Not assembled yet"}
+                        >
+                          {formatVideoLength(p.lengthSeconds)}
                         </td>
                         <td
                           className="py-3 px-4 text-sm tabular-nums font-mono"
