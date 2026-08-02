@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
-import { getPaymentSettings } from "@/lib/plans";
+import { getPaymentSettings, getPlanBySlug } from "@/lib/plans";
 
 export async function POST(request: Request) {
   let user;
@@ -248,6 +248,41 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     return NextResponse.json({ error: `Failed to update user: ${(e as Error).message}` }, { status: 500 });
+  }
+
+  // Changing plans carries the outgoing allowance into the new one, so the
+  // move never costs a user niches they have already paid for. A Founder
+  // (20) who takes Starter (5) gets an override of 25 rather than dropping
+  // to 5 — which, with a cumulative counter, would otherwise put a Founder
+  // who had used 13 immediately over cap.
+  //
+  // Written as niche_limit_override because that is the only field that can
+  // exceed a plan's own limit. It REPLACES the plan limit rather than adding
+  // to it, so a plan with no ceiling (nichesPerMonth null = unlimited) must
+  // clear the override instead of summing, or unlimited would collapse to a
+  // number.
+  //
+  // Fail-soft: the customer has paid, so a failure here must not fail the
+  // purchase. It is logged for manual follow-up.
+  const previousPlan = ((user.app_metadata?.plan as string | undefined) ?? "").trim().toLowerCase();
+  const newPlan = (plan ?? "pro").trim().toLowerCase();
+  if (previousPlan && previousPlan !== newPlan) {
+    try {
+      const [from, to] = await Promise.all([getPlanBySlug(previousPlan), getPlanBySlug(newPlan)]);
+      const fromLimit = from?.nichesPerMonth ?? null;
+      const toLimit = to?.nichesPerMonth ?? null;
+      const carried = fromLimit === null || toLimit === null ? null : fromLimit + toLimit;
+      const { error: nicheErr } = await supabase
+        .from("account_settings")
+        .upsert({ user_id: user.id, niche_limit_override: carried }, { onConflict: "user_id" });
+      if (nicheErr) {
+        console.error(`[dodo-verify] niche carry-over failed for ${user.id} (${previousPlan}->${newPlan}):`, nicheErr.message);
+      } else {
+        console.log(`[dodo-verify] ${previousPlan}(${fromLimit}) -> ${newPlan}(${toLimit}): niche override ${carried ?? "cleared (unlimited)"}`);
+      }
+    } catch (e) {
+      console.error(`[dodo-verify] niche carry-over threw for ${user.id}:`, e instanceof Error ? e.message : e);
+    }
   }
 
   // Immutable revenue ledger — mirrors the insert in the Dodo webhook
