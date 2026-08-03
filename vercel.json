@@ -27,6 +27,10 @@
     {
       "path": "/api/one-click/tick",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/storage-usage",
+      "schedule": "35 */6 * * *"
     }
   ]
 }

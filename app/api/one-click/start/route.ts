@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { getOneClickConfig } from "@/lib/one-click/config";
+import { requireStorageHeadroom } from "@/lib/storage-quota";
 import type { User } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,11 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+
+  // A full run writes images, voiceover and a rendered video, so refuse to
+  // engage rather than letting the orchestrator die part-way through.
+  const noRoom = await requireStorageHeadroom(user);
+  if (noRoom) return noRoom;
 
   let body: { projectId?: unknown };
   try { body = await req.json(); } catch {

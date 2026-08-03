@@ -26,6 +26,7 @@ import { incrementFreeUsage } from "@/lib/freeUsage";
 import { redis } from "@/lib/queue/client";
 import { isProTier } from "@/lib/plans-gating";
 import { sendEmail } from "@/lib/email/smtp";
+import { storageFullNote } from "@/lib/storage-quota";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { ModelChain, OneClickConfig } from "@/lib/one-click/config";
 
@@ -607,6 +608,13 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
   }
   if (assemblyStatus === "failed") return RESULT.attention("Assembly failed — open the project to retry the final render.");
   if (assemblyStatus === "queued" || assemblyStatus === "processing") return RESULT.waiting("Assembling the final video…");
+
+  // Checked here rather than at the top of the tick: the assembly-watch
+  // returns above are the common case, and this step is the one that writes
+  // images, clips and a rendered video. Stopping the run with a message
+  // beats failing every upload for the rest of it.
+  const storageNote = await storageFullNote(project.user_id);
+  if (storageNote) return RESULT.attention(storageNote);
 
   const attempts = (proj?.auto_pilot_attempts as Record<string, number> | null) ?? {};
   const imgIdx = attempts["genImageModelIdx"] ?? 0;

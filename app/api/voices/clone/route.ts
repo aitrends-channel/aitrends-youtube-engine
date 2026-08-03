@@ -10,6 +10,7 @@ import {
 import { listClonedVoices, clonedVoiceId } from "@/lib/cloned-voices";
 import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { resolveQuotaCap, QUOTA_UNLIMITED } from "@/lib/quota-config";
+import { requireStorageHeadroom } from "@/lib/storage-quota";
 import { planSlugOf } from "@/lib/plans-gating";
 import { isAdminUser } from "@/lib/admin";
 
@@ -41,6 +42,9 @@ export async function GET() {
 export async function POST(request: Request) {
   let user;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+
+  const noRoom = await requireStorageHeadroom(user);
+  if (noRoom) return noRoom;
 
   const form = await request.formData().catch(() => null);
   const name = String(form?.get("name") ?? "").trim();

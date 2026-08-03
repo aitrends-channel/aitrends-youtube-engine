@@ -8,6 +8,7 @@ import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import { logProjectCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
+import { requireStorageHeadroom } from "@/lib/storage-quota";
 
 export const maxDuration = 800;
 
@@ -25,6 +26,8 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
   const expired = requireActiveSubscription(user);
   if (expired) return expired;
+  const noRoom = await requireStorageHeadroom(user);
+  if (noRoom) return noRoom;
 
   try {
     const { projectId, thumbnails, modelId, aspectRatio = "16:9", resolution, clearFirst = false } = await req.json() as {

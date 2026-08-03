@@ -3,6 +3,7 @@ import { createPresignedUpload, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
+import { requireStorageHeadroom } from "@/lib/storage-quota";
 
 // Returns a short-lived presigned PUT URL so the browser can upload
 // directly to R2, bypassing Vercel's ~4.5 MB body limit on Route
@@ -11,6 +12,8 @@ import type { User } from "@supabase/supabase-js";
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const noRoom = await requireStorageHeadroom(user);
+  if (noRoom) return noRoom;
 
   const body = await req.json().catch(() => ({})) as {
     projectId?: string;

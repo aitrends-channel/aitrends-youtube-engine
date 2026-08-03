@@ -5,9 +5,97 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Eye, EyeOff, KeyRound, LogOut, Save, Star } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, HardDrive, KeyRound, LogOut, Save, Star } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+
+const GB = 1024 ** 3;
+
+function formatBytes(bytes: number): string {
+  if (bytes >= GB) return `${(bytes / GB).toFixed(bytes >= 10 * GB ? 0 : 1)} GB`;
+  const mb = bytes / (1024 ** 2);
+  return `${mb >= 10 || mb === 0 ? mb.toFixed(0) : mb.toFixed(1)} MB`;
+}
+
+function measuredAgo(iso: string): string {
+  const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (mins < 2) return "just now";
+  if (mins < 60) return `${mins} minutes ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  return `${days} day${days === 1 ? "" : "s"} ago`;
+}
+
+/** Storage meter. Hidden until the usage sweep has measured the account —
+ *  a bar reading 0 GB on a user with projects would just look broken. */
+function StorageCard() {
+  const [status, setStatus] = useState<{
+    usedBytes: number; capBytes: number | null; full: boolean; measuredAt: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/storage/usage", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (!cancelled && d && typeof d.usedBytes === "number") setStatus(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!status?.measuredAt) return null;
+
+  const { usedBytes, capBytes, full, measuredAt } = status;
+  const pct = capBytes === null ? 0 : Math.min(usedBytes / capBytes, 1);
+  const barColor = full
+    ? "oklch(0.6 0.19 25)"
+    : pct >= 0.9
+      ? "oklch(0.72 0.17 75)"
+      : "oklch(0.72 0.25 285)";
+
+  return (
+    <div className="space-y-5 pt-8">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: "oklch(0.62 0.15 220 / 0.12)", border: "1px solid oklch(0.62 0.15 220 / 0.25)" }}>
+          <HardDrive size={18} style={{ color: "oklch(0.62 0.15 220)" }} />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Storage</h2>
+          <p className="text-xs" style={{ color: "var(--c-45)" }}>
+            Images, clips, voiceovers and finished videos across all your projects.
+          </p>
+        </div>
+      </div>
+
+      <div className="p-5 rounded-2xl space-y-3"
+        style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+        <p className="leading-none">
+          <span className="text-2xl font-bold tabular-nums" style={{ color: "var(--c-90)" }}>
+            {formatBytes(usedBytes)}
+          </span>
+          <span className="text-xs ml-1.5" style={{ color: "var(--c-50)" }}>
+            {capBytes === null ? "used — unlimited on your plan" : `of ${formatBytes(capBytes)} used`}
+          </span>
+        </p>
+
+        {capBytes !== null && (
+          <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(0 0 0 / 0.18)" }}>
+            <div className="h-full rounded-full transition-all"
+              style={{ width: `${Math.max(pct * 100, 1.5)}%`, background: barColor }} />
+          </div>
+        )}
+
+        <p className="text-[11px] leading-relaxed" style={{ color: full ? "oklch(0.68 0.19 25)" : "var(--c-42)" }}>
+          {full
+            ? "You're out of storage — delete a project's assets or upgrade your plan to keep generating."
+            : "Deleting a project frees its assets."}
+          {" "}Measured {measuredAgo(measuredAt)}, refreshed every few hours.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 /** "Your feedback" card. Rendered only when the user has already
  *  responded to the one-time feedback prompt (row exists) — lets them
@@ -479,6 +567,7 @@ export default function AccountPage() {
             </form>
           )}
 
+          <StorageCard />
           <FeedbackCard />
         </div>
       </main>

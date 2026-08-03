@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
+import { requireStorageHeadroom } from "@/lib/storage-quota";
 
 // Two-step upload because Vercel functions cap request bodies at ~4.5MB
 // and trimmed voiceovers easily exceed that.
@@ -25,6 +26,8 @@ export async function POST(req: Request) {
   }
   const expired = requireActiveSubscription(user);
   if (expired) return expired;
+  const noRoom = await requireStorageHeadroom(user);
+  if (noRoom) return noRoom;
 
   const { searchParams } = new URL(req.url);
   const projectId = searchParams.get("projectId");

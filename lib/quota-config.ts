@@ -26,7 +26,7 @@ export const AI33_TTS_USD_PER_MILLION_CHARS =
  *  it has no counter. Only perks we pay for are allocated here — Google
  *  TTS and Cloudflare images run on the user's own key, and Qwen isn't
  *  reachable in the picker. */
-export type QuotaKind = Extract<FreeUsageKind, "ai33_tts_chars"> | "voice_clones";
+export type QuotaKind = Extract<FreeUsageKind, "ai33_tts_chars"> | "voice_clones" | "storage_bytes";
 
 export type QuotaAllocation = {
   /** Allowance per plan slug. A slug with no entry gets nothing — every
@@ -102,6 +102,22 @@ export const QUOTA_FIELDS: {
     perPlanEditable: false,
     description: "How many cloned voices a user can keep at once. Each one holds a slot on our shared voice-provider account. -1 = unlimited, 0 = not included.",
   },
+  {
+    key: "storage_bytes",
+    label: "Asset storage",
+    // Stored and enforced in GB so the admin cell is a sane number; the
+    // usage side converts from bytes. QUOTA_VALUE_MAX caps it at 50M, which
+    // is 50 petabytes — no practical ceiling.
+    unit: "GB",
+    period: "total",
+    funding: "heclus",
+    // R2 is ~$0.015/GB-month, so a per-1M-units rate would round to zero
+    // and print a misleading $0.00.
+    usdPerMillionUnits: null,
+    perPlan: true,
+    allowUnlimited: true,
+    description: "Total R2 storage for a user's images, clips, voiceovers and exports. -1 = unlimited. At the cap, new writes are blocked until they delete or upgrade.",
+  },
 ];
 
 /** The env/constant baseline — how the product behaved before this config
@@ -117,6 +133,17 @@ export const QUOTA_DEFAULTS: QuotaConfig = {
     // only. Both are admin-tunable, so opening it to Starter — unlimited or
     // capped — is a config change, not a deploy.
     byPlan: { founder: 0, starter: 0, pro: QUOTA_UNLIMITED },
+  },
+  storage_bytes: {
+    // Comfortably above measured usage: the heaviest account holds 37.9 GB
+    // and p90 is 6.9 GB, so nobody is retroactively over cap. For scale, a
+    // user sitting at the 200 GB Pro cap is ~$3/month of actual R2 cost.
+    //
+    // There is no paid storage add-on, matching the category: InVideo and
+    // peers treat storage as a fixed entitlement and resolve overage by
+    // deleting media or moving up a tier. Hitting the cap therefore blocks
+    // new writes rather than billing for more.
+    byPlan: { founder: 100, starter: 100, pro: 200 },
   },
 };
 
@@ -135,6 +162,7 @@ export function coerceQuotaConfig(raw: unknown): QuotaConfig {
   const out: QuotaConfig = {
     ai33_tts_chars: { byPlan: { ...QUOTA_DEFAULTS.ai33_tts_chars.byPlan } },
     voice_clones: { byPlan: { ...QUOTA_DEFAULTS.voice_clones.byPlan } },
+    storage_bytes: { byPlan: { ...QUOTA_DEFAULTS.storage_bytes.byPlan } },
   };
   if (!raw || typeof raw !== "object") return out;
 

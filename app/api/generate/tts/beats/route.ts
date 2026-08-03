@@ -11,6 +11,7 @@ import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import { logProjectCost } from "@/lib/costs";
 import { incrementFreeUsage } from "@/lib/freeUsage";
 import type { User } from "@supabase/supabase-js";
+import { requireStorageHeadroom } from "@/lib/storage-quota";
 
 export const maxDuration = 800;
 
@@ -83,6 +84,8 @@ function selectStaleBeats(beats: BeatRow[], voiceId: string): BeatRow[] {
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const noRoom = await requireStorageHeadroom(user);
+  if (noRoom) return noRoom;
 
   const body = await req.json().catch(() => ({})) as {
     projectId?: string;

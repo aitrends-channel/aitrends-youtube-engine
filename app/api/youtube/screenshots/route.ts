@@ -3,6 +3,7 @@ import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import { requireStorageHeadroom } from "@/lib/storage-quota";
 
 interface VideoInput {
   videoId: string;
@@ -34,6 +35,8 @@ async function tryUpload(path: string, url: string): Promise<string | null> {
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const noRoom = await requireStorageHeadroom(user);
+  if (noRoom) return noRoom;
 
   try {
     const { videos, projectId, kinds, attempt: rawAttempt }: {

@@ -5,6 +5,7 @@ import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
+import { requireStorageHeadroom } from "@/lib/storage-quota";
 
 // Server-side upload: the browser POSTs the file here (multipart) and we
 // push it to R2 with the S3 client. Unlike the presigned direct-PUT flow
@@ -16,6 +17,8 @@ import type { User } from "@supabase/supabase-js";
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const noRoom = await requireStorageHeadroom(user);
+  if (noRoom) return noRoom;
 
   let form: FormData;
   try { form = await req.formData(); }
