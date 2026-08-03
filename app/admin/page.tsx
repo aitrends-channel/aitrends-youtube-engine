@@ -2400,7 +2400,7 @@ interface ClaudeModelOption {
   label: string;
   note: string;
   tier: "quality" | "balanced" | "fast";
-  thinkingOnByDefault: boolean;
+  thinking: "off" | "pin-off" | "always";
 }
 
 interface RoutingResponse {
@@ -2785,13 +2785,19 @@ function DefaultModelPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRespo
                 )}
               </div>
               <p className="text-[11px] mt-1 leading-relaxed" style={{ color: "var(--c-50)" }}>{m.note}</p>
-              {m.thinkingOnByDefault && (
+              {m.thinking === "pin-off" && (
                 // These models think by default and that shares the request's
                 // max_tokens with the answer. We send thinking: disabled so
                 // the tighter steps (1.5-2k budgets) behave as tuned.
                 <p className="text-[11px] mt-1.5 leading-relaxed" style={{ color: "oklch(0.55 0.13 250)" }}>
                   Thinking is off — it would otherwise eat into the token budget the
                   shorter steps are tuned for.
+                </p>
+              )}
+              {m.thinking === "always" && (
+                <p className="text-[11px] mt-1.5 leading-relaxed" style={{ color: "oklch(0.6 0.16 60)" }}>
+                  Thinking can&apos;t be turned off and shares the token budget with the
+                  answer — the 1.5–2k steps (ideas, visual analysis) may run short.
                 </p>
               )}
             </button>

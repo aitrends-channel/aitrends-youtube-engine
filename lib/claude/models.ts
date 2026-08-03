@@ -24,29 +24,33 @@ export const TIER_LABELS: Record<ClaudeModelTier, string> = {
   fast: "Fastest",
 };
 
+/** What we send for `thinking`, which is not the same question per model:
+ *  - "off"     — the model doesn't think unless asked; send nothing.
+ *  - "pin-off" — thinking is on by default and max_tokens is a ceiling on
+ *                thinking PLUS the answer, so we pin it off to keep the
+ *                behaviour the tighter steps (1500–2048) were tuned against.
+ *  - "always"  — thinking can't be turned off at all (a 400, not a warning),
+ *                so max_tokens has to cover thinking plus the answer. */
+export type ClaudeThinkingMode = "off" | "pin-off" | "always";
+
 export type ClaudeModelOption = {
   id: string;
   label: string;
   note: string;
   tier: ClaudeModelTier;
-  /** Thinking is on unless we turn it off. On these models max_tokens is a
-   *  ceiling on thinking PLUS the answer, and several of our calls run on a
-   *  tight budget (1500–2048), so we pin thinking off to keep the behaviour
-   *  the tighter models were tuned against. */
-  thinkingOnByDefault: boolean;
+  thinking: ClaudeThinkingMode;
 };
 
-// Fable 5 / Mythos 5 are deliberately absent: thinking can't be disabled on
-// them at all (a 400, not a warning), they need 30-day retention, and they
-// price above Opus — none of which suits these steps.
+// Mythos 5 is deliberately absent: it's Project Glasswing only.
 export const CLAUDE_MODELS: ClaudeModelOption[] = [
-  { id: "claude-opus-5", label: "Opus 5", tier: "quality", note: "Newest Opus. Strongest on long agentic and structured work.", thinkingOnByDefault: true },
-  { id: "claude-opus-4-8", label: "Opus 4.8", tier: "quality", note: "Previous Opus flagship. Warmer prose, narrates more.", thinkingOnByDefault: false },
-  { id: "claude-opus-4-7", label: "Opus 4.7", tier: "quality", note: "What the engine shipped on. Literal instruction following.", thinkingOnByDefault: false },
-  { id: "claude-opus-4-6", label: "Opus 4.6", tier: "quality", note: "Older Opus. Kept for comparison against a known baseline.", thinkingOnByDefault: false },
-  { id: "claude-sonnet-5", label: "Sonnet 5", tier: "balanced", note: "Near-Opus quality on structured output at Sonnet pricing.", thinkingOnByDefault: true },
-  { id: "claude-sonnet-4-6", label: "Sonnet 4.6", tier: "balanced", note: "Previous Sonnet. Cheaper than Opus, weaker on long scripts.", thinkingOnByDefault: false },
-  { id: "claude-haiku-4-5", label: "Haiku 4.5", tier: "fast", note: "Cheapest and fastest. Looser tool_choice adherence.", thinkingOnByDefault: false },
+  { id: "claude-fable-5", label: "Fable 5", tier: "quality", note: "Most capable, and the most expensive ($10/$50 per Mtok). Always thinks and needs 30-day retention.", thinking: "always" },
+  { id: "claude-opus-5", label: "Opus 5", tier: "quality", note: "Newest Opus. Strongest on long agentic and structured work.", thinking: "pin-off" },
+  { id: "claude-opus-4-8", label: "Opus 4.8", tier: "quality", note: "Previous Opus flagship. Warmer prose, narrates more.", thinking: "off" },
+  { id: "claude-opus-4-7", label: "Opus 4.7", tier: "quality", note: "What the engine shipped on. Literal instruction following.", thinking: "off" },
+  { id: "claude-opus-4-6", label: "Opus 4.6", tier: "quality", note: "Older Opus. Kept for comparison against a known baseline.", thinking: "off" },
+  { id: "claude-sonnet-5", label: "Sonnet 5", tier: "balanced", note: "Near-Opus quality on structured output at Sonnet pricing.", thinking: "pin-off" },
+  { id: "claude-sonnet-4-6", label: "Sonnet 4.6", tier: "balanced", note: "Previous Sonnet. Cheaper than Opus, weaker on long scripts.", thinking: "off" },
+  { id: "claude-haiku-4-5", label: "Haiku 4.5", tier: "fast", note: "Cheapest and fastest. Looser tool_choice adherence.", thinking: "off" },
 ];
 
 /** Steps where a user's own pick is honoured. Deliberately only the
@@ -79,7 +83,8 @@ export type ClaudeModelParams = {
 
 export function modelParamsFor(id: string): ClaudeModelParams {
   const opt = CLAUDE_MODELS.find((m) => m.id === id);
-  return opt?.thinkingOnByDefault ? { model: id, thinking: { type: "disabled" } } : { model: id };
+  // "always" must send no thinking field at all — an explicit disabled is a 400.
+  return opt?.thinking === "pin-off" ? { model: id, thinking: { type: "disabled" } } : { model: id };
 }
 
 export type ClaudeModelConfig = {
