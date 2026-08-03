@@ -770,11 +770,11 @@ export default function SettingsPage() {
             </div>
           ) : (
             <form onSubmit={handleSave} className="space-y-6">
-              {/* items-start keeps cards their natural height instead of
-                  stretching to the tallest sibling in the row. */}
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 items-start">
+              {/* Cards stretch to the tallest sibling in the row; each is a
+                  flex column so the key inputs sit flush at the bottom. */}
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {SERVICES.filter((svc) => svc.tier === tab).map((svc, idx) => (
-                  <div key={svc.title} className="p-5 rounded-2xl space-y-4"
+                  <div key={svc.title} className="p-5 rounded-2xl flex flex-col gap-4"
                     style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.14)" }}>
                     {/* Card header */}
                     <div className="flex items-start gap-3">
@@ -828,7 +828,9 @@ export default function SettingsPage() {
                       </ol>
                     )}
 
-                    {/* Key inputs for this service */}
+                    {/* Key inputs for this service — mt-auto pins them to the
+                        card's bottom edge so they align across the row. */}
+                    <div className="mt-auto flex flex-col gap-4">
                     {svc.fields.map((key) => {
                       const field = KEY_FIELDS.find((f) => f.key === key)!;
                       const currentMasked = masked[field.key] ?? "";
@@ -886,6 +888,7 @@ export default function SettingsPage() {
                         </div>
                       );
                     })}
+                    </div>
                   </div>
                 ))}
               </div>
