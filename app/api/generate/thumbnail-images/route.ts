@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateImage } from "@/lib/kie/images";
+import { withPromptLengthRetry } from "@/lib/kie/promptLength";
 import { deleteObject, r2KeyFromUrl, uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
@@ -89,8 +90,17 @@ export async function POST(req: Request) {
         batch.map(async (thumb) => {
           await supabase.from("project_thumbnails").update({ image_status: "generating" }).eq("project_id", projectId).eq("position", thumb.position);
 
-          const finalPrompt = augmentPromptWithOverlay(thumb.stylePrompt, textOverlayByPosition.get(thumb.position));
-          const { url: imageUrl, creditsConsumed } = await generateImage(finalPrompt, modelId, aspectRatio, resolution, user.id);
+          // Style prompt goes through the length ladder; the overlay is
+          // re-appended on every attempt so a too-long style prompt never
+          // costs us the literal text the thumbnail is supposed to render.
+          const overlay = textOverlayByPosition.get(thumb.position);
+          const { url: imageUrl, creditsConsumed } = await withPromptLengthRetry(
+            thumb.stylePrompt,
+            (stylePrompt) => generateImage(
+              augmentPromptWithOverlay(stylePrompt, overlay),
+              modelId, aspectRatio, resolution, user.id,
+            ),
+          );
           if (creditsConsumed) {
             void logProjectCost({
               projectId,

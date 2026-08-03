@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { submitImageTask } from "@/lib/kie/images";
+import { withPromptLengthRetry } from "@/lib/kie/promptLength";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { KieUpstreamError } from "@/lib/kie/client";
 import { incrementFreeUsage } from "@/lib/freeUsage";
@@ -39,7 +40,6 @@ export async function POST(req: Request) {
     // account default) to the client-supplied prompt just for the
     // generator call. The stored image_prompt is never touched here.
     const consistency = await resolveConsistency(user.id, projectId);
-    const sentPrompt = applyConsistency(imagePrompt, consistency.text, consistency.append);
 
     // Webhook URL — KIE POSTs here the moment the image finishes, so
     // we don't depend on the cron tick or the browser polling. Cron and
@@ -47,7 +47,10 @@ export async function POST(req: Request) {
     // dropped en route.
     const callBackUrl = `${getAppUrl(req)}/api/webhooks/kie/image`;
 
-    const taskId = await submitImageTask(sentPrompt, modelId, aspectRatio, resolution, user.id, callBackUrl);
+    const taskId = await withPromptLengthRetry(imagePrompt, (prompt) => submitImageTask(
+      applyConsistency(prompt, consistency.text, consistency.append),
+      modelId, aspectRatio, resolution, user.id, callBackUrl,
+    ));
     console.log(`[images/submit] beat=${beatNumber} model=${modelId} taskId=${taskId}`);
 
     // Single atomic UPDATE so the webhook can never fire in a window

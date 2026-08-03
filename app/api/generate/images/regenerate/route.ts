@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { submitImageTask, checkImageTask } from "@/lib/kie/images";
+import { withPromptLengthRetry } from "@/lib/kie/promptLength";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { KieUpstreamError } from "@/lib/kie/client";
 import { incrementFreeUsage } from "@/lib/freeUsage";
@@ -69,7 +70,6 @@ export async function POST(req: Request) {
     // generator call — the (possibly edited) imagePrompt is what we
     // persist to image_prompt below, kept clean.
     const consistency = await resolveConsistency(user.id, projectId);
-    const sentPrompt = applyConsistency(imagePrompt, consistency.text, consistency.append);
 
     // 1. Snapshot existing image so we can delete it after the new
     //    one is live in the DB.
@@ -88,7 +88,10 @@ export async function POST(req: Request) {
     //    as "how long this model took". Powers the picker's
     //    "Fastest" tab ranking.
     const submitT0 = Date.now();
-    const taskId = await submitImageTask(sentPrompt, modelId, aspectRatio, resolution, user.id);
+    const taskId = await withPromptLengthRetry(imagePrompt, (prompt) => submitImageTask(
+      applyConsistency(prompt, consistency.text, consistency.append),
+      modelId, aspectRatio, resolution, user.id,
+    ));
     console.log(`[images/regenerate] beat=${beatNumber} model=${modelId} taskId=${taskId}`);
 
     // 3. Mark in-flight. A page refresh between submit and complete

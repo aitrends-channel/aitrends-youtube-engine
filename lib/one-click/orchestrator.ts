@@ -10,6 +10,7 @@ import { retryClaudeCall } from "@/lib/claude/retry";
 import { uploadFromUrl, uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { generateImages, generateVideos, generateThumbnails } from "@/lib/workflow/prompts-core";
 import { submitImageTask, generateImage } from "@/lib/kie/images";
+import { PROMPT_LENGTH_CAPS, capPrompt, isPromptLengthError } from "@/lib/kie/promptLength";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { finishImageTask } from "@/lib/kie/finishImageTask";
 import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
@@ -493,26 +494,6 @@ function chainModel(chain: ModelChain, idx: number): string {
 }
 function chainLength(chain: ModelChain): number {
   return [chain.primary, chain.secondary, chain.fallback].filter(Boolean).length;
-}
-
-// KIE image models reject prompts past a model-specific maximum with
-// "KIE 500: The text length cannot exceed the maximum limit". Unlike a
-// 429 this is deterministic — retrying the identical prompt fails the
-// same way — so recovery means SHORTENING the prompt. We retry at
-// progressively smaller caps; the floor (400) sits comfortably under
-// every KIE image model's limit. Applies to both beat images and
-// thumbnails, so it lives here rather than in each loop.
-const PROMPT_LENGTH_CAPS = [1500, 800, 400];
-function isPromptLengthError(msg: string): boolean {
-  return /text length|maximum limit|too long|prompt.*exceed/i.test(msg);
-}
-// Cap a prompt to `max` chars, preferring to cut at the last sentence/
-// clause/word boundary so the truncated prompt still reads cleanly.
-function capPrompt(prompt: string, max: number): string {
-  if (prompt.length <= max) return prompt;
-  const slice = prompt.slice(0, max);
-  const cut = Math.max(slice.lastIndexOf(". "), slice.lastIndexOf(", "), slice.lastIndexOf(" "));
-  return (cut > max * 0.5 ? slice.slice(0, cut) : slice).trim();
 }
 
 // Hash a beat's script segment the same way the manual tts/beats route

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateImage } from "@/lib/kie/images";
+import { withPromptLengthRetry } from "@/lib/kie/promptLength";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
@@ -65,8 +66,13 @@ export async function POST(req: Request) {
           // the user's actual experience (queue + generation + cdn
           // fetch), not just the raw model inference time.
           const t0 = Date.now();
-          const sentPrompt = applyConsistency(beat.imagePrompt, consistency.text, consistency.append);
-          const { url: imageUrl, creditsConsumed } = await generateImage(sentPrompt, modelId, aspectRatio, resolution, user.id);
+          const { url: imageUrl, creditsConsumed } = await withPromptLengthRetry(
+            beat.imagePrompt,
+            (prompt) => generateImage(
+              applyConsistency(prompt, consistency.text, consistency.append),
+              modelId, aspectRatio, resolution, user.id,
+            ),
+          );
           const elapsedMs = Date.now() - t0;
           if (creditsConsumed) {
             void logProjectCost({
