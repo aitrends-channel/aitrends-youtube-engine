@@ -9,6 +9,9 @@ import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { ChevronUp, ChevronDown, Download, Check } from "lucide-react";
+import { joinSegments } from "@/lib/text/joinSegments";
+import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
+import { planBulkMerge, findStubs } from "@/lib/text/mergePlan";
 import type { Beat } from "@/lib/types";
 
 // ── Sub-components ─────────────────────────────────────────────────────────
@@ -166,8 +169,26 @@ function EditablePrompt({
   );
 }
 
-function BeatCard({ beat, projectId, onSaved, consistencyPreview }: { beat: Beat; projectId: string; onSaved: () => Promise<unknown> | void; consistencyPreview?: string | null }) {
+// A beat this short can't carry an image and a clip of its own — the
+// splitter occasionally emits one. Flagged so the user can spot it in a
+// long list and merge it away.
+const SHORT_BEAT_WORDS = 3;
+function wordCount(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLast, onMerge }: {
+  beat: Beat;
+  projectId: string;
+  onSaved: () => Promise<unknown> | void;
+  consistencyPreview?: string | null;
+  isFirst: boolean;
+  isLast: boolean;
+  onMerge: (beatNumber: number, direction: "up" | "down") => void;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const words = wordCount(beat.scriptSegment ?? "");
+  const isShort = words > 0 && words <= SHORT_BEAT_WORDS;
 
   return (
     <div className="rounded-xl overflow-hidden transition-all"
@@ -184,6 +205,12 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview }: { beat: Beat
         <p className="text-sm flex-1 leading-relaxed line-clamp-2" style={{ color: "var(--c-60)" }}>
           {beat.scriptSegment}
         </p>
+        {isShort && (
+          <span className="shrink-0 mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+            style={{ background: "oklch(0.6 0.15 75 / 0.15)", color: "oklch(0.72 0.15 75)", border: "1px solid oklch(0.6 0.15 75 / 0.3)" }}>
+            {words} word{words === 1 ? "" : "s"}
+          </span>
+        )}
         <span className="text-xs shrink-0 mt-1" style={{ color: "var(--c-35)" }}>
           {expanded ? "▲" : "▼"}
         </span>
@@ -260,6 +287,39 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview }: { beat: Beat
             </div>
           ) : (
             <p className="text-xs italic" style={{ color: "var(--c-35)" }}>No video prompt yet — run Step 2 to generate.</p>
+          )}
+
+          {/* Merge — the surviving beat keeps its own prompts, so this is
+              deliberately a separate action from editing them. */}
+          {!(isFirst && isLast) && (
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wider shrink-0" style={{ color: "var(--c-35)" }}>
+                Merge
+              </span>
+              <span className="text-[9px] font-bold uppercase tracking-wide shrink-0" style={{ color: "oklch(0.65 0.24 25)" }}>
+                New
+              </span>
+              {!isFirst && (
+                <button
+                  onClick={() => onMerge(beat.beatNumber, "up")}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-all hover:opacity-80"
+                  style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
+                >
+                  <ChevronUp size={12} />
+                  into beat {beat.beatNumber - 1}
+                </button>
+              )}
+              {!isLast && (
+                <button
+                  onClick={() => onMerge(beat.beatNumber, "down")}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-all hover:opacity-80"
+                  style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
+                >
+                  <ChevronDown size={12} />
+                  with beat {beat.beatNumber + 1}
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -1154,6 +1214,13 @@ export default function PromptsPage({ params }: PageProps) {
   const [clearing, setClearing] = useState(false);
   const [regenTarget, setRegenTarget] = useState<"image" | "video" | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  const [mergeTarget, setMergeTarget] = useState<{ beatNumber: number; direction: "up" | "down" } | null>(null);
+  const [mergeDraft, setMergeDraft] = useState("");
+  const [merging, setMerging] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkMinWords, setBulkMinWords] = useState(SHORT_BEAT_WORDS);
+  const [bulkDirection, setBulkDirection] = useState<"up" | "down" | "auto">("up");
+  const [bulkRunning, setBulkRunning] = useState(false);
 
   const beats: Beat[] = project?.beats ?? [];
   const videoBeats = beats.filter((b) => b.videoPrompt);
@@ -1692,6 +1759,55 @@ export default function PromptsPage({ params }: PageProps) {
     }
   }
 
+  async function confirmMerge() {
+    if (!mergeTarget) return;
+    setMerging(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/beats/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...mergeTarget, segment: mergeDraft }),
+      });
+      const data = await res.json().catch(() => ({})) as { error?: string; keptBeatNumber?: number; remainingBeats?: number };
+      if (!res.ok) throw new Error(data.error ?? "Merge failed");
+      await mutate();
+      toast.success(`Merged into beat ${data.keptBeatNumber}. Reread its prompts.`);
+      setMergeTarget(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Merge failed");
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  // Previewed with the same planner the route runs, so the count the user
+  // approves is the count that happens. Auto can't be previewed exactly — the
+  // side is Claude's call server-side — so it previews as "up" for the count
+  // (the set of stubs is the same either way) and the dialog says so.
+  const bulkPlanBeats = beats.map((b) => ({ beatNumber: b.beatNumber, scriptSegment: b.scriptSegment ?? "" }));
+  const bulkPlan = planBulkMerge(bulkPlanBeats, bulkMinWords, bulkDirection === "auto" ? "up" : bulkDirection);
+  const bulkStubs = bulkDirection === "auto" ? findStubs(bulkPlanBeats, bulkMinWords) : [];
+
+  async function runBulkMerge() {
+    setBulkRunning(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/beats/merge/bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ minWords: bulkMinWords, direction: bulkDirection }),
+      });
+      const data = await res.json().catch(() => ({})) as { error?: string; merged?: number; remainingBeats?: number };
+      if (!res.ok) throw new Error(data.error ?? "Bulk merge failed");
+      await mutate();
+      toast.success(`Merged ${data.merged} beat${data.merged === 1 ? "" : "s"} away. ${data.remainingBeats} left.`);
+      setBulkOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Bulk merge failed");
+    } finally {
+      setBulkRunning(false);
+    }
+  }
+
   async function runVideoStep() {
     // Re-check server state — image beats may have been cleared since
     // the page rendered. Pull fresh data and read the latest from the
@@ -1986,6 +2102,19 @@ export default function PromptsPage({ params }: PageProps) {
                 );
               })}
             </div>
+            {beats.length > 1 && (
+              <button
+                onClick={() => setBulkOpen(true)}
+                disabled={anyRunning || remoteRunInProgress}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all hover:opacity-80 disabled:opacity-40 mr-auto"
+                style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
+              >
+                Merge beats
+                <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: "oklch(0.65 0.24 25)" }}>
+                  New
+                </span>
+              </button>
+            )}
             {/* Export dropdown. The backdrop sits behind the menu so a click
                 anywhere else dismisses it without a document listener. */}
             <div className="relative">
@@ -2054,8 +2183,23 @@ export default function PromptsPage({ params }: PageProps) {
             </div>
 
             <div className="px-5 sm:px-8 pt-6 pb-6 space-y-3">
-              {activeTab === "beats" && beats.map((beat) => (
-                <BeatCard key={beat.beatNumber} beat={beat} projectId={projectId} onSaved={mutate} consistencyPreview={consistencyPreview} />
+              {activeTab === "beats" && beats.map((beat, i) => (
+                <BeatCard
+                  key={beat.beatNumber}
+                  beat={beat}
+                  projectId={projectId}
+                  onSaved={mutate}
+                  consistencyPreview={consistencyPreview}
+                  isFirst={i === 0}
+                  isLast={i === beats.length - 1}
+                  onMerge={(beatNumber, direction) => {
+                    const keep = direction === "up" ? beatNumber - 1 : beatNumber;
+                    const a = beats.find((b) => b.beatNumber === keep)?.scriptSegment ?? "";
+                    const b = beats.find((x) => x.beatNumber === keep + 1)?.scriptSegment ?? "";
+                    setMergeDraft(joinSegments(a, dedupeOverlap(b, a)));
+                    setMergeTarget({ beatNumber, direction });
+                  }}
+                />
               ))}
               {activeTab === "video" && (
                 videoBeats.length > 0 ? videoBeats.map((beat) => (
@@ -2233,6 +2377,139 @@ export default function PromptsPage({ params }: PageProps) {
                   Clearing…
                 </span>
               ) : "Clear"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkOpen} onOpenChange={(open) => { if (!open && !bulkRunning) setBulkOpen(false); }}>
+        <DialogContent className="sm:max-w-2xl" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Merge beats</DialogTitle>
+            <DialogDescription>
+              Folds stub beats into a neighbour. Fewer beats cost less but match the narration less closely. Absorbed prompts and media are deleted for good. It&apos;s all your decision!
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <label className="flex items-center justify-between gap-3 text-sm text-zinc-700">
+              <span>Merge beats under</span>
+              <span className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={bulkMinWords}
+                  disabled={bulkRunning}
+                  onChange={(e) => setBulkMinWords(Math.min(50, Math.max(1, Number(e.target.value) || 1)))}
+                  className="w-20 rounded-lg px-2 py-1.5 text-sm bg-zinc-50 text-zinc-900 ring-1 ring-zinc-300 focus:ring-2 focus:ring-zinc-400 outline-none disabled:opacity-60"
+                />
+                <span className="text-zinc-500">words</span>
+              </span>
+            </label>
+
+            <label className="flex items-center justify-between gap-3 text-sm text-zinc-700">
+              <span>Fold into</span>
+              <select
+                value={bulkDirection}
+                disabled={bulkRunning}
+                onChange={(e) => setBulkDirection(e.target.value as "up" | "down" | "auto")}
+                className="rounded-lg px-2 py-1.5 text-sm bg-zinc-50 text-zinc-900 ring-1 ring-zinc-300 focus:ring-2 focus:ring-zinc-400 outline-none disabled:opacity-60"
+              >
+                <option value="up">the beat before</option>
+                <option value="down">the beat after</option>
+                <option value="auto">Auto (AI decides)</option>
+              </select>
+            </label>
+
+            <div className="rounded-lg px-3 py-2.5 text-sm bg-zinc-100 text-zinc-700 ring-1 ring-zinc-200">
+              {bulkPlan.steps.length === 0
+                ? `No beats under ${bulkMinWords} word${bulkMinWords === 1 ? "" : "s"}.`
+                : bulkDirection === "auto"
+                  ? `${bulkStubs.length} stub${bulkStubs.length === 1 ? "" : "s"}, each folded into the side the AI picks. ${beats.length} becomes ${bulkPlan.finalCount}.`
+                  : `${bulkPlan.steps.length} beat${bulkPlan.steps.length === 1 ? "" : "s"} merged away. ${beats.length} becomes ${bulkPlan.finalCount}.`}
+            </div>
+
+            {(bulkDirection === "auto" ? bulkStubs.map((s) => s.beatNumber) : bulkPlan.absorbedOriginals).length > 0 && (
+              <div className="max-h-40 overflow-y-auto rounded-lg ring-1 ring-zinc-200 divide-y divide-zinc-200">
+                {(bulkDirection === "auto" ? bulkStubs.map((s) => s.beatNumber) : bulkPlan.absorbedOriginals).map((n) => (
+                  <div key={n} className="flex gap-2 px-3 py-1.5 text-xs text-zinc-600">
+                    <span className="font-semibold text-zinc-400 shrink-0">{n}</span>
+                    <span className="truncate">{beats.find((b) => b.beatNumber === n)?.scriptSegment || "(empty)"}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <button
+              onClick={() => setBulkOpen(false)}
+              disabled={bulkRunning}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40 bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={runBulkMerge}
+              disabled={bulkRunning || bulkPlan.steps.length === 0}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+            >
+              {bulkRunning ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  Merging…
+                </span>
+              ) : `Merge ${bulkPlan.steps.length || ""}`.trim()}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!mergeTarget} onOpenChange={(open) => { if (!open && !merging) setMergeTarget(null); }}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>
+              {mergeTarget && (mergeTarget.direction === "up"
+                ? `Merge beat ${mergeTarget.beatNumber} into ${mergeTarget.beatNumber - 1}?`
+                : `Merge beat ${mergeTarget.beatNumber + 1} into ${mergeTarget.beatNumber}?`)}
+            </DialogTitle>
+            <DialogDescription>
+              {mergeTarget && (() => {
+                const keep = mergeTarget.direction === "up" ? mergeTarget.beatNumber - 1 : mergeTarget.beatNumber;
+                return `Beat ${keep} keeps its prompts. Beat ${keep + 1}'s are deleted. Can't be undone.`;
+              })()}
+            </DialogDescription>
+          </DialogHeader>
+          <textarea
+            value={mergeDraft}
+            onChange={(e) => setMergeDraft(e.target.value)}
+            disabled={merging}
+            rows={4}
+            className="w-full rounded-lg px-3 py-2 text-sm leading-relaxed bg-zinc-50 text-zinc-900 ring-1 ring-zinc-300 focus:ring-2 focus:ring-zinc-400 outline-none resize-y disabled:opacity-60"
+          />
+          <DialogFooter>
+            <button
+              onClick={() => setMergeTarget(null)}
+              disabled={merging}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmMerge}
+              disabled={merging || !mergeDraft.trim()}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+            >
+              {merging ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  Merging…
+                </span>
+              ) : "Merge"}
             </button>
           </DialogFooter>
         </DialogContent>
