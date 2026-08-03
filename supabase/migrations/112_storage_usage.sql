@@ -1,21 +1,16 @@
 -- Per-account R2 storage totals, refreshed by /api/cron/storage-usage.
 --
--- Why a cache rather than a live sum: usage is a per-prefix ListObjectsV2
--- walk, and heavy accounts already hold 27k+ objects — far too slow to run
--- on an upload. One bucket-wide sweep costs ~200 Class B ops for the whole
--- estate, so refreshing every 6 hours is effectively free and that much
--- staleness is fine for a cap measured in gigabytes.
+-- A cache rather than a live sum: usage is a per-prefix ListObjectsV2 walk and
+-- heavy accounts hold 27k+ objects, far too slow on an upload. A whole-estate
+-- sweep is ~200 Class B ops, so 6-hourly is free and that staleness is fine
+-- for a cap measured in gigabytes.
 --
--- Keyed on the R2 prefix, which is userFolderFor(user) — the lowercased
--- email, or the uuid when no email exists. user_id is resolved where we can
--- and left null otherwise (deleted accounts still hold objects, and their
--- bytes should stay visible to the admin storage view).
+-- Keyed on the R2 prefix (userFolderFor: lowercased email, else uuid).
+-- user_id stays null when no account matches — deleted accounts still hold
+-- objects, and those bytes belong in the admin storage view.
 --
--- bonus_bytes is an admin grant, not a product. There is no paid storage
--- add-on: hitting the cap means deleting media or upgrading, which is how
--- the category handles it. The column exists so support can unblock a
--- specific account without editing everyone's plan allowance, and cap logic
--- adds it unconditionally because it is 0 for almost everybody.
+-- bonus_bytes lets support unblock one account without touching everyone's
+-- plan allowance. Not a purchasable add-on.
 
 CREATE TABLE IF NOT EXISTS storage_usage (
   prefix       TEXT        PRIMARY KEY,

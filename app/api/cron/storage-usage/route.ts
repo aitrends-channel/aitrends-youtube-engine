@@ -2,23 +2,15 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { listAllObjects, listTopLevelPrefixes } from "@/lib/supabase/storage";
 
-// R2 storage sweep, every 6 hours. Sums bytes per top-level prefix
-// (userFolderFor = lowercased email, or uuid) and caches the totals in
-// storage_usage for the cap check to read.
+// R2 storage sweep, every 6 hours (vercel.json), caching per-prefix totals
+// in storage_usage for the cap check.
 //
-// A sweep rather than summing on demand: heavy accounts already hold 27k+
-// objects, so a live sum is far too slow for an upload path. The whole
-// estate is ~195k objects, which is ~195 Class B ops — a rounding error
-// against R2's free tier, which is why this runs 4x a day rather than
-// nightly: it bounds how far a heavy account can overshoot its cap between
-// sweeps to one generating session, at no real cost.
+// A sweep rather than an on-demand sum: heavy accounts hold 27k+ objects, far
+// too slow for an upload path. The whole estate is ~195 Class B ops, so 4x a
+// day is free and bounds overshoot between sweeps to one session.
 //
-// Account prefixes are walked concurrently because listing is latency-bound
-// (a page is 1000 keys, one round trip) — serially the whole estate took
-// ~190s, uncomfortably close to maxDuration.
-//
-// Scheduled in vercel.json, protected by the standard CRON_SECRET bearer
-// check.
+// Prefixes are walked concurrently — listing is latency-bound, and serially
+// the estate took ~190s, uncomfortably close to maxDuration.
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;

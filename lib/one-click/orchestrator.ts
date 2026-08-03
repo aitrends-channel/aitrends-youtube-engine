@@ -609,10 +609,8 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
   if (assemblyStatus === "failed") return RESULT.attention("Assembly failed — open the project to retry the final render.");
   if (assemblyStatus === "queued" || assemblyStatus === "processing") return RESULT.waiting("Assembling the final video…");
 
-  // Checked here rather than at the top of the tick: the assembly-watch
-  // returns above are the common case, and this step is the one that writes
-  // images, clips and a rendered video. Stopping the run with a message
-  // beats failing every upload for the rest of it.
+  // Checked here, not at the top of the tick: this is the step that writes
+  // images, clips and a video, and the returns above are the common case.
   const storageNote = await storageFullNote(project.user_id);
   if (storageNote) return RESULT.attention(storageNote);
 

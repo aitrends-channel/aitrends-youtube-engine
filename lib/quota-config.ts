@@ -105,14 +105,11 @@ export const QUOTA_FIELDS: {
   {
     key: "storage_bytes",
     label: "Asset storage",
-    // Stored and enforced in GB so the admin cell is a sane number; the
-    // usage side converts from bytes. QUOTA_VALUE_MAX caps it at 50M, which
-    // is 50 petabytes — no practical ceiling.
+    // Stored in GB so the admin cell is a sane number; usage converts from bytes.
     unit: "GB",
     period: "total",
     funding: "heclus",
-    // R2 is ~$0.015/GB-month, so a per-1M-units rate would round to zero
-    // and print a misleading $0.00.
+    // R2 is ~$0.015/GB-month — a per-1M-units rate would print $0.00.
     usdPerMillionUnits: null,
     perPlan: true,
     allowUnlimited: true,
@@ -135,14 +132,10 @@ export const QUOTA_DEFAULTS: QuotaConfig = {
     byPlan: { founder: 0, starter: 0, pro: QUOTA_UNLIMITED },
   },
   storage_bytes: {
-    // Comfortably above measured usage: the heaviest account holds 37.9 GB
-    // and p90 is 6.9 GB, so nobody is retroactively over cap. For scale, a
-    // user sitting at the 200 GB Pro cap is ~$3/month of actual R2 cost.
-    //
-    // There is no paid storage add-on, matching the category: InVideo and
-    // peers treat storage as a fixed entitlement and resolve overage by
-    // deleting media or moving up a tier. Hitting the cap therefore blocks
-    // new writes rather than billing for more.
+    // Above measured usage (heaviest account 37.9 GB, p90 6.9 GB) so nobody is
+    // retroactively over cap; a user at the 200 GB Pro cap costs ~$3/month.
+    // No paid add-on — like the rest of the category, overage is resolved by
+    // deleting media or moving up a tier.
     byPlan: { founder: 100, starter: 100, pro: 200 },
   },
 };

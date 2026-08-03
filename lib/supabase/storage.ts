@@ -214,9 +214,8 @@ export async function deleteFolder(prefix: string): Promise<void> {
 }
 
 // The bucket's top-level folders — one per user (userFolderFor). Delimiter
-// collapses each folder into a single CommonPrefixes entry, so this costs a
-// couple of requests instead of a walk of every key. Trailing "/" is
-// stripped so the result reads as a folder name.
+// collapses each into one CommonPrefixes entry, so this is a couple of
+// requests rather than a walk of every key.
 export async function listTopLevelPrefixes(): Promise<string[]> {
   if (!BUCKET) throw new Error("R2 storage is not configured — R2_BUCKET_NAME environment variable is missing");
   const prefixes: string[] = [];
@@ -237,10 +236,8 @@ export async function listTopLevelPrefixes(): Promise<string[]> {
   return prefixes;
 }
 
-// Streams every object in the bucket (or under `prefix`) one page at a
-// time. A generator rather than an array because the estate is ~200k
-// objects and the storage sweep only ever needs a running sum — holding
-// all the keys in memory at once buys nothing.
+// A generator rather than an array: the estate is ~200k objects and the sweep
+// only needs a running sum.
 export async function* listAllObjects(
   prefix?: string,
 ): AsyncGenerator<{ key: string; size: number }> {

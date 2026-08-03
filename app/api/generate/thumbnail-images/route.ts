@@ -93,9 +93,8 @@ export async function POST(req: Request) {
         batch.map(async (thumb) => {
           await supabase.from("project_thumbnails").update({ image_status: "generating" }).eq("project_id", projectId).eq("position", thumb.position);
 
-          // Style prompt goes through the length ladder; the overlay is
-          // re-appended on every attempt so a too-long style prompt never
-          // costs us the literal text the thumbnail is supposed to render.
+          // Overlay re-appended per attempt so shortening never costs us the
+          // literal text the thumbnail is meant to render.
           const overlay = textOverlayByPosition.get(thumb.position);
           const { url: imageUrl, creditsConsumed } = await withPromptLengthRetry(
             thumb.stylePrompt,

@@ -17,8 +17,7 @@ export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
-  // A full run writes images, voiceover and a rendered video, so refuse to
-  // engage rather than letting the orchestrator die part-way through.
+  // Refuse up front rather than dying part-way through a full run.
   const noRoom = await requireStorageHeadroom(user);
   if (noRoom) return noRoom;
 

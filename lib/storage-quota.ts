@@ -16,27 +16,24 @@ export interface StorageStatus {
   usedBytes: number;
   /** Plan allowance plus any admin grant. null = unlimited. */
   capBytes: number | null;
-  /** True once usage has reached the cap. Always false when unlimited. */
   full: boolean;
   /** Null when the sweep has never run for this account. */
   measuredAt: string | null;
 }
 
-/** The R2 key prefix for a user — mirrors userFolderFor in supabase/storage. */
+/** Mirrors userFolderFor in supabase/storage. */
 export function storagePrefixFor(user: { email?: string | null; id: string }): string {
   return ((user.email ?? user.id) || user.id).trim().toLowerCase();
 }
 
-/** Cap in bytes from the admin per-plan allowance (stored in GB) plus the
- *  per-account grant. Null means no ceiling. */
+/** Per-plan allowance (stored in GB) plus the per-account grant; null = no ceiling. */
 export async function storageCapBytes(user: User, bonusBytes = 0): Promise<number | null> {
   const gbCap = await resolveQuotaCap("storage_bytes", planSlugOf(user), isAdminUser(user));
   if (gbCap === QUOTA_UNLIMITED) return null;
   return gbCap * GB + bonusBytes;
 }
 
-/** Reads the cached sweep result. Usage is hours stale by design — see
- *  migration 112 for why this is not summed live. */
+/** Cached sweep result — hours stale by design, see migration 112. */
 export async function storageStatus(user: User): Promise<StorageStatus> {
   const { data } = await supabase
     .from("storage_usage")
@@ -54,11 +51,8 @@ export async function storageStatus(user: User): Promise<StorageStatus> {
   };
 }
 
-/** Reads the status, or null when the read itself failed.
- *
- *  Both callers below fail open on null: a storage cap is a cost control,
- *  not a correctness boundary, and a transient DB blip must not stop
- *  someone mid-generation. */
+/** Null when the read itself failed — callers fail open, since a cost control
+ *  must not stop a generation on a DB blip. */
 async function statusOrNull(user: User): Promise<StorageStatus | null> {
   try {
     return await storageStatus(user);
@@ -68,13 +62,9 @@ async function statusOrNull(user: User): Promise<StorageStatus | null> {
   }
 }
 
-/** Route guard, same shape as requireActiveSubscription: returns the
- *  response to send back, or null when there's headroom. Goes right after
- *  the auth/subscription checks so the user is told once up front rather
- *  than part-way through a batch of images.
- *
- *  403 + a flag rather than 507, because the app's fetch interceptor
- *  already inspects 403 bodies for exactly this kind of gate. */
+/** Route guard shaped like requireActiveSubscription — the response to send,
+ *  or null when there's headroom. 403 rather than 507: the app's fetch
+ *  interceptor already inspects 403 bodies for this kind of gate. */
 export async function requireStorageHeadroom(user: User): Promise<NextResponse | null> {
   const status = await statusOrNull(user);
   if (!status?.full || status.capBytes === null) return null;
@@ -89,9 +79,8 @@ export async function requireStorageHeadroom(user: User): Promise<NextResponse |
   );
 }
 
-/** Same check for background callers that hold a user id rather than a
- *  session — the 1Click tick loop, which turns the note into a
- *  needs-attention message. Null means "carry on". */
+/** Same check for background callers holding a user id, not a session (the
+ *  1Click tick). Null means carry on. */
 export async function storageFullNote(userId: string): Promise<string | null> {
   try {
     const { data, error } = await supabase.auth.admin.getUserById(userId);
