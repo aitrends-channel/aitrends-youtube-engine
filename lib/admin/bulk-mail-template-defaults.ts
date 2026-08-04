@@ -33,6 +33,47 @@ export const BULK_MAIL_STEP_OPTIONS = [
   { id: "thumbnails", label: "Thumbnails" },
 ] as const;
 
+// Customer-level audiences (ids must match CUSTOMER_AUDIENCES in
+// lib/admin/bulk-mail-audience). Client-safe so the panel can build the
+// picker, decide when to hide the idle selector, and label history rows
+// without importing the server-only audience module.
+export const BULK_MAIL_CUSTOMER_OPTIONS = [
+  {
+    id: "paid-no-setup",
+    label: "Paid users with no setup",
+    historyLabel: "Paid, no setup",
+    hint: "Paying customers who haven't finished account setup (no API key saved) — no idle window, matched regardless of last activity.",
+  },
+  {
+    id: "paid-setup-no-video",
+    label: "Paid users with setup but zero video",
+    historyLabel: "Paid, no niche",
+    hint: "Paying customers with account setup done but no niche created yet (no channel analyzed) — no idle window.",
+  },
+  {
+    id: "free-inactive-3d",
+    label: "Free/demo users with no activity in the past 3 days",
+    historyLabel: "Free/demo inactive 3d+",
+    hint: "Free or demo users (never paid) with no sign-in and no project activity in the past 3 days — includes accounts that never did anything.",
+  },
+  {
+    id: "all-paid",
+    label: "All paid users",
+    historyLabel: "All paid users",
+    hint: "Every paying account, whatever their funnel position — no idle window. Admin and test accounts are always excluded.",
+  },
+  {
+    id: "all-users",
+    label: "All users",
+    historyLabel: "All users",
+    hint: "Every account — paid, free and demo — with no funnel filter and no idle window. Admin and test accounts are always excluded.",
+  },
+] as const;
+
+export function isCustomerAudienceId(v: string): boolean {
+  return BULK_MAIL_CUSTOMER_OPTIONS.some((o) => o.id === v);
+}
+
 // The {{stuck}} sentence for a given audience. Step audiences name the
 // step; everything else ("any", the paid audiences) gets the generic
 // unfinished-video line.
@@ -131,5 +172,29 @@ Alex
 Heclus Support`,
     videoTable: false,
     sortOrder: 4,
+  },
+  {
+    id: "service-outage",
+    label: "Service notice: KIE outage",
+    subject: "Why your generations are failing right now",
+    body: `Hi {{name}},
+
+If your generations have been failing, it isn't your setup and it isn't your API key. KIE - the provider Heclus routes generation through - is having an internal outage and is returning "Server exception, please try again later" on their side.
+
+What that means for you:
+
+- Script, prompt, image, voiceover and video steps can fail or stall while the outage lasts.
+- Nothing you have made is lost. Every project stays exactly at the step it reached, and you can carry on from there once KIE recovers.
+- Retrying straight away will usually hit the same error, so it is worth giving it some time rather than repeating the step.
+
+We are watching KIE's status and the pipeline will pick up again as soon as their service is back. If this runs on longer than expected, I will email you an update.
+
+Sorry for the disruption. If you are stuck on something specific, reply to this email and I will look at your account directly.
+
+Thanks,
+Alex
+Heclus Support`,
+    videoTable: false,
+    sortOrder: 5,
   },
 ];
