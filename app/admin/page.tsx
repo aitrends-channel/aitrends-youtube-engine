@@ -70,10 +70,13 @@ const PROJECT_STATUS_FILTERS: { id: string; label: string; match: (p: StatusFilt
   { id: "topic",      label: "At Topic",      match: (p) => p.currentState === 6 && !p.selectedTopic },
   { id: "script",     label: "At Script",     match: (p) => p.currentState === 6 && !!p.selectedTopic },
   { id: "visuals",    label: "At Visuals",    match: (p) => [7, 8, 11, 12].includes(p.currentState) },
-  { id: "prompts",    label: "At Prompts",    match: (p) => [9, 10].includes(p.currentState) },
-  { id: "thumbnail",  label: "At Thumbnail",  match: (p) => p.currentState === 13 },
+  // Chips follow the same state→step mapping the stats route uses. 13 is where
+  // the app parks a project that landed on Prompts (deliberately short of
+  // Generate/Assemble); the thumbnails step is 16.
+  { id: "prompts",    label: "At Prompts",    match: (p) => [9, 10, 13].includes(p.currentState) },
   { id: "generate",   label: "At Generate",   match: (p) => p.currentState === 14 },
   { id: "assemble",   label: "At Assemble",   match: (p) => p.currentState === 15 && !p.isComplete },
+  { id: "thumbnail",  label: "At Thumbnail",  match: (p) => p.currentState >= 16 && !p.isComplete },
 ];
 
 const STATS_KEY = "/api/admin/stats";
@@ -621,7 +624,7 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
 
   const inProgress = projects.filter((p) => !p.isComplete && p.currentState > 1);
   const stepFilters = PROJECT_STATUS_FILTERS.filter((f) =>
-    ["channel", "topic", "script", "visuals", "prompts", "thumbnail", "generate", "assemble"].includes(f.id));
+    ["channel", "topic", "script", "visuals", "prompts", "generate", "assemble", "thumbnail"].includes(f.id));
   const stepCounts = stepFilters
     .map((f) => ({ label: f.label.replace(/^At /, ""), count: projects.filter((p) => !p.isComplete && f.match(p)).length }))
     .filter((s) => s.count > 0)
