@@ -14,29 +14,30 @@ const PHASE_LABELS: Record<number, string> = {
   1: "Setup", 2: "Setup", 3: "Setup", 4: "Analyzing", 5: "Analyzing",
   6: "Topic", 7: "Visuals", 8: "Visuals", 9: "Prompts", 10: "Prompts",
   11: "Visuals", 12: "Visuals", 13: "Thumbnails", 14: "Generate", 15: "Assemble",
+  // 16 = the post-assembly thumbnail step. Only reachable with an MP4 in
+  // hand, so it normally coerces to Complete below; labelled anyway so the
+  // few rows whose assembled_url went missing read "Thumbnails", not "Setup".
+  16: "Thumbnails",
 };
 
 // The one definition of "this video is done", used by the Videos tab rows and
 // the Stats cards so they can never disagree.
 //
-// Two ways to qualify. The final MP4 exists (assembled_url), or the project
-// moved PAST Assemble — state 16 is the thumbnails step, which is optional, so
-// reaching it means assembly already succeeded and nothing else is required.
-//
-// The second clause matters because assembled_url can go missing on a video
-// that really was produced (the R2 URL corruption, or a manual fix-up). Those
-// rows used to render "99% · Setup": PHASE_LABELS has no entry for 16, and
-// 16/15 rounds past 100 into the 99 cap. All 3 such rows in prod carry both
-// assembly_started_at and assembly_finished_at, so the assembly did finish.
+// A final assembled MP4 and nothing else. Workflow position is deliberately
+// NOT part of it: state 13 is the wizard's thumbnails step, which sits BEFORE
+// Generate and Assemble, so a project can carry a "Thumbnails" phase label
+// with no video made yet. Reaching any step never implies a video exists —
+// only assembled_url does.
 const ASSEMBLE_STATE = 15;
-function isProjectComplete(p: { assembled_url?: unknown; current_state?: number | null }): boolean {
-  return Boolean(p.assembled_url) || (p.current_state ?? 1) > ASSEMBLE_STATE;
+function isProjectComplete(p: { assembled_url?: unknown }): boolean {
+  return Boolean(p.assembled_url);
 }
 
 const PHASE_PATHS: Record<number, string> = {
   1: "channel", 2: "channel", 3: "channel", 4: "channel", 5: "channel",
   6: "topic", 7: "visuals", 8: "visuals", 9: "prompts", 10: "prompts",
   11: "visuals", 12: "visuals", 13: "thumbnails", 14: "generate", 15: "assemble",
+  16: "thumbnails",
 };
 
 export async function GET() {
