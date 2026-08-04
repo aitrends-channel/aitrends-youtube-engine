@@ -7,6 +7,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getAnthropicClient, SYSTEM_PROMPT } from "@/lib/claude/client";
 import { modelParamsFor } from "@/lib/claude/models";
 import {
+  buildBeatsCached,
+  buildBeatsDynamic,
   buildImagePromptsCached,
   buildImagePromptsDynamic,
   buildConsistencySheetPrompt,
@@ -15,11 +17,13 @@ import {
   buildThumbnailsPrompt,
 } from "@/lib/claude/prompts";
 import {
+  BeatsSchema,
   ImagePromptsSchema,
   VideoPromptsSchema,
   ThumbnailsOutputSchema,
 } from "@/lib/claude/schemas";
 import {
+  beatsInputSchema,
   imagePromptsInputSchema,
   videoPromptsInputSchema,
   thumbnailsInputSchema,
@@ -48,7 +52,7 @@ function assertComplete(stopReason: string | null | undefined, label: string) {
 // rather than a real failure.
 const CANCELLED_MSG = "Prompts generation was cancelled — the step was cleared while in flight.";
 
-type PromptsStep = "images" | "videos";
+type PromptsStep = "beats" | "images" | "videos";
 
 async function claimPromptsRun(projectId: string, userId: string, step: PromptsStep): Promise<string | null> {
   const runId = randomUUID();
@@ -871,6 +875,297 @@ export async function generateImages(
   send({ type: "done", beatCount: totalBeatCount });
   } catch (err) {
     await recordPromptsFailure(projectId, userId, "images", err);
+    throw err;
+  } finally {
+    await releasePromptsRunIfOwned(projectId, userId, runId);
+  }
+}
+
+
+// ── Step 1: Beats (segmentation only) ──────────────────────────────────────
+//
+// Splits the script into beats and writes script_segment ONLY, leaving every
+// prompt field null. That gap is the whole point: the user can merge stub
+// beats here for free, because nothing derived from the segment exists yet.
+//
+// Structurally a trimmed generateImages: same chunk walk, same word-coverage
+// resume, same persist gates for monotonic beat numbers, same recursive split
+// when a dense chunk truncates. What it drops is the consistency sheet and
+// the visual profile — neither affects where a beat starts and ends.
+export async function generateBeats(
+  projectId: string,
+  userId: string,
+  script: string,
+  send: (data: object) => void,
+  model: string,
+  promptStyle: "general" | "cinematic" = "general",
+) {
+  console.log(`[beats] start project=${projectId} scriptWords=${script.trim().split(/\s+/).filter(Boolean).length}`);
+  const runId = await claimPromptsRun(projectId, userId, "beats");
+  // Same walk-back as the image step: beats existing without prompts is
+  // "prompts in progress", not done.
+  await supabase
+    .from("projects")
+    .update({ current_state: 13 })
+    .eq("id", projectId)
+    .eq("user_id", userId)
+    .gte("current_state", 14);
+  try {
+    const { client: anthropic } = await getAnthropicClient(userId, "image_prompts");
+
+    const scriptHash = createHash("sha256").update(script).digest("hex");
+    const { data: priorHashRow } = await supabase
+      .from("projects")
+      .select("prompts_script_hash")
+      .eq("id", projectId)
+      .single();
+    const priorHash = (priorHashRow?.prompts_script_hash as string | null) ?? null;
+    if (priorHash && priorHash !== scriptHash) {
+      console.log(`[beats] script changed since last run — discarding old beats project=${projectId}`);
+      await supabase.from("project_beats").delete().eq("project_id", projectId);
+    }
+
+    const SCRIPT_CHUNK_WORDS = 200;
+    const words = script.trim().split(/\s+/).filter(Boolean);
+    const allChunks: string[] = [];
+    for (let i = 0; i < words.length; i += SCRIPT_CHUNK_WORDS) {
+      allChunks.push(words.slice(i, i + SCRIPT_CHUNK_WORDS).join(" "));
+    }
+    if (allChunks.length === 0) allChunks.push(script);
+
+    // Sweep debris from a prior failed run. NOTE the difference from
+    // generateImages, which deletes beats with a null image_prompt: here a
+    // null image_prompt is the expected, correct state, so the only thing
+    // that counts as debris is a beat with no segment at all.
+    await supabase.from("project_beats").delete().eq("project_id", projectId).is("script_segment", null);
+    await supabase.from("project_beats").delete().eq("project_id", projectId).eq("script_segment", "");
+
+    const { data: existingBeats } = await supabase
+      .from("project_beats")
+      .select("beat_number, script_segment")
+      .eq("project_id", projectId)
+      .order("beat_number", { ascending: true });
+
+    let coveredWords = 0;
+    let nextBeatNumber = 1;
+    if (existingBeats && existingBeats.length > 0) {
+      for (const b of existingBeats) {
+        coveredWords += (b.script_segment as string).trim().split(/\s+/).filter(Boolean).length;
+      }
+      nextBeatNumber = (existingBeats[existingBeats.length - 1].beat_number as number) + 1;
+    }
+
+    const CHUNK_SLACK_WORDS = 100;
+    const chunksToProcess: { content: string; chunkIndex: number; totalChunks: number }[] = [];
+    let walkedWords = 0;
+    for (let i = 0; i < allChunks.length; i++) {
+      const chunkWords = allChunks[i].split(/\s+/).filter(Boolean).length;
+      const chunkEnd = walkedWords + chunkWords;
+      if (coveredWords > 0 && chunkEnd <= coveredWords + CHUNK_SLACK_WORDS) {
+        walkedWords = chunkEnd;
+        continue;
+      }
+      chunksToProcess.push({ content: allChunks[i], chunkIndex: i, totalChunks: allChunks.length });
+      walkedWords = chunkEnd;
+    }
+
+    if (chunksToProcess.length === 0 && existingBeats && existingBeats.length > 0) {
+      // Already segmented. Unlike the image step this does NOT advance
+      // current_state to 14 — prompts still have to be written.
+      await supabase
+        .from("projects")
+        .update({ prompts_script_hash: scriptHash, prompts_active_run_id: null, prompts_active_step: null, prompts_stop_requested: false })
+        .eq("id", projectId)
+        .eq("user_id", userId);
+      send({ type: "done", beatCount: existingBeats.length });
+      return;
+    }
+
+    const isResume = existingBeats && existingBeats.length > 0 && chunksToProcess.length < allChunks.length;
+    send({
+      type: "status",
+      message: isResume
+        ? `Resuming — ${chunksToProcess.length} script segment${chunksToProcess.length === 1 ? "" : "s"} left to split...`
+        : `Splitting the script across ${chunksToProcess.length} segment${chunksToProcess.length === 1 ? "" : "s"}...`,
+    });
+
+    const alreadyDoneChunks = allChunks.length - chunksToProcess.length;
+    if (allChunks.length > 1) send({ type: "progress", current: alreadyDoneChunks, total: allChunks.length });
+
+    const cachedUserBlock = buildBeatsCached(promptStyle);
+
+    const persistGates: Array<{ promise: Promise<void>; resolve: () => void; reject: (e: Error) => void }> = [];
+    for (let i = 0; i < chunksToProcess.length; i++) {
+      let resolve!: () => void;
+      let reject!: (e: Error) => void;
+      const promise = new Promise<void>((res, rej) => { resolve = res; reject = rej; });
+      persistGates.push({ promise, resolve, reject });
+    }
+    let runningBeatNumber = nextBeatNumber;
+
+    async function genSegmentsForText(
+      text: string,
+      chunkIndex: number,
+      totalChunks: number,
+      depth: number,
+    ): Promise<ReturnType<typeof BeatsSchema.parse>["beats"]> {
+      const MAX_SPLIT_DEPTH = 4;
+      const MIN_SPLIT_WORDS = 24;
+      const label = `beats chunk ${chunkIndex + 1}/${totalChunks}${depth > 0 ? ` (split d${depth})` : ""}`;
+
+      const { res, input } = await retryClaudeCall(
+        label,
+        async (): Promise<{ res: Anthropic.Messages.Message; input: Record<string, unknown> | null }> => {
+          const ac = new AbortController();
+          const STREAM_IDLE_MS = 300_000;
+          let idleTimer: ReturnType<typeof setTimeout> | null = null;
+          const armIdle = () => {
+            if (idleTimer) clearTimeout(idleTimer);
+            idleTimer = setTimeout(
+              () => ac.abort(new Error(`KIE stream idle >${STREAM_IDLE_MS}ms — aborting to retry with a fresh request`)),
+              STREAM_IDLE_MS,
+            );
+          };
+          // 8192, not the image step's 12288: this pass emits only
+          // beatNumber + scriptSegment, roughly a fifth of the tokens, so
+          // 8192 clears even the verbose <tool_calls> text fallback while
+          // staying well under the 16384 first-token latency cliff.
+          const stream = anthropic.messages.stream({
+            ...modelParamsFor(model),
+            max_tokens: 8192,
+            system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+            tools: [{ name: "save_beats", description: "Save the script split into visual beats", input_schema: beatsInputSchema }],
+            tool_choice: { type: "tool", name: "save_beats" },
+            messages: [{
+              role: "user",
+              content: [
+                { type: "text", text: cachedUserBlock, cache_control: { type: "ephemeral" } },
+                { type: "text", text: buildBeatsDynamic(text) },
+              ],
+            }],
+          }, { signal: ac.signal });
+          try {
+            armIdle();
+            let toolJsonAccum = "";
+            let lastReportedBeats = 0;
+            for await (const ev of stream) {
+              armIdle();
+              if (ev.type === "content_block_delta" && ev.delta.type === "input_json_delta") {
+                toolJsonAccum += ev.delta.partial_json;
+                const complete = countCompleteBeatsInPartialJson(toolJsonAccum);
+                if (complete > lastReportedBeats) {
+                  lastReportedBeats = complete;
+                  send({ type: "chunk_beat_progress", chunkIndex, beatsInChunk: complete });
+                }
+              }
+            }
+          } finally {
+            if (idleTimer) clearTimeout(idleTimer);
+          }
+          const message = await stream.finalMessage();
+          const toolBlock = message.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+          let extracted = (toolBlock?.input as Record<string, unknown> | undefined) ?? null;
+          if (!extracted) {
+            // Same fallback as the image step: Opus intermittently ignores
+            // tool_choice and emits the tool call as text.
+            const text = message.content
+              .filter((b): b is Anthropic.TextBlock => b.type === "text")
+              .map((b) => b.text).join("\n");
+            extracted = extractToolInputFromText(text) as Record<string, unknown> | null;
+          }
+          if (!extracted && message.stop_reason !== "max_tokens") {
+            throw new Error(`${label}: provider returned no beats`);
+          }
+          return { res: message, input: extracted };
+        },
+      );
+
+      if (res.stop_reason === "max_tokens") {
+        const spanWords = text.split(/\s+/).filter(Boolean).length;
+        if (depth < MAX_SPLIT_DEPTH && spanWords >= MIN_SPLIT_WORDS * 2) {
+          const w = text.split(/\s+/).filter(Boolean);
+          const mid = Math.floor(w.length / 2);
+          const left = await genSegmentsForText(w.slice(0, mid).join(" "), chunkIndex, totalChunks, depth + 1);
+          const right = await genSegmentsForText(w.slice(mid).join(" "), chunkIndex, totalChunks, depth + 1);
+          return [...left, ...right];
+        }
+        assertComplete(res.stop_reason, label);
+      }
+
+      const parsed = BeatsSchema.safeParse(input);
+      if (!parsed.success) {
+        console.error(`[beats] ${label} schema validation failed`, { zodIssues: parsed.error.issues });
+        throw new Error(`Chunk ${chunkIndex + 1} returned unusable beats. Try again — any beats saved so far are preserved.`);
+      }
+      return parsed.data.beats;
+    }
+
+    async function processChunk(taskIdx: number): Promise<number> {
+      const { content, chunkIndex, totalChunks } = chunksToProcess[taskIdx];
+      await assertPromptsRunActive(projectId, runId);
+      const localBeats = await genSegmentsForText(content, chunkIndex, totalChunks, 0);
+      if (taskIdx > 0) await persistGates[taskIdx - 1].promise;
+      try {
+        const finalBeats = localBeats.map((b, i) => ({ ...b, beatNumber: runningBeatNumber + i }));
+        const { error: insertError } = await supabase.from("project_beats").insert(
+          finalBeats.map((b) => ({
+            project_id: projectId,
+            beat_number: b.beatNumber,
+            script_segment: b.scriptSegment,
+          })),
+        );
+        if (insertError) throw new Error(`Failed to save beats for chunk ${chunkIndex + 1}: ${insertError.message}`);
+        runningBeatNumber += finalBeats.length;
+        persistGates[taskIdx].resolve();
+        return finalBeats.length;
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e));
+        for (let j = taskIdx; j < chunksToProcess.length; j++) persistGates[j].reject(err);
+        throw err;
+      }
+    }
+
+    const CONCURRENCY = (await getConcurrencyConfig()).image_prompts_chunks;
+    let nextIdx = 0;
+    let completed = 0;
+    let totalBeatCount = existingBeats?.length ?? 0;
+    let firstError: Error | null = null;
+
+    async function worker() {
+      while (true) {
+        if (firstError) return;
+        const myIdx = nextIdx++;
+        if (myIdx >= chunksToProcess.length) return;
+        try {
+          totalBeatCount += await processChunk(myIdx);
+          completed++;
+          if (allChunks.length > 1) {
+            send({ type: "progress", current: alreadyDoneChunks + completed, total: allChunks.length });
+          }
+        } catch (err) {
+          if (!firstError) firstError = err instanceof Error ? err : new Error(String(err));
+        }
+      }
+    }
+
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, chunksToProcess.length) }, () => worker()),
+    );
+    if (firstError) throw firstError;
+
+    // Deliberately does NOT set current_state = 14: the prompts step is not
+    // complete until image prompts exist. Only the hash is recorded, so a
+    // later script edit still invalidates these beats.
+    const { error: finalUpdErr } = await supabase
+      .from("projects")
+      .update({ prompts_script_hash: scriptHash, prompts_active_run_id: null, prompts_active_step: null, prompts_stop_requested: false })
+      .eq("id", projectId)
+      .eq("user_id", userId);
+    if (finalUpdErr) console.error(`[beats] hash write failed project=${projectId}:`, finalUpdErr);
+    console.log(`[beats] done project=${projectId} beats=${totalBeatCount}`);
+    send({ type: "done", beatCount: totalBeatCount });
+  } catch (err) {
+    await recordPromptsFailure(projectId, userId, "beats", err);
     throw err;
   } finally {
     await releasePromptsRunIfOwned(projectId, userId, runId);
