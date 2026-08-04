@@ -8,6 +8,7 @@ import { ONE_CLICK_HIDDEN } from "@/lib/feature-flags";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
 import { StepCostCard } from "@/components/StepCostCard";
+import { CostTipsModal } from "@/components/CostTipsModal";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { isAdminUser } from "@/lib/admin";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -803,6 +804,7 @@ export default function ChannelPage({ params }: PageProps) {
                 hideUnitKinds={isAdmin ? undefined : ["supadata_transcripts"]}
               />
               <StepBalanceCard />
+              <CostTipsModal />
             </div>
           </div>
 
