@@ -83,6 +83,16 @@ function SetPasswordForm() {
       // to /login where they can sign in with the password they just
       // set.
       const { data: { session } } = await supabase.auth.getSession();
+
+      // A password just set on a brand-new account is the first moment the
+      // signup is complete, so this is where the welcome email goes out.
+      // Skipped for resets, and the route re-checks eligibility server-side
+      // anyway. Not awaited — the email must never delay getting into the
+      // app, and it must not fail the signup if SMTP is down.
+      if (session && !isReset) {
+        void fetch("/api/auth/signup-welcome", { method: "POST" }).catch(() => {});
+      }
+
       if (session) {
         router.push("/");
         router.refresh();
