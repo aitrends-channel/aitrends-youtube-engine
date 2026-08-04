@@ -49,12 +49,30 @@ export type StuckPhaseId = (typeof STUCK_PHASES)[number]["id"];
 //   • paid-setup-no-video — paid, account fully set up, but never
 //                           created a niche (niches_used = 0 — no
 //                           channel analyzed, so no videos either).
+//   • all-paid / all-users — blanket sends: every account in scope with
+//                           no funnel predicate at all. Announcements,
+//                           not funnel rescue.
 export const CUSTOMER_AUDIENCES = [
   { id: "paid-no-setup",       label: "Paid, no setup yet" },
   { id: "paid-setup-no-video", label: "Paid, set up but no video" },
   { id: "free-inactive-3d",    label: "Free/demo, no activity in 3 days" },
+  { id: "all-paid",            label: "All paid users" },
+  { id: "all-users",           label: "All users" },
 ] as const;
 export type CustomerAudienceId = (typeof CUSTOMER_AUDIENCES)[number]["id"];
+
+// Which accounts each audience starts from, before its own predicate
+// runs. Admins and production-test accounts are dropped from all of them.
+const AUDIENCE_SCOPE: Record<CustomerAudienceId, "paid" | "free" | "all"> = {
+  "paid-no-setup": "paid",
+  "paid-setup-no-video": "paid",
+  "free-inactive-3d": "free",
+  "all-paid": "paid",
+  "all-users": "all",
+};
+
+// Audiences that take every account in scope, no further filtering.
+const BLANKET_AUDIENCES = new Set<CustomerAudienceId>(["all-paid", "all-users"]);
 // The free/demo inactivity window — fixed by the audience definition,
 // not the composer's idle selector.
 export const FREE_INACTIVE_HOURS = 72;
@@ -89,6 +107,26 @@ export interface BulkMailRecipient {
   projectCount: number;
   furthestState: number;
   lastActivity: string;
+}
+
+type AuthUser = Awaited<ReturnType<typeof supabase.auth.admin.listUsers>>["data"]["users"][number];
+
+// listUsers is paged and caps at 1000 per call, so a single call silently
+// drops everyone past the first page. That's survivable for a narrow
+// funnel slice but not for the blanket audiences, where the cap would
+// quietly under-send a whole campaign — so walk every page.
+const LIST_USERS_PER_PAGE = 1000;
+const LIST_USERS_MAX_PAGES = 25; // backstop; 25k accounts
+async function listAllUsers(): Promise<AuthUser[]> {
+  const all: AuthUser[] = [];
+  for (let page = 1; page <= LIST_USERS_MAX_PAGES; page++) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: LIST_USERS_PER_PAGE });
+    if (error) throw new Error(`listUsers failed: ${error.message}`);
+    const batch = data.users ?? [];
+    all.push(...batch);
+    if (batch.length < LIST_USERS_PER_PAGE) break;
+  }
+  return all;
 }
 
 // Best-effort first name for personalizing the greeting. Prefers the
@@ -147,28 +185,38 @@ function resolveStep(p: ProjectRow, state14HasAudio: Set<string>): string {
 // purpose — each audience carries its own definition of relevance
 // (see CUSTOMER_AUDIENCES / FREE_INACTIVE_HOURS).
 async function getCustomerAudience(phase: CustomerAudienceId): Promise<BulkMailAudience> {
-  const { data: usersData, error: listErr } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-  if (listErr) throw new Error(`listUsers failed: ${listErr.message}`);
-  const paidPhase = phase !== "free-inactive-3d";
-  const candidates = usersData.users.filter(
-    (u) =>
-      u.email &&
-      (u.app_metadata?.paid === true) === paidPhase &&
+  const allUsers = await listAllUsers();
+  const scope = AUDIENCE_SCOPE[phase];
+  const candidates = allUsers.filter((u) => {
+    if (!u.email) return false;
+    const paid = u.app_metadata?.paid === true;
+    if (scope === "paid" && !paid) return false;
+    if (scope === "free" && paid) return false;
+    return (
       !isAdminUser(u) &&
-      (u.app_metadata as { is_production_test?: boolean }).is_production_test !== true,
-  );
+      (u.app_metadata as { is_production_test?: boolean }).is_production_test !== true
+    );
+  });
   if (candidates.length === 0) return { recipients: [], videos: [] };
   const candidateIds = candidates.map((u) => u.id);
 
+  // Only the two setup-sensitive audiences read account_settings; the rest
+  // decide from auth metadata and project activity alone.
+  const needsSettings = phase === "paid-no-setup" || phase === "paid-setup-no-video";
+  // Projects feed the preview table and each recipient's own video list.
+  // With every account in scope an `.in()` list of ids would blow the
+  // request URL, so take all projects and let the grouping below match
+  // them up — recipients come from the account list either way.
+  const projectsQuery = supabase
+    .from("projects")
+    .select("id, user_id, current_state, updated_at, selected_topic, channel_name, assembled_url")
+    .limit(10_000);
+
   const [settingsRes, projectsRes] = await Promise.all([
-    paidPhase
+    needsSettings
       ? supabase.from("account_settings").select("user_id, niches_used, kie_api_key").in("user_id", candidateIds)
       : Promise.resolve({ data: [], error: null }),
-    supabase
-      .from("projects")
-      .select("id, user_id, current_state, updated_at, selected_topic, channel_name, assembled_url")
-      .in("user_id", candidateIds)
-      .limit(10_000),
+    scope === "all" ? projectsQuery : projectsQuery.in("user_id", candidateIds),
   ]);
   if (settingsRes.error) throw new Error(`Failed to load settings: ${settingsRes.error.message}`);
   if (projectsRes.error) throw new Error(`Failed to load projects: ${projectsRes.error.message}`);
@@ -199,6 +247,7 @@ async function getCustomerAudience(phase: CustomerAudienceId): Promise<BulkMailA
   const inactiveCutoffMs = Date.now() - FREE_INACTIVE_HOURS * 3_600_000;
 
   const matched = candidates.filter((u) => {
+    if (BLANKET_AUDIENCES.has(phase)) return true;
     if (phase === "free-inactive-3d") {
       // Free/demo user with no sign-in and no project activity in the
       // window (never-touched accounts match too).
@@ -352,9 +401,7 @@ export async function getBulkMailAudience(
   }
   if (byUser.size === 0) return { recipients: [], videos: [] };
 
-  const { data: usersData, error: listErr } = await supabase.auth.admin.listUsers({ perPage: 1000 });
-  if (listErr) throw new Error(`listUsers failed: ${listErr.message}`);
-  const idToUser = new Map(usersData.users.map((u) => [u.id, u]));
+  const idToUser = new Map((await listAllUsers()).map((u) => [u.id, u]));
   const isTest = (uid: string) =>
     (idToUser.get(uid)?.app_metadata as { is_production_test?: boolean } | undefined)?.is_production_test === true;
 
