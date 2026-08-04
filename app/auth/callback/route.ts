@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { supabase as serviceClient } from "@/lib/supabase/client";
 import { isAdminUser } from "@/lib/admin";
+import { shouldSendSignupEmail, sendSignupEmail } from "@/lib/email/welcome";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
@@ -67,6 +68,23 @@ export async function GET(request: Request) {
         if (!allowed) {
           await supabase.auth.signOut();
           return NextResponse.redirect(`${origin}/login?error=unauthorized`);
+        }
+      }
+
+      // OAuth signups never reach /set-password, so this is their only
+      // "account just created" moment. shouldSendSignupEmail's account-age
+      // window is what keeps this off every established user signing back
+      // in — the common case here by far, and it costs them nothing since
+      // the check is local. Awaited (the function can be suspended once it
+      // redirects) and fail-soft: sign-in must not depend on SMTP.
+      if (isOAuth && user.email) {
+        try {
+          if (shouldSendSignupEmail({ createdAt: user.created_at, appMetadata: user.app_metadata })) {
+            await sendSignupEmail({ userId: user.id, email: user.email, userMetadata: user.user_metadata });
+            console.log(`[auth-callback] signup email sent to ${user.email}`);
+          }
+        } catch (e) {
+          console.error(`[auth-callback] signup email failed for ${user.email}:`, e instanceof Error ? e.message : e);
         }
       }
     }
