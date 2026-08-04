@@ -78,6 +78,12 @@ export function CostTipsModal() {
       >
         <Lightbulb size={12} />
         <span>Tips to cut cost</span>
+        <span
+          className="rounded-[4px] px-1 py-px text-[9px] font-bold uppercase tracking-wider leading-[1.4]"
+          style={{ background: "oklch(0.6 0.22 25 / 0.12)", color: "oklch(0.62 0.22 25)" }}
+        >
+          New
+        </span>
       </button>
 
       <Dialog open={open} onOpenChange={setOpen}>
