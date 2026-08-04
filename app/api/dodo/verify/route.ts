@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import { getPaymentSettings, getPlanBySlug } from "@/lib/plans";
+import { shouldWelcome, sendWelcomeEmail } from "@/lib/email/welcome";
 
 export async function POST(request: Request) {
   let user;
@@ -235,6 +236,10 @@ export async function POST(request: Request) {
     ...(!customerIdFromResult && baseDodo.customer_id ? { customer_id: baseDodo.customer_id } : {}),
   };
 
+  // Read before the grant overwrites it — this is what tells a first
+  // purchase apart from a renewal or an upgrade.
+  const earnsWelcome = shouldWelcome(user.app_metadata);
+
   try {
     await supabase.auth.admin.updateUserById(user.id, {
       app_metadata: {
@@ -248,6 +253,24 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     return NextResponse.json({ error: `Failed to update user: ${(e as Error).message}` }, { status: 500 });
+  }
+
+  // Welcome the new subscriber. Fail-soft: the customer has paid, so a
+  // mail problem must not fail the purchase. Awaited rather than
+  // fire-and-forget because the function can be suspended once it
+  // responds, which would drop the send.
+  if (earnsWelcome && user.email) {
+    try {
+      await sendWelcomeEmail({
+        userId: user.id,
+        email: user.email,
+        userMetadata: user.user_metadata,
+        plan: plan ?? "pro",
+      });
+      console.log(`[dodo-verify] welcome email sent to ${user.email}`);
+    } catch (e) {
+      console.error(`[dodo-verify] welcome email failed for ${user.email}:`, e instanceof Error ? e.message : e);
+    }
   }
 
   // Changing plans carries the outgoing allowance into the new one, so the
