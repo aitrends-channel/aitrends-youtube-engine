@@ -3,13 +3,15 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound } from "lucide-react";
+import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound, CreditCard, Gift, Brain, Wand2, Pilcrow } from "lucide-react";
+import { OneClickConfigPanel } from "@/components/one-click/OneClickConfigPanel";
 import { Spinner } from "@/components/ui/spinner";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import Image from "next/image";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { FREE_TIER_COMING_SOON } from "@/lib/free-tier-flag";
+import { FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
+import { ONE_CLICK_HIDDEN } from "@/lib/feature-flags";
 
 type Tier = "paid" | "free";
 
@@ -70,43 +72,16 @@ const KEY_FIELDS: KeyField[] = [
     placeholder: "sk_…",
     tier: "paid",
   },
-  {
-    key: "cloudflare_account_id",
-    label: "Cloudflare Account ID",
-    description: "Powers the Free image option (Cloudflare Workers AI · FLUX Schnell) on your own free daily quota. It's the long hex string in your Cloudflare dashboard URL — dash.cloudflare.com/<Account ID>. See the Instructions tab for the full walkthrough.",
-    placeholder: "e.g. 1a2b3c4d5e6f7a8b9c0d…",
-    tier: "free",
-  },
-  {
-    key: "cloudflare_api_token",
-    label: "Cloudflare API Token",
-    description: "Goes with the Account ID above. Create it at dash.cloudflare.com → My Profile → API Tokens → Create Token, using the \"Workers AI\" template.",
-    placeholder: "paste your Workers AI token",
-    tier: "free",
-  },
-  {
-    key: "google_tts_key",
-    label: "Google Cloud TTS Key",
-    description: "Powers the Free voiceover option (Google Cloud Text-to-Speech) — 1,000,000 characters/month free on your own account. Requires a Google Cloud project with billing enabled (you're not charged within the free tier) and the Text-to-Speech API turned on. See the Instructions tab.",
-    placeholder: "AIza…",
-    tier: "free",
-  },
 ];
 
 interface FormState {
   kie_api_key: string;
   elevenlabs_api_key: string;
-  cloudflare_account_id: string;
-  cloudflare_api_token: string;
-  google_tts_key: string;
 }
 
 const EMPTY_FORM: FormState = {
   kie_api_key: "",
   elevenlabs_api_key: "",
-  cloudflare_account_id: "",
-  cloudflare_api_token: "",
-  google_tts_key: "",
 };
 
 // One card per service: the walkthrough steps AND the key input(s)
@@ -159,7 +134,7 @@ const SERVICES: ServiceCard[] = [
   {
     tier: "free",
     quota: "50k–100k chars/month",
-    title: "Qwen Voices (Free voiceover — on us)",
+    title: "Free Voices (Free voiceover — on us)",
     sub: "Included with every account — runs on Heclus's own infrastructure, nothing to connect",
     perk: true,
     steps: [
@@ -173,37 +148,6 @@ const SERVICES: ServiceCard[] = [
       </>,
     ],
     fields: [],
-  },
-  {
-    tier: "free",
-    quota: "500 imgs/month",
-    title: "Cloudflare Workers AI (Free images)",
-    sub: "Powers the Free image option — free daily quota on your own account (~500–2,000 images/day)",
-    href: "https://dash.cloudflare.com",
-    linkLabel: "dash.cloudflare.com",
-    steps: [
-      <>Create a free account at <ExtLink href="https://dash.cloudflare.com/sign-up">dash.cloudflare.com/sign-up</ExtLink> — no credit card needed.</>,
-      <>Copy your <b>Account ID</b>: after you log in at <ExtLink href="https://dash.cloudflare.com">dash.cloudflare.com</ExtLink>, the address bar shows <span style={{ fontFamily: "monospace" }}>dash.cloudflare.com/&lt;Account ID&gt;</span> — copy that 32-character code.</>,
-      <>Create an API token: open <ExtLink href="https://dash.cloudflare.com/profile/api-tokens">the API Tokens page</ExtLink> → <b>Create Token</b> → pick the <b>Workers AI</b> template → <b>Continue to summary</b> → <b>Create Token</b> → copy it.</>,
-      <>Paste the Account ID and the token below and hit <b>Save</b>.</>,
-    ],
-    fields: ["cloudflare_account_id", "cloudflare_api_token"],
-  },
-  {
-    tier: "free",
-    quota: "1M chars/month",
-    title: "Google Cloud TTS (Free voiceover)",
-    sub: "Powers the Free voiceover option — 1,000,000 characters/month free on your own account",
-    href: "https://console.cloud.google.com",
-    linkLabel: "console.cloud.google.com",
-    steps: [
-      <>Create a Google Cloud project at <ExtLink href="https://console.cloud.google.com/projectcreate">console.cloud.google.com/projectcreate</ExtLink> — any name works.</>,
-      <>Enable billing for it at <ExtLink href="https://console.cloud.google.com/billing">console.cloud.google.com/billing</ExtLink>. Don&apos;t worry: the first 1M characters each month are free and never charged.</>,
-      <>Turn on the Text-to-Speech API: open <ExtLink href="https://console.cloud.google.com/apis/library/texttospeech.googleapis.com">this page</ExtLink> and click <b>Enable</b>.</>,
-      <>Create your key: open the <ExtLink href="https://console.cloud.google.com/apis/credentials">Credentials page</ExtLink> → <b>+ Create credentials</b> → <b>API key</b> → copy it.</>,
-      <>Paste the key below and hit <b>Save</b>.</>,
-    ],
-    fields: ["google_tts_key"],
   },
 ];
 
@@ -277,6 +221,281 @@ function AddUserSection() {
   );
 }
 
+// Account-level Claude model choice for the prompt-generation steps.
+// Only rendered when an admin has allowlisted models (Config → Anthropic →
+// Model) — the GET returns an empty options array otherwise and the whole
+// panel hides rather than showing an empty picker.
+interface ClaudeModelChoice {
+  id: string;
+  label: string;
+  note: string;
+  tierLabel: string;
+}
+
+function ClaudeModelDefault() {
+  const [options, setOptions] = useState<ClaudeModelChoice[]>([]);
+  const [selected, setSelected] = useState("");
+  const [isPro, setIsPro] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/me/claude-model")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return;
+        setOptions((d.options as ClaudeModelChoice[]) ?? []);
+        setSelected((d.selected as string) ?? "");
+        setIsPro(d.isPro === true);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  // `null` = the account default. Saves immediately: one click, one field,
+  // nothing to batch behind a Save button.
+  async function pick(model: string | null) {
+    if (!isPro) return;
+    setSaving(model ?? "__default__");
+    try {
+      const res = await fetch("/api/me/claude-model", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? "Save failed");
+      setSelected(model ?? "");
+      toast.success(model ? "Model updated." : "Using the account default.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save model");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-6" style={{ color: "var(--c-40)" }}>
+        <Spinner size={16} />
+        <span className="text-sm">Loading…</span>
+      </div>
+    );
+  }
+
+  const rows: { key: string; value: string | null; title: string; note: string }[] = [
+    {
+      key: "__default__",
+      value: null,
+      title: "Account default",
+      note: "Whatever Heclus has tuned as the best all-round choice. Recommended.",
+    },
+    ...options.map((o) => ({
+      key: o.id,
+      value: o.id as string | null,
+      title: `${o.tierLabel} — ${o.label}`,
+      note: o.note,
+    })),
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+          <Brain size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Claude Model</h2>
+          <p className="text-xs" style={{ color: "var(--c-45)" }}>
+            Which Claude model writes your image, video, and thumbnail prompts. Faster
+            models cost you fewer KIE credits per run; stronger ones follow a
+            brief more closely.
+          </p>
+        </div>
+      </div>
+
+      {/* No allowlisted models = nobody can choose yet. Say so plainly
+          rather than rendering a picker with a single inert row. */}
+      {options.length === 0 ? (
+        <div className="p-4 rounded-xl text-xs leading-relaxed"
+          style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-55)" }}>
+          <p className="text-sm font-semibold text-foreground mb-1.5">
+            Not available yet
+          </p>
+          Choosing your own prompt model hasn&apos;t been switched on. Every run
+          currently uses the model Heclus has tuned as the best all-round
+          choice — nothing is missing from your generations, and there&apos;s
+          nothing you need to do here.
+        </div>
+      ) : !isPro && (
+        <div className="p-3 rounded-xl text-xs leading-relaxed"
+          style={{ background: "oklch(0.72 0.25 285 / 0.08)", border: "1px solid oklch(0.72 0.25 285 / 0.25)", color: "var(--c-70)" }}>
+          Choosing your own model is a <b>Pro</b> feature. Your runs use the
+          account default in the meantime.
+        </div>
+      )}
+
+      <div className={options.length === 0 ? "hidden" : "space-y-2"}>
+        {rows.map((r) => {
+          const on = (r.value ?? "") === selected;
+          const busy = saving === r.key;
+          return (
+            <button
+              key={r.key}
+              onClick={() => pick(r.value)}
+              disabled={!isPro || saving !== null}
+              className="w-full text-left p-3 rounded-xl transition-all cursor-pointer disabled:cursor-not-allowed flex items-start gap-3"
+              style={{
+                background: on ? "oklch(0.72 0.25 285 / 0.1)" : "oklch(1 0 0 / 0.04)",
+                border: `1px solid ${on ? "oklch(0.72 0.25 285 / 0.45)" : "var(--bd-card)"}`,
+                opacity: !isPro && !on ? 0.55 : 1,
+              }}
+            >
+              <span className="mt-0.5 shrink-0">
+                {busy ? <Spinner size={14} /> : (
+                  <span className="w-3.5 h-3.5 rounded-full block"
+                    style={{
+                      border: `1px solid ${on ? "oklch(0.72 0.25 285)" : "var(--bd-10)"}`,
+                      background: on ? "oklch(0.72 0.25 285)" : "transparent",
+                    }} />
+                )}
+              </span>
+              <span className="min-w-0">
+                <span className="text-sm font-semibold text-foreground">{r.title}</span>
+                <span className="block text-xs mt-0.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
+                  {r.note}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {options.length > 0 && (
+        <p className="text-[11px] leading-relaxed" style={{ color: "var(--c-40)" }}>
+          Channel analysis and script generation always run on the account default —
+          those set up everything downstream, so we keep them on the model tuned for them.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Account-level character-consistency default. A single statement
+// appended to EVERY image prompt across all projects (each project can
+// still override or detach it in its Prompts step). Free text, not a
+// secret — persisted (including when cleared to empty) via /api/settings.
+function CharacterConsistencyDefaults() {
+  const [text, setText] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  // True when the field was prefilled from a project rather than from a
+  // saved account default — the value is real but not yet global.
+  const [fromProject, setFromProject] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((data) => {
+        const saved = (data?.character_consistency_text as string) ?? "";
+        const suggestion = (data?.character_consistency_suggestion as string) ?? "";
+        if (saved.trim()) {
+          setText(saved);
+        } else if (suggestion) {
+          setText(suggestion);
+          setFromProject(true);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ character_consistency_text: text }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Save failed");
+      // It's the account default now, so the "came from a project" hint no
+      // longer applies.
+      setFromProject(false);
+      toast.success("Prompt prefix default saved.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save default");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" } as const;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+          <Pilcrow size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Prompt Prefix</h2>
+          <p className="text-xs" style={{ color: "var(--c-45)" }}>
+            A reusable statement added to <b>every</b> image prompt to keep your
+            character and style the same. Applies to all projects. Each project
+            can change or turn it off in its Prompts step.
+          </p>
+        </div>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 py-4" style={{ color: "var(--c-40)" }}>
+          <Spinner size={16} />
+          <span className="text-sm">Loading…</span>
+        </div>
+      ) : (
+        <div className="p-5 rounded-2xl space-y-4"
+          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+          <div className="space-y-2">
+            <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>
+              Consistency text
+            </label>
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              rows={4}
+              placeholder="e.g. Recurring character: a 30-year-old woman, red curly hair, green parka. Flat 2D illustration style, warm palette. Keep her face, hairstyle and outfit identical across every image."
+              className="w-full px-3 py-2.5 rounded-lg text-sm outline-none transition-all resize-y"
+              style={inputStyle}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
+            />
+            {fromProject && (
+              <p className="text-[11px] leading-relaxed" style={{ color: "oklch(0.72 0.25 285)" }}>
+                Filled in from the last prefix you set on a project. Save it to
+                make it your default for every new project.
+              </p>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+            style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+          >
+            {saving ? <Spinner size={14} /> : <Save size={14} />}
+            {saving ? "Saving…" : "Save Default"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const router = useRouter();
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -292,6 +511,32 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState<Tier>("paid");
+  // Top-level split: API keys (the existing paid/free cards), the
+  // full-page 1Click preference editor, and the account-level
+  // Character Consistency default. Deep-linkable via
+  // /setup?tab=oneclick or /setup?tab=consistency (read from location
+  // to avoid the useSearchParams/Suspense dance on this client page).
+  const [mainTab, setMainTab] = useState<"keys" | "oneclick" | "consistency" | "model">("keys");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "oneclick" && ONE_CLICK_HIDDEN) return; // ?tab=oneclick deep link
+    if (t === "oneclick" || t === "consistency" || t === "model") setMainTab(t);
+  }, []);
+
+  // Claude tab is Pro-only. null = not yet known, so the tab stays hidden
+  // and a ?tab=model deep link isn't bounced before the answer arrives.
+  // /api/me/claude-model is the same isProTier check the server enforces.
+  const [isPro, setIsPro] = useState<boolean | null>(null);
+  useEffect(() => {
+    fetch("/api/me/claude-model")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setIsPro(d?.isPro === true))
+      .catch(() => setIsPro(false));
+  }, []);
+  useEffect(() => {
+    if (isPro === false && mainTab === "model") setMainTab("keys");
+  }, [isPro, mainTab]);
   const [userEmail, setUserEmail] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
@@ -434,25 +679,71 @@ export default function SettingsPage() {
 
       <main className="flex-1 w-full max-w-none px-4 sm:px-8 lg:px-12 py-8 sm:py-14">
 
-        {/* Tabs: PAID / FREE */}
-        <div className="flex gap-1 mb-10 p-1 rounded-xl w-full"
+        {/* Top-level tabs: API KEYS / 1CLICK / CHARACTER CONSISTENCY */}
+        <div className="flex gap-1 mb-6 p-1 rounded-xl w-full"
           style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-          {(["paid", "free"] as const).map((t) => (
+          {([["keys", "API Keys"], ["oneclick", "1Click"], ["consistency", "Prompt Prefix"], ["model", "Claude"]] as const)
+            .filter(([id]) => id !== "model" || isPro === true)
+            .filter(([id]) => id !== "oneclick" || !ONE_CLICK_HIDDEN)
+            .map(([id, label]) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
+              key={id}
+              onClick={() => setMainTab(id)}
               className="flex-1 py-2 rounded-lg text-xs font-bold tracking-widest uppercase transition-all cursor-pointer"
               style={{
-                background: tab === t ? "oklch(0.72 0.25 285)" : "transparent",
-                color: tab === t ? "white" : "var(--c-45)",
+                background: mainTab === id ? "oklch(0.72 0.25 285)" : "transparent",
+                color: mainTab === id ? "white" : "var(--c-45)",
               }}
             >
-              {t === "free" && FREE_TIER_COMING_SOON ? (
+              {id === "oneclick" ? (
+                // Wand2 — matches the 1Click workflow shell/controls.
+                <span className="inline-flex items-center gap-1.5"><Wand2 size={12} /> {label}</span>
+              ) : id === "consistency" ? (
+                <span className="inline-flex items-center gap-1.5"><Pilcrow size={12} /> {label}</span>
+              ) : id === "model" ? (
+                <span className="inline-flex items-center gap-1.5"><Brain size={12} /> {label}</span>
+              ) : label}
+            </button>
+          ))}
+        </div>
+
+        {mainTab === "oneclick" ? (
+          <OneClickConfigPanel />
+        ) : mainTab === "consistency" ? (
+          <div className="w-full max-w-2xl mx-auto">
+            <CharacterConsistencyDefaults />
+          </div>
+        ) : mainTab === "model" ? (
+          <div className="w-full max-w-2xl mx-auto">
+            <ClaudeModelDefault />
+          </div>
+        ) : (
+        <>
+        {/* Sub-tabs: PAID / FREE. Sized to content and left-aligned — a
+            two-option switcher stretched full-width read like a primary
+            nav rather than a filter on the cards below. */}
+        <div className="inline-flex items-center gap-1 rounded-lg p-0.5 mb-8 w-fit"
+          style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
+          {([
+            { key: "paid" as const, label: "Paid", icon: <CreditCard size={13} /> },
+            { key: "free" as const, label: "Free", icon: <Gift size={13} /> },
+          ]).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              aria-pressed={tab === t.key}
+              className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              style={tab === t.key
+                ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)" }
+                : { color: "var(--c-55)" }}
+            >
+              {t.icon}
+              {t.key === "free" && FREE_TTS_COMING_SOON ? (
                 <span className="flex flex-col items-center leading-tight">
-                  <span>😄 Free</span>
-                  <span className="text-[9px] font-semibold normal-case tracking-normal">coming soon</span>
+                  <span>Free</span>
+                  <span className="text-[8px] font-semibold normal-case tracking-normal">coming soon</span>
                 </span>
-              ) : t}
+              ) : t.label}
             </button>
           ))}
         </div>
@@ -468,12 +759,12 @@ export default function SettingsPage() {
               <h1 className="text-2xl font-bold text-foreground">API Keys</h1>
             </div>
             <p className="text-sm leading-relaxed" style={{ color: "var(--c-50)" }}>
-              Each card walks you through one service and takes its keys right there — takes ~5 minutes.
-              Keys are saved securely and take effect immediately.
+              One card per service, with its keys right there. Saved securely and
+              live immediately.
             </p>
           </div>
 
-          {tab === "free" && FREE_TIER_COMING_SOON ? (
+          {tab === "free" && FREE_TTS_COMING_SOON ? (
             <FreeComingSoonCard />
           ) : loading ? (
             <div className="flex items-center gap-2 py-6" style={{ color: "var(--c-40)" }}>
@@ -482,12 +773,12 @@ export default function SettingsPage() {
             </div>
           ) : (
             <form onSubmit={handleSave} className="space-y-6">
-              {/* items-start keeps cards their natural height instead of
-                  stretching to the tallest sibling in the row. */}
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 items-start">
+              {/* Cards stretch to the tallest sibling in the row; each is a
+                  flex column so the key inputs sit flush at the bottom. */}
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                 {SERVICES.filter((svc) => svc.tier === tab).map((svc, idx) => (
-                  <div key={svc.title} className="p-5 rounded-2xl space-y-4"
-                    style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid white" }}>
+                  <div key={svc.title} className="p-5 rounded-2xl flex flex-col gap-4"
+                    style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.14)" }}>
                     {/* Card header */}
                     <div className="flex items-start gap-3">
                       <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 text-xs font-bold"
@@ -540,7 +831,9 @@ export default function SettingsPage() {
                       </ol>
                     )}
 
-                    {/* Key inputs for this service */}
+                    {/* Key inputs for this service — mt-auto pins them to the
+                        card's bottom edge so they align across the row. */}
+                    <div className="mt-auto flex flex-col gap-4">
                     {svc.fields.map((key) => {
                       const field = KEY_FIELDS.find((f) => f.key === key)!;
                       const currentMasked = masked[field.key] ?? "";
@@ -598,6 +891,7 @@ export default function SettingsPage() {
                         </div>
                       );
                     })}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -621,6 +915,8 @@ export default function SettingsPage() {
           {/* Add User — admin only */}
           {isAdmin && <AddUserSection />}
         </div>
+        </>
+        )}
 
       </main>
     </div>

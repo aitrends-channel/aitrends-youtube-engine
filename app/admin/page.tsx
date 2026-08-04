@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -22,6 +22,7 @@ import { TtsCostLens } from "@/components/admin/TtsCostLens";
 import { SupportPanel } from "@/components/admin/SupportPanel";
 import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
 import { MemoryPanel } from "@/components/admin/MemoryPanel";
+import { QuotasPanel } from "@/components/admin/quotas";
 
 const PHASE_PATHS: Record<number, string> = {
   1: "channel", 2: "channel", 3: "channel", 4: "channel", 5: "channel",
@@ -1224,8 +1225,8 @@ function SetupSection({
   keysLoading: boolean;
   mutateKeys: () => void;
 }) {
-  const [setupTab, setSetupTab] = usePersistentTab<"keys" | "models" | "anthropic" | "concurrency" | "plans">(
-    "config", "keys", ["keys", "models", "anthropic", "concurrency", "plans"],
+  const [setupTab, setSetupTab] = usePersistentTab<"keys" | "models" | "anthropic" | "concurrency" | "plans" | "quotas">(
+    "config", "keys", ["keys", "models", "anthropic", "concurrency", "plans", "quotas"],
   );
   const [serviceInput, setServiceInput] = useState<Service>("youtube_data_api_key");
   const [keyInput, setKeyInput] = useState("");
@@ -1411,6 +1412,7 @@ function SetupSection({
           { id: "anthropic", label: "Anthropic" },
           { id: "concurrency", label: "Batched process" },
           { id: "plans", label: "Payment" },
+          { id: "quotas", label: "Quotas" },
         ] as const).map((t) => (
           <button
             key={t.id}
@@ -1434,6 +1436,7 @@ function SetupSection({
       {setupTab === "anthropic" && <AnthropicRoutingPanel />}
       {setupTab === "concurrency" && <ConcurrencyPanel />}
       {setupTab === "plans" && <PlansPanel />}
+      {setupTab === "quotas" && <QuotasPanel />}
 
       {setupTab === "keys" && <>
 
@@ -2392,21 +2395,35 @@ const WORKFLOW_STEP_LIST: WorkflowStep[] = [
   "image_prompts", "video_prompts", "thumbnails",
 ];
 
+interface ClaudeModelOption {
+  id: string;
+  label: string;
+  note: string;
+  tier: "quality" | "balanced" | "fast";
+  thinking: "off" | "pin-off" | "always";
+}
+
 interface RoutingResponse {
   routing: Routing;
   per_step: Partial<Record<WorkflowStep, Routing>>;
   steps: WorkflowStep[];
+  model: string;
+  models: ClaudeModelOption[];
+  model_fallback: string;
+  user_selectable_models: string[];
+  user_choice_steps: WorkflowStep[];
 }
 
 function AnthropicRoutingPanel() {
   const swr = useSWR<RoutingResponse>("/api/admin/anthropic-routing", fetcher, { revalidateOnFocus: false });
-  const [subTab, setSubTab] = usePersistentTab<"general" | "per_step">(
-    "config.anthropic", "general", ["general", "per_step"],
+  const [subTab, setSubTab] = usePersistentTab<"general" | "per_step" | "model">(
+    "config.anthropic", "general", ["general", "per_step", "model"],
   );
 
-  const subTabs: { id: "general" | "per_step"; label: string }[] = [
+  const subTabs: { id: "general" | "per_step" | "model"; label: string }[] = [
     { id: "general",  label: "General"  },
     { id: "per_step", label: "Per step" },
+    { id: "model",    label: "Model"    },
   ];
 
   return (
@@ -2433,6 +2450,7 @@ function AnthropicRoutingPanel() {
 
       {subTab === "general" && <GeneralRoutingPanel swr={swr} />}
       {subTab === "per_step" && <PerStepRoutingPanel swr={swr} />}
+      {subTab === "model" && <DefaultModelPanel swr={swr} />}
     </div>
   );
 }
@@ -2679,6 +2697,268 @@ function GeneralRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
         onConfirm={() => { if (pending) applyRouting(pending); }}
         onCancel={() => setPending(null)}
       />
+    </div>
+  );
+}
+
+/**
+ * Config → Anthropic → Model. Sets the default Claude model for the
+ * workflow steps (channel analysis, ideas, script, image/video/thumbnail
+ * prompts). Visual analysis stays pinned in code — it's a separate knob.
+ */
+function DefaultModelPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingResponse>> }) {
+  const { data, mutate, isLoading } = swr;
+
+  const [sel, setSel] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (!data?.model || hydratedRef.current) return;
+    hydratedRef.current = true;
+    setSel(data.model);
+  }, [data]);
+
+  const models = data?.models ?? [];
+  const active = data?.model;
+  const dirty = sel !== null && sel !== active;
+  const selected = models.find((m) => m.id === sel);
+
+  async function save() {
+    if (!sel) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/anthropic-routing", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: sel }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? "Failed to save");
+      toast.success(`Default model set to ${selected?.label ?? sel}`);
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <p className="text-xs leading-relaxed" style={{ color: "var(--c-50)" }}>
+        The Claude model behind channel analysis, video ideas, script, and the
+        image / video / thumbnail prompt steps. Applies to all users globally
+        and takes effect within 15 seconds.
+      </p>
+
+      {isLoading && <p className="text-xs" style={{ color: "var(--c-42)" }}>Loading…</p>}
+
+      <div className="space-y-2">
+        {models.map((m) => {
+          const isSel = sel === m.id;
+          return (
+            <button
+              key={m.id}
+              onClick={() => setSel(m.id)}
+              disabled={saving}
+              className="w-full text-left p-3 rounded-xl transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+              style={{
+                background: isSel ? "oklch(0.72 0.25 285 / 0.08)" : "oklch(0 0 0 / 0.02)",
+                border: `1px solid ${isSel ? "oklch(0.72 0.25 285 / 0.45)" : "oklch(0 0 0 / 0.07)"}`,
+              }}
+            >
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>{m.label}</span>
+                <code className="text-[10px] tabular-nums" style={{ color: "var(--c-42)" }}>{m.id}</code>
+                {m.id === active && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+                    style={{ background: "oklch(0.6 0.15 150 / 0.12)", color: "oklch(0.45 0.15 150)" }}>
+                    live
+                  </span>
+                )}
+                {m.id === data?.model_fallback && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+                    style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-50)" }}>
+                    shipped default
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] mt-1 leading-relaxed" style={{ color: "var(--c-50)" }}>{m.note}</p>
+              {m.thinking === "pin-off" && (
+                // These models think by default and that shares the request's
+                // max_tokens with the answer. We send thinking: disabled so
+                // the tighter steps (1.5-2k budgets) behave as tuned.
+                <p className="text-[11px] mt-1.5 leading-relaxed" style={{ color: "oklch(0.55 0.13 250)" }}>
+                  Thinking is off — it would otherwise eat into the token budget the
+                  shorter steps are tuned for.
+                </p>
+              )}
+              {m.thinking === "always" && (
+                <p className="text-[11px] mt-1.5 leading-relaxed" style={{ color: "oklch(0.6 0.16 60)" }}>
+                  Thinking can&apos;t be turned off and shares the token budget with the
+                  answer — the 1.5–2k steps (ideas, visual analysis) may run short.
+                </p>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <button
+        onClick={save}
+        disabled={!dirty || saving || isLoading}
+        className="px-3.5 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
+        style={{
+          background: dirty && !saving ? "oklch(0.72 0.25 285)" : "oklch(0 0 0 / 0.06)",
+          color: dirty && !saving ? "white" : "var(--c-50)",
+        }}
+      >
+        {saving && <Spinner size={12} />}
+        {saving ? "Saving…" : "Save model"}
+      </button>
+
+      <UserSelectableModelsPanel swr={swr} />
+    </div>
+  );
+}
+
+/**
+ * The allowlist half of the Model tab: which models a Pro user may choose
+ * for themselves on /setup. Empty = the feature is off.
+ */
+function UserSelectableModelsPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingResponse>> }) {
+  const { data, mutate } = swr;
+
+  const [sel, setSel] = useState<string[] | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (!data?.models || hydratedRef.current) return;
+    hydratedRef.current = true;
+    setSel(data.user_selectable_models ?? []);
+  }, [data]);
+
+  const models = data?.models ?? [];
+  const server = data?.user_selectable_models ?? [];
+  const current = sel ?? [];
+  const dirty = sel !== null &&
+    (current.length !== server.length || current.some((id) => !server.includes(id)));
+
+  function toggle(id: string) {
+    setSel((prev) => {
+      const base = prev ?? [];
+      return base.includes(id) ? base.filter((x) => x !== id) : [...base, id];
+    });
+  }
+
+  async function save() {
+    if (sel === null) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/anthropic-routing", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_selectable_models: sel }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? "Failed to save");
+      toast.success(sel.length ? "User model choices saved" : "User model choice turned off");
+      await mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const stepList = (data?.user_choice_steps ?? []).map((s) => s.replace(/_/g, " ")).join(", ");
+
+  return (
+    <div className="pt-5 mt-1 space-y-3" style={{ borderTop: "1px solid oklch(0 0 0 / 0.08)" }}>
+      <div>
+        <h4 className="text-sm font-bold" style={{ color: "var(--c-90)" }}>
+          Let Pro users choose their own model
+        </h4>
+        <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-50)" }}>
+          Tick the models a Pro user may pick on their Setup page. Their choice
+          only applies to the{" "}
+          <span className="font-semibold">{stepList || "prompt"}</span> steps, and
+          only while those steps run on the user&apos;s own KIE key — so a user can
+          never pick a model that Heclus pays for. Tick nothing to turn this off.
+        </p>
+      </div>
+
+      {/* Bulk toggle. Indeterminate whenever the selection is partial, so
+          the box reflects "some" rather than lying about all-or-nothing. */}
+      <label
+        className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer"
+        style={{ background: "oklch(0 0 0 / 0.03)", border: "1px solid oklch(0 0 0 / 0.06)" }}
+      >
+        <input
+          type="checkbox"
+          checked={models.length > 0 && current.length === models.length}
+          ref={(el) => {
+            if (el) el.indeterminate = current.length > 0 && current.length < models.length;
+          }}
+          disabled={saving || models.length === 0}
+          onChange={() =>
+            setSel(current.length === models.length ? [] : models.map((m) => m.id))
+          }
+          className="cursor-pointer"
+        />
+        <span className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>
+          All
+        </span>
+        <span className="text-[11px]" style={{ color: "var(--c-42)" }}>
+          {current.length} of {models.length} selected
+        </span>
+      </label>
+
+      <div className="space-y-2">
+        {models.map((m) => {
+          const on = current.includes(m.id);
+          return (
+            <label
+              key={m.id}
+              className="flex items-start gap-2.5 p-2.5 rounded-lg cursor-pointer transition-all"
+              style={{
+                background: on ? "oklch(0.72 0.25 285 / 0.06)" : "oklch(0 0 0 / 0.02)",
+                border: `1px solid ${on ? "oklch(0.72 0.25 285 / 0.35)" : "oklch(0 0 0 / 0.07)"}`,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={on}
+                disabled={saving}
+                onChange={() => toggle(m.id)}
+                className="mt-0.5 cursor-pointer"
+              />
+              <span className="min-w-0">
+                <span className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>{m.label}</span>
+                <code className="text-[10px] ml-2" style={{ color: "var(--c-42)" }}>{m.id}</code>
+                <span className="block text-[11px] mt-0.5 leading-relaxed" style={{ color: "var(--c-50)" }}>
+                  {m.note}
+                </span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+
+      <button
+        onClick={save}
+        disabled={!dirty || saving}
+        className="px-3.5 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer flex items-center gap-1.5"
+        style={{
+          background: dirty && !saving ? "oklch(0.72 0.25 285)" : "oklch(0 0 0 / 0.06)",
+          color: dirty && !saving ? "white" : "var(--c-50)",
+        }}
+      >
+        {saving && <Spinner size={12} />}
+        {saving ? "Saving…" : "Save choices"}
+      </button>
     </div>
   );
 }
@@ -4844,6 +5124,7 @@ export default function AdminPage() {
   // spinner and the menu item disables itself during the request.
   const [flaggingProdTest, setFlaggingProdTest] = useState<string | null>(null);
   const [settingSub, setSettingSub] = useState<string | null>(null);
+  const [settingPlan, setSettingPlan] = useState<string | null>(null);
   const [usersPage, setUsersPage] = useState(1);
   const [userSearch, setUserSearch] = useState("");
   // "zero-video" / "no-setup" are cross-cutting slices (they overlap the
@@ -5000,6 +5281,28 @@ export default function AdminPage() {
       toast.error(err instanceof Error ? err.message : "Failed to update subscription");
     } finally {
       setSettingSub(null);
+    }
+  }
+
+  // Switch a non-admin user's paid plan tier (Starter / Pro / Founder).
+  // Setting a tier marks them an active subscriber on that plan.
+  async function handleSetPlan(email: string, plan: "starter" | "pro" | "founder") {
+    setSettingPlan(email);
+    try {
+      const res = await fetch(`/api/admin/users/${encodeURIComponent(email)}/plan`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Failed to update plan");
+      const label = plan.charAt(0).toUpperCase() + plan.slice(1);
+      toast.success(`${email} set to ${label}`);
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update plan");
+    } finally {
+      setSettingPlan(null);
     }
   }
 
@@ -5988,7 +6291,7 @@ export default function AdminPage() {
                                 />
                                 <div
                                   role="menu"
-                                  className="absolute right-0 top-full mt-1 z-20 rounded-lg overflow-hidden min-w-[160px]"
+                                  className="absolute right-0 top-full mt-1 z-20 rounded-lg overflow-hidden min-w-[240px] py-1.5"
                                   style={{
                                     background: "white",
                                     border: "1px solid oklch(0 0 0 / 0.08)",
@@ -6078,6 +6381,30 @@ export default function AdminPage() {
                                         <Sparkles size={12} />
                                         Mark as Demo/free
                                       </button>
+                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
+                                      <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.55 0 0)" }}>Plan</div>
+                                      {([
+                                        { slug: "starter" as const, label: "Starter", Icon: Rocket, color: "oklch(0.45 0.15 145)" },
+                                        { slug: "pro" as const,     label: "Pro",     Icon: Star,   color: "oklch(0.45 0.15 220)" },
+                                        { slug: "founder" as const, label: "Founder", Icon: Gem,    color: "oklch(0.5 0.18 300)" },
+                                      ]).map(({ slug, label, Icon, color }) => {
+                                        const current = (u.plan ?? "").toLowerCase().trim() === slug;
+                                        return (
+                                          <button
+                                            key={slug}
+                                            type="button"
+                                            role="menuitem"
+                                            onClick={() => { setOpenUserMenu(null); handleSetPlan(u.email, slug); }}
+                                            disabled={settingPlan === u.email || current}
+                                            className="w-full text-left text-xs px-3 py-2 hover:bg-[oklch(0_0_0_/_0.04)] flex items-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                                            style={{ color }}
+                                          >
+                                            <Icon size={12} />
+                                            <span className="flex-1">Set plan: {label}</span>
+                                            {current && <Check size={12} />}
+                                          </button>
+                                        );
+                                      })}
                                       <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
                                       <button
                                         type="button"

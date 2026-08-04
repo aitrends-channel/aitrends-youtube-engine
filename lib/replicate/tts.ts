@@ -1,6 +1,7 @@
 import type { KieModel } from "@/lib/types";
 import { getFreeUsageThisMonth } from "@/lib/freeUsage";
 import { supabase } from "@/lib/supabase/client";
+import { isAdminUser } from "@/lib/admin";
 
 // Qwen3-TTS via Replicate — the SECOND free voiceover option, alongside
 // the BYO Google path. Unlike Google/Cloudflare (user's own key), this
@@ -271,8 +272,10 @@ export async function generateQwenTTS(
   // characters, so enforce OUR cap up front (Google's equivalent is
   // enforced by Google). Founders have no Qwen allowance at all.
   const { data: userData } = await supabase.auth.admin.getUserById(userId);
-  const meta = (userData?.user?.app_metadata ?? {}) as { plan?: string; is_admin?: boolean };
-  const cap = qwenCapForPlan(meta.plan, meta.is_admin === true);
+  const meta = (userData?.user?.app_metadata ?? {}) as { plan?: string };
+  // isAdminUser folds in the legacy ADMIN_EMAILS backstop; those accounts
+  // carry no app_metadata.is_admin flag, so the raw flag denied them.
+  const cap = qwenCapForPlan(meta.plan, isAdminUser(userData?.user));
   if (cap <= 0) {
     throw new QwenTTSError(
       "Qwen voices aren't included in the Founder plan — pick a Google voice (free on your own key) or a paid voice.",

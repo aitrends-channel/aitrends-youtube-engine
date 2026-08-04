@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
-import { Settings, LogOut, BarChart3, Trash2, Download, KeyRound } from "lucide-react";
+import { Settings, LogOut, BarChart3, Trash2, Download, KeyRound, SlidersHorizontal, Wand2, ChevronRight } from "lucide-react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { ADMIN_EMAILS } from "@/lib/admin";
@@ -17,6 +17,9 @@ import type { ApiKeysStatus } from "@/app/api/me/api-keys-status/route";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
+import { OneClickControls } from "@/components/one-click/OneClickControls";
+import { forkAndStartOneClick } from "@/lib/one-click/kickoff";
+import { ONE_CLICK_HIDDEN } from "@/lib/feature-flags";
 
 
 // ── Demo dashboard helpers ────────────────────────────────────────────────────
@@ -76,6 +79,9 @@ interface Project {
   selected_topic?: string;
   assembly_status?: string | null;
   assembled_url?: string | null;
+  auto_pilot?: boolean;
+  auto_pilot_status?: string | null;
+  auto_pilot_error?: string | null;
 }
 
 interface ChannelGroup {
@@ -153,7 +159,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
   };
   const nicheLimit = 1;
 
-  const cardStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" };
+  const cardStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" };
 
   const W = 600, PAD_X = 16, PAD_T = 16, PAD_B = 32, H = 160;
   const plotH = H - PAD_T - PAD_B;
@@ -285,7 +291,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
       </div>
 
       {!hasStartedDemo ? (
-        <div className="rounded-2xl px-6 py-16 flex flex-col items-center justify-center text-center" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+        <div className="rounded-2xl px-6 py-16 flex flex-col items-center justify-center text-center" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
           <p className="text-sm font-medium mb-1" style={{ color: "var(--c-45)" }}>No niches yet</p>
           <p className="text-xs mb-6" style={{ color: "var(--c-30)" }}>Try the demo to see how a niche looks, or subscribe to create your first one.</p>
           <div className="flex items-center gap-3">
@@ -341,9 +347,9 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
               onClick={() => { setNavigatingTo("resume-demo"); router.push(href); }}
               disabled={navigatingTo === "resume-demo"}
               className="text-left p-4 sm:p-6 rounded-2xl transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer disabled:opacity-70"
-              style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}
+              style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-card)"; }}
             >
               <div className="flex items-start justify-between mb-3">
                 <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
@@ -393,7 +399,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
 
       {/* Static niche group — locked/grayed */}
       <div style={{ opacity: 0.18, pointerEvents: "none", userSelect: "none" }} >
-        <div className="rounded-2xl px-4 sm:px-6 py-6 sm:py-8" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+        <div className="rounded-2xl px-4 sm:px-6 py-6 sm:py-8" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
           <div className="flex items-center justify-between gap-3 mb-5">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-bold shrink-0"
@@ -421,7 +427,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
               <div
                 key={v.title}
                 className="text-left p-4 sm:p-6 rounded-2xl"
-                style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}
+                style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
               >
                 <div className="flex items-start justify-between mb-3">
                   <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
@@ -639,6 +645,14 @@ export default function HomePage() {
     | { type: "video"; id: string; label: string }
     | { type: "niche"; channelName: string; projectIds: string[]; count: number };
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  // "New Video" opens a Studio-vs-1Click chooser before creating the fork.
+  const [newVideoGroup, setNewVideoGroup] = useState<ChannelGroup | null>(null);
+  const [startingOneClick, setStartingOneClick] = useState(false);
+  // Studio-vs-1Click chooser for a brand-new niche (no group to fork).
+  const [newNicheChooser, setNewNicheChooser] = useState(false);
+  // When 1Click is picked but not configured, the modal swaps to a
+  // "set up first" view instead of navigating away.
+  const [oneClickNeedsSetup, setOneClickNeedsSetup] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
@@ -689,6 +703,7 @@ export default function HomePage() {
     at_limit: boolean;
     plan: string;
     is_admin: boolean;
+    subscription_expired?: boolean;
   }>("/api/usage", fetcher);
 
   // User-only API keys check (admins skip the gate since they can use
@@ -712,7 +727,12 @@ export default function HomePage() {
   const hasOverride = nicheLimitOverride !== null;
 
   function requireSubscription(action: () => void) {
-    if (isPaid || isAdmin) {
+    // An expired subscription (app_metadata.paid can lag true after the
+    // period lapses) must route to the renew/subscribe modal — NOT fall
+    // through to the API-keys gate. subscription_expired is the same
+    // predicate the spend-gated server routes use.
+    const expired = usage?.subscription_expired === true;
+    if ((isPaid && !expired) || isAdmin) {
       action();
     } else {
       setPendingAction(() => action);
@@ -728,9 +748,41 @@ export default function HomePage() {
     router.push("/dashboard");
   }
 
-  function doCreateProject() {
-    setNavigatingTo("new-niche");
-    router.push("/projects/new/channel");
+  // A brand-new niche has no channel analysis yet, so 1Click can't start
+  // here the way it can for an existing niche — both modes go to the
+  // channel step, and the mode rides along so that page opens on the right
+  // one. From there the 1Click path analyses and engages autopilot itself.
+  // Studio goes to the wizard's channel step as always. 1Click goes to the
+  // 1Click view, which collects the content type + channel itself and then
+  // runs the kickoff without leaving that page.
+  async function doCreateProject(mode: "studio" | "oneclick" = "studio") {
+    if (mode === "studio") {
+      setNewNicheChooser(false);
+      setNavigatingTo("new-niche");
+      router.push("/projects/new/channel");
+      return;
+    }
+    // First-run gate, same as the existing-niche path: a user who has never
+    // configured 1Click gets told what's about to happen instead of landing
+    // in a setup stepper unannounced.
+    setStartingOneClick(true);
+    try {
+      const cfgRes = await fetch("/api/one-click/config");
+      const cfg = (await cfgRes.json().catch(() => ({}))) as { configured?: boolean };
+      if (!cfgRes.ok || !cfg.configured) {
+        setOneClickNeedsSetup(true);
+        return;
+      }
+      setNewNicheChooser(false);
+      setNavigatingTo("new-niche");
+      router.push("/one-click?new=1");
+    } catch {
+      // Can't tell either way — let the 1Click view sort it out.
+      setNewNicheChooser(false);
+      router.push("/one-click?new=1");
+    } finally {
+      setStartingOneClick(false);
+    }
   }
 
   function requireApiKeys(action: () => void) {
@@ -750,7 +802,13 @@ export default function HomePage() {
       setShowNicheLimitModal(true);
       return;
     }
-    requireSubscription(() => requireApiKeys(doCreateProject));
+    // Same shape as createVideoForChannel: gate first, then let the user
+    // pick Studio vs 1Click. With 1Click hidden there's nothing to choose,
+    // so skip the chooser and go straight to Studio.
+    requireSubscription(() => requireApiKeys(() => {
+      if (ONE_CLICK_HIDDEN) { doCreateProject("studio"); return; }
+      setNewNicheChooser(true);
+    }));
   }
 
   function doCreateVideoForChannel(group: ChannelGroup) {
@@ -759,8 +817,44 @@ export default function HomePage() {
     router.push(`/projects/new-fork/topic?from=${source.id}`);
   }
 
+  // 1Click path for a new video in an existing niche: fork the niche's
+  // channel (analysis/ideas/visual profile already done), engage autopilot,
+  // and hand straight off to the live view — 1Click takes over immediately.
+  async function doOneClickVideoForChannel(group: ChannelGroup) {
+    const source = [...group.projects].sort((a, b) => b.current_state - a.current_state)[0];
+    setStartingOneClick(true);
+    try {
+      // Check 1Click is configured BEFORE forking — otherwise a not-yet-
+      // configured user would leave an orphan project behind. If it isn't
+      // set up, swap the modal to the "set up first" view (no fork, no nav).
+      const cfgRes = await fetch("/api/one-click/config");
+      const cfg = (await cfgRes.json().catch(() => ({}))) as { configured?: boolean };
+      if (!cfgRes.ok || !cfg.configured) {
+        setOneClickNeedsSetup(true);
+        return;
+      }
+      const newProjectId = await forkAndStartOneClick(source.id);
+      toast.success("1Click engaged. We'll take it from here.");
+      router.push(`/projects/${newProjectId}/one-click`);
+    } catch (err) {
+      // A config that vanished between the check above and the start call
+      // lands here; the stepper is the place to fix that, not the Setup page.
+      if ((err as { code?: string }).code === "not_configured") {
+        router.push(`/one-click?from=${encodeURIComponent(source.id)}`);
+        return;
+      }
+      toast.error(err instanceof Error ? err.message : "1Click start failed");
+    } finally {
+      setStartingOneClick(false);
+    }
+  }
+
   function createVideoForChannel(group: ChannelGroup) {
-    requireSubscription(() => requireApiKeys(() => doCreateVideoForChannel(group)));
+    // Gate on subscription + API keys, then let the user pick Studio vs 1Click.
+    requireSubscription(() => requireApiKeys(() => {
+      if (ONE_CLICK_HIDDEN) { doCreateVideoForChannel(group); return; }
+      setNewVideoGroup(group);
+    }));
   }
 
   async function deleteOne(id: string): Promise<{ id: string; ok: boolean; error?: string; warnings?: string[] }> {
@@ -911,7 +1005,7 @@ export default function HomePage() {
                         style={{ color: "var(--c-60)" }}
                       >
                         <Settings size={15} />
-                        <span>Setup</span>
+                        <span>Config</span>
                       </Link>
                     ) : (
                       <button
@@ -920,7 +1014,7 @@ export default function HomePage() {
                         style={{ color: "var(--c-60)" }}
                       >
                         <Settings size={15} />
-                        <span>Setup</span>
+                        <span>Config</span>
                       </button>
                     )}
                     <Link
@@ -1006,8 +1100,9 @@ export default function HomePage() {
         <>{(() => {
           const allProjects = channelGroups.flatMap(g => g.projects);
           const total = allProjects.length;
-          const completed = allProjects.filter(p => p.assembly_status === "done").length;
-          const inProgress = allProjects.filter(p => p.assembly_status !== "done" && p.current_state > 0).length;
+          // Complete = final assembled MP4 exists (thumbnails don't count).
+          const completed = allProjects.filter(p => !!p.assembled_url).length;
+          const inProgress = allProjects.filter(p => !p.assembled_url && p.current_state > 0).length;
           const niches = channelGroups.length;
 
           return (
@@ -1017,7 +1112,7 @@ export default function HomePage() {
               {projects === undefined ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   {[0, 1, 2, 3].map((i) => (
-                    <div key={i} className="rounded-xl px-5 py-4 space-y-2" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                    <div key={i} className="rounded-xl px-5 py-4 space-y-2" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div className="h-8 w-10 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.08)" }} />
                       <div className="h-3 w-20 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.06)" }} />
                       <div className="h-2.5 w-14 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.05)" }} />
@@ -1100,7 +1195,7 @@ export default function HomePage() {
                           : "Free";
                       return (
                         <div className="rounded-xl px-5 py-4 flex items-center justify-between gap-3"
-                          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                           <div className="min-w-0 space-y-1">
                             <p className="leading-none">
                               <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{nichesUsed}</span>
@@ -1169,14 +1264,14 @@ export default function HomePage() {
 
                     {/* Total Videos — plain */}
                     <div className="rounded-xl px-5 py-4 flex flex-col items-center justify-center text-center"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{total}</p>
                       <p className="text-xs" style={{ color: "var(--c-42)" }}>Total Videos</p>
                     </div>
 
                     {/* Completed */}
                     <div className="rounded-xl px-5 py-4 flex items-center justify-between"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div>
                         <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{completed}</p>
                         <p className="text-xs" style={{ color: "var(--c-42)" }}>Completed</p>
@@ -1190,7 +1285,7 @@ export default function HomePage() {
 
                     {/* In Progress */}
                     <div className="rounded-xl px-5 py-4 flex items-center justify-between"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div>
                         <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{inProgress}</p>
                         <p className="text-xs" style={{ color: "var(--c-42)" }}>In Progress</p>
@@ -1208,7 +1303,7 @@ export default function HomePage() {
               <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "40px", marginBottom: "10px" }}>Niches/Video Chart</h3>
               {/* Bar chart — videos per niche */}
               {projects === undefined ? (
-                <div className="rounded-2xl px-6 py-5" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                <div className="rounded-2xl px-6 py-5" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                   <div className="flex items-center justify-between mb-5">
                     <div className="space-y-2">
                       <div className="h-4 w-32 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.08)" }} />
@@ -1223,7 +1318,7 @@ export default function HomePage() {
                   </div>
                 </div>
               ) : channelGroups.length === 0 ? (
-                <div className="rounded-2xl px-6 py-10 flex flex-col items-center justify-center text-center" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                <div className="rounded-2xl px-6 py-10 flex flex-col items-center justify-center text-center" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                   <p className="text-sm font-medium" style={{ color: "var(--c-40)" }}>No niches yet</p>
                   <p className="text-xs mt-1" style={{ color: "var(--c-30)" }}>Create your first niche to see video counts here</p>
                 </div>
@@ -1275,7 +1370,7 @@ export default function HomePage() {
                 const plotH = H - PAD_T - PAD_B;
 
                 return (
-                  <div className="rounded-2xl px-4 sm:px-6 py-5" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                  <div className="rounded-2xl px-4 sm:px-6 py-5" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                     <div className="flex items-center justify-between mb-5">
                       <div>
                         <p className="text-sm font-semibold" style={{ color: "var(--c-75)" }}>Videos per niche</p>
@@ -1439,7 +1534,7 @@ export default function HomePage() {
                   );
                 }
 
-                const cardStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" };
+                const cardStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" };
 
                 return (
                   <div style={{ marginTop: "40px" }}>
@@ -1515,7 +1610,7 @@ export default function HomePage() {
           <div className="space-y-12">
             {channelGroups.map((group) => {
               return (
-                <div key={group.channelName} className="rounded-2xl px-4 sm:px-6" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)", paddingTop: "34px", paddingBottom: "34px" }}>
+                <div key={group.channelName} className="rounded-2xl px-4 sm:px-6" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)", paddingTop: "34px", paddingBottom: "34px" }}>
                   {/* Channel header */}
                   <div className="flex items-center justify-between gap-3 mb-5">
                     <div className="flex items-center gap-3 min-w-0">
@@ -1572,7 +1667,10 @@ export default function HomePage() {
                   <div className="grid gap-7"
                     style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))" }}>
                     {group.projects.map((p) => {
-                      const assembled = p.assembly_status === "done";
+                      // A video is complete once its final assembled MP4
+                      // exists — thumbnails are an extra step that doesn't
+                      // affect progress/completion.
+                      const assembled = !!p.assembled_url;
                       const path = assembled
                         ? "thumbnails"
                         : (p.current_state === 6 && p.selected_topic)
@@ -1590,13 +1688,13 @@ export default function HomePage() {
                       return (
                         <Link
                           key={p.id}
-                          href={`/projects/${p.id}/${path}`}
+                          href={(p.auto_pilot && !assembled && p.auto_pilot_status !== "stopped") ? `/projects/${p.id}/one-click` : `/projects/${p.id}/${path}`}
                           prefetch
                           onClick={() => setNavigatingTo(`open-video-${p.id}`)}
                           className={`block relative text-left p-6 rounded-2xl transition-all ${isNavigating ? "pointer-events-none" : "hover:scale-[1.01] active:scale-[0.99]"}`}
-                          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}
+                          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
                           onMouseEnter={(e) => { if (!isNavigating) (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
-                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-7)"; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-card)"; }}
                         >
                           <div className="flex items-start justify-between mb-3">
                             <div className="flex items-center gap-1.5">
@@ -1648,6 +1746,20 @@ export default function HomePage() {
                             {p.selected_topic ?? "No topic selected"}
                           </p>
 
+                          {/* 1Click live controls — only for autopilot
+                              projects still in flight (running / paused /
+                              needs attention). */}
+                          {p.auto_pilot && !isComplete && !ONE_CLICK_HIDDEN && (
+                            <div className="mb-4">
+                              <OneClickControls
+                                projectId={p.id}
+                                status={p.auto_pilot_status ?? null}
+                                error={p.auto_pilot_error ?? null}
+                                onChanged={() => mutateProjects()}
+                              />
+                            </div>
+                          )}
+
                           <div className="space-y-1.5">
                             <div className="flex justify-between text-xs" style={{ color: "var(--c-38)" }}>
                               <span>Progress</span>
@@ -1698,7 +1810,7 @@ export default function HomePage() {
                 <div className="grid gap-7" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))" }}>
                   {[0, 1, 2].map((i) => (
                     <div key={i} className="p-6 rounded-2xl space-y-4"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-7)" }}>
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div className="flex items-start justify-between">
                         <div className="h-5 w-20 rounded-full animate-pulse" style={{ background: "var(--bg-elevated)" }} />
                         <div className="h-4 w-14 rounded animate-pulse" style={{ background: "var(--bg-elevated)" }} />
@@ -1728,7 +1840,7 @@ export default function HomePage() {
               className="w-16 h-16 rounded-2xl flex items-center justify-center transition-all hover:scale-105 active:scale-95 disabled:opacity-50 cursor-pointer"
               style={{
                 background: "oklch(0.72 0.25 285 / 0.08)",
-                border: "2px dashed oklch(0.72 0.25 285 / 0.35)",
+                border: "1px dashed oklch(0.72 0.25 285 / 0.35)",
                 color: "oklch(0.72 0.25 285)",
               }}
             >
@@ -1801,6 +1913,108 @@ export default function HomePage() {
               ) : "Delete"}
             </button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New Video: Studio vs 1Click chooser */}
+      <Dialog
+        open={!!newVideoGroup || newNicheChooser}
+        onOpenChange={(open) => { if (!open && !startingOneClick) { setNewVideoGroup(null); setNewNicheChooser(false); setOneClickNeedsSetup(false); } }}
+      >
+        {/* Themed rather than the default white sheet: this chooser sits
+            directly on the dashboard chrome, so it uses the same app theme
+            tokens. dialog.tsx supports exactly this via className. The
+            tokens are theme-aware, so it follows light mode too. */}
+        <DialogContent
+          className="sm:max-w-sm bg-[var(--bg-panel)] text-[var(--c-90)] ring-[var(--bd-card)]"
+          showCloseButton={!startingOneClick}
+        >
+          {oneClickNeedsSetup ? (
+            <>
+              <DialogHeader>
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-1 mx-auto" style={{ background: "oklch(0.72 0.25 285 / 0.12)" }}>
+                  <Wand2 size={20} style={{ color: "oklch(0.55 0.22 285)" }} />
+                </div>
+                <DialogTitle className="text-center">It&apos;s your first time with 1Click, let&apos;s set you up first</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-2 mt-1">
+                <button
+                  onClick={() => {
+                    // Continue the flow the user was in, so setup finishes
+                    // into the thing they were trying to start.
+                    if (newNicheChooser) {
+                      setNewNicheChooser(false);
+                      router.push("/one-click?new=1");
+                      return;
+                    }
+                    const src = newVideoGroup
+                      ? [...newVideoGroup.projects].sort((a, b) => b.current_state - a.current_state)[0]
+                      : null;
+                    router.push(src ? `/one-click?from=${encodeURIComponent(src.id)}` : "/one-click");
+                  }}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+                  style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+                >
+                  Set up 1Click
+                </button>
+                <button
+                  onClick={() => setOneClickNeedsSetup(false)}
+                  className="w-full py-2.5 rounded-xl text-sm font-medium text-[var(--c-55)] hover:text-[var(--c-90)] transition-colors"
+                >
+                  Back
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>{newNicheChooser ? "New niche" : "New video"}</DialogTitle>
+                <DialogDescription className="text-[var(--c-55)]">Choose how to create it.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-2.5 mt-1">
+                <button
+                  onClick={() => {
+                    if (newNicheChooser) { doCreateProject("studio"); return; }
+                    const g = newVideoGroup; setNewVideoGroup(null); if (g) doCreateVideoForChannel(g);
+                  }}
+                  disabled={startingOneClick}
+                  className="group flex items-center gap-3 p-3.5 rounded-xl border border-[var(--bd-card)] text-left transition-all hover:bg-[var(--bg-progress)] disabled:opacity-50"
+                >
+                  <span className="w-9 h-9 shrink-0 rounded-lg bg-[var(--bg-progress)] flex items-center justify-center">
+                    <SlidersHorizontal size={17} className="text-[var(--c-70)]" />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-[var(--c-90)]">Studio</span>
+                    <span className="block text-xs text-[var(--c-55)]">Build it yourself, step by step.</span>
+                  </span>
+                  <ChevronRight size={16} className="text-[var(--c-45)] group-hover:text-[var(--c-70)]" />
+                </button>
+                <button
+                  onClick={() => {
+                    // New niche: the channel step owns the 1Click kickoff (it
+                    // needs a channel URL first). Existing niche: fork and
+                    // engage right away.
+                    if (newNicheChooser) { doCreateProject("oneclick"); return; }
+                    if (newVideoGroup) doOneClickVideoForChannel(newVideoGroup);
+                  }}
+                  disabled={startingOneClick}
+                  className="group flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all hover:opacity-95 disabled:opacity-60"
+                  style={{ borderColor: "oklch(0.72 0.25 285 / 0.4)", background: "oklch(0.72 0.25 285 / 0.06)" }}
+                >
+                  <span className="w-9 h-9 shrink-0 rounded-lg flex items-center justify-center" style={{ background: "oklch(0.72 0.25 285 / 0.15)" }}>
+                    {startingOneClick
+                      ? <span className="w-4 h-4 border-2 rounded-full animate-spin" style={{ borderColor: "oklch(0.55 0.22 285 / 0.4)", borderTopColor: "oklch(0.55 0.22 285)" }} />
+                      : <Wand2 size={17} style={{ color: "oklch(0.55 0.22 285)" }} />}
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-[var(--c-90)]">{startingOneClick ? "Starting 1Click…" : "1Click"}</span>
+                    <span className="block text-xs text-[var(--c-55)]">Hands-off. We make the whole video.</span>
+                  </span>
+                  {!startingOneClick && <ChevronRight size={16} style={{ color: "oklch(0.72 0.25 285 / 0.5)" }} />}
+                </button>
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

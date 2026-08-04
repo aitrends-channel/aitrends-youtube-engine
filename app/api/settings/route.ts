@@ -17,12 +17,34 @@ export async function GET() {
 
   try {
     const s = await getSettings(user.id);
+
+    // A user who only ever set a prefix in a project's Prompts step has no
+    // account default, so the Setup field would open blank and look like
+    // they never wrote one. Surface their most recent project-level prefix
+    // as a suggestion the Setup panel can prefill — saving it is what
+    // actually promotes it to the account default.
+    let character_consistency_suggestion = "";
+    if (!s.character_consistency_text.trim()) {
+      const { data: recent } = await supabase
+        .from("projects")
+        .select("character_consistency_text")
+        .eq("user_id", user.id)
+        .not("character_consistency_text", "is", null)
+        .neq("character_consistency_text", "")
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      character_consistency_suggestion = ((recent?.character_consistency_text as string | null) ?? "").trim();
+    }
+
     return NextResponse.json({
       kie_api_key: mask(s.kie_api_key),
       elevenlabs_api_key: mask(s.elevenlabs_api_key),
-      cloudflare_account_id: mask(s.cloudflare_account_id),
-      cloudflare_api_token: mask(s.cloudflare_api_token),
-      google_tts_key: mask(s.google_tts_key),
+      // Not a secret — returned in full so the prompts step can show the
+      // inherited account default as a placeholder / prefill.
+      character_consistency_text: s.character_consistency_text,
+      // Empty whenever an account default already exists.
+      character_consistency_suggestion,
     });
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to load settings" }, { status: 500 });
@@ -37,17 +59,16 @@ export async function POST(req: Request) {
     const body = await req.json() as Partial<{
       kie_api_key: string;
       elevenlabs_api_key: string;
-      cloudflare_account_id: string;
-      cloudflare_api_token: string;
-      google_tts_key: string;
+      character_consistency_text: string;
     }>;
 
     const update: Record<string, string> = {};
     if (body.kie_api_key?.trim()) update.kie_api_key = body.kie_api_key.trim();
     if (body.elevenlabs_api_key?.trim()) update.elevenlabs_api_key = body.elevenlabs_api_key.trim();
-    if (body.cloudflare_account_id?.trim()) update.cloudflare_account_id = body.cloudflare_account_id.trim();
-    if (body.cloudflare_api_token?.trim()) update.cloudflare_api_token = body.cloudflare_api_token.trim();
-    if (body.google_tts_key?.trim()) update.google_tts_key = body.google_tts_key.trim();
+    // Consistency text is free text, not a secret — persist it whenever
+    // the key is present (unlike the API keys above, an empty string is a
+    // valid value here: it clears a previously-set default).
+    if (body.character_consistency_text !== undefined) update.character_consistency_text = body.character_consistency_text;
 
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ error: "No keys provided" }, { status: 400 });
@@ -63,7 +84,7 @@ export async function POST(req: Request) {
         { user_id: user.id, ...update },
         { onConflict: "user_id", ignoreDuplicates: false },
       )
-      .select("user_id, kie_api_key, elevenlabs_api_key, cloudflare_account_id, cloudflare_api_token, google_tts_key")
+      .select("user_id, kie_api_key, elevenlabs_api_key")
       .single();
 
     if (error) throw new Error(error.message);
@@ -76,10 +97,7 @@ export async function POST(req: Request) {
     console.log(
       `[settings] user=${user.id} update=${Object.keys(update).join(",")} ` +
         `persisted: kie_api_key.len=${written?.kie_api_key?.length ?? 0} ` +
-        `elevenlabs_api_key.len=${written?.elevenlabs_api_key?.length ?? 0} ` +
-        `cloudflare_account_id.len=${written?.cloudflare_account_id?.length ?? 0} ` +
-        `cloudflare_api_token.len=${written?.cloudflare_api_token?.length ?? 0} ` +
-        `google_tts_key.len=${written?.google_tts_key?.length ?? 0}`,
+        `elevenlabs_api_key.len=${written?.elevenlabs_api_key?.length ?? 0}`,
     );
 
     return NextResponse.json({ ok: true });

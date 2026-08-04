@@ -23,6 +23,7 @@ import { supabase } from "@/lib/supabase/client";
 const SENDER_DISPLAY_NAMES: Record<string, string> = {
   "support@heclus.com": "Heclus Support",
   "info@heclus.com":    "Heclus",
+  "notify@heclus.com":  "Heclus",
 };
 
 /**
@@ -49,6 +50,9 @@ interface SendArgs {
   // most clients build the thread correctly. inReplyTo is the
   // Message-ID of the parent (with angle brackets).
   inReplyTo?: string;
+  // Inline (cid:) or file attachments, e.g. an embedded logo referenced
+  // as <img src="cid:heclus-logo">. Nodemailer attachment shape.
+  attachments?: { filename: string; content: Buffer; cid?: string; contentType?: string }[];
 }
 
 let cachedTransport: nodemailer.Transporter | null = null;
@@ -92,6 +96,9 @@ function getTransport(): nodemailer.Transporter {
 export async function sendEmail(args: SendArgs): Promise<{ messageId: string }> {
   const transport = getTransport();
 
+  const toRecipients = Array.isArray(args.to) ? args.to : [args.to];
+  const ccRecipients = args.cc ? (Array.isArray(args.cc) ? args.cc : [args.cc]) : [];
+
   const result = await transport.sendMail({
     // Format with the display name ("Heclus Support" <support@…>)
     // so the recipient's mail client shows a friendly sender. The
@@ -107,6 +114,17 @@ export async function sendEmail(args: SendArgs): Promise<{ messageId: string }> 
     // clients only thread off References; doing both maximizes the
     // chance a reply lands in the original conversation.
     references: args.inReplyTo,
+    attachments: args.attachments,
+    // Envelope MAIL FROM must be the AUTHENTICATED mailbox. Without this,
+    // nodemailer derives the envelope from the header From — so sending
+    // with a visible From of an alias (e.g. notify@heclus.com) that isn't
+    // the login address gets rejected as spoofing and the mail silently
+    // never leaves. The header From above still shows the friendly alias.
+    envelope: {
+      // getTransport() already threw if this env is missing, so it's set.
+      from: process.env.HOSTINGER_SMTP_USER as string,
+      to: [...toRecipients, ...ccRecipients],
+    },
   });
 
   const messageId = result.messageId;

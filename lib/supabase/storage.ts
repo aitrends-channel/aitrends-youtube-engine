@@ -213,6 +213,52 @@ export async function deleteFolder(prefix: string): Promise<void> {
   } while (continuationToken);
 }
 
+// The bucket's top-level folders — one per user (userFolderFor). Delimiter
+// collapses each into one CommonPrefixes entry, so this is a couple of
+// requests rather than a walk of every key.
+export async function listTopLevelPrefixes(): Promise<string[]> {
+  if (!BUCKET) throw new Error("R2 storage is not configured — R2_BUCKET_NAME environment variable is missing");
+  const prefixes: string[] = [];
+  let continuationToken: string | undefined;
+
+  do {
+    const list = await r2.send(new ListObjectsV2Command({
+      Bucket: BUCKET,
+      Delimiter: "/",
+      ContinuationToken: continuationToken,
+    }));
+    for (const p of list.CommonPrefixes ?? []) {
+      if (p.Prefix) prefixes.push(p.Prefix.replace(/\/+$/, ""));
+    }
+    continuationToken = list.IsTruncated ? list.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  return prefixes;
+}
+
+// A generator rather than an array: the estate is ~200k objects and the sweep
+// only needs a running sum.
+export async function* listAllObjects(
+  prefix?: string,
+): AsyncGenerator<{ key: string; size: number }> {
+  if (!BUCKET) throw new Error("R2 storage is not configured — R2_BUCKET_NAME environment variable is missing");
+  let continuationToken: string | undefined;
+
+  do {
+    const list = await r2.send(new ListObjectsV2Command({
+      Bucket: BUCKET,
+      Prefix: prefix,
+      ContinuationToken: continuationToken,
+    }));
+
+    for (const o of list.Contents ?? []) {
+      if (o.Key) yield { key: o.Key, size: o.Size ?? 0 };
+    }
+
+    continuationToken = list.IsTruncated ? list.NextContinuationToken : undefined;
+  } while (continuationToken);
+}
+
 // Folder delete with a predicate. Use this when a prefix holds keys
 // owned by different features (e.g. auto-frames/ contains both
 // thumbnail refs and frame stills) and only some of them should be

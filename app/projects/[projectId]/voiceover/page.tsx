@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 // FreeResourcesButton is temporarily hidden — see comment near
@@ -16,10 +16,15 @@ import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
 import { SequentialVoiceoverPreview } from "@/components/voiceover/SequentialVoiceoverPreview";
 import { BeatAudioPlayer } from "@/components/voiceover/BeatAudioPlayer";
-import { GOOGLE_VOICES, isGoogleVoice } from "@/lib/google/tts";
 import { QWEN_VOICES, isQwenVoice } from "@/lib/replicate/tts";
-import { FREE_TIER_COMING_SOON } from "@/lib/free-tier-flag";
-import { RotateCw, ChevronUp, ChevronDown, Download } from "lucide-react";
+import { AI33_VOICES, AI33_FREE_PROVIDERS, ai33VoicesByGender, isAi33Voice, AI33_CLONE_MAX_SECONDS, AI33_CLONE_MIN_SECONDS } from "@/lib/ai33/tts";
+import { trimAudioFile } from "@/lib/audio/trim";
+import { SubscriptionModal } from "@/components/SubscriptionModal";
+import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+
+import { VoiceOption } from "@/components/VoiceOption";
+import { FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
+import { RotateCw, ChevronUp, ChevronDown, Download, Trash2, Plus, X, Upload as UploadIcon, Mic } from "lucide-react";
 
 // Per-beat voiceover step. Each beat shows its own row with status,
 // playback, and per-beat retry. A bulk Generate button kicks off all
@@ -43,129 +48,6 @@ interface LiveBeatState {
   status: BeatStatus;
   url?: string;
   error?: string;
-}
-
-// ── Voice picker (mirrors the generate page's VoiceOption) ──────────
-function VoiceOption({
-  model, selected, onSelect, isPlaying, onPlayToggle,
-}: {
-  model: KieModel; selected: boolean; onSelect: () => void;
-  isPlaying: boolean; onPlayToggle: (id: string | null) => void;
-}) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  useEffect(() => {
-    if (!isPlaying && audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-      audioRef.current = null;
-    }
-  }, [isPlaying]);
-  useEffect(() => () => { audioRef.current?.pause(); }, []);
-  async function togglePreview(e: React.MouseEvent) {
-    e.stopPropagation();
-    if (!model.previewUrl) return;
-    if (isPlaying) {
-      onPlayToggle(null);
-      return;
-    }
-    onSelect();
-
-    // Same-origin dynamic previews (the free Google voices → our /preview
-    // route) are auth'd and take a couple seconds to synthesize. Fetch
-    // them explicitly so we can (a) play reliably from a blob and (b)
-    // surface the error — "connect your key", quota, etc. — instead of
-    // failing silently. ElevenLabs previews are CROSS-ORIGIN static mp3s,
-    // where fetch() would trip CORS, so those keep the direct-Audio path.
-    const isDynamic = model.previewUrl.startsWith("/");
-    if (!isDynamic) {
-      const audio = new Audio(model.previewUrl);
-      audioRef.current = audio;
-      audio.onended = () => onPlayToggle(null);
-      audio.onerror = () => onPlayToggle(null);
-      audio.play().catch(() => onPlayToggle(null));
-      onPlayToggle(model.id);
-      return;
-    }
-
-    onPlayToggle(model.id); // show the "playing" state while it loads
-    try {
-      const res = await fetch(model.previewUrl);
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error || `Preview failed (${res.status})`);
-      }
-      const url = URL.createObjectURL(await res.blob());
-      const audio = new Audio(url);
-      audioRef.current = audio;
-      const cleanup = () => { onPlayToggle(null); URL.revokeObjectURL(url); };
-      audio.onended = cleanup;
-      audio.onerror = cleanup;
-      await audio.play();
-    } catch (err) {
-      onPlayToggle(null);
-      toast.error(err instanceof Error ? err.message : "Voice preview failed");
-    }
-  }
-  return (
-    <div
-      role="button"
-      onClick={onSelect}
-      className="cursor-pointer p-3 rounded-xl transition-all select-none"
-      style={selected ? {
-        background: "oklch(0.72 0.25 285 / 0.1)",
-        border: "1px solid oklch(0.72 0.25 285 / 0.3)",
-        color: "var(--c-90)",
-      } : {
-        background: "var(--bg-input)",
-        // Voice picker items keep the subtle default border — the white
-        // card border is only for the step's content panels.
-        border: "1px solid var(--bd-7)",
-        color: "var(--c-60)",
-      }}
-    >
-      <div className="flex items-center gap-2">
-        <p className="font-medium text-xs flex-1 truncate">
-          {model.name}
-          {(model.id.startsWith("google/") || model.id.startsWith("qwen/")) && (
-            <span style={{ color: "var(--primary)" }}> - free</span>
-          )}
-        </p>
-        {model.previewUrl && (
-          <button
-            onClick={togglePreview}
-            title={isPlaying ? "Stop preview" : "Preview voice"}
-            className="w-6 h-6 rounded flex items-center justify-center shrink-0 transition-colors"
-            style={{
-              background: isPlaying ? "oklch(0.72 0.25 285 / 0.15)" : "oklch(0.2 0 0)",
-              color: isPlaying ? "oklch(0.72 0.25 285)" : "var(--c-45)",
-              border: "1px solid var(--bd-10)",
-            }}
-          >
-            {isPlaying ? (
-              <svg width="8" height="8" viewBox="0 0 8 8" fill="currentColor">
-                <rect x="0.5" y="0" width="2.5" height="8" rx="0.5" />
-                <rect x="5" y="0" width="2.5" height="8" rx="0.5" />
-              </svg>
-            ) : (
-              <svg width="7" height="9" viewBox="0 0 7 9" fill="currentColor">
-                <path d="M0 0.5L7 4.5L0 8.5V0.5Z" />
-              </svg>
-            )}
-          </button>
-        )}
-      </div>
-      {model.tags && model.tags.length > 0 && (
-        <div className="flex gap-1 mt-1.5 flex-wrap">
-          {model.tags.map((tag) => (
-            <span key={tag} className="px-1.5 py-0.5 rounded text-xs"
-              style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 // ── Status pill ─────────────────────────────────────────────────────
@@ -202,7 +84,20 @@ function StatusPill({ status }: { status: BeatStatus }) {
 // Monthly free-quota usage bar shared by the free voice providers
 // (Qwen perk cap, Google BYO 1M). Mirrors the free-image daily bar
 // in ModelPicker.
-function FreeQuotaBar({ label, used, cap, loaded, badge, badgeNote }: { label: string; used: number; cap: number; loaded: boolean; badge?: string; badgeNote?: string }) {
+// Compact two-row layout: the badge and its note share row one with the
+// used/cap figure, and the bar sits INLINE on row two between the
+// "Monthly quota" caption and the percentage. It was four stacked rows
+// (title, badge+figure, caption+percent, full-width bar) which ate
+// vertical space above the voice grid for very little information.
+interface ClonedVoiceCard {
+  id: string;
+  name: string;
+  voiceId: string;
+  sample_url: string | null;
+  created_at: string;
+}
+
+function FreeQuotaBar({ used, cap, loaded, badge, badgeNote }: { used: number; cap: number; loaded: boolean; badge?: string; badgeNote?: string }) {
   // Exact percent — big caps mean real usage is often <1%, where
   // rounding to an integer shows a misleading "0%".
   const pctRaw = cap > 0 ? Math.min(100, (used / cap) * 100) : 0;
@@ -216,42 +111,41 @@ function FreeQuotaBar({ label, used, cap, loaded, badge, badgeNote }: { label: s
   const fillWidth = used > 0 ? Math.max(pctRaw, 1) : 0;
   const near = pctRaw >= 90;
   return (
-    <div className="rounded-xl px-1 py-1 space-y-2">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        <span className="flex items-start gap-2">
-          <span className="text-xs font-semibold" style={{ color: "var(--c-55)" }}>{label}</span>
+    <div className="rounded-xl px-1 py-1 space-y-1.5">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <span className="flex items-center gap-1.5 min-w-0">
           {badge && (
-            <span className="flex flex-col items-center shrink-0" style={{ marginLeft: "30px" }}>
-              <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
-                style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
-                {badge}
-              </span>
-              {badgeNote && (
-                <span className="text-[8px] mt-0.5 whitespace-nowrap" style={{ color: "var(--c-45)" }}>
-                  {badgeNote}
-                </span>
-              )}
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0"
+              style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
+              {badge}
+            </span>
+          )}
+          {badgeNote && (
+            <span className="text-[9px] whitespace-nowrap" style={{ color: "var(--c-45)" }}>
+              {badgeNote}
             </span>
           )}
         </span>
-        <span className="text-[10px] tabular-nums" style={{ color: "var(--c-45)" }}>
+        <span className="text-[10px] tabular-nums shrink-0" style={{ color: "var(--c-45)" }}>
           {loaded ? `${used.toLocaleString()} / ${cap.toLocaleString()}` : "…"}
         </span>
       </div>
-      <div className="flex items-center justify-between text-[10px]" style={{ color: "var(--c-45)" }}>
-        <span>Monthly quota</span>
-        <span className="tabular-nums">{loaded ? pctLabel : ""}</span>
-      </div>
-      <div className="h-2.5 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
-        <div
-          className="h-full rounded-full transition-all"
-          style={{
-            width: `${fillWidth}%`,
-            background: near
-              ? "oklch(0.72 0.18 65)"
-              : "linear-gradient(90deg, oklch(0.7 0.19 150), oklch(0.6 0.2 145))",
-          }}
-        />
+      <div className="flex items-center gap-2 text-[10px]" style={{ color: "var(--c-45)" }}>
+        <span className="shrink-0">Monthly quota</span>
+        {/* min-w-0 so the track can shrink instead of pushing the
+            percentage out of the row on narrow viewports. */}
+        <div className="h-2 rounded-full overflow-hidden flex-1 min-w-0" style={{ background: "var(--bg-track)" }}>
+          <div
+            className="h-full rounded-full transition-all"
+            style={{
+              width: `${fillWidth}%`,
+              background: near
+                ? "oklch(0.72 0.18 65)"
+                : "linear-gradient(90deg, oklch(0.7 0.19 150), oklch(0.6 0.2 145))",
+            }}
+          />
+        </div>
+        <span className="tabular-nums shrink-0">{loaded ? pctLabel : ""}</span>
       </div>
     </div>
   );
@@ -281,7 +175,72 @@ export default function VoiceoverPage({ params }: PageProps) {
   // else first model of the active gender tab.
   const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
   const [voiceTab, setVoiceTab] = useState<"female" | "male" | "custom" | "free">("female");
+  // Which paid tab to restore when coming back from Free.
+  const [lastPaidTab, setLastPaidTab] = useState<"female" | "male" | "custom">("female");
+  // Gender split *inside* the Free tab. Separate from voiceTab so switching
+  // Female/Male among the free voices doesn't knock you out of the Free tab.
+  const [freeGenderTab, setFreeGenderTab] = useState<"female" | "male">("female");
+  // Provider split, one level ABOVE the gender split: "all" merges every
+  // provider (the previous behavior), or narrow to one vendor's catalog.
+  // Both are server-side filters on /api/generate/tts/voices.
+  const [freeProviderTab, setFreeProviderTab] = useState<"all" | "custom" | (typeof AI33_FREE_PROVIDERS)[number]["id"]>("all");
   const [previewingId, setPreviewingId] = useState<string | null>(null);
+  // Live ai33 catalog for the Free tab. The tab used to render the 25
+  // hardcoded AI33_VOICES; it now pages through /api/generate/tts/voices
+  // (thousands of English voices across elevenlabs/minimax/fishaudio/
+  // edge). `freeLive` false means the server fell back to the static
+  // list — shown with a note rather than silently.
+  const [freeVoices, setFreeVoices] = useState<KieModel[]>([]);
+  const [freeVoicesLoading, setFreeVoicesLoading] = useState(false);
+  const [freeHasMore, setFreeHasMore] = useState(false);
+  const [freeLive, setFreeLive] = useState(true);
+  const [freePage, setFreePage] = useState(1);
+  // Raw input vs. the debounced value that actually hits the API, so
+  // typing doesn't fire a request per keystroke.
+  const [freeSearch, setFreeSearch] = useState("");
+  const [freeSearchQuery, setFreeSearchQuery] = useState("");
+  // Voices this user cloned on Heclus's ai33 account. Only ever the
+  // caller's own — the shared upstream account holds everyone's.
+  const [clones, setClones] = useState<ClonedVoiceCard[]>([]);
+  const [cloneMax, setCloneMax] = useState(0);
+  const [cloneName, setCloneName] = useState("");
+  const [cloneFile, setCloneFile] = useState<File | null>(null);
+  const [cloneConsent, setCloneConsent] = useState(false);
+  const [cloning, setCloning] = useState(false);
+  const [cloneError, setCloneError] = useState<string | null>(null);
+  const [deletingClone, setDeletingClone] = useState<string | null>(null);
+  // A sample has to come from somewhere: either a file on the user's
+  // machine or the mic, since cloning your own voice rarely means you
+  // already have a clip lying around.
+  const [cloneDuration, setCloneDuration] = useState<number | null>(null);
+  const [clonePreviewUrl, setClonePreviewUrl] = useState<string | null>(null);
+  const [cloneTrimmed, setCloneTrimmed] = useState(false);
+  const [showCloneForm, setShowCloneForm] = useState(false);
+  // cloneMax starts at 0, so "no allowance" and "not fetched yet" would
+  // otherwise look identical and refuse a Pro user mid-load.
+  const [clonesLoaded, setClonesLoaded] = useState(false);
+  // Same pattern as the assemble step's Pro-locked resolutions: let the
+  // user upgrade in place rather than only being told no. Mounted lazily —
+  // most sessions never open it.
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    createSupabaseBrowserClient().auth.getUser().then(({ data }) => {
+      if (!cancelled && data.user?.email) setUserEmail(data.user.email);
+    }).catch(() => { /* the modal falls back to an empty email */ });
+    return () => { cancelled = true; };
+  }, []);
+  const [recording, setRecording] = useState(false);
+  const [recordSecs, setRecordSecs] = useState(0);
+  const cloneFileInputRef = useRef<HTMLInputElement>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordSecsRef = useRef(0);
+  // Names for ai33 voices the picker hasn't loaded a page containing —
+  // a project's saved voice is usually somewhere deep in the catalog.
+  // Keyed by voice id, filled lazily by the resolve effect below.
+  const [resolvedFreeVoices, setResolvedFreeVoices] = useState<Record<string, KieModel>>({});
   // Sticky bit so a subsequent project SWR update doesn't overwrite an
   // explicit user pick. Only the very first resolution honors
   // projectVoiceId / auto-pick; after that the picker owns the state.
@@ -314,37 +273,274 @@ export default function VoiceoverPage({ params }: PageProps) {
   // stream ends and SWR catches up.
   const [liveBeats, setLiveBeats] = useState<Map<number, LiveBeatState>>(new Map());
   const [generating, setGenerating] = useState(false);
-  // Google-TTS free monthly usage for the Free tab's usage bar (mirrors the
-  // free-image daily bar in ModelPicker). Fetched lazily when the Free tab is
-  // opened and refreshed after generation so the bar reflects new chars.
-  // Declared after `generating` so the effect below can depend on it without
-  // a temporal-dead-zone error.
-  const [freeTtsUsage, setFreeTtsUsage] = useState<{ ttsChars: number; ttsCap: number; qwenTtsChars: number; qwenTtsCap: number } | null>(null);
+  // Free monthly usage for the Free tab's usage bar. Fetched lazily when the
+  // Free tab is opened and refreshed after generation so the bar reflects new
+  // chars. Declared after `generating` so the effect below can depend on it
+  // without a temporal-dead-zone error.
+  //
+  // ai33TtsCap is the admin-allocated quota (product_config.free_quotas), so
+  // the bar shows exactly what the server enforces — never a local guess.
+  const [freeTtsUsage, setFreeTtsUsage] = useState<{ qwenTtsChars: number; qwenTtsCap: number; ai33TtsChars: number; ai33TtsCap: number } | null>(null);
   useEffect(() => {
     if (voiceTab !== "free") return;
     let cancelled = false;
     fetch("/api/free-usage")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
-        if (cancelled || !d || typeof d.ttsChars !== "number") return;
-        setFreeTtsUsage({ ttsChars: d.ttsChars, ttsCap: d.ttsCap ?? 1_000_000, qwenTtsChars: d.qwenTtsChars ?? 0, qwenTtsCap: d.qwenTtsCap ?? 50_000 });
+        // Gate on the cap we actually render: without it there's no honest
+        // number to show, so stay unloaded rather than invent one.
+        if (cancelled || !d || typeof d.ai33TtsCap !== "number") return;
+        setFreeTtsUsage({ qwenTtsChars: d.qwenTtsChars ?? 0, qwenTtsCap: d.qwenTtsCap ?? 0, ai33TtsChars: d.ai33TtsChars ?? 0, ai33TtsCap: d.ai33TtsCap });
       })
       .catch(() => { /* fail-soft: bar just shows "…" */ });
     return () => { cancelled = true; };
   }, [voiceTab, generating]);
-  // Whether the user has connected their own Google Cloud TTS key. Gates the
-  // Free tab behind "set up your free tools first" until it's present. null =
-  // not-yet-known (don't gate); false = confirmed missing (gate).
-  const [googleTtsSet, setGoogleTtsSet] = useState<boolean | null>(null);
+
+  // Never fail quietly here: an empty panel is indistinguishable from
+  // "you have no clones", which hid a broken query for a whole session.
+  const loadClones = useCallback(async () => {
+    try {
+      const r = await fetch("/api/voices/clone");
+      const d = await r.json().catch(() => null);
+      if (!r.ok) {
+        setCloneError(d?.error ?? `Couldn't load your cloned voices (${r.status}).`);
+        return;
+      }
+      setClones(d.voices ?? []);
+      setCloneMax(d.max ?? 0);
+      setClonesLoaded(true);
+    } catch (e) {
+      setCloneError(`Couldn't load your cloned voices: ${(e as Error).message}`);
+    }
+  }, []);
   useEffect(() => {
-    if (voiceTab !== "free") return;
+    if (voiceTab === "free") void loadClones();
+  }, [voiceTab, loadClones]);
+
+  // ai33 rejects samples outside 3–30s, so check locally rather than make
+  // the user wait on an upload that can't succeed.
+  const sampleDuration = (file: File) => new Promise<number>((resolve) => {
+    const url = URL.createObjectURL(file);
+    const audio = new Audio(url);
+    const done = (d: number) => { URL.revokeObjectURL(url); resolve(d); };
+    audio.onloadedmetadata = () => done(audio.duration);
+    audio.onerror = () => done(NaN);
+  });
+
+  // Accepts a picked file or a finished recording: measure it, keep a
+  // preview so the user can hear what they're about to submit, and reject
+  // out-of-range lengths here rather than after a 10MB upload.
+  const resetCloneForm = useCallback(() => {
+    setCloneName("");
+    setCloneFile(null);
+    setCloneConsent(false);
+    setCloneDuration(null);
+    setCloneTrimmed(false);
+    setCloneError(null);
+    setClonePreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+  }, []);
+
+  // knownSecs comes from the recorder's own clock: MediaRecorder blobs
+  // report duration Infinity (no metadata in a streamed container), so
+  // measuring one tells us nothing.
+  const acceptCloneSample = useCallback(async (file: File, knownSecs?: number) => {
+    setCloneError(null);
+    let next = file;
+    let secs: number | undefined;
+    let trimmed = false;
+    try {
+      const r = await trimAudioFile(file, AI33_CLONE_MAX_SECONDS);
+      next = r.file;
+      secs = r.duration;
+      trimmed = r.trimmed;
+    } catch {
+      // Undecodable container: keep the file and fall back to whatever
+      // length we can establish, rather than blocking on the trim.
+      const measured = await sampleDuration(file);
+      secs = Number.isFinite(measured) ? measured : knownSecs;
+    }
+    setCloneFile(next);
+    setCloneTrimmed(trimmed);
+    setClonePreviewUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(next); });
+    setCloneDuration(secs ?? null);
+    // Too long is fixed by trimming; too short can only be re-recorded.
+    if (secs !== undefined && secs < AI33_CLONE_MIN_SECONDS) {
+      setCloneError(`That sample is only ${Math.round(secs)}s — at least ${AI33_CLONE_MIN_SECONDS}s is needed.`);
+    }
+  }, []);
+
+  const startRecording = async () => {
+    setCloneError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const chunks: Blob[] = [];
+      // Prefer mp4/aac over webm/opus: ai33 rejects unknown types and aac
+      // is the likelier of the two to be on their allowlist.
+      const preferred = ["audio/mp4", "audio/webm"].find(
+        (t) => typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(t),
+      );
+      const rec = new MediaRecorder(stream, preferred ? { mimeType: preferred } : undefined);
+      rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+        setRecording(false);
+        const type = rec.mimeType || preferred || "audio/webm";
+        const ext = type.includes("mp4") ? "m4a" : "webm";
+        void acceptCloneSample(
+          new File([new Blob(chunks, { type })], `recording.${ext}`, { type }),
+          recordSecsRef.current,
+        );
+      };
+      recorderRef.current = rec;
+      rec.start();
+      setRecording(true);
+      setRecordSecs(0);
+      recordSecsRef.current = 0;
+      // Hard stop at the upstream ceiling so a forgotten recording can't
+      // produce a sample ai33 will reject. The tick counts in a ref and
+      // stops the recorder outside the state updater — updaters run twice
+      // under StrictMode, and a second stop() on an inactive recorder
+      // throws InvalidStateError.
+      recordTimerRef.current = setInterval(() => {
+        recordSecsRef.current += 1;
+        setRecordSecs(recordSecsRef.current);
+        if (recordSecsRef.current >= AI33_CLONE_MAX_SECONDS && recorderRef.current?.state === "recording") {
+          recorderRef.current.stop();
+        }
+      }, 1000);
+    } catch {
+      setCloneError("Couldn't access the microphone. Choose a file instead.");
+    }
+  };
+
+  const stopRecording = () => recorderRef.current?.stop();
+
+  useEffect(() => () => {
+    if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+    recorderRef.current?.stream?.getTracks().forEach((t) => t.stop());
+  }, []);
+
+  const submitClone = async () => {
+    if (!cloneName.trim() || !cloneFile || !cloneConsent) return;
+    setCloneError(null);
+
+    // Over-length is already trimmed at selection; only too-short blocks.
+    if (cloneDuration !== null && cloneDuration < AI33_CLONE_MIN_SECONDS) {
+      setCloneError(`That sample is only ${Math.round(cloneDuration)}s — at least ${AI33_CLONE_MIN_SECONDS}s is needed.`);
+      return;
+    }
+
+    setCloning(true);
+    try {
+      const form = new FormData();
+      form.append("name", cloneName.trim());
+      form.append("audio", cloneFile);
+      const r = await fetch("/api/voices/clone", { method: "POST", body: form });
+      const d = await r.json().catch(() => null);
+      if (!r.ok) { setCloneError(d?.error ?? "Cloning failed."); return; }
+      resetCloneForm();
+      setShowCloneForm(false);
+      await loadClones();
+      if (d?.voice?.voiceId) setSelectedVoice(d.voice.voiceId);
+    } catch (e) {
+      setCloneError((e as Error).message);
+    } finally {
+      setCloning(false);
+    }
+  };
+
+  const deleteClone = async (id: string) => {
+    setDeletingClone(id);
+    try {
+      const r = await fetch(`/api/voices/clone?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!r.ok) {
+        const d = await r.json().catch(() => null);
+        setCloneError(d?.error ?? "Couldn't delete that voice.");
+        return;
+      }
+      await loadClones();
+    } finally {
+      setDeletingClone(null);
+    }
+  };
+  // Debounce the Free tab's search box. Resets to page 1 here (not in a
+  // separate effect) so a pending page-3 fetch can't fire against the
+  // new query first.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setFreeSearchQuery((prev) => (prev === freeSearch ? prev : freeSearch));
+      setFreePage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [freeSearch]);
+
+  // Name the selected ai33 voice when it's not in the static catalog or
+  // the loaded page — one lookup per id, cached in state.
+  useEffect(() => {
+    if (!selectedVoice || !isAi33Voice(selectedVoice)) return;
+    if (resolvedFreeVoices[selectedVoice]) return;
+    if (AI33_VOICES.some((m) => m.id === selectedVoice)) return;
+    if (freeVoices.some((m) => m.id === selectedVoice)) return;
     let cancelled = false;
-    fetch("/api/me/api-keys-status")
+    fetch(`/api/generate/tts/voices?id=${encodeURIComponent(selectedVoice)}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (!cancelled && d) setGoogleTtsSet(!!d.googleTtsSet); })
-      .catch(() => { /* leave null — don't gate on a failed check */ });
+      .then((d: { voice?: KieModel | null } | null) => {
+        if (cancelled || !d?.voice) return;
+        setResolvedFreeVoices((prev) => ({ ...prev, [selectedVoice]: d.voice! }));
+      })
+      .catch(() => { /* banner falls back to the id-only label */ });
     return () => { cancelled = true; };
-  }, [voiceTab]);
+  }, [selectedVoice, freeVoices, resolvedFreeVoices]);
+
+  // Fetch the live free catalog: refetch on gender/search change (page
+  // already reset to 1 by the handlers), append on "Load more".
+  useEffect(() => {
+    // Custom lists the user's own clones from our DB, not ai33's catalog.
+    if (voiceTab !== "free" || freeProviderTab === "custom" || FREE_TTS_COMING_SOON) return;
+    let cancelled = false;
+    setFreeVoicesLoading(true);
+    const params = new URLSearchParams({ gender: freeGenderTab, page: String(freePage) });
+    if (freeProviderTab !== "all") params.set("provider", freeProviderTab);
+    if (freeSearchQuery.trim()) params.set("search", freeSearchQuery.trim());
+    // Endpoint unreachable — fall back to the static catalog so the tab
+    // still offers voices, scoped to the selected provider to match what
+    // the server would have returned.
+    const offlineFallback = () => {
+      const byGender = ai33VoicesByGender(freeGenderTab === "female" ? "Female" : "Male");
+      return freeProviderTab === "all"
+        ? byGender
+        : byGender.filter((m) => m.id.startsWith(`ai33/${freeProviderTab}_`));
+    };
+    fetch(`/api/generate/tts/voices?${params.toString()}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { voices?: KieModel[]; hasMore?: boolean; live?: boolean } | null) => {
+        if (cancelled) return;
+        if (!d || !Array.isArray(d.voices)) {
+          setFreeLive(false);
+          setFreeHasMore(false);
+          setFreeVoices(offlineFallback());
+          return;
+        }
+        setFreeLive(d.live !== false);
+        setFreeHasMore(!!d.hasMore);
+        setFreeVoices((prev) => {
+          if (freePage === 1) return d.voices!;
+          // Append, keeping ids unique — the catalog repeats a premade
+          // block across pages (see listAi33Voices).
+          const seen = new Set(prev.map((m) => m.id));
+          return [...prev, ...d.voices!.filter((m) => !seen.has(m.id))];
+        });
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setFreeLive(false);
+        setFreeHasMore(false);
+        setFreeVoices(offlineFallback());
+      })
+      .finally(() => { if (!cancelled) setFreeVoicesLoading(false); });
+    return () => { cancelled = true; };
+  }, [voiceTab, freeProviderTab, freeGenderTab, freeSearchQuery, freePage]);
   const [exportingVoiceover, setExportingVoiceover] = useState(false);
   const [stopped, setStopped] = useState(false);
   // Mirror `stopped` into a ref so the SSE handler (a long-lived async
@@ -846,7 +1042,7 @@ export default function VoiceoverPage({ params }: PageProps) {
     // Free Google voices aren't in the ElevenLabs catalog (ttsModels) — they
     // carry a "google/" prefix and are validated by the backend against the
     // user's connected key, so accept them here without a catalog match.
-    const valid = !!selectedVoice && (isGoogleVoice(selectedVoice) || isQwenVoice(selectedVoice) || (ttsModels ? ttsModels.some((m) => m.id === selectedVoice) : true));
+    const valid = !!selectedVoice && (isQwenVoice(selectedVoice) || isAi33Voice(selectedVoice) || (ttsModels ? ttsModels.some((m) => m.id === selectedVoice) : true));
     if (valid) return true;
     setConfirm({
       title: "Select a voice first",
@@ -955,6 +1151,246 @@ export default function VoiceoverPage({ params }: PageProps) {
     () => (ttsModels ?? []).some((m) => m.tags?.includes("Custom")),
     [ttsModels],
   );
+  // The Custom tab's body: the user's own clones, plus the clone form
+  // while they're under the cap. Declared here rather than inline so the
+  // Free tab's provider/gender branch stays readable.
+  // cloneMax is the admin per-plan allocation (Config → Quotas): 0 means
+  // cloning isn't part of the plan, -1 means no ceiling.
+  const cloneUnlimited = cloneMax < 0;
+  // Gated on clonesLoaded: cloneMax starts at 0, so without it every render
+  // before the fetch resolves reports "at cap" and flashes the red
+  // not-included copy at users who in fact have unlimited.
+  const clonesAtCap = clonesLoaded && !cloneUnlimited && clones.length >= cloneMax;
+
+  // Clones live on Heclus's ai33 account but only ever list back to the
+  // user who made them.
+  const clonePanel = (
+    <div className="rounded-xl p-4 space-y-3"
+      style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-semibold" style={{ color: "var(--c-60)" }}>
+          Your cloned voices
+        </p>
+        <span className="text-[10px] tabular-nums" style={{ color: "var(--c-45)" }}>
+          {!clonesLoaded ? "…" : cloneUnlimited ? clones.length : `${clones.length}/${cloneMax}`}
+        </span>
+      </div>
+
+      {/* Panel-level, not inside the form: a load failure leaves cloneMax
+          at 0, which hides the form and would hide the reason with it. */}
+      {cloneError && (
+        <p className="text-[10px]" style={{ color: "oklch(0.7 0.19 25)" }}>{cloneError}</p>
+      )}
+
+      {clones.length > 0 && (
+        <div className="space-y-1.5">
+          {/* Same card as every other voice in the picker, so a clone
+              previews and selects identically. previewUrl is the clip it
+              was cloned from — ai33 exposes no preview for clones. */}
+          {clones.map((c) => (
+            <VoiceOption
+              key={c.id}
+              model={{
+                id: c.voiceId,
+                name: c.name,
+                type: "tts",
+                // Always same-origin: the route serves the stored clip when
+                // there is one and synthesizes a sample otherwise, so
+                // clones made before samples were kept still preview.
+                previewUrl: `/api/voices/clone/preview?id=${c.id}`,
+              }}
+              selected={selectedVoice === c.voiceId}
+              onSelect={() => setSelectedVoice(c.voiceId)}
+              isPlaying={previewingId === c.voiceId}
+              onPlayToggle={setPreviewingId}
+              action={
+                <button
+                  onClick={(e) => { e.stopPropagation(); void deleteClone(c.id); }}
+                  disabled={effectivelyGenerating || deletingClone === c.id}
+                  title="Delete this cloned voice"
+                  aria-label="Delete this cloned voice"
+                  className="w-6 h-6 rounded flex items-center justify-center shrink-0 transition-colors disabled:opacity-40"
+                  style={{
+                    background: "oklch(0.2 0 0)",
+                    border: "1px solid var(--bd-10)",
+                    color: deletingClone === c.id ? "oklch(0.72 0.19 25)" : "var(--c-45)",
+                  }}
+                >
+                  {deletingClone === c.id
+                    ? <span className="block w-2.5 h-2.5 border rounded-full animate-spin"
+                        style={{ borderColor: "oklch(0.72 0.19 25 / 0.3)", borderTopColor: "oklch(0.72 0.19 25)" }} />
+                    : <Trash2 size={11} />}
+                </button>
+              }
+            />
+          ))}
+        </div>
+      )}
+
+      {/* The toggle is always present under the cap, so the form can be
+          dismissed as well as opened. Always starts collapsed, empty
+          state included. */}
+      {clonesAtCap ? (
+        // Kept visible but disabled, so the option is discoverable and the
+        // reason is stated — rather than the button just vanishing.
+        <>
+          <button
+            disabled
+            className="w-full px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 opacity-40"
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", color: "var(--c-50)" }}
+          ><Plus size={12} />Clone a voice</button>
+          <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
+            {cloneMax > 0
+              ? `All ${cloneMax} clone slots used — delete one to make room.`
+              : "Voice cloning isn't included on your plan."}
+          </p>
+        </>
+      ) : (
+        <>
+        {showCloneForm ? (
+          // Closing is secondary to filling the form in, so it's a small
+          // icon at the right rather than a second full-width button
+          // competing with "Clone a voice" at the bottom.
+          <div className="flex justify-end">
+            <button
+              onClick={() => { resetCloneForm(); setShowCloneForm(false); }}
+              disabled={cloning}
+              aria-expanded
+              title="Close"
+              aria-label="Close the clone form"
+              className="w-6 h-6 rounded flex items-center justify-center transition-colors disabled:opacity-40"
+              style={{ background: "oklch(0.2 0 0)", border: "1px solid var(--bd-10)", color: "var(--c-45)" }}
+            ><X size={11} /></button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowCloneForm(true)}
+            aria-expanded={false}
+            className="w-full px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-all"
+            style={{
+              background: "oklch(0.72 0.25 285 / 0.15)",
+              border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+              color: "oklch(0.88 0.12 285)",
+            }}
+          ><Plus size={12} />Clone a voice</button>
+        )}
+        {showCloneForm && (
+        <div className="space-y-2.5">
+          <input
+            ref={cloneFileInputRef}
+            type="file"
+            accept="audio/*"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) void acceptCloneSample(f); }}
+            className="hidden"
+          />
+          {/* Name/Record/Upload and preview/Clone share one grid, so Clone
+              lands exactly under Upload and the preview spans the columns
+              above it. Flex with max-widths couldn't guarantee the columns
+              lined up.
+
+              On large screens a 1fr spacer column opens up between the name
+              and the buttons, pushing them to the right edge; the buttons
+              are placed explicitly so nothing flows into the spacer. Narrow
+              panels keep the buttons beside the name, where the room is
+              needed. */}
+          <div className="grid gap-2 items-center grid-cols-[minmax(0,11.5rem)_max-content_max-content] lg:grid-cols-[minmax(0,11.5rem)_1fr_max-content_max-content]">
+            <input
+              type="text"
+              value={cloneName}
+              onChange={(e) => setCloneName(e.target.value)}
+              placeholder="Voice name"
+              disabled={cloning}
+              className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none"
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", color: "var(--c-70)" }}
+            />
+            <button
+              onClick={recording ? stopRecording : startRecording}
+              disabled={cloning}
+              className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 lg:col-start-3"
+              style={recording ? {
+                background: "oklch(0.7 0.19 25 / 0.15)",
+                border: "1px solid oklch(0.7 0.19 25 / 0.4)",
+                color: "oklch(0.78 0.17 25)",
+              } : {
+                background: "var(--bg-panel)",
+                border: "1px solid var(--bd-card)",
+                color: "var(--c-60)",
+              }}
+            >{recording
+              ? <>Stop · {recordSecs}s</>
+              : <><Mic size={11} />Record</>}</button>
+            <button
+              onClick={() => cloneFileInputRef.current?.click()}
+              disabled={cloning || recording}
+              className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium flex items-center justify-center gap-1.5 transition-all disabled:opacity-40 lg:col-start-4"
+              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
+            ><UploadIcon size={11} />Upload</button>
+
+            {cloneFile && !recording && (
+              <>
+                <p className="col-span-3 lg:col-span-4 text-[10px] truncate" style={{ color: "var(--c-50)" }}>
+                  {cloneFile.name}{cloneDuration !== null && ` · ${Math.round(cloneDuration)}s`}
+                  {cloneTrimmed && ` · trimmed to first ${AI33_CLONE_MAX_SECONDS}s`}
+                </p>
+                {/* Own cell even without a URL, so Clone can't slide into
+                    the first column. */}
+                <div className="col-span-2 lg:col-span-3 min-w-0">
+                  {clonePreviewUrl && (
+                    <audio src={clonePreviewUrl} controls className="w-full" style={{ height: "28px" }} />
+                  )}
+                </div>
+                <button
+                  onClick={submitClone}
+                  disabled={cloning || !cloneName.trim() || !cloneFile || !cloneConsent}
+                  className="px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all disabled:opacity-40 lg:col-start-4"
+                  style={{
+                    background: "oklch(0.72 0.25 285 / 0.15)",
+                    border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                    color: "oklch(0.88 0.12 285)",
+                  }}
+                >{cloning ? "Cloning…" : "Clone"}</button>
+              </>
+            )}
+          </div>
+          <label className="flex items-start gap-1.5 text-[10px] leading-snug" style={{ color: "var(--c-45)" }}>
+            <input
+              type="checkbox"
+              checked={cloneConsent}
+              onChange={(e) => setCloneConsent(e.target.checked)}
+              disabled={cloning}
+              className="mt-0.5 shrink-0"
+            />
+            <span>I have the speaker&apos;s permission to clone this voice.</span>
+          </label>
+          {/* A greyed-out button with no reason is a dead end. Recording
+              only satisfies one of three requirements, so show all three
+              rather than naming one at a time. */}
+          {cloning ? (
+            <p className="text-[10px]" style={{ color: "var(--c-40)" }}>Uploading your sample to clone…</p>
+          ) : (
+            <div className="space-y-1">
+              {([
+                ["Sample recorded or chosen", !!cloneFile],
+                ["Voice named", !!cloneName.trim()],
+                ["Permission confirmed", cloneConsent],
+              ] as const).map(([label, done]) => (
+                <p key={label} className="text-[10px] flex items-center gap-1"
+                  style={{ color: done ? "oklch(0.72 0.16 150)" : "var(--c-40)" }}>
+                  <span>{done ? "✓" : "○"}</span>{label}
+                </p>
+              ))}
+            </div>
+          )}
+          <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
+            At least {AI33_CLONE_MIN_SECONDS}s of clean speech. Longer samples are trimmed to {AI33_CLONE_MAX_SECONDS}s.
+          </p>
+        </div>
+        )}
+        </>
+      )}
+    </div>
+  );
+
   // Search within the active tab — matches voice name and tag text.
   // Cleared on tab switch so a leftover query never makes a fresh tab
   // look mysteriously empty.
@@ -1009,11 +1445,11 @@ export default function VoiceoverPage({ params }: PageProps) {
         </div>
 
         <div ref={scrollContainerRef} className="flex-1 overflow-y-auto pb-[70px] relative">
-        <div className="px-5 py-4 sm:p-8 pb-24 space-y-6">
+        <div className="px-5 py-4 sm:p-8 pb-24 space-y-8">
 
           {/* Voice picker */}
           <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-3">
               <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
                 Voice
               </p>
@@ -1023,44 +1459,80 @@ export default function VoiceoverPage({ params }: PageProps) {
                 </span>
               )}
             </div>
-            {/* Gender / custom tabs. Custom only renders when the user's
-                ElevenLabs account has added/cloned voices. */}
-            <div className="flex gap-1 mb-2">
-              {([...(["female", "male"] as const), ...(hasCustomVoices ? (["custom"] as const) : []), ...(["free"] as const)]).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => { setVoiceTab(tab); setVoiceSearch(""); }}
-                  disabled={effectivelyGenerating}
-                  className="flex-1 px-2 py-1.5 rounded-lg text-xs font-medium capitalize transition-all disabled:opacity-40"
-                  style={voiceTab === tab ? {
-                    background: "oklch(0.72 0.25 285 / 0.15)",
-                    border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                    color: "oklch(0.88 0.12 285)",
-                  } : {
-                    background: "var(--bg-input)",
-                    border: "1px solid var(--bd-card)",
-                    color: "var(--c-50)",
-                  }}
-                >{tab === "custom" ? (
-                  <span className="flex flex-col items-center leading-tight">
-                    <span>Custom</span>
-                    <span className="text-[9px] font-normal normal-case" style={{ opacity: 0.7 }}>
-                      cloned · generated · professional
+            {/* Paid / Free decide the catalog; Female / Male / Custom are
+                sub-pills of Paid, mirroring how Free nests its own
+                provider and gender pills. Custom only renders when the
+                user's ElevenLabs account has added/cloned voices. */}
+            <div className="space-y-1.5 mb-4">
+              <div className="flex gap-1">
+                {([
+                  { group: "paid", active: voiceTab !== "free" },
+                  { group: "free", active: voiceTab === "free" },
+                ] as const).map(({ group, active }) => (
+                  <button
+                    key={group}
+                    onClick={() => {
+                      setVoiceTab(group === "free"
+                        ? "free"
+                        : (lastPaidTab === "custom" && !hasCustomVoices ? "female" : lastPaidTab));
+                      setVoiceSearch("");
+                    }}
+                    disabled={effectivelyGenerating}
+                    className="flex-1 px-2 py-2 rounded-lg text-xs font-semibold capitalize transition-all disabled:opacity-40"
+                    style={active ? {
+                      background: "oklch(0.72 0.25 285 / 0.15)",
+                      border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                      color: "oklch(0.88 0.12 285)",
+                    } : {
+                      background: "var(--bg-input)",
+                      border: "1px solid var(--bd-card)",
+                      color: "var(--c-50)",
+                    }}
+                  >{group === "free" && FREE_TTS_COMING_SOON ? (
+                    <span className="flex flex-col items-center leading-tight">
+                      <span>😄 Free</span>
+                      <span className="text-[9px] font-semibold normal-case">coming soon</span>
                     </span>
-                  </span>
-                ) : tab === "free" && FREE_TIER_COMING_SOON ? (
-                  <span className="flex flex-col items-center leading-tight">
-                    <span>😄 Free</span>
-                    <span className="text-[9px] font-semibold normal-case">coming soon</span>
-                  </span>
-                ) : tab}</button>
-              ))}
+                  ) : group === "free" ? "😄 Free" : group}</button>
+                ))}
+              </div>
+              {voiceTab !== "free" && (
+                <>
+                <p className="text-[10px] font-semibold" style={{ color: "var(--c-40)" }}>
+                  ElevenLabs
+                </p>
+                <div className="flex gap-1 flex-wrap">
+                  {([...(["female", "male"] as const), ...(hasCustomVoices ? (["custom"] as const) : [])]).map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => { setVoiceTab(tab); setLastPaidTab(tab); setVoiceSearch(""); }}
+                      disabled={effectivelyGenerating}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-medium capitalize transition-all disabled:opacity-40"
+                      style={voiceTab === tab ? {
+                        background: "oklch(0.72 0.25 285 / 0.15)",
+                        border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                        color: "oklch(0.88 0.12 285)",
+                      } : {
+                        background: "var(--bg-input)",
+                        border: "1px solid var(--bd-card)",
+                        color: "var(--c-50)",
+                      }}
+                    >{tab === "custom" ? (
+                      <span className="flex flex-col items-center leading-tight">
+                        <span>Custom</span>
+                        <span className="text-[9px] font-normal normal-case" style={{ opacity: 0.7 }}>
+                          cloned · generated · professional
+                        </span>
+                      </span>
+                    ) : tab}</button>
+                  ))}
+                </div>
+                </>
+              )}
             </div>
             {voiceTab === "free" ? (
-              FREE_TIER_COMING_SOON ? (
-                // TEMPORARY (lib/free-tier-flag.ts): free tier paused —
-                // the tab's original "coming soon" card. The functional
-                // Google-TTS branches below stay intact for the flip back.
+              FREE_TTS_COMING_SOON ? (
+                // TEMPORARY (lib/free-tier-flag.ts): free voiceover paused.
                 <div className="rounded-xl px-4 py-8 text-center"
                   style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
                   <p className="text-base font-bold" style={{ color: "var(--primary)" }}>
@@ -1077,89 +1549,216 @@ export default function VoiceoverPage({ params }: PageProps) {
                   </p>
                 </div>
               ) : (
-              // Two free providers, stacked. Qwen (Replicate) runs on
-              // HECLUS's token — a perk, capped per user per month, no
-              // setup needed. Google is BYO on the user's own key and
-              // 1M chars/month quota, so only that section gates on
-              // the key being connected.
-              <div className="scroll-themed space-y-4 max-h-[26rem] overflow-y-auto pr-1">
-                {freeTtsUsage && freeTtsUsage.qwenTtsCap <= 0 ? (
-                  // Plan gate: qwenTtsCap 0 = Qwen isn't included in this
-                  // plan (Founder). The server enforces the same rule, so
-                  // this card is honest, not just cosmetic.
+              // Free voiceover = the ai33 perk only. Runs on HECLUS's own
+              // ai33 token, capped per user per month, no setup needed.
+              <div className="scroll-themed space-y-5 max-h-[26rem] overflow-y-auto pr-1">
+                {freeTtsUsage && freeTtsUsage.ai33TtsCap <= 0 ? (
+                  // Plan gate: cap 0 = the admin allocated this plan no ai33
+                  // quota. Any plan can be set to 0, so don't name one.
                   <div className="rounded-xl px-4 py-5 text-center"
                     style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
                     <p className="text-sm font-medium" style={{ color: "var(--c-70)" }}>
-                      Qwen voices aren&apos;t included in the Founder plan
+                      Free voices aren&apos;t included in your plan
                     </p>
                     <p className="text-xs mt-1.5" style={{ color: "var(--c-45)" }}>
-                      Use the free Google voices below on your own key, or a paid voice.
+                      Pick a paid voice, or upgrade your plan.
                     </p>
                   </div>
                 ) : (
-                <div className="space-y-2">
+                <div className="space-y-4">
                   <FreeQuotaBar
-                    label="Qwen voices"
                     badge="Heclus perks 🎁"
                     badgeNote="You use, we pay"
-                    used={freeTtsUsage?.qwenTtsChars ?? 0}
-                    cap={freeTtsUsage?.qwenTtsCap ?? 50_000}
+                    used={freeTtsUsage?.ai33TtsChars ?? 0}
+                    cap={freeTtsUsage?.ai33TtsCap ?? 0}
                     loaded={!!freeTtsUsage}
                   />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {QWEN_VOICES.map((m) => (
-                      <VoiceOption
-                        key={m.id}
-                        model={m}
-                        selected={selectedVoice === m.id}
-                        onSelect={() => setSelectedVoice(m.id)}
-                        isPlaying={previewingId === m.id}
-                        onPlayToggle={setPreviewingId}
-                      />
+                  {/* Clone slots are part of the same perk allowance, so
+                      they belong next to the character bar rather than
+                      only inside the Custom tab. */}
+                  <div className="flex items-center justify-between gap-2 text-[10px]">
+                    <span style={{ color: "var(--c-45)" }}>Custom voice clones</span>
+                    <span className="tabular-nums" style={{ color: clonesAtCap ? "oklch(0.72 0.19 25)" : "var(--c-45)" }}>
+                      {!clonesLoaded
+                        ? "…"
+                        : cloneUnlimited
+                          ? `${clones.length} used · unlimited`
+                          : cloneMax > 0
+                            ? `${clones.length} / ${cloneMax} used`
+                            : "not included on your plan"}
+                    </span>
+                  </div>
+                  {/* Provider + gender/custom pills are one filter group,
+                      kept tight so they read as a unit against the quota bar
+                      above and the voice list below. */}
+                  <div className="space-y-1.5">
+                  {/* Provider subtabs, one level above the gender split.
+                      "All" merges every provider in catalog order; the
+                      rest narrow to a single vendor. Custom sits here too:
+                      a clone is its own ai33 provider, not a gender.
+                      flex-wrap so the pills don't squeeze on a narrow
+                      panel. */}
+                  <div className="flex gap-1 flex-wrap">
+                    {([
+                      { id: "all", label: "All" },
+                      ...AI33_FREE_PROVIDERS,
+                      { id: "custom", label: "Cloned voices", pro: true },
+                    ] as const).map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => { setFreeProviderTab(p.id); setFreePage(1); }}
+                        disabled={effectivelyGenerating}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium inline-flex items-center gap-1 transition-all disabled:opacity-40"
+                        style={freeProviderTab === p.id ? {
+                          background: "oklch(0.72 0.25 285 / 0.15)",
+                          border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                          color: "oklch(0.88 0.12 285)",
+                        } : {
+                          background: "var(--bg-input)",
+                          border: "1px solid var(--bd-card)",
+                          color: "var(--c-50)",
+                        }}
+                      >{p.label}{"pro" in p && p.pro && (
+                        <span className="px-1 rounded text-[9px] font-bold uppercase tracking-wide"
+                          style={{ background: "oklch(0.75 0.15 85 / 0.18)", color: "oklch(0.78 0.14 85)" }}>
+                          pro
+                        </span>
+                      )}</button>
                     ))}
                   </div>
-                </div>
-                )}
-
-                {googleTtsSet === false ? (
-                  // No Google Cloud TTS key yet — section-level setup
-                  // prompt; the Qwen voices above still work without it.
-                  <div
-                    className="rounded-xl px-4 py-6 text-center"
-                    style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}
-                  >
-                    <p className="text-sm font-medium" style={{ color: "var(--c-70)" }}>
-                      Want more free voices? Connect your Google Cloud TTS key
-                    </p>
-                    <a
-                      href="/setup"
-                      className="mt-3 inline-flex items-center px-4 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-90"
-                      style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}
-                    >
-                      Go to setup
-                    </a>
+                  {/* Female / Male narrows whatever the provider row above
+                      selected, so it's indented under it rather than
+                      reading as a second sibling filter. Switching resets
+                      to page 1: the gender is a server-side filter, not a
+                      client-side split of one loaded list. Custom has no
+                      gender split — those are the user's own voices. */}
+                  {freeProviderTab !== "custom" && (
+                  <div className="flex gap-1 flex-wrap items-center pl-2.5 ml-0.5"
+                    style={{ borderLeft: "1px solid var(--bd-card)" }}>
+                    <span className="text-[10px]" style={{ color: "var(--c-40)" }}>
+                      {freeProviderTab === "all"
+                        ? "All providers"
+                        : AI33_FREE_PROVIDERS.find((p) => p.id === freeProviderTab)?.label}
+                    </span>
+                    {(["female", "male"] as const).map((g) => (
+                      <button
+                        key={g}
+                        onClick={() => { setFreeGenderTab(g); setFreePage(1); }}
+                        disabled={effectivelyGenerating}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium capitalize transition-all disabled:opacity-40"
+                        style={freeGenderTab === g ? {
+                          background: "oklch(0.72 0.25 285 / 0.15)",
+                          border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                          color: "oklch(0.88 0.12 285)",
+                        } : {
+                          background: "var(--bg-input)",
+                          border: "1px solid var(--bd-card)",
+                          color: "var(--c-50)",
+                        }}
+                      >{g}</button>
+                    ))}
                   </div>
-                ) : (
-                  <div className="space-y-2">
-                    <FreeQuotaBar
-                      label="Google Cloud TTS"
-                      used={freeTtsUsage?.ttsChars ?? 0}
-                      cap={freeTtsUsage?.ttsCap ?? 1_000_000}
-                      loaded={!!freeTtsUsage}
-                    />
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {GOOGLE_VOICES.map((m) => (
-                        <VoiceOption
-                          key={m.id}
-                          model={m}
-                          selected={selectedVoice === m.id}
-                          onSelect={() => setSelectedVoice(m.id)}
-                          isPlaying={previewingId === m.id}
-                          onPlayToggle={setPreviewingId}
-                        />
-                      ))}
+                  )}
+                  </div>
+                  {freeProviderTab === "custom" ? (
+                    clonesLoaded && cloneMax === 0 ? (
+                      <div className="rounded-xl px-4 py-5 text-center"
+                        style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+                        <p className="text-sm font-medium" style={{ color: "var(--c-70)" }}>
+                          This feature is available to only pro users
+                        </p>
+                        <p className="text-xs mt-1.5" style={{ color: "var(--c-45)" }}>
+                          Upgrade to Pro to clone your own voice.
+                        </p>
+                        <button
+                          onClick={() => setShowUpgradeModal(true)}
+                          className="mt-3 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                          style={{
+                            background: "oklch(0.72 0.25 285 / 0.15)",
+                            border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                            color: "oklch(0.88 0.12 285)",
+                          }}
+                        >Upgrade to Pro</button>
+                      </div>
+                    ) : clonePanel
+                  ) : (
+                  <>
+                  {/* Search runs server-side against the whole catalog
+                      (name + description), not just the loaded page. */}
+                  <input
+                    type="search"
+                    value={freeSearch}
+                    onChange={(e) => setFreeSearch(e.target.value)}
+                    placeholder="Search free voices — name, accent, style…"
+                    aria-label="Search free voices"
+                    className="w-full px-2.5 py-1.5 rounded-lg text-xs outline-none transition-colors"
+                    style={{
+                      background: "var(--bg-input)",
+                      border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+                      color: "var(--c-70)",
+                    }}
+                  />
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] tabular-nums" style={{ color: "var(--c-45)" }}>
+                      {freeVoices.length > 0 && `${freeVoices.length} loaded`}
+                    </span>
+                    {!freeLive && (
+                      <span className="text-[10px]" style={{ color: "var(--c-45)" }}>
+                        Live catalog unreachable — showing the built-in set
+                      </span>
+                    )}
+                  </div>
+                  {freeVoicesLoading && freeVoices.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-10 gap-2">
+                      <span className="block w-6 h-6 border-2 rounded-full animate-spin"
+                        style={{ borderColor: "oklch(0.72 0.25 285 / 0.3)", borderTopColor: "oklch(0.72 0.25 285)" }} />
+                      <p className="text-xs" style={{ color: "var(--c-40)" }}>Loading voices…</p>
                     </div>
-                  </div>
+                  ) : freeVoices.length === 0 ? (
+                    <p className="text-xs text-center py-6" style={{ color: "var(--c-40)" }}>
+                      {(() => {
+                        const providerLabel = AI33_FREE_PROVIDERS.find((p) => p.id === freeProviderTab)?.label;
+                        if (freeSearchQuery.trim()) {
+                          return `No ${providerLabel ?? "free"} voices match “${freeSearchQuery.trim()}”`;
+                        }
+                        return providerLabel
+                          ? `No ${providerLabel} voices available right now`
+                          : "No free voices available right now";
+                      })()}
+                    </p>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {freeVoices.map((m) => (
+                          <VoiceOption
+                            key={m.id}
+                            model={m}
+                            selected={selectedVoice === m.id}
+                            onSelect={() => setSelectedVoice(m.id)}
+                            isPlaying={previewingId === m.id}
+                            onPlayToggle={setPreviewingId}
+                          />
+                        ))}
+                      </div>
+                      {freeHasMore && (
+                        <button
+                          onClick={() => setFreePage((p) => p + 1)}
+                          disabled={freeVoicesLoading}
+                          className="w-full px-3 py-2 rounded-lg text-xs font-medium transition-all disabled:opacity-50"
+                          style={{
+                            background: "var(--bg-input)",
+                            border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+                            color: "oklch(0.88 0.12 285)",
+                          }}
+                        >
+                          {freeVoicesLoading ? "Loading…" : "Load more voices"}
+                        </button>
+                      )}
+                    </>
+                  )}
+                  </>
+                  )}
+                </div>
                 )}
               </div>
               )
@@ -1220,7 +1819,7 @@ export default function VoiceoverPage({ params }: PageProps) {
           {project === undefined ? null : (
           <>
           {/* Bulk action panel */}
-          <div ref={bulkPanelRef} className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", marginTop: "10px" }}>
+          <div ref={bulkPanelRef} className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
             {/* Selected-voice banner — sits above the count/action row
                 so the user always sees which voice the next batch will
                 use, right next to the beats list (the most relevant
@@ -1230,8 +1829,11 @@ export default function VoiceoverPage({ params }: PageProps) {
             {(() => {
               // Resolve the name from the ElevenLabs catalog OR the free
               // Google catalog so a selected free voice shows its name too.
+              // freeVoices (the live ai33 page currently loaded) comes
+              // before the static AI33_VOICES — most live ai33 voices
+              // aren't in the static list at all.
               const model = selectedVoice
-                ? (ttsModels?.find((m) => m.id === selectedVoice) ?? GOOGLE_VOICES.find((m) => m.id === selectedVoice) ?? QWEN_VOICES.find((m) => m.id === selectedVoice))
+                ? (ttsModels?.find((m) => m.id === selectedVoice) ?? freeVoices.find((m) => m.id === selectedVoice) ?? resolvedFreeVoices[selectedVoice] ?? QWEN_VOICES.find((m) => m.id === selectedVoice) ?? AI33_VOICES.find((m) => m.id === selectedVoice))
                 : null;
               const tag = model?.tags?.[0];
               return (
@@ -1246,7 +1848,10 @@ export default function VoiceoverPage({ params }: PageProps) {
                     </span>
                     <span className="text-sm font-semibold truncate" style={{ color: "oklch(0.92 0.08 285)" }}>
                       {model?.name ?? (selectedVoice
-                        ? (ttsModels ? "Unknown voice" : "Loading…")
+                        // An ai33 id that hasn't resolved yet is a known
+                        // free voice, not an unknown one — the lookup is
+                        // one request behind, so don't cry wolf.
+                        ? (isAi33Voice(selectedVoice) ? "Free voice" : ttsModels ? "Unknown voice" : "Loading…")
                         : "None selected")}
                     </span>
                     {tag && (
@@ -1752,6 +2357,16 @@ export default function VoiceoverPage({ params }: PageProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {showUpgradeModal && (
+        <SubscriptionModal
+          email={userEmail}
+          defaultPlan="pro"
+          hideTryDemo
+          onClose={() => setShowUpgradeModal(false)}
+          onSuccess={() => setShowUpgradeModal(false)}
+        />
       )}
     </div>
   );

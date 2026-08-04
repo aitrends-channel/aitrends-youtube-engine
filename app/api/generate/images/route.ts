@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { generateImage } from "@/lib/kie/images";
+import { withPromptLengthRetry } from "@/lib/kie/promptLength";
+import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
@@ -7,6 +9,7 @@ import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import { logProjectCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
+import { requireStorageHeadroom } from "@/lib/storage-quota";
 
 export const maxDuration = 60;
 
@@ -24,6 +27,8 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
   const expired = requireActiveSubscription(user);
   if (expired) return expired;
+  const noRoom = await requireStorageHeadroom(user);
+  if (noRoom) return noRoom;
 
   try {
     const { projectId, beats, modelId, aspectRatio = "16:9", resolution, clearFirst = false } = await req.json() as {
@@ -39,6 +44,12 @@ export async function POST(req: Request) {
       await supabase.from("project_beats").update({ image_url: null, image_status: null }).eq("project_id", projectId);
       await supabase.from("projects").update({ images_progress: 0 }).eq("id", projectId).eq("user_id", user.id);
     }
+
+    // Character-consistency text (per-project override, else the user's
+    // account default). Resolved once per request and appended to each
+    // beat prompt only for the KIE call — the stored image_prompt stays
+    // clean.
+    const consistency = await resolveConsistency(user.id, projectId);
 
     const results: { beatNumber: number; url: string }[] = [];
     const failures: { beatNumber: number; error: string }[] = [];
@@ -58,7 +69,13 @@ export async function POST(req: Request) {
           // the user's actual experience (queue + generation + cdn
           // fetch), not just the raw model inference time.
           const t0 = Date.now();
-          const { url: imageUrl, creditsConsumed } = await generateImage(beat.imagePrompt, modelId, aspectRatio, resolution, user.id);
+          const { url: imageUrl, creditsConsumed } = await withPromptLengthRetry(
+            beat.imagePrompt,
+            (prompt) => generateImage(
+              applyConsistency(prompt, consistency.text, consistency.append),
+              modelId, aspectRatio, resolution, user.id,
+            ),
+          );
           const elapsedMs = Date.now() - t0;
           if (creditsConsumed) {
             void logProjectCost({

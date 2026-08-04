@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useEffect, useRef, use, type ReactNode } from "react";
+import { useState, useEffect, useRef, useCallback, use, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { StepCostCard } from "@/components/StepCostCard";
@@ -8,7 +8,11 @@ import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown, Download, Check } from "lucide-react";
+import { joinSegments } from "@/lib/text/joinSegments";
+import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
+import { planBulkMerge, findStubs } from "@/lib/text/mergePlan";
+import { MERGE_BEATS_HIDDEN } from "@/lib/feature-flags";
 import type { Beat } from "@/lib/types";
 
 // ── Sub-components ─────────────────────────────────────────────────────────
@@ -166,8 +170,26 @@ function EditablePrompt({
   );
 }
 
-function BeatCard({ beat, projectId, onSaved }: { beat: Beat; projectId: string; onSaved: () => Promise<unknown> | void }) {
+// A beat this short can't carry an image and a clip of its own — the
+// splitter occasionally emits one. Flagged so the user can spot it in a
+// long list and merge it away.
+const SHORT_BEAT_WORDS = 3;
+function wordCount(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLast, onMerge }: {
+  beat: Beat;
+  projectId: string;
+  onSaved: () => Promise<unknown> | void;
+  consistencyPreview?: string | null;
+  isFirst: boolean;
+  isLast: boolean;
+  onMerge: (beatNumber: number, direction: "up" | "down") => void;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const words = wordCount(beat.scriptSegment ?? "");
+  const isShort = words > 0 && words <= SHORT_BEAT_WORDS;
 
   return (
     <div className="rounded-xl overflow-hidden transition-all"
@@ -184,6 +206,12 @@ function BeatCard({ beat, projectId, onSaved }: { beat: Beat; projectId: string;
         <p className="text-sm flex-1 leading-relaxed line-clamp-2" style={{ color: "var(--c-60)" }}>
           {beat.scriptSegment}
         </p>
+        {isShort && !MERGE_BEATS_HIDDEN && (
+          <span className="shrink-0 mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
+            style={{ background: "oklch(0.6 0.15 75 / 0.15)", color: "oklch(0.72 0.15 75)", border: "1px solid oklch(0.6 0.15 75 / 0.3)" }}>
+            {words} word{words === 1 ? "" : "s"}
+          </span>
+        )}
         <span className="text-xs shrink-0 mt-1" style={{ color: "var(--c-35)" }}>
           {expanded ? "▲" : "▼"}
         </span>
@@ -205,6 +233,15 @@ function BeatCard({ beat, projectId, onSaved }: { beat: Beat; projectId: string;
               </p>
               <CopyButton text={beat.imagePrompt} />
             </div>
+            {consistencyPreview && (
+              <div className="mb-2 rounded-lg px-3 py-2"
+                style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px dashed oklch(0.72 0.25 285 / 0.3)" }}>
+                <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "oklch(0.72 0.25 285)" }}>
+                  + Prefix (added before the prompt)
+                </p>
+                <p className="text-xs leading-relaxed" style={{ color: "var(--c-60)" }}>{consistencyPreview}</p>
+              </div>
+            )}
             <EditablePrompt
               value={beat.imagePrompt}
               field="image"
@@ -251,6 +288,39 @@ function BeatCard({ beat, projectId, onSaved }: { beat: Beat; projectId: string;
             </div>
           ) : (
             <p className="text-xs italic" style={{ color: "var(--c-35)" }}>No video prompt yet — run Step 2 to generate.</p>
+          )}
+
+          {/* Merge — the surviving beat keeps its own prompts, so this is
+              deliberately a separate action from editing them. */}
+          {!(isFirst && isLast) && !MERGE_BEATS_HIDDEN && (
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-[10px] font-semibold uppercase tracking-wider shrink-0" style={{ color: "var(--c-35)" }}>
+                Merge
+              </span>
+              <span className="text-[9px] font-bold uppercase tracking-wide shrink-0" style={{ color: "oklch(0.65 0.24 25)" }}>
+                New
+              </span>
+              {!isFirst && (
+                <button
+                  onClick={() => onMerge(beat.beatNumber, "up")}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-all hover:opacity-80"
+                  style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
+                >
+                  <ChevronUp size={12} />
+                  into beat {beat.beatNumber - 1}
+                </button>
+              )}
+              {!isLast && (
+                <button
+                  onClick={() => onMerge(beat.beatNumber, "down")}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-all hover:opacity-80"
+                  style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
+                >
+                  <ChevronDown size={12} />
+                  with beat {beat.beatNumber + 1}
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -627,6 +697,352 @@ async function streamStep(
   return doneReceived;
 }
 
+// Per-project prompt prefix (stored in the character_consistency_*
+// columns, which predate the rename). A single statement placed in front
+// of every image prompt at generation time. NULL text on the project row
+// = inherit the account default (set in Settings); a value (including "")
+// overrides it for this project only. Nothing here is baked into the
+// stored beat prompts — it's applied only when a prompt is sent to the
+// image generator, so edits take effect on the next generate without
+// regenerating the prompts.
+//
+// Two controls: Save (writes the text and applies it) and Remove, which
+// appears only when a prefix exists and clears it from the database. The
+// old Add/Detach switch is gone — Save implies "apply".
+function PrefixPanel({
+  projectId,
+  project,
+  mutate,
+  defText,
+  onAccountSaved,
+}: {
+  projectId: string;
+  project: { character_consistency_text?: string | null; character_consistency_append?: boolean | null } | undefined;
+  mutate: () => void;
+  /** Account-level default, shown as a placeholder while text inherits. */
+  defText: string;
+  /** Re-reads the account default after an all-videos save, so the
+   *  placeholder and the per-beat preview reflect the new value. */
+  onAccountSaved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // null = inherit account default; string (incl. "") = per-project override.
+  const [text, setText] = useState<string | null>(null);
+  // true = append the text to prompts; false = detached (not applied).
+  const [append, setAppend] = useState(true);
+  const [hydrated, setHydrated] = useState(false);
+  // Where Save writes: this project's row, or the account default that every
+  // project inherits. Resets to "this" on each mount — promoting a prefix to
+  // every video should be a deliberate click, never a sticky default.
+  const [scope, setScope] = useState<"this" | "all">("this");
+  // Set by Edit on the account-prefix view, so the editor replaces the
+  // read-only block for the rest of this visit.
+  const [editing, setEditing] = useState(false);
+
+  // Seed the local editor from the project row once it lands.
+  useEffect(() => {
+    if (hydrated || !project) return;
+    setText((project.character_consistency_text as string | null | undefined) ?? null);
+    setAppend((project.character_consistency_append as boolean | null | undefined) ?? true);
+    setHydrated(true);
+  }, [project, hydrated]);
+
+  async function persist(nextText: string | null, nextAppend: boolean, successMsg: string) {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ character_consistency_text: nextText, character_consistency_append: nextAppend }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Save failed");
+      }
+      toast.success(successMsg);
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // "All videos" writes the text to the account default, then clears this
+  // project's override so it inherits it — otherwise the project row would
+  // keep shadowing the very default the user just set, and later edits to
+  // the account default wouldn't reach this project.
+  async function saveForAllVideos(next: string) {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ character_consistency_text: next }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Save failed");
+      }
+      const proj = await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ character_consistency_text: null, character_consistency_append: true }),
+      });
+      if (!proj.ok) {
+        const data = await proj.json().catch(() => ({}));
+        throw new Error(data.error ?? "Saved for all videos, but this project kept its own prefix");
+      }
+      setText(null);
+      setAppend(true);
+      // Back to the read-only view, now showing the saved text.
+      setEditing(false);
+      toast.success("Prefix saved for all videos.");
+      onAccountSaved();
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Clear the project's stored prefix AND switch off application, then
+  // persist both — so Remove takes the prefix out of the database rather
+  // than only detaching it locally until the next Save. append:false is
+  // what stops an inherited account default from taking over once the
+  // project's own text is null (applyConsistency returns the base prompt
+  // untouched when apply is false).
+  async function remove() {
+    setText(null);
+    setAppend(false);
+    await persist(null, false, "Prefix removed.");
+  }
+
+  // Clears the ACCOUNT default. Scoped wider than remove() above — this
+  // takes the prefix off every project that inherits it, which is why the
+  // button says so and the toast confirms the scope.
+  async function removeAccountPrefix() {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ character_consistency_text: "" }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Remove failed");
+      }
+      setText(null);
+      toast.success("Prefix removed from all videos.");
+      onAccountSaved();
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputStyle = { background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" } as const;
+
+  // Remove is offered only when a prefix actually exists, judged on the
+  // SAVED row rather than the editor draft — otherwise merely typing would
+  // surface a Remove button for a prefix that was never stored.
+  const savedText = (project?.character_consistency_text as string | null | undefined) ?? null;
+  const savedAppend = (project?.character_consistency_append as boolean | null | undefined) ?? true;
+  const hasPrefix = savedAppend && (savedText ?? defText).trim().length > 0;
+
+  // An account-scoped prefix this project is inheriting is shown as-is
+  // rather than as an empty editor: there's nothing to add, only something
+  // to change. The editor takes over once Edit is pressed.
+  const accountPrefix = defText.trim();
+  const showAccountPrefix = accountPrefix.length > 0 && savedText === null && !editing;
+
+  // The pill's colour tracks whether a prefix is applied; the label reflects
+  // whether there's one to change or one to add.
+  const badge = showAccountPrefix ? "Prefix" : "Add prefix";
+
+  // Nothing to save while the field holds no override (null = inheriting)
+  // or while the draft still matches what's stored. For "all videos" the
+  // comparison is against the account default instead, and an existing
+  // project override counts as work to do (it has to be cleared).
+  const draft = (text ?? "").trim();
+  const canSave = scope === "all"
+    ? draft.length > 0 && (draft !== defText.trim() || savedText !== null)
+    : text !== null && text !== savedText;
+
+  return (
+    <div className="rounded-xl overflow-hidden self-start w-full"
+      style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 text-left transition-colors"
+      >
+        {/* No title on the left — the badge is the only header label, so it
+            doubles as the affordance for opening the panel. */}
+        <span className="text-[10px] px-3 py-1.5 rounded-full"
+          style={append
+            ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.4)" }
+            : { background: "var(--bg-panel)", color: "var(--c-45)", border: "1px solid var(--bd-card)" }}>
+          {badge}
+        </span>
+        <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: "oklch(0.65 0.24 25)" }}>
+          New
+        </span>
+        <span className="ml-auto" style={{ color: "var(--c-45)" }}>
+          {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        </span>
+      </button>
+
+      {open && showAccountPrefix && (
+        <div className="px-3 pb-3 space-y-3" style={{ borderTop: "1px solid var(--bd-card)" }}>
+          <p className="text-[11px] leading-relaxed pt-3" style={{ color: "var(--c-45)" }}>
+            Leads every image prompt, on all videos.
+          </p>
+
+          <p className="px-3 py-2 rounded-lg text-xs leading-relaxed whitespace-pre-wrap"
+            style={{ background: "var(--bg-input)", border: "1px solid var(--bd-10)", color: "var(--c-90)" }}>
+            {accountPrefix}
+          </p>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => { setText(accountPrefix); setScope("all"); setEditing(true); }}
+              disabled={saving}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+            >
+              Edit
+            </button>
+            <button
+              onClick={removeAccountPrefix}
+              disabled={saving}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 disabled:opacity-50"
+              style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-card)" }}
+            >
+              {saving ? "Removing…" : "Remove"}
+            </button>
+            <span className="text-[10px]" style={{ color: "var(--c-42)" }}>
+              Remove takes it off every video.
+            </span>
+          </div>
+        </div>
+      )}
+
+      {open && !showAccountPrefix && (
+        <div className="px-3 pb-3 space-y-3" style={{ borderTop: "1px solid var(--bd-card)" }}>
+          <p className="text-[11px] leading-relaxed pt-3" style={{ color: "var(--c-45)" }}>
+            Leads every image prompt from the next generation on. Blank
+            uses your account default.
+          </p>
+
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-medium" style={{ color: "var(--c-50)" }}>Prefix text</label>
+            {/* Always editable. With the Add button gone there's no switch
+                to turn application back on, so disabling this while removed
+                would leave no route back to having a prefix — Save is that
+                route, and it re-applies. */}
+            <textarea
+              value={text ?? ""}
+              onChange={(e) => setText(e.target.value)}
+              rows={7}
+              placeholder={text === null && defText ? `Inheriting: ${defText}` : "Text placed in front of every image prompt…"}
+              className="w-full px-3 py-2 rounded-lg text-xs outline-none transition-all resize-y"
+              style={inputStyle}
+              onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
+              onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
+            />
+          </div>
+
+          {/* Scope switch. "All videos" promotes the text to the account
+              default, so it leads prompts on every project instead of just
+              this one. */}
+          <div className="flex items-center justify-center gap-2.5 py-0.5">
+            <span className="text-[11px] font-medium" style={{ color: "var(--c-45)" }}>For:</span>
+            <button
+              onClick={() => setScope("this")}
+              disabled={saving}
+              className="text-[11px] font-medium transition-colors disabled:opacity-50"
+              style={{ color: scope === "this" ? "oklch(0.88 0.12 285)" : "var(--c-45)" }}
+            >
+              This video
+            </button>
+            <button
+              onClick={() => setScope(scope === "this" ? "all" : "this")}
+              disabled={saving}
+              role="switch"
+              aria-checked={scope === "all"}
+              aria-label="Apply this prefix to all videos"
+              className="relative rounded-full transition-all shrink-0 disabled:opacity-50"
+              style={{
+                width: 34,
+                height: 18,
+                background: scope === "all" ? "oklch(0.72 0.25 285)" : "var(--bg-panel)",
+                border: "1px solid var(--bd-card)",
+              }}
+            >
+              <span
+                className="absolute rounded-full transition-all"
+                style={{
+                  width: 12,
+                  height: 12,
+                  top: 2,
+                  left: scope === "all" ? 18 : 3,
+                  background: scope === "all" ? "white" : "var(--c-45)",
+                }}
+              />
+            </button>
+            <button
+              onClick={() => setScope("all")}
+              disabled={saving}
+              className="text-[11px] font-medium transition-colors disabled:opacity-50"
+              style={{ color: scope === "all" ? "oklch(0.88 0.12 285)" : "var(--c-45)" }}
+            >
+              All videos
+            </button>
+          </div>
+
+          {scope === "all" && (
+            <p className="text-[11px] leading-relaxed" style={{ color: "oklch(0.72 0.25 285)" }}>
+              Saves as your account default, so it leads prompts on every
+              project. This project stops keeping its own copy and follows the
+              default from here on.
+            </p>
+          )}
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Saving always re-applies the prefix (append:true) — it's the
+                only way back after a Remove. */}
+            <button
+              onClick={() => scope === "all"
+                ? saveForAllVideos(draft)
+                : persist(text, true, "Prefix saved for this project.")}
+              disabled={saving || !canSave}
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            {hasPrefix && (
+              <button
+                onClick={remove}
+                disabled={saving}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 disabled:opacity-50"
+                style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-card)" }}
+              >
+                {saving ? "Removing…" : "Remove"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ───────────────────────────────────────────────────────────────────
 
 type Tab = "beats" | "video";
@@ -649,6 +1065,25 @@ export default function PromptsPage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
   const { project, mutate } = useProject(projectId);
+
+  // Account-level character-consistency default, fetched once. Feeds both
+  // the per-project panel (placeholder) and the per-beat "will be
+  // appended" preview so the user can see what gets added at generation.
+  const [accountConsistencyText, setAccountConsistencyText] = useState("");
+  const refreshAccountConsistency = useCallback(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((data) => setAccountConsistencyText((data?.character_consistency_text as string) ?? ""))
+      .catch(() => {});
+  }, []);
+  useEffect(() => { refreshAccountConsistency(); }, [refreshAccountConsistency]);
+  // Effective text that will be appended to every image prompt for this
+  // project: per-project override if set, else the account default —
+  // unless the project has detached it. NULL = nothing appended.
+  const projConsistencyText = project?.character_consistency_text as string | null | undefined;
+  const projConsistencyAppend = (project?.character_consistency_append as boolean | null | undefined) ?? true;
+  const effectiveConsistency = (projConsistencyText ?? accountConsistencyText ?? "").trim();
+  const consistencyPreview = projConsistencyAppend && effectiveConsistency ? effectiveConsistency : null;
 
   // Bump current_state to 13 the first time the user lands here so the
   // Visuals phase ticks done in the WizardNav. The visuals phase's
@@ -690,6 +1125,12 @@ export default function PromptsPage({ params }: PageProps) {
   const [imageStopState, setImageStopState] = useState<{ stoppedAt: number; snapshot: number } | null>(null);
   const [videoStopState, setVideoStopState] = useState<{ stoppedAt: number; snapshot: number } | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("beats");
+  const [exportingDocx, setExportingDocx] = useState(false);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  // Which prompt kinds go into the export. Both on = the whole set; the
+  // format buttons are disabled while neither is ticked.
+  const [exportImage, setExportImage] = useState(true);
+  const [exportVideo, setExportVideo] = useState(true);
   const [navigating, setNavigating] = useState(false);
   // Image prompt style — General is the current behaviour; Cinematic
   // adds filmic cues on top of the visual profile at generation time.
@@ -724,6 +1165,42 @@ export default function PromptsPage({ params }: PageProps) {
       mutate();
     } catch { /* best-effort — the next generate click still sends the current selection */ }
   }
+
+  // Download every beat's image + video prompt. Both formats hit the same
+  // scope:"prompts" export, so the file holds only the prompts — not the
+  // ideas/script/thumbnail sections the Generate step's full export has.
+  async function exportPrompts(format: "pdf" | "docx") {
+    setExportMenuOpen(false);
+    setExportingDocx(true);
+    try {
+      const res = await fetch(`/api/export/${format}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          scope: "prompts",
+          parts: { image: exportImage, video: exportVideo },
+        }),
+      });
+      if (!res.ok) throw new Error((await res.text().catch(() => "")) || "Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      // Mirrors the server's filenameBase — a blob download takes its name
+      // from here, not from Content-Disposition.
+      const suffix = exportImage && exportVideo
+        ? "prompts"
+        : exportImage ? "image_prompts" : "video_prompts";
+      a.download = `${(project?.channel_name ?? "export").replace(/\s+/g, "_")}_${suffix}.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Export failed");
+    } finally {
+      setExportingDocx(false);
+    }
+  }
   // Per-step AbortControllers so the user's Stop click can kill the
   // local SSE fetch alongside the server-side run-id PATCH. Without
   // the abort the fetch keeps the connection open until the server
@@ -738,6 +1215,13 @@ export default function PromptsPage({ params }: PageProps) {
   const [clearing, setClearing] = useState(false);
   const [regenTarget, setRegenTarget] = useState<"image" | "video" | null>(null);
   const [regenerating, setRegenerating] = useState(false);
+  const [mergeTarget, setMergeTarget] = useState<{ beatNumber: number; direction: "up" | "down" } | null>(null);
+  const [mergeDraft, setMergeDraft] = useState("");
+  const [merging, setMerging] = useState(false);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkMinWords, setBulkMinWords] = useState(SHORT_BEAT_WORDS);
+  const [bulkDirection, setBulkDirection] = useState<"up" | "down" | "auto">("up");
+  const [bulkRunning, setBulkRunning] = useState(false);
 
   const beats: Beat[] = project?.beats ?? [];
   const videoBeats = beats.filter((b) => b.videoPrompt);
@@ -1276,6 +1760,55 @@ export default function PromptsPage({ params }: PageProps) {
     }
   }
 
+  async function confirmMerge() {
+    if (!mergeTarget) return;
+    setMerging(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/beats/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...mergeTarget, segment: mergeDraft }),
+      });
+      const data = await res.json().catch(() => ({})) as { error?: string; keptBeatNumber?: number; remainingBeats?: number };
+      if (!res.ok) throw new Error(data.error ?? "Merge failed");
+      await mutate();
+      toast.success(`Merged into beat ${data.keptBeatNumber}. Reread its prompts.`);
+      setMergeTarget(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Merge failed");
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  // Previewed with the same planner the route runs, so the count the user
+  // approves is the count that happens. Auto can't be previewed exactly — the
+  // side is Claude's call server-side — so it previews as "up" for the count
+  // (the set of stubs is the same either way) and the dialog says so.
+  const bulkPlanBeats = beats.map((b) => ({ beatNumber: b.beatNumber, scriptSegment: b.scriptSegment ?? "" }));
+  const bulkPlan = planBulkMerge(bulkPlanBeats, bulkMinWords, bulkDirection === "auto" ? "up" : bulkDirection);
+  const bulkStubs = bulkDirection === "auto" ? findStubs(bulkPlanBeats, bulkMinWords) : [];
+
+  async function runBulkMerge() {
+    setBulkRunning(true);
+    try {
+      const res = await fetch(`/api/projects/${projectId}/beats/merge/bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ minWords: bulkMinWords, direction: bulkDirection }),
+      });
+      const data = await res.json().catch(() => ({})) as { error?: string; merged?: number; remainingBeats?: number };
+      if (!res.ok) throw new Error(data.error ?? "Bulk merge failed");
+      await mutate();
+      toast.success(`Merged ${data.merged} beat${data.merged === 1 ? "" : "s"} away. ${data.remainingBeats} left.`);
+      setBulkOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Bulk merge failed");
+    } finally {
+      setBulkRunning(false);
+    }
+  }
+
   async function runVideoStep() {
     // Re-check server state — image beats may have been cleared since
     // the page rendered. Pull fresh data and read the latest from the
@@ -1487,6 +2020,7 @@ export default function PromptsPage({ params }: PageProps) {
               );
             })}
           </div>
+          <PrefixPanel projectId={projectId} project={project} mutate={mutate} defText={accountConsistencyText} onAccountSaved={refreshAccountConsistency} />
           {hasImageBeats
             && !anyRunning
             && !remoteRunInProgress
@@ -1535,7 +2069,8 @@ export default function PromptsPage({ params }: PageProps) {
           <div className="pb-24">
           <div className="rounded-2xl overflow-hidden"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-            <div className="mx-5 sm:mx-8 mt-4 rounded-xl p-1 flex gap-1 self-start w-fit"
+            <div className="mx-5 sm:mx-8 mt-4 flex items-center justify-between gap-3 flex-wrap">
+            <div className="rounded-xl p-1 flex gap-1 w-fit"
               style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
               {tabs.map((tab) => {
                 const active = activeTab === tab.id;
@@ -1568,10 +2103,104 @@ export default function PromptsPage({ params }: PageProps) {
                 );
               })}
             </div>
+            {beats.length > 1 && !MERGE_BEATS_HIDDEN && (
+              <button
+                onClick={() => setBulkOpen(true)}
+                disabled={anyRunning || remoteRunInProgress}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all hover:opacity-80 disabled:opacity-40 mr-auto"
+                style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
+              >
+                Merge beats
+                <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: "oklch(0.65 0.24 25)" }}>
+                  New
+                </span>
+              </button>
+            )}
+            {/* Export dropdown. The backdrop sits behind the menu so a click
+                anywhere else dismisses it without a document listener. */}
+            <div className="relative">
+              <button
+                onClick={() => setExportMenuOpen((v) => !v)}
+                disabled={exportingDocx}
+                title="Download the beat prompts as PDF or Word"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 disabled:opacity-50"
+                style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)", color: "var(--c-70)" }}
+              >
+                <Download size={13} />
+                {exportingDocx ? "Exporting…" : "Export"}
+                <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: "oklch(0.65 0.24 25)" }}>
+                  New
+                </span>
+                <ChevronDown size={13} />
+              </button>
+              {exportMenuOpen && !exportingDocx && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setExportMenuOpen(false)} />
+                  <div className="absolute right-0 mt-1 z-20 rounded-lg overflow-hidden min-w-[11rem]"
+                    style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", boxShadow: "0 8px 24px oklch(0 0 0 / 0.35)" }}>
+                    {/* What to include. Ticking both gives the full set. */}
+                    <div className="px-1 py-1">
+                      {([
+                        { on: exportImage, set: setExportImage, label: "Image prompts" },
+                        { on: exportVideo, set: setExportVideo, label: "Video prompts" },
+                      ]).map((opt) => (
+                        <button
+                          key={opt.label}
+                          onClick={() => opt.set((v) => !v)}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs font-medium transition-colors hover:opacity-80"
+                          style={{ color: "var(--c-70)" }}
+                        >
+                          <span className="w-3.5 h-3.5 rounded flex items-center justify-center shrink-0"
+                            style={opt.on
+                              ? { background: "oklch(0.72 0.25 285)", border: "1px solid white" }
+                              : { background: "transparent", border: "1px solid white" }}>
+                            {opt.on && <Check size={10} strokeWidth={3} color="white" />}
+                          </span>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ borderTop: "1px solid var(--bd-card)" }}>
+                      {([
+                        { format: "pdf" as const, label: "PDF" },
+                        { format: "docx" as const, label: "Word" },
+                      ]).map((opt) => (
+                        <button
+                          key={opt.format}
+                          onClick={() => exportPrompts(opt.format)}
+                          disabled={!exportImage && !exportVideo}
+                          title={!exportImage && !exportVideo ? "Tick at least one prompt kind" : undefined}
+                          className="w-full text-left px-3 py-2 text-xs font-medium transition-colors hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed"
+                          style={{ color: "var(--c-70)" }}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            </div>
 
             <div className="px-5 sm:px-8 pt-6 pb-6 space-y-3">
-              {activeTab === "beats" && beats.map((beat) => (
-                <BeatCard key={beat.beatNumber} beat={beat} projectId={projectId} onSaved={mutate} />
+              {activeTab === "beats" && beats.map((beat, i) => (
+                <BeatCard
+                  key={beat.beatNumber}
+                  beat={beat}
+                  projectId={projectId}
+                  onSaved={mutate}
+                  consistencyPreview={consistencyPreview}
+                  isFirst={i === 0}
+                  isLast={i === beats.length - 1}
+                  onMerge={(beatNumber, direction) => {
+                    const keep = direction === "up" ? beatNumber - 1 : beatNumber;
+                    const a = beats.find((b) => b.beatNumber === keep)?.scriptSegment ?? "";
+                    const b = beats.find((x) => x.beatNumber === keep + 1)?.scriptSegment ?? "";
+                    setMergeDraft(joinSegments(a, dedupeOverlap(b, a)));
+                    setMergeTarget({ beatNumber, direction });
+                  }}
+                />
               ))}
               {activeTab === "video" && (
                 videoBeats.length > 0 ? videoBeats.map((beat) => (
@@ -1749,6 +2378,139 @@ export default function PromptsPage({ params }: PageProps) {
                   Clearing…
                 </span>
               ) : "Clear"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkOpen} onOpenChange={(open) => { if (!open && !bulkRunning) setBulkOpen(false); }}>
+        <DialogContent className="sm:max-w-2xl" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Merge beats</DialogTitle>
+            <DialogDescription>
+              Folds stub beats into a neighbour. Fewer beats cost less but match the narration less closely. Absorbed prompts and media are deleted for good. It&apos;s all your decision!
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <label className="flex items-center justify-between gap-3 text-sm text-zinc-700">
+              <span>Merge beats under</span>
+              <span className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={bulkMinWords}
+                  disabled={bulkRunning}
+                  onChange={(e) => setBulkMinWords(Math.min(50, Math.max(1, Number(e.target.value) || 1)))}
+                  className="w-20 rounded-lg px-2 py-1.5 text-sm bg-zinc-50 text-zinc-900 ring-1 ring-zinc-300 focus:ring-2 focus:ring-zinc-400 outline-none disabled:opacity-60"
+                />
+                <span className="text-zinc-500">words</span>
+              </span>
+            </label>
+
+            <label className="flex items-center justify-between gap-3 text-sm text-zinc-700">
+              <span>Fold into</span>
+              <select
+                value={bulkDirection}
+                disabled={bulkRunning}
+                onChange={(e) => setBulkDirection(e.target.value as "up" | "down" | "auto")}
+                className="rounded-lg px-2 py-1.5 text-sm bg-zinc-50 text-zinc-900 ring-1 ring-zinc-300 focus:ring-2 focus:ring-zinc-400 outline-none disabled:opacity-60"
+              >
+                <option value="up">the beat before</option>
+                <option value="down">the beat after</option>
+                <option value="auto">Auto (AI decides)</option>
+              </select>
+            </label>
+
+            <div className="rounded-lg px-3 py-2.5 text-sm bg-zinc-100 text-zinc-700 ring-1 ring-zinc-200">
+              {bulkPlan.steps.length === 0
+                ? `No beats under ${bulkMinWords} word${bulkMinWords === 1 ? "" : "s"}.`
+                : bulkDirection === "auto"
+                  ? `${bulkStubs.length} stub${bulkStubs.length === 1 ? "" : "s"}, each folded into the side the AI picks. ${beats.length} becomes ${bulkPlan.finalCount}.`
+                  : `${bulkPlan.steps.length} beat${bulkPlan.steps.length === 1 ? "" : "s"} merged away. ${beats.length} becomes ${bulkPlan.finalCount}.`}
+            </div>
+
+            {(bulkDirection === "auto" ? bulkStubs.map((s) => s.beatNumber) : bulkPlan.absorbedOriginals).length > 0 && (
+              <div className="max-h-40 overflow-y-auto rounded-lg ring-1 ring-zinc-200 divide-y divide-zinc-200">
+                {(bulkDirection === "auto" ? bulkStubs.map((s) => s.beatNumber) : bulkPlan.absorbedOriginals).map((n) => (
+                  <div key={n} className="flex gap-2 px-3 py-1.5 text-xs text-zinc-600">
+                    <span className="font-semibold text-zinc-400 shrink-0">{n}</span>
+                    <span className="truncate">{beats.find((b) => b.beatNumber === n)?.scriptSegment || "(empty)"}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <button
+              onClick={() => setBulkOpen(false)}
+              disabled={bulkRunning}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40 bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={runBulkMerge}
+              disabled={bulkRunning || bulkPlan.steps.length === 0}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+            >
+              {bulkRunning ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  Merging…
+                </span>
+              ) : `Merge ${bulkPlan.steps.length || ""}`.trim()}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!mergeTarget} onOpenChange={(open) => { if (!open && !merging) setMergeTarget(null); }}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>
+              {mergeTarget && (mergeTarget.direction === "up"
+                ? `Merge beat ${mergeTarget.beatNumber} into ${mergeTarget.beatNumber - 1}?`
+                : `Merge beat ${mergeTarget.beatNumber + 1} into ${mergeTarget.beatNumber}?`)}
+            </DialogTitle>
+            <DialogDescription>
+              {mergeTarget && (() => {
+                const keep = mergeTarget.direction === "up" ? mergeTarget.beatNumber - 1 : mergeTarget.beatNumber;
+                return `Beat ${keep} keeps its prompts. Beat ${keep + 1}'s are deleted. Can't be undone.`;
+              })()}
+            </DialogDescription>
+          </DialogHeader>
+          <textarea
+            value={mergeDraft}
+            onChange={(e) => setMergeDraft(e.target.value)}
+            disabled={merging}
+            rows={4}
+            className="w-full rounded-lg px-3 py-2 text-sm leading-relaxed bg-zinc-50 text-zinc-900 ring-1 ring-zinc-300 focus:ring-2 focus:ring-zinc-400 outline-none resize-y disabled:opacity-60"
+          />
+          <DialogFooter>
+            <button
+              onClick={() => setMergeTarget(null)}
+              disabled={merging}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmMerge}
+              disabled={merging || !mergeDraft.trim()}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+            >
+              {merging ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  Merging…
+                </span>
+              ) : "Merge"}
             </button>
           </DialogFooter>
         </DialogContent>

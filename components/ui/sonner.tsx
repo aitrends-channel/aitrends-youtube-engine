@@ -10,6 +10,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme={theme as ToasterProps["theme"]}
+      // Without this, sonner paints every toast with --normal-bg and only the
+      // icon differs — a save and a failure looked identical at a glance.
+      richColors
       className="toaster group"
       icons={{
         success: (

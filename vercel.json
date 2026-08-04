@@ -23,6 +23,14 @@
     {
       "path": "/api/cron/cleanup-logs",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/one-click/tick",
+      "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/storage-usage",
+      "schedule": "35 */6 * * *"
     }
   ]
 }

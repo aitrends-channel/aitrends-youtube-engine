@@ -233,7 +233,7 @@ export default function DemoDashboardPage() {
                       onClick={() => { setShowProfileMenu(false); setShowSubModal(true); }}
                     >
                       <Settings size={15} />
-                      <span>Setup</span>
+                      <span>Config</span>
                     </button>
                     <Link
                       href="/account"

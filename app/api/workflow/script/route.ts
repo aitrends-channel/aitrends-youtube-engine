@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
-import { getAnthropicClient, MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { getAnthropicClient, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { resolveDefaultModel } from "@/lib/claude/models";
 import { buildScriptPrompt, getEffectiveScriptTargetWordCount } from "@/lib/claude/prompts";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { stripCaptionCues } from "@/lib/youtube/supadata";
@@ -135,7 +136,8 @@ export async function POST(req: Request) {
       topic: string;
       mode?: "fresh" | "continue";
     };
-    const model = MODEL;
+    const modelParams = await resolveDefaultModel();
+    const model = modelParams.model;
 
     if (!analysis || !topic) {
       return new Response("Missing analysis or topic", { status: 400 });
@@ -167,7 +169,7 @@ export async function POST(req: Request) {
     // a >45min script. Sub-threshold channels pass through unchanged.
     const target = getEffectiveScriptTargetWordCount(analysis);
     const initialPrompt = buildScriptPrompt(analysis, topic);
-    const activeModel = MODEL;
+    const activeModel = model;
 
     // Token budget. Sub-threshold channels stay on the full Opus ceiling
     // (32K) so a script that wants to run a touch long isn't artificially
@@ -343,7 +345,7 @@ export async function POST(req: Request) {
             // 720s soft-deadline so the route's own deadline path still
             // gets to save a partial.
             const stream = anthropic.messages.stream({
-              model: model,
+              ...modelParams,
               max_tokens: maxTokens,
               system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
               messages: opusMessages,

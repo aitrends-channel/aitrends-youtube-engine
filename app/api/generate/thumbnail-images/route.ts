@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateImage } from "@/lib/kie/images";
+import { withPromptLengthRetry } from "@/lib/kie/promptLength";
 import { deleteObject, r2KeyFromUrl, uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
@@ -7,6 +8,7 @@ import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import { logProjectCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
+import { requireStorageHeadroom } from "@/lib/storage-quota";
 
 export const maxDuration = 800;
 
@@ -24,6 +26,8 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
   const expired = requireActiveSubscription(user);
   if (expired) return expired;
+  const noRoom = await requireStorageHeadroom(user);
+  if (noRoom) return noRoom;
 
   try {
     const { projectId, thumbnails, modelId, aspectRatio = "16:9", resolution, clearFirst = false } = await req.json() as {
@@ -89,8 +93,16 @@ export async function POST(req: Request) {
         batch.map(async (thumb) => {
           await supabase.from("project_thumbnails").update({ image_status: "generating" }).eq("project_id", projectId).eq("position", thumb.position);
 
-          const finalPrompt = augmentPromptWithOverlay(thumb.stylePrompt, textOverlayByPosition.get(thumb.position));
-          const { url: imageUrl, creditsConsumed } = await generateImage(finalPrompt, modelId, aspectRatio, resolution, user.id);
+          // Overlay re-appended per attempt so shortening never costs us the
+          // literal text the thumbnail is meant to render.
+          const overlay = textOverlayByPosition.get(thumb.position);
+          const { url: imageUrl, creditsConsumed } = await withPromptLengthRetry(
+            thumb.stylePrompt,
+            (stylePrompt) => generateImage(
+              augmentPromptWithOverlay(stylePrompt, overlay),
+              modelId, aspectRatio, resolution, user.id,
+            ),
+          );
           if (creditsConsumed) {
             void logProjectCost({
               projectId,

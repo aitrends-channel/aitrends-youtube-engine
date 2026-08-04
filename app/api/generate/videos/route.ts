@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
+import { requireStorageHeadroom } from "@/lib/storage-quota";
 
 export const maxDuration = 30;
 
@@ -17,6 +18,8 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
   const expired = requireActiveSubscription(user);
   if (expired) return expired;
+  const noRoom = await requireStorageHeadroom(user);
+  if (noRoom) return noRoom;
 
   try {
     const { projectId, beats, modelId, duration, aspectRatio = "16:9", resolution } = await req.json() as {

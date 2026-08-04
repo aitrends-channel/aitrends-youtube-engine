@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "crypto";
 import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
-import { isGoogleVoice } from "@/lib/google/tts";
 import { isQwenVoice } from "@/lib/replicate/tts";
+import { isAi33Voice } from "@/lib/ai33/tts";
+import { canUseVoice } from "@/lib/cloned-voices";
 import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
@@ -10,6 +11,7 @@ import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import { logProjectCost } from "@/lib/costs";
 import { incrementFreeUsage } from "@/lib/freeUsage";
 import type { User } from "@supabase/supabase-js";
+import { requireStorageHeadroom } from "@/lib/storage-quota";
 
 export const maxDuration = 800;
 
@@ -82,6 +84,8 @@ function selectStaleBeats(beats: BeatRow[], voiceId: string): BeatRow[] {
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const noRoom = await requireStorageHeadroom(user);
+  if (noRoom) return noRoom;
 
   const body = await req.json().catch(() => ({})) as {
     projectId?: string;
@@ -102,6 +106,14 @@ export async function POST(req: Request) {
   }
   const projectId = body.projectId;
   const voiceId = body.voiceId;
+  // Cloned voices sit on Heclus's shared provider account — an id alone
+  // can't be treated as permission to use one.
+  if (!(await canUseVoice(user.id, voiceId))) {
+    return new Response(JSON.stringify({ error: "That voice isn't available on your account." }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
   const explicitBeats = body.beatNumbers && body.beatNumbers.length > 0 ? new Set(body.beatNumbers) : null;
   const skipRunClaim = body.skipRunClaim === true;
 
@@ -297,10 +309,7 @@ export async function POST(req: Request) {
               const { audio: audioBuf, charsConsumed } = await generateTTS(ttsText, voiceId, undefined, undefined, user.id);
               // Free Google voices run on the user's own BYO quota — no
               // ElevenLabs spend, so don't record a cost-ledger charge.
-              // Instead count the chars into free_usage so the voiceover
-              // Free tab can show the monthly usage bar (mirrors how the
-              // free image path increments its own daily counter).
-              if (charsConsumed && !isGoogleVoice(voiceId) && !isQwenVoice(voiceId)) {
+              if (charsConsumed && !isQwenVoice(voiceId) && !isAi33Voice(voiceId)) {
                 void logProjectCost({
                   projectId,
                   userId: user.id,
@@ -310,11 +319,12 @@ export async function POST(req: Request) {
                   units: charsConsumed,
                   unitKind: "elevenlabs_chars",
                 });
-              } else if (charsConsumed && isGoogleVoice(voiceId)) {
-                void incrementFreeUsage(user.id, "tts_chars", charsConsumed);
               } else if (charsConsumed && isQwenVoice(voiceId)) {
                 // Heclus-paid perk — counted against the per-user monthly cap.
                 void incrementFreeUsage(user.id, "qwen_tts_chars", charsConsumed);
+              } else if (charsConsumed && isAi33Voice(voiceId)) {
+                // Heclus-paid perk — counted against the per-user monthly cap.
+                void incrementFreeUsage(user.id, "ai33_tts_chars", charsConsumed);
               }
               // Hash the RAW segment (matches what selectStaleBeats
               // checks). Hashing the dedup'd text would cause every

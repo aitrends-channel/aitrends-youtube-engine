@@ -3,6 +3,7 @@ import { createPresignedUpload, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
+import { requireStorageHeadroom } from "@/lib/storage-quota";
 
 // Returns a short-lived presigned PUT URL so the browser can upload
 // directly to R2, bypassing Vercel's ~4.5 MB body limit on Route
@@ -11,6 +12,8 @@ import type { User } from "@supabase/supabase-js";
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+  const noRoom = await requireStorageHeadroom(user);
+  if (noRoom) return noRoom;
 
   const body = await req.json().catch(() => ({})) as {
     projectId?: string;
@@ -24,8 +27,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "projectId, filename and contentType are required" }, { status: 400 });
   }
 
-  const { data: project } = await supabase.from("projects").select("id").eq("id", projectId).eq("user_id", user.id).single();
-  if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  // "one-click" is a settings-scope sentinel: assets uploaded from the
+  // 1Click config page (bgm/logo) belong to the user's preset, not to
+  // any project, so they live under <user>/one-click/… and skip the
+  // project-ownership check.
+  if (projectId !== "one-click") {
+    const { data: project } = await supabase.from("projects").select("id").eq("id", projectId).eq("user_id", user.id).single();
+    if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  }
 
   const ext = filename.split(".").pop() ?? "bin";
   const key = `${userFolderFor(user)}/${projectId}/${folder ?? "uploads"}/${Date.now()}.${ext}`;

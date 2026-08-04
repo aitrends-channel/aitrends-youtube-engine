@@ -51,7 +51,13 @@ interface WizardNavProps {
   highestState?: number;
   channelName?: string;
   activeOverridePath?: string;
+  /** The main video is done — its final MP4 assembled. Drives the 100%
+   *  progress bar and the Assemble step's green tick. Independent of
+   *  thumbnails (an extra step that doesn't affect progress). */
   progressComplete?: boolean;
+  /** All thumbnail images generated. The ONLY thing that greens the
+   *  Thumbnails step — an assembled video alone doesn't. */
+  thumbnailsComplete?: boolean;
   topRightExtra?: React.ReactNode;
   /** Hide the step navigation (desktop sidebar, mobile step-dots
    *  row, mobile drawer) but keep the logo + Back/Cost/Theme/Profile
@@ -61,7 +67,7 @@ interface WizardNavProps {
   hideSteps?: boolean;
 }
 
-export function WizardNav({ projectId, currentState, highestState, channelName, activeOverridePath, progressComplete, topRightExtra, hideSteps }: WizardNavProps) {
+export function WizardNav({ projectId, currentState, highestState, channelName, activeOverridePath, progressComplete, thumbnailsComplete, topRightExtra, hideSteps }: WizardNavProps) {
   const reached = highestState ?? currentState;
   const router = useRouter();
   const pathname = usePathname();
@@ -111,13 +117,21 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
   const effectivePath = activeOverridePath ? `/${activeOverridePath}` : pathname;
   const currentPathRank = Object.entries(PATH_RANK).find(([p]) => effectivePath.endsWith(`/${p}`))?.[1] ?? -1;
 
+  // Completion, independent of which page is open — so a step can be BOTH
+  // the current page (active border) AND done (green tick). Assemble is
+  // done once the final MP4 exists; thumbnails ONLY once every thumbnail
+  // image is generated; every other step once state has moved past it.
+  function phaseDone(phase: (typeof PHASES)[0]) {
+    if (phase.id === "thumbnails") return !!thumbnailsComplete;
+    if (phase.id === "assemble") return !!progressComplete || reached > Math.max(...phase.states);
+    return reached > Math.max(...phase.states);
+  }
+
   function getPhaseStatus(phase: (typeof PHASES)[0]) {
-    if (progressComplete && phase.id === "thumbnails") return "done";
+    // The current page always reads "active" (drives the highlight); the
+    // green tick is layered on separately via phaseDone in the render.
     if (effectivePath.endsWith(`/${phase.path}`)) return "active";
-    // Thumbnails is a side-branch — only mark done via progressComplete above
-    if (phase.id === "thumbnails") return "locked";
-    // A phase is visually "done" only when project state has moved past it
-    if (reached > Math.max(...phase.states)) return "done";
+    if (phaseDone(phase)) return "done";
     return "locked";
   }
 
@@ -186,13 +200,40 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
     setDrawerHighlightPhase(-1);
   }
 
+  // Progress bar. Rendered INSIDE the step list, directly above the
+  // Thumbnails step — the main video's progress ends at Assemble, and
+  // thumbnails are an extra step that sits below the bar.
+  const progressBar = (
+    <div className="px-1 py-3 my-1 border-t border-b" style={{ borderColor: "var(--bd-6)" }}>
+      <div className="flex justify-between text-xs mb-2" style={{ color: progressPct === 100 ? "oklch(0.7 0.15 145)" : "var(--c-45)" }}>
+        <span>Progress</span>
+        <span>{progressPct}%</span>
+      </div>
+      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-progress)" }}>
+        <div
+          className="h-full rounded-full transition-all duration-500"
+          style={{
+            width: `${progressPct}%`,
+            background: progressPct === 100
+              ? "linear-gradient(90deg, oklch(0.55 0.15 145), oklch(0.65 0.18 155))"
+              : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+            boxShadow: "0 0 8px oklch(0.72 0.25 285 / 0.5)",
+          }}
+        />
+      </div>
+    </div>
+  );
+
   const stepList = (
     <nav className="flex-1 px-3 py-5 space-y-1 overflow-y-auto">
       {PHASES.map((phase, i) => {
         const status = getPhaseStatus(phase);
         const navigable = isNavigable(phase);
         const isActive = status === "active";
-        const isDone = status === "done";
+        const isDone = phaseDone(phase);
+        // Current page that's also complete (e.g. Assemble after the video
+        // assembled) → keep the active highlight but in green, plus the tick.
+        const isActiveDone = isActive && isDone;
         const isHighlighted = i === drawerHighlightPhase && drawerHighlightPhase >= 0;
         const href = `/projects/${projectId}/${phase.path}`;
         const isPending = pendingHref === href;
@@ -200,6 +241,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
 
         return (
           <div key={phase.id}>
+            {phase.id === "thumbnails" && progressBar}
             <button
               onClick={() => navigable && navigate(href)}
               // Belt-and-suspenders prefetch: the mount-time useEffect
@@ -218,7 +260,10 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                 isPending && "opacity-60",
               )}
               style={{
-                ...(isActive ? {
+                ...(isActiveDone ? {
+                  background: "oklch(0.55 0.15 145 / 0.12)",
+                  boxShadow: "inset 0 0 0 1px oklch(0.55 0.15 145 / 0.45)",
+                } : isActive ? {
                   background: "oklch(0.72 0.25 285 / 0.12)",
                   boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.25)",
                 } : {}),
@@ -229,7 +274,10 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
             >
               <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-all"
                 style={
-                  isActive ? {
+                  isActiveDone ? {
+                    background: "oklch(0.55 0.15 145 / 0.15)",
+                    color: "oklch(0.55 0.15 145)",
+                  } : isActive ? {
                     background: "oklch(0.72 0.25 285)",
                     color: "oklch(0.06 0 0)",
                     boxShadow: "0 0 14px oklch(0.72 0.25 285 / 0.5)",
@@ -283,31 +331,6 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
     </nav>
   );
 
-  const progressFooter = (
-    <>
-      <div className="px-5 py-4 border-t" style={{ borderColor: "var(--bd-7)" }}>
-        <div className="flex justify-between text-xs mb-2" style={{ color: progressPct === 100 ? "oklch(0.7 0.15 145)" : "var(--c-45)" }}>
-          <span>Progress</span>
-          <span>{progressPct}%</span>
-        </div>
-        <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-progress)" }}>
-          <div
-            className="h-full rounded-full transition-all duration-500"
-            style={{
-              width: `${progressPct}%`,
-              background: progressPct === 100
-                ? "linear-gradient(90deg, oklch(0.55 0.15 145), oklch(0.65 0.18 155))"
-                : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-              boxShadow: "0 0 8px oklch(0.72 0.25 285 / 0.5)",
-            }}
-          />
-        </div>
-      </div>
-
-
-
-    </>
-  );
 
   return (
     <>
@@ -408,7 +431,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                     style={{ color: "var(--c-60)" }}
                   >
                     <Settings size={13} />
-                    <span>Setup</span>
+                    <span>Config</span>
                   </button>
                   <button
                     onClick={() => { setShowProfileMenu(false); navigate("/account"); }}
@@ -519,7 +542,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                         style={{ color: "var(--c-60)" }}
                       >
                         <Settings size={13} />
-                        <span>Setup</span>
+                        <span>Config</span>
                       </button>
                       <button
                         onClick={() => { setShowProfileMenu(false); router.push("/account"); }}
@@ -555,7 +578,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
           <div className="flex items-center px-5 sm:px-8">
             {PHASES.map((phase, i) => {
               const status = getPhaseStatus(phase);
-              const isDone = status === "done";
+              const isDone = phaseDone(phase);
               const isActive = status === "active";
               return (
                 <Fragment key={phase.id}>
@@ -564,7 +587,9 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                     className="w-4 h-4 rounded-full shrink-0 flex items-center justify-center transition-all focus:outline-none"
                     style={
                       isDone
-                        ? { background: "oklch(0.55 0.15 145)" }
+                        // Green dot when complete; a ring when it's also the
+                        // current page (e.g. Assemble after assembly).
+                        ? { background: "oklch(0.55 0.15 145)", boxShadow: isActive ? "0 0 0 2px oklch(0.55 0.15 145 / 0.35)" : undefined }
                         : isActive
                         ? { background: "oklch(0.72 0.25 285)", boxShadow: "0 0 6px oklch(0.72 0.25 285 / 0.6)" }
                         : { background: "transparent", border: "1.5px solid var(--bd-8)" }
@@ -638,7 +663,6 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
               </button>
             </div>
             {stepList}
-            {progressFooter}
           </div>
         </div>
       )}
@@ -667,7 +691,6 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
           </div>
 
           {stepList}
-          {progressFooter}
         </aside>
       )}
     </>

@@ -30,7 +30,7 @@ const FAQS: Faq[] = [
     q: "Where do I add my API keys?",
     a: (
       <>
-        Open <Link href="/setup" className="font-semibold text-zinc-900 underline underline-offset-2 hover:opacity-80">Setup</Link> and paste your KIE and ElevenLabs keys. KIE powers script/image/video generation; ElevenLabs powers voiceovers and caption alignment.
+        Open <Link href="/setup" className="font-semibold text-zinc-900 underline underline-offset-2 hover:opacity-80">Config</Link> and paste your KIE and ElevenLabs keys. KIE powers script/image/video generation; ElevenLabs powers voiceovers and caption alignment.
       </>
     ),
   },

@@ -1,6 +1,6 @@
 import { getSettings } from "@/lib/settings";
-import { isGoogleVoice, generateGoogleTTS } from "@/lib/google/tts";
 import { isQwenVoice, generateQwenTTS } from "@/lib/replicate/tts";
+import { isAi33Voice, generateAi33TTS } from "@/lib/ai33/tts";
 import type { KieModel } from "@/lib/types";
 
 // Direct ElevenLabs TTS. Used to go through KIE's proxy (commit b5b38ac)
@@ -321,13 +321,10 @@ export async function generateTTS(
   onStatus?: (msg: string) => void,
   userId?: string,
 ): Promise<{ audio: ArrayBuffer; charsConsumed: number }> {
-  // Free path — Google Cloud TTS voices carry a "google/" prefix and run on
-  // the user's own free quota. Delegate entirely; same return contract.
-  if (isGoogleVoice(voiceId)) {
-    onProgress?.(0, 1);
-    const result = await generateGoogleTTS(text, voiceId, userId);
-    onProgress?.(1, 1);
-    return result;
+  // Google TTS was removed. Projects saved before then still carry
+  // "google/" ids, so fail with something the user can act on.
+  if (voiceId.startsWith("google/")) {
+    throw new Error("That free Google voice is no longer available — pick a new voice on the Voiceover step.");
   }
 
   // Free path — Qwen3-TTS voices ("qwen/" prefix) run on Replicate under
@@ -335,6 +332,15 @@ export async function generateTTS(
   if (isQwenVoice(voiceId)) {
     onProgress?.(0, 1);
     const result = await generateQwenTTS(text, voiceId, userId);
+    onProgress?.(1, 1);
+    return result;
+  }
+
+  // Free path — ai33.pro (OpenSpeaker) voices ("ai33/" prefix) run on
+  // Heclus's own ai33 token as a perk, capped per user per month.
+  if (isAi33Voice(voiceId)) {
+    onProgress?.(0, 1);
+    const result = await generateAi33TTS(text, voiceId, userId);
     onProgress?.(1, 1);
     return result;
   }

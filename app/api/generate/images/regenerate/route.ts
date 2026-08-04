@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { submitImageTask, checkImageTask } from "@/lib/kie/images";
+import { withPromptLengthRetry } from "@/lib/kie/promptLength";
+import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { KieUpstreamError } from "@/lib/kie/client";
-import { generateCloudflareImage, isCloudflareModel, CloudflareError } from "@/lib/cloudflare/images";
 import { incrementFreeUsage } from "@/lib/freeUsage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
@@ -9,6 +10,7 @@ import { uploadBuffer, uploadFromUrl, deleteObject, r2KeyFromUrl, userFolderFor 
 import { logProjectCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
+import { requireStorageHeadroom } from "@/lib/storage-quota";
 
 export const maxDuration = 120;
 
@@ -51,6 +53,8 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
   const expired = requireActiveSubscription(user);
   if (expired) return expired;
+  const noRoom = await requireStorageHeadroom(user);
+  if (noRoom) return noRoom;
 
   try {
     const { projectId, beatNumber, imagePrompt, modelId, aspectRatio = "16:9", resolution } = await req.json() as {
@@ -65,6 +69,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `Beat ${beatNumber} has no image prompt` }, { status: 400 });
     }
 
+    // Character-consistency text appended to the prompt only for the
+    // generator call — the (possibly edited) imagePrompt is what we
+    // persist to image_prompt below, kept clean.
+    const consistency = await resolveConsistency(user.id, projectId);
+
     // 1. Snapshot existing image so we can delete it after the new
     //    one is live in the DB.
     const { data: beatRow } = await supabase
@@ -75,39 +84,6 @@ export async function POST(req: Request) {
       .maybeSingle();
     const previousImageUrl = beatRow?.image_url ?? null;
 
-    // Free path (BYO Cloudflare Workers AI) — synchronous, no KIE task/poll.
-    // Generate, upload, mark done, then delete the previous object. Runs on
-    // the user's own free quota; no KIE credits / cost-ledger entry.
-    if (isCloudflareModel(modelId)) {
-      await supabase.from("project_beats")
-        .update({ image_status: "generating", image_model_id: modelId, image_task_id: null, image_prompt: imagePrompt })
-        .eq("project_id", projectId)
-        .eq("beat_number", beatNumber);
-
-      const { buffer, contentType } = await generateCloudflareImage(imagePrompt, modelId, aspectRatio, user.id);
-      const folder = userFolderFor({ id: user.id, email: user.email ?? null });
-      const storagePath = `${folder}/${projectId}/images/beat-${beatNumber}_${Date.now()}.jpg`;
-      const publicUrl = await uploadBuffer(storagePath, buffer, contentType);
-
-      await supabase.from("project_beats")
-        .update({ image_url: publicUrl, image_prompt: imagePrompt, image_status: "done", image_task_id: null, image_model_id: null })
-        .eq("project_id", projectId)
-        .eq("beat_number", beatNumber);
-
-      if (previousImageUrl) {
-        try {
-          const oldKey = r2KeyFromUrl(previousImageUrl);
-          if (oldKey) await deleteObject(oldKey);
-        } catch (e) {
-          console.warn(`[images/regenerate] beat=${beatNumber} (free) delete previous failed:`, e instanceof Error ? e.message : e);
-        }
-      }
-
-      await incrementFreeUsage(user.id, "image", 1);
-      console.log(`[images/regenerate] beat=${beatNumber} model=${modelId} (free/cloudflare) done`);
-      return NextResponse.json({ ok: true, url: publicUrl });
-    }
-
     // 2. Submit to KIE. No callBackUrl — this route owns the
     //    completion path. Stamp t0 here so the wall-clock elapsed
     //    we log to project_costs.elapsed_ms covers the entire
@@ -115,7 +91,10 @@ export async function POST(req: Request) {
     //    as "how long this model took". Powers the picker's
     //    "Fastest" tab ranking.
     const submitT0 = Date.now();
-    const taskId = await submitImageTask(imagePrompt, modelId, aspectRatio, resolution, user.id);
+    const taskId = await withPromptLengthRetry(imagePrompt, (prompt) => submitImageTask(
+      applyConsistency(prompt, consistency.text, consistency.append),
+      modelId, aspectRatio, resolution, user.id,
+    ));
     console.log(`[images/regenerate] beat=${beatNumber} model=${modelId} taskId=${taskId}`);
 
     // 3. Mark in-flight. A page refresh between submit and complete
@@ -212,11 +191,6 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, url: publicUrl });
   } catch (err) {
-    if (err instanceof CloudflareError) {
-      console.warn(`[images/regenerate] Cloudflare error: ${err.message}`);
-      const status = err.status === 401 ? 401 : err.status === 429 ? 429 : 502;
-      return NextResponse.json({ error: err.message, code: "cloudflare_free" }, { status });
-    }
     if (err instanceof KieUpstreamError) {
       const headers: Record<string, string> = {};
       if (err.upstreamStatus === 429 && err.retryAfter != null) headers["Retry-After"] = String(err.retryAfter);

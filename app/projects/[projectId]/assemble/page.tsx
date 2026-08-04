@@ -155,6 +155,38 @@ export default function AssemblePage({ params }: PageProps) {
     if (typeof cap.captions_position === "string" && cap.captions_position) setCaptionsPosition(cap.captions_position);
   }, [project]);
 
+  // "Use this always": per-user saved bg-music + logo defaults, tracked
+  // INDEPENDENTLY (each control has its own toggle). On a fresh project
+  // (no bgm/logo of its own) with a default enabled, prefill it so the user
+  // doesn't re-select every video.
+  const [useAlwaysBgm, setUseAlwaysBgm] = useState(false);
+  const [useAlwaysLogo, setUseAlwaysLogo] = useState(false);
+  const defaultsFetchedRef = useRef(false);
+  useEffect(() => {
+    if (!project || defaultsFetchedRef.current) return;
+    defaultsFetchedRef.current = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/me/assembly-defaults");
+        const { defaults } = (await res.json()) as { defaults: null | { bgmEnabled: boolean; logoEnabled: boolean; backgroundMusicUrl: string | null; backgroundMusicVolume: number; logoUrl: string | null; logoX: number; logoY: number; logoSize: number } };
+        if (!defaults) return;
+        setUseAlwaysBgm(!!defaults.bgmEnabled);
+        setUseAlwaysLogo(!!defaults.logoEnabled);
+        // Prefill only what's enabled AND the project hasn't set itself.
+        if (defaults.bgmEnabled && !project.background_music_url && defaults.backgroundMusicUrl) {
+          setBgmUploadedUrl(defaults.backgroundMusicUrl);
+          if (typeof defaults.backgroundMusicVolume === "number") setBgmVolume(defaults.backgroundMusicVolume);
+        }
+        if (defaults.logoEnabled && !project.logo_url && defaults.logoUrl) {
+          setLogoUploadedUrl(defaults.logoUrl);
+          if (typeof defaults.logoX === "number") setLogoX(defaults.logoX);
+          if (typeof defaults.logoY === "number") setLogoY(defaults.logoY);
+          if (typeof defaults.logoSize === "number") setLogoSize(defaults.logoSize);
+        }
+      } catch { /* defaults are best-effort */ }
+    })();
+  }, [project]);
+
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("16:9");
   // Render resolution. Default 1080p (matches YouTube's HD standard
   // and the dimensions previously displayed in the Output card).
@@ -235,6 +267,48 @@ export default function AssemblePage({ params }: PageProps) {
   const [logoY, setLogoY] = useState<number>(0.05);
   const [logoSize, setLogoSize] = useState<number>(0.1);
   const logoInputRef = useRef<HTMLInputElement>(null);
+
+  // Persist the user's "Use this always" defaults. bgm and logo have
+  // independent toggles; every write sends both current enabled flags plus
+  // the current values.
+  function persistAssemblyDefaults(bgmEnabled: boolean, logoEnabled: boolean) {
+    void fetch("/api/me/assembly-defaults", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bgmEnabled,
+        logoEnabled,
+        backgroundMusicUrl: bgmUploadedUrl,
+        backgroundMusicVolume: bgmVolume,
+        logoUrl: logoUploadedUrl,
+        logoX, logoY, logoSize,
+      }),
+    }).catch(() => {});
+  }
+  function toggleUseAlwaysBgm() {
+    const next = !useAlwaysBgm;
+    setUseAlwaysBgm(next);
+    persistAssemblyDefaults(next, useAlwaysLogo);
+  }
+  function toggleUseAlwaysLogo() {
+    const next = !useAlwaysLogo;
+    setUseAlwaysLogo(next);
+    persistAssemblyDefaults(useAlwaysBgm, next);
+  }
+  // Keep the saved music default in sync while its toggle is on.
+  useEffect(() => {
+    if (!useAlwaysBgm) return;
+    const t = setTimeout(() => persistAssemblyDefaults(useAlwaysBgm, useAlwaysLogo), 800);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useAlwaysBgm, bgmUploadedUrl, bgmVolume]);
+  // Keep the saved logo default in sync while its toggle is on.
+  useEffect(() => {
+    if (!useAlwaysLogo) return;
+    const t = setTimeout(() => persistAssemblyDefaults(useAlwaysBgm, useAlwaysLogo), 800);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useAlwaysLogo, logoUploadedUrl, logoX, logoY, logoSize]);
   useEffect(() => {
     if (!logoFile) {
       if (logoObjectUrl) URL.revokeObjectURL(logoObjectUrl);
@@ -801,7 +875,7 @@ export default function AssemblePage({ params }: PageProps) {
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "var(--bg-page-2)" }}>
-      <WizardNav projectId={projectId} currentState={15} highestState={project?.current_state} channelName={project?.channel_name} />
+      <WizardNav projectId={projectId} currentState={15} highestState={project?.current_state} channelName={project?.channel_name} progressComplete={!!(project?.assembled_url)} />
 
       <main className="flex-1 overflow-y-auto pt-[105px] md:pt-0 lg:px-[15px]">
         {/* Header */}
@@ -1033,6 +1107,20 @@ export default function AssemblePage({ params }: PageProps) {
                       ×
                     </button>
                   </div>
+                  <div className="flex items-center justify-end gap-2 w-full">
+                    <span className="text-xs" style={{ color: "var(--c-55)" }}>Use this always</span>
+                    <button
+                      type="button"
+                      onClick={toggleUseAlwaysBgm}
+                      aria-pressed={useAlwaysBgm}
+                      title="Reuse this background music on future videos"
+                      className="relative w-9 h-5 rounded-full transition-all shrink-0 cursor-pointer"
+                      style={{ background: useAlwaysBgm ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
+                    >
+                      <span className="absolute top-0.5 w-4 h-4 rounded-full transition-all"
+                        style={{ background: "oklch(0.95 0 0)", left: useAlwaysBgm ? "calc(100% - 1.125rem)" : "0.125rem" }} />
+                    </button>
+                  </div>
                 </>
               )}
               <input
@@ -1117,6 +1205,20 @@ export default function AssemblePage({ params }: PageProps) {
                         style={{ background: "transparent", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
                       >
                         ×
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-end gap-2 w-full">
+                      <span className="text-xs" style={{ color: "var(--c-55)" }}>Use this always</span>
+                      <button
+                        type="button"
+                        onClick={toggleUseAlwaysLogo}
+                        aria-pressed={useAlwaysLogo}
+                        title="Reuse this logo on future videos"
+                        className="relative w-9 h-5 rounded-full transition-all shrink-0 cursor-pointer"
+                        style={{ background: useAlwaysLogo ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
+                      >
+                        <span className="absolute top-0.5 w-4 h-4 rounded-full transition-all"
+                          style={{ background: "oklch(0.95 0 0)", left: useAlwaysLogo ? "calc(100% - 1.125rem)" : "0.125rem" }} />
                       </button>
                     </div>
                   </>
@@ -1817,7 +1919,7 @@ export default function AssemblePage({ params }: PageProps) {
                     className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)", marginTop: "50px", marginBottom: "20px" }}
                   >
-                    Continue →
+                    Generate Thumbnail →
                   </button>
                 </div>
               )}

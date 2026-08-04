@@ -17,11 +17,6 @@ export interface ApiKeysStatus {
   kieSet: boolean;
   elevenlabsSet: boolean;
   bothSet: boolean;
-  // Free-tier BYO keys — used to gate the "Free" tabs until the user has
-  // connected their own Cloudflare (free images) / Google Cloud TTS
-  // (free voiceover) credentials.
-  cloudflareSet: boolean;
-  googleTtsSet: boolean;
 }
 
 export async function GET() {
@@ -30,27 +25,19 @@ export async function GET() {
 
   const { data } = await supabase
     .from("account_settings")
-    .select("kie_api_key, elevenlabs_api_key, cloudflare_account_id, cloudflare_api_token, google_tts_key")
+    .select("kie_api_key, elevenlabs_api_key")
     .eq("user_id", user.id)
     .maybeSingle();
 
   const row = data as {
     kie_api_key: string | null;
     elevenlabs_api_key: string | null;
-    cloudflare_account_id: string | null;
-    cloudflare_api_token: string | null;
-    google_tts_key: string | null;
   } | null;
   const kieSet = !!row?.kie_api_key?.trim();
   const elevenlabsSet = !!row?.elevenlabs_api_key?.trim();
-  // Free images need BOTH Cloudflare values (account id + token).
-  const cloudflareSet = !!row?.cloudflare_account_id?.trim() && !!row?.cloudflare_api_token?.trim();
-  const googleTtsSet = !!row?.google_tts_key?.trim();
   return NextResponse.json({
     kieSet,
     elevenlabsSet,
     bothSet: kieSet && elevenlabsSet,
-    cloudflareSet,
-    googleTtsSet,
   } satisfies ApiKeysStatus);
 }
