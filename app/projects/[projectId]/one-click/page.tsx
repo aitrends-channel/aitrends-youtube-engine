@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { OneClickProgress } from "@/components/one-click/OneClickProgress";
@@ -8,6 +8,8 @@ import { OneClickConfigPanel } from "@/components/one-click/OneClickConfigPanel"
 import { OneClickShell } from "@/components/one-click/OneClickShell";
 import { startOneClick } from "@/lib/one-click/kickoff";
 import { Spinner } from "@/components/ui/spinner";
+import { ONE_CLICK_HIDDEN } from "@/lib/feature-flags";
+import { useRouter } from "next/navigation";
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(r.status)));
 
@@ -24,6 +26,11 @@ interface PageProps { params: { projectId: string } }
 // straight to the live run.
 export default function OneClickProgressPage({ params }: PageProps) {
   const { projectId } = params;
+  const router = useRouter();
+  // Flag off: don't render a live-run view for a feature users can't start.
+  useEffect(() => {
+    if (ONE_CLICK_HIDDEN) router.replace(`/projects/${projectId}/topic`);
+  }, [router, projectId]);
   const { data: cfg, mutate: mutateCfg } = useSWR<{ configured: boolean }>(
     "/api/one-click/config", fetcher,
   );

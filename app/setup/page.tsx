@@ -11,6 +11,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
+import { ONE_CLICK_HIDDEN } from "@/lib/feature-flags";
 
 type Tier = "paid" | "free";
 
@@ -519,6 +520,7 @@ export default function SettingsPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "oneclick" && ONE_CLICK_HIDDEN) return; // ?tab=oneclick deep link
     if (t === "oneclick" || t === "consistency" || t === "model") setMainTab(t);
   }, []);
 
@@ -682,6 +684,7 @@ export default function SettingsPage() {
           style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
           {([["keys", "API Keys"], ["oneclick", "1Click"], ["consistency", "Prompt Prefix"], ["model", "Claude"]] as const)
             .filter(([id]) => id !== "model" || isPro === true)
+            .filter(([id]) => id !== "oneclick" || !ONE_CLICK_HIDDEN)
             .map(([id, label]) => (
             <button
               key={id}

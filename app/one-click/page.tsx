@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import useSWR from "swr";
 import { toast } from "sonner";
@@ -14,6 +14,7 @@ import {
 } from "@/lib/one-click/kickoff";
 import type { OneClickConfig } from "@/lib/one-click/config";
 import { Spinner } from "@/components/ui/spinner";
+import { ONE_CLICK_HIDDEN } from "@/lib/feature-flags";
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(r.status)));
 
@@ -36,6 +37,10 @@ const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promi
 function OneClickSetup() {
   const router = useRouter();
   const params = useSearchParams();
+  // Flag off: a bookmarked/shared URL must not reach the kickoff.
+  useEffect(() => {
+    if (ONE_CLICK_HIDDEN) router.replace("/dashboard");
+  }, [router]);
   const isNewNiche = params.get("new") === "1";
   const from = params.get("from");
   const next = params.get("next");

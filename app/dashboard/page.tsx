@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Spinner } from "@/components/ui/spinner";
 import { OneClickControls } from "@/components/one-click/OneClickControls";
 import { forkAndStartOneClick } from "@/lib/one-click/kickoff";
+import { ONE_CLICK_HIDDEN } from "@/lib/feature-flags";
 
 
 // ── Demo dashboard helpers ────────────────────────────────────────────────────
@@ -802,8 +803,12 @@ export default function HomePage() {
       return;
     }
     // Same shape as createVideoForChannel: gate first, then let the user
-    // pick Studio vs 1Click.
-    requireSubscription(() => requireApiKeys(() => setNewNicheChooser(true)));
+    // pick Studio vs 1Click. With 1Click hidden there's nothing to choose,
+    // so skip the chooser and go straight to Studio.
+    requireSubscription(() => requireApiKeys(() => {
+      if (ONE_CLICK_HIDDEN) { doCreateProject("studio"); return; }
+      setNewNicheChooser(true);
+    }));
   }
 
   function doCreateVideoForChannel(group: ChannelGroup) {
@@ -846,7 +851,10 @@ export default function HomePage() {
 
   function createVideoForChannel(group: ChannelGroup) {
     // Gate on subscription + API keys, then let the user pick Studio vs 1Click.
-    requireSubscription(() => requireApiKeys(() => setNewVideoGroup(group)));
+    requireSubscription(() => requireApiKeys(() => {
+      if (ONE_CLICK_HIDDEN) { doCreateVideoForChannel(group); return; }
+      setNewVideoGroup(group);
+    }));
   }
 
   async function deleteOne(id: string): Promise<{ id: string; ok: boolean; error?: string; warnings?: string[] }> {
@@ -1741,7 +1749,7 @@ export default function HomePage() {
                           {/* 1Click live controls — only for autopilot
                               projects still in flight (running / paused /
                               needs attention). */}
-                          {p.auto_pilot && !isComplete && (
+                          {p.auto_pilot && !isComplete && !ONE_CLICK_HIDDEN && (
                             <div className="mb-4">
                               <OneClickControls
                                 projectId={p.id}
