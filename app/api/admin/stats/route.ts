@@ -9,13 +9,29 @@ export const dynamic = "force-dynamic";
 
 // State 13 is the thumbnails side-branch and resting state 15 means the
 // user reached Assemble but hasn't produced a video yet — same map the
-// bulk-mail audience queries use. A project only counts as Complete when
-// assembled_url exists (or state 16, thumbnails-done).
+// bulk-mail audience queries use. Completion is isProjectComplete below.
 const PHASE_LABELS: Record<number, string> = {
   1: "Setup", 2: "Setup", 3: "Setup", 4: "Analyzing", 5: "Analyzing",
   6: "Topic", 7: "Visuals", 8: "Visuals", 9: "Prompts", 10: "Prompts",
   11: "Visuals", 12: "Visuals", 13: "Thumbnails", 14: "Generate", 15: "Assemble",
 };
+
+// The one definition of "this video is done", used by the Videos tab rows and
+// the Stats cards so they can never disagree.
+//
+// Two ways to qualify. The final MP4 exists (assembled_url), or the project
+// moved PAST Assemble — state 16 is the thumbnails step, which is optional, so
+// reaching it means assembly already succeeded and nothing else is required.
+//
+// The second clause matters because assembled_url can go missing on a video
+// that really was produced (the R2 URL corruption, or a manual fix-up). Those
+// rows used to render "99% · Setup": PHASE_LABELS has no entry for 16, and
+// 16/15 rounds past 100 into the 99 cap. All 3 such rows in prod carry both
+// assembly_started_at and assembly_finished_at, so the assembly did finish.
+const ASSEMBLE_STATE = 15;
+function isProjectComplete(p: { assembled_url?: unknown; current_state?: number | null }): boolean {
+  return Boolean(p.assembled_url) || (p.current_state ?? 1) > ASSEMBLE_STATE;
+}
 
 const PHASE_PATHS: Record<number, string> = {
   1: "channel", 2: "channel", 3: "channel", 4: "channel", 5: "channel",
@@ -213,12 +229,9 @@ export async function GET() {
     // fixes the "100% progress · Setup phase" mismatch admins were
     // seeing in the videos table.
     const rawState = p.current_state ?? 1;
-    // Complete = the video successfully assembled to completion, i.e. the
-    // final MP4 exists (assembled_url). Thumbnails (state 16) are a
-    // separate post-assembly step, and a state-16 row with no MP4 never
-    // actually assembled — so completion is keyed purely on assembled_url.
-    const isComplete = Boolean(p.assembled_url);
-    const state = isComplete ? 15 : rawState;
+    // Complete = assembled, or past Assemble entirely. See isProjectComplete.
+    const isComplete = isProjectComplete(p);
+    const state = isComplete ? ASSEMBLE_STATE : rawState;
     const userEmail = p.user_id ? (userIdToEmail.get(p.user_id) ?? "Unknown") : "Unknown";
     // Wall-clock assembly duration in seconds, or null when the
     // project hasn't completed an assembly yet (or pre-dates the
@@ -267,11 +280,10 @@ export async function GET() {
     };
   });
 
-  // Completed = successfully assembled to completion (a final MP4 exists),
-  // matching isComplete on the rows above. In progress = started but not
-  // yet assembled.
-  const completed = nonAdminProjects.filter((p) => Boolean(p.assembled_url)).length;
-  const videosInProgress = nonAdminProjects.filter((p) => (p.current_state ?? 1) > 1 && !p.assembled_url).length;
+  // Same predicate as the rows above, so the cards and the table always
+  // report the same set. In progress = started but not yet done.
+  const completed = nonAdminProjects.filter(isProjectComplete).length;
+  const videosInProgress = nonAdminProjects.filter((p) => (p.current_state ?? 1) > 1 && !isProjectComplete(p)).length;
 
   // Last 30 days activity
   const activityDates = Array.from({ length: 30 }, (_, i) => {
