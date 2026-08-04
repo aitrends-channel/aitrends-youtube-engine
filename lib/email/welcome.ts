@@ -10,7 +10,9 @@ import { WELCOME_EMAIL_ENABLED } from "@/lib/feature-flags";
 // later renewal or upgrade — skip.
 
 const FROM = "support@heclus.com";
-const APP_URL = process.env.APP_URL ?? "https://app.heclus.io";
+// Truthiness, not ??: an APP_URL set to an empty string would otherwise
+// render the one link in this email as nothing at all.
+const APP_URL = process.env.APP_URL?.trim() || "https://app.heclus.io";
 
 /**
  * Does this purchase earn a welcome email?
