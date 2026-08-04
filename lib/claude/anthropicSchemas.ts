@@ -95,6 +95,46 @@ export const imagePromptsInputSchema = {
   required: ["beats"],
 };
 
+export const beatsInputSchema = {
+  type: "object" as const,
+  properties: {
+    beats: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          beatNumber: { type: "number" },
+          scriptSegment: { type: "string" },
+        },
+        required: ["beatNumber", "scriptSegment"],
+      },
+    },
+  },
+  required: ["beats"],
+};
+
+export const fillPromptsInputSchema = {
+  type: "object" as const,
+  properties: {
+    beats: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          beatNumber: { type: "number" },
+          imagePrompt: { type: "string" },
+          camera: { type: "string" },
+          lighting: { type: "string" },
+          mood: { type: "string" },
+          action: { type: "string" },
+        },
+        required: ["beatNumber", "imagePrompt", "camera", "lighting", "mood", "action"],
+      },
+    },
+  },
+  required: ["beats"],
+};
+
 export const videoPromptsInputSchema = {
   type: "object" as const,
   properties: {

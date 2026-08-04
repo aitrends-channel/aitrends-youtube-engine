@@ -12,7 +12,7 @@ import { ChevronUp, ChevronDown, Download, Check } from "lucide-react";
 import { joinSegments } from "@/lib/text/joinSegments";
 import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
 import { planBulkMerge, findStubs } from "@/lib/text/mergePlan";
-import { MERGE_BEATS_HIDDEN } from "@/lib/feature-flags";
+import { MERGE_BEATS_HIDDEN, PROMPTS_THREE_STEP } from "@/lib/feature-flags";
 import { friendlyError } from "@/lib/errors/friendly";
 import type { Beat } from "@/lib/types";
 
@@ -367,6 +367,13 @@ interface StepCardProps {
   optional?: boolean;
   /** Custom button label for non-running, non-done states (e.g. "Generate Remaining 9"). */
   actionLabel?: string | null;
+  /** Renders the card without its action button — for a step whose work is
+   *  currently produced by another step, so it reports state but cannot be
+   *  run on its own. */
+  hideAction?: boolean;
+  /** Step-specific secondary action, rendered in the button row. Used to put
+   *  "Merge beats" on the Beats step, where the decision actually belongs. */
+  extraAction?: ReactNode;
   /** When set, renders a secondary "Clear" button. The handler should wipe persisted state for this step. */
   onClear?: (() => Promise<void> | void) | null;
   /** Stop handler — when set and the step is running, renders a Stop button alongside the spinner. */
@@ -416,7 +423,7 @@ function RunningCaption({ progress }: { progress?: { current: number; total: num
   );
 }
 
-function StepCard({ num, title, description, state, windingDown, doneLabel, pendingLabel, disabled, optional, actionLabel, onClear, onStop, onGenerate }: StepCardProps) {
+function StepCard({ num, title, description, state, windingDown, doneLabel, pendingLabel, disabled, optional, actionLabel, hideAction, extraAction, onClear, onStop, onGenerate }: StepCardProps) {
   const isRunning = state.status === "running";
   const isDone = state.status === "done";
   const isError = state.status === "error";
@@ -530,6 +537,7 @@ function StepCard({ num, title, description, state, windingDown, doneLabel, pend
           running. */}
       <div className="shrink-0 flex flex-col items-start sm:items-end gap-2">
         <div className="flex items-start gap-2">
+          {extraAction}
           {onClear && !isRunning && (
             <button
               onClick={() => { Promise.resolve(onClear()).catch(() => { /* surfaced via toast in caller */ }); }}
@@ -548,6 +556,7 @@ function StepCard({ num, title, description, state, windingDown, doneLabel, pend
               Stop
             </button>
           )}
+          {!hideAction && (
           <button
             onClick={onGenerate}
             disabled={disabled || (isRunning && !windingDown)}
@@ -560,6 +569,7 @@ function StepCard({ num, title, description, state, windingDown, doneLabel, pend
           >
             {(isRunning && !windingDown) ? "Running..." : (actionLabel ?? (windingDown ? "Resume" : isDone ? "Regenerate" : isError ? "Retry" : "Generate"))}
           </button>
+          )}
         </div>
         {isRunning && <RunningCaption progress={state.progress} />}
       </div>
@@ -1489,6 +1499,13 @@ export default function PromptsPage({ params }: PageProps) {
   const persistedImageError = persistedErrorStep === "images" ? persistedError : null;
   const persistedVideoError = persistedErrorStep === "videos" ? persistedError : null;
 
+  // Card 1's state, derived only from data that already exists: beats with
+  // segments. No stored flag, so every existing project reads as complete and
+  // nothing needs backfilling.
+  const beatsStepState: StepState =
+    imageStep.status === "running" && beats.length === 0 ? { status: "running", message: "Splitting the script…" } :
+    beats.length > 0 ? { status: "done", message: "" } : IDLE;
+
   const baseImage: StepState =
     imageStep.status !== "idle" ? imageStep :
     imageStoppedByUser ? IDLE :
@@ -1942,6 +1959,26 @@ export default function PromptsPage({ params }: PageProps) {
     imageStep.status === "running" ||
     videoStep.status === "running";
 
+  // Rendered in two places on purpose: on the Beats step, where the decision
+  // belongs, and above the beat list, where the user is actually looking at
+  // the beats. Defined once so the two copies cannot drift apart. `shape`
+  // is the only difference — the step card's buttons are rounded-lg, the
+  // toolbar's are rounded-xl.
+  const mergeBeatsButton = (shape: string) =>
+    beats.length > 1 && !MERGE_BEATS_HIDDEN ? (
+      <button
+        onClick={() => setBulkOpen(true)}
+        disabled={anyRunning || remoteRunInProgress}
+        className={`flex items-center gap-1.5 px-3 py-1.5 ${shape} text-xs font-medium transition-all hover:opacity-80 disabled:opacity-40`}
+        style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
+      >
+        Merge beats
+        <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: "oklch(0.65 0.24 25)" }}>
+          New
+        </span>
+      </button>
+    ) : null;
+
   // Hash the current script in the browser so we can compare it against
   // the hash stored when these beats were generated. If they differ, the
   // saved beats describe an older version of the script and the user
@@ -2051,8 +2088,32 @@ export default function PromptsPage({ params }: PageProps) {
               </span>
             </div>
           )}
+          {/* Step 1 — the beats themselves. Until PROMPTS_THREE_STEP is on,
+              beats are still a by-product of the Image Prompts call, so this
+              card reports state and deliberately has no button of its own:
+              it is derived from data every existing project already has, so
+              finished projects read as complete with no backfill. */}
           <StepCard
             num={1}
+            title="Beats"
+            description="Your script split into beats. Merge any that are too short before prompts are written for them"
+            state={beatsStepState}
+            doneLabel={beats.length > 0 ? `${beats.length} beat${beats.length === 1 ? "" : "s"}` : undefined}
+            // Generate while there is nothing, Merge once there is. Notably no
+            // Regenerate: re-splitting deletes the beat rows, taking the paid
+            // image prompts, renders and voiceovers with them.
+            //
+            // The Generate is also gated on the split being live — until then
+            // there is no beats-only run, so the only thing it could fire is
+            // the combined Image Prompts call, which would create prompts in
+            // the same breath and destroy the merge window this step exists
+            // to open.
+            hideAction={!PROMPTS_THREE_STEP || beats.length > 0}
+            extraAction={mergeBeatsButton("rounded-lg")}
+            onGenerate={requestRunImageStep}
+          />
+          <StepCard
+            num={2}
             title="Image Prompts"
             description="One AI image prompt per script beat, matched to your channel's visual style"
             state={effectiveImage}
@@ -2065,7 +2126,7 @@ export default function PromptsPage({ params }: PageProps) {
             onGenerate={requestRunImageStep}
           />
           <StepCard
-            num={2}
+            num={3}
             title="Video Prompts"
             description="Camera movement and motion instructions layered on top of each image beat"
             state={effectiveVideo}
@@ -2121,19 +2182,7 @@ export default function PromptsPage({ params }: PageProps) {
                 );
               })}
             </div>
-            {beats.length > 1 && !MERGE_BEATS_HIDDEN && (
-              <button
-                onClick={() => setBulkOpen(true)}
-                disabled={anyRunning || remoteRunInProgress}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-all hover:opacity-80 disabled:opacity-40 mr-auto"
-                style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
-              >
-                Merge beats
-                <span className="text-[9px] font-bold uppercase tracking-wide" style={{ color: "oklch(0.65 0.24 25)" }}>
-                  New
-                </span>
-              </button>
-            )}
+            <div className="ml-auto">{mergeBeatsButton("rounded-xl")}</div>
             {/* Export dropdown. The backdrop sits behind the menu so a click
                 anywhere else dismisses it without a document listener. */}
             <div className="relative">
