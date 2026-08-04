@@ -7,38 +7,65 @@ import { isProductionEnv } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 
-// State 13 is the thumbnails side-branch and resting state 15 means the
-// user reached Assemble but hasn't produced a video yet — same map the
-// bulk-mail audience queries use. Completion is isProjectComplete below.
-const PHASE_LABELS: Record<number, string> = {
-  1: "Setup", 2: "Setup", 3: "Setup", 4: "Analyzing", 5: "Analyzing",
-  6: "Topic", 7: "Visuals", 8: "Visuals", 9: "Prompts", 10: "Prompts",
-  11: "Visuals", 12: "Visuals", 13: "Thumbnails", 14: "Generate", 15: "Assemble",
-  // 16 = the post-assembly thumbnail step. Only reachable with an MP4 in
-  // hand, so it normally coerces to Complete below; labelled anyway so the
-  // few rows whose assembled_url went missing read "Thumbnails", not "Setup".
-  16: "Thumbnails",
+// The workflow in the order it actually runs, mirroring WizardNav's PHASES.
+//
+// current_state is NOT a linear position, so progress must never be derived
+// from the number itself. WizardNav maps the thumbnails phase — the LAST step
+// — to state 13, below Generate (14) and Assemble (15), and 6 is shared by
+// Topic and Script while 9 is shared by Prompts and Voiceover. Dividing the
+// raw state by 15 therefore printed a Generate row at 93% above a Thumbnails
+// row at 87%, which can't happen: thumbnails come after the video exists.
+//
+// The list is the ordering contract: keep it in workflow order, and keep
+// STEP_PROGRESS below non-decreasing along it.
+const STEPS = ["Setup", "Analyzing", "Topic", "Script", "Visuals", "Prompts", "Generate", "Assemble", "Thumbnails"] as const;
+type Step = (typeof STEPS)[number];
+
+const STEP_PATHS: Record<Step, string> = {
+  Setup: "channel", Analyzing: "channel", Topic: "topic", Script: "script",
+  Visuals: "visuals", Prompts: "prompts", Generate: "generate",
+  Assemble: "assemble", Thumbnails: "thumbnails",
 };
+
+// Progress per step. Explicit rather than derived from the index so the
+// weighting reflects how much work each step actually represents — Generate
+// and Assemble are the long ones. Must stay non-decreasing down the list.
+//
+// Assemble onward reads 100: by then every asset exists and the video is being
+// rendered. A row can therefore show 100% while its phase says Assemble and it
+// is NOT counted as Completed — completion needs the final MP4 (see
+// isProjectComplete), and the phase badge is what distinguishes them.
+const STEP_PROGRESS: Record<Step, number> = {
+  Setup: 10, Analyzing: 20, Topic: 30, Script: 40, Visuals: 50,
+  Prompts: 70, Generate: 90, Assemble: 100, Thumbnails: 100,
+};
+
+// State → step, from the writes in the app (grep `current_state:`): 6 =
+// analysed (Script once a topic is chosen), 7 = script saved, 9 = visuals
+// done, 13 = landed on Prompts, 14 = prompts saved, 15 = landed on Assemble,
+// 16 = thumbnails. 8, 10, 11 and 12 are never written; they're mapped for
+// completeness only.
+function stepFor(state: number, hasTopic: boolean): Step {
+  if (state <= 3) return "Setup";
+  if (state <= 5) return "Analyzing";
+  if (state === 6) return hasTopic ? "Script" : "Topic";
+  if (state === 7 || state === 8 || state === 11 || state === 12) return "Visuals";
+  if (state <= 13) return "Prompts";
+  if (state === 14) return "Generate";
+  if (state === 15) return "Assemble";
+  return "Thumbnails";
+}
 
 // The one definition of "this video is done", used by the Videos tab rows and
 // the Stats cards so they can never disagree.
 //
 // A final assembled MP4 and nothing else. Workflow position is deliberately
-// NOT part of it: state 13 is the wizard's thumbnails step, which sits BEFORE
-// Generate and Assemble, so a project can carry a "Thumbnails" phase label
-// with no video made yet. Reaching any step never implies a video exists —
-// only assembled_url does.
-const ASSEMBLE_STATE = 15;
+// NOT part of it — the thumbnails step is reachable from state 9 as a side
+// branch (WizardNav's navigableFrom), so being "at thumbnails" never proves a
+// video exists. Only assembled_url does.
 function isProjectComplete(p: { assembled_url?: unknown }): boolean {
   return Boolean(p.assembled_url);
 }
-
-const PHASE_PATHS: Record<number, string> = {
-  1: "channel", 2: "channel", 3: "channel", 4: "channel", 5: "channel",
-  6: "topic", 7: "visuals", 8: "visuals", 9: "prompts", 10: "prompts",
-  11: "visuals", 12: "visuals", 13: "thumbnails", 14: "generate", 15: "assemble",
-  16: "thumbnails",
-};
 
 export async function GET() {
   const guard = await requireAdmin();
@@ -229,10 +256,10 @@ export async function GET() {
     // agree with each other and with the assembled_url field —
     // fixes the "100% progress · Setup phase" mismatch admins were
     // seeing in the videos table.
-    const rawState = p.current_state ?? 1;
-    // Complete = assembled, or past Assemble entirely. See isProjectComplete.
+    const state = p.current_state ?? 1;
     const isComplete = isProjectComplete(p);
-    const state = isComplete ? ASSEMBLE_STATE : rawState;
+    // Where the project sits in the real workflow order, never the raw state.
+    const step = stepFor(state, Boolean(p.selected_topic));
     const userEmail = p.user_id ? (userIdToEmail.get(p.user_id) ?? "Unknown") : "Unknown";
     // Wall-clock assembly duration in seconds, or null when the
     // project hasn't completed an assembly yet (or pre-dates the
@@ -254,18 +281,11 @@ export async function GET() {
       selectedTopic: p.selected_topic ?? null,
       currentState: state,
       isComplete,
-      // State 6 is shared by the Topic and Script steps; a chosen topic
-      // means the user has moved on to the script. Same signal the
-      // bulk-mail audience queries use.
-      phaseLabel: isComplete
-        ? "Complete"
-        : state === 6 && p.selected_topic
-          ? "Script"
-          : (PHASE_LABELS[state] ?? "Setup"),
-      phasePath: PHASE_PATHS[state] ?? "channel",
-      // Only a complete video reads 100% — a project resting at the
-      // Assemble step caps at 99 so the bar never lies.
-      progress: isComplete ? 100 : Math.min(99, Math.round((state / 15) * 100)),
+      phaseLabel: isComplete ? "Complete" : step,
+      phasePath: STEP_PATHS[step],
+      // Keyed to the step, never the raw state, so the bar rises through the
+      // real workflow order. See STEP_PROGRESS.
+      progress: isComplete ? 100 : STEP_PROGRESS[step],
       createdAt: p.created_at,
       // When the video finished assembling — feeds the "Completed
       // today/yesterday" filters. Null for incomplete projects and for
