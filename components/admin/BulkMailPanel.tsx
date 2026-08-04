@@ -9,6 +9,8 @@ import { renderBulkMailHtml, personalizeBulkMail } from "@/lib/email/bulk-mail-t
 import {
   DEFAULT_BULK_MAIL_TEMPLATES,
   BULK_MAIL_STEP_OPTIONS,
+  BULK_MAIL_CUSTOMER_OPTIONS,
+  isCustomerAudienceId,
   stuckLineFor,
   type BulkMailTemplate,
 } from "@/lib/admin/bulk-mail-template-defaults";
@@ -54,9 +56,7 @@ interface SendHistoryRow {
 
 // Human label for an audience id in the history list.
 const CUSTOMER_AUDIENCE_LABELS: Record<string, string> = {
-  "paid-no-setup": "Paid, no setup",
-  "paid-setup-no-video": "Paid, no niche",
-  "free-inactive-3d": "Free/demo inactive 3d+",
+  ...Object.fromEntries(BULK_MAIL_CUSTOMER_OPTIONS.map((o) => [o.id, o.historyLabel])),
   // Backfilled campaigns from before the ledger recorded audiences.
   "unknown": "Unrecorded audience",
 };
@@ -143,9 +143,7 @@ function HistoryView() {
   const allAudiences: { id: string; label: string }[] = [
     { id: "any", label: "Any unfinished video" },
     ...BULK_MAIL_STEP_OPTIONS.map((p) => ({ id: p.id, label: `Stuck at ${p.label}` })),
-    { id: "paid-no-setup", label: "Paid users with no setup" },
-    { id: "paid-setup-no-video", label: "Paid users with setup but zero video" },
-    { id: "free-inactive-3d", label: "Free/demo users inactive 3+ days" },
+    ...BULK_MAIL_CUSTOMER_OPTIONS.map((o) => ({ id: o.id, label: o.label })),
   ];
 
   const byPhase = new Map<string, SendHistoryRow[]>();
@@ -239,13 +237,12 @@ const selectStyle = {
 
 function MailComposer() {
   // "any" targets owners of any unfinished video; a step id targets
-  // users stuck at that step; customer audiences ("paid-*",
-  // "free-inactive-3d") target accounts by funnel position or
-  // inactivity — those carry their own window, so the idle selector
-  // hides for them.
+  // users stuck at that step; customer audiences target accounts by funnel
+  // position, inactivity, or nothing at all (the blanket "all-*" sends).
+  // Each carries its own window, so the idle selector hides for them.
   const [phase, setPhase] = useState<string>("any");
   const anyMode = phase === "any";
-  const customerMode = phase.startsWith("paid-") || phase === "free-inactive-3d";
+  const customerMode = isCustomerAudienceId(phase);
   const audiencePhase = phase;
   const [idleHours, setIdleHours] = useState<number>(24);
 
@@ -423,9 +420,9 @@ function MailComposer() {
               ))}
             </optgroup>
             <optgroup label="Customers">
-              <option value="paid-no-setup">Paid users with no setup</option>
-              <option value="paid-setup-no-video">Paid users with setup but zero video</option>
-              <option value="free-inactive-3d">Free/demo users with no activity in the past 3 days</option>
+              {BULK_MAIL_CUSTOMER_OPTIONS.map((o) => (
+                <option key={o.id} value={o.id}>{o.label}</option>
+              ))}
             </optgroup>
           </select>
 
@@ -447,12 +444,8 @@ function MailComposer() {
           )}
         </div>
         <p className="text-[11px] mt-2" style={{ color: "var(--c-45)" }}>
-          {phase === "paid-no-setup"
-            ? "Paying customers who haven't finished account setup (no API key saved) — no idle window, matched regardless of last activity."
-            : phase === "paid-setup-no-video"
-            ? "Paying customers with account setup done but no niche created yet (no channel analyzed) — no idle window."
-            : phase === "free-inactive-3d"
-            ? "Free or demo users (never paid) with no sign-in and no project activity in the past 3 days — includes accounts that never did anything."
+          {customerMode
+            ? BULK_MAIL_CUSTOMER_OPTIONS.find((o) => o.id === phase)?.hint
             : anyMode
             ? "Targets owners of any unfinished video, whatever step it's on, idle for the selected duration."
             : "“Stuck at” = the user is currently at that step and has been idle for the selected duration."}
