@@ -34,7 +34,7 @@ const TIPS: { title: string; body: string }[] = [
     ? []
     : [{
         title: "Use Heclus Free Resources",
-        body: "Voiceover is the next biggest line after images, at around 6 credits per run on ElevenLabs. The free voices included with Heclus cost no credits at all, so unless a project needs a specific premium voice, this is close to free money.",
+        body: "The free voices included with Heclus cost no credits at all, against around 6 credits per run on ElevenLabs. Voiceover is a small part of a typical bill, so treat this as tidying up rather than the main saving.",
       }]),
   {
     title: "Retry failed beats, not the whole step",
@@ -51,12 +51,13 @@ const TIPS: { title: string; body: string }[] = [
 // three sit on one line without one of them looking taller or louder. The
 // 40px left gap is lg-only: once the row wraps on narrow screens, an indent
 // on the wrapped pill reads as a misalignment rather than separation.
-// Measured from project_costs: image generation (incl. thumbnails) ~64% of
-// all KIE credits spent, voiceover ~30%, and every Claude text step plus
-// video clips the remainder. Drives both the bar and the tip ordering.
+// Measured over every project_costs row (99k rows, 112.5k credits), NOT a
+// sample — an earlier version of this used a truncated query and badly
+// overstated voiceover. Images 86%, video clips 8%, voiceover 2%, all
+// prompt/text steps together under 4%.
 const SPEND_SPLIT = [
-  { label: "Images", pct: 64, color: "#8b6cf7" },
-  { label: "Voiceover", pct: 30, color: "#f0a855" },
+  { label: "Images", pct: 86, color: "#8b6cf7" },
+  { label: "Video clips", pct: 8, color: "#f0a855" },
   { label: "Everything else", pct: 6, color: "#d4d4d8" },
 ];
 
@@ -97,7 +98,7 @@ export function CostTipsModal() {
                 Tips to cut generation cost by 50%
               </DialogTitle>
               <DialogDescription className="text-[13px] leading-relaxed text-zinc-500">
-                Images and voiceover drive almost all of your spend, and the first three tips cost nothing to apply.{" "}
+                Images are the overwhelming majority of your spend, and the first three tips cost nothing to apply.{" "}
                 <span className="font-semibold text-zinc-700">We provide the tool, you control cost.</span>
               </DialogDescription>
             </DialogHeader>
