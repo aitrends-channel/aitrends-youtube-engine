@@ -32,6 +32,7 @@ import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import { logAnthropicCost } from "@/lib/costs";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
+import { friendlyError } from "@/lib/errors/friendly";
 
 function assertComplete(stopReason: string | null | undefined, label: string) {
   if (stopReason === "max_tokens") {
@@ -69,7 +70,40 @@ async function claimPromptsRun(projectId: string, userId: string, step: PromptsS
     console.warn("[prompts-cancel] could not claim run id; cancellation disabled for this run", error);
     return null;
   }
+  // Wipe the previous failure so the card stops explaining an attempt the
+  // user has just superseded. Deliberately a SEPARATE write from the claim
+  // above: if migration 114 hasn't been applied, an unknown column here must
+  // not fail the claim and silently disable cancellation for the whole run.
+  const { error: clearErr } = await supabase
+    .from("projects")
+    .update({ prompts_last_error: null, prompts_last_error_step: null, prompts_last_error_at: null })
+    .eq("id", projectId)
+    .eq("user_id", userId);
+  if (clearErr) console.warn("[prompts] could not clear last error (migration 114 applied?)", clearErr.message);
   return runId;
+}
+
+// Persist a failure so the prompts page can still explain it after a reload.
+// Stores the friendly sentence, not the raw payload, because the page renders
+// this verbatim. A user-initiated cancel is not a failure and is skipped.
+async function recordPromptsFailure(
+  projectId: string,
+  userId: string,
+  step: PromptsStep,
+  err: unknown,
+): Promise<void> {
+  const raw = err instanceof Error ? err.message : String(err);
+  if (raw === CANCELLED_MSG) return;
+  const { error } = await supabase
+    .from("projects")
+    .update({
+      prompts_last_error: friendlyError(raw),
+      prompts_last_error_step: step,
+      prompts_last_error_at: new Date().toISOString(),
+    })
+    .eq("id", projectId)
+    .eq("user_id", userId);
+  if (error) console.warn("[prompts] could not persist failure (migration 114 applied?)", error.message);
 }
 
 async function assertPromptsRunActive(projectId: string, runId: string | null): Promise<void> {
@@ -835,6 +869,9 @@ export async function generateImages(
   if (finalUpdErr) console.error(`[image-prompts] full-run hash write failed project=${projectId}:`, finalUpdErr);
   else console.log(`[image-prompts] full-run hash written project=${projectId} hash=${scriptHash.slice(0, 12)}… beats=${totalBeatCount}`);
   send({ type: "done", beatCount: totalBeatCount });
+  } catch (err) {
+    await recordPromptsFailure(projectId, userId, "images", err);
+    throw err;
   } finally {
     await releasePromptsRunIfOwned(projectId, userId, runId);
   }
@@ -1062,6 +1099,9 @@ export async function generateVideos(projectId: string, userId: string, send: (d
     .eq("id", projectId)
     .eq("user_id", userId);
   send({ type: "done", beatCount: allBeats.length });
+  } catch (err) {
+    await recordPromptsFailure(projectId, userId, "videos", err);
+    throw err;
   } finally {
     await releasePromptsRunIfOwned(projectId, userId, runId);
   }

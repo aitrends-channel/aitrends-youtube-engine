@@ -13,6 +13,7 @@ import { joinSegments } from "@/lib/text/joinSegments";
 import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
 import { planBulkMerge, findStubs } from "@/lib/text/mergePlan";
 import { MERGE_BEATS_HIDDEN } from "@/lib/feature-flags";
+import { friendlyError } from "@/lib/errors/friendly";
 import type { Beat } from "@/lib/types";
 
 // ── Sub-components ─────────────────────────────────────────────────────────
@@ -1317,7 +1318,11 @@ export default function PromptsPage({ params }: PageProps) {
   const videoPendingLabel: ReactNode = videoStepResumable
     ? !hasVideoBeats
       ? <span style={{ display: "inline-flex", alignItems: "center", gap: "40px", flexWrap: "wrap" }}>
-          <span style={{ color: "oklch(0.65 0.15 75)" }}>0 ready, first segment still processing</span>
+          <span style={{ color: "oklch(0.65 0.15 75)" }}>
+            {videoInFlightStillRunning
+              ? "0 ready, first segment still processing"
+              : "0 ready. The last attempt did not finish. Click Generate to retry."}
+          </span>
           {videoInFlightStillRunning && inFlightIndicator}
         </span>
       : beats.length > 0
@@ -1451,7 +1456,11 @@ export default function PromptsPage({ params }: PageProps) {
   const imagePendingLabel: ReactNode = imageStepResumable
     ? !hasImageBeats
       ? <span style={{ display: "inline-flex", alignItems: "center", gap: "40px", flexWrap: "wrap" }}>
-          <span style={{ color: "oklch(0.65 0.15 75)" }}>0 ready, first segment still processing</span>
+          <span style={{ color: "oklch(0.65 0.15 75)" }}>
+            {imageInFlightStillRunning
+              ? "0 ready, first segment still processing"
+              : "0 ready. The last attempt did not finish. Click Generate to retry."}
+          </span>
           {imageInFlightStillRunning && inFlightIndicator}
         </span>
       : estimatedTotalBeats > 0
@@ -1473,6 +1482,13 @@ export default function PromptsPage({ params }: PageProps) {
   // on refresh / nav-away → return; in that case we synthesize a fresh
   // running state with real progress derived from the persisted beat
   // count so the user sees actual work instead of an idle bar.
+  // Failure of the last run, persisted server-side so a reload still explains
+  // it. Scoped per step because the run id is gone by the time we read this.
+  const persistedError = (project as { prompts_last_error?: string | null } | undefined)?.prompts_last_error ?? null;
+  const persistedErrorStep = (project as { prompts_last_error_step?: string | null } | undefined)?.prompts_last_error_step ?? null;
+  const persistedImageError = persistedErrorStep === "images" ? persistedError : null;
+  const persistedVideoError = persistedErrorStep === "videos" ? persistedError : null;
+
   const baseImage: StepState =
     imageStep.status !== "idle" ? imageStep :
     imageStoppedByUser ? IDLE :
@@ -1484,10 +1500,11 @@ export default function PromptsPage({ params }: PageProps) {
           ? `Generating — ${beats.length} of ~${estimatedTotalBeats} beats generated`
           : hasImageBeats
             ? `Generating — ${beats.length} beats so far, still generating`
-            : "Generating — still generating in the background",
+            : "Generating in the background",
       progress: imageProgress,
     } :
-    imageStepCompleteOnServer ? { status: "done", message: "" } : IDLE;
+    imageStepCompleteOnServer ? { status: "done", message: "" } :
+    persistedImageError ? { status: "error", message: "", error: persistedImageError } : IDLE;
 
   // Rewrite the running message to combine the live persisted beat
   // count with the current chunk's section progress and, when
@@ -1528,7 +1545,8 @@ export default function PromptsPage({ params }: PageProps) {
           : "Generating motion prompts in the background…",
       progress: beats.length > 0 ? { current: videoBeats.length, total: beats.length } : undefined,
     } :
-    videoStepCompleteOnServer ? { status: "done", message: "" } : IDLE;
+    videoStepCompleteOnServer ? { status: "done", message: "" } :
+    persistedVideoError ? { status: "error", message: "", error: persistedVideoError } : IDLE;
 
   async function runImageStep() {
     if (!project?.script || !project?.visual_profile) {
@@ -1620,15 +1638,15 @@ export default function PromptsPage({ params }: PageProps) {
         // landed yet. Hard-failing here surfaced a scary error on a
         // perfectly healthy run — keep polling instead.
         if (completedOnServer && !serverStillActive) {
-          throw new Error("Generation reported done but some beats are missing prompts. Try again — the existing beats are preserved.");
+          throw new Error("Some beats are missing prompts. Try again. Existing beats are kept.");
         }
         if (!serverStillActive) {
           // Route released its run id without writing current_state=14
           // → it threw and the finally cleared the flag. Surface as
           // error so the user can retry.
           throw new Error(doneReceived
-            ? "Generation reported done but the server didn't mark the step complete. Try again — the existing beats are preserved."
-            : "Generation stopped before completing. Any beats saved so far are preserved. Try again to complete the rest.");
+            ? "The step did not finish. Try again. Existing beats are kept."
+            : "Generation stopped before finishing. Try again. Saved beats are kept.");
         }
         if (Date.now() - lastAdvanceAt > STALL_MS) {
           // Server still advertises an active run but no new beats have
@@ -1636,7 +1654,7 @@ export default function PromptsPage({ params }: PageProps) {
           // clearing its flag (timeout/crash/redeploy). Stop polling and
           // let the user resume; the route's chunk-walk picks up where
           // this left off, preserving every beat already saved.
-          throw new Error("Generation stalled — the server stopped responding while working. Any beats saved so far are preserved. Click Generate to resume the rest.");
+          throw new Error("Generation stalled. Click Generate to resume. Saved beats are kept.");
         }
 
         // Server is still working — keep the card live.
@@ -1665,7 +1683,7 @@ export default function PromptsPage({ params }: PageProps) {
         await mutate();
       } else {
         const msg = err instanceof Error ? err.message : "Failed";
-        setImageStep({ status: "error", message: "", error: msg });
+        setImageStep({ status: "error", message: "", error: friendlyError(msg) });
       }
     } finally {
       imageAbortRef.current = null;
@@ -1816,7 +1834,7 @@ export default function PromptsPage({ params }: PageProps) {
     const fresh = await mutate();
     const freshBeats = (fresh?.beats ?? []) as Beat[];
     if (freshBeats.length === 0) {
-      toast.error("Image prompts are missing — generate them first.");
+      toast.error("Image prompts are missing. Generate them first.");
       setVideoStep(IDLE);
       return;
     }
@@ -1841,7 +1859,7 @@ export default function PromptsPage({ params }: PageProps) {
         setVideoStep({ status: "done", message: "" });
         toast.success("Video prompts generated");
       } else {
-        throw new Error("Generation timed out — the server closed the connection before finishing. Any prompts saved so far are preserved. Try again to complete the rest.");
+        throw new Error("Generation timed out before finishing. Try again. Saved prompts are kept.");
       }
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
@@ -1849,7 +1867,7 @@ export default function PromptsPage({ params }: PageProps) {
         await mutate();
       } else {
         const msg = err instanceof Error ? err.message : "Failed";
-        setVideoStep({ status: "error", message: "", error: msg });
+        setVideoStep({ status: "error", message: "", error: friendlyError(msg) });
       }
     } finally {
       videoAbortRef.current = null;
