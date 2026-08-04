@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { createHmac } from "crypto";
 import { getPaymentSettings } from "@/lib/plans";
+import { shouldWelcome, sendWelcomeEmail } from "@/lib/email/welcome";
 
 // Standard Webhooks spec: webhook-id + webhook-timestamp + webhook-signature headers
 // signed payload: "{msgId}\n{timestamp}\n{body}", secret is base64-encoded (whsec_ prefix)
@@ -172,6 +173,24 @@ export async function POST(request: Request) {
       }
     }
     await supabase.from("allowed_emails").upsert({ email });
+
+    // Welcome the new subscriber — baseMetadata is the pre-grant copy, so
+    // a renewal or upgrade (already paid) and anyone already welcomed by
+    // the verify route are both skipped. Fail-soft and awaited, same as
+    // the verify path: the customer has paid regardless.
+    if (userId && shouldWelcome(baseMetadata as Record<string, unknown>)) {
+      try {
+        await sendWelcomeEmail({
+          userId,
+          email,
+          userMetadata: existing?.user_metadata,
+          plan: (baseMetadata as { plan?: string }).plan ?? null,
+        });
+        console.log(`[dodo-webhook] welcome email sent to ${email}`);
+      } catch (e) {
+        console.error(`[dodo-webhook] welcome email failed for ${email}:`, e instanceof Error ? e.message : e);
+      }
+    }
 
     // Reset the niches_used counter so the user gets a fresh allocation
     // matching their new (or renewed) plan. Covers initial purchase,

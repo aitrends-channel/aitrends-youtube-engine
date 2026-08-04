@@ -8,6 +8,10 @@
 // badge and the bulk "Merge beats" dialog.
 export const MERGE_BEATS_HIDDEN = true;
 
+// Automatic welcome email on a first-time plan purchase (lib/email/welcome).
+// Off means purchases grant access exactly as before, silently.
+export const WELCOME_EMAIL_ENABLED = true;
+
 // 1Click autopilot. Hides the Studio-vs-1Click chooser (New niche and New
 // video go straight to Studio), the Setup tab, the per-project controls, and
 // bounces the /one-click routes back to the dashboard. The API routes and the
