@@ -36,7 +36,7 @@ const FAQS: Faq[] = [
   },
   {
     q: "Why does a niche refuse to start?",
-    a: <>You need both KIE and ElevenLabs keys saved before creating a niche. Add them on the Setup page, then try again.</>,
+    a: <>You need both KIE and ElevenLabs keys saved before creating a niche. Add them on the Config page, then try again.</>,
   },
   {
     q: "Why is my voiceover slow?",

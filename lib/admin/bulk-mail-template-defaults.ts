@@ -145,7 +145,7 @@ Heclus Support`,
 
 Thanks for joining Heclus - your plan is active, but your account setup isn't finished yet, so none of it is working for you.
 
-It's one quick step: open the Setup page, add your API key (the page walks you through getting it), and you're live. From there your first video is as simple as pasting a YouTube channel URL - the pipeline handles the script, voiceover, images, video clips, and thumbnails.
+It's one quick step: open the Config page, add your API key (the page walks you through getting it), and you're live. From there your first video is as simple as pasting a YouTube channel URL - the pipeline handles the script, voiceover, images, video clips, and thumbnails.
 
 If anything about the setup is unclear, reply to this email and I'll walk you through it personally. I read every response.
 
@@ -176,22 +176,27 @@ Heclus Support`,
   {
     id: "service-outage",
     label: "Service notice: KIE outage",
-    subject: "Why your generations are failing right now",
-    body: `Hi {{name}},
+    subject: "Service update: upstream outage affecting video generation",
+    body: `Hello {{name}},
 
-If your generations have been failing, it isn't your setup and it isn't your API key. KIE - the provider Heclus routes generation through - is having an internal outage and is returning "Server exception, please try again later" on their side.
+We are writing to make you aware of an ongoing issue affecting video generation on Heclus.
 
-What that means for you:
+KIE, the upstream provider that Heclus routes generation requests through, is currently experiencing an internal outage and is returning server errors on its side. If a generation step has failed for you recently, the cause is this outage, not your account, your configuration, or your API key.
 
-- Script, prompt, image, voiceover and video steps can fail or stall while the outage lasts.
-- Nothing you have made is lost. Every project stays exactly at the step it reached, and you can carry on from there once KIE recovers.
-- Retrying straight away will usually hit the same error, so it is worth giving it some time rather than repeating the step.
+Current impact:
 
-We are watching KIE's status and the pipeline will pick up again as soon as their service is back. If this runs on longer than expected, I will email you an update.
+- Script, prompt, image, voiceover and video generation steps may fail or stall for the duration of the outage.
+- No work has been lost. Each project remains at the step it had reached and can be resumed once service is restored.
+- Repeating a failed step while the outage continues will return the same error, so we recommend waiting rather than retrying.
 
-Sorry for the disruption. If you are stuck on something specific, reply to this email and I will look at your account directly.
+What we are doing:
 
-Thanks,
+We are monitoring KIE's service status directly, and the pipeline will resume automatically once their platform recovers. If the outage extends significantly, we will follow up with a further update.
+
+We are sorry for the disruption this causes, particularly if you had work planned for today. If there is a specific project you need assistance with, reply to this message and we will review your account directly.
+
+Kind regards,
+
 Alex
 Heclus Support`,
     videoTable: false,
