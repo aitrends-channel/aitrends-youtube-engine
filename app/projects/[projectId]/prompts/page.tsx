@@ -12,6 +12,7 @@ import { ChevronUp, ChevronDown, Download, Check } from "lucide-react";
 import { joinSegments } from "@/lib/text/joinSegments";
 import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
 import { planBulkMerge, findStubs } from "@/lib/text/mergePlan";
+import { MERGE_BEATS_HIDDEN } from "@/lib/feature-flags";
 import type { Beat } from "@/lib/types";
 
 // ── Sub-components ─────────────────────────────────────────────────────────
@@ -205,7 +206,7 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLas
         <p className="text-sm flex-1 leading-relaxed line-clamp-2" style={{ color: "var(--c-60)" }}>
           {beat.scriptSegment}
         </p>
-        {isShort && (
+        {isShort && !MERGE_BEATS_HIDDEN && (
           <span className="shrink-0 mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
             style={{ background: "oklch(0.6 0.15 75 / 0.15)", color: "oklch(0.72 0.15 75)", border: "1px solid oklch(0.6 0.15 75 / 0.3)" }}>
             {words} word{words === 1 ? "" : "s"}
@@ -291,7 +292,7 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLas
 
           {/* Merge — the surviving beat keeps its own prompts, so this is
               deliberately a separate action from editing them. */}
-          {!(isFirst && isLast) && (
+          {!(isFirst && isLast) && !MERGE_BEATS_HIDDEN && (
             <div className="flex items-center gap-2 pt-1">
               <span className="text-[10px] font-semibold uppercase tracking-wider shrink-0" style={{ color: "var(--c-35)" }}>
                 Merge
@@ -2102,7 +2103,7 @@ export default function PromptsPage({ params }: PageProps) {
                 );
               })}
             </div>
-            {beats.length > 1 && (
+            {beats.length > 1 && !MERGE_BEATS_HIDDEN && (
               <button
                 onClick={() => setBulkOpen(true)}
                 disabled={anyRunning || remoteRunInProgress}

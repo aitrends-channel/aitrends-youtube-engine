@@ -4,6 +4,7 @@ import { useState, use, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, ArrowUpRight, Wand2, SlidersHorizontal } from "lucide-react";
 import { STUDIO_MODE_NAME } from "@/lib/one-click/config";
+import { ONE_CLICK_HIDDEN } from "@/lib/feature-flags";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
 import { StepCostCard } from "@/components/StepCostCard";
@@ -301,9 +302,13 @@ export default function ChannelPage({ params }: PageProps) {
   // Preselected from ?mode=oneclick, which the dashboard's "New niche"
   // chooser sets so this page opens on the mode the user already picked
   // instead of making them choose twice.
+  //
+  // While 1Click is gated the ?mode hint is ignored — otherwise a shared or
+  // bookmarked ?mode=oneclick URL would still put this page in a mode whose
+  // selector is hidden, and submitting would take the autopilot branch.
   const searchParams = useSearchParams();
   const [genMode, setGenMode] = useState<"studio" | "oneclick">(
-    searchParams.get("mode") === "oneclick" ? "oneclick" : "studio",
+    !ONE_CLICK_HIDDEN && searchParams.get("mode") === "oneclick" ? "oneclick" : "studio",
   );
   // null = not checked yet; refreshed whenever 1Click is selected and on
   // window focus (so returning from /setup?tab=oneclick picks up the
@@ -848,7 +853,9 @@ export default function ChannelPage({ params }: PageProps) {
 
             {/* Generation mode — Studio (classic wizard) vs 1Click
                 (autopilot). Locked once analysis has run, same as the
-                content type. */}
+                content type. Hidden entirely while 1Click is gated, which
+                leaves genMode on its "studio" default. */}
+            {!ONE_CLICK_HIDDEN && (
             <div className="space-y-2">
               <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
                 Generation Mode
@@ -892,6 +899,7 @@ export default function ChannelPage({ params }: PageProps) {
                 </button>
               )}
             </div>
+            )}
 
             <div className="space-y-2">
               {/* Label hidden in the unconfigured-1Click state — that
