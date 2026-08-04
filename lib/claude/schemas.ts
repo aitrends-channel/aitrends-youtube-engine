@@ -115,6 +115,32 @@ export const ImagePromptsSchema = z.object({
   })),
 });
 
+// Step 1 of the prompts step: split the script into beats and nothing else.
+// Deliberately NOT a subset of ImagePromptsSchema — the point of the separate
+// pass is that it emits ~10x fewer tokens, so asking for camera/lighting/mood
+// here would defeat it.
+export const BeatsSchema = z.object({
+  beats: z.array(z.object({
+    beatNumber: z.number(),
+    scriptSegment: z.string().min(1),
+  })),
+});
+
+// Step 2 of the three-step flow: write prompts for beats that already exist.
+// Deliberately has no scriptSegment field — the segmentation was approved by
+// the user (possibly after merging), so this pass must not be able to change
+// it. Beats are addressed by beatNumber instead.
+export const FillPromptsSchema = z.object({
+  beats: z.array(z.object({
+    beatNumber: z.number(),
+    imagePrompt: z.string().min(1),
+    camera: z.string().min(1),
+    lighting: z.string().min(1),
+    mood: z.string().min(1),
+    action: z.string().min(1),
+  })),
+});
+
 export const VideoPromptsSchema = z.object({
   beats: z.array(z.object({
     beatNumber: z.number(),
