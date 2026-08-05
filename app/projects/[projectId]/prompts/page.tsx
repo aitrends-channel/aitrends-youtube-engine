@@ -1585,6 +1585,13 @@ export default function PromptsPage({ params }: PageProps) {
   // What steps 2 and 3 actually require: the whole script split, and the user
   // done reviewing it.
   const promptStepsUnlocked = beatsComplete && beatsGateOpen;
+  // Merging is confined to the window between a finished split and the first
+  // prompt. Earlier renumbers rows the running walk is about to write to;
+  // once a single prompt exists, a merge leaves the survivor holding text
+  // written for its old, shorter segment, and fixing that means paying to
+  // rewrite it. Written flag-independently: with the combined pass, prompts
+  // land with the beats, so the same rule closes the window there too.
+  const canMergeBeats = beatsComplete && promptedBeats === 0 && !beatsConfirmed;
   const beatsPendingLabel: ReactNode = beatsResumable && beats.length > 0
     ? <span>
         <span style={{ color: "oklch(0.6 0.15 145)" }}>{`${beats.length} beat${beats.length === 1 ? "" : "s"} so far`}</span>
@@ -2219,11 +2226,8 @@ export default function PromptsPage({ params }: PageProps) {
   // the beats. Defined once so the two copies cannot drift apart. `shape`
   // is the only difference — the step card's buttons are rounded-lg, the
   // toolbar's are rounded-xl.
-  // Merging is confined to the review window: after the split finishes (earlier
-  // would renumber rows the running walk is about to write to) and before
-  // Continue, which is what the confirmation modal promises.
   const mergeBeatsButton = (shape: string) =>
-    beats.length > 1 && beatsComplete && !beatsConfirmed && !MERGE_BEATS_HIDDEN ? (
+    beats.length > 1 && canMergeBeats && !MERGE_BEATS_HIDDEN ? (
       <button
         onClick={() => setBulkOpen(true)}
         disabled={anyRunning || remoteRunInProgress}
@@ -2543,7 +2547,7 @@ export default function PromptsPage({ params }: PageProps) {
                   consistencyPreview={consistencyPreview}
                   isFirst={i === 0}
                   isLast={i === beats.length - 1}
-                  canMerge={beatsComplete && !beatsConfirmed}
+                  canMerge={canMergeBeats}
                   onMerge={(beatNumber, direction) => {
                     const keep = direction === "up" ? beatNumber - 1 : beatNumber;
                     const a = beats.find((b) => b.beatNumber === keep)?.scriptSegment ?? "";
