@@ -79,19 +79,19 @@ export function friendlyError(raw: string | undefined | null): string {
   // 500/529 and rate limits are transient and worth retrying; the rest are
   // configuration problems the user (or we) has to fix.
   // KIE's own 500 wording, checked BEFORE the generic 5xx rule below so it
-  // keeps its attribution. Every KIE-caused message names KIE, because
-  // otherwise users read a provider outage as Heclus being broken. The
-  // generic rule below must stay unattributed: the same 5xx shapes arrive
-  // from Anthropic direct (heclus_direct routing) and the free-tier
-  // providers, and blaming KIE for those would be wrong.
+  // keeps its attribution. Naming KIE is enough — it says where the failure
+  // came from without defending Heclus, which just draws attention to the
+  // question. The generic rule below must stay unattributed: the same 5xx
+  // shapes arrive from Anthropic direct (heclus_direct routing) and the
+  // free-tier providers, and blaming KIE for those would be wrong.
   if (msg.includes("server exception"))
-    return "KIE is failing on their side, not Heclus. Try again in a few minutes.";
+    return "KIE failed, you may try again.";
   // "fail code 500" is KIE's task-status wording, not an HTTP status, but
   // unwrapPayload scrapes any 3-digit run as one — so this has to be matched
   // before the generic 500 rule, which would otherwise shadow it and strip
   // the KIE attribution.
   if (msg.includes("fail code 500"))
-    return "KIE says this model is unavailable. Try a different model.";
+    return "KIE failed on this model. Try a different model.";
   if (errorType === "overloaded_error" || status === 529 || msg.includes("overloaded"))
     return "The AI service is overloaded. Wait a moment, then retry.";
   if (errorType === "api_error" || status === 500 || status === 502 || status === 503)
@@ -117,7 +117,7 @@ export function friendlyError(raw: string | undefined | null): string {
   if (msg.includes("credits remaining") || msg.includes("credit balance"))
     return "KIE credits exhausted. Top up at kie.ai.";
   if (msg.includes("quota_exceeded") || msg.includes("quota exceeded"))
-    return "KIE rate limit hit, not Heclus. Wait a minute, then retry.";
+    return "KIE rate limit hit. Wait a minute, then retry.";
   if (msg.includes("invalid_api_key") || msg.includes("invalid api key") || msg.includes("unauthorized") || (msg.includes("api key") && msg.includes("invalid")))
     return "API key is invalid. Update it in Settings.";
   if (msg.includes("api key") && (msg.includes("missing") || msg.includes("not set") || msg.includes("required")))
@@ -129,13 +129,13 @@ export function friendlyError(raw: string | undefined | null): string {
   if (msg.includes("internal error") || msg.includes("internal server error"))
     return "The model is temporarily unavailable. Try a different one.";
   if (msg.includes("temporarily paused") || msg.includes("interface is paused") || msg.includes("model is paused") || msg.includes("paused by kie"))
-    return "KIE paused this model. Try a different one.";
+    return "Model paused on KIE. Try a different one.";
   if (msg.includes("this field is required"))
-    return "KIE's video model rejected the request. Try another video model.";
+    return "KIE rejected the video request. Try another video model.";
   if (msg.includes("timed out") || msg.includes("timeout"))
     return "Still generating on KIE. Refresh the page to check status.";
   if (msg.includes("no task id") || msg.includes("no taskid"))
-    return "KIE would not queue the job. Try another model.";
+    return "KIE did not queue the job. Try another model.";
   // KIE / Veo safety filters flag anything the model interprets as a
   // reference to a real person, brand, copyrighted character, or sensitive
   // content. It's a per-beat problem — the same model with a different prompt
