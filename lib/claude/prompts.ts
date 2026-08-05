@@ -487,22 +487,33 @@ If the counts do not match, keep adding beats until coverage is complete.
 Number beats sequentially starting from 1, with no gaps. Call the save_image_prompts tool with a "beats" array. Do not write any text outside the tool call.`;
 }
 
-// Step 1 of the prompts step: segmentation only. The beat DEFINITION, RULES
-// and DENSITY text below are copied verbatim from buildImagePromptsCached on
-// purpose — the boundaries this pass produces must match what the combined
-// pass produced, or splitting the step would quietly change every downstream
-// image. Only the per-beat fields differ: no visual style, no camera/lighting/
-// mood/action, which is what makes this call cheap.
 // Step 2 of the three-step flow: prompts for beats that ALREADY exist. The
 // style, consistency and quality rules are the same ones the combined pass
 // uses — only the segmentation instructions are gone, because the segments
 // are an input here rather than an output. The model is told to key its
 // answer by beat number and never to re-cut or reword a segment, since the
 // user may have merged beats and that decision has to survive.
+//
+// promptStyle still matters here even though segmentation is fixed: Cinematic
+// asks for sustained camera moves and images that can hold the screen for
+// 6-10 seconds, which is prompt WORDING, not boundaries. Only the three lines
+// that differ between the combined general and cinematic prompts are swapped —
+// duplicating the whole block for them would just invite the two to drift.
 export function buildFillPromptsCached(
   visualProfile: VisualProfileOutput,
+  promptStyle: PromptStyle = "general",
   consistencySheet?: string,
 ): string {
+  const cinematic = promptStyle === "cinematic";
+  const cameraField = cinematic
+    ? `- camera: single short phrase, favoring sustained moves for held shots (e.g. "slow push-in on face", "lingering static wide", "slow lateral pan", "gradual pull-back reveal")`
+    : `- camera: single short phrase (e.g. "tight close-up", "low-angle wide", "overhead aerial")`;
+  const actionField = cinematic
+    ? `- action: single short phrase describing what unfolds WITHIN the held shot, including emotional shifts (e.g. "subject slowly lowers their head", "fire dims as the group falls silent")`
+    : `- action: single short phrase (e.g. "subject leans forward", "dust settles after the strike")`;
+  const closingQuality = cinematic
+    ? `- Every image must be strong enough to hold the screen for 6–10 seconds. Prioritize composition, emotion, and atmosphere over informational density.`
+    : `- Educational sections: visuals must help the viewer UNDERSTAND the narration, not just decorate it.`;
   return `You will be given a numbered list of SCRIPT BEATS. Write one image prompt for EACH beat.
 
 ${consistencyBlock(consistencySheet)}
@@ -518,15 +529,15 @@ ${renderVisualStyleBlock(visualProfile)}
 
 PER-BEAT FIELDS
 ${SELF_CONTAINED_IMAGE_PROMPT_FIELD}
-- camera: single short phrase (e.g. "tight close-up", "low-angle wide", "overhead aerial")
+${cameraField}
 - lighting: single short phrase (e.g. "warm golden rim light", "cold blue moonlight")
 - mood: single short phrase (e.g. "tense, urgent", "quiet, reverent")
-- action: single short phrase (e.g. "subject leans forward", "dust settles after the strike")
+${actionField}
 
 QUALITY
 ${SELF_CONTAINED_QUALITY_RULES}
 - Historical sections: historically accurate environments, clothing, tools, architecture, lighting — no anachronisms.
-- Educational sections: visuals must help the viewer UNDERSTAND the narration, not just decorate it.
+${closingQuality}
 
 VALIDATION (DO THIS BEFORE RETURNING)
 Count the beats you were given. Confirm your "beats" array has exactly that many entries and that every beatNumber matches one from the input.
@@ -540,6 +551,13 @@ export function buildFillPromptsDynamic(beats: { beatNumber: number; scriptSegme
   }`;
 }
 
+// Step 1 of the three-step flow: segmentation only. The beat DEFINITION, RULES
+// and DENSITY text below are copied verbatim from buildImagePromptsCached on
+// purpose — the boundaries this pass produces must match what the combined
+// pass produced, or splitting the step would quietly change every downstream
+// image. Only the per-beat fields differ: no visual style, no camera/lighting/
+// mood/action, which is what makes this call cheap.
+//
 // Segmentation is style-dependent, which is easy to miss: the Cinematic
 // prompt does not merely reword prompts, it changes where beats START and END
 // (~20-35 words per held shot, "prefer fewer, longer-held shots") against
