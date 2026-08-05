@@ -28,5 +28,7 @@ export const ONE_CLICK_HIDDEN = true;
 // the surviving beat keeps a prompt written for its old, shorter segment —
 // wrong text — and fixing that means paying to rewrite it.
 //
-// Ships dark until the new path has been exercised against a live provider.
-export const PROMPTS_THREE_STEP = false;
+// Requires migration 116 (batch_update_beat_image_prompts) — with the flag on
+// and that function missing, step 2 pays for its Claude calls and then fails at
+// the write.
+export const PROMPTS_THREE_STEP = true;

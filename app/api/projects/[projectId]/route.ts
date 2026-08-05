@@ -164,6 +164,45 @@ export async function PATCH(
     return NextResponse.json({ success: true });
   }
 
+  // Clear the prompt TEXT while keeping the beat rows. The three-step prompts
+  // flow needs this: there, the beats are step 1's output — deleting them to
+  // rewrite a prompt would throw away the segmentation and any merges the user
+  // made, which is the work the split exists to protect.
+  //
+  // Video prompts go too: one written against the old image prompt describes a
+  // shot that no longer exists.
+  //
+  // image_url / video_url are deliberately kept, same trade as migration 115 —
+  // those are already-paid renders and image generation is most of what a user
+  // spends. prompts_script_hash is kept as well: the segments still match the
+  // script they were cut from, so nothing about them is stale.
+  if (body.clear_image_prompt_text) {
+    const { error: updErr } = await supabase
+      .from("project_beats")
+      .update({
+        image_prompt: null,
+        video_prompt: null,
+        camera: null,
+        lighting: null,
+        mood: null,
+        action: null,
+      })
+      .eq("project_id", projectId);
+    if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 });
+    await supabase
+      .from("projects")
+      .update({ prompts_active_run_id: null, prompts_active_step: null })
+      .eq("id", projectId)
+      .eq("user_id", user.id);
+    await supabase
+      .from("projects")
+      .update({ current_state: 13 })
+      .eq("id", projectId)
+      .eq("user_id", user.id)
+      .gte("current_state", 14);
+    return NextResponse.json({ success: true });
+  }
+
   // Wipe every prior thumbnail reference before a fresh batch is
   // uploaded/fetched. The Thumbnails step calls this at the start of
   // generateConcepts so the analysis runs on the new references only:
