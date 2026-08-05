@@ -180,13 +180,18 @@ function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLast, onMerge }: {
+function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLast, canMerge, mergeHint, onMerge }: {
   beat: Beat;
   projectId: string;
   onSaved: () => Promise<unknown> | void;
   consistencyPreview?: string | null;
   isFirst: boolean;
   isLast: boolean;
+  /** False outside the merge window. The controls stay visible and disabled
+   *  rather than vanishing, so the feature is still discoverable. */
+  canMerge: boolean;
+  /** Why merging is unavailable, shown on hover. */
+  mergeHint?: string | null;
   onMerge: (beatNumber: number, direction: "up" | "down") => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -305,7 +310,9 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLas
               {!isFirst && (
                 <button
                   onClick={() => onMerge(beat.beatNumber, "up")}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-all hover:opacity-80"
+                  disabled={!canMerge}
+                  title={mergeHint ?? undefined}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40"
                   style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
                 >
                   <ChevronUp size={12} />
@@ -315,7 +322,9 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLas
               {!isLast && (
                 <button
                   onClick={() => onMerge(beat.beatNumber, "down")}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-all hover:opacity-80"
+                  disabled={!canMerge}
+                  title={mergeHint ?? undefined}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40"
                   style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
                 >
                   <ChevronDown size={12} />
@@ -1114,6 +1123,10 @@ export default function PromptsPage({ params }: PageProps) {
     }
   }, [project?.current_state, projectId, mutate]);
 
+  // Segmentation-only run (three-step flow). Its own state because card 1
+  // finishes long before card 2 starts, and a beats failure must not read as
+  // an image-prompts failure.
+  const [beatsStep, setBeatsStep] = useState<StepState>(IDLE);
   const [imageStep, setImageStep] = useState<StepState>(IDLE);
   const [videoStep, setVideoStep] = useState<StepState>(IDLE);
   // "User clicked Stop on this step" sticky flag. Pure UX state — overrides
@@ -1122,6 +1135,15 @@ export default function PromptsPage({ params }: PageProps) {
   // the route happened to write `current_state >= 14` before the abort
   // landed. Cleared the moment the user picks an explicit next action
   // (Resume kicks off a new run; Clear wipes state).
+  const [beatsStoppedByUser, setBeatsStoppedByUser] = useState(false);
+  // The user has looked at the beats and chosen to move on. Steps 2 and 3 stay
+  // locked until then: writing a prompt is what makes a merge expensive, so the
+  // decision to stop merging should be deliberate rather than implied by the
+  // split finishing. Not persisted — a project that already has prompts is
+  // past this gate anyway (see beatsGateOpen), so the only cost is one extra
+  // click if the page is reloaded between splitting and continuing.
+  const [beatsConfirmed, setBeatsConfirmed] = useState(false);
+  const [continueOpen, setContinueOpen] = useState(false);
   const [imageStoppedByUser, setImageStoppedByUser] = useState(false);
   const [videoStoppedByUser, setVideoStoppedByUser] = useState(false);
   // Snapshot of the persisted beat count at the moment the user clicked
@@ -1218,6 +1240,7 @@ export default function PromptsPage({ params }: PageProps) {
   // the abort the fetch keeps the connection open until the server
   // closes it (a few seconds later when its next assertPromptsRunActive
   // fires); the abort makes the UI snap to "stopped" instantly.
+  const beatsAbortRef = useRef<AbortController | null>(null);
   const imageAbortRef = useRef<AbortController | null>(null);
   const videoAbortRef = useRef<AbortController | null>(null);
   // Scroll container for the floating jump-to buttons — the per-beat prompt
@@ -1369,7 +1392,9 @@ export default function PromptsPage({ params }: PageProps) {
   // partial image beats was misclassified as an image resume — image
   // beats incomplete + run id set used to be sufficient to flag the
   // image step as running.
-  const remoteStep = (project?.prompts_active_step as "images" | "videos" | null | undefined) ?? null;
+  // "fill" is the three-step flow's image-prompts run and belongs to the same
+  // card as "images"; "beats" is card 1's segmentation run.
+  const remoteStep = (project?.prompts_active_step as "beats" | "fill" | "images" | "videos" | null | undefined) ?? null;
   // True image-step completion lives in `current_state >= 14` — the route
   // only writes that after the final chunk finishes and every beat has
   // an image_prompt. `beats.every(b => !!b.imagePrompt)` alone is NOT a
@@ -1399,12 +1424,42 @@ export default function PromptsPage({ params }: PageProps) {
   // eventually clears this when the run finishes and the route nulls
   // prompts_active_run_id + prompts_active_step.
   const imageRemoteRunning =
-    remoteRunInProgress && remoteStep === "images" && imageStep.status === "idle" && videoStep.status === "idle";
+    remoteRunInProgress
+    && (remoteStep === "images" || remoteStep === "fill")
+    && beatsStep.status === "idle" && imageStep.status === "idle" && videoStep.status === "idle";
+  const beatsRemoteRunning =
+    remoteRunInProgress && remoteStep === "beats"
+    && beatsStep.status === "idle" && imageStep.status === "idle" && videoStep.status === "idle";
   // Symmetric flag for the video step. Re-introduced safely now that
   // prompts_active_step disambiguates which run is going — previously
   // we couldn't derive this without false positives.
   const videoRemoteRunning =
-    remoteRunInProgress && remoteStep === "videos" && imageStep.status === "idle" && videoStep.status === "idle";
+    remoteRunInProgress && remoteStep === "videos"
+    && beatsStep.status === "idle" && imageStep.status === "idle" && videoStep.status === "idle";
+
+  // Estimate the target beat count from the script's word count so the
+  // image-step progress bar can show actual progress on reconnect
+  // instead of restarting at 0. The prompt instructs Claude to produce
+  // roughly one beat per 12 words of narration; this is approximate
+  // (a long-form script will land anywhere in the 10–15 words/beat
+  // range) but it's enough to give the user a meaningful "halfway
+  // there" instead of "starting from scratch". Capped so the visible
+  // percentage never claims to be more than 99% before the actual
+  // done signal flips the card to its done state.
+  const scriptWords = (project?.word_count as number | undefined) ?? 0;
+  const estimatedTotalBeats = scriptWords > 0 ? Math.max(1, Math.ceil(scriptWords / 12)) : 0;
+  // In the three-step flow the estimate is unnecessary: the beats already
+  // exist, so the total is exactly beats.length and the work done is the
+  // number of them carrying a prompt. Counting beats instead — as the
+  // combined pass must, since it creates them as it goes — would read as
+  // "done" from the first moment, because every beat is already there.
+  const fillMode = PROMPTS_THREE_STEP && hasImageBeats;
+  const promptedBeats = beats.filter((b) => !!b.imagePrompt).length;
+  const imageTotal = fillMode ? beats.length : estimatedTotalBeats;
+  const imageWritten = fillMode ? promptedBeats : beats.length;
+  const imageProgress = imageTotal > 0
+    ? { current: Math.min(imageWritten, imageTotal - 1), total: imageTotal }
+    : undefined;
 
   // Partial work the user can resume — beats already persisted but the
   // step never reached the server's "complete" mark (current_state >= 14),
@@ -1424,28 +1479,18 @@ export default function PromptsPage({ params }: PageProps) {
   //      a Resume button to pick the work back up.
   //  (3) Step had previously completed but the user stopped a regen
   //      mid-flight (imageStoppedByUser flips on then).
-  const imageStepResumable =
-    (hasImageBeats && !imageStepCompleteOnServer) || imageStoppedByUser;
+  // In fill mode the presence of beats says nothing about this step — beats
+  // are card 1's output and exist before card 2 has ever run. What's
+  // resumable there is PARTIAL prompts.
+  const imageStepResumable = fillMode
+    ? (promptedBeats > 0 && !imageStepCompleteOnServer) || imageStoppedByUser
+    : (hasImageBeats && !imageStepCompleteOnServer) || imageStoppedByUser;
   const imageActionLabel = imageStep.status === "error"
     ? "Resume"
     : (imageStepResumable && imageStep.status === "idle")
     ? "Resume"
     : null;
 
-  // Estimate the target beat count from the script's word count so the
-  // image-step progress bar can show actual progress on reconnect
-  // instead of restarting at 0. The prompt instructs Claude to produce
-  // roughly one beat per 12 words of narration; this is approximate
-  // (a long-form script will land anywhere in the 10–15 words/beat
-  // range) but it's enough to give the user a meaningful "halfway
-  // there" instead of "starting from scratch". Capped so the visible
-  // percentage never claims to be more than 99% before the actual
-  // done signal flips the card to its done state.
-  const scriptWords = (project?.word_count as number | undefined) ?? 0;
-  const estimatedTotalBeats = scriptWords > 0 ? Math.max(1, Math.ceil(scriptWords / 12)) : 0;
-  const imageProgress = estimatedTotalBeats > 0
-    ? { current: Math.min(beats.length, estimatedTotalBeats - 1), total: estimatedTotalBeats }
-    : undefined;
   // When the step is resumable surface a status line so the user can
   // see the work-so-far before deciding Resume vs Clear. Three flavors:
   //  • beats persisted → "N ready, ~M remaining"
@@ -1474,16 +1519,17 @@ export default function PromptsPage({ params }: PageProps) {
           </span>
           {imageInFlightStillRunning && inFlightIndicator}
         </span>
-      : estimatedTotalBeats > 0
+      : imageTotal > 0
+        // No "~" in fill mode: the total is the beat count, not an estimate.
         ? <span style={{ display: "inline-flex", alignItems: "center", gap: "40px", flexWrap: "wrap" }}>
             <span>
-              <span style={{ color: "oklch(0.6 0.15 145)" }}>{`${beats.length} ready`}</span>
-              <span style={{ color: "oklch(0.65 0.15 75)" }}>{`, ~${Math.max(0, estimatedTotalBeats - beats.length)} remaining`}</span>
+              <span style={{ color: "oklch(0.6 0.15 145)" }}>{`${imageWritten} ready`}</span>
+              <span style={{ color: "oklch(0.65 0.15 75)" }}>{`, ${fillMode ? "" : "~"}${Math.max(0, imageTotal - imageWritten)} remaining`}</span>
             </span>
             {imageInFlightStillRunning && inFlightIndicator}
           </span>
         : <span style={{ display: "inline-flex", alignItems: "center", gap: "40px", flexWrap: "wrap" }}>
-            <span style={{ color: "oklch(0.6 0.15 145)" }}>{`${beats.length} ready`}</span>
+            <span style={{ color: "oklch(0.6 0.15 145)" }}>{`${imageWritten} ready`}</span>
             {imageInFlightStillRunning && inFlightIndicator}
           </span>
     : undefined;
@@ -1497,15 +1543,76 @@ export default function PromptsPage({ params }: PageProps) {
   // it. Scoped per step because the run id is gone by the time we read this.
   const persistedError = (project as { prompts_last_error?: string | null } | undefined)?.prompts_last_error ?? null;
   const persistedErrorStep = (project as { prompts_last_error_step?: string | null } | undefined)?.prompts_last_error_step ?? null;
-  const persistedImageError = persistedErrorStep === "images" ? persistedError : null;
+  // "fill" is card 2's run in the three-step flow, so its failures belong to
+  // the image card.
+  const persistedImageError = persistedErrorStep === "images" || persistedErrorStep === "fill" ? persistedError : null;
   const persistedVideoError = persistedErrorStep === "videos" ? persistedError : null;
+  const persistedBeatsError = persistedErrorStep === "beats" ? persistedError : null;
 
-  // Card 1's state, derived only from data that already exists: beats with
-  // segments. No stored flag, so every existing project reads as complete and
-  // nothing needs backfilling.
+  // A split that never finished. generateBeats writes prompts_script_hash only
+  // on its success path, so beats with no hash are a partial walk. Restricted
+  // to projects with no prompts yet: a two-step project has beats AND prompts,
+  // and some predate the hash column entirely — without that guard every one
+  // of them would read as a half-done split. A hash that is merely out of DATE
+  // is a different condition — that's the "script was edited" warning below.
+  const beatsIncomplete =
+    PROMPTS_THREE_STEP && beats.length > 0 && promptedBeats === 0 && !project?.prompts_script_hash;
+
+  // Card 1's state. Completion is derived only from data that already exists —
+  // beats with segments — so every finished project reads as complete and
+  // nothing needs backfilling. The combined pass creates beats as it goes, so
+  // while it runs with none saved yet, card 1 is what's working.
   const beatsStepState: StepState =
+    beatsStep.status !== "idle" ? beatsStep :
+    beatsRemoteRunning ? {
+      status: "running",
+      message: promptsStopRequested
+        ? "Finishing the current section…"
+        : "Splitting the script in the background",
+    } :
     imageStep.status === "running" && beats.length === 0 ? { status: "running", message: "Splitting the script…" } :
-    beats.length > 0 ? { status: "done", message: "" } : IDLE;
+    persistedBeatsError ? { status: "error", message: "", error: persistedBeatsError } :
+    beats.length > 0 && !beatsIncomplete && !beatsStoppedByUser ? { status: "done", message: "" } : IDLE;
+
+  // Card 1 offers an action when there is nothing yet (Generate), and when the
+  // last attempt failed, was stopped, or left the walk partial (Resume).
+  // Never once the split is complete: re-splitting deletes the beat rows and
+  // takes the paid prompts, renders and voiceovers with them.
+  const beatsResumable = beatsIncomplete || beatsStoppedByUser || beatsStepState.status === "error";
+  // Gate for the two cards downstream. Card 1 reaching "done" is the only
+  // state that means the whole script is split — it already excludes a run in
+  // flight, a partial walk, a stop and a failure, each of which would let the
+  // next step write prompts for part of the script and call the step complete.
+  const beatsComplete = beatsStepState.status === "done";
+  // Prompts already written means the user is past the review gate — that's
+  // what keeps every existing project, and any resumed fill, unlocked without
+  // needing a stored flag or a backfill.
+  const beatsGateOpen = !PROMPTS_THREE_STEP || promptedBeats > 0 || beatsConfirmed;
+  // What steps 2 and 3 actually require: the whole script split, and the user
+  // done reviewing it.
+  const promptStepsUnlocked = beatsComplete && beatsGateOpen;
+  // Merging is confined to the window between a finished split and the first
+  // prompt. Earlier renumbers rows the running walk is about to write to;
+  // once a single prompt exists, a merge leaves the survivor holding text
+  // written for its old, shorter segment, and fixing that means paying to
+  // rewrite it. Written flag-independently: with the combined pass, prompts
+  // land with the beats, so the same rule closes the window there too.
+  const canMergeBeats = beatsComplete && promptedBeats === 0 && !beatsConfirmed;
+  // Shown on hover when the controls are greyed out — a disabled button with no
+  // explanation just reads as broken.
+  const mergeHint = canMergeBeats
+    ? null
+    : !beatsComplete
+      ? "Available once the whole script is split into beats"
+      : promptedBeats > 0
+        ? "Image prompts are already written for these beats"
+        : "You continued past the merge step";
+  const beatsPendingLabel: ReactNode = beatsResumable && beats.length > 0
+    ? <span>
+        <span style={{ color: "oklch(0.6 0.15 145)" }}>{`${beats.length} beat${beats.length === 1 ? "" : "s"} so far`}</span>
+        <span style={{ color: "oklch(0.65 0.15 75)" }}>, the split did not finish</span>
+      </span>
+    : undefined;
 
   const baseImage: StepState =
     imageStep.status !== "idle" ? imageStep :
@@ -1513,11 +1620,11 @@ export default function PromptsPage({ params }: PageProps) {
     imageRemoteRunning ? {
       status: "running",
       message: promptsStopRequested
-        ? `Finishing the current section… (${beats.length} ready so far)`
-        : estimatedTotalBeats > 0
-          ? `Generating — ${beats.length} of ~${estimatedTotalBeats} beats generated`
+        ? `Finishing the current section… (${imageWritten} ready so far)`
+        : imageTotal > 0
+          ? `Generating — ${imageWritten} of ${fillMode ? "" : "~"}${imageTotal} beats generated`
           : hasImageBeats
-            ? `Generating — ${beats.length} beats so far, still generating`
+            ? `Generating — ${imageWritten} beats so far, still generating`
             : "Generating in the background",
       progress: imageProgress,
     } :
@@ -1539,8 +1646,8 @@ export default function PromptsPage({ params }: PageProps) {
       ? {
           ...baseImage,
           message: typeof baseImage.liveBeatsInChunk === "number" && baseImage.liveBeatsInChunk > 0
-            ? `${beats.length} ready, section ${baseImage.progress.current}/${baseImage.progress.total} (${baseImage.liveBeatsInChunk} beats in this section)`
-            : `${beats.length} ready, section ${baseImage.progress.current} in progress (${baseImage.progress.current}/${baseImage.progress.total})`,
+            ? `${imageWritten} ready, section ${baseImage.progress.current}/${baseImage.progress.total} (${baseImage.liveBeatsInChunk} beats in this section)`
+            : `${imageWritten} ready, section ${baseImage.progress.current} in progress (${baseImage.progress.current}/${baseImage.progress.total})`,
         }
       : baseImage;
 
@@ -1571,6 +1678,17 @@ export default function PromptsPage({ params }: PageProps) {
       toast.error("Script and visual analysis required first");
       return;
     }
+    // Three-step flow: this card writes prompts onto beats that card 1
+    // already produced, so it has nothing to do until they exist. Re-read
+    // rather than trusting the render's closure — they may have been cleared
+    // since.
+    if (PROMPTS_THREE_STEP) {
+      const fresh = await mutate();
+      if (((fresh?.beats ?? []) as Beat[]).length === 0) {
+        toast.error("Split the script into beats first.");
+        return;
+      }
+    }
     // User picked Resume (or Generate). Clear the "stopped" sticky so
     // the derived state reflects the new run rather than the prior
     // user-initiated stop. Also clear the stop-grace snapshot so the
@@ -1582,7 +1700,9 @@ export default function PromptsPage({ params }: PageProps) {
     imageAbortRef.current = new AbortController();
     try {
       const doneReceived = await streamStep("/api/workflow/prompts", {
-        step: "images",
+        // "fill" writes prompts onto the existing beats; "images" is the
+        // combined pass that segments and prompts in one call.
+        step: PROMPTS_THREE_STEP ? "fill" : "images",
         projectId,
         script: project.script,
         visualProfile: project.visual_profile,
@@ -1624,8 +1744,14 @@ export default function PromptsPage({ params }: PageProps) {
       // it. Only reached when the SSE channel already dropped (else the
       // client stays in streamStep, kept warm by the route's heartbeat).
       const STALL_MS = 450_000;
+      // What "advancing" means differs by flow. The combined pass creates
+      // beats, so the beat count grows; the fill pass writes onto beats that
+      // all exist from the start, so the count NEVER changes and the watchdog
+      // would fire mid-run on every project. Count written prompts there.
+      const writtenCount = (rows: Beat[]) =>
+        PROMPTS_THREE_STEP ? rows.filter((b) => !!b.imagePrompt).length : rows.length;
       let fresh = await mutate();
-      let maxBeatsSeen = ((fresh?.beats ?? []) as Beat[]).length;
+      let maxBeatsSeen = writtenCount((fresh?.beats ?? []) as Beat[]);
       let lastAdvanceAt = Date.now();
       while (true) {
         if (imageAbortRef.current?.signal.aborted) {
@@ -1634,8 +1760,9 @@ export default function PromptsPage({ params }: PageProps) {
           return;
         }
         const freshBeats = (fresh?.beats ?? []) as Beat[];
-        if (freshBeats.length > maxBeatsSeen) {
-          maxBeatsSeen = freshBeats.length;
+        const written = writtenCount(freshBeats);
+        if (written > maxBeatsSeen) {
+          maxBeatsSeen = written;
           lastAdvanceAt = Date.now();
         }
         const completedOnServer = (fresh?.current_state ?? 0) >= 14;
@@ -1675,14 +1802,16 @@ export default function PromptsPage({ params }: PageProps) {
           throw new Error("Generation stalled. Click Generate to resume. Saved beats are kept.");
         }
 
-        // Server is still working — keep the card live.
+        // Server is still working — keep the card live. In the three-step
+        // flow the total is exact (the beats are all there), so no "~".
+        const pollTotal = PROMPTS_THREE_STEP ? freshBeats.length : estimatedTotalBeats;
         setImageStep({
           status: "running",
-          message: estimatedTotalBeats > 0
-            ? `Generating — ${freshBeats.length} of ~${estimatedTotalBeats} beats so far`
-            : `Generating — ${freshBeats.length} beats so far`,
-          progress: estimatedTotalBeats > 0
-            ? { current: Math.min(freshBeats.length, estimatedTotalBeats - 1), total: estimatedTotalBeats }
+          message: pollTotal > 0
+            ? `Generating — ${written} of ${PROMPTS_THREE_STEP ? "" : "~"}${pollTotal} beats so far`
+            : `Generating — ${written} beats so far`,
+          progress: pollTotal > 0
+            ? { current: Math.min(written, pollTotal - 1), total: pollTotal }
             : undefined,
         });
 
@@ -1726,8 +1855,11 @@ export default function PromptsPage({ params }: PageProps) {
     if (!regenTarget) return;
     setRegenerating(true);
     try {
+      // In the three-step flow, clear the prompt text and keep the rows: the
+      // beats belong to card 1, and deleting them here would take the
+      // segmentation — and the user's merges — with them.
       const body = regenTarget === "image"
-        ? { clear_image_prompts: true }
+        ? (fillMode ? { clear_image_prompt_text: true } : { clear_image_prompts: true })
         : { clear_video_prompts: true };
       const res = await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
@@ -1766,7 +1898,7 @@ export default function PromptsPage({ params }: PageProps) {
     setClearing(true);
     try {
       const body = clearTarget === "image"
-        ? { clear_image_prompts: true }
+        ? (fillMode ? { clear_image_prompt_text: true } : { clear_image_prompts: true })
         : { clear_video_prompts: true };
       const res = await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
@@ -1845,6 +1977,97 @@ export default function PromptsPage({ params }: PageProps) {
     }
   }
 
+  // Card 1: segmentation only. Deliberately has no Regenerate — re-splitting
+  // deletes the beat rows and takes the paid prompts, renders and voiceovers
+  // with them — so this only ever runs from a project with no beats.
+  async function runBeatsStep() {
+    if (!project?.script) {
+      toast.error("A script is required first");
+      return;
+    }
+    setBeatsStoppedByUser(false);
+    setBeatsStep({ status: "running", message: "Starting..." });
+    beatsAbortRef.current = new AbortController();
+    try {
+      await streamStep("/api/workflow/prompts", {
+        step: "beats",
+        projectId,
+        script: project.script,
+        // Style decides beat DENSITY, not just prompt wording, so send the
+        // active tab rather than letting the server fall back to the row.
+        promptStyle,
+      }, setBeatsStep, beatsAbortRef.current.signal);
+
+      // Same reasoning as runImageStep: the SSE channel dies on long runs, so
+      // the DB decides. Unlike the image step there is no current_state mark
+      // to wait for — generateBeats deliberately leaves the project at 13
+      // because prompts still have to be written — so the authoritative
+      // signal is the run being released with the script's hash recorded,
+      // which generateBeats writes only on its success path.
+      const POLL_MS = 3000;
+      const STALL_MS = 450_000;
+      let fresh = await mutate();
+      let maxBeatsSeen = ((fresh?.beats ?? []) as Beat[]).length;
+      let lastAdvanceAt = Date.now();
+      while (true) {
+        if (beatsAbortRef.current?.signal.aborted) {
+          setBeatsStep(IDLE);
+          await mutate();
+          return;
+        }
+        const freshBeats = (fresh?.beats ?? []) as Beat[];
+        if (freshBeats.length > maxBeatsSeen) {
+          maxBeatsSeen = freshBeats.length;
+          lastAdvanceAt = Date.now();
+        }
+        const serverStillActive = !!fresh?.prompts_active_run_id;
+
+        if (!serverStillActive) {
+          // Hash written + beats present = the chunk walk finished. Beats with
+          // no hash means it died partway; the next run resumes from them.
+          const hashRecorded = !!fresh?.prompts_script_hash
+            && (!currentScriptHash || fresh.prompts_script_hash === currentScriptHash);
+          if (freshBeats.length > 0 && hashRecorded) {
+            setBeatsStep({ status: "done", message: "" });
+            toast.success(`Script split into ${freshBeats.length} beats`);
+            return;
+          }
+          throw new Error(freshBeats.length > 0
+            ? "Splitting stopped before finishing. Click Generate to continue — saved beats are kept."
+            : "Splitting did not finish. Try again.");
+        }
+        if (Date.now() - lastAdvanceAt > STALL_MS) {
+          throw new Error("Splitting stalled. Click Generate to resume. Saved beats are kept.");
+        }
+
+        setBeatsStep({
+          status: "running",
+          message: estimatedTotalBeats > 0
+            ? `Splitting — ${freshBeats.length} of ~${estimatedTotalBeats} beats so far`
+            : `Splitting — ${freshBeats.length} beats so far`,
+          progress: estimatedTotalBeats > 0
+            ? { current: Math.min(freshBeats.length, estimatedTotalBeats - 1), total: estimatedTotalBeats }
+            : undefined,
+        });
+
+        await new Promise<void>((resolve) => {
+          const t = setTimeout(resolve, POLL_MS);
+          beatsAbortRef.current?.signal.addEventListener("abort", () => { clearTimeout(t); resolve(); }, { once: true });
+        });
+        fresh = await mutate();
+      }
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        setBeatsStep(IDLE);
+        await mutate();
+      } else {
+        setBeatsStep({ status: "error", message: "", error: friendlyError(err instanceof Error ? err.message : "Failed") });
+      }
+    } finally {
+      beatsAbortRef.current = null;
+    }
+  }
+
   async function runVideoStep() {
     // Re-check server state — image beats may have been cleared since
     // the page rendered. Pull fresh data and read the latest from the
@@ -1913,8 +2136,13 @@ export default function PromptsPage({ params }: PageProps) {
     // Capture which step the user was actually stopping. A non-null
     // abort ref means runImageStep/runVideoStep is still in flight on
     // this client — that's what they Stop button is acting on.
+    const wasBeatsActive = !!beatsAbortRef.current;
     const wasImageActive = !!imageAbortRef.current;
     const wasVideoActive = !!videoAbortRef.current;
+    if (beatsAbortRef.current) {
+      try { beatsAbortRef.current.abort(); } catch { /* ignore */ }
+      beatsAbortRef.current = null;
+    }
     if (imageAbortRef.current) {
       try { imageAbortRef.current.abort(); } catch { /* ignore */ }
       imageAbortRef.current = null;
@@ -1926,6 +2154,12 @@ export default function PromptsPage({ params }: PageProps) {
     // Force the step the user actively stopped to IDLE, regardless of
     // whether a racing completion check inside the polling loop just
     // flipped it to "done". User-initiated Stop wins.
+    // No stopped-sticky for beats: the beats that landed are simply there and
+    // the same Generate resumes from them.
+    if (wasBeatsActive) {
+      setBeatsStep(IDLE);
+      setBeatsStoppedByUser(true);
+    }
     if (wasImageActive) {
       setImageStep(IDLE);
       setImageStoppedByUser(true);
@@ -1951,12 +2185,54 @@ export default function PromptsPage({ params }: PageProps) {
     }
   }
 
+  // Escape hatch for a run the server never released — a function timeout,
+  // crash or redeploy leaves prompts_active_run_id set with nobody working,
+  // and the cards derive "running" from it, so the step freezes at
+  // "Finishing the current section…" with Stop already spent and Merge beats
+  // disabled. Clearing the three flags is safe even if a worker IS alive: the
+  // run-id mismatch is the same signal Stop uses, so it exits at its next
+  // check. Beats already written stay.
+  async function resetStuckRun() {
+    try {
+      await fetch(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompts_active_run_id: null,
+          prompts_active_step: null,
+          prompts_stop_requested: false,
+        }),
+      });
+      setBeatsStep(IDLE);
+      setImageStep(IDLE);
+      setVideoStep(IDLE);
+      await mutate();
+      toast.success("Run cleared — saved beats are kept");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not clear the run");
+    }
+  }
+
+  // Shown only once the user has already asked to stop and the server still
+  // claims the run — the exact state that can hang indefinitely.
+  const resetRunButton = remoteRunInProgress && promptsStopRequested ? (
+    <button
+      onClick={resetStuckRun}
+      title="The server still reports this run as active. Clear it and keep the beats already saved."
+      className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+      style={{ background: "transparent", color: "oklch(0.7 0.22 25)", border: "1px solid oklch(0.6 0.22 25 / 0.4)" }}
+    >
+      Force stop
+    </button>
+  ) : null;
+
   const tabs: { id: Tab; label: string; count: number }[] = [
     { id: "beats", label: "Image Beats", count: beats.length },
     { id: "video", label: "Video Beats", count: videoBeats.length },
   ];
 
   const anyRunning =
+    beatsStep.status === "running" ||
     imageStep.status === "running" ||
     videoStep.status === "running";
 
@@ -1969,8 +2245,9 @@ export default function PromptsPage({ params }: PageProps) {
     beats.length > 1 && !MERGE_BEATS_HIDDEN ? (
       <button
         onClick={() => setBulkOpen(true)}
-        disabled={anyRunning || remoteRunInProgress}
-        className={`flex items-center gap-1.5 px-3 py-1.5 ${shape} text-xs font-medium transition-all hover:opacity-80 disabled:opacity-40`}
+        disabled={anyRunning || remoteRunInProgress || !canMergeBeats}
+        title={mergeHint ?? "Merge beats that are too short to hold a shot"}
+        className={`flex items-center gap-1.5 px-3 py-1.5 ${shape} text-xs font-medium transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40`}
         style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
       >
         Merge beats
@@ -1979,6 +2256,20 @@ export default function PromptsPage({ params }: PageProps) {
         </span>
       </button>
     ) : null;
+
+  // Unlocks steps 2 and 3. Sits to the right of Merge beats so the two read as
+  // "merge first, or go straight on". Disappears once the gate is open.
+  const continueButton = beatsComplete && !beatsGateOpen ? (
+    <button
+      onClick={() => setContinueOpen(true)}
+      disabled={anyRunning || remoteRunInProgress}
+      title="Move on to image prompts. Merging after this point means paying to rewrite the merged beat's prompt."
+      className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40"
+      style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+    >
+      Continue
+    </button>
+  ) : null;
 
   // Hash the current script in the browser so we can compare it against
   // the hash stored when these beats were generated. If they differ, the
@@ -2110,16 +2401,25 @@ export default function PromptsPage({ params }: PageProps) {
             // the combined Image Prompts call, which would create prompts in
             // the same breath and destroy the merge window this step exists
             // to open.
-            hideAction={!PROMPTS_THREE_STEP || beats.length > 0}
-            extraAction={mergeBeatsButton("rounded-lg")}
-            onGenerate={requestRunImageStep}
+            hideAction={!PROMPTS_THREE_STEP || (beats.length > 0 && !beatsResumable)}
+            actionLabel={beats.length > 0 ? "Resume" : null}
+            pendingLabel={beatsPendingLabel}
+            extraAction={<>{beatsRemoteRunning && resetRunButton}{mergeBeatsButton("rounded-lg")}{continueButton}</>}
+            windingDown={beatsRemoteRunning && promptsStopRequested}
+            onStop={handleStopPrompts}
+            onGenerate={runBeatsStep}
           />
           <StepCard
             num={2}
             title="Image Prompts"
             description="One AI image prompt per script beat, matched to your channel's visual style"
             state={effectiveImage}
+            extraAction={imageRemoteRunning ? resetRunButton : null}
             windingDown={imageRemoteRunning && promptsStopRequested}
+            // In the three-step flow this card writes onto the beats card 1
+            // made, so it stays locked until the script is fully split AND the
+            // user has clicked Continue there.
+            disabled={PROMPTS_THREE_STEP && !promptStepsUnlocked}
             doneLabel={beats.length > 0 ? `${beats.length} beats ready` : undefined}
             pendingLabel={imagePendingLabel}
             actionLabel={imageActionLabel}
@@ -2132,13 +2432,14 @@ export default function PromptsPage({ params }: PageProps) {
             title="Video Prompts"
             description="Camera movement and motion instructions layered on top of each image beat"
             state={effectiveVideo}
+            extraAction={videoRemoteRunning ? resetRunButton : null}
             windingDown={videoRemoteRunning && promptsStopRequested}
             doneLabel={videoBeats.length > 0 ? `${videoBeats.length} beats ready` : undefined}
             pendingLabel={videoPendingLabel}
             actionLabel={videoActionLabel}
             onClear={hasVideoBeats ? () => setClearTarget("video") : null}
             onStop={handleStopPrompts}
-            disabled={!hasImageBeats}
+            disabled={!promptStepsUnlocked}
             optional
             onGenerate={requestRunVideoStep}
           />
@@ -2262,6 +2563,8 @@ export default function PromptsPage({ params }: PageProps) {
                   consistencyPreview={consistencyPreview}
                   isFirst={i === 0}
                   isLast={i === beats.length - 1}
+                  canMerge={canMergeBeats}
+                  mergeHint={mergeHint}
                   onMerge={(beatNumber, direction) => {
                     const keep = direction === "up" ? beatNumber - 1 : beatNumber;
                     const a = beats.find((b) => b.beatNumber === keep)?.scriptSegment ?? "";
@@ -2376,6 +2679,34 @@ export default function PromptsPage({ params }: PageProps) {
         </div>
       )}
 
+      <Dialog open={continueOpen} onOpenChange={setContinueOpen}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Done merging beats?</DialogTitle>
+            <DialogDescription>
+              Merging is only available here. Once you continue, these {beats.length} beat{beats.length === 1 ? "" : "s"} are
+              what your prompts, images and voiceover get built from — make sure you&apos;re happy with the split.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setContinueOpen(false)}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80"
+              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Keep merging
+            </button>
+            <button
+              onClick={() => { setBeatsConfirmed(true); setContinueOpen(false); }}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              Continue
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!regenTarget} onOpenChange={(open) => { if (!open && !regenerating) setRegenTarget(null); }}>
         <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
@@ -2384,7 +2715,9 @@ export default function PromptsPage({ params }: PageProps) {
             </DialogTitle>
             <DialogDescription>
               {regenTarget === "image"
-                ? `This discards all ${beats.length} existing image beat${beats.length === 1 ? "" : "s"} (and any video prompts attached to them) and rebuilds them from your current script. This can't be undone.`
+                ? fillMode
+                  ? `This rewrites the image prompt on all ${beats.length} beat${beats.length === 1 ? "" : "s"} and clears any video prompts attached to them. Your beats and how you've merged them stay as they are. This can't be undone.`
+                  : `This discards all ${beats.length} existing image beat${beats.length === 1 ? "" : "s"} (and any video prompts attached to them) and rebuilds them from your current script. This can't be undone.`
                 : `This discards the existing video prompts on all ${videoBeats.length} beat${videoBeats.length === 1 ? "" : "s"} and rebuilds them. Image prompts and beat metadata stay intact. This can't be undone.`}
             </DialogDescription>
           </DialogHeader>
@@ -2422,7 +2755,9 @@ export default function PromptsPage({ params }: PageProps) {
             </DialogTitle>
             <DialogDescription>
               {clearTarget === "image"
-                ? `This permanently removes all ${beats.length} image beat${beats.length === 1 ? "" : "s"} from the database. Video prompts attached to those beats will also be cleared. This can't be undone.`
+                ? fillMode
+                  ? `This removes the image prompt from all ${beats.length} beat${beats.length === 1 ? "" : "s"}, along with any video prompts attached to them. The beats themselves stay, so you won't have to split or merge them again. This can't be undone.`
+                  : `This permanently removes all ${beats.length} image beat${beats.length === 1 ? "" : "s"} from the database. Video prompts attached to those beats will also be cleared. This can't be undone.`
                 : `This removes the video prompts from all ${videoBeats.length} beat${videoBeats.length === 1 ? "" : "s"}. Image prompts and beat metadata stay intact. This can't be undone.`}
             </DialogDescription>
           </DialogHeader>
