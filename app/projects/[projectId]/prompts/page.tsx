@@ -179,16 +179,18 @@ function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLast, canMerge, onMerge }: {
+function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLast, canMerge, mergeHint, onMerge }: {
   beat: Beat;
   projectId: string;
   onSaved: () => Promise<unknown> | void;
   consistencyPreview?: string | null;
   isFirst: boolean;
   isLast: boolean;
-  /** False until the script is fully split — merging mid-walk renumbers rows
-   *  the running pass is about to write to. */
+  /** False outside the merge window. The controls stay visible and disabled
+   *  rather than vanishing, so the feature is still discoverable. */
   canMerge: boolean;
+  /** Why merging is unavailable, shown on hover. */
+  mergeHint?: string | null;
   onMerge: (beatNumber: number, direction: "up" | "down") => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -296,7 +298,7 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLas
 
           {/* Merge — the surviving beat keeps its own prompts, so this is
               deliberately a separate action from editing them. */}
-          {!(isFirst && isLast) && canMerge && !MERGE_BEATS_HIDDEN && (
+          {!(isFirst && isLast) && !MERGE_BEATS_HIDDEN && (
             <div className="flex items-center gap-2 pt-1">
               <span className="text-[10px] font-semibold uppercase tracking-wider shrink-0" style={{ color: "var(--c-35)" }}>
                 Merge
@@ -307,7 +309,9 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLas
               {!isFirst && (
                 <button
                   onClick={() => onMerge(beat.beatNumber, "up")}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-all hover:opacity-80"
+                  disabled={!canMerge}
+                  title={mergeHint ?? undefined}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40"
                   style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
                 >
                   <ChevronUp size={12} />
@@ -317,7 +321,9 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLas
               {!isLast && (
                 <button
                   onClick={() => onMerge(beat.beatNumber, "down")}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-all hover:opacity-80"
+                  disabled={!canMerge}
+                  title={mergeHint ?? undefined}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40"
                   style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
                 >
                   <ChevronDown size={12} />
@@ -1591,6 +1597,15 @@ export default function PromptsPage({ params }: PageProps) {
   // rewrite it. Written flag-independently: with the combined pass, prompts
   // land with the beats, so the same rule closes the window there too.
   const canMergeBeats = beatsComplete && promptedBeats === 0 && !beatsConfirmed;
+  // Shown on hover when the controls are greyed out — a disabled button with no
+  // explanation just reads as broken.
+  const mergeHint = canMergeBeats
+    ? null
+    : !beatsComplete
+      ? "Available once the whole script is split into beats"
+      : promptedBeats > 0
+        ? "Image prompts are already written for these beats"
+        : "You continued past the merge step";
   const beatsPendingLabel: ReactNode = beatsResumable && beats.length > 0
     ? <span>
         <span style={{ color: "oklch(0.6 0.15 145)" }}>{`${beats.length} beat${beats.length === 1 ? "" : "s"} so far`}</span>
@@ -2226,11 +2241,12 @@ export default function PromptsPage({ params }: PageProps) {
   // is the only difference — the step card's buttons are rounded-lg, the
   // toolbar's are rounded-xl.
   const mergeBeatsButton = (shape: string) =>
-    beats.length > 1 && canMergeBeats && !MERGE_BEATS_HIDDEN ? (
+    beats.length > 1 && !MERGE_BEATS_HIDDEN ? (
       <button
         onClick={() => setBulkOpen(true)}
-        disabled={anyRunning || remoteRunInProgress}
-        className={`flex items-center gap-1.5 px-3 py-1.5 ${shape} text-xs font-medium transition-all hover:opacity-80 disabled:opacity-40`}
+        disabled={anyRunning || remoteRunInProgress || !canMergeBeats}
+        title={mergeHint ?? "Merge beats that are too short to hold a shot"}
+        className={`flex items-center gap-1.5 px-3 py-1.5 ${shape} text-xs font-medium transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40`}
         style={{ background: "var(--bg-progress)", color: "var(--c-60)", border: "1px solid var(--bd-card)" }}
       >
         Merge beats
@@ -2546,6 +2562,7 @@ export default function PromptsPage({ params }: PageProps) {
                   isFirst={i === 0}
                   isLast={i === beats.length - 1}
                   canMerge={canMergeBeats}
+                  mergeHint={mergeHint}
                   onMerge={(beatNumber, direction) => {
                     const keep = direction === "up" ? beatNumber - 1 : beatNumber;
                     const a = beats.find((b) => b.beatNumber === keep)?.scriptSegment ?? "";
