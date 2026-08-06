@@ -1435,7 +1435,7 @@ export default function VoiceoverPage({ params }: PageProps) {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               One narration clip per beat. Each beat&apos;s clip is the timing source for its visual — no matcher, no drift.
             </p>
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <div className="mt-3 flex items-center gap-2 flex-wrap min-w-0 w-full">
               <StepCostCard projectId={projectId} column="voiceover" />
               <StepBalanceCard />
               <CostTipsModal />

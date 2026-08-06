@@ -321,7 +321,7 @@ export default function ScriptPage({ params }: PageProps) {
                 {selectedTopic}
               </p>
             )}
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <div className="mt-3 flex items-center gap-2 flex-wrap min-w-0 w-full">
               <StepCostCard projectId={projectId} column="script" />
               <StepBalanceCard />
               <CostTipsModal />
