@@ -198,7 +198,7 @@ export default function PlanPage() {
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
               style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-              <Zap size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+              <Zap size={18} style={{ color: "var(--brand-text)" }} />
             </div>
             <h1 className="text-2xl font-bold text-foreground">Your Plan</h1>
           </div>
@@ -229,7 +229,7 @@ export default function PlanPage() {
                   <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full capitalize mb-3"
                     style={{
                       background: "oklch(0.72 0.25 285 / 0.15)",
-                      color: "oklch(0.72 0.25 285)",
+                      color: "var(--brand-text)",
                       border: "1px solid oklch(0.72 0.25 285 / 0.3)",
                     }}>
                     <Zap size={10} />
@@ -258,7 +258,7 @@ export default function PlanPage() {
                 )}
                 {expiringSOon && !isExpired && !isCancelled && (
                   <span className="text-xs font-semibold px-2.5 py-1 rounded-full shrink-0"
-                    style={{ background: "oklch(0.75 0.18 70 / 0.12)", color: "oklch(0.75 0.18 70)", border: "1px solid oklch(0.75 0.18 70 / 0.25)" }}>
+                    style={{ background: "oklch(0.75 0.18 70 / 0.12)", color: "var(--accent-amber-text)", border: "1px solid oklch(0.75 0.18 70 / 0.25)" }}>
                     Expiring soon
                   </span>
                 )}
@@ -324,7 +324,7 @@ export default function PlanPage() {
 
                 {expiresAt && (
                   <div className="flex items-center gap-3">
-                    <CalendarDays size={14} style={{ color: isExpired ? "oklch(0.7 0.2 25)" : isCancelled ? "oklch(0.65 0.20 25)" : expiringSOon ? "oklch(0.75 0.18 70)" : "var(--c-40)" }} />
+                    <CalendarDays size={14} style={{ color: isExpired ? "oklch(0.7 0.2 25)" : isCancelled ? "oklch(0.65 0.20 25)" : expiringSOon ? "var(--accent-amber-text)" : "var(--c-40)" }} />
                     <div>
                       <p className="text-xs" style={{ color: "var(--c-40)" }}>
                         {isExpired ? "Expired on" : isCancelled ? "Access ends on" : "Expires on"}
@@ -332,7 +332,7 @@ export default function PlanPage() {
                       <p className="text-sm font-medium" style={{ color: isExpired ? "oklch(0.7 0.2 25)" : "var(--c-88)" }}>
                         {formatDate(expiresAt)}
                         {!isExpired && daysLeft !== null && (
-                          <span className="ml-2 text-xs font-normal" style={{ color: isCancelled ? "oklch(0.65 0.20 25)" : expiringSOon ? "oklch(0.75 0.18 70)" : "var(--c-40)" }}>
+                          <span className="ml-2 text-xs font-normal" style={{ color: isCancelled ? "oklch(0.65 0.20 25)" : expiringSOon ? "var(--accent-amber-text)" : "var(--c-40)" }}>
                             ({daysLeft} day{daysLeft !== 1 ? "s" : ""} left)
                           </span>
                         )}

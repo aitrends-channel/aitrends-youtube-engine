@@ -79,7 +79,7 @@ export async function GET() {
     // aggregation below adds into per-date Map buckets, which is
     // commutative — order doesn't change the chart numbers.
     supabase.from("projects").select("id, user_id, channel_name, current_state, selected_topic, created_at, assembled_url, assembly_started_at, assembly_finished_at, assembled_duration_ms").order("created_at", { ascending: false }),
-    supabase.from("account_settings").select("user_id, niches_used, niche_limit_override, kie_api_key"),
+    supabase.from("account_settings").select("user_id, niches_used, niche_limit_override, kie_api_key, anthropic_api_key, anthropic_direct_enabled"),
     getPlans(),
     supabase.from("product_config").select("activity_cutoff_at").eq("service", "_global").maybeSingle(),
   ]);
@@ -111,7 +111,7 @@ export async function GET() {
   // (column doesn't exist) and every user would silently show 0 niches
   // used. Detect that case and retry without the override column so the
   // numerator still renders correctly; overrides just default to null.
-  let settingsRows: Array<{ user_id: string; niches_used: number; niche_limit_override: number | null; has_setup: boolean }> = [];
+  let settingsRows: Array<{ user_id: string; niches_used: number; niche_limit_override: number | null; has_setup: boolean; has_anthropic_key: boolean; anthropic_direct: boolean }> = [];
   if (settingsRes.error) {
     console.warn("[admin/stats] account_settings full select failed; falling back to niches_used only", settingsRes.error);
     const fallback = await supabase.from("account_settings").select("user_id, niches_used");
@@ -123,6 +123,8 @@ export async function GET() {
         niches_used: (s.niches_used as number) ?? 0,
         niche_limit_override: null,
         has_setup: false,
+        has_anthropic_key: false,
+        anthropic_direct: false,
       }));
     }
   } else {
@@ -133,6 +135,10 @@ export async function GET() {
       // Account setup = the Setup page's API key saved. Same signal the
       // bulk-mail paid audiences use.
       has_setup: Boolean(((s as { kie_api_key?: string | null }).kie_api_key ?? "").trim()),
+      // BYO Anthropic key (migration 117). Two facts, not one: a key can be
+      // saved but switched off, and only the switch decides whose key pays.
+      has_anthropic_key: Boolean(((s as { anthropic_api_key?: string | null }).anthropic_api_key ?? "").trim()),
+      anthropic_direct: (s as { anthropic_direct_enabled?: boolean | null }).anthropic_direct_enabled === true,
     }));
   }
   const settingsByUserId = new Map(settingsRows.map((s) => [s.user_id, s]));
@@ -207,6 +213,8 @@ export async function GET() {
         planExpiresAt: (authUser.app_metadata?.plan_expires_at as string | undefined) ?? null,
         nichesUsed: settings?.niches_used ?? 0,
         hasSetup: settings?.has_setup ?? false,
+        hasAnthropicKey: settings?.has_anthropic_key ?? false,
+        anthropicDirect: settings?.anthropic_direct ?? false,
         planDefaultLimit,
         nicheLimitOverride: override,
         effectiveNicheLimit: override !== null ? override : planDefaultLimit,

@@ -166,11 +166,11 @@ export function DemoNav({ currentStep }: DemoNavProps) {
 
               <div className="min-w-0">
                 <p className="text-sm font-semibold leading-tight"
-                  style={{ color: isActive ? "var(--c-90)" : isDone ? "var(--c-65)" : "oklch(0.95 0 0 / 0.25)" }}>
+                  style={{ color: isActive ? "var(--c-90)" : isDone ? "var(--c-65)" : "var(--c-30)" }}>
                   {step.label}
                 </p>
                 <p className="text-xs leading-tight mt-0.5"
-                  style={{ color: isActive ? "var(--c-50)" : "oklch(0.95 0 0 / 0.25)" }}>
+                  style={{ color: isActive ? "var(--c-50)" : "var(--c-30)" }}>
                   {step.sublabel}
                 </p>
               </div>
@@ -300,7 +300,7 @@ export function DemoNav({ currentStep }: DemoNavProps) {
                       className="mt-1.5 inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full"
                       style={{
                         background: "oklch(0.72 0.25 285 / 0.15)",
-                        color: "oklch(0.72 0.25 285)",
+                        color: "var(--brand-text)",
                         border: "1px solid oklch(0.72 0.25 285 / 0.25)",
                       }}
                     >

@@ -117,7 +117,7 @@ function FreeQuotaBar({ used, cap, loaded, badge, badgeNote }: { used: number; c
         <span className="flex items-center gap-1.5 min-w-0">
           {badge && (
             <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold shrink-0"
-              style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
+              style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
               {badge}
             </span>
           )}
@@ -1214,7 +1214,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                   style={{
                     background: "oklch(0.2 0 0)",
                     border: "1px solid var(--bd-10)",
-                    color: deletingClone === c.id ? "oklch(0.72 0.19 25)" : "var(--c-45)",
+                    color: deletingClone === c.id ? "var(--accent-red-text)" : "var(--c-45)",
                   }}
                 >
                   {deletingClone === c.id
@@ -1271,7 +1271,7 @@ export default function VoiceoverPage({ params }: PageProps) {
             style={{
               background: "oklch(0.72 0.25 285 / 0.15)",
               border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-              color: "oklch(0.88 0.12 285)",
+              color: "var(--accent-purple-text)",
             }}
           ><Plus size={12} />Clone a voice</button>
         )}
@@ -1311,7 +1311,7 @@ export default function VoiceoverPage({ params }: PageProps) {
               style={recording ? {
                 background: "oklch(0.7 0.19 25 / 0.15)",
                 border: "1px solid oklch(0.7 0.19 25 / 0.4)",
-                color: "oklch(0.78 0.17 25)",
+                color: "var(--accent-red-text)",
               } : {
                 background: "var(--bg-panel)",
                 border: "1px solid var(--bd-card)",
@@ -1347,7 +1347,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                   style={{
                     background: "oklch(0.72 0.25 285 / 0.15)",
                     border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                    color: "oklch(0.88 0.12 285)",
+                    color: "var(--accent-purple-text)",
                   }}
                 >{cloning ? "Cloning…" : "Clone"}</button>
               </>
@@ -1376,7 +1376,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                 ["Permission confirmed", cloneConsent],
               ] as const).map(([label, done]) => (
                 <p key={label} className="text-[10px] flex items-center gap-1"
-                  style={{ color: done ? "oklch(0.72 0.16 150)" : "var(--c-40)" }}>
+                  style={{ color: done ? "var(--accent-green-text)" : "var(--c-40)" }}>
                   <span>{done ? "✓" : "○"}</span>{label}
                 </p>
               ))}
@@ -1484,7 +1484,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                     style={active ? {
                       background: "oklch(0.72 0.25 285 / 0.15)",
                       border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                      color: "oklch(0.88 0.12 285)",
+                      color: "var(--accent-purple-text)",
                     } : {
                       background: "var(--bg-input)",
                       border: "1px solid var(--bd-card)",
@@ -1513,7 +1513,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                       style={voiceTab === tab ? {
                         background: "oklch(0.72 0.25 285 / 0.15)",
                         border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                        color: "oklch(0.88 0.12 285)",
+                        color: "var(--accent-purple-text)",
                       } : {
                         background: "var(--bg-input)",
                         border: "1px solid var(--bd-card)",
@@ -1580,7 +1580,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                       only inside the Custom tab. */}
                   <div className="flex items-center justify-between gap-2 text-[10px]">
                     <span style={{ color: "var(--c-45)" }}>Custom voice clones</span>
-                    <span className="tabular-nums" style={{ color: clonesAtCap ? "oklch(0.72 0.19 25)" : "var(--c-45)" }}>
+                    <span className="tabular-nums" style={{ color: clonesAtCap ? "var(--accent-red-text)" : "var(--c-45)" }}>
                       {!clonesLoaded
                         ? "…"
                         : cloneUnlimited
@@ -1614,7 +1614,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                         style={freeProviderTab === p.id ? {
                           background: "oklch(0.72 0.25 285 / 0.15)",
                           border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                          color: "oklch(0.88 0.12 285)",
+                          color: "var(--accent-purple-text)",
                         } : {
                           background: "var(--bg-input)",
                           border: "1px solid var(--bd-card)",
@@ -1622,7 +1622,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                         }}
                       >{p.label}{"pro" in p && p.pro && (
                         <span className="px-1 rounded text-[9px] font-bold uppercase tracking-wide"
-                          style={{ background: "oklch(0.75 0.15 85 / 0.18)", color: "oklch(0.78 0.14 85)" }}>
+                          style={{ background: "oklch(0.75 0.15 85 / 0.18)", color: "var(--accent-amber-text)" }}>
                           pro
                         </span>
                       )}</button>
@@ -1651,7 +1651,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                         style={freeGenderTab === g ? {
                           background: "oklch(0.72 0.25 285 / 0.15)",
                           border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                          color: "oklch(0.88 0.12 285)",
+                          color: "var(--accent-purple-text)",
                         } : {
                           background: "var(--bg-input)",
                           border: "1px solid var(--bd-card)",
@@ -1678,7 +1678,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                           style={{
                             background: "oklch(0.72 0.25 285 / 0.15)",
                             border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                            color: "oklch(0.88 0.12 285)",
+                            color: "var(--accent-purple-text)",
                           }}
                         >Upgrade to Pro</button>
                       </div>
@@ -1750,7 +1750,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                           style={{
                             background: "var(--bg-input)",
                             border: "1px solid oklch(0.72 0.25 285 / 0.3)",
-                            color: "oklch(0.88 0.12 285)",
+                            color: "var(--accent-purple-text)",
                           }}
                         >
                           {freeVoicesLoading ? "Loading…" : "Load more voices"}
@@ -1845,10 +1845,10 @@ export default function VoiceoverPage({ params }: PageProps) {
                   title={selectedVoice ? `Voice id: ${selectedVoice}` : undefined}
                 >
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-[10px] uppercase tracking-wider font-semibold shrink-0" style={{ color: "oklch(0.78 0.12 285)" }}>
+                    <span className="text-[10px] uppercase tracking-wider font-semibold shrink-0" style={{ color: "var(--accent-purple-text)" }}>
                       Voice
                     </span>
-                    <span className="text-sm font-semibold truncate" style={{ color: "oklch(0.92 0.08 285)" }}>
+                    <span className="text-sm font-semibold truncate" style={{ color: "var(--accent-purple-text)" }}>
                       {model?.name ?? (selectedVoice
                         // An ai33 id that hasn't resolved yet is a known
                         // free voice, not an unknown one — the lookup is
@@ -1857,7 +1857,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                         : "None selected")}
                     </span>
                     {tag && (
-                      <span className="text-xs capitalize shrink-0" style={{ color: "oklch(0.78 0.12 285 / 0.8)" }}>
+                      <span className="text-xs capitalize shrink-0" style={{ color: "color-mix(in oklch, var(--accent-purple-text) 85%, transparent)" }}>
                         · {tag}
                       </span>
                     )}
@@ -1942,7 +1942,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                       title={projectStopRequested
                         ? "Stop received — no new beats will start, but the worker pool's in-flight KIE calls will still finish."
                         : "Voiceover generation is running on the server. The page will update as each beat completes."}
-                      style={{ background: "oklch(0.72 0.25 285 / 0.1)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "oklch(0.88 0.12 285)" }}
+                      style={{ background: "oklch(0.72 0.25 285 / 0.1)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "var(--accent-purple-text)" }}
                     >
                       <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
                       <span className="font-medium">
@@ -2105,7 +2105,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                               className="w-7 h-7 rounded-lg flex items-center justify-center"
                               aria-label="Beat regenerating"
                               title="Regenerating"
-                              style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "oklch(0.72 0.25 285)" }}
+                              style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "var(--brand-text)" }}
                             >
                               <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
                             </span>
@@ -2160,7 +2160,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                             className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
                             aria-label="Beat regenerating"
                             title="Regenerating"
-                            style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "oklch(0.72 0.25 285)" }}
+                            style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.3)", color: "var(--brand-text)" }}
                           >
                             <span className="w-3.5 h-3.5 rounded-full border-2 border-current border-t-transparent animate-spin" />
                           </div>
@@ -2172,7 +2172,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                             className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
                             aria-label="Beat queued"
                             title="Queued"
-                            style={{ background: "oklch(0.72 0.16 70 / 0.10)", border: "1px solid oklch(0.72 0.16 70 / 0.28)", color: "oklch(0.85 0.12 70)" }}
+                            style={{ background: "oklch(0.72 0.16 70 / 0.10)", border: "1px solid oklch(0.72 0.16 70 / 0.28)", color: "var(--accent-amber-text)" }}
                           >
                             <span className="w-2 h-2 rounded-full" style={{ background: "currentColor", opacity: 0.75 }} />
                           </div>
@@ -2224,7 +2224,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                   disabled={exportingVoiceover}
                   title="Download the full voiceover as one MP3 file"
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+                  style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
                 >
                   {exportingVoiceover ? (
                     <>

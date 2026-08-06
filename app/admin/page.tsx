@@ -393,6 +393,10 @@ interface AdminUser {
   nichesUsed: number;
   // Account setup complete = API key saved on the Setup page.
   hasSetup: boolean;
+  // BYO Anthropic key: saved, and whether it's actually switched on. A key
+  // that exists but is off still bills Claude calls to KIE.
+  hasAnthropicKey: boolean;
+  anthropicDirect: boolean;
   planDefaultLimit: number | null;
   nicheLimitOverride: number | null;
   effectiveNicheLimit: number | null;
@@ -5134,7 +5138,7 @@ export default function AdminPage() {
   const [userSearch, setUserSearch] = useState("");
   // "zero-video" / "no-setup" are cross-cutting slices (they overlap the
   // plan buckets), matched by predicate rather than bucketOf below.
-  type PlanBucket = "all" | "admin" | "founder" | "pro" | "starter" | "free" | "pending" | "zero-video" | "no-setup";
+  type PlanBucket = "all" | "admin" | "founder" | "pro" | "starter" | "free" | "pending" | "zero-video" | "no-setup" | "anthropic";
   const [planFilter, setPlanFilter] = useState<PlanBucket>("all");
   const [nicheLimitUser, setNicheLimitUser] = useState<AdminUser | null>(null);
   const [projectsPage, setProjectsPage] = useState(1);
@@ -5344,7 +5348,9 @@ export default function AdminPage() {
   // the plan, and that only fires if the user lands on the callback)
   // fall back to "starter" — the cheapest paid tier — instead of
   // Free/Demo, since they did pay something.
-  function bucketOf(u: AdminUser): Exclude<PlanBucket, "all" | "zero-video" | "no-setup"> {
+  // The plan buckets only. "anthropic", like "zero-video" and "no-setup", is a
+  // cross-cutting flag a user can have in any plan, so it is never a bucket.
+  function bucketOf(u: AdminUser): Exclude<PlanBucket, "all" | "zero-video" | "no-setup" | "anthropic"> {
     if (u.isAdmin) return "admin";
     if (u.status === "Pending") return "pending";
     const planNorm = (u.plan ?? "").toLowerCase().trim();
@@ -5361,6 +5367,11 @@ export default function AdminPage() {
   // both slices.
   const hasZeroVideos = (u: AdminUser) => !u.isAdmin && u.status !== "Pending" && u.projectCount === 0;
   const hasNoSetup = (u: AdminUser) => !u.isAdmin && u.status !== "Pending" && u.nichesUsed === 0;
+  // Excludes admins and pending invites, same as the two filters above it:
+  // these pills are meant to describe customers, and internal accounts (which
+  // have keys for testing) otherwise dominate a small count.
+  const hasAnthropicKey = (u: AdminUser) =>
+    !u.isAdmin && u.status !== "Pending" && u.hasAnthropicKey;
 
   const userSearchLower = userSearch.trim().toLowerCase();
   const filteredUsers = users.filter((u) => {
@@ -5368,6 +5379,7 @@ export default function AdminPage() {
       planFilter === "all" ? true
       : planFilter === "zero-video" ? hasZeroVideos(u)
       : planFilter === "no-setup" ? hasNoSetup(u)
+      : planFilter === "anthropic" ? hasAnthropicKey(u)
       : bucketOf(u) === planFilter;
     if (!matchesBucket) return false;
     if (userSearchLower && !u.email.toLowerCase().includes(userSearchLower)) return false;
@@ -6052,6 +6064,7 @@ export default function AdminPage() {
               { id: "pending",    label: "Pending",         value: userBreakdown.pending,               accent: "oklch(0.72 0.25 285)", bg: "oklch(0.72 0.25 285 / 0.1)",   color: "oklch(0.72 0.25 285)", border: "oklch(0.72 0.25 285 / 0.2)" },
               { id: "zero-video", label: "With zero video", value: users.filter(hasZeroVideos).length,  accent: "oklch(0.6 0.19 25)",   bg: "oklch(0.6 0.19 25 / 0.12)",    color: "oklch(0.55 0.19 25)", border: "oklch(0.6 0.19 25 / 0.3)" },
               { id: "no-setup",   label: "With no setup",   value: users.filter(hasNoSetup).length,     accent: "oklch(0.6 0.19 25)",   bg: "oklch(0.6 0.19 25 / 0.12)",    color: "oklch(0.55 0.19 25)", border: "oklch(0.6 0.19 25 / 0.3)" },
+              { id: "anthropic",  label: "With Anthropic key", value: users.filter(hasAnthropicKey).length, accent: "oklch(0.62 0.15 220)", bg: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.5 0.13 220)", border: "oklch(0.62 0.15 220 / 0.35)" },
             ] as const).map((s) => {
               const isActive = planFilter === s.id;
               // Every pill except Total carries its share of all users.

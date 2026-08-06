@@ -903,14 +903,14 @@ export default function AssemblePage({ params }: PageProps) {
               <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover</p>
                 <p className="mt-2 text-sm font-medium"
-                  style={{ color: !hasVoiceover ? "var(--c-45)" : trimSilence ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)" }}>
+                  style={{ color: !hasVoiceover ? "var(--c-45)" : trimSilence ? "oklch(0.7 0.15 145)" : "var(--brand-text)" }}>
                   {!hasVoiceover ? "Missing" : trimSilence ? "Trimmed ✓" : "Original"}
                 </p>
               </div>
               <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Video Clips</p>
                 <p className="mt-2 text-sm font-medium"
-                  style={{ color: generatedVideos > 0 ? "oklch(0.72 0.25 285)" : "var(--c-45)" }}>
+                  style={{ color: generatedVideos > 0 ? "var(--brand-text)" : "var(--c-45)" }}>
                   {generatedVideos} / {videoBeats}
                 </p>
                 {generatedVideos < videoBeats && (
@@ -948,7 +948,7 @@ export default function AssemblePage({ params }: PageProps) {
                         style={active ? {
                           background: "oklch(0.72 0.25 285 / 0.18)",
                           border: "1px solid oklch(0.72 0.25 285 / 0.45)",
-                          color: "oklch(0.88 0.12 285)",
+                          color: "var(--accent-purple-text)",
                         } : {
                           background: "var(--bg-input)",
                           border: "1px solid var(--bd-card)",
@@ -985,7 +985,7 @@ export default function AssemblePage({ params }: PageProps) {
                   would letterbox/crop every beat. Locked to the project's
                   generation aspect ratio. */}
               <span className="inline-flex px-4 py-2 rounded-xl text-xs font-medium"
-                style={{ background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "oklch(0.88 0.12 285)" }}>
+                style={{ background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "var(--accent-purple-text)" }}>
                 {aspectRatio}
               </span>
             </div>
@@ -998,7 +998,7 @@ export default function AssemblePage({ params }: PageProps) {
                 renders inside each preview card. */}
             <div className="flex items-center gap-3 rounded-2xl px-4 py-2.5 flex-wrap"
               style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-              <span aria-hidden="true" className="text-base shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>♫</span>
+              <span aria-hidden="true" className="text-base shrink-0" style={{ color: "var(--brand-text)" }}>♫</span>
               {!bgmFile && !bgmUploadedUrl ? (
                 <>
                   <p className="text-sm font-semibold flex-1">Background music</p>
@@ -1006,7 +1006,7 @@ export default function AssemblePage({ params }: PageProps) {
                     onClick={() => bgmInputRef.current?.click()}
                     disabled={assembling}
                     className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-all shrink-0"
-                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
                   >
                     Choose file
                   </button>
@@ -1155,7 +1155,7 @@ export default function AssemblePage({ params }: PageProps) {
             <div className="rounded-2xl px-4 py-2.5 space-y-3"
               style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               <div className="flex items-center gap-3 flex-wrap">
-                <span aria-hidden="true" className="text-base shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>◈</span>
+                <span aria-hidden="true" className="text-base shrink-0" style={{ color: "var(--brand-text)" }}>◈</span>
                 {!logoFile && !logoUploadedUrl ? (
                   <>
                     <p className="text-sm font-semibold flex-1">Channel logo</p>
@@ -1163,7 +1163,7 @@ export default function AssemblePage({ params }: PageProps) {
                       onClick={() => logoInputRef.current?.click()}
                       disabled={assembling}
                       className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-all shrink-0"
-                      style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+                      style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
                     >
                       Choose file
                     </button>
@@ -1406,7 +1406,7 @@ export default function AssemblePage({ params }: PageProps) {
                   <div className="flex items-center gap-2">
                     <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover Source</p>
                     {showLoading && (
-                      <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "oklch(0.72 0.25 285)" }}>
+                      <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "var(--brand-text)" }}>
                         <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
                         Loading previews…
                       </span>
@@ -1475,7 +1475,7 @@ export default function AssemblePage({ params }: PageProps) {
                             background: "var(--bg-input)",
                             border: "1px solid var(--bd-card)",
                           }}>
-                          <p className="text-xs font-medium" style={{ color: captionsStyle === s.id ? "oklch(0.88 0.12 285)" : "var(--c-60)" }}>{s.label}</p>
+                          <p className="text-xs font-medium" style={{ color: captionsStyle === s.id ? "var(--accent-purple-text)" : "var(--c-60)" }}>{s.label}</p>
                           <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>{s.hint}</p>
                         </button>
                       ))}
@@ -1492,7 +1492,7 @@ export default function AssemblePage({ params }: PageProps) {
                             style={captionsSize === s.id ? {
                               background: "oklch(0.72 0.25 285 / 0.15)",
                               border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                              color: "oklch(0.88 0.12 285)",
+                              color: "var(--accent-purple-text)",
                             } : {
                               background: "var(--bg-input)",
                               border: "1px solid var(--bd-card)",
@@ -1513,7 +1513,7 @@ export default function AssemblePage({ params }: PageProps) {
                             style={captionsPosition === p.id ? {
                               background: "oklch(0.72 0.25 285 / 0.15)",
                               border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                              color: "oklch(0.88 0.12 285)",
+                              color: "var(--accent-purple-text)",
                             } : {
                               background: "var(--bg-input)",
                               border: "1px solid var(--bd-card)",
@@ -1535,7 +1535,7 @@ export default function AssemblePage({ params }: PageProps) {
                           style={captionsLanguage === lang.code ? {
                             background: "oklch(0.72 0.25 285 / 0.15)",
                             border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                            color: "oklch(0.88 0.12 285)",
+                            color: "var(--accent-purple-text)",
                           } : {
                             background: "var(--bg-input)",
                             border: "1px solid var(--bd-card)",
@@ -1595,7 +1595,7 @@ export default function AssemblePage({ params }: PageProps) {
                     className="mx-auto block max-h-[70vh] rounded-xl"
                     style={{ background: "var(--bg-page-2)", maxWidth: "100%" }}
                   />
-                  <p className="text-sm text-center font-medium leading-snug" style={{ color: "oklch(0.72 0.18 60)" }}>
+                  <p className="text-sm text-center font-medium leading-snug" style={{ color: "var(--accent-amber-text)" }}>
                     Preview — finishing up
                   </p>
                 </div>
@@ -1741,7 +1741,7 @@ export default function AssemblePage({ params }: PageProps) {
                                 style={{
                                   background: done ? "oklch(0.55 0.15 145 / 0.15)" : pausedHere ? "oklch(0.65 0.18 60 / 0.15)" : doing ? "oklch(0.72 0.25 285 / 0.15)" : "var(--bg-track)",
                                   border: `1px solid ${done ? "oklch(0.55 0.15 145 / 0.4)" : pausedHere ? "oklch(0.65 0.18 60 / 0.5)" : doing ? "oklch(0.72 0.25 285 / 0.4)" : "var(--bd-7)"}`,
-                                  color: done ? "oklch(0.7 0.15 145)" : pausedHere ? "oklch(0.72 0.18 60)" : doing ? "oklch(0.88 0.12 285)" : "var(--c-35)",
+                                  color: done ? "oklch(0.7 0.15 145)" : pausedHere ? "var(--accent-amber-text)" : doing ? "var(--accent-purple-text)" : "var(--c-35)",
                                   fontSize: "9px",
                                 }}>
                                 {done ? "✓" : pausedHere ? (

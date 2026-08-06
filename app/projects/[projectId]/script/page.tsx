@@ -55,7 +55,7 @@ function ScriptRunningCaption({ size = "md", emphasis = false }: { size?: "sm" |
       <p
         key={idx}
         className="text-base font-semibold animate-pulse"
-        style={{ color: "oklch(0.72 0.25 285)" }}
+        style={{ color: "var(--brand-text)" }}
       >
         {SCRIPT_RUNNING_CAPTIONS[idx]}…
       </p>
@@ -492,7 +492,7 @@ export default function ScriptPage({ params }: PageProps) {
                               style={{
                                 background: showGreen ? "oklch(0.55 0.15 145 / 0.1)" : "oklch(0.72 0.25 285 / 0.1)",
                                 border: `1px solid ${showGreen ? "oklch(0.55 0.15 145 / 0.3)" : "oklch(0.72 0.25 285 / 0.3)"}`,
-                                color: showGreen ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)",
+                                color: showGreen ? "oklch(0.7 0.15 145)" : "var(--brand-text)",
                               }}>
                               <span className="text-[10px] uppercase tracking-wide" style={{ opacity: 0.7 }}>Your Script</span>
                               <span className="tabular-nums font-semibold">{wordCount.toLocaleString()}</span>

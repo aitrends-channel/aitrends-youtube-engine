@@ -76,7 +76,7 @@ export function OneClickControls({ projectId, status, error, onChanged }: {
       style={{
         background: danger ? "transparent" : "oklch(0.72 0.25 285 / 0.12)",
         border: `1px solid ${danger ? "oklch(0.6 0.22 25 / 0.4)" : "oklch(0.72 0.25 285 / 0.3)"}`,
-        color: danger ? "oklch(0.7 0.22 25)" : "oklch(0.72 0.25 285)",
+        color: danger ? "oklch(0.7 0.22 25)" : "var(--brand-text)",
       }}
     >
       {node}

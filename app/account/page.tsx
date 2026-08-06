@@ -165,7 +165,7 @@ function FeedbackCard() {
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: "oklch(0.75 0.15 85 / 0.12)", border: "1px solid oklch(0.75 0.15 85 / 0.25)" }}>
-          <Star size={18} style={{ color: "oklch(0.75 0.15 85)" }} />
+          <Star size={18} style={{ color: "var(--accent-amber-text)" }} />
         </div>
         <div>
           <h2 className="text-lg font-bold text-foreground">Your feedback</h2>
@@ -461,7 +461,7 @@ export default function AccountPage() {
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
               style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-              <KeyRound size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+              <KeyRound size={18} style={{ color: "var(--brand-text)" }} />
             </div>
             <div>
               <h1 className="text-lg font-bold text-foreground">

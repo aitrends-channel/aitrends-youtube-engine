@@ -111,7 +111,7 @@ export default function DemoTopicPage() {
                           <span
                             className="text-xs font-mono mt-0.5 shrink-0"
                             style={{
-                              color: locked ? "var(--c-35)" : "oklch(0.72 0.25 285)",
+                              color: locked ? "var(--c-35)" : "var(--brand-text)",
                               background: locked ? "var(--bg-track)" : "oklch(0.72 0.25 285 / 0.1)",
                               padding: "2px 6px",
                               borderRadius: "4px",

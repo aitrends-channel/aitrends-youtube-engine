@@ -69,7 +69,7 @@ export function VoicePickerGrid({
   const genderPill = (active: boolean) => active
     ? {
         background: "oklch(0.72 0.25 285 / 0.15)",
-        color: "oklch(0.88 0.12 285)",
+        color: "var(--accent-purple-text)",
         boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.35)",
       }
     : { background: "transparent", color: "var(--c-55)" };

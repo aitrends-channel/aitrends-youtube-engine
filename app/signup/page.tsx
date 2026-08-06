@@ -139,11 +139,11 @@ function SignupForm({ onSuccess }: { onSuccess: (email: string) => void }) {
         />
         <span>
           I agree to the{" "}
-          <a href="https://heclus.com/terms" target="_blank" rel="noopener noreferrer" className="underline hover:opacity-80" style={{ color: "oklch(0.72 0.25 285)" }}>
+          <a href="https://heclus.com/terms" target="_blank" rel="noopener noreferrer" className="underline hover:opacity-80" style={{ color: "var(--brand-text)" }}>
             Terms of Service
           </a>
           {" "}and{" "}
-          <a href="https://heclus.com/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:opacity-80" style={{ color: "oklch(0.72 0.25 285)" }}>
+          <a href="https://heclus.com/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:opacity-80" style={{ color: "var(--brand-text)" }}>
             Privacy Policy
           </a>
           .
@@ -218,7 +218,7 @@ export default function SignupPage() {
         >
           {success ? (
             <div className="text-center space-y-2 py-2">
-              <p className="text-sm font-semibold" style={{ color: "oklch(0.72 0.25 285)" }}>
+              <p className="text-sm font-semibold" style={{ color: "var(--brand-text)" }}>
                 Email sent to your inbox, follow the link to complete your account setup.
               </p>
               <p className="text-xs" style={{ color: "var(--c-45)" }}>

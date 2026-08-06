@@ -213,7 +213,7 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, mode, isFirst,
         onClick={() => setExpanded(!expanded)}
       >
         <span className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold"
-          style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" }}>
+          style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "var(--brand-text)" }}>
           {beat.beatNumber}
         </span>
         <p className="text-sm flex-1 leading-relaxed line-clamp-2" style={{ color: "var(--c-60)" }}>
@@ -225,7 +225,7 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, mode, isFirst,
         </p>
         {mode === "beats" && isShort && !MERGE_BEATS_HIDDEN && (
           <span className="shrink-0 mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
-            style={{ background: "oklch(0.6 0.15 75 / 0.15)", color: "oklch(0.72 0.15 75)", border: "1px solid oklch(0.6 0.15 75 / 0.3)" }}>
+            style={{ background: "oklch(0.6 0.15 75 / 0.15)", color: "var(--accent-amber-text)", border: "1px solid oklch(0.6 0.15 75 / 0.3)" }}>
             {words} word{words === 1 ? "" : "s"}
           </span>
         )}
@@ -272,7 +272,7 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, mode, isFirst,
             {consistencyPreview && (
               <div className="mb-2 rounded-lg px-3 py-2"
                 style={{ background: "oklch(0.72 0.25 285 / 0.06)", border: "1px dashed oklch(0.72 0.25 285 / 0.3)" }}>
-                <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "oklch(0.72 0.25 285)" }}>
+                <p className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--brand-text)" }}>
                   + Prefix (added before the prompt)
                 </p>
                 <p className="text-xs leading-relaxed" style={{ color: "var(--c-60)" }}>{consistencyPreview}</p>
@@ -371,7 +371,7 @@ function ModalLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <a href={href} target="_blank" rel="noopener noreferrer"
       className="font-medium underline underline-offset-2 transition-opacity hover:opacity-80"
-      style={{ color: "oklch(0.72 0.25 285)" }}>
+      style={{ color: "var(--brand-text)" }}>
       {children} ↗
     </a>
   );
@@ -512,7 +512,7 @@ function StepCard({ num, title, description, state, windingDown, doneLabel, pend
       <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm font-bold mt-0.5"
         style={
           isDone ? { background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.7 0.15 145)" } :
-          isRunning ? { background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" } :
+          isRunning ? { background: "oklch(0.72 0.25 285 / 0.12)", color: "var(--brand-text)" } :
           isError ? { background: "oklch(0.6 0.22 25 / 0.12)", color: "oklch(0.7 0.2 25)" } :
           { background: "var(--bg-progress)", color: "var(--c-30)" }
         }>
@@ -935,7 +935,7 @@ function PrefixPanel({
             doubles as the affordance for opening the panel. */}
         <span className="text-[10px] px-3 py-1.5 rounded-full"
           style={append
-            ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.4)" }
+            ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.4)" }
             : { background: "var(--bg-panel)", color: "var(--c-45)", border: "1px solid var(--bd-card)" }}>
           {badge}
         </span>
@@ -1016,7 +1016,7 @@ function PrefixPanel({
               onClick={() => setScope("this")}
               disabled={saving}
               className="text-[11px] font-medium transition-colors disabled:opacity-50"
-              style={{ color: scope === "this" ? "oklch(0.88 0.12 285)" : "var(--c-45)" }}
+              style={{ color: scope === "this" ? "var(--accent-purple-text)" : "var(--c-45)" }}
             >
               This video
             </button>
@@ -1049,14 +1049,14 @@ function PrefixPanel({
               onClick={() => setScope("all")}
               disabled={saving}
               className="text-[11px] font-medium transition-colors disabled:opacity-50"
-              style={{ color: scope === "all" ? "oklch(0.88 0.12 285)" : "var(--c-45)" }}
+              style={{ color: scope === "all" ? "var(--accent-purple-text)" : "var(--c-45)" }}
             >
               All videos
             </button>
           </div>
 
           {scope === "all" && (
-            <p className="text-[11px] leading-relaxed" style={{ color: "oklch(0.72 0.25 285)" }}>
+            <p className="text-[11px] leading-relaxed" style={{ color: "var(--brand-text)" }}>
               Saves as your account default, so it leads prompts on every
               project. This project stops keeping its own copy and follows the
               default from here on.
@@ -2331,7 +2331,7 @@ export default function PromptsPage({ params }: PageProps) {
       <button
         onClick={() => { setAnthropicKeyDraft(""); setRerouteFor(step); }}
         className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all hover:opacity-80"
-        style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "oklch(0.88 0.12 285)" }}
+        style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "var(--accent-purple-text)" }}
       >
         Generate via direct Anthropic?
       </button>
@@ -2449,7 +2449,7 @@ export default function PromptsPage({ params }: PageProps) {
           style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
           {beatsStale && (
             <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
-              style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "oklch(0.85 0.12 70)" }}>
+              style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "var(--accent-amber-text)" }}>
               <span aria-hidden>⚠</span>
               <span>
                 Script was edited after these beats were generated. The image prompts below no longer match your current script — click <strong>Regenerate</strong> to update them.
@@ -2477,7 +2477,7 @@ export default function PromptsPage({ params }: PageProps) {
                   style={active ? {
                     background: "oklch(0.72 0.25 285 / 0.15)",
                     border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                    color: "oklch(0.88 0.12 285)",
+                    color: "var(--accent-purple-text)",
                   } : {
                     background: "transparent",
                     border: "1px solid transparent",
@@ -2495,7 +2495,7 @@ export default function PromptsPage({ params }: PageProps) {
             && !remoteRunInProgress
             && (project?.prompt_style ?? "general") !== promptStyle && (
             <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
-              style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "oklch(0.85 0.12 70)" }}>
+              style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "var(--accent-amber-text)" }}>
               <span aria-hidden>⚠</span>
               <span>
                 Style changed to <strong>{promptStyle === "cinematic" ? "Cinematic" : "General"}</strong>. Existing prompts still use the previous style — click <strong>Regenerate</strong> to apply.
@@ -2591,7 +2591,7 @@ export default function PromptsPage({ params }: PageProps) {
                     style={active ? {
                       background: "oklch(0.72 0.25 285 / 0.15)",
                       border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                      color: "oklch(0.88 0.12 285)",
+                      color: "var(--accent-purple-text)",
                     } : {
                       background: "transparent",
                       border: "1px solid transparent",
@@ -2603,7 +2603,7 @@ export default function PromptsPage({ params }: PageProps) {
                       <span className="px-1.5 py-0.5 rounded-full text-[10px] tabular-nums"
                         style={{
                           background: active ? "oklch(0.72 0.25 285 / 0.2)" : "var(--bg-panel)",
-                          color: active ? "oklch(0.88 0.12 285)" : "var(--c-45)",
+                          color: active ? "var(--accent-purple-text)" : "var(--c-45)",
                         }}>
                         {tab.count}
                       </span>

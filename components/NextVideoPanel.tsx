@@ -112,7 +112,7 @@ export function NextVideoPanel({ projectId, project }: NextVideoPanelProps) {
                   </span>
                 ) : (
                   <span className="font-mono text-[9px] shrink-0"
-                    style={{ color: "oklch(0.72 0.25 285 / 0.5)" }}>
+                    style={{ color: "color-mix(in oklch, var(--brand-text) 60%, transparent)" }}>
                     {String(i + 1).padStart(2, "0")}
                   </span>
                 )}
