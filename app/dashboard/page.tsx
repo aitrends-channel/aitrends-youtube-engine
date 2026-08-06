@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
-import { Settings, LogOut, BarChart3, Trash2, Download, KeyRound, SlidersHorizontal, Wand2, ChevronRight } from "lucide-react";
+import { Settings, LogOut, BarChart3, Trash2, Download, KeyRound, SlidersHorizontal, Wand2, ChevronRight, Clapperboard } from "lucide-react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { ADMIN_EMAILS } from "@/lib/admin";
@@ -262,7 +262,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
                     fill="url(#dcBarG)" opacity={0.85 + i * 0.15} />
                   <text x={cx} y={by - 5} textAnchor="middle" fontSize="10" fill="#9b7ff5" fontWeight="600">{bar.count}</text>
                   <text x={cx} y={PAD_T + plotH + 18} textAnchor="middle" fontSize="10"
-                    style={{ fill: "oklch(1 0 0 / 0.30)" }}>{bar.label}</text>
+                    style={{ fill: "var(--c-40)" }}>{bar.label}</text>
                 </g>
               );
             })}
@@ -647,6 +647,11 @@ export default function HomePage() {
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   // "New Video" opens a Studio-vs-1Click chooser before creating the fork.
   const [newVideoGroup, setNewVideoGroup] = useState<ChannelGroup | null>(null);
+  // Header "New" button: first asks niche-or-video, then (for a video) which
+  // niche it belongs to. A video can't be created from the header without one,
+  // because it forks an existing niche's channel analysis and visual profile.
+  const [newChooser, setNewChooser] = useState(false);
+  const [pickNicheForVideo, setPickNicheForVideo] = useState(false);
   const [startingOneClick, setStartingOneClick] = useState(false);
   // Studio-vs-1Click chooser for a brand-new niche (no group to fork).
   const [newNicheChooser, setNewNicheChooser] = useState(false);
@@ -1040,7 +1045,7 @@ export default function HomePage() {
             )}
           </div>
           <button
-            onClick={createProject}
+            onClick={() => setNewChooser(true)}
             disabled={creating || !authReady || navigatingTo === "new-niche"}
             className="flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
@@ -1049,7 +1054,7 @@ export default function HomePage() {
               style={{ background: "white", color: "oklch(0.55 0.15 145)" }}>
               {creating || navigatingTo === "new-niche" ? "…" : "+"}
             </span>
-            <span className="hidden sm:inline">{navigatingTo === "new-niche" ? "Loading…" : creating ? "Creating…" : "Niche"}</span>
+            <span className="hidden sm:inline">{navigatingTo === "new-niche" ? "Loading…" : creating ? "Creating…" : "New"}</span>
           </button>
         </div>
       </header>
@@ -1332,8 +1337,16 @@ export default function HomePage() {
                 const barW = Math.min(52, slotW * 0.6);
                 const r = Math.min(5, barW / 3);
 
-                // Word-wrap label into lines that fit within the slot width
-                const CHAR_W = 5.8; // approx px per char at font-size 10
+                // Label type scales with how many niches share the axis. At 10px
+                // a 14-niche chart gives each label a ~40px slot, so a name like
+                // "Unf*ck Everything" wraps to four stacked fragments and reads
+                // as noise. Smaller type fits more characters per line, so the
+                // same name wraps once or twice instead.
+                const LABEL_FONT = n <= 6 ? 10 : n <= 9 ? 9 : n <= 13 ? 8 : n <= 18 ? 7 : 6.5;
+                // Wrapping, line spacing and the label block's height are all
+                // derived from the font size — hardcoding any of them against
+                // 10px is what made the fragments overlap when the type shrank.
+                const CHAR_W = LABEL_FONT * 0.58; // approx advance width for Inter
                 const maxCharsPerLine = Math.max(6, Math.floor(slotW / CHAR_W));
                 function wrapLabel(text: string): string[] {
                   const words = text.split(" ");
@@ -1362,7 +1375,7 @@ export default function HomePage() {
                   return lines;
                 }
 
-                const LINE_H = 13; // px between label lines
+                const LINE_H = Math.round(LABEL_FONT * 1.3); // px between label lines
                 const wrappedLabels = points.map(p => wrapLabel(p.label));
                 const maxLines = Math.max(...wrappedLabels.map(l => l.length));
                 const PAD_B = 8 + maxLines * LINE_H;
@@ -1440,7 +1453,7 @@ export default function HomePage() {
                                 <g>
                                   <rect x={TX} y={TY} width={TW} height={TH} rx={5} ry={5}
                                     style={{ fill: "oklch(0.12 0.02 285)" }} stroke="#9b7ff5" strokeOpacity="0.4" strokeWidth="1" />
-                                  <text x={TX + TW / 2} y={TY + 12} textAnchor="middle" fontSize="9.5" style={{ fill: "oklch(1 0 0 / 0.70)" }} fontWeight="500">
+                                  <text x={TX + TW / 2} y={TY + 12} textAnchor="middle" fontSize="9.5" style={{ fill: "oklch(0.88 0 0)" }} fontWeight="500">
                                     {nicheLabel}
                                   </text>
                                   <text x={TX + TW / 2} y={TY + 24} textAnchor="middle" fontSize="10" fill="#9b7ff5" fontWeight="700">
@@ -1450,8 +1463,8 @@ export default function HomePage() {
                               );
                             })()}
                             {/* X-axis label — word-wrapped */}
-                            <text x={cx} textAnchor="middle" fontSize="10"
-                              style={{ fill: isEmpty ? "oklch(1 0 0 / 0.12)" : hov ? "#9b7ff5" : "oklch(1 0 0 / 0.30)" }}
+                            <text x={cx} textAnchor="middle" fontSize={LABEL_FONT}
+                              style={{ fill: isEmpty ? "var(--c-25)" : hov ? "var(--brand-text)" : "var(--c-40)" }}
                               fontWeight={hov ? "600" : "400"}>
                               {wrappedLabels[i].map((line, li) => (
                                 <tspan key={li} x={cx} dy={li === 0 ? PAD_T + plotH + LINE_H : LINE_H}>
@@ -1913,6 +1926,102 @@ export default function HomePage() {
               ) : "Delete"}
             </button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Header "New": niche or video, then which niche the video belongs to.
+          Two views in one dialog so Back doesn't close and reopen it. */}
+      <Dialog
+        open={newChooser}
+        onOpenChange={(open) => { if (!open) { setNewChooser(false); setPickNicheForVideo(false); } }}
+      >
+        <DialogContent className="sm:max-w-md p-6 gap-5 bg-[var(--bg-panel)] text-[var(--c-90)] ring-[var(--bd-card)]">
+          {!pickNicheForVideo ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>What are you making?</DialogTitle>
+                <DialogDescription className="text-[var(--c-55)]">
+                  A niche holds a channel&apos;s style; videos are made inside one.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-3 mt-2">
+                <button
+                  onClick={() => { setNewChooser(false); createProject(); }}
+                  className="group flex items-center gap-3.5 p-4 rounded-xl border border-[var(--bd-card)] text-left transition-all hover:bg-[var(--bg-progress)]"
+                >
+                  <span className="w-10 h-10 shrink-0 rounded-xl bg-[var(--bg-progress)] flex items-center justify-center">
+                    <Wand2 size={18} className="text-[var(--c-70)]" />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-[var(--c-90)]">Add new niche</span>
+                    <span className="block text-xs text-[var(--c-55)]">Analyse a channel and build its style.</span>
+                  </span>
+                  <ChevronRight size={16} className="text-[var(--c-45)] group-hover:text-[var(--c-70)]" />
+                </button>
+                {/* Disabled with a reason rather than hidden: a first-time user
+                    should see that videos exist and what unlocks them. */}
+                <button
+                  onClick={() => {
+                    if (channelGroups.length === 0) return;
+                    // Only one niche: nothing to choose, go straight in.
+                    if (channelGroups.length === 1) {
+                      setNewChooser(false);
+                      createVideoForChannel(channelGroups[0]);
+                      return;
+                    }
+                    setPickNicheForVideo(true);
+                  }}
+                  disabled={channelGroups.length === 0}
+                  className="group flex items-center gap-3.5 p-4 rounded-xl border border-[var(--bd-card)] text-left transition-all hover:bg-[var(--bg-progress)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                >
+                  <span className="w-10 h-10 shrink-0 rounded-xl bg-[var(--bg-progress)] flex items-center justify-center">
+                    <Clapperboard size={18} className="text-[var(--c-70)]" />
+                  </span>
+                  <span className="flex-1 min-w-0">
+                    <span className="block text-sm font-semibold text-[var(--c-90)]">Create new video</span>
+                    <span className="block text-xs text-[var(--c-55)]">
+                      {channelGroups.length === 0
+                        ? "Add a niche first — a video reuses its channel analysis."
+                        : "Reuses a niche's channel analysis and style."}
+                    </span>
+                  </span>
+                  {channelGroups.length > 0 && <ChevronRight size={16} className="text-[var(--c-45)] group-hover:text-[var(--c-70)]" />}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Which niche?</DialogTitle>
+                <DialogDescription className="text-[var(--c-55)]">
+                  The new video inherits this niche&apos;s channel analysis and visual style.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-2.5 mt-2 max-h-[46vh] overflow-y-auto pr-0.5">
+                {channelGroups.map((g) => (
+                  <button
+                    key={g.channelName}
+                    onClick={() => { setNewChooser(false); setPickNicheForVideo(false); createVideoForChannel(g); }}
+                    className="group flex items-center gap-3.5 p-3.5 rounded-xl border border-[var(--bd-card)] text-left transition-all hover:bg-[var(--bg-progress)]"
+                  >
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-semibold text-[var(--c-90)] truncate">{g.channelName}</span>
+                      <span className="block text-xs text-[var(--c-55)]">
+                        {g.projects.length} video{g.projects.length === 1 ? "" : "s"}
+                      </span>
+                    </span>
+                    <ChevronRight size={16} className="text-[var(--c-45)] group-hover:text-[var(--c-70)]" />
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setPickNicheForVideo(false)}
+                className="w-full py-2 rounded-xl text-sm font-medium text-[var(--c-55)] hover:text-[var(--c-90)] transition-colors"
+              >
+                Back
+              </button>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
