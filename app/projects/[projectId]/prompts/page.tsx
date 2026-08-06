@@ -67,13 +67,14 @@ function EditablePrompt({
   textColor,
 }: {
   value: string | null | undefined;
-  field: "image" | "video";
+  field: "image" | "video" | "segment";
   beatNumber: number;
   projectId: string;
   onSaved: () => Promise<unknown> | void;
   accent: string;
   textColor: string;
 }) {
+  const noun = field === "segment" ? "segment" : `${field} prompt`;
   // Coerce to a string up front — a beat may not have this prompt yet
   // (null/undefined), and draft.trim() would throw during render.
   const safeValue = value ?? "";
@@ -104,9 +105,9 @@ function EditablePrompt({
       if (!res.ok) throw new Error(data.error ?? `Request failed (HTTP ${res.status})`);
       await onSaved();
       setEditing(false);
-      toast.success(`Beat ${beatNumber} ${field} prompt saved`);
+      toast.success(`Beat ${beatNumber} ${noun} saved`);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to save prompt");
+      toast.error(err instanceof Error ? err.message : `Failed to save ${noun}`);
     } finally {
       setSaving(false);
     }
@@ -117,7 +118,7 @@ function EditablePrompt({
       <div>
         {safeValue
           ? <p className="text-sm leading-relaxed" style={{ color: textColor }}>{safeValue}</p>
-          : <p className="text-xs italic" style={{ color: "var(--c-35)" }}>No {field} prompt yet.</p>}
+          : <p className="text-xs italic" style={{ color: "var(--c-35)" }}>No {noun} yet.</p>}
         <button
           onClick={(e) => { e.stopPropagation(); setDraft(safeValue); setEditing(true); }}
           className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium transition-opacity hover:opacity-80"
@@ -225,11 +226,27 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLas
 
       {expanded && (
         <div className="px-4 pb-4 space-y-4" style={{ borderTop: "1px solid var(--bd-6)" }}>
+          {/* The segment is editable only until this beat has a prompt. After
+              that the prompt, the render, the voiceover and the timings are all
+              derived from it, and editing would leave them describing text that
+              is no longer here — the same reason merging closes then. */}
           <div className="pt-3 rounded-lg px-3 py-2.5" style={{ background: "oklch(0.72 0.25 285 / 0.05)", border: "1px solid oklch(0.72 0.25 285 / 0.12)" }}>
             <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "oklch(0.6 0.15 75)" }}>
               Script Segment
             </p>
-            <p className="text-sm leading-relaxed font-medium" style={{ color: "var(--c-85)" }}>{beat.scriptSegment}</p>
+            {beat.imagePrompt?.trim() ? (
+              <p className="text-sm leading-relaxed font-medium" style={{ color: "var(--c-85)" }}>{beat.scriptSegment}</p>
+            ) : (
+              <EditablePrompt
+                value={beat.scriptSegment}
+                field="segment"
+                beatNumber={beat.beatNumber}
+                projectId={projectId}
+                onSaved={onSaved}
+                accent="oklch(0.6 0.15 75)"
+                textColor="var(--c-85)"
+              />
+            )}
           </div>
 
           <div>
@@ -2973,7 +2990,7 @@ export default function PromptsPage({ params }: PageProps) {
           <DialogHeader>
             <DialogTitle>Merge beats</DialogTitle>
             <DialogDescription>
-              Folds stub beats into a neighbour. Fewer beats cost less but match the narration less closely. Absorbed prompts and media are deleted for good. It&apos;s all your decision!
+              Merges short beats into a neighbour. Fewer, longer beats cost less to generate but match the narration less closely.
             </DialogDescription>
           </DialogHeader>
 
@@ -2995,7 +3012,7 @@ export default function PromptsPage({ params }: PageProps) {
             </label>
 
             <label className="flex items-center justify-between gap-3 text-sm text-zinc-700">
-              <span>Fold into</span>
+              <span>Merge into</span>
               <select
                 value={bulkDirection}
                 disabled={bulkRunning}
@@ -3012,8 +3029,8 @@ export default function PromptsPage({ params }: PageProps) {
               {bulkPlan.steps.length === 0
                 ? `No beats under ${bulkMinWords} word${bulkMinWords === 1 ? "" : "s"}.`
                 : bulkDirection === "auto"
-                  ? `${bulkStubs.length} stub${bulkStubs.length === 1 ? "" : "s"}, each folded into the side the AI picks. ${beats.length} becomes ${bulkPlan.finalCount}.`
-                  : `${bulkPlan.steps.length} beat${bulkPlan.steps.length === 1 ? "" : "s"} merged away. ${beats.length} becomes ${bulkPlan.finalCount}.`}
+                  ? `${bulkStubs.length} beat${bulkStubs.length === 1 ? "" : "s"} will be merged, each into the side the AI picks. ${beats.length} becomes ${bulkPlan.finalCount}.`
+                  : `${bulkPlan.steps.length} beat${bulkPlan.steps.length === 1 ? "" : "s"} will be merged. ${beats.length} becomes ${bulkPlan.finalCount}.`}
             </div>
 
             {(bulkDirection === "auto" ? bulkStubs.map((s) => s.beatNumber) : bulkPlan.absorbedOriginals).length > 0 && (
