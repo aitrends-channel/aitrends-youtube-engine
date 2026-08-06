@@ -111,7 +111,7 @@ function SelectableImage({
         )}
         {/* Loading shimmer */}
         {state === "loading" && (
-          <div className="absolute inset-0 animate-pulse" style={{ background: "var(--bg-progress)" }} />
+          <div className="absolute inset-0 animate-pulse" style={{ background: "var(--skeleton)" }} />
         )}
         {/* Error placeholder — one tidy icon + label, no broken glyph */}
         {state === "error" && (
