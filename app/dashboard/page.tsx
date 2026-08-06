@@ -1118,9 +1118,9 @@ export default function HomePage() {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   {[0, 1, 2, 3].map((i) => (
                     <div key={i} className="rounded-xl px-5 py-4 space-y-2" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
-                      <div className="h-8 w-10 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.08)" }} />
-                      <div className="h-3 w-20 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.06)" }} />
-                      <div className="h-2.5 w-14 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.05)" }} />
+                      <div className="h-8 w-10 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
+                      <div className="h-3 w-20 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
+                      <div className="h-2.5 w-14 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
                     </div>
                   ))}
                 </div>
@@ -1199,7 +1199,7 @@ export default function HomePage() {
                           ? usage.plan.charAt(0).toUpperCase() + usage.plan.slice(1)
                           : "Free";
                       return (
-                        <div className="rounded-xl px-5 py-4 flex items-center justify-between gap-3"
+                        <div className="col-span-2 sm:col-span-1 rounded-xl px-4 sm:px-5 py-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3"
                           style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                           <div className="min-w-0 space-y-1">
                             <p className="leading-none">
@@ -1222,7 +1222,7 @@ export default function HomePage() {
                               </p>
                             )}
                           </div>
-                          <div className="flex flex-col items-center gap-1.5 shrink-0">
+                          <div className="flex flex-row sm:flex-col items-center gap-2 sm:gap-1.5 shrink-0">
                             {unlimited && (
                               <span
                                 className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider"
@@ -1311,14 +1311,14 @@ export default function HomePage() {
                 <div className="rounded-2xl px-6 py-5" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                   <div className="flex items-center justify-between mb-5">
                     <div className="space-y-2">
-                      <div className="h-4 w-32 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.08)" }} />
-                      <div className="h-3 w-16 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.06)" }} />
+                      <div className="h-4 w-32 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
+                      <div className="h-3 w-16 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
                     </div>
-                    <div className="h-8 w-10 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.08)" }} />
+                    <div className="h-8 w-10 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
                   </div>
                   <div className="flex items-end gap-4 h-24 px-4">
                     {[60, 40, 80, 30].map((h, i) => (
-                      <div key={i} className="flex-1 rounded-t animate-pulse" style={{ height: `${h}%`, background: "oklch(1 0 0 / 0.08)" }} />
+                      <div key={i} className="flex-1 rounded-t animate-pulse" style={{ height: `${h}%`, background: "var(--skeleton)" }} />
                     ))}
                   </div>
                 </div>
@@ -1814,10 +1814,10 @@ export default function HomePage() {
             {[0, 1].map((g) => (
               <div key={g}>
                 <div className="flex items-center gap-3 mb-5">
-                  <div className="w-11 h-11 rounded-xl animate-pulse" style={{ background: "oklch(1 0 0 / 0.08)" }} />
+                  <div className="w-11 h-11 rounded-xl animate-pulse" style={{ background: "var(--skeleton)" }} />
                   <div className="space-y-2">
-                    <div className="h-4 w-36 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.08)" }} />
-                    <div className="h-3 w-52 rounded animate-pulse" style={{ background: "oklch(1 0 0 / 0.08)" }} />
+                    <div className="h-4 w-36 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
+                    <div className="h-3 w-52 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
                   </div>
                 </div>
                 <div className="grid gap-7" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))" }}>
@@ -1825,16 +1825,16 @@ export default function HomePage() {
                     <div key={i} className="p-6 rounded-2xl space-y-4"
                       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div className="flex items-start justify-between">
-                        <div className="h-5 w-20 rounded-full animate-pulse" style={{ background: "var(--bg-elevated)" }} />
-                        <div className="h-4 w-14 rounded animate-pulse" style={{ background: "var(--bg-elevated)" }} />
+                        <div className="h-5 w-20 rounded-full animate-pulse" style={{ background: "var(--skeleton)" }} />
+                        <div className="h-4 w-14 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
                       </div>
-                      <div className="h-6 w-4/5 rounded animate-pulse" style={{ background: "var(--bg-elevated)" }} />
+                      <div className="h-6 w-4/5 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
                       <div className="space-y-2">
                         <div className="flex justify-between">
-                          <div className="h-3 w-14 rounded animate-pulse" style={{ background: "var(--bg-elevated)" }} />
-                          <div className="h-3 w-8 rounded animate-pulse" style={{ background: "var(--bg-elevated)" }} />
+                          <div className="h-3 w-14 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
+                          <div className="h-3 w-8 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
                         </div>
-                        <div className="h-1 w-full rounded-full animate-pulse" style={{ background: "var(--bg-elevated)" }} />
+                        <div className="h-1 w-full rounded-full animate-pulse" style={{ background: "var(--skeleton)" }} />
                       </div>
                     </div>
                   ))}

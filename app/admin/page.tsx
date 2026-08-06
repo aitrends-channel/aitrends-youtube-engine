@@ -4924,7 +4924,7 @@ function NicheLimitOverrideModal({
   );
 }
 
-const SK = { background: "oklch(0 0 0 / 0.07)" };
+const SK = { background: "var(--skeleton)" };
 const PER_PAGE = 10;
 
 function Pagination({ page, total, onChange }: { page: number; total: number; onChange: (p: number) => void }) {
