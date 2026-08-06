@@ -2124,7 +2124,9 @@ export default function PromptsPage({ params }: PageProps) {
     // response rather than relying on the SWR-cached `beats` closure.
     const fresh = await mutate();
     const freshBeats = (fresh?.beats ?? []) as Beat[];
-    if (freshBeats.length === 0) {
+    // Beats existing isn't enough — each motion prompt is written from its
+    // beat's image prompt, so re-check for those, not just for rows.
+    if (freshBeats.filter((b) => !!b.imagePrompt).length === 0) {
       toast.error("Image prompts are missing. Generate them first.");
       setVideoStep(IDLE);
       return;
@@ -2561,7 +2563,10 @@ export default function PromptsPage({ params }: PageProps) {
             actionLabel={videoActionLabel}
             onClear={hasVideoBeats ? () => setClearTarget("video") : null}
             onStop={handleStopPrompts}
-            disabled={!promptStepsUnlocked}
+            // Also needs image prompts to exist: a video prompt is written
+            // from its beat's image prompt, so there is nothing to derive from
+            // until at least one is there.
+            disabled={!promptStepsUnlocked || promptedBeats === 0}
             optional
             onGenerate={requestRunVideoStep}
           />
