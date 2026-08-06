@@ -14,6 +14,9 @@ import type { User } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
 
+// client_direct is intentionally absent: it is a per-user upgrade of client_kie
+// that each client turns on with their own Anthropic key, not a value an admin
+// can store globally — set here, it would break every client without one.
 const VALID_ROUTINGS = new Set<AnthropicRouting>(["client_kie", "heclus_kie", "heclus_direct"]);
 
 function isAnthropicRouting(v: unknown): v is AnthropicRouting {

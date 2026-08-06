@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
-import type { AnthropicRouting } from "@/lib/claude/routing";
+import { isDirectRouting, type AnthropicRouting } from "@/lib/claude/routing";
 
 /**
  * Workflow step that the cost belongs to. Mapped to display columns
@@ -406,8 +406,10 @@ export async function logClaudeUsage(args: {
  * Route-aware Anthropic cost logger. Dispatches to the correct
  * ledger based on routing:
  *
- *  - heclus_direct → bills in tokens, log claude_tokens_* rows
- *    via logClaudeUsage. Same behavior the old direct path had.
+ *  - heclus_direct / client_direct → bills in tokens, log claude_tokens_*
+ *    rows via logClaudeUsage. Same behavior the old direct path had. The
+ *    ledger records consumption per project regardless of who is billed —
+ *    it already mixes the two, since client_kie credits are the client's.
  *
  *  - client_kie / heclus_kie → bills in KIE credits. Token counters
  *    on the Anthropic response are still accurate, but they aren't
@@ -434,7 +436,7 @@ export async function logAnthropicCost(args: {
   } | null | undefined;
   kieCreditsConsumed: number | null;
 }): Promise<void> {
-  if (args.routing === "heclus_direct") {
+  if (isDirectRouting(args.routing)) {
     await logClaudeUsage({
       projectId: args.projectId,
       userId: args.userId,

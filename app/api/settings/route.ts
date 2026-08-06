@@ -40,6 +40,11 @@ export async function GET() {
     return NextResponse.json({
       kie_api_key: mask(s.kie_api_key),
       elevenlabs_api_key: mask(s.elevenlabs_api_key),
+      anthropic_api_key: mask(s.anthropic_api_key),
+      // Whether the key is actually in use. The toggle needs the real boolean,
+      // and the UI needs to know a key exists to decide if it can be turned on.
+      anthropic_direct_enabled: s.anthropic_direct_enabled,
+      has_anthropic_api_key: !!s.anthropic_api_key,
       // Not a secret — returned in full so the prompts step can show the
       // inherited account default as a placeholder / prefill.
       character_consistency_text: s.character_consistency_text,
@@ -60,11 +65,25 @@ export async function POST(req: Request) {
       kie_api_key: string;
       elevenlabs_api_key: string;
       character_consistency_text: string;
+      anthropic_api_key: string;
+      anthropic_direct_enabled: boolean;
+      remove_anthropic_api_key: boolean;
     }>;
 
-    const update: Record<string, string> = {};
+    const update: Record<string, string | boolean | null> = {};
     if (body.kie_api_key?.trim()) update.kie_api_key = body.kie_api_key.trim();
     if (body.elevenlabs_api_key?.trim()) update.elevenlabs_api_key = body.elevenlabs_api_key.trim();
+    if (body.anthropic_api_key?.trim()) update.anthropic_api_key = body.anthropic_api_key.trim();
+    // Deletion is an explicit flag, never an empty string: the Setup form
+    // posts every field, so treating "" as "clear" would wipe a saved key
+    // any time the user saved without re-typing it. Turns the preference off
+    // in the same write — leaving it on with no key would fail every call.
+    if (body.remove_anthropic_api_key) {
+      update.anthropic_api_key = null;
+      update.anthropic_direct_enabled = false;
+    } else if (typeof body.anthropic_direct_enabled === "boolean") {
+      update.anthropic_direct_enabled = body.anthropic_direct_enabled;
+    }
     // Consistency text is free text, not a secret — persist it whenever
     // the key is present (unlike the API keys above, an empty string is a
     // valid value here: it clears a previously-set default).
@@ -72,6 +91,18 @@ export async function POST(req: Request) {
 
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ error: "No keys provided" }, { status: 400 });
+    }
+
+    // Switching direct billing on without a key to bill would fail every
+    // Claude call, so refuse it here rather than at generation time.
+    if (update.anthropic_direct_enabled === true && !update.anthropic_api_key) {
+      const existing = await getSettings(user.id);
+      if (!existing.anthropic_api_key) {
+        return NextResponse.json(
+          { error: "Add your Anthropic API key before switching direct billing on." },
+          { status: 400 },
+        );
+      }
     }
 
     // Explicit onConflict so the upsert always merges into the
