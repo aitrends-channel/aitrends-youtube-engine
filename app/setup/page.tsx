@@ -860,7 +860,11 @@ export default function SettingsPage() {
             <form onSubmit={handleSave} className="space-y-6">
               {/* Cards stretch to the tallest sibling in the row; each is a
                   flex column so the key inputs sit flush at the bottom. */}
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {/* gap-6, not gap-4: the card fill is only 8% white on a dark
+                  page, so adjacent cards read as one continuous block with a
+                  hairline through it unless the gutter is clearly wider than
+                  the internal padding steps. */}
+              <div className="grid gap-6 sm:grid-cols-2 xl:grid-cols-3">
                 {SERVICES.filter((svc) => svc.tier === tab).map((svc, idx) => (
                   <div key={svc.title} className="p-5 rounded-2xl flex flex-col gap-4"
                     style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.14)" }}>
