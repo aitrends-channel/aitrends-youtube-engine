@@ -1655,9 +1655,21 @@ export async function generateVideos(projectId: string, userId: string, send: (d
     hasVideoPrompt: !!b.video_prompt,
   }));
   const alreadyDoneCount = allBeats.filter((b) => b.hasVideoPrompt).length;
+  // A motion prompt describes how to animate THIS beat's image, so a beat with
+  // no image prompt has nothing to derive from — the model would be handed a
+  // null and invent a shot. Those beats are skipped rather than filled with
+  // guesses; the next run picks them up once their image prompt exists.
   const pendingBeats = allBeats
-    .filter((b) => !b.hasVideoPrompt)
+    .filter((b) => !b.hasVideoPrompt && !!b.imagePrompt?.trim())
     .map((b) => ({ beatNumber: b.beatNumber, scriptSegment: b.scriptSegment, imagePrompt: b.imagePrompt }));
+  const skippedNoImagePrompt = allBeats.filter((b) => !b.hasVideoPrompt && !b.imagePrompt?.trim()).length;
+  if (skippedNoImagePrompt > 0) {
+    console.warn(`[video-prompts] skipping ${skippedNoImagePrompt} beat(s) with no image prompt project=${projectId}`);
+  }
+
+  if (pendingBeats.length === 0 && alreadyDoneCount === 0) {
+    throw new Error("No image prompts yet. Run Image Prompts first — a motion prompt is written from its beat's image prompt.");
+  }
 
   if (pendingBeats.length === 0) {
     send({ type: "status", message: "All video prompts already generated." });
