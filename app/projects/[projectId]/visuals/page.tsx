@@ -636,7 +636,7 @@ export default function VisualsPage({ params }: PageProps) {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               Upload or auto-capture screenshots so we can extract the channel&apos;s visual signature
             </p>
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <div className="mt-3 flex items-center gap-2 flex-wrap min-w-0 w-full">
               <StepCostCard projectId={projectId} column="visuals" />
               <StepBalanceCard />
             </div>
