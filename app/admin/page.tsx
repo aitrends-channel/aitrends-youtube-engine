@@ -1485,7 +1485,9 @@ function SetupSection({
       {keysLoading ? (
         <SkeletonRows cols={4} rows={2} />
       ) : (
-        <div className="space-y-4">
+        // space-y-6: each service is its own card with an internal header and
+        // key rows, so 16px read as part of the card above it.
+        <div className="space-y-6">
           {SERVICES.map(service => {
             const row = serviceMap.get(service);
             return (
