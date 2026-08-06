@@ -72,16 +72,25 @@ const KEY_FIELDS: KeyField[] = [
     placeholder: "sk_…",
     tier: "paid",
   },
+  {
+    key: "anthropic_api_key",
+    label: "Anthropic API Key",
+    description: "Optional. Runs the writing steps (scripts, analysis, prompts) straight on your Anthropic account instead of through KIE. Switch it on below once saved.",
+    placeholder: "sk-ant-…",
+    tier: "paid",
+  },
 ];
 
 interface FormState {
   kie_api_key: string;
   elevenlabs_api_key: string;
+  anthropic_api_key: string;
 }
 
 const EMPTY_FORM: FormState = {
   kie_api_key: "",
   elevenlabs_api_key: "",
+  anthropic_api_key: "",
 };
 
 // One card per service: the walkthrough steps AND the key input(s)
@@ -99,6 +108,8 @@ interface ServiceCard {
   steps: React.ReactNode[];
   /** Key inputs rendered inside this card (looked up in KEY_FIELDS). */
   fields: (keyof FormState)[];
+  /** Extra control rendered under this card's inputs. */
+  afterFields?: "anthropic-direct-toggle";
 }
 
 const SERVICES: ServiceCard[] = [
@@ -130,6 +141,22 @@ const SERVICES: ServiceCard[] = [
       <>Paste the key below and hit <b>Save</b>.</>,
     ],
     fields: ["elevenlabs_api_key"],
+  },
+  {
+    tier: "paid",
+    title: "Anthropic (optional)",
+    sub: "Run the writing steps on your own Claude account instead of through KIE",
+    href: "https://console.anthropic.com/settings/keys",
+    linkLabel: "console.anthropic.com",
+    steps: [
+      <>Only worth doing if you already have (or want) an Anthropic account. Leave this blank and everything runs on your KIE key as normal.</>,
+      <>Create your account at <ExtLink href="https://console.anthropic.com">console.anthropic.com</ExtLink>.</>,
+      <>Add credit under <ExtLink href="https://console.anthropic.com/settings/billing">Billing</ExtLink> — Anthropic bills per token, so there are no credits to convert.</>,
+      <>Open <ExtLink href="https://console.anthropic.com/settings/keys">API Keys</ExtLink> → <b>Create Key</b> → copy it right away (it&apos;s shown only once).</>,
+      <>Paste it below, hit <b>Save</b>, then switch <b>Use my Anthropic key</b> on. Images, video and voiceover still run on KIE and ElevenLabs.</>,
+    ],
+    fields: ["anthropic_api_key"],
+    afterFields: "anthropic-direct-toggle",
   },
   {
     tier: "free",
@@ -509,6 +536,12 @@ export default function SettingsPage() {
   const [visible, setVisible] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Whether the client's own Anthropic key is stored, and whether it's the one
+  // Claude calls actually use. Two flags, so turning it off doesn't discard
+  // the key.
+  const [anthropicKeySaved, setAnthropicKeySaved] = useState(false);
+  const [anthropicDirect, setAnthropicDirect] = useState(false);
+  const [savingDirect, setSavingDirect] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState<Tier>("paid");
   // Top-level split: API keys (the existing paid/free cards), the
@@ -559,10 +592,59 @@ export default function SettingsPage() {
       .then((r) => r.json())
       .then((data) => {
         setMasked(data as FormState);
+        setAnthropicDirect(!!data.anthropic_direct_enabled);
+        setAnthropicKeySaved(!!data.has_anthropic_api_key);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  // Direct-billing switch. Writes immediately rather than waiting for Save —
+  // it isn't a key being typed, it's a choice about who gets billed, and a
+  // toggle that silently needs a separate Save invites the user to think it
+  // took effect when it didn't.
+  async function setAnthropicDirect2(next: boolean) {
+    setSavingDirect(true);
+    const prev = anthropicDirect;
+    setAnthropicDirect(next);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ anthropic_direct_enabled: next }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to save");
+      toast.success(next ? "Claude calls now use your Anthropic key" : "Claude calls are back on your KIE key");
+    } catch (err) {
+      setAnthropicDirect(prev);
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSavingDirect(false);
+    }
+  }
+
+  async function removeAnthropicKey() {
+    setSavingDirect(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ remove_anthropic_api_key: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to remove");
+      setAnthropicDirect(false);
+      setAnthropicKeySaved(false);
+      const fresh = await fetch("/api/settings").then((r) => r.json());
+      setMasked(fresh as FormState);
+      toast.success("Anthropic key removed — Claude calls run on your KIE key");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove");
+    } finally {
+      setSavingDirect(false);
+    }
+  }
 
   function toggle(key: string) {
     setVisible((v) => ({ ...v, [key]: !v[key] }));
@@ -600,6 +682,9 @@ export default function SettingsPage() {
       setForm(EMPTY_FORM);
       const fresh = await fetch("/api/settings").then((r) => r.json());
       setMasked(fresh as FormState);
+      // A just-saved Anthropic key has to unlock its switch without a reload.
+      setAnthropicKeySaved(!!fresh.has_anthropic_api_key);
+      setAnthropicDirect(!!fresh.anthropic_direct_enabled);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save settings");
     } finally {
@@ -891,6 +976,49 @@ export default function SettingsPage() {
                         </div>
                       );
                     })}
+                    {svc.afterFields === "anthropic-direct-toggle" && (
+                      <div className="space-y-2 pt-3" style={{ borderTop: "1px solid oklch(1 0 0 / 0.07)" }}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-foreground">Use my Anthropic key</p>
+                            <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                              {anthropicKeySaved
+                                ? anthropicDirect
+                                  ? "On — scripts, analysis and prompts bill to your Anthropic account."
+                                  : "Off — those steps run on your KIE key."
+                                : "Save a key above first."}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={anthropicDirect}
+                            aria-label="Use my Anthropic key"
+                            disabled={!anthropicKeySaved || savingDirect}
+                            onClick={() => setAnthropicDirect2(!anthropicDirect)}
+                            className="relative shrink-0 w-11 h-6 rounded-full transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                            style={{
+                              background: anthropicDirect ? "oklch(0.72 0.25 285)" : "var(--bg-progress)",
+                              border: "1px solid var(--bd-10)",
+                            }}
+                          >
+                            <span className="absolute top-1/2 -translate-y-1/2 w-4 h-4 rounded-full transition-all"
+                              style={{ left: anthropicDirect ? "1.5rem" : "0.25rem", background: "white" }} />
+                          </button>
+                        </div>
+                        {anthropicKeySaved && (
+                          <button
+                            type="button"
+                            onClick={removeAnthropicKey}
+                            disabled={savingDirect}
+                            className="text-xs font-medium transition-opacity hover:opacity-70 disabled:opacity-40"
+                            style={{ color: "oklch(0.7 0.22 25)" }}
+                          >
+                            Remove key
+                          </button>
+                        )}
+                      </div>
+                    )}
                     </div>
                   </div>
                 ))}
