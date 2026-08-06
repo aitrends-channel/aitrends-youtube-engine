@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import { getSettings } from "@/lib/settings";
-import { getAnthropicRouting, type WorkflowStep } from "@/lib/claude/routing";
+import { getRoutingForUser, isClientPaid, type WorkflowStep } from "@/lib/claude/routing";
 import { PRO_TIER_PLANS, planSlugOf } from "@/lib/plans-gating";
 import { isAdminUser } from "@/lib/admin";
 import type { User } from "@supabase/supabase-js";
@@ -185,9 +185,10 @@ export async function resolveModelForUser(
 
   if (!USER_CHOICE_STEPS.has(step) || config.userSelectable.length === 0) return fallback;
 
-  // Whose key pays decides whether the choice is the user's to make.
+  // Whose key pays decides whether the choice is the user's to make — which
+  // covers their own Anthropic key as well as their KIE one.
   try {
-    if ((await getAnthropicRouting(step)) !== "client_kie") return fallback;
+    if (!isClientPaid(await getRoutingForUser(userId, step))) return fallback;
   } catch {
     return fallback;
   }

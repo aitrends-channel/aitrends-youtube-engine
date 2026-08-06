@@ -2366,7 +2366,7 @@ const ROUTING_OPTIONS: RoutingOption[] = [
   {
     id: "client_kie",
     title: "Via Client's KIE account",
-    description: "Each user's own KIE API key (from their Settings) is used. Calls are billed to the end user.",
+    description: "Each user's own KIE API key (from their Settings) is used. Calls are billed to the end user. A user who has added their own Anthropic key and switched it on runs direct on that instead — still their own money, so this setting is unaffected.",
   },
   {
     id: "heclus_kie",

@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getSettings } from "@/lib/settings";
-import { getAnthropicRouting, getActiveProductKey, type WorkflowStep, type AnthropicRouting } from "./routing";
+import { getRoutingForUser, getActiveProductKey, type WorkflowStep, type AnthropicRouting } from "./routing";
 
 const KIE_CLAUDE_BASE_URL = "https://api.kie.ai/claude";
 
@@ -252,7 +252,26 @@ export async function getHeclusDirectClient(): Promise<Anthropic> {
 }
 
 export async function getAnthropicClient(userId: string, step?: WorkflowStep): Promise<AnthropicClientHandle> {
-  const routing = await getAnthropicRouting(step);
+  const routing = await getRoutingForUser(userId, step);
+
+  // The client's OWN Anthropic key, native API, bypassing KIE. Only reachable
+  // when the step already routes client_kie and the client switched this on
+  // (see getRoutingForUser), so this spends the client's money either way —
+  // which is why, unlike getHeclusDirectClient, a user-chosen model is fine
+  // here. Anthropic bills tokens, so there are no credits to capture.
+  if (routing === "client_direct") {
+    const apiKey = (await getSettings(userId)).anthropic_api_key;
+    if (!apiKey) {
+      // getRoutingForUser only returns client_direct when a key is present, so
+      // this is a race (key cleared mid-run) rather than a config gap.
+      throw new Error("Your Anthropic API key is missing. Re-add it in Setup, or turn off direct Anthropic billing to go back to KIE.");
+    }
+    return {
+      client: new Anthropic({ apiKey, maxRetries: 0, timeout: 180_000 }),
+      routing,
+      takeLastCreditsConsumed: () => null,
+    };
+  }
 
   // Heclus's Anthropic key, native API, bypassing KIE entirely. Useful
   // when KIE is degraded or for high-volume workloads we want billed to

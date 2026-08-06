@@ -353,6 +353,19 @@ interface StepState {
   error?: string;
 }
 
+// Link inside the reroute modal, which is dark. Mirrors ExtLink on the Setup
+// page. New tab on purpose: the user is mid-generation and navigating away
+// would lose the failed run.
+function ModalLink({ href, children }: { href: string; children: ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer"
+      className="font-medium underline underline-offset-2 transition-opacity hover:opacity-80"
+      style={{ color: "oklch(0.72 0.25 285)" }}>
+      {children} ↗
+    </a>
+  );
+}
+
 interface StepCardProps {
   num: number;
   title: string;
@@ -372,6 +385,9 @@ interface StepCardProps {
    *  ReactNode (not string) so the caller can colour the "ready" half
    *  green and the "remaining" half orange in one composed label. */
   pendingLabel?: ReactNode;
+  /** Rendered under the error text when the step has failed — an offer to
+   *  change something about the failed attempt, rather than just retry it. */
+  errorAction?: ReactNode;
   disabled?: boolean;
   optional?: boolean;
   /** Custom button label for non-running, non-done states (e.g. "Generate Remaining 9"). */
@@ -432,7 +448,7 @@ function RunningCaption({ progress }: { progress?: { current: number; total: num
   );
 }
 
-function StepCard({ num, title, description, state, windingDown, doneLabel, pendingLabel, disabled, optional, actionLabel, hideAction, extraAction, onClear, onStop, onGenerate }: StepCardProps) {
+function StepCard({ num, title, description, state, windingDown, doneLabel, pendingLabel, errorAction, disabled, optional, actionLabel, hideAction, extraAction, onClear, onStop, onGenerate }: StepCardProps) {
   const isRunning = state.status === "running";
   const isDone = state.status === "done";
   const isError = state.status === "error";
@@ -536,7 +552,10 @@ function StepCard({ num, title, description, state, windingDown, doneLabel, pend
           <p className="text-xs">{pendingLabel}</p>
         )}
         {isError && (
-          <p className="text-xs leading-relaxed" style={{ color: "oklch(0.65 0.15 25)" }}>{state.error}</p>
+          <div className="space-y-2">
+            <p className="text-xs leading-relaxed" style={{ color: "oklch(0.65 0.15 25)" }}>{state.error}</p>
+            {errorAction}
+          </div>
         )}
       </div>
       </div>
@@ -1097,6 +1116,14 @@ export default function PromptsPage({ params }: PageProps) {
       .catch(() => {});
   }, []);
   useEffect(() => { refreshAccountConsistency(); }, [refreshAccountConsistency]);
+
+  const refreshAnthropicRouting = useCallback(() => {
+    fetch("/api/me/anthropic-routing")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && !d.error) setAnthropicRouting(d); })
+      .catch(() => { /* the offer just stays hidden */ });
+  }, []);
+  useEffect(() => { refreshAnthropicRouting(); }, [refreshAnthropicRouting]);
   // Effective text that will be appended to every image prompt for this
   // project: per-project override if set, else the account default —
   // unless the project has detached it. NULL = nothing appended.
@@ -1143,6 +1170,19 @@ export default function PromptsPage({ params }: PageProps) {
   // click if the page is reloaded between splitting and continuing.
   const [beatsConfirmed, setBeatsConfirmed] = useState(false);
   const [continueOpen, setContinueOpen] = useState(false);
+  // Whether this client can move their Claude calls off KIE onto their own
+  // Anthropic key, and whether they already have. Drives the reroute offer that
+  // appears on a failed generation — see anthropicOffer below.
+  const [anthropicRouting, setAnthropicRouting] = useState<{
+    hasKey: boolean;
+    enabled: boolean;
+    eligible: { image_prompts: boolean; video_prompts: boolean };
+  } | null>(null);
+  // Which step the reroute offer was clicked from, so the retry after switching
+  // runs the step that actually failed. null = modal closed.
+  const [rerouteFor, setRerouteFor] = useState<"beats" | "image" | "video" | null>(null);
+  const [anthropicKeyDraft, setAnthropicKeyDraft] = useState("");
+  const [switchingRoute, setSwitchingRoute] = useState(false);
   const [imageStoppedByUser, setImageStoppedByUser] = useState(false);
   const [videoStoppedByUser, setVideoStoppedByUser] = useState(false);
   // Snapshot of the persisted beat count at the moment the user clicked
@@ -2256,6 +2296,71 @@ export default function PromptsPage({ params }: PageProps) {
       </button>
     ) : null;
 
+  // Offer to move this step off KIE and onto the client's own Anthropic key.
+  // Shown only on a failure, and only when it would actually change something:
+  //   • the step's routing is client-paid (otherwise Heclus is covering it and
+  //     the client's key is never consulted), and
+  //   • they aren't already on their own key — if they are, KIE isn't in the
+  //     path and the failure came from Anthropic itself.
+  // Every recorded prompts failure so far has been a KIE 500 on /claude, which
+  // is exactly what this sidesteps.
+  function anthropicOffer(step: "beats" | "image" | "video"): ReactNode {
+    if (!anthropicRouting || anthropicRouting.enabled) return null;
+    const eligible = step === "video"
+      ? anthropicRouting.eligible.video_prompts
+      : anthropicRouting.eligible.image_prompts;
+    if (!eligible) return null;
+    return (
+      <button
+        onClick={() => { setAnthropicKeyDraft(""); setRerouteFor(step); }}
+        className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all hover:opacity-80"
+        style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "oklch(0.88 0.12 285)" }}
+      >
+        Generate via direct Anthropic?
+      </button>
+    );
+  }
+
+  // Turn direct routing on (adding the key first if this is the client's first
+  // time) and immediately retry the step that failed. Saving without retrying
+  // would leave the user looking at the same error, unsure it took.
+  async function confirmReroute() {
+    if (!rerouteFor) return;
+    const needsKey = !anthropicRouting?.hasKey;
+    const key = anthropicKeyDraft.trim();
+    if (needsKey && !key) {
+      toast.error("Paste your Anthropic API key first.");
+      return;
+    }
+    setSwitchingRoute(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(needsKey ? { anthropic_api_key: key } : {}),
+          anthropic_direct_enabled: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not save the key");
+      // Re-read rather than assuming: the server decides whether the step is
+      // eligible, and the offer must disappear only if it really switched.
+      refreshAnthropicRouting();
+      const step = rerouteFor;
+      setRerouteFor(null);
+      setAnthropicKeyDraft("");
+      toast.success("Switched to your Anthropic key — retrying");
+      if (step === "beats") await runBeatsStep();
+      else if (step === "image") await runImageStep();
+      else await runVideoStep();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not switch routing");
+    } finally {
+      setSwitchingRoute(false);
+    }
+  }
+
   // Unlocks steps 2 and 3. Sits to the right of Merge beats so the two read as
   // "merge first, or go straight on". Disappears once the gate is open.
   const continueButton = beatsComplete && !beatsGateOpen ? (
@@ -2402,6 +2507,7 @@ export default function PromptsPage({ params }: PageProps) {
             hideAction={!PROMPTS_THREE_STEP || (beats.length > 0 && !beatsResumable)}
             actionLabel={beats.length > 0 ? "Resume" : null}
             pendingLabel={beatsPendingLabel}
+            errorAction={anthropicOffer("beats")}
             extraAction={<>{beatsRemoteRunning && resetRunButton}{mergeBeatsButton("rounded-lg")}{continueButton}</>}
             windingDown={beatsRemoteRunning && promptsStopRequested}
             onStop={handleStopPrompts}
@@ -2420,6 +2526,7 @@ export default function PromptsPage({ params }: PageProps) {
             disabled={PROMPTS_THREE_STEP && !promptStepsUnlocked}
             doneLabel={beats.length > 0 ? `${beats.length} beats ready` : undefined}
             pendingLabel={imagePendingLabel}
+            errorAction={anthropicOffer("image")}
             actionLabel={imageActionLabel}
             onClear={hasImageBeats ? () => setClearTarget("image") : null}
             onStop={handleStopPrompts}
@@ -2434,6 +2541,7 @@ export default function PromptsPage({ params }: PageProps) {
             windingDown={videoRemoteRunning && promptsStopRequested}
             doneLabel={videoBeats.length > 0 ? `${videoBeats.length} beats ready` : undefined}
             pendingLabel={videoPendingLabel}
+            errorAction={anthropicOffer("video")}
             actionLabel={videoActionLabel}
             onClear={hasVideoBeats ? () => setClearTarget("video") : null}
             onStop={handleStopPrompts}
@@ -2676,6 +2784,81 @@ export default function PromptsPage({ params }: PageProps) {
           </div>
         </div>
       )}
+
+      {/* Reroute offer. Two shapes behind one button: paste-a-key for a client
+          who has never set one, plain confirm for a client who has. */}
+      {/* The only dark dialog in the app — every other one is white (see
+          DialogContent's own note). twMerge lets the overrides below win over
+          the white base classes. */}
+      <Dialog open={rerouteFor !== null} onOpenChange={(open) => { if (!open && !switchingRoute) setRerouteFor(null); }}>
+        <DialogContent className="sm:max-w-md bg-zinc-900 text-zinc-100 ring-zinc-700" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle className="text-zinc-50">
+              {anthropicRouting?.hasKey ? "Use your Anthropic key?" : "Add your Anthropic key"}
+            </DialogTitle>
+            <DialogDescription className="text-zinc-400">
+              {anthropicRouting?.hasKey
+                ? "This step will run straight on your Anthropic account instead of through KIE, then retry. Images, video and voiceover stay on KIE."
+                : "KIE resells Claude, so an outage there stops these steps. With your own Anthropic key they run direct and are billed by Anthropic in tokens. Images, video and voiceover stay on KIE."}
+            </DialogDescription>
+          </DialogHeader>
+          {!anthropicRouting?.hasKey && (
+            <div className="space-y-3">
+              {/* Every link opens in a new tab: the user is mid-generation and
+                  navigating away would lose the failed run's state. */}
+              <ol className="space-y-1.5 text-xs text-zinc-400">
+                {([
+                  <>Sign up or log in at <ModalLink href="https://console.anthropic.com">console.anthropic.com</ModalLink>.</>,
+                  <>Add credit under <ModalLink href="https://console.anthropic.com/settings/billing">Billing</ModalLink> — a key with no balance fails on the first call. Anthropic bills per token, so there is nothing to convert.</>,
+                  <>Open <ModalLink href="https://console.anthropic.com/settings/keys">API Keys</ModalLink> → <b>Create Key</b> → copy it immediately (it is shown once).</>,
+                  <>Paste it below and hit <b>Save and retry</b>.</>,
+                ]).map((s, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="font-semibold text-zinc-500 shrink-0">{i + 1}.</span>
+                    <span className="leading-relaxed">{s}</span>
+                  </li>
+                ))}
+              </ol>
+              <input
+                type="password"
+                autoComplete="new-password"
+                spellCheck={false}
+                value={anthropicKeyDraft}
+                onChange={(e) => setAnthropicKeyDraft(e.target.value)}
+                placeholder="sk-ant-…"
+                disabled={switchingRoute}
+                className="w-full px-3 py-2 rounded-lg text-sm font-mono bg-zinc-800 border border-zinc-700 text-zinc-100 placeholder:text-zinc-500 outline-none focus:border-zinc-500 disabled:opacity-50"
+              />
+              <p className="text-xs text-zinc-400">
+                Stored on your account only. Switch back to KIE any time in{" "}
+                <ModalLink href="/setup">Setup</ModalLink>.
+              </p>
+            </div>
+          )}
+          <DialogFooter className="bg-zinc-800/50 border-zinc-700">
+            <button
+              onClick={() => setRerouteFor(null)}
+              disabled={switchingRoute}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40 bg-zinc-800 text-zinc-200 border border-zinc-600"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmReroute}
+              disabled={switchingRoute}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+            >
+              {switchingRoute ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  Switching…
+                </span>
+              ) : anthropicRouting?.hasKey ? "Switch and retry" : "Save and retry"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={continueOpen} onOpenChange={setContinueOpen}>
         <DialogContent className="sm:max-w-md" showCloseButton={false}>
