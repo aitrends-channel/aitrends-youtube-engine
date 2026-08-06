@@ -487,6 +487,163 @@ If the counts do not match, keep adding beats until coverage is complete.
 Number beats sequentially starting from 1, with no gaps. Call the save_image_prompts tool with a "beats" array. Do not write any text outside the tool call.`;
 }
 
+// Step 2 of the three-step flow: prompts for beats that ALREADY exist. The
+// style, consistency and quality rules are the same ones the combined pass
+// uses — only the segmentation instructions are gone, because the segments
+// are an input here rather than an output. The model is told to key its
+// answer by beat number and never to re-cut or reword a segment, since the
+// user may have merged beats and that decision has to survive.
+//
+// promptStyle still matters here even though segmentation is fixed: Cinematic
+// asks for sustained camera moves and images that can hold the screen for
+// 6-10 seconds, which is prompt WORDING, not boundaries. Only the three lines
+// that differ between the combined general and cinematic prompts are swapped —
+// duplicating the whole block for them would just invite the two to drift.
+export function buildFillPromptsCached(
+  visualProfile: VisualProfileOutput,
+  promptStyle: PromptStyle = "general",
+  consistencySheet?: string,
+): string {
+  const cinematic = promptStyle === "cinematic";
+  const cameraField = cinematic
+    ? `- camera: single short phrase, favoring sustained moves for held shots (e.g. "slow push-in on face", "lingering static wide", "slow lateral pan", "gradual pull-back reveal")`
+    : `- camera: single short phrase (e.g. "tight close-up", "low-angle wide", "overhead aerial")`;
+  const actionField = cinematic
+    ? `- action: single short phrase describing what unfolds WITHIN the held shot, including emotional shifts (e.g. "subject slowly lowers their head", "fire dims as the group falls silent")`
+    : `- action: single short phrase (e.g. "subject leans forward", "dust settles after the strike")`;
+  const closingQuality = cinematic
+    ? `- Every image must be strong enough to hold the screen for 6–10 seconds. Prioritize composition, emotion, and atmosphere over informational density.`
+    : `- Educational sections: visuals must help the viewer UNDERSTAND the narration, not just decorate it.`;
+  return `You will be given a numbered list of SCRIPT BEATS. Write one image prompt for EACH beat.
+
+${consistencyBlock(consistencySheet)}
+
+RULES (NON-NEGOTIABLE)
+1. The segmentation is FIXED. Never merge, split, reorder, reword or re-cut a beat.
+2. Return exactly one entry per beat you were given, addressed by its beatNumber.
+3. Never invent beat numbers that were not in the input, and never omit one.
+4. Treat each beat's text as the whole of what is narrated over that image.
+
+VISUAL STYLE
+${renderVisualStyleBlock(visualProfile)}
+
+PER-BEAT FIELDS
+${SELF_CONTAINED_IMAGE_PROMPT_FIELD}
+${cameraField}
+- lighting: single short phrase (e.g. "warm golden rim light", "cold blue moonlight")
+- mood: single short phrase (e.g. "tense, urgent", "quiet, reverent")
+${actionField}
+
+QUALITY
+${SELF_CONTAINED_QUALITY_RULES}
+- Historical sections: historically accurate environments, clothing, tools, architecture, lighting — no anachronisms.
+${closingQuality}
+
+VALIDATION (DO THIS BEFORE RETURNING)
+Count the beats you were given. Confirm your "beats" array has exactly that many entries and that every beatNumber matches one from the input.
+
+Call the save_fill_prompts tool with a "beats" array. Do not write any text outside the tool call.`;
+}
+
+export function buildFillPromptsDynamic(beats: { beatNumber: number; scriptSegment: string }[]): string {
+  return `SCRIPT BEATS (write one image prompt per beat, keyed by beatNumber):\n${
+    beats.map((b) => `${b.beatNumber}. ${b.scriptSegment}`).join("\n")
+  }`;
+}
+
+// Step 1 of the three-step flow: segmentation only. The beat DEFINITION, RULES
+// and DENSITY text below are copied verbatim from buildImagePromptsCached on
+// purpose — the boundaries this pass produces must match what the combined
+// pass produced, or splitting the step would quietly change every downstream
+// image. Only the per-beat fields differ: no visual style, no camera/lighting/
+// mood/action, which is what makes this call cheap.
+//
+// Segmentation is style-dependent, which is easy to miss: the Cinematic
+// prompt does not merely reword prompts, it changes where beats START and END
+// (~20-35 words per held shot, "prefer fewer, longer-held shots") against
+// General's ~10-15. A beats pass that ignored promptStyle would hand Cinematic
+// projects educational-density beats and no later step could recover it.
+export function buildBeatsCached(promptStyle: PromptStyle = "general"): string {
+  if (promptStyle === "cinematic") {
+    return `Split the SCRIPT CHUNK that follows this message into VISUAL BEATS. Do not write image prompts — segmentation only.
+
+WHAT COUNTS AS A VISUAL BEAT
+A visual beat is ONE CONTINUOUS SHOT the viewer watches — not one fact or one sentence. Split by what the CAMERA sees, not by grammar. A new beat begins ONLY when the shot must change:
+- A new subject, character, or location enters the frame
+- The action or setting changes in a way one shot cannot contain
+- A new camera perspective is required (cutting from wide to close-up for a reveal or emotional moment)
+- A distinct fact, statistic, date, or historical event requires its own dedicated visual
+- A deliberate dramatic cut (reveal, shock, punchline)
+
+WHAT DOES NOT START A NEW BEAT
+- A sentence that continues the same subject, location, and action
+- Elaboration, restatement, or rhetorical repetition of the current idea
+- Emotional build within a single moment — sustain the shot rather than cutting
+- Descriptive detail about something already on screen
+
+RULES (NON-NEGOTIABLE)
+1. One shot MAY span multiple sentences when they describe the same continuous moment. Merging such sentences into a single beat is correct, not lazy.
+2. Prefer FEWER, longer-held shots.
+3. Each distinct fact, statistic, date, location, study, or historical example still gets its OWN dedicated beat.
+4. Punch cuts (under ~10 words) are allowed ONLY for deliberate reveals, jokes, or shocks — use sparingly.
+5. Do NOT chop a single dramatic moment into multiple beats.
+6. Do NOT leave any narration uncovered.
+
+DENSITY
+- Target: ~1 beat every 6–10 seconds of narration (≈20–35 words of script per beat).
+- Minimum beat length: ~10 words (unless a deliberate punch cut per Rule 4).
+- Maximum beat length: ~35 words — if a passage exceeds this, split at the most natural visual change.
+
+PER-BEAT FIELDS
+- scriptSegment: the exact words from the script for this beat (typically 20–35 words; shorter only for deliberate punch cuts). Must be a verbatim substring of the chunk AND must NOT overlap with adjacent beats — each beat picks up exactly where the previous beat's last word ended. Concatenating every scriptSegment in order, separated by single spaces, must reproduce the chunk verbatim.
+
+VALIDATION (DO THIS BEFORE RETURNING)
+Step 1: Walk the chunk and identify every beat using the SHOT definition above.
+Step 2: Confirm concatenating every scriptSegment in order reproduces the chunk verbatim, with no gaps and no overlaps.
+Step 3: Estimate each beat's duration (word count ÷ 2.5 ≈ seconds). If 3 or more consecutive beats fall under ~5 seconds and none are deliberate punch cuts, MERGE them.
+Step 4: Confirm no beat exceeds ~35 words.
+
+Number beats sequentially starting from 1, with no gaps. Call the save_beats tool with a "beats" array. Do not write any text outside the tool call.`;
+  }
+  return `Split the SCRIPT CHUNK that follows this message into VISUAL BEATS. Do not write image prompts — segmentation only.
+
+WHAT COUNTS AS A VISUAL BEAT
+A visual beat is any individual narration unit that introduces a NEW:
+- Action, subject, character, or location
+- Camera perspective, emotion, or object
+- Historical event, statistic, date, fact, or study
+- Transition, cause-and-effect relationship, or visual concept
+
+RULES (NON-NEGOTIABLE)
+1. NEVER segment by scene. NEVER merge multiple beats into one.
+2. No narration may be left uncovered.
+3. If a sentence contains multiple distinct visual ideas, split it into multiple beats.
+4. Each fact, statistic, date, location, study, or historical example gets its OWN dedicated beat.
+5. Storytelling sections typically produce 1+ beats per sentence — often multiple when a sentence contains several visual changes.
+6. Educational sections: each concept, mechanism, or example is its own beat.
+7. Do NOT optimize for fewer beats. Complete coverage is the goal.
+
+DENSITY
+- Minimum: 1 beat per sentence.
+- Preferred: ~1 beat every 3–6 seconds of narration (≈10–15 words of script per beat).
+- This chunk may produce many beats; long-form scripts commonly total 50–150+ across all chunks.
+
+PER-BEAT FIELDS
+- scriptSegment: the exact words from the script for this beat (typically 8–20 words). Must be a verbatim substring of the chunk AND must NOT overlap with adjacent beats — each beat picks up exactly where the previous beat's last word ended. Concatenating every scriptSegment in order, separated by single spaces, must reproduce the chunk verbatim. Do not repeat phrases at beat boundaries.
+
+VALIDATION (DO THIS BEFORE RETURNING)
+Step 1: Walk the script chunk and identify every visual beat using the definition above.
+Step 2: Count them.
+Step 3: Confirm your "beats" array has exactly that many entries.
+Step 4: Confirm the segments concatenate back to the chunk verbatim, with no gaps and no overlaps.
+
+Number beats sequentially starting from 1, with no gaps. Call the save_beats tool with a "beats" array. Do not write any text outside the tool call.`;
+}
+
+export function buildBeatsDynamic(script: string): string {
+  return `SCRIPT (THIS CHUNK):\n${script}`;
+}
+
 export function buildImagePromptsDynamic(script: string): string {
   return `SCRIPT (THIS CHUNK):\n${script}`;
 }

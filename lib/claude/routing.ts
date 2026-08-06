@@ -1,14 +1,32 @@
 import { supabase } from "@/lib/supabase/client";
+import { getSettings } from "@/lib/settings";
 
 /**
  * Where Claude calls get routed. Set globally by admin in Config → Anthropic.
  *
  *   client_kie    – use the end-user's KIE API key (default, current behavior)
+ *   client_direct – call Anthropic directly with the END USER's own Anthropic
+ *                   key (account_settings.anthropic_api_key). Not selectable as
+ *                   a global default: it is what client_kie becomes for a
+ *                   client who opted in, per user. See getRoutingForUser.
  *   heclus_kie    – use Heclus's KIE key (product_config service='heclus_kie_api_key')
  *   heclus_direct – call Anthropic directly with Heclus's Anthropic API key
  *                   (product_config service='anthropic_api_key'), bypassing KIE
  */
-export type AnthropicRouting = "client_kie" | "heclus_kie" | "heclus_direct";
+export type AnthropicRouting = "client_kie" | "client_direct" | "heclus_kie" | "heclus_direct";
+
+/** Whose money the call spends. Drives two decisions elsewhere: whether a
+ *  user's own model pick is honoured (lib/claude/models.ts) and which ledger
+ *  the cost lands in (lib/costs.ts). */
+export function isClientPaid(routing: AnthropicRouting): boolean {
+  return routing === "client_kie" || routing === "client_direct";
+}
+
+/** True when the call goes straight to api.anthropic.com and is billed in
+ *  tokens, rather than through KIE and billed in credits. */
+export function isDirectRouting(routing: AnthropicRouting): boolean {
+  return routing === "client_direct" || routing === "heclus_direct";
+}
 
 /**
  * Workflow step slugs accepted by the per-step routing override. Kept in
@@ -32,6 +50,9 @@ export function isWorkflowStep(v: unknown): v is WorkflowStep {
   return typeof v === "string" && (WORKFLOW_STEPS as readonly string[]).includes(v);
 }
 
+// client_direct is deliberately NOT accepted here. It is a per-user upgrade of
+// client_kie, not something an admin can set globally — configuring it for
+// everyone would break every client who hasn't supplied an Anthropic key.
 function normaliseRouting(v: unknown): AnthropicRouting | null {
   if (v === "client_kie" || v === "heclus_kie" || v === "heclus_direct") return v;
   return null;
@@ -61,6 +82,30 @@ export async function getAnthropicRouting(step?: WorkflowStep): Promise<Anthropi
   }
 
   return normaliseRouting(data?.anthropic_routing) ?? "client_kie";
+}
+
+/**
+ * The routing that actually applies to one user's call. Same as
+ * getAnthropicRouting, except a client who has supplied their own Anthropic key
+ * and switched it on runs client_direct instead of client_kie.
+ *
+ * Scoped to client_kie on purpose: that is the only routing where the client's
+ * key is already what pays, so swapping which of THEIR keys is used changes
+ * nothing about who is billed. When an admin has moved a step to heclus_kie or
+ * heclus_direct, Heclus is deliberately covering it — quietly spending the
+ * client's Anthropic key there would override that decision.
+ */
+export async function getRoutingForUser(userId: string, step?: WorkflowStep): Promise<AnthropicRouting> {
+  const routing = await getAnthropicRouting(step);
+  if (routing !== "client_kie") return routing;
+  try {
+    const { anthropic_api_key, anthropic_direct_enabled } = await getSettings(userId);
+    if (anthropic_direct_enabled && anthropic_api_key) return "client_direct";
+  } catch {
+    // Settings unreadable (or migration 117 not applied) — stay on KIE rather
+    // than failing the call over an optional preference.
+  }
+  return routing;
 }
 
 /**

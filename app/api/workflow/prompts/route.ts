@@ -4,7 +4,8 @@ import { requireActiveSubscription } from "@/lib/subscription";
 import { resolveModelForUser } from "@/lib/claude/models";
 import type { WorkflowStep } from "@/lib/claude/routing";
 import { supabase } from "@/lib/supabase/client";
-import { sseStream, generateImages, generateVideos, generateThumbnails } from "@/lib/workflow/prompts-core";
+import { sseStream, generateBeats, fillPrompts, generateImages, generateVideos, generateThumbnails } from "@/lib/workflow/prompts-core";
+import { PROMPTS_THREE_STEP } from "@/lib/feature-flags";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
   if (expired) return expired;
 
   const body = await req.json() as {
-    step: "images" | "videos" | "thumbnails";
+    step: "beats" | "fill" | "images" | "videos" | "thumbnails";
     projectId: string;
     script?: string;
     visualProfile?: VisualProfileOutput;
@@ -37,31 +38,69 @@ export async function POST(req: Request) {
   // Haiku sees that fallback largely disappear — the recovery path just goes
   // unused, so the sizing is safe either way.
   const routingStep: WorkflowStep =
-    step === "images" ? "image_prompts" : step === "videos" ? "video_prompts" : "thumbnails";
+    step === "images" || step === "beats" || step === "fill" ? "image_prompts" : step === "videos" ? "video_prompts" : "thumbnails";
   const model = (await resolveModelForUser(user.id, routingStep, user)).model;
+
+  // Style resolution shared by every step whose output depends on it. Prefer
+  // the request body — the client sends the currently-active tab so an
+  // in-session switch is honoured even before the PATCH that persists it
+  // settles — and fall back to the project row so a reload before generation
+  // still uses the persisted style.
+  async function resolvePromptStyle(): Promise<"general" | "cinematic"> {
+    const bodyStyle = (body as { promptStyle?: unknown }).promptStyle;
+    if (bodyStyle === "cinematic") return "cinematic";
+    if (bodyStyle === "general") return "general";
+    const { data: proj } = await supabase
+      .from("projects")
+      .select("prompt_style")
+      .eq("id", projectId)
+      .eq("user_id", user.id)
+      .single();
+    return (proj?.prompt_style as string | null) === "cinematic" ? "cinematic" : "general";
+  }
+
+  if (step === "beats") {
+    // Gated: with the flag off the client's Image Prompts button still runs
+    // the combined pass, and that pass DELETES beats whose image_prompt is
+    // null — exactly the rows this step creates. So a beats run behind the
+    // flag would be wiped by the very next step the user can reach.
+    if (!PROMPTS_THREE_STEP) {
+      return NextResponse.json({ error: "Three-step prompts flow is not enabled" }, { status: 400 });
+    }
+    if (!body.script) {
+      return NextResponse.json({ error: "script is required" }, { status: 400 });
+    }
+    // promptStyle decides beat DENSITY here, not just prompt wording, so
+    // segmentation has to agree with whatever the fill pass will later use.
+    return sseStream(async (send) =>
+      generateBeats(projectId, user.id, body.script!, send, model, await resolvePromptStyle())
+    );
+  }
+
+  if (step === "fill") {
+    // Step 2 of the three-step flow: prompts onto beats that already exist.
+    // Flag-gated alongside "beats" — with the flag off there are no
+    // prompt-less beats to fill, because segmentation and prompts arrive
+    // together.
+    if (!PROMPTS_THREE_STEP) {
+      return NextResponse.json({ error: "Three-step prompts flow is not enabled" }, { status: 400 });
+    }
+    // No script needed: the beats' own segments are the input, which is what
+    // makes a merge survive this step.
+    if (!body.visualProfile) {
+      return NextResponse.json({ error: "visualProfile is required" }, { status: 400 });
+    }
+    return sseStream(async (send) =>
+      fillPrompts(projectId, user.id, body.visualProfile!, send, model, await resolvePromptStyle())
+    );
+  }
 
   if (step === "images") {
     if (!body.script || !body.visualProfile) {
       return NextResponse.json({ error: "script and visualProfile are required" }, { status: 400 });
     }
-    // Prefer the request body — the client sends the currently-active
-    // tab so an in-session switch is honoured even before the PATCH
-    // that persists it settles. Fall back to the project row so a
-    // reload before generation still uses the persisted style.
-    const bodyStyle = (body as { promptStyle?: unknown }).promptStyle;
-    let promptStyle: "general" | "cinematic" =
-      bodyStyle === "cinematic" ? "cinematic" : bodyStyle === "general" ? "general" : "general";
-    if (bodyStyle === undefined) {
-      const { data: proj } = await supabase
-        .from("projects")
-        .select("prompt_style")
-        .eq("id", projectId)
-        .eq("user_id", user.id)
-        .single();
-      if ((proj?.prompt_style as string | null) === "cinematic") promptStyle = "cinematic";
-    }
-    return sseStream((send) =>
-      generateImages(projectId, user.id, body.script!, body.visualProfile!, send, model, promptStyle)
+    return sseStream(async (send) =>
+      generateImages(projectId, user.id, body.script!, body.visualProfile!, send, model, await resolvePromptStyle())
     );
   }
 
