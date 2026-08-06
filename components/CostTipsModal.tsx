@@ -70,7 +70,7 @@ export function CostTipsModal() {
         onClick={() => setOpen(true)}
         title="Tips to cut cost"
         aria-label="Tips to cut cost"
-        className="inline-flex items-center gap-1.5 rounded-md text-xs font-medium px-2.5 py-1 transition-all hover:opacity-80 cursor-pointer max-w-full lg:ml-10"
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-md text-xs font-medium px-2.5 py-1 transition-all hover:opacity-80 cursor-pointer max-w-full lg:ml-10"
         style={{
           border: "1px solid oklch(0.65 0.15 145 / 0.35)",
           background: "oklch(0.65 0.15 145 / 0.10)",
