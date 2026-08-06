@@ -157,6 +157,12 @@
   --accent-red-text: oklch(0.85 0.08 25);
   --accent-green-text: oklch(0.8 0.15 145);
   --accent-blue-text: oklch(0.8 0.12 200);
+
+  /* Loading skeletons. One token so a pulse block never has to guess which
+     surface it sits on: the fills in use were a mix of translucent white and
+     --bg-elevated, and both became invisible once light-theme surfaces went
+     white. */
+  --skeleton: oklch(1 0 0 / 0.08);
 }
 
 /* Light theme overrides */
@@ -266,6 +272,8 @@
   --accent-red-text: oklch(0.48 0.19 25);
   --accent-green-text: oklch(0.42 0.14 145);
   --accent-blue-text: oklch(0.42 0.13 200);
+
+  --skeleton: #ecf0f1;
 }
 
 @layer base {
