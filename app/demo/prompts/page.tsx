@@ -29,7 +29,7 @@ function DemoEditablePrompt({ value, onSave }: { value: string; onSave: (v: stri
         <button
           onClick={() => { setDraft(value); setEditing(true); }}
           className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium transition-opacity hover:opacity-80"
-          style={{ color: "oklch(0.72 0.25 285)" }}
+          style={{ color: "var(--brand-text)" }}
         >
           <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
             <path d="M8.5 1.5l2 2L4 10l-2.5.5L2 8l6.5-6.5z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
@@ -143,7 +143,7 @@ export default function DemoPromptsPage() {
                     style={active ? {
                       background: "oklch(0.72 0.25 285 / 0.15)",
                       border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                      color: "oklch(0.88 0.12 285)",
+                      color: "var(--accent-purple-text)",
                     } : {
                       background: "transparent",
                       border: "1px solid transparent",
@@ -242,7 +242,7 @@ export default function DemoPromptsPage() {
                         style={active ? {
                           background: "oklch(0.72 0.25 285 / 0.15)",
                           border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                          color: "oklch(0.88 0.12 285)",
+                          color: "var(--accent-purple-text)",
                         } : {
                           background: "transparent",
                           border: "1px solid transparent",
@@ -253,7 +253,7 @@ export default function DemoPromptsPage() {
                         <span className="px-1.5 py-0.5 rounded-full text-[10px] tabular-nums"
                           style={{
                             background: active ? "oklch(0.72 0.25 285 / 0.2)" : "var(--bg-panel)",
-                            color: active ? "oklch(0.88 0.12 285)" : "var(--c-45)",
+                            color: active ? "var(--accent-purple-text)" : "var(--c-45)",
                           }}>
                           {count}
                         </span>
@@ -268,7 +268,7 @@ export default function DemoPromptsPage() {
                     const base = activeTab === "image" ? beat.imagePrompt : beat.videoPrompt;
                     const value = editedPrompts[key] ?? base;
                     const badge = activeTab === "image"
-                      ? { bg: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" }
+                      ? { bg: "oklch(0.72 0.25 285 / 0.12)", color: "var(--brand-text)" }
                       : { bg: "oklch(0.6 0.15 200 / 0.12)", color: "oklch(0.6 0.15 200)" };
                     return (
                       <div

@@ -233,7 +233,7 @@ export function BeatAudioPlayer({ src, beatNumber }: { src: string; beatNumber?:
                 aria-checked={rate === s}
                 onClick={() => applyRate(s)}
                 className="w-full flex items-center justify-between px-3 py-1 text-xs text-left transition-colors hover:bg-[var(--bg-track)]"
-                style={{ color: rate === s ? "oklch(0.72 0.25 285)" : "var(--c-70)" }}
+                style={{ color: rate === s ? "var(--brand-text)" : "var(--c-70)" }}
               >
                 {s === 1 ? "Normal" : `${s}×`}
                 {rate === s && (

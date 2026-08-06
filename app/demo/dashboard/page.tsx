@@ -171,7 +171,7 @@ export default function DemoDashboardPage() {
             style={{
               background: "oklch(0.72 0.25 285 / 0.15)",
               border: "1px solid oklch(0.72 0.25 285 / 0.3)",
-              color: "oklch(0.72 0.25 285)",
+              color: "var(--brand-text)",
             }}
           >
             Demo
@@ -221,7 +221,7 @@ export default function DemoDashboardPage() {
                     </div>
                     <span
                       className="text-[10px] font-semibold px-2.5 py-1 rounded-full"
-                      style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}
+                      style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}
                     >
                       Pro plan
                     </span>
@@ -439,7 +439,7 @@ export default function DemoDashboardPage() {
               <div className="flex items-center gap-3">
                 <div
                   className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-bold shrink-0"
-                  style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}
+                  style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}
                 >
                   F
                 </div>
@@ -483,7 +483,7 @@ export default function DemoDashboardPage() {
                       border: "1px solid oklch(0.55 0.15 145 / 0.3)",
                     } : {
                       background: "oklch(0.72 0.25 285 / 0.1)",
-                      color: "oklch(0.72 0.25 285)",
+                      color: "var(--brand-text)",
                       border: "1px solid oklch(0.72 0.25 285 / 0.2)",
                     }}
                   >

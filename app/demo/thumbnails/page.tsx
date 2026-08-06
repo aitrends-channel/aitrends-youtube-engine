@@ -22,7 +22,7 @@ function StepBadge({ status, num }: { status: "idle" | "running" | "done"; num: 
       className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm font-bold mt-0.5"
       style={
         status === "done"    ? { background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.7 0.15 145)" } :
-        status === "running" ? { background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" } :
+        status === "running" ? { background: "oklch(0.72 0.25 285 / 0.12)", color: "var(--brand-text)" } :
         { background: "var(--bg-progress)", color: "var(--c-30)" }
       }
     >
@@ -210,7 +210,7 @@ export default function DemoThumbnailsPage() {
                           onClick={() => update({ selectedThumbRatio: r })}
                           className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
                           style={selectedRatio === r ? {
-                            background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+                            background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)",
                           } : { background: "var(--bg-control)", color: "var(--c-50)", border: "1px solid var(--bd-8)" }}
                         >
                           {r}
@@ -235,7 +235,7 @@ export default function DemoThumbnailsPage() {
                       ) : imagePhase === "running" && imageProgress === t.position - 1 ? (
                         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
                           <span className="w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin"
-                            style={{ color: "oklch(0.72 0.25 285)" }} />
+                            style={{ color: "var(--brand-text)" }} />
                           <p className="text-xs" style={{ color: "var(--c-45)" }}>Generating…</p>
                         </div>
                       ) : (
@@ -252,7 +252,7 @@ export default function DemoThumbnailsPage() {
                           href={t.imageUrl}
                           download={`thumbnail-${t.position}.png`}
                           className="absolute top-2 right-2 w-7 h-7 rounded-md flex items-center justify-center transition-all hover:opacity-80"
-                          style={{ background: "var(--bg-overlay)", color: "oklch(0.95 0 0)" }}
+                          style={{ background: "var(--bg-overlay)", color: "var(--c-90)" }}
                         >
                           <Download size={14} />
                         </a>

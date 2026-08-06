@@ -144,7 +144,7 @@ export function AssembleSection({ value, aspectRatio, onChange }: {
       {/* Background music — single-bar picker, as on the assemble step */}
       <div className="flex items-center gap-3 rounded-2xl px-4 py-2.5 flex-wrap"
         style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-        <span aria-hidden="true" className="text-base shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>♫</span>
+        <span aria-hidden="true" className="text-base shrink-0" style={{ color: "var(--brand-text)" }}>♫</span>
         {!value.bgMusicUrl && !bgmUploading ? (
           <>
             <p className="text-sm font-semibold flex-1">Background music</p>
@@ -152,7 +152,7 @@ export function AssembleSection({ value, aspectRatio, onChange }: {
               type="button"
               onClick={() => bgmInputRef.current?.click()}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 cursor-pointer"
-              style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+              style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
             >
               Choose file
             </button>
@@ -256,7 +256,7 @@ export function AssembleSection({ value, aspectRatio, onChange }: {
       <div className="rounded-2xl px-4 py-2.5 space-y-3"
         style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
         <div className="flex items-center gap-3 flex-wrap">
-          <span aria-hidden="true" className="text-base shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>◈</span>
+          <span aria-hidden="true" className="text-base shrink-0" style={{ color: "var(--brand-text)" }}>◈</span>
           {!value.logoUrl && !logoUploading ? (
             <>
               <p className="text-sm font-semibold flex-1">Channel logo</p>
@@ -264,7 +264,7 @@ export function AssembleSection({ value, aspectRatio, onChange }: {
                 type="button"
                 onClick={() => logoInputRef.current?.click()}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shrink-0 cursor-pointer"
-                style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+                style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
               >
                 Choose file
               </button>
@@ -407,7 +407,7 @@ export function AssembleSection({ value, aspectRatio, onChange }: {
                       background: "var(--bg-input)",
                       border: "1px solid var(--bd-card)",
                     }}>
-                    <p className="text-xs font-medium" style={{ color: (value.captionsStyle ?? "classic") === s.id ? "oklch(0.88 0.12 285)" : "var(--c-60)" }}>{s.label}</p>
+                    <p className="text-xs font-medium" style={{ color: (value.captionsStyle ?? "classic") === s.id ? "var(--accent-purple-text)" : "var(--c-60)" }}>{s.label}</p>
                     <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>{s.hint}</p>
                   </button>
                 ))}
@@ -424,7 +424,7 @@ export function AssembleSection({ value, aspectRatio, onChange }: {
                       style={(value.captionsSize ?? "medium") === s.id ? {
                         background: "oklch(0.72 0.25 285 / 0.15)",
                         border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                        color: "oklch(0.88 0.12 285)",
+                        color: "var(--accent-purple-text)",
                       } : {
                         background: "var(--bg-input)",
                         border: "1px solid var(--bd-card)",
@@ -445,7 +445,7 @@ export function AssembleSection({ value, aspectRatio, onChange }: {
                       style={(value.captionsPosition ?? "bottom") === p.id ? {
                         background: "oklch(0.72 0.25 285 / 0.15)",
                         border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                        color: "oklch(0.88 0.12 285)",
+                        color: "var(--accent-purple-text)",
                       } : {
                         background: "var(--bg-input)",
                         border: "1px solid var(--bd-card)",
@@ -467,7 +467,7 @@ export function AssembleSection({ value, aspectRatio, onChange }: {
                     style={(value.captionsLanguage ?? "source") === lang.code ? {
                       background: "oklch(0.72 0.25 285 / 0.15)",
                       border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                      color: "oklch(0.88 0.12 285)",
+                      color: "var(--accent-purple-text)",
                     } : {
                       background: "var(--bg-input)",
                       border: "1px solid var(--bd-card)",

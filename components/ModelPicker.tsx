@@ -100,7 +100,7 @@ function ModelOption({
           ))}
           {model.costPerUnit && (
             <span className="px-1.5 py-0.5 rounded text-xs"
-              style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" }}>
+              style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "var(--brand-text)" }}>
               {model.costPerUnit} cr{model.type === "video" ? "/s" : ""}
             </span>
           )}
@@ -131,7 +131,7 @@ function VariantPill<T>({
       style={selected ? {
         background: "oklch(0.72 0.25 285 / 0.15)",
         border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-        color: "oklch(0.88 0.12 285)",
+        color: "var(--accent-purple-text)",
       } : {
         background: "var(--bg-input)",
         border: "1px solid var(--bd-7)",
@@ -213,7 +213,7 @@ export function ModelPicker(props: ModelPickerProps) {
             className="flex-1 flex items-center justify-center px-2 py-1 rounded-md text-xs font-medium capitalize transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             style={tab === t ? {
               background: "oklch(0.72 0.25 285 / 0.15)",
-              color: "oklch(0.88 0.12 285)",
+              color: "var(--accent-purple-text)",
               boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.35)",
             } : { background: "transparent", color: "var(--c-55)" }}
           >
@@ -382,7 +382,7 @@ export function ModelPicker(props: ModelPickerProps) {
             style={{
               background: "oklch(0.72 0.25 285 / 0.15)",
               border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-              color: "oklch(0.88 0.12 285)",
+              color: "var(--accent-purple-text)",
             }}
           >
             {props.selectedAspectRatio || "—"}

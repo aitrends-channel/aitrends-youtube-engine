@@ -51,7 +51,7 @@ function SectionHeader({ icon, title, subtitle }: { icon: string; title: string;
   return (
     <div className="flex items-center gap-3 mb-4">
       <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base"
-        style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
+        style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
         {icon}
       </div>
       <div>
@@ -130,7 +130,7 @@ function RatioButtons({ ratios, selected, onSelect }: { ratios: string[]; select
           style={selected === r ? {
             background: "oklch(0.72 0.25 285 / 0.15)",
             border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-            color: "oklch(0.88 0.12 285)",
+            color: "var(--accent-purple-text)",
           } : {
             background: "var(--bg-input)",
             border: "1px solid var(--bd-7)",
@@ -164,7 +164,7 @@ function ModelTabs({ tab, onTab }: { tab: ModelTab; onTab: (t: ModelTab) => void
             color: "var(--primary-foreground)",
           } : tab === t ? {
             background: "oklch(0.72 0.25 285 / 0.15)",
-            color: "oklch(0.88 0.12 285)",
+            color: "var(--accent-purple-text)",
             boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.35)",
           } : { background: "transparent", color: "var(--c-55)" }}
         >
@@ -412,7 +412,7 @@ export default function DemoGeneratePage() {
                   aria-pressed={effectiveView === t.key}
                   className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5"
                   style={effectiveView === t.key
-                    ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)" }
+                    ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)" }
                     : { color: "var(--c-55)" }}
                 >
                   {t.icon} {t.label}
@@ -455,7 +455,7 @@ export default function DemoGeneratePage() {
                             style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>{tag}</span>
                         ))}
                         <span className="px-1.5 py-0.5 rounded text-xs"
-                          style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" }}>
+                          style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "var(--brand-text)" }}>
                           {m.cost}
                         </span>
                       </div>
@@ -503,7 +503,7 @@ export default function DemoGeneratePage() {
                           <span className="text-[9px] px-1.5 py-0.5 rounded relative z-10"
                             style={{
                               background: "oklch(0.72 0.25 285 / 0.1)",
-                              color: "oklch(0.72 0.25 285)",
+                              color: "var(--brand-text)",
                             }}>
                             generating
                           </span>
@@ -571,7 +571,7 @@ export default function DemoGeneratePage() {
                             style={{ background: "var(--bg-track)", color: "var(--c-45)" }}>{tag}</span>
                         ))}
                         <span className="px-1.5 py-0.5 rounded text-xs"
-                          style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" }}>
+                          style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "var(--brand-text)" }}>
                           {m.cost}
                         </span>
                       </div>
@@ -597,7 +597,7 @@ export default function DemoGeneratePage() {
                       style={selectedDuration === d.value ? {
                         background: "oklch(0.72 0.25 285 / 0.15)",
                         border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                        color: "oklch(0.88 0.12 285)",
+                        color: "var(--accent-purple-text)",
                       } : {
                         background: "var(--bg-input)",
                         border: "1px solid var(--bd-7)",
@@ -633,7 +633,7 @@ export default function DemoGeneratePage() {
                           <span className="text-[9px] px-1.5 py-0.5 rounded relative z-10"
                             style={{
                               background: "oklch(0.72 0.25 285 / 0.1)",
-                              color: "oklch(0.72 0.25 285)",
+                              color: "var(--brand-text)",
                             }}>
                             queued
                           </span>

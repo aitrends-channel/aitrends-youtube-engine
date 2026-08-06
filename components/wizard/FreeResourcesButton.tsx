@@ -17,7 +17,7 @@ export function FreeResourcesButton({ step }: { step: string }) {
       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
       style={{
         background: "oklch(0.72 0.25 285 / 0.08)",
-        color: "oklch(0.72 0.25 285)",
+        color: "var(--brand-text)",
         border: "1px solid oklch(0.72 0.25 285 / 0.2)",
       }}
     >

@@ -73,7 +73,7 @@ function VoiceOption({ voice, selected, onSelect }: { voice: Voice; selected: bo
           title="Voice preview is available in the full app"
           aria-label="Preview voice"
           className="w-6 h-6 rounded flex items-center justify-center shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ background: "oklch(0.2 0 0)", color: "var(--c-45)", border: "1px solid var(--bd-10)" }}
+          style={{ background: "oklch(0.2 0 0)", color: "var(--c-70)", border: "1px solid var(--bd-10)" }}
         >
           <svg width="7" height="9" viewBox="0 0 7 9" fill="currentColor">
             <path d="M0 0.5L7 4.5L0 8.5V0.5Z" />
@@ -184,7 +184,7 @@ export default function DemoVoiceoverPage() {
                     } : voiceTab === tab ? {
                       background: "oklch(0.72 0.25 285 / 0.15)",
                       border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                      color: "oklch(0.88 0.12 285)",
+                      color: "var(--accent-purple-text)",
                     } : {
                       background: "var(--bg-input)",
                       border: "1px solid var(--bd-card)",
@@ -259,7 +259,7 @@ export default function DemoVoiceoverPage() {
                 style={{ background: "oklch(0.72 0.25 285 / 0.08)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
                 <span style={{ color: "var(--c-45)" }}>Voice:</span>
                 {selectedVoiceModel ? (
-                  <span className="font-semibold" style={{ color: "oklch(0.88 0.12 285)" }}>
+                  <span className="font-semibold" style={{ color: "var(--accent-purple-text)" }}>
                     {selectedVoiceModel.name} · {selectedVoiceModel.tags[0].toLowerCase()}
                   </span>
                 ) : (

@@ -304,7 +304,7 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
             <button
               onClick={() => router.push(`/projects/${projectId}/assemble`)}
               className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer transition-all"
-              style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
+              style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
               <Film size={14} /> View in studio
             </button>
             <button
@@ -356,7 +356,7 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
             ? <Pause size={22} style={{ color: "oklch(0.7 0.16 65)" }} />
             : status === "needs_attention"
               ? <AlertTriangle size={22} style={{ color: "oklch(0.6 0.19 25)" }} />
-              : <Loader2 size={24} className="animate-spin" style={{ color: "oklch(0.72 0.25 285)" }} />}
+              : <Loader2 size={24} className="animate-spin" style={{ color: "var(--brand-text)" }} />}
         </div>
         <h1 className="text-xl font-bold" style={{ color: "var(--c-90)" }}>
           {status === "needs_attention" ? "1Click needs your input" : status === "paused" ? "1Click paused" : "1Click is building your video"}
@@ -375,7 +375,7 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
               const runStartTs = p.auto_pilot_started_at ? Date.parse(p.auto_pilot_started_at) : (seenStartRef.current ?? nowTs);
               const elapsedMs = Math.max(0, nowTs - runStartTs);
               return (
-                <span className="inline-flex items-center gap-1" style={{ color: "oklch(0.82 0.12 285)" }}>
+                <span className="inline-flex items-center gap-1" style={{ color: "var(--accent-purple-text)" }}>
                   <Clock size={11} /> {formatDuration(elapsedMs)}{status === "paused" ? " · paused" : ""}
                 </span>
               );
@@ -444,7 +444,7 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
             <button
               onClick={() => router.push(`/projects/${projectId}/${p.selected_topic || p.current_state > 6 ? "topic" : "channel"}`)}
               className="px-4 py-2.5 rounded-xl text-sm font-semibold cursor-pointer"
-              style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+              style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
             >
               Finish in the editor →
             </button>
@@ -457,7 +457,7 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
         ) : (
           <button onClick={() => control("pause")} disabled={acting}
             className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-semibold cursor-pointer disabled:opacity-40 transition-opacity hover:opacity-90"
-            style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
+            style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
             <Pause size={14} /> Pause
           </button>
         )}
@@ -497,10 +497,10 @@ function StepCard({ step, status, agg, project, busy, onRun }: {
     >
       <div className="flex items-center gap-2.5">
         <span className="shrink-0">
-          {busy ? <Loader2 size={16} className="animate-spin" style={{ color: "oklch(0.72 0.25 285)" }} />
+          {busy ? <Loader2 size={16} className="animate-spin" style={{ color: "var(--brand-text)" }} />
             : status === "done" ? <Check size={16} style={{ color: "oklch(0.65 0.15 145)" }} />
             : status === "attention" ? <AlertTriangle size={16} style={{ color: "oklch(0.6 0.19 25)" }} />
-            : status === "active" ? <Loader2 size={16} className="animate-spin" style={{ color: "oklch(0.72 0.25 285)" }} />
+            : status === "active" ? <Loader2 size={16} className="animate-spin" style={{ color: "var(--brand-text)" }} />
             : <Circle size={16} style={{ color: "var(--c-30)" }} />}
         </span>
         <span className="flex-1 text-sm font-medium truncate"
@@ -509,7 +509,7 @@ function StepCard({ step, status, agg, project, busy, onRun }: {
         </span>
         {count && (
           <span className="text-xs font-semibold tabular-nums shrink-0"
-            style={{ color: status === "done" ? "oklch(0.65 0.15 145)" : status === "active" ? "oklch(0.82 0.12 285)" : "var(--c-45)" }}>
+            style={{ color: status === "done" ? "oklch(0.65 0.15 145)" : status === "active" ? "var(--accent-purple-text)" : "var(--c-45)" }}>
             {count.done}/{count.total}{cpct !== null ? ` · ${cpct}%` : ""}
           </span>
         )}

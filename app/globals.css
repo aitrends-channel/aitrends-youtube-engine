@@ -142,43 +142,70 @@
      1px line reads as a subtle edge, not a harsh full-opacity outline.
      The light-theme override below keeps it visible on light bg. */
   --bd-card: oklch(1 0 0 / 0.4);
+
+  /* Accent TEXT colours, as opposed to the accent fills/borders beside them.
+     A tinted fill like `oklch(0.72 0.25 285 / 0.15)` is translucent and works
+     on either theme, but the text on top of it does not: these were picked to
+     read on a near-black page, so on the light theme they sit at ~0.88
+     lightness against a 0.97 background and effectively disappear. The light
+     block below darkens each one while keeping its hue. */
+  /* The brand purple used as TEXT. Identical to the raw value it replaces, so
+     the dark theme is unchanged; only the light block below moves it. */
+  --brand-text: oklch(0.72 0.25 285);
+  --accent-purple-text: oklch(0.88 0.12 285);
+  --accent-amber-text: oklch(0.85 0.12 70);
+  --accent-red-text: oklch(0.85 0.08 25);
+  --accent-green-text: oklch(0.8 0.15 145);
+  --accent-blue-text: oklch(0.8 0.12 200);
 }
 
 /* Light theme overrides */
 [data-theme="light"] {
   --background: oklch(0.97 0 0);
   --foreground: oklch(0.08 0 0);
-  --card: oklch(0.93 0 0);
+  /* Same reasoning as the --bg-* surfaces below: white, with borders doing the
+     separating. --secondary / --muted / --accent stay a hair off white because
+     they are fills for badges and hover states that need to register against
+     the card they sit on. */
+  --card: oklch(1 0 0);
   --card-foreground: oklch(0.08 0 0);
-  --popover: oklch(0.93 0 0);
+  --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.08 0 0);
-  --secondary: oklch(0.87 0 0);
+  --secondary: oklch(0.96 0 0);
   --secondary-foreground: oklch(0.35 0 0);
-  --muted: oklch(0.87 0 0);
+  --muted: oklch(0.96 0 0);
   --muted-foreground: oklch(0.50 0 0);
-  --accent: oklch(0.87 0 0);
-  --border: oklch(0.82 0 0);
-  --input: oklch(0.89 0 0);
-  --sidebar: oklch(0.94 0 0);
+  --accent: oklch(0.96 0 0);
+  --sidebar: oklch(1 0 0);
   --sidebar-foreground: oklch(0.08 0 0);
-  --sidebar-border: oklch(0.82 0 0);
+  /* --border, --input and --sidebar-border are set with the rest of the border
+     scale further down, so they are not declared twice here. */
 
+  /* Surfaces are WHITE, not graduated greys.
+     The dark theme builds depth by getting lighter as it stacks (0.06 page →
+     0.18 track), and mirroring that downward on light (0.97 page → 0.82) turned
+     every panel, field and control into a silver slab. Cards, panels, fields
+     and controls are white or near-white here, and the silver borders below
+     draw the boundaries instead. Only the two genuine TRACKS keep a grey fill,
+     because a progress bar needs an unfilled part you can see. */
   --bg-page: oklch(0.97 0 0);
-  --bg-page-2: oklch(0.95 0 0);
-  --bg-header: oklch(0.97 0 0 / 0.92);
-  --bg-header-2: oklch(0.95 0 0 / 0.96);
+  --bg-page-2: oklch(0.98 0 0);
+  --bg-header: oklch(0.99 0 0 / 0.92);
+  --bg-header-2: oklch(0.99 0 0 / 0.96);
   --bg-overlay: oklch(0.97 0 0 / 0.8);
-  --bg-nav: oklch(0.94 0 0);
-  --bg-code: oklch(0.92 0 0);
-  --bg-card-subtle: oklch(0.96 0 0);
-  --bg-card: oklch(0.93 0 0);
-  --bg-panel: oklch(0.91 0 0);
-  --bg-elevated: oklch(0.90 0 0);
-  --bg-input: oklch(0.89 0 0);
-  --bg-control: oklch(0.87 0 0);
-  --bg-step-idle: oklch(0.85 0 0);
-  --bg-progress: oklch(0.84 0 0);
-  --bg-track: oklch(0.82 0 0);
+  --bg-nav: oklch(1 0 0);
+  --bg-code: oklch(0.96 0 0);
+  --bg-card-subtle: oklch(0.99 0 0);
+  --bg-card: oklch(1 0 0);
+  --bg-panel: oklch(1 0 0);
+  --bg-elevated: oklch(1 0 0);
+  --bg-input: oklch(1 0 0);
+  --bg-control: oklch(0.99 0 0);
+  --bg-step-idle: oklch(0.98 0 0);
+  /* Tracks: light enough not to read as silver panels, dark enough to show an
+     unfilled bar against a white card. */
+  --bg-progress: oklch(0.94 0 0);
+  --bg-track: oklch(0.91 0 0);
 
   --c-98: oklch(0.03 0 0);
   --c-96: oklch(0.04 0 0);
@@ -205,17 +232,40 @@
   --c-25: oklch(0.65 0 0);
   --c-22: oklch(0.68 0 0);
 
-  --bd-2: oklch(0 0 0 / 0.03);
-  --bd-4: oklch(0 0 0 / 0.06);
-  --bd-5: oklch(0 0 0 / 0.07);
-  --bd-6: oklch(0 0 0 / 0.08);
-  --bd-7: oklch(0 0 0 / 0.10);
-  --bd-8: oklch(0 0 0 / 0.11);
-  --bd-9: oklch(0 0 0 / 0.12);
-  --bd-10: oklch(0 0 0 / 0.14);
-  /* Light theme: a pure-white card border would vanish on the light
-     background, so keep a subtle visible neutral instead. */
-  --bd-card: oklch(0 0 0 / 0.12);
+  /* Silver borders. The dark theme draws edges with white at 2-10%, which
+     reads clearly on a near-black page; mirroring that as black at 3-14% on a
+     0.97 page came out almost invisible, so cards and inputs lost their edges.
+     Solid silver greys instead of black-at-low-opacity: opaque, so a border
+     looks the same whatever card tint sits behind it, and still a graduated
+     scale so the old hierarchy survives. */
+  --bd-2: oklch(0.89 0 0);
+  --bd-4: oklch(0.87 0 0);
+  --bd-5: oklch(0.85 0 0);
+  --bd-6: oklch(0.83 0 0);
+  --bd-7: oklch(0.81 0 0);
+  --bd-8: oklch(0.79 0 0);
+  --bd-9: oklch(0.76 0 0);
+  --bd-10: oklch(0.73 0 0);
+  /* The workhorse border for step and content cards. A pure-white line would
+     vanish here, so it takes the mid-silver step. */
+  --bd-card: oklch(0.79 0 0);
+  --border: oklch(0.81 0 0);
+  --sidebar-border: oklch(0.81 0 0);
+  /* shadcn uses --input as the input BORDER (border-input); the field's own
+     fill is --bg-input. Silver, matching every other edge. */
+  --input: oklch(0.81 0 0);
+
+  /* Same hues, dark enough to read on the 0.97 page and on the 10-15%
+     tinted fills these labels usually sit on. */
+  /* 0.72 lightness purple on a 0.97 page, and on the 15% lavender fills these
+     labels sit on, is washed out to the point of unreadable. Same hue, dark
+     enough to read on both. */
+  --brand-text: oklch(0.44 0.22 285);
+  --accent-purple-text: oklch(0.45 0.2 285);
+  --accent-amber-text: oklch(0.45 0.13 70);
+  --accent-red-text: oklch(0.48 0.19 25);
+  --accent-green-text: oklch(0.42 0.14 145);
+  --accent-blue-text: oklch(0.42 0.13 200);
 }
 
 @layer base {
@@ -367,6 +417,26 @@ body {
 
 /* Light mode hover overrides for Tailwind opacity classes */
 [data-theme="light"] .hover\:bg-white\/5:hover { background-color: oklch(0 0 0 / 0.04) !important; }
+
+/* Disabled controls on the light theme.
+   The app fades disabled buttons to 40-60% opacity, which works against a
+   near-black page: fading light text toward the background still leaves a
+   readable grey. On a 0.97 page it fades text INTO the background instead, and
+   it compounds — a card at opacity-50 with an `opacity-70` subtitle inside
+   renders that subtitle at 0.35 effective. That's what makes locked controls
+   (a content-type choice after the channel is analysed, for one) read as
+   blank. Raised here so a disabled control is still legible; the dimming, the
+   cursor and the missing hover still signal that it's inert. */
+[data-theme="light"] .disabled\:opacity-30:disabled,
+[data-theme="light"] .disabled\:opacity-35:disabled,
+[data-theme="light"] .disabled\:opacity-40:disabled,
+[data-theme="light"] .disabled\:opacity-50:disabled { opacity: 0.72 !important; }
+[data-theme="light"] .disabled\:opacity-60:disabled { opacity: 0.78 !important; }
+/* Same for the aria/data-driven disabled states shadcn emits. */
+[data-theme="light"] [aria-disabled="true"].disabled\:opacity-50,
+[data-theme="light"] [data-disabled].disabled\:opacity-50 { opacity: 0.72 !important; }
+/* A fieldset[disabled] wrapper dims its whole subtree the same way. */
+[data-theme="light"] fieldset:disabled { opacity: 0.75; }
 
 /* Step connector line animation */
 @keyframes pulse-line {

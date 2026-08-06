@@ -102,7 +102,7 @@ function CallbackContent() {
     <div className="flex flex-col items-center justify-center flex-1 px-4 py-16 text-center">
       {stage === "verifying" && (
         <>
-          <Loader2 size={40} className="animate-spin mb-5" style={{ color: "oklch(0.72 0.25 285)" }} />
+          <Loader2 size={40} className="animate-spin mb-5" style={{ color: "var(--brand-text)" }} />
           <h1 className="text-xl font-bold mb-2" style={{ color: "var(--c-90)" }}>Verifying your payment…</h1>
           <p className="text-sm" style={{ color: "var(--c-45)" }}>Please wait, this only takes a moment.</p>
         </>
@@ -189,7 +189,7 @@ export default function PaymentCallbackPage() {
       <Suspense
         fallback={
           <div className="flex flex-col items-center justify-center flex-1 px-4">
-            <Loader2 size={36} className="animate-spin" style={{ color: "oklch(0.72 0.25 285)" }} />
+            <Loader2 size={36} className="animate-spin" style={{ color: "var(--brand-text)" }} />
           </div>
         }
       >

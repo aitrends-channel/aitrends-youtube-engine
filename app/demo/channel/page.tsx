@@ -259,7 +259,7 @@ export default function DemoChannelPage() {
                         style={{
                           background: selected ? "oklch(0.72 0.25 285 / 0.12)" : "var(--bg-progress)",
                           border: `1px solid ${selected ? "oklch(0.72 0.25 285 / 0.3)" : "var(--bd-8)"}`,
-                          color: selected ? "oklch(0.72 0.25 285)" : "var(--c-55)",
+                          color: selected ? "var(--brand-text)" : "var(--c-55)",
                         }}
                       >
                         <p className="font-medium">{opt.label}</p>
@@ -327,7 +327,7 @@ export default function DemoChannelPage() {
                       style={{
                         background: channelTopicMode === mode ? "oklch(0.72 0.25 285 / 0.12)" : "var(--bg-progress)",
                         border: `1px solid ${channelTopicMode === mode ? "oklch(0.72 0.25 285 / 0.3)" : "var(--bd-8)"}`,
-                        color: channelTopicMode === mode ? "oklch(0.72 0.25 285)" : "var(--c-55)",
+                        color: channelTopicMode === mode ? "var(--brand-text)" : "var(--c-55)",
                       }}
                     >
                       <p className="font-medium">{mode === "generate" ? "Generate Ideas" : "Custom Topic"}</p>
@@ -460,7 +460,7 @@ export default function DemoChannelPage() {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="flex items-center gap-1.5 min-w-0 hover:opacity-80 transition-opacity"
-                                style={{ color: "oklch(0.72 0.25 285)" }}
+                                style={{ color: "var(--brand-text)" }}
                                 title={v.title}
                               >
                                 <span

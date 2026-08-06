@@ -104,7 +104,7 @@ export function VoiceOption({
             className="w-6 h-6 rounded flex items-center justify-center shrink-0 transition-colors"
             style={{
               background: isPlaying ? "oklch(0.72 0.25 285 / 0.15)" : "oklch(0.2 0 0)",
-              color: isPlaying ? "oklch(0.72 0.25 285)" : "var(--c-45)",
+              color: isPlaying ? "var(--brand-text)" : "var(--c-45)",
               border: "1px solid var(--bd-10)",
             }}
           >
