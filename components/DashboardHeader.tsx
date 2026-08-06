@@ -87,7 +87,7 @@ export function DashboardHeader({ rightExtra }: DashboardHeaderProps) {
           <Link
             href="/admin"
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80"
-            style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}
+            style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}
           >
             <BarChart3 size={15} />
             <span>Admin</span>
@@ -131,7 +131,7 @@ export function DashboardHeader({ rightExtra }: DashboardHeaderProps) {
                       href="/plan"
                       onClick={() => setShowProfileMenu(false)}
                       className="text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize transition-opacity hover:opacity-75"
-                      style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+                      style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
                       {isPaid ? userPlan : "Free"} plan →
                     </Link>
                   )}

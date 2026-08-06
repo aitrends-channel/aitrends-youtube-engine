@@ -141,7 +141,7 @@ function PreviewModal({
         <div className="flex items-center justify-between mb-3 px-1">
           <div className="flex items-center gap-3">
             <span className="w-6 h-6 rounded-md flex items-center justify-center text-xs font-bold shrink-0"
-              style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)" }}>
+              style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)" }}>
               {thumb.position}
             </span>
             <p className="text-sm font-semibold text-white/90 truncate">{thumb.title}</p>
@@ -258,8 +258,8 @@ function ThumbnailCard({
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2"
             style={{ background: "oklch(0.06 0 0 / 0.6)" }}>
             <span className="w-5 h-5 rounded-full border-2 border-current border-t-transparent animate-spin"
-              style={{ color: "oklch(0.72 0.25 285)" }} />
-            <p className="text-xs font-medium" style={{ color: "oklch(0.88 0.12 285)" }}>
+              style={{ color: "var(--brand-text)" }} />
+            <p className="text-xs font-medium" style={{ color: "var(--accent-purple-text)" }}>
               {isRegenerating ? "Regenerating…" : "Generating…"}
             </p>
           </div>
@@ -311,7 +311,7 @@ function ThumbnailCard({
               aria-label={thumb.imageStatus === "failed" ? "Retry thumbnail" : "Regenerate thumbnail"}
               title={thumb.imageStatus === "failed" ? "Retry" : "Regenerate"}
               className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-90"
-              style={{ background: "var(--bg-overlay)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+              style={{ background: "var(--bg-overlay)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
             >
               <RotateCw className="w-3.5 h-3.5" />
             </button>
@@ -1103,7 +1103,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
       <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-sm font-bold mt-0.5"
         style={
           status === "done" ? { background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.7 0.15 145)" } :
-          status === "running" ? { background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" } :
+          status === "running" ? { background: "oklch(0.72 0.25 285 / 0.12)", color: "var(--brand-text)" } :
           status === "error" ? { background: "oklch(0.6 0.22 25 / 0.12)", color: "oklch(0.7 0.2 25)" } :
           { background: "var(--bg-progress)", color: "var(--c-30)" }
         }>
@@ -1215,8 +1215,8 @@ export default function ThumbnailsPage({ params }: PageProps) {
                   >
                     <p className="text-sm" style={{ color: "var(--c-50)" }}>
                       {isDraggingRef
-                        ? <span style={{ color: "oklch(0.72 0.25 285)" }}>Release to upload</span>
-                        : <>Drop thumbnails here or <span style={{ color: "oklch(0.72 0.25 285)" }}>click to upload</span></>}
+                        ? <span style={{ color: "var(--brand-text)" }}>Release to upload</span>
+                        : <>Drop thumbnails here or <span style={{ color: "var(--brand-text)" }}>click to upload</span></>}
                     </p>
                     <p className="text-xs mt-1" style={{ color: "var(--c-35)" }}>PNG, JPG, WEBP · 3 to 5 images</p>
                   </div>
@@ -1239,7 +1239,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
                   {manualRefFiles.length > 0 && manualRefFiles.length < 3 && (
                     <div
                       className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs"
-                      style={{ background: "oklch(0.72 0.55 75 / 0.08)", border: "1px solid oklch(0.72 0.55 75 / 0.25)", color: "oklch(0.78 0.18 75)" }}
+                      style={{ background: "oklch(0.72 0.55 75 / 0.08)", border: "1px solid oklch(0.72 0.55 75 / 0.25)", color: "var(--accent-amber-text)" }}
                     >
                       <span aria-hidden="true">!</span>
                       <span>Add {3 - manualRefFiles.length} more {3 - manualRefFiles.length === 1 ? "image" : "images"} — analysis needs at least 3.</span>

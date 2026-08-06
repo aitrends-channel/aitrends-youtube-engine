@@ -248,7 +248,7 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
         >
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-              style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" }}>
+              style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "var(--brand-text)" }}>
               <PlayCircle size={16} />
             </div>
             <div className="text-left">
@@ -256,7 +256,7 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
               <p className="text-xs" style={{ color: "var(--c-40)" }}>Explore Heclus with a guided walkthrough — free</p>
             </div>
           </div>
-          <span className="text-xs font-medium shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>
+          <span className="text-xs font-medium shrink-0" style={{ color: "var(--brand-text)" }}>
             Free →
           </span>
         </button>}
@@ -320,7 +320,7 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
                       Test
                     </span>
                   )}
-                  <p className="text-xs font-semibold mb-1" style={{ color: selectedPlan === plan.slug ? "oklch(0.82 0.18 285)" : "var(--c-60)" }}>
+                  <p className="text-xs font-semibold mb-1" style={{ color: selectedPlan === plan.slug ? "var(--accent-purple-text)" : "var(--c-60)" }}>
                     {plan.name}
                   </p>
                   <p className="text-base font-bold" style={{ color: "var(--c-90)" }}>

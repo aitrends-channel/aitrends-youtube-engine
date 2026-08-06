@@ -206,7 +206,7 @@ export default function DemoScriptPage() {
               style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               <div className="flex flex-col items-center gap-4">
                 <span className="w-8 h-8 border-2 border-current border-t-transparent rounded-full animate-spin inline-block"
-                  style={{ color: "oklch(0.72 0.25 285)" }} />
+                  style={{ color: "var(--brand-text)" }} />
                 <p className="text-sm font-medium" style={{ color: "var(--c-65)" }}>
                   Generating your script…
                 </p>
@@ -273,7 +273,7 @@ export default function DemoScriptPage() {
                     )}
                   </div>
                   {(isManual || !scriptDone) && (
-                    <span className="text-xs font-mono" style={{ color: "oklch(0.72 0.25 285)" }}>
+                    <span className="text-xs font-mono" style={{ color: "var(--brand-text)" }}>
                       {displayedScript.split(/\s+/).filter(Boolean).length} words
                     </span>
                   )}

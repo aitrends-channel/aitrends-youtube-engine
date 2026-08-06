@@ -319,7 +319,7 @@ export function FullVoiceoverPreview({
             title={`Export ${title}`}
             aria-label={`Export ${title}`}
             className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-opacity hover:opacity-90 disabled:opacity-40"
-            style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+            style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
           >
             <svg width="11" height="11" viewBox="0 0 14 14" fill="none" aria-hidden>
               <path d="M7 1v8m0 0L4 6m3 3l3-3M2 12h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />

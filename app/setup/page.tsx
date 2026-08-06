@@ -20,7 +20,7 @@ type Tier = "paid" | "free";
 function ExtLink({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <a href={href} target="_blank" rel="noopener noreferrer"
-      style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>
+      style={{ color: "var(--brand-text)", textDecoration: "underline" }}>
       {children} ↗
     </a>
   );
@@ -33,7 +33,7 @@ function FreeComingSoonCard() {
   return (
     <div className="rounded-2xl px-4 py-10 text-center max-w-xl"
       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
-      <p className="text-base font-bold" style={{ color: "oklch(0.72 0.25 285)" }}>
+      <p className="text-base font-bold" style={{ color: "var(--brand-text)" }}>
         Great Good News!
       </p>
       <p className="text-sm font-medium mt-2" style={{ color: "var(--c-70)" }}>
@@ -169,8 +169,8 @@ const SERVICES: ServiceCard[] = [
         <span className="block text-2xl font-bold" style={{ color: "var(--c-90)" }}>This is a perk 🎁</span>
         <span className="block mt-1 text-sm">Heclus bears the cost.</span>
         <span className="block" style={{ marginTop: "40px" }}>
-          <span className="block text-xs font-semibold" style={{ color: "oklch(0.72 0.25 285)" }}>50k chrs/month for Starters</span>
-          <span className="block text-xs font-semibold mt-1" style={{ color: "oklch(0.72 0.25 285)" }}>100k chrs/month for Pros</span>
+          <span className="block text-xs font-semibold" style={{ color: "var(--brand-text)" }}>50k chrs/month for Starters</span>
+          <span className="block text-xs font-semibold mt-1" style={{ color: "var(--brand-text)" }}>100k chrs/month for Pros</span>
         </span>
       </>,
     ],
@@ -330,7 +330,7 @@ function ClaudeModelDefault() {
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-          <Brain size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+          <Brain size={18} style={{ color: "var(--brand-text)" }} />
         </div>
         <div>
           <h2 className="text-lg font-bold text-foreground">Claude Model</h2>
@@ -466,7 +466,7 @@ function CharacterConsistencyDefaults() {
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-          <Pilcrow size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+          <Pilcrow size={18} style={{ color: "var(--brand-text)" }} />
         </div>
         <div>
           <h2 className="text-lg font-bold text-foreground">Prompt Prefix</h2>
@@ -501,7 +501,7 @@ function CharacterConsistencyDefaults() {
               onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
             />
             {fromProject && (
-              <p className="text-[11px] leading-relaxed" style={{ color: "oklch(0.72 0.25 285)" }}>
+              <p className="text-[11px] leading-relaxed" style={{ color: "var(--brand-text)" }}>
                 Filled in from the last prefix you set on a project. Save it to
                 make it your default for every new project.
               </p>
@@ -819,7 +819,7 @@ export default function SettingsPage() {
               aria-pressed={tab === t.key}
               className="px-3 py-1.5 rounded-md text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               style={tab === t.key
-                ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)" }
+                ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)" }
                 : { color: "var(--c-55)" }}
             >
               {t.icon}
@@ -839,7 +839,7 @@ export default function SettingsPage() {
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                 style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-                <Settings size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+                <Settings size={18} style={{ color: "var(--brand-text)" }} />
               </div>
               <h1 className="text-2xl font-bold text-foreground">API Keys</h1>
             </div>
@@ -871,7 +871,7 @@ export default function SettingsPage() {
                     {/* Card header */}
                     <div className="flex items-start gap-3">
                       <div className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 text-xs font-bold"
-                        style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
+                        style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}>
                         {idx + 1}
                       </div>
                       <div className="min-w-0">
@@ -879,7 +879,7 @@ export default function SettingsPage() {
                         <p className="text-xs" style={{ color: "var(--c-40)" }}>{svc.sub}</p>
                         {svc.quota && (
                           <p className="text-xs font-semibold mt-0.5"
-                            style={{ color: "oklch(0.72 0.25 285)", ...(svc.perk ? { marginBottom: "40px" } : {}) }}>
+                            style={{ color: "var(--brand-text)", ...(svc.perk ? { marginBottom: "40px" } : {}) }}>
                             {svc.quota}
                           </p>
                         )}
@@ -887,7 +887,7 @@ export default function SettingsPage() {
                       {svc.href && (
                         <a href={svc.href} target="_blank" rel="noopener noreferrer"
                           className="ml-auto text-xs shrink-0 hover:opacity-80"
-                          style={{ color: "oklch(0.72 0.25 285)", textDecoration: "underline" }}>
+                          style={{ color: "var(--brand-text)", textDecoration: "underline" }}>
                           {svc.linkLabel} ↗
                         </a>
                       )}

@@ -320,7 +320,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
           <div className="flex items-center justify-between gap-3 mb-5">
             <div className="flex items-center gap-3 min-w-0">
               <div className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-bold shrink-0"
-                style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+                style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
                 F
               </div>
               <div className="min-w-0">
@@ -356,7 +356,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
                   style={isComplete ? {
                     background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "1px solid oklch(0.55 0.15 145 / 0.3)",
                   } : {
-                    background: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.2)",
+                    background: "oklch(0.72 0.25 285 / 0.1)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.2)",
                   }}>
                   {stateLabel}
                 </span>
@@ -938,7 +938,7 @@ export default function HomePage() {
             <Link
               href="/admin"
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80"
-              style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}
+              style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}
             >
               <BarChart3 size={15} />
               <span>Admin</span>
@@ -988,7 +988,7 @@ export default function HomePage() {
                           href="/plan"
                           onClick={() => setShowProfileMenu(false)}
                           className="text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize transition-opacity hover:opacity-75"
-                          style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+                          style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
                           {isPaid ? userPlan : "Free"} plan →
                         </Link>
                       )}
@@ -1068,7 +1068,7 @@ export default function HomePage() {
                 color: "var(--c-65)",
               }}
             >
-              <span>This dashboard is a <strong style={{ color: "oklch(0.85 0.12 285)" }}>demo</strong> — subscribe to populate it with your real data.</span>
+              <span>This dashboard is a <strong style={{ color: "var(--accent-purple-text)" }}>demo</strong> — subscribe to populate it with your real data.</span>
               <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
                 {!hasStartedDemo && (
                   <button
@@ -1617,7 +1617,7 @@ export default function HomePage() {
                       <div className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-bold shrink-0"
                         style={{
                           background: "oklch(0.72 0.25 285 / 0.15)",
-                          color: "oklch(0.72 0.25 285)",
+                          color: "var(--brand-text)",
                           border: "1px solid oklch(0.72 0.25 285 / 0.25)",
                         }}>
                         {group.channelName.charAt(0).toUpperCase()}
@@ -1631,7 +1631,7 @@ export default function HomePage() {
                             rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
                             className="text-xs mt-0.5 block truncate underline underline-offset-2 hover:opacity-80 transition-opacity"
-                            style={{ color: "oklch(0.72 0.25 285)", textDecorationColor: "oklch(0.72 0.25 285 / 0.5)" }}
+                            style={{ color: "var(--brand-text)", textDecorationColor: "color-mix(in oklch, var(--brand-text) 60%, transparent)" }}
                             title={group.channelUrl}
                           >
                             {group.channelUrl}
@@ -1705,7 +1705,7 @@ export default function HomePage() {
                                   border: "1px solid oklch(0.55 0.15 145 / 0.3)",
                                 } : {
                                   background: "oklch(0.72 0.25 285 / 0.1)",
-                                  color: "oklch(0.72 0.25 285)",
+                                  color: "var(--brand-text)",
                                   border: "1px solid oklch(0.72 0.25 285 / 0.2)",
                                 }}>
                                 {stateLabel}
@@ -1841,7 +1841,7 @@ export default function HomePage() {
               style={{
                 background: "oklch(0.72 0.25 285 / 0.08)",
                 border: "1px dashed oklch(0.72 0.25 285 / 0.35)",
-                color: "oklch(0.72 0.25 285)",
+                color: "var(--brand-text)",
               }}
             >
               <span className="text-3xl leading-none">+</span>
@@ -2010,7 +2010,7 @@ export default function HomePage() {
                     <span className="block text-sm font-semibold text-[var(--c-90)]">{startingOneClick ? "Starting 1Click…" : "1Click"}</span>
                     <span className="block text-xs text-[var(--c-55)]">Hands-off. We make the whole video.</span>
                   </span>
-                  {!startingOneClick && <ChevronRight size={16} style={{ color: "oklch(0.72 0.25 285 / 0.5)" }} />}
+                  {!startingOneClick && <ChevronRight size={16} style={{ color: "color-mix(in oklch, var(--brand-text) 60%, transparent)" }} />}
                 </button>
               </div>
             </>

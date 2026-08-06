@@ -218,7 +218,7 @@ function VoiceOption({ model, selected, onSelect, isPlaying, onPlayToggle }: {
             className="w-6 h-6 rounded flex items-center justify-center shrink-0 transition-colors"
             style={{
               background: isPlaying ? "oklch(0.72 0.25 285 / 0.15)" : "oklch(0.2 0 0)",
-              color: isPlaying ? "oklch(0.72 0.25 285)" : "var(--c-45)",
+              color: isPlaying ? "var(--brand-text)" : "var(--c-45)",
               border: "1px solid var(--bd-10)",
             }}
           >
@@ -253,7 +253,7 @@ function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title
   return (
     <div className="flex items-center gap-3 mb-4">
       <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base"
-        style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
+        style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
         {icon}
       </div>
       <div>
@@ -2040,7 +2040,7 @@ export default function GeneratePage({ params }: PageProps) {
                 aria-pressed={t.active}
                 className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5"
                 style={t.active
-                  ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)" }
+                  ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)" }
                   : { color: "var(--c-55)" }}
               >
                 {t.icon} {t.label}
@@ -2085,7 +2085,7 @@ export default function GeneratePage({ params }: PageProps) {
             {beatsStale && !staleImageDismissed && (
               <div className="px-5 pt-4">
                 <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
-                  style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "oklch(0.85 0.12 70)" }}>
+                  style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "var(--accent-amber-text)" }}>
                   <span aria-hidden>⚠</span>
                   <span className="flex-1">
                     Script was edited after these beats were generated. Any images below were prompted from the old script — regenerate the beats in <strong>Prompt Studio</strong> before re-running images.
@@ -2095,7 +2095,7 @@ export default function GeneratePage({ params }: PageProps) {
                     onClick={() => setStaleImageDismissed(true)}
                     aria-label="Dismiss"
                     className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-md transition-colors hover:bg-[oklch(0.72_0.16_70_/_0.18)]"
-                    style={{ color: "oklch(0.85 0.12 70)" }}
+                    style={{ color: "var(--accent-amber-text)" }}
                   >
                     <X size={14} />
                   </button>
@@ -2129,7 +2129,7 @@ export default function GeneratePage({ params }: PageProps) {
                         {uploadingBeat === b.beatNumber && (
                           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-1" style={{ background: "oklch(0 0 0 / 0.7)" }}>
                             <Spinner size={20} className="text-white" />
-                            <span className="text-[10px] font-medium" style={{ color: "oklch(0.95 0 0)" }}>Uploading…</span>
+                            <span className="text-[10px] font-medium" style={{ color: "var(--c-90)" }}>Uploading…</span>
                           </div>
                         )}
                         {/* Beat number badge — top-left corner of every
@@ -2188,7 +2188,7 @@ export default function GeneratePage({ params }: PageProps) {
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1"
                             style={{ background: "oklch(0 0 0 / 0.55)" }}>
                             <Spinner size={20} className="text-white" />
-                            <span className="text-[10px] font-medium" style={{ color: "oklch(0.95 0 0)" }}>
+                            <span className="text-[10px] font-medium" style={{ color: "var(--c-90)" }}>
                               Regenerating…
                             </span>
                           </div>
@@ -2204,7 +2204,7 @@ export default function GeneratePage({ params }: PageProps) {
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1"
                             style={{ background: "oklch(0 0 0 / 0.55)" }}>
                             <Spinner size={20} className="text-white" />
-                            <span className="text-[10px] font-medium" style={{ color: "oklch(0.95 0 0)" }}>
+                            <span className="text-[10px] font-medium" style={{ color: "var(--c-90)" }}>
                               generating…
                             </span>
                           </div>
@@ -2317,7 +2317,7 @@ export default function GeneratePage({ params }: PageProps) {
                   <>
                     {showCreditBanner && (
                       <div className="px-3 py-2 rounded-lg text-xs leading-snug flex items-start gap-2"
-                        style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.3)", color: "oklch(0.78 0.12 25)" }}>
+                        style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.3)", color: "var(--accent-red-text)" }}>
                         <span aria-hidden style={{ marginTop: "1px" }}>⚠</span>
                         <span>
                           <span style={{ fontWeight: 600 }}>KIE credits exhausted.</span>{" "}
@@ -2332,13 +2332,13 @@ export default function GeneratePage({ params }: PageProps) {
                     )}
                     {isPartial && !generatingImages && !showCreditBanner && !userStoppedImages && !imageErrorDismissed && (
                       <div ref={imageErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug flex items-start gap-2"
-                        style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "oklch(0.78 0.12 25)" }}>
+                        style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "var(--accent-red-text)" }}>
                         <div className="flex-1 space-y-1">
                           <p>
                             {pendingCount} image{pendingCount === 1 ? "" : "s"} didn't generate on <span style={{ fontWeight: 600 }}>{workingImageName}</span>. Try switching to a different model above, then run again.
                           </p>
                           {imageRunError && (
-                            <p style={{ color: "oklch(0.85 0.08 25)" }}>{imageRunError}</p>
+                            <p style={{ color: "var(--accent-red-text)" }}>{imageRunError}</p>
                           )}
                         </div>
                         <button
@@ -2346,7 +2346,7 @@ export default function GeneratePage({ params }: PageProps) {
                           onClick={() => setImageErrorDismissed(true)}
                           aria-label="Dismiss"
                           className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-md transition-colors hover:bg-[oklch(0.6_0.22_25_/_0.15)]"
-                          style={{ color: "oklch(0.78 0.12 25)" }}
+                          style={{ color: "var(--accent-red-text)" }}
                         >
                           <X size={14} />
                         </button>
@@ -2431,7 +2431,7 @@ export default function GeneratePage({ params }: PageProps) {
             {beatsStale && !staleVideoDismissed && (
               <div className="px-5 pt-4">
                 <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-xs"
-                  style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "oklch(0.85 0.12 70)" }}>
+                  style={{ background: "oklch(0.72 0.16 70 / 0.12)", border: "1px solid oklch(0.72 0.16 70 / 0.35)", color: "var(--accent-amber-text)" }}>
                   <span aria-hidden>⚠</span>
                   <span className="flex-1">
                     Script was edited after these beats were generated. Any clips below were prompted from the old script — regenerate the beats in <strong>Prompt Studio</strong> before re-running videos.
@@ -2441,7 +2441,7 @@ export default function GeneratePage({ params }: PageProps) {
                     onClick={() => setStaleVideoDismissed(true)}
                     aria-label="Dismiss"
                     className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-md transition-colors hover:bg-[oklch(0.72_0.16_70_/_0.18)]"
-                    style={{ color: "oklch(0.85 0.12 70)" }}
+                    style={{ color: "var(--accent-amber-text)" }}
                   >
                     <X size={14} />
                   </button>
@@ -2496,7 +2496,7 @@ export default function GeneratePage({ params }: PageProps) {
                         {uploadingBeat === b.beatNumber && (
                           <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-1" style={{ background: "oklch(0 0 0 / 0.7)" }}>
                             <Spinner size={20} className="text-white" />
-                            <span className="text-[10px] font-medium" style={{ color: "oklch(0.95 0 0)" }}>Uploading…</span>
+                            <span className="text-[10px] font-medium" style={{ color: "var(--c-90)" }}>Uploading…</span>
                           </div>
                         )}
                         {/* Beat number badge — top-left corner of every
@@ -2543,7 +2543,7 @@ export default function GeneratePage({ params }: PageProps) {
                             title={b.videoStatus === "failed" && b.videoError ? b.videoError : undefined}
                             style={{
                               background: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285 / 0.1)" : b.videoStatus === "done" ? "oklch(0.55 0.15 145 / 0.1)" : b.videoStatus === "failed" ? "oklch(0.6 0.22 25 / 0.1)" : "var(--bg-track)",
-                              color: b.videoStatus === "rendering" ? "oklch(0.72 0.25 285)" : b.videoStatus === "done" ? "oklch(0.7 0.15 145)" : b.videoStatus === "failed" ? "oklch(0.7 0.2 25)" : "var(--c-35)",
+                              color: b.videoStatus === "rendering" ? "var(--brand-text)" : b.videoStatus === "done" ? "oklch(0.7 0.15 145)" : b.videoStatus === "failed" ? "oklch(0.7 0.2 25)" : "var(--c-35)",
                               cursor: b.videoStatus === "failed" && b.videoError ? "help" : undefined,
                             }}>
                             {/* Status badge maps 1:1 to the DB state so
@@ -2570,7 +2570,7 @@ export default function GeneratePage({ params }: PageProps) {
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1"
                             style={{ background: "oklch(0 0 0 / 0.55)" }}>
                             <Spinner size={20} className="text-white" />
-                            <span className="text-[10px] font-medium" style={{ color: "oklch(0.95 0 0)" }}>
+                            <span className="text-[10px] font-medium" style={{ color: "var(--c-90)" }}>
                               {b.videoStatus}…
                             </span>
                           </div>
@@ -2766,7 +2766,7 @@ export default function GeneratePage({ params }: PageProps) {
                 const extra = errors.length - shown.length;
                 return (
                   <div ref={videoErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug flex items-start gap-2"
-                    style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "oklch(0.78 0.12 25)" }}>
+                    style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "var(--accent-red-text)" }}>
                     <div className="flex-1 space-y-1">
                       {failedVideos > 0 && !allContentBlocks && (
                         <p>
@@ -2774,10 +2774,10 @@ export default function GeneratePage({ params }: PageProps) {
                         </p>
                       )}
                       {shown.map((e) => (
-                        <p key={e} style={{ color: "oklch(0.85 0.08 25)" }}>{e}</p>
+                        <p key={e} style={{ color: "var(--accent-red-text)" }}>{e}</p>
                       ))}
                       {extra > 0 && (
-                        <p style={{ color: "oklch(0.85 0.08 25)" }}>
+                        <p style={{ color: "var(--accent-red-text)" }}>
                           +{extra} more failed beat{extra === 1 ? "" : "s"} with a different error.
                         </p>
                       )}
@@ -2787,7 +2787,7 @@ export default function GeneratePage({ params }: PageProps) {
                       onClick={() => setVideoErrorDismissed(true)}
                       aria-label="Dismiss"
                       className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-md transition-colors hover:bg-[oklch(0.6_0.22_25_/_0.15)]"
-                      style={{ color: "oklch(0.78 0.12 25)" }}
+                      style={{ color: "var(--accent-red-text)" }}
                     >
                       <X size={14} />
                     </button>
@@ -2873,7 +2873,7 @@ export default function GeneratePage({ params }: PageProps) {
                   disabled={!selectedVideoModel || videosBlockedByImages}
                   title={videoBlockReason}
                   className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
-                  style={{ background: "transparent", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285)" }}
+                  style={{ background: "transparent", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285)" }}
                 >
                   Retry {failedVideos} Failed
                 </button>

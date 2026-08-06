@@ -57,7 +57,7 @@ export function DemoBanner() {
           style={{
             background: "oklch(0.22 0.08 285)",
             borderBottom: "1px solid oklch(0.72 0.25 285 / 0.35)",
-            color: "oklch(0.82 0.04 285)",
+            color: "var(--accent-purple-text)",
           }}
         >
           <span className="hidden sm:inline">✨ You&apos;re viewing a demo — subscribe to run this on your own channel.</span>
@@ -108,7 +108,7 @@ export function DemoBanner() {
                         className="mt-1.5 inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full"
                         style={{
                           background: "oklch(0.72 0.25 285 / 0.15)",
-                          color: "oklch(0.72 0.25 285)",
+                          color: "var(--brand-text)",
                           border: "1px solid oklch(0.72 0.25 285 / 0.25)",
                         }}
                       >

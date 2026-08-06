@@ -416,7 +416,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                         href="/plan"
                         onClick={() => setShowProfileMenu(false)}
                         className="inline-block text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize transition-opacity hover:opacity-75"
-                        style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+                        style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
                         {isPaid ? userPlan : "Free"} plan →
                       </Link>
                     )
@@ -527,7 +527,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                             href="/plan"
                             onClick={() => setShowProfileMenu(false)}
                             className="inline-block text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize transition-opacity hover:opacity-75"
-                            style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+                            style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
                             {isPaid ? userPlan : "Free"} plan →
                           </Link>
                         )
@@ -622,7 +622,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
               if (!active) return null;
               return (
                 <span className="absolute left-1/2 top-0 -translate-x-1/2 text-[10px] leading-none whitespace-nowrap">
-                  <span className="font-semibold" style={{ color: "oklch(0.72 0.25 285)" }}>{active.label}</span>
+                  <span className="font-semibold" style={{ color: "var(--brand-text)" }}>{active.label}</span>
                   <span className="font-normal" style={{ color: "var(--c-40)" }}> · {active.sublabel}</span>
                 </span>
               );

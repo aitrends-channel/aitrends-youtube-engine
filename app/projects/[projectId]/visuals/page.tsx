@@ -45,7 +45,7 @@ function StepRow({ label, sublabel, status, expectedMs = 12000 }: { label: strin
       <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-sm"
         style={
           status === "done" ? { background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.7 0.15 145)" } :
-          status === "running" ? { background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.72 0.25 285)" } :
+          status === "running" ? { background: "oklch(0.72 0.25 285 / 0.12)", color: "var(--brand-text)" } :
           status === "error" ? { background: "oklch(0.6 0.22 25 / 0.12)", color: "oklch(0.7 0.2 25)" } :
           { background: "var(--bg-progress)", color: "var(--c-35)" }
         }
@@ -133,7 +133,7 @@ function SelectableImage({
       )}
       {label && (
         <div className="absolute bottom-0 inset-x-0 px-2 py-1 text-xs truncate"
-          style={{ background: "oklch(0.06 0 0 / 0.8)", color: "var(--c-60)" }}>
+          style={{ background: "oklch(0.06 0 0 / 0.8)", color: "var(--c-70)" }}>
           {label}
         </div>
       )}
@@ -305,7 +305,7 @@ function VisualProfileCard({
                   className="w-full p-3 rounded-lg text-sm outline-none resize-y min-h-[170px] bg-white text-zinc-900 border border-zinc-300 placeholder:text-zinc-400 focus:border-zinc-400"
                 />
               ) : (
-                <p className="text-sm" style={{ color: "oklch(0.8 0 0)" }}>{value}</p>
+                <p className="text-sm" style={{ color: "var(--c-70)" }}>{value}</p>
               )}
             </div>
           );
@@ -682,7 +682,7 @@ export default function VisualsPage({ params }: PageProps) {
                     onClick={() => fetchScreenshots(autoShots.length > 0)}
                     disabled={fetching || !topVideos.length}
                     className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold disabled:opacity-40 transition-all"
-                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
                   >
                     {fetching ? (
                       <>
@@ -706,7 +706,7 @@ export default function VisualsPage({ params }: PageProps) {
                     ].map((item) => (
                       <div key={item.label} className="p-3 rounded-xl"
                         style={{ background: "oklch(0.09 0 0)", border: "1px solid var(--bd-6)" }}>
-                        <span className="text-base" style={{ color: "oklch(0.72 0.25 285)" }}>{item.icon}</span>
+                        <span className="text-base" style={{ color: "var(--brand-text)" }}>{item.icon}</span>
                         <p className="font-medium text-xs mt-2 mb-0.5">{item.label}</p>
                         <p className="text-xs" style={{ color: "var(--c-40)" }}>{item.desc}</p>
                       </div>
@@ -749,7 +749,7 @@ export default function VisualsPage({ params }: PageProps) {
                       style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                       <div className="px-5 py-3 flex items-center gap-2"
                         style={{ borderBottom: "1px solid var(--bd-6)" }}>
-                        <span style={{ color: "oklch(0.72 0.25 285)" }}>◈</span>
+                        <span style={{ color: "var(--brand-text)" }}>◈</span>
                         <p className="text-xs font-semibold">Captured Images</p>
                       </div>
                       <div className="p-5">
@@ -841,8 +841,8 @@ export default function VisualsPage({ params }: PageProps) {
                   >
                     <p className="text-sm" style={{ color: "var(--c-50)" }}>
                       {isDragging
-                        ? <span style={{ color: "oklch(0.72 0.25 285)" }}>Release to upload</span>
-                        : <>Drop images here or <span style={{ color: "oklch(0.72 0.25 285)" }}>click to upload</span></>}
+                        ? <span style={{ color: "var(--brand-text)" }}>Release to upload</span>
+                        : <>Drop images here or <span style={{ color: "var(--brand-text)" }}>click to upload</span></>}
                     </p>
                     <p className="text-xs mt-1" style={{ color: "var(--c-35)" }}>PNG, JPG, WEBP · up to 5</p>
                   </div>
@@ -857,7 +857,7 @@ export default function VisualsPage({ params }: PageProps) {
                           <button
                             onClick={() => setVideoImages((p) => p.filter((_, j) => j !== i))}
                             className="absolute top-1 right-1 w-4 h-4 rounded-full flex items-center justify-center text-xs"
-                            style={{ background: "var(--bg-overlay)", color: "white" }}>×</button>
+                            style={{ background: "oklch(0 0 0 / 0.6)", color: "white" }}>×</button>
                         </div>
                       ))}
                     </div>
@@ -865,7 +865,7 @@ export default function VisualsPage({ params }: PageProps) {
                   {videoImages.length > 0 && videoImages.length < 3 && (
                     <div
                       className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs"
-                      style={{ background: "oklch(0.72 0.55 75 / 0.08)", border: "1px solid oklch(0.72 0.55 75 / 0.25)", color: "oklch(0.78 0.18 75)" }}
+                      style={{ background: "oklch(0.72 0.55 75 / 0.08)", border: "1px solid oklch(0.72 0.55 75 / 0.25)", color: "var(--accent-amber-text)" }}
                     >
                       <span aria-hidden="true">!</span>
                       <span>
