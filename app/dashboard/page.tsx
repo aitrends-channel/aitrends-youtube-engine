@@ -1982,7 +1982,7 @@ export default function HomePage() {
                     <span className="block text-xs text-[var(--c-55)]">
                       {channelGroups.length === 0
                         ? "Add a niche first — a video reuses its channel analysis."
-                        : "Reuses a niche's channel analysis and style."}
+                        : "Add a new video to an existing niche."}
                     </span>
                   </span>
                   {channelGroups.length > 0 && <ChevronRight size={16} className="text-[var(--c-45)] group-hover:text-[var(--c-70)]" />}
