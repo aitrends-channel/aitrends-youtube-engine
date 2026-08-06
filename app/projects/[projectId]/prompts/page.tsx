@@ -180,11 +180,16 @@ function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLast, canMerge, mergeHint, onMerge }: {
+function BeatCard({ beat, projectId, onSaved, consistencyPreview, mode, isFirst, isLast, canMerge, mergeHint, onMerge }: {
   beat: Beat;
   projectId: string;
   onSaved: () => Promise<unknown> | void;
   consistencyPreview?: string | null;
+  /** Which tab this card is rendered in. "beats" shows the narration and the
+   *  merge controls; "image" shows only the prompt written for it. Keeping them
+   *  apart is the point of the split — a prompt tab that also showed segments
+   *  made the two impossible to scan separately. */
+  mode: "beats" | "image";
   isFirst: boolean;
   isLast: boolean;
   /** False outside the merge window. The controls stay visible and disabled
@@ -211,9 +216,13 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLas
           {beat.beatNumber}
         </span>
         <p className="text-sm flex-1 leading-relaxed line-clamp-2" style={{ color: "var(--c-60)" }}>
-          {beat.scriptSegment}
+          {mode === "beats"
+            ? beat.scriptSegment
+            : beat.imagePrompt?.trim()
+              ? beat.imagePrompt
+              : <span className="italic" style={{ color: "var(--c-35)" }}>No image prompt yet</span>}
         </p>
-        {isShort && !MERGE_BEATS_HIDDEN && (
+        {mode === "beats" && isShort && !MERGE_BEATS_HIDDEN && (
           <span className="shrink-0 mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap"
             style={{ background: "oklch(0.6 0.15 75 / 0.15)", color: "oklch(0.72 0.15 75)", border: "1px solid oklch(0.6 0.15 75 / 0.3)" }}>
             {words} word{words === 1 ? "" : "s"}
@@ -230,6 +239,7 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLas
               that the prompt, the render, the voiceover and the timings are all
               derived from it, and editing would leave them describing text that
               is no longer here — the same reason merging closes then. */}
+          {mode === "beats" && (
           <div className="pt-3 rounded-lg px-3 py-2.5" style={{ background: "oklch(0.72 0.25 285 / 0.05)", border: "1px solid oklch(0.72 0.25 285 / 0.12)" }}>
             <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: "oklch(0.6 0.15 75)" }}>
               Script Segment
@@ -248,8 +258,10 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLas
               />
             )}
           </div>
+          )}
 
-          <div>
+          {mode === "image" && (
+          <div className="pt-3">
             <div className="flex items-center gap-1.5 mb-1.5">
               <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
                 Image Prompt
@@ -275,7 +287,9 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLas
               textColor="var(--c-75)"
             />
           </div>
+          )}
 
+          {mode === "image" && (
           <div className="flex gap-2 flex-wrap">
             {[
               { icon: "◎", label: beat.camera, key: "camera" },
@@ -290,32 +304,11 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, isFirst, isLas
               </span>
             ))}
           </div>
-
-          {beat.videoPrompt ? (
-            <div className="rounded-lg px-3 py-2.5" style={{ background: "oklch(0.6 0.15 200 / 0.05)", border: "1px solid oklch(0.6 0.15 200 / 0.15)" }}>
-              <div className="flex items-center gap-1.5 mb-1.5">
-                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "oklch(0.55 0.12 200)" }}>
-                  Video Prompt
-                </p>
-                <CopyButton text={beat.videoPrompt} />
-              </div>
-              <EditablePrompt
-                value={beat.videoPrompt}
-                field="video"
-                beatNumber={beat.beatNumber}
-                projectId={projectId}
-                onSaved={onSaved}
-                accent="oklch(0.55 0.12 200)"
-                textColor="var(--c-70)"
-              />
-            </div>
-          ) : (
-            <p className="text-xs italic" style={{ color: "var(--c-35)" }}>No video prompt yet — run Step 2 to generate.</p>
           )}
 
-          {/* Merge — the surviving beat keeps its own prompts, so this is
-              deliberately a separate action from editing them. */}
-          {!(isFirst && isLast) && !MERGE_BEATS_HIDDEN && (
+          {/* Merge lives on the Beats tab only — it is a decision about the
+              narration, not about a prompt. */}
+          {mode === "beats" && !(isFirst && isLast) && !MERGE_BEATS_HIDDEN && (
             <div className="flex items-center gap-2 pt-1">
               <span className="text-[10px] font-semibold uppercase tracking-wider shrink-0" style={{ color: "var(--c-35)" }}>
                 Merge
@@ -1101,7 +1094,7 @@ function PrefixPanel({
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
-type Tab = "beats" | "video";
+type Tab = "beats" | "image" | "video";
 
 interface PageProps {
   params: { projectId: string };
@@ -2282,9 +2275,13 @@ export default function PromptsPage({ params }: PageProps) {
     </button>
   ) : null;
 
+  // Beats first: it is the step that comes first and the only one that shows
+  // the narration. The two prompt tabs count prompts written, not beats, so a
+  // half-finished prompts run reads honestly.
   const tabs: { id: Tab; label: string; count: number }[] = [
-    { id: "beats", label: "Image Beats", count: beats.length },
-    { id: "video", label: "Video Beats", count: videoBeats.length },
+    { id: "beats", label: "Beats", count: beats.length },
+    { id: "image", label: "Image Prompts", count: promptedBeats },
+    { id: "video", label: "Video Prompts", count: videoBeats.length },
   ];
 
   const anyRunning =
@@ -2677,26 +2674,43 @@ export default function PromptsPage({ params }: PageProps) {
             </div>
 
             <div className="px-5 sm:px-8 pt-6 pb-6 space-y-3">
-              {activeTab === "beats" && beats.map((beat, i) => (
-                <BeatCard
-                  key={beat.beatNumber}
-                  beat={beat}
-                  projectId={projectId}
-                  onSaved={mutate}
-                  consistencyPreview={consistencyPreview}
-                  isFirst={i === 0}
-                  isLast={i === beats.length - 1}
-                  canMerge={canMergeBeats}
-                  mergeHint={mergeHint}
-                  onMerge={(beatNumber, direction) => {
-                    const keep = direction === "up" ? beatNumber - 1 : beatNumber;
-                    const a = beats.find((b) => b.beatNumber === keep)?.scriptSegment ?? "";
-                    const b = beats.find((x) => x.beatNumber === keep + 1)?.scriptSegment ?? "";
-                    setMergeDraft(joinSegments(a, dedupeOverlap(b, a)));
-                    setMergeTarget({ beatNumber, direction });
-                  }}
-                />
-              ))}
+              {(activeTab === "beats" || activeTab === "image") && (() => {
+                // The image tab lists only beats that actually have a prompt,
+                // so a partial run doesn't pad the list with empty cards.
+                const rows = activeTab === "beats" ? beats : beats.filter((b) => b.imagePrompt?.trim());
+                if (rows.length === 0) {
+                  return (
+                    <div className="text-center py-12">
+                      <p className="text-sm" style={{ color: "var(--c-40)" }}>
+                        {activeTab === "beats"
+                          ? "Run Beats to split your script."
+                          : "Run Image Prompts to write a prompt for each beat."}
+                      </p>
+                    </div>
+                  );
+                }
+                return rows.map((beat, i) => (
+                  <BeatCard
+                    key={beat.beatNumber}
+                    beat={beat}
+                    projectId={projectId}
+                    onSaved={mutate}
+                    consistencyPreview={consistencyPreview}
+                    mode={activeTab === "beats" ? "beats" : "image"}
+                    isFirst={i === 0}
+                    isLast={i === rows.length - 1}
+                    canMerge={canMergeBeats}
+                    mergeHint={mergeHint}
+                    onMerge={(beatNumber, direction) => {
+                      const keep = direction === "up" ? beatNumber - 1 : beatNumber;
+                      const a = beats.find((b) => b.beatNumber === keep)?.scriptSegment ?? "";
+                      const b = beats.find((x) => x.beatNumber === keep + 1)?.scriptSegment ?? "";
+                      setMergeDraft(joinSegments(a, dedupeOverlap(b, a)));
+                      setMergeTarget({ beatNumber, direction });
+                    }}
+                  />
+                ));
+              })()}
               {activeTab === "video" && (
                 videoBeats.length > 0 ? videoBeats.map((beat) => (
                   <div key={beat.beatNumber} className="rounded-xl p-4 space-y-3"
@@ -2706,7 +2720,11 @@ export default function PromptsPage({ params }: PageProps) {
                         style={{ background: "oklch(0.6 0.15 200 / 0.12)", color: "oklch(0.6 0.15 200)" }}>
                         {beat.beatNumber}
                       </span>
-                      <p className="text-xs line-clamp-1" style={{ color: "var(--c-50)" }}>{beat.scriptSegment}</p>
+                      {/* Prompts only — the narration lives on the Beats tab. */}
+                      <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "oklch(0.55 0.12 200)" }}>
+                        Video Prompt
+                      </p>
+                      <CopyButton text={beat.videoPrompt ?? ""} />
                     </div>
                     <EditablePrompt
                       value={beat.videoPrompt ?? ""}

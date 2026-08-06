@@ -112,6 +112,19 @@ export function friendlyError(raw: string | undefined | null): string {
   // mappings below mislabel them (a Google "Quota exceeded…" message is NOT a
   // KIE rate limit).
   if (msg.includes("cloudflare")) return text.trim();
+  // Anthropic's own out-of-credit wording, matched BEFORE the KIE credit rules
+  // below. "Your credit balance is too low to access the Anthropic API" contains
+  // "credit balance", so it was being reported as "KIE credits exhausted. Top up
+  // at kie.ai." — sending a client with a full KIE balance to top up the wrong
+  // account, on a step they had deliberately moved off KIE.
+  //
+  // Deliberately does not assert WHOSE Anthropic account: this same error also
+  // arrives from heclus_direct steps, where the empty account is Heclus's and
+  // the client can do nothing about it. friendlyError has no routing context to
+  // tell the two apart.
+  if ((msg.includes("credit balance") || msg.includes("purchase credits") || msg.includes("too low"))
+    && (msg.includes("anthropic") || msg.includes("plans & billing") || msg.includes("plans and billing")))
+    return "Out of Anthropic credit. If this step runs on your own Anthropic key, top up at console.anthropic.com or switch back to KIE in Setup.";
   if (msg.includes("credits insufficient") || msg.includes("insufficient credits") || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit") || msg.includes("fund"))))
     return "KIE credits exhausted. Top up at kie.ai.";
   if (msg.includes("credits remaining") || msg.includes("credit balance"))
