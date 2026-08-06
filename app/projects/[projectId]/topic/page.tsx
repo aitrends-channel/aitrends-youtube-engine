@@ -129,7 +129,7 @@ export default function TopicPage({ params }: PageProps) {
             <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
               {isTopicLocked ? "Topic is locked — already used in script generation" : "Select a video idea or enter a custom topic"}
             </p>
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <div className="mt-3 flex items-center gap-2 flex-wrap min-w-0 w-full">
               <StepCostCard projectId={projectId} column="topic" />
               <StepBalanceCard />
             </div>

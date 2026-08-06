@@ -1141,7 +1141,7 @@ export default function ThumbnailsPage({ params }: PageProps) {
                 {thumbnails.length} concepts · {thumbnails.filter((t) => t.imageUrl).length} images generated
               </p>
             )}
-            <div className="mt-3 flex items-center gap-2 flex-wrap">
+            <div className="mt-3 flex items-center gap-2 flex-wrap min-w-0 w-full">
               <StepCostCard projectId={projectId} column="thumbnail" />
               <StepBalanceCard />
             </div>
