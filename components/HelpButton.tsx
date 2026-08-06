@@ -162,7 +162,7 @@ export function HelpButton() {
               onClick={() => { setMenuOpen(false); setOpen(true); }}
               className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer text-left"
             >
-              <LifeBuoy size={16} style={{ color: "oklch(0.72 0.25 285)" }} />
+              <LifeBuoy size={16} style={{ color: "var(--brand-text)" }} />
               Support
             </button>
             {signedIn && (
@@ -171,7 +171,7 @@ export function HelpButton() {
                 onClick={() => { setMenuOpen(false); setFeedbackOpen(true); }}
                 className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-semibold text-zinc-900 hover:bg-zinc-100 transition-colors cursor-pointer text-left"
               >
-                <Star size={16} style={{ color: "oklch(0.75 0.15 85)" }} />
+                <Star size={16} style={{ color: "var(--accent-amber-text)" }} />
                 Feedback
               </button>
             )}
@@ -281,7 +281,7 @@ export function HelpButton() {
               href="https://discord.gg/N53RuARnwn"
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-4 flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-[color:oklch(0.55_0.22_270/0.06)]"
+              className="mt-4 flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-[color: oklch(0.55_0.22_270/0.06)]"
               style={{ border: "1px solid oklch(0.55 0.22 270 / 0.25)", background: "oklch(0.55 0.22 270 / 0.04)" }}
             >
               <span className="flex items-center gap-2.5">

@@ -837,7 +837,7 @@ export default function ChannelPage({ params }: PageProps) {
                       style={{
                         background: selected ? "oklch(0.72 0.25 285 / 0.12)" : "var(--bg-progress)",
                         border: `1px solid ${selected ? "oklch(0.72 0.25 285 / 0.3)" : "var(--bd-8)"}`,
-                        color: selected ? "oklch(0.72 0.25 285)" : "var(--c-55)",
+                        color: selected ? "var(--brand-text)" : "var(--c-55)",
                       }}
                     >
                       <p className="font-medium">{opt.label}</p>
@@ -878,7 +878,7 @@ export default function ChannelPage({ params }: PageProps) {
                       style={{
                         background: selected ? "oklch(0.72 0.25 285 / 0.12)" : "var(--bg-progress)",
                         border: `1px solid ${selected ? "oklch(0.72 0.25 285 / 0.3)" : "var(--bd-8)"}`,
-                        color: selected ? "oklch(0.72 0.25 285)" : "var(--c-55)",
+                        color: selected ? "var(--brand-text)" : "var(--c-55)",
                       }}
                     >
                       <p className="font-medium flex items-center gap-1.5">
@@ -895,7 +895,7 @@ export default function ChannelPage({ params }: PageProps) {
                   type="button"
                   onClick={() => router.push(`/one-click?next=${encodeURIComponent(window.location.pathname + "?mode=oneclick")}`)}
                   className="text-xs font-medium underline underline-offset-2 cursor-pointer"
-                  style={{ color: "oklch(0.72 0.25 285)" }}
+                  style={{ color: "var(--brand-text)" }}
                 >
                   Review 1Click preferences
                 </button>
@@ -1031,7 +1031,7 @@ export default function ChannelPage({ params }: PageProps) {
                     style={{
                       background: topicMode === mode ? "oklch(0.72 0.25 285 / 0.12)" : "var(--bg-progress)",
                       border: `1px solid ${topicMode === mode ? "oklch(0.72 0.25 285 / 0.3)" : "var(--bd-8)"}`,
-                      color: topicMode === mode ? "oklch(0.72 0.25 285)" : "var(--c-55)",
+                      color: topicMode === mode ? "var(--brand-text)" : "var(--c-55)",
                     }}
                   >
                     <p className="font-medium">{mode === "generate" ? "Generate Ideas" : "Custom Topic"}</p>
@@ -1106,7 +1106,7 @@ export default function ChannelPage({ params }: PageProps) {
                     style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)" }}>
                     <AlertCircle size={20} className="shrink-0 mt-0.5" style={{ color: "oklch(0.65 0.22 25)" }} />
                     <div className="min-w-0 space-y-1">
-                      <p className="text-sm font-semibold" style={{ color: "oklch(0.78 0.22 25)" }}>{err.title}</p>
+                      <p className="text-sm font-semibold" style={{ color: "var(--accent-red-text)" }}>{err.title}</p>
                       <p className="text-sm" style={{ color: "oklch(0.65 0.18 25)" }}>{err.body}</p>
                       {err.hint && (
                         <p className="text-xs pt-1" style={{ color: "oklch(0.6 0.10 25)" }}>{err.hint}</p>
@@ -1183,7 +1183,7 @@ export default function ChannelPage({ params }: PageProps) {
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="flex items-center gap-1.5 min-w-0 hover:opacity-80 transition-opacity"
-                                style={{ color: "oklch(0.72 0.25 285)" }}
+                                style={{ color: "var(--brand-text)" }}
                                 title={v.title}
                               >
                                 <span
@@ -1248,7 +1248,7 @@ export default function ChannelPage({ params }: PageProps) {
               // Autopilot owns the rest of the pipeline — invite the user
               // to walk away instead of continuing manually.
               <div className="flex items-center gap-3 flex-wrap">
-                <p className="flex-1 min-w-[240px] text-sm font-medium flex items-center gap-2" style={{ color: "oklch(0.72 0.25 285)" }}>
+                <p className="flex-1 min-w-[240px] text-sm font-medium flex items-center gap-2" style={{ color: "var(--brand-text)" }}>
                   <Wand2 size={15} />
                   1Click engaged — generation continues in the background. You can close this tab; we&apos;ll email you when your video is ready.
                 </p>

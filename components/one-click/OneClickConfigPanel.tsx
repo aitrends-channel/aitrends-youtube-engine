@@ -45,13 +45,13 @@ function SlotTabs({ chain, active, onActive, onClear }: {
             aria-pressed={isActive}
             className="flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
             style={isActive
-              ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)" }
+              ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)" }
               : { color: "var(--c-55)" }}
           >
             {s.label}
             {value ? (
               <span className="text-[10px] px-1.5 py-0.5 rounded font-bold"
-                style={{ background: "oklch(0.72 0.25 285 / 0.2)", color: "oklch(0.88 0.12 285)" }}>
+                style={{ background: "oklch(0.72 0.25 285 / 0.2)", color: "var(--accent-purple-text)" }}>
                 set
               </span>
             ) : s.optional ? (
@@ -241,7 +241,7 @@ export function OneClickConfigPanel({
                     : { background: "var(--bg-input)", border: "1px solid var(--bd-10)" }}
                 >
                   <span className="block text-sm font-semibold"
-                    style={{ color: active ? "oklch(0.88 0.12 285)" : "var(--c-90)" }}>
+                    style={{ color: active ? "var(--accent-purple-text)" : "var(--c-90)" }}>
                     {t.label}
                   </span>
                   <span className="block text-xs mt-0.5" style={{ color: "var(--c-45)" }}>{t.desc}</span>
@@ -561,7 +561,7 @@ export function OneClickConfigPanel({
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
             style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-            <Wand2 size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+            <Wand2 size={18} style={{ color: "var(--brand-text)" }} />
           </div>
           <h1 className="text-2xl font-bold text-foreground">1Click</h1>
         </div>
@@ -571,7 +571,7 @@ export function OneClickConfigPanel({
         </p>
         {cfgData && !cfgData.configured && (
           <p className="text-xs font-semibold px-3 py-2 rounded-lg inline-block"
-            style={{ background: "oklch(0.72 0.18 65 / 0.12)", color: "oklch(0.72 0.18 65)", border: "1px solid oklch(0.72 0.18 65 / 0.3)" }}>
+            style={{ background: "oklch(0.72 0.18 65 / 0.12)", color: "var(--accent-amber-text)", border: "1px solid oklch(0.72 0.18 65 / 0.3)" }}>
             Not configured yet. Pick your preferences below and save to unlock 1Click.
           </p>
         )}

@@ -109,7 +109,7 @@ export function useChannelUrl(contentType: ContentType) {
       {consent && (
         <div className="rounded-xl px-4 py-3 space-y-2"
           style={{ background: "oklch(0.72 0.18 65 / 0.1)", border: "1px solid oklch(0.72 0.18 65 / 0.3)" }}>
-          <p className="text-sm font-semibold inline-flex items-center gap-2" style={{ color: "oklch(0.78 0.16 65)" }}>
+          <p className="text-sm font-semibold inline-flex items-center gap-2" style={{ color: "var(--accent-amber-text)" }}>
             <AlertTriangle size={14} /> These videos are long
           </p>
           <p className="text-xs leading-relaxed" style={{ color: "var(--c-70)" }}>

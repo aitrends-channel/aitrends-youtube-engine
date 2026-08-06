@@ -43,7 +43,7 @@ export function OneClickShell({
             className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
             style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}
           >
-            <Wand2 size={15} style={{ color: "oklch(0.72 0.25 285)" }} />
+            <Wand2 size={15} style={{ color: "var(--brand-text)" }} />
           </span>
           <h1 className="text-sm font-bold" style={{ color: "var(--c-90)" }}>1Click</h1>
           {status && (

@@ -215,12 +215,12 @@ function VoiceoverPreviewCard({
       }}
     >
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-semibold" style={{ color: selected ? "oklch(0.88 0.12 285)" : "var(--c-80)" }}>
+        <p className="text-sm font-semibold" style={{ color: selected ? "var(--accent-purple-text)" : "var(--c-80)" }}>
           {title}
         </p>
         {selected && (
           <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full"
-            style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.35)" }}>
+            style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.35)" }}>
             Selected
           </span>
         )}
@@ -247,7 +247,7 @@ function VoiceoverPreviewCard({
             style={{ background: "var(--bg-input)", border: "1px solid var(--bd-7)" }}
           >
             <div className="flex items-center gap-2 min-w-0">
-              <span aria-hidden="true" style={{ color: "oklch(0.72 0.25 285)" }}>♫</span>
+              <span aria-hidden="true" style={{ color: "var(--brand-text)" }}>♫</span>
               <span className="text-[11px] truncate" style={{ color: "var(--c-65)" }}
                 title={bgmName ?? "Background music"}>
                 {bgmName ?? "Background music"}
@@ -317,7 +317,7 @@ function SelectButton({ active, disabled, onClick, children }: { active: boolean
       style={active ? {
         background: "oklch(0.72 0.25 285 / 0.15)",
         border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-        color: "oklch(0.88 0.12 285)",
+        color: "var(--accent-purple-text)",
       } : {
         background: "var(--bg-input)",
         border: "1px solid var(--bd-7)",
@@ -446,13 +446,13 @@ export default function DemoAssemblePage() {
                 <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                   <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover</p>
                   <p className="mt-2 text-sm font-medium"
-                    style={{ color: voiceoverType === "trimmed" ? "oklch(0.7 0.15 145)" : "oklch(0.72 0.25 285)" }}>
+                    style={{ color: voiceoverType === "trimmed" ? "oklch(0.7 0.15 145)" : "var(--brand-text)" }}>
                     {voiceoverType === "trimmed" ? "Trimmed ✓" : "Original"}
                   </p>
                 </div>
                 <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
                   <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Video Clips</p>
-                  <p className="mt-2 text-sm font-medium" style={{ color: "oklch(0.72 0.25 285)" }}>
+                  <p className="mt-2 text-sm font-medium" style={{ color: "var(--brand-text)" }}>
                     {totalBeats} / {totalBeats}
                   </p>
                 </div>
@@ -470,7 +470,7 @@ export default function DemoAssemblePage() {
                         style={selectedResolution === p ? {
                           background: "oklch(0.72 0.25 285 / 0.18)",
                           border: "1px solid oklch(0.72 0.25 285 / 0.45)",
-                          color: "oklch(0.88 0.12 285)",
+                          color: "var(--accent-purple-text)",
                         } : {
                           background: "var(--bg-input)",
                           border: "1px solid var(--bd-card)",
@@ -514,7 +514,7 @@ export default function DemoAssemblePage() {
                   the file input is wired but doesn't actually upload). */}
               <div className="flex items-center gap-3 rounded-2xl px-4 py-2.5 flex-wrap"
                 style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-                <span aria-hidden="true" className="text-base shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>♫</span>
+                <span aria-hidden="true" className="text-base shrink-0" style={{ color: "var(--brand-text)" }}>♫</span>
                 {!bgmDataUrl ? (
                   <>
                     <p className="text-sm font-semibold flex-1">Background music</p>
@@ -522,7 +522,7 @@ export default function DemoAssemblePage() {
                       onClick={() => bgmInputRef.current?.click()}
                       disabled={assemblePhase === "assembling" || bgmReading}
                       className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-all shrink-0"
-                      style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+                      style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
                     >
                       {bgmReading ? "Reading…" : "Choose file"}
                     </button>
@@ -589,7 +589,7 @@ export default function DemoAssemblePage() {
                   pixel-perfect placement. */}
               <div className="flex items-center gap-3 rounded-2xl px-4 py-2.5 flex-wrap"
                 style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-                <span aria-hidden="true" className="text-base shrink-0" style={{ color: "oklch(0.72 0.25 285)" }}>◈</span>
+                <span aria-hidden="true" className="text-base shrink-0" style={{ color: "var(--brand-text)" }}>◈</span>
                 {!logoDataUrl ? (
                   <>
                     <p className="text-sm font-semibold flex-1">Channel logo</p>
@@ -597,7 +597,7 @@ export default function DemoAssemblePage() {
                       onClick={() => logoInputRef.current?.click()}
                       disabled={assemblePhase === "assembling" || logoReading}
                       className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-all shrink-0"
-                      style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.88 0.12 285)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+                      style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
                     >
                       {logoReading ? "Reading…" : "Choose file"}
                     </button>
