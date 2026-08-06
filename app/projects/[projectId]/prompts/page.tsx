@@ -2986,16 +2986,16 @@ export default function PromptsPage({ params }: PageProps) {
       </Dialog>
 
       <Dialog open={bulkOpen} onOpenChange={(open) => { if (!open && !bulkRunning) setBulkOpen(false); }}>
-        <DialogContent className="sm:max-w-2xl" showCloseButton={false}>
+        <DialogContent className="sm:max-w-2xl bg-zinc-900 text-zinc-100 ring-zinc-700" showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>Merge beats</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className="text-zinc-50">Merge beats</DialogTitle>
+            <DialogDescription className="text-zinc-400">
               Merges short beats into a neighbour. Fewer, longer beats cost less to generate but match the narration less closely.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-3">
-            <label className="flex items-center justify-between gap-3 text-sm text-zinc-700">
+            <label className="flex items-center justify-between gap-3 text-sm text-zinc-300">
               <span>Merge beats under</span>
               <span className="flex items-center gap-2">
                 <input
@@ -3005,19 +3005,19 @@ export default function PromptsPage({ params }: PageProps) {
                   value={bulkMinWords}
                   disabled={bulkRunning}
                   onChange={(e) => setBulkMinWords(Math.min(50, Math.max(1, Number(e.target.value) || 1)))}
-                  className="w-20 rounded-lg px-2 py-1.5 text-sm bg-zinc-50 text-zinc-900 ring-1 ring-zinc-300 focus:ring-2 focus:ring-zinc-400 outline-none disabled:opacity-60"
+                  className="w-20 rounded-lg px-2 py-1.5 text-sm bg-zinc-800 text-zinc-100 ring-1 ring-zinc-700 focus:ring-2 focus:ring-zinc-500 outline-none disabled:opacity-60"
                 />
-                <span className="text-zinc-500">words</span>
+                <span className="text-zinc-400">words</span>
               </span>
             </label>
 
-            <label className="flex items-center justify-between gap-3 text-sm text-zinc-700">
+            <label className="flex items-center justify-between gap-3 text-sm text-zinc-300">
               <span>Merge into</span>
               <select
                 value={bulkDirection}
                 disabled={bulkRunning}
                 onChange={(e) => setBulkDirection(e.target.value as "up" | "down" | "auto")}
-                className="rounded-lg px-2 py-1.5 text-sm bg-zinc-50 text-zinc-900 ring-1 ring-zinc-300 focus:ring-2 focus:ring-zinc-400 outline-none disabled:opacity-60"
+                className="rounded-lg px-2 py-1.5 text-sm bg-zinc-800 text-zinc-100 ring-1 ring-zinc-700 focus:ring-2 focus:ring-zinc-500 outline-none disabled:opacity-60"
               >
                 <option value="up">the beat before</option>
                 <option value="down">the beat after</option>
@@ -3025,7 +3025,7 @@ export default function PromptsPage({ params }: PageProps) {
               </select>
             </label>
 
-            <div className="rounded-lg px-3 py-2.5 text-sm bg-zinc-100 text-zinc-700 ring-1 ring-zinc-200">
+            <div className="rounded-lg px-3 py-2.5 text-sm bg-zinc-800 text-zinc-300 ring-1 ring-zinc-700">
               {bulkPlan.steps.length === 0
                 ? `No beats under ${bulkMinWords} word${bulkMinWords === 1 ? "" : "s"}.`
                 : bulkDirection === "auto"
@@ -3034,10 +3034,10 @@ export default function PromptsPage({ params }: PageProps) {
             </div>
 
             {(bulkDirection === "auto" ? bulkStubs.map((s) => s.beatNumber) : bulkPlan.absorbedOriginals).length > 0 && (
-              <div className="max-h-40 overflow-y-auto rounded-lg ring-1 ring-zinc-200 divide-y divide-zinc-200">
+              <div className="max-h-40 overflow-y-auto rounded-lg ring-1 ring-zinc-700 divide-y divide-zinc-800">
                 {(bulkDirection === "auto" ? bulkStubs.map((s) => s.beatNumber) : bulkPlan.absorbedOriginals).map((n) => (
-                  <div key={n} className="flex gap-2 px-3 py-1.5 text-xs text-zinc-600">
-                    <span className="font-semibold text-zinc-400 shrink-0">{n}</span>
+                  <div key={n} className="flex gap-2 px-3 py-1.5 text-xs text-zinc-400">
+                    <span className="font-semibold text-zinc-500 shrink-0">{n}</span>
                     <span className="truncate">{beats.find((b) => b.beatNumber === n)?.scriptSegment || "(empty)"}</span>
                   </div>
                 ))}
@@ -3045,11 +3045,11 @@ export default function PromptsPage({ params }: PageProps) {
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="bg-zinc-800/50 border-zinc-700">
             <button
               onClick={() => setBulkOpen(false)}
               disabled={bulkRunning}
-              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40 bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100"
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40 bg-zinc-800 text-zinc-200 ring-1 ring-zinc-600 hover:bg-zinc-700"
             >
               Cancel
             </button>
