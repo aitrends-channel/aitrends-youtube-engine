@@ -1165,7 +1165,7 @@ export default function HomePage() {
               <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginBottom: "10px" }}>General Stats</h3>
               {/* Stat cards */}
               {projects === undefined ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 lg:gap-x-[150px]">
                   {[0, 1, 2, 3].map((i) => (
                     <div key={i} className="rounded-xl px-5 py-4 space-y-2" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div className="h-8 w-10 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
@@ -1240,7 +1240,7 @@ export default function HomePage() {
                 const inProgressPct = total > 0 ? inProgress / total : 0;
 
                 return (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 lg:gap-x-[150px]">
                     {/* Niches Used (lifetime — deletions don't decrement) — first */}
                     {(() => {
                       const planLabel = isAdmin
