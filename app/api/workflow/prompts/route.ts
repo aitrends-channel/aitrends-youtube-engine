@@ -37,8 +37,15 @@ export async function POST(req: Request) {
   // verbose <tool_calls> text fallback that overruns the ceiling. A user on
   // Haiku sees that fallback largely disappear — the recovery path just goes
   // unused, so the sizing is safe either way.
+  // Segmentation has its own slug so the admin's Prompts card can govern it
+  // explicitly; "fill" is prompt-writing onto existing beats, so it belongs
+  // with image_prompts. All three are boxed into one card, so they normally
+  // carry the same value anyway.
   const routingStep: WorkflowStep =
-    step === "images" || step === "beats" || step === "fill" ? "image_prompts" : step === "videos" ? "video_prompts" : "thumbnails";
+    step === "beats" ? "beats"
+      : step === "images" || step === "fill" ? "image_prompts"
+      : step === "videos" ? "video_prompts"
+      : "thumbnails";
   const model = (await resolveModelForUser(user.id, routingStep, user)).model;
 
   // Style resolution shared by every step whose output depends on it. Prefer

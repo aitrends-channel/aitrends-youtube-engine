@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase/client";
 import { getSettings } from "@/lib/settings";
 import { getRoutingForUser, isClientPaid, type WorkflowStep } from "@/lib/claude/routing";
+import { getGptModel, getPromptProvider } from "@/lib/claude/providers";
 import { PRO_TIER_PLANS, planSlugOf } from "@/lib/plans-gating";
 import { isAdminUser } from "@/lib/admin";
 import type { User } from "@supabase/supabase-js";
@@ -60,6 +61,7 @@ export const CLAUDE_MODELS: ClaudeModelOption[] = [
  *  styleDNA into everything downstream, and the script is what customers
  *  judge the product on. */
 export const USER_CHOICE_STEPS = new Set<WorkflowStep>([
+  "beats",
   "image_prompts",
   "video_prompts",
   "thumbnails",
@@ -180,6 +182,16 @@ export async function resolveModelForUser(
   step: WorkflowStep,
   user?: User | null,
 ): Promise<ClaudeModelParams> {
+  // Provider first: on GPT the Claude catalog is irrelevant, and a Pro user's
+  // Claude pick must not leak onto the GPT client. modelParamsFor returns a
+  // bare { model } for ids outside CLAUDE_MODELS, which is what the facade
+  // wants — no `thinking` field.
+  try {
+    if (await getPromptProvider(step) === "gpt") return { model: await getGptModel() };
+  } catch {
+    // Provider unreadable — fall through to Claude rather than fail the step.
+  }
+
   const config = await getClaudeModelConfig();
   const fallback = modelParamsFor(config.default);
 
