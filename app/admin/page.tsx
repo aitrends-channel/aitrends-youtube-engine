@@ -3289,6 +3289,10 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
           const cardProvider = card.steps
             .map((s) => data?.provider_per_step?.[s])
             .find((p): p is PromptProvider => p === "gpt" || p === "gemini");
+          // Which key a KIE provider ends up on, mirroring kieRoutingFor. A
+          // mixed card falls back to the global, same as an unset step would.
+          const effectiveRouting = override === "mixed" || override === null ? data?.routing : override;
+          const paysHeclus = effectiveRouting === "heclus_kie" || effectiveRouting === "heclus_direct";
           // Disable interaction while ANY card is saving so a confirm
           // mid-dialog can't be racing another save's optimistic state.
           const disabled = saving;
@@ -3358,13 +3362,30 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
                 <StepProviderControl card={card} data={data} mutate={mutate} disabled={disabled} />
               )}
 
-              <RoutingRadios
-                options={perStepChoices}
-                selected={selectedValue}
-                serverActive={selectedValue}
-                disabled={disabled}
-                onPick={(id) => setPending({ card, value: id })}
-              />
+              {/* The routing cards are all Anthropic-specific, and GPT/Gemini
+                  reach the model only through KIE — so they'd be describing a
+                  path this step isn't taking. Hide them, but say which KIE key
+                  ends up paying, because the stored routing still decides that
+                  (kieRoutingFor in lib/claude/providers.ts). */}
+              {cardProvider ? (
+                <p className="text-[11px] leading-relaxed rounded-lg px-3 py-2"
+                  style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.06)", color: "var(--c-50)" }}>
+                  Routing doesn&apos;t apply on {PROVIDER_LABELS[cardProvider]} — it&apos;s only reachable through KIE.
+                  This step bills{" "}
+                  <span className="font-semibold">
+                    {paysHeclus ? "Heclus's KIE key" : "each user's own KIE key"}
+                  </span>
+                  . Switch back to Claude to change routing.
+                </p>
+              ) : (
+                <RoutingRadios
+                  options={perStepChoices}
+                  selected={selectedValue}
+                  serverActive={selectedValue}
+                  disabled={disabled}
+                  onPick={(id) => setPending({ card, value: id })}
+                />
+              )}
             </div>
           );
         })}
