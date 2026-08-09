@@ -13,6 +13,14 @@ export interface ApiStatusResult {
     remaining?: number;
     /** Total characters in the plan (e.g. 10000 for Free, 30000 for Starter). */
     limit?: number;
+    /**
+     * Why there is no balance, when we know. Lets the UI say something true
+     * instead of guessing:
+     *   scope    the key works but can't read the account (needs user_read)
+     *   key_id   the saved value is a key ID, not the key itself
+     * Absent means the balance is simply unknown (a transient upstream blip).
+     */
+    balanceIssue?: "scope" | "key_id";
   };
 }
 
@@ -50,12 +58,26 @@ async function checkElevenLabs(key: string) {
       try {
         const body = await res.json() as { detail?: { status?: string } };
         if (body?.detail?.status === "missing_permissions") {
-          return { configured: true, valid: true };
+          return { configured: true, valid: true, balanceIssue: "scope" as const };
         }
       } catch { /* non-JSON body — fall through to invalid */ }
       return { configured: true, valid: false };
     }
     if (!res.ok) {
+      // Pasting the key ID instead of the key is an easy mistake: the
+      // dashboard shows the ID permanently, while the key itself appears once
+      // at creation. ElevenLabs rejects it with 400, which this branch used to
+      // swallow as "configured, balance unknown" — so the card showed a green
+      // Active badge for a credential that cannot generate a single word of
+      // voiceover, and blamed the missing balance on a scope.
+      try {
+        const body = await res.json() as { detail?: { status?: string } };
+        if (body?.detail?.status === "api_key_id_used_as_api_key") {
+          return { configured: true, valid: false, balanceIssue: "key_id" as const };
+        }
+      } catch { /* non-JSON body — fall through */ }
+      // Anything else non-2xx stays "configured, balance unknown" so a
+      // transient ElevenLabs hiccup doesn't make a working key look broken.
       return { configured: true, valid: true };
     }
     const body = await res.json() as { character_count?: number; character_limit?: number };

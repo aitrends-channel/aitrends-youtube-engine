@@ -2301,10 +2301,10 @@ export default function PromptsPage({ params }: PageProps) {
   // Beats first: it is the step that comes first and the only one that shows
   // the narration. The two prompt tabs count prompts written, not beats, so a
   // half-finished prompts run reads honestly.
-  const tabs: { id: Tab; label: string; count: number }[] = [
-    { id: "beats", label: "Beats", count: beats.length },
-    { id: "image", label: "Image Prompts", count: promptedBeats },
-    { id: "video", label: "Video Prompts", count: videoBeats.length },
+  const tabs: { id: Tab; label: string; shortLabel: string; count: number }[] = [
+    { id: "beats", label: "Beats", shortLabel: "Beats", count: beats.length },
+    { id: "image", label: "Image Prompts", shortLabel: "Image", count: promptedBeats },
+    { id: "video", label: "Video Prompts", shortLabel: "Video", count: videoBeats.length },
   ];
 
   const anyRunning =
@@ -2591,15 +2591,22 @@ export default function PromptsPage({ params }: PageProps) {
           <div className="rounded-2xl overflow-hidden"
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
             <div className="mx-5 sm:mx-8 mt-4 flex items-center justify-between gap-3 flex-wrap">
-            <div className="rounded-xl p-1 flex gap-1 w-fit"
-              style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
+            {/* w-fit sized the strip to its content with nothing to stop it
+                exceeding the viewport, so on a phone the last tab's count was
+                cut off at the screen edge. max-w-full plus scrolling means it
+                can never clip whatever the counts grow to (a 788-beat project
+                is three digits per badge), and the short labels below keep it
+                inside a 360px screen so the scroll is a safety net rather than
+                something the user has to use. */}
+            <div className="rounded-xl p-1 flex gap-1 w-fit max-w-full overflow-x-auto"
+              style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)", scrollbarWidth: "none" }}>
               {tabs.map((tab) => {
                 const active = activeTab === tab.id;
                 return (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className="px-3 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5"
+                    className="px-2.5 sm:px-3 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 shrink-0 whitespace-nowrap"
                     style={active ? {
                       background: "oklch(0.72 0.25 285 / 0.15)",
                       border: "1px solid oklch(0.72 0.25 285 / 0.4)",
@@ -2610,7 +2617,11 @@ export default function PromptsPage({ params }: PageProps) {
                       color: "var(--c-55)",
                     }}
                   >
-                    {tab.label}
+                    {/* "Image Prompts"/"Video Prompts" are what make the strip
+                        overflow a phone. The tab sits directly above the list
+                        it filters, so the qualifier is redundant there. */}
+                    <span className="sm:hidden">{tab.shortLabel}</span>
+                    <span className="hidden sm:inline">{tab.label}</span>
                     {tab.count > 0 && (
                       <span className="px-1.5 py-0.5 rounded-full text-[10px] tabular-nums"
                         style={{

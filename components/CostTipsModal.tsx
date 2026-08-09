@@ -70,7 +70,11 @@ export function CostTipsModal() {
         onClick={() => setOpen(true)}
         title="Tips to cut cost"
         aria-label="Tips to cut cost"
-        className="inline-flex shrink-0 items-center gap-1.5 rounded-md text-xs font-medium px-2.5 py-1 transition-all hover:opacity-80 cursor-pointer max-w-full lg:ml-10"
+        // Full width on phones, centred: the pill was landing on its own line
+        // under the cost chips anyway (the row wraps), so a narrow left-aligned
+        // button just left a ragged gap. From sm up it goes back to hugging its
+        // label so it can sit inline beside the chips.
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-md text-xs font-medium px-2.5 py-1 transition-all hover:opacity-80 cursor-pointer max-w-full w-full justify-center sm:w-auto sm:justify-start lg:ml-10"
         style={{
           border: "1px solid oklch(0.65 0.15 145 / 0.35)",
           background: "oklch(0.65 0.15 145 / 0.10)",
