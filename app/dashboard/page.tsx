@@ -1123,7 +1123,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <main className="flex-1 w-full px-4 sm:px-8 py-6 sm:py-12 space-y-8 sm:space-y-12">
+      <main className="flex-1 w-full px-4 sm:px-8 pt-6 pb-4 sm:py-12 space-y-8 sm:space-y-12">
 
         {/* ── Demo banner for free users ──────────────────────────────── */}
         {showDemo && (() => {
@@ -1714,7 +1714,7 @@ export default function HomePage() {
                     {/* min-h + mt-auto on each card's footer keeps all three
                         the same height whatever each has to say, so the status
                         bars line up across the row. */}
-                    <div className="flex flex-wrap justify-between gap-y-8 gap-x-6 w-full mt-5 mb-10">
+                    <div className="flex flex-wrap justify-between gap-y-8 gap-x-6 w-full mt-5 mb-4 sm:mb-10">
 
                       {/* KIE */}
                       <div className="rounded-xl p-6 sm:p-7 flex flex-col min-h-[170px] sm:min-h-[275px] w-full sm:w-[calc(50%-0.75rem)] lg:w-[27%]" style={cardStyle}>
@@ -1869,7 +1869,7 @@ export default function HomePage() {
                 ? `max-h-[70vh] overflow-y-auto pr-1 ${n > 8 ? "sm:max-h-[75vh]" : "sm:max-h-none sm:overflow-visible sm:pr-0"}`
                 : "";
               return (
-                <div key={group.channelName} className="rounded-2xl px-4 sm:px-6" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)", paddingTop: "34px", paddingBottom: "34px" }}>
+                <div key={group.channelName} className="rounded-2xl px-4 sm:px-6 pb-5 sm:pb-[34px]" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)", paddingTop: "34px" }}>
                   {/* Channel header. Stacks on phones: with the avatar, name,
                       URL, delete and New Video all on one row the name got
                       truncated to a couple of characters and the URL to
