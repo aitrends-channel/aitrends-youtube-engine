@@ -33,13 +33,19 @@ export function isDirectRouting(routing: AnthropicRouting): boolean {
  * sync with the JSONB keys written by the admin UI / API and with the
  * `step` argument each workflow route passes to getAnthropicClient.
  * Adding a new step here is a 3-touch change: this union, the admin
- * panel's STEP_LIST, and the calling route.
+ * panel's STEP_CARDS, and the calling route.
+ *
+ * `beats` is beat segmentation — the pass that splits a script into visual
+ * beats before any prompt is written. It used to ride image_prompts' routing
+ * implicitly; it has its own slug so the Prompts card governs it explicitly.
+ * A missing key still inherits, so that change is backwards compatible.
  */
 export const WORKFLOW_STEPS = [
   "analyze",
   "ideas",
   "script",
   "visual_analysis",
+  "beats",
   "image_prompts",
   "video_prompts",
   "thumbnails",

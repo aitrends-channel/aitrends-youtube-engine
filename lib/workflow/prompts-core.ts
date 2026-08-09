@@ -951,7 +951,10 @@ export async function generateBeats(
     .eq("user_id", userId)
     .gte("current_state", 14);
   try {
-    const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(userId, "image_prompts");
+    // Segmentation has its own routing/provider slug (the admin's Prompts card
+    // sets it alongside image_prompts and video_prompts). Prompt-writing passes
+    // below still use image_prompts.
+    const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(userId, "beats");
 
     const scriptHash = createHash("sha256").update(script).digest("hex");
     const { data: priorHashRow } = await supabase
