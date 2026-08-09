@@ -12,6 +12,7 @@ import { useProject } from "@/hooks/useProject";
 import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp, Eye, X, Upload, Info } from "lucide-react";
 import { ImageSparkle } from "@/components/icons/ImageSparkle";
 import { StepCostCard } from "@/components/StepCostCard";
+import { CostTipsModal } from "@/components/CostTipsModal";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -1989,6 +1990,7 @@ export default function GeneratePage({ params }: PageProps) {
             <div className="mt-3 flex items-center gap-2 flex-wrap min-w-0 w-full">
               <StepCostCard projectId={projectId} column="generate" />
               <StepBalanceCard />
+              <CostTipsModal />
               {/* Free resources button hidden until the /free-resources
                   page is built. Drop this back in when ready:
                   <FreeResourcesButton step="generate" /> */}

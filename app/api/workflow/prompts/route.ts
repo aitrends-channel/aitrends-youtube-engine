@@ -9,6 +9,12 @@ import { PROMPTS_THREE_STEP } from "@/lib/feature-flags";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 
+// Matches analyze/ideas/script. Its absence was invisible locally, where
+// next dev has no ceiling, and fatal on Vercel: the platform default killed a
+// 275-beat fill at ~282s mid-batch. A hard kill runs no finally, so the run id
+// was never released and the step sat on "Running…" with no Resume offered.
+export const maxDuration = 800;
+
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
@@ -37,8 +43,15 @@ export async function POST(req: Request) {
   // verbose <tool_calls> text fallback that overruns the ceiling. A user on
   // Haiku sees that fallback largely disappear — the recovery path just goes
   // unused, so the sizing is safe either way.
+  // Segmentation has its own slug so the admin's Prompts card can govern it
+  // explicitly; "fill" is prompt-writing onto existing beats, so it belongs
+  // with image_prompts. All three are boxed into one card, so they normally
+  // carry the same value anyway.
   const routingStep: WorkflowStep =
-    step === "images" || step === "beats" || step === "fill" ? "image_prompts" : step === "videos" ? "video_prompts" : "thumbnails";
+    step === "beats" ? "beats"
+      : step === "images" || step === "fill" ? "image_prompts"
+      : step === "videos" ? "video_prompts"
+      : "thumbnails";
   const model = (await resolveModelForUser(user.id, routingStep, user)).model;
 
   // Style resolution shared by every step whose output depends on it. Prefer

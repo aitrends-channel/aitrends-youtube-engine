@@ -2357,6 +2357,7 @@ type WorkflowStep =
   | "ideas"
   | "script"
   | "visual_analysis"
+  | "beats"
   | "image_prompts"
   | "video_prompts"
   | "thumbnails";
@@ -2389,20 +2390,57 @@ const ROUTING_OPTIONS: RoutingOption[] = [
 ];
 
 // Display labels for each workflow step. Slugs must match the WorkflowStep
-// union exported from lib/claude/routing.ts.
+// union exported from lib/claude/routing.ts. The three prompt slugs are listed
+// for completeness but aren't rendered on their own — STEP_CARDS below boxes
+// them into a single "Prompts" card.
 const WORKFLOW_STEP_LABELS: Record<WorkflowStep, { title: string; subtitle: string }> = {
   analyze:         { title: "Channel Analysis",  subtitle: "Reverse-engineers the channel's style from transcripts" },
   ideas:           { title: "Video Ideas",       subtitle: "Generates trending topic suggestions" },
   script:          { title: "Script Generation", subtitle: "Writes the long-form narration script" },
   visual_analysis: { title: "Visual Analysis",   subtitle: "Extracts the channel's visual style from frames" },
+  beats:           { title: "Beat Segmentation", subtitle: "Splits the script into visual beats" },
   image_prompts:   { title: "Image Prompts",     subtitle: "One AI image prompt per script beat" },
   video_prompts:   { title: "Video Prompts",     subtitle: "Motion + camera instructions per beat" },
   thumbnails:      { title: "Thumbnail Concepts", subtitle: "Generates 5 thumbnail design concepts" },
 };
-const WORKFLOW_STEP_LIST: WorkflowStep[] = [
-  "analyze", "ideas", "script", "visual_analysis",
-  "image_prompts", "video_prompts", "thumbnails",
+/**
+ * One card in the Per step tab. Usually one step, but the three sub-steps the
+ * wizard shows as a single "Prompts" step — beat segmentation, image prompts,
+ * video prompts — are boxed into one card so an admin configures the step they
+ * can actually see rather than three internal slugs that always move together.
+ *
+ * Writes fan out to every slug in `steps` in one request, so the group can't
+ * half-save.
+ */
+interface StepCard {
+  id: string;
+  steps: WorkflowStep[];
+  title: string;
+  subtitle: string;
+}
+
+const STEP_CARDS: StepCard[] = [
+  { id: "analyze",         steps: ["analyze"],         ...WORKFLOW_STEP_LABELS.analyze },
+  { id: "ideas",           steps: ["ideas"],           ...WORKFLOW_STEP_LABELS.ideas },
+  { id: "script",          steps: ["script"],          ...WORKFLOW_STEP_LABELS.script },
+  { id: "visual_analysis", steps: ["visual_analysis"], ...WORKFLOW_STEP_LABELS.visual_analysis },
+  {
+    id: "prompts",
+    steps: ["beats", "image_prompts", "video_prompts"],
+    title: "Prompts",
+    subtitle: "Beat segmentation, image prompts and video prompts",
+  },
+  { id: "thumbnails",      steps: ["thumbnails"],      ...WORKFLOW_STEP_LABELS.thumbnails },
 ];
+
+/** The shared value across a card's steps, or "mixed" when they disagree —
+ *  possible for the grouped card if the two slugs were set separately before
+ *  they were boxed together. Saving from the card writes every step, so a
+ *  mixed state resolves on the next change. */
+function sharedValue<T>(values: T[]): T | "mixed" {
+  const [first, ...rest] = values;
+  return rest.every((v) => v === first) ? first : "mixed";
+}
 
 interface ClaudeModelOption {
   id: string;
@@ -2411,6 +2449,22 @@ interface ClaudeModelOption {
   tier: "quality" | "balanced" | "fast";
   thinking: "off" | "pin-off" | "always";
 }
+
+interface GptModelOption {
+  id: string;
+  label: string;
+  note: string;
+}
+
+// Which model family a step's output comes from. Orthogonal to routing (whose
+// key pays) — see lib/claude/providers.ts.
+type PromptProvider = "claude" | "gpt" | "gemini";
+
+const PROVIDER_LABELS: Record<PromptProvider, string> = {
+  claude: "Claude",
+  gpt: "GPT",
+  gemini: "Gemini",
+};
 
 interface RoutingResponse {
   routing: Routing;
@@ -2421,6 +2475,12 @@ interface RoutingResponse {
   model_fallback: string;
   user_selectable_models: string[];
   user_choice_steps: WorkflowStep[];
+  provider_per_step: Partial<Record<WorkflowStep, PromptProvider>>;
+  provider_steps: WorkflowStep[];
+  gpt_model: string;
+  gpt_models: GptModelOption[];
+  gemini_model: string;
+  gemini_models: GptModelOption[];
 }
 
 function AnthropicRoutingPanel() {
@@ -2491,8 +2551,10 @@ function RoutingRadios({
   onPick,
 }: {
   options: RoutingChoice[];
-  selected: RoutingValue;
-  serverActive?: RoutingValue;
+  /** "mixed" matches no option, so a grouped card whose steps disagree renders
+   *  with nothing selected rather than claiming a value it doesn't have. */
+  selected: RoutingValue | "mixed";
+  serverActive?: RoutingValue | "mixed";
   disabled?: boolean;
   onPick: (id: RoutingValue) => void;
 }) {
@@ -2565,6 +2627,7 @@ function RoutingConfirmDialog({
   title,
   description,
   preview,
+  confirmLabel = "Switch routing",
   onConfirm,
   onCancel,
 }: {
@@ -2573,6 +2636,9 @@ function RoutingConfirmDialog({
   title: string;
   description: string;
   preview: RoutingChoice | null;
+  /** Overridden by the provider switch, which changes the model family
+   *  rather than the routing. */
+  confirmLabel?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -2613,7 +2679,7 @@ function RoutingConfirmDialog({
                 <Spinner size={14} className="text-white" />
                 Switching…
               </span>
-            ) : "Switch routing"}
+            ) : confirmLabel}
           </button>
           <button
             onClick={onCancel}
@@ -2972,9 +3038,200 @@ function UserSelectableModelsPanel({ swr }: { swr: ReturnType<typeof useSWR<Rout
   );
 }
 
+/**
+ * Claude ⇄ GPT switch for the steps that support it (image_prompts,
+ * video_prompts). Provider is a separate axis from routing: routing decides
+ * whose key pays, this decides which model family writes the prompts.
+ *
+ * GPT is only reachable through KIE, so selecting it makes the step run on the
+ * KIE key of whoever the routing already bills — the confirm copy says so,
+ * because the routing card above will still read "direct" while GPT is active.
+ */
+function StepProviderControl({
+  card,
+  data,
+  mutate,
+  disabled,
+}: {
+  card: StepCard;
+  data: RoutingResponse | undefined;
+  mutate: () => void;
+  disabled: boolean;
+}) {
+  const [pending, setPending] = useState<PromptProvider | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [savingModel, setSavingModel] = useState<string | null>(null);
+
+  const provider = sharedValue(card.steps.map((s) => data?.provider_per_step?.[s] ?? "claude"));
+  // Each KIE provider has its own catalog and its own stored default.
+  const isGemini = provider === "gemini";
+  const models = isGemini ? data?.gemini_models ?? [] : data?.gpt_models ?? [];
+  const activeModel = isGemini ? data?.gemini_model : data?.gpt_model;
+  const modelField = isGemini ? "gemini_model" : "gpt_model";
+  const routesDirect = card.steps.some((s) => (data?.per_step?.[s] ?? data?.routing) === "heclus_direct");
+
+  async function applyProvider(next: PromptProvider) {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/anthropic-routing", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ steps: card.steps, provider: next }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? "Failed to save");
+      toast.success(`${card.title} now runs on ${PROVIDER_LABELS[next]}`);
+      mutate();
+      setPending(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function applyModel(id: string) {
+    setSavingModel(id);
+    try {
+      const res = await fetch("/api/admin/anthropic-routing", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [modelField]: id }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? "Failed to save");
+      toast.success(`${isGemini ? "Gemini" : "GPT"} model set to ${models.find((m) => m.id === id)?.label ?? id}`);
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSavingModel(null);
+    }
+  }
+
+  const PROVIDER_BLURB: Record<PromptProvider, string> = {
+    claude: "Back to the Anthropic Messages API and the model set in the Model tab.",
+    gpt: "Prompts are generated by GPT through KIE's Responses API, using strict JSON schema output. Cheapest per chunk, but a share of calls come back empty and are retried.",
+    gemini: "Prompts are generated by Gemini through KIE's chat/completions API, using strict JSON schema output. Fastest and most consistent of the three, at a higher credit cost than GPT.",
+  };
+  const kieNote = "Only available via KIE, so this step will use the KIE key instead of the direct Anthropic key. Who pays is unchanged.";
+  const confirmPreview: RoutingChoice | null = pending
+    ? {
+        id: "inherit",
+        title: `Run this step on ${PROVIDER_LABELS[pending]}`,
+        description:
+          PROVIDER_BLURB[pending] +
+          (pending === "claude" ? "" : " Prompt wording was tuned on Claude, so review the first run's output."),
+        requires: pending !== "claude" && routesDirect ? kieNote : undefined,
+      }
+    : null;
+
+  return (
+    <div
+      className="rounded-lg p-3 space-y-3"
+      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.06)" }}
+    >
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--c-50)" }}>
+          Model family
+        </span>
+        <div
+          className="flex items-center gap-1 p-0.5 rounded-lg"
+          style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}
+        >
+          {(["claude", "gpt", "gemini"] as PromptProvider[]).map((p) => (
+            <button
+              key={p}
+              onClick={() => { if (p !== provider) setPending(p); }}
+              disabled={disabled || saving}
+              className="px-3 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              style={provider === p ? {
+                background: "oklch(0.72 0.25 285)",
+                color: "white",
+                boxShadow: "0 1px 4px oklch(0.72 0.25 285 / 0.30)",
+              } : {
+                color: "var(--c-50)",
+              }}
+            >
+              {PROVIDER_LABELS[p]}
+            </button>
+          ))}
+        </div>
+        {provider !== "claude" && provider !== "mixed" && (
+          <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+            style={{
+              background: "oklch(0.6 0.15 150 / 0.10)",
+              color: "oklch(0.45 0.15 150)",
+              border: "1px solid oklch(0.6 0.15 150 / 0.35)",
+            }}>
+            via KIE
+          </span>
+        )}
+        {provider === "mixed" && (
+          <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+            style={{
+              background: "oklch(0.7 0.18 60 / 0.12)",
+              color: "oklch(0.5 0.16 60)",
+              border: "1px solid oklch(0.7 0.18 60 / 0.40)",
+            }}>
+            Mixed — pick one to align
+          </span>
+        )}
+      </div>
+
+      {provider !== "claude" && provider !== "mixed" && (
+        <div className="space-y-2">
+          <p className="text-[11px] leading-relaxed" style={{ color: "var(--c-50)" }}>
+            {isGemini ? "Gemini" : "GPT"} model — shared by every step set to {PROVIDER_LABELS[provider]}, not just this one.
+          </p>
+          {models.map((m) => {
+            const isActive = m.id === activeModel;
+            return (
+              <button
+                key={m.id}
+                onClick={() => { if (!isActive) applyModel(m.id); }}
+                disabled={disabled || savingModel !== null}
+                className="w-full text-left p-2.5 rounded-lg transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                style={{
+                  background: isActive ? "oklch(0.72 0.25 285 / 0.08)" : "white",
+                  border: `1px solid ${isActive ? "oklch(0.72 0.25 285 / 0.45)" : "oklch(0 0 0 / 0.07)"}`,
+                }}
+              >
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[11px] font-semibold" style={{ color: "var(--c-90)" }}>{m.label}</span>
+                  <code className="text-[10px] tabular-nums" style={{ color: "var(--c-42)" }}>{m.id}</code>
+                  {isActive && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold"
+                      style={{ background: "oklch(0.6 0.15 150 / 0.12)", color: "oklch(0.45 0.15 150)" }}>
+                      live
+                    </span>
+                  )}
+                  {savingModel === m.id && <Spinner size={11} />}
+                </div>
+                <p className="text-[11px] mt-0.5 leading-relaxed" style={{ color: "var(--c-50)" }}>{m.note}</p>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      <RoutingConfirmDialog
+        open={pending !== null}
+        saving={saving}
+        title={`Switch ${card.title} to ${pending ? PROVIDER_LABELS[pending] : ""}?`}
+        description={`Applies to ${card.subtitle.toLowerCase()}. Change takes effect for all users within 15 seconds.`}
+        preview={confirmPreview}
+        confirmLabel="Switch model family"
+        onConfirm={() => { if (pending) applyProvider(pending); }}
+        onCancel={() => setPending(null)}
+      />
+    </div>
+  );
+}
+
 function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingResponse>> }) {
   const { data, mutate, isLoading } = swr;
-  const [pending, setPending] = useState<{ step: WorkflowStep; value: RoutingValue } | null>(null);
+  const [pending, setPending] = useState<{ card: StepCard; value: RoutingValue } | null>(null);
   const [saving, setSaving] = useState(false);
 
   const generalLabel = data
@@ -2982,23 +3239,22 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
     : "—";
   const perStepChoices = buildPerStepChoices(generalLabel);
   const pendingChoice = pending ? perStepChoices.find((c) => c.id === pending.value) ?? null : null;
-  const pendingStepMeta = pending ? WORKFLOW_STEP_LABELS[pending.step] : null;
 
-  async function applyStepRouting(step: WorkflowStep, value: RoutingValue) {
+  async function applyStepRouting(card: StepCard, value: RoutingValue) {
     setSaving(true);
     try {
       const res = await fetch("/api/admin/anthropic-routing", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ step, routing: value === "inherit" ? null : value }),
+        body: JSON.stringify({ steps: card.steps, routing: value === "inherit" ? null : value }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error ?? "Failed to save");
       }
       toast.success(value === "inherit"
-        ? `${WORKFLOW_STEP_LABELS[step].title}: inheriting from General`
-        : `${WORKFLOW_STEP_LABELS[step].title} routing saved`);
+        ? `${card.title}: inheriting from General`
+        : `${card.title} routing saved`);
       mutate();
       setPending(null);
     } catch (err) {
@@ -3015,21 +3271,34 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
         shows the same routing options as the General tab — picking
         <span className="font-semibold"> Inherit from General </span>
         falls back to whatever's set globally (currently <span className="font-semibold">{generalLabel}</span>).
+        The prompt steps additionally offer a <span className="font-semibold">model family</span> switch:
+        run them on GPT or Gemini via KIE instead of Claude, useful when KIE&apos;s Claude relay is degraded.
       </p>
 
       {isLoading && <p className="text-xs" style={{ color: "var(--c-42)" }}>Loading…</p>}
 
       <div className="space-y-4">
-        {WORKFLOW_STEP_LIST.map((step) => {
-          const override = data?.per_step?.[step] ?? null;
-          const selectedValue: RoutingValue = override ?? "inherit";
-          const meta = WORKFLOW_STEP_LABELS[step];
-          // Disable interaction while ANY step is saving so a confirm
+        {STEP_CARDS.map((card) => {
+          // A card's value is whatever its steps agree on. They only disagree
+          // if the slugs were set individually before being grouped; any save
+          // from the card realigns them.
+          const override = sharedValue(card.steps.map((s) => data?.per_step?.[s] ?? null));
+          const selectedValue: RoutingValue | "mixed" = override === "mixed" ? "mixed" : override ?? "inherit";
+          const supportsProvider = card.steps.every((s) => (data?.provider_steps ?? []).includes(s));
+          // Badge shows the non-Claude provider the card is on, if any.
+          const cardProvider = card.steps
+            .map((s) => data?.provider_per_step?.[s])
+            .find((p): p is PromptProvider => p === "gpt" || p === "gemini");
+          // Which key a KIE provider ends up on, mirroring kieRoutingFor. A
+          // mixed card falls back to the global, same as an unset step would.
+          const effectiveRouting = override === "mixed" || override === null ? data?.routing : override;
+          const paysHeclus = effectiveRouting === "heclus_kie" || effectiveRouting === "heclus_direct";
+          // Disable interaction while ANY card is saving so a confirm
           // mid-dialog can't be racing another save's optimistic state.
           const disabled = saving;
           return (
             <div
-              key={step}
+              key={card.id}
               className="rounded-xl p-4 space-y-3"
               style={{
                 background: "white",
@@ -3044,9 +3313,18 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
                     color: "white",
                     boxShadow: "0 1px 3px oklch(0.72 0.25 285 / 0.30)",
                   }}>
-                  {meta.title}
+                  {card.title}
                 </span>
-                {override === null ? (
+                {override === "mixed" ? (
+                  <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                    style={{
+                      background: "oklch(0.7 0.18 60 / 0.12)",
+                      color: "oklch(0.5 0.16 60)",
+                      border: "1px solid oklch(0.7 0.18 60 / 0.40)",
+                    }}>
+                    Mixed
+                  </span>
+                ) : override === null ? (
                   <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
                     style={{
                       background: "oklch(0 0 0 / 0.05)",
@@ -3065,18 +3343,49 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
                     Override
                   </span>
                 )}
+                {cardProvider && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full"
+                    style={{
+                      background: "oklch(0.7 0.18 60 / 0.12)",
+                      color: "oklch(0.5 0.16 60)",
+                      border: "1px solid oklch(0.7 0.18 60 / 0.40)",
+                    }}>
+                    {PROVIDER_LABELS[cardProvider]}
+                  </span>
+                )}
                 <span className="text-[11px]" style={{ color: "var(--c-50)" }}>
-                  · {meta.subtitle}
+                  · {card.subtitle}
                 </span>
               </div>
 
-              <RoutingRadios
-                options={perStepChoices}
-                selected={selectedValue}
-                serverActive={selectedValue}
-                disabled={disabled}
-                onPick={(id) => setPending({ step, value: id })}
-              />
+              {supportsProvider && (
+                <StepProviderControl card={card} data={data} mutate={mutate} disabled={disabled} />
+              )}
+
+              {/* The routing cards are all Anthropic-specific, and GPT/Gemini
+                  reach the model only through KIE — so they'd be describing a
+                  path this step isn't taking. Hide them, but say which KIE key
+                  ends up paying, because the stored routing still decides that
+                  (kieRoutingFor in lib/claude/providers.ts). */}
+              {cardProvider ? (
+                <p className="text-[11px] leading-relaxed rounded-lg px-3 py-2"
+                  style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.06)", color: "var(--c-50)" }}>
+                  Routing doesn&apos;t apply on {PROVIDER_LABELS[cardProvider]}, which is only reachable through KIE.
+                  This step bills{" "}
+                  <span className="font-semibold">
+                    {paysHeclus ? "Heclus's KIE key" : "each user's own KIE key"}
+                  </span>
+                  . Switch back to Claude to change routing.
+                </p>
+              ) : (
+                <RoutingRadios
+                  options={perStepChoices}
+                  selected={selectedValue}
+                  serverActive={selectedValue}
+                  disabled={disabled}
+                  onPick={(id) => setPending({ card, value: id })}
+                />
+              )}
             </div>
           );
         })}
@@ -3085,10 +3394,12 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
       <RoutingConfirmDialog
         open={pending !== null}
         saving={saving}
-        title={pendingStepMeta ? `Switch routing for ${pendingStepMeta.title}?` : "Switch routing?"}
-        description="Only this step is affected. Change takes effect immediately for all users."
+        title={pending ? `Switch routing for ${pending.card.title}?` : "Switch routing?"}
+        description={pending && pending.card.steps.length > 1
+          ? `Applies to ${pending.card.subtitle.toLowerCase()}. Change takes effect immediately for all users.`
+          : "Only this step is affected. Change takes effect immediately for all users."}
         preview={pendingChoice}
-        onConfirm={() => { if (pending) applyStepRouting(pending.step, pending.value); }}
+        onConfirm={() => { if (pending) applyStepRouting(pending.card, pending.value); }}
         onCancel={() => setPending(null)}
       />
     </div>

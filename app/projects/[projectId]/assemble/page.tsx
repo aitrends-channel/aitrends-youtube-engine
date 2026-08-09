@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { StepCostCard } from "@/components/StepCostCard";
+import { CostTipsModal } from "@/components/CostTipsModal";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
@@ -889,6 +890,7 @@ export default function AssemblePage({ params }: PageProps) {
             <div className="mt-3 flex items-center gap-2 flex-wrap min-w-0 w-full">
               <StepCostCard projectId={projectId} column="assemble" />
               <StepBalanceCard />
+              <CostTipsModal />
             </div>
           </div>
         </div>

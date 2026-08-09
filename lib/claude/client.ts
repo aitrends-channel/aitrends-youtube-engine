@@ -1,6 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getSettings } from "@/lib/settings";
 import { getRoutingForUser, getActiveProductKey, type WorkflowStep, type AnthropicRouting } from "./routing";
+import { getPromptProvider, isKieProvider, kieRoutingFor, supportsProviderChoice, type PromptProvider } from "./providers";
+import { fetchKieBalance } from "@/lib/kie/client";
+import { KieGptClient } from "./kieGptClient";
+import { KieGeminiClient } from "./kieGeminiClient";
 
 const KIE_CLAUDE_BASE_URL = "https://api.kie.ai/claude";
 
@@ -223,6 +227,17 @@ export interface AnthropicClientHandle {
   client: Anthropic;
   routing: AnthropicRouting;
   takeLastCreditsConsumed: () => number | null;
+  /**
+   * Reads the KIE balance this handle is spending, or null when it can't be
+   * read — and undefined entirely on direct-to-Anthropic routings, which have
+   * no KIE wallet.
+   *
+   * Callers use it to tell a real empty wallet from an error that merely looks
+   * like one: a bare 402 is indistinguishable from "out of credit" by message
+   * alone, and abandoning a half-finished run on that reads as broken to a user
+   * with a healthy balance. The key stays in this module; callers get a yes/no.
+   */
+  checkKieBalance?: () => Promise<number | null>;
 }
 
 // Build a direct-to-Anthropic client signed with Heclus's company key,
@@ -251,8 +266,65 @@ export async function getHeclusDirectClient(): Promise<Anthropic> {
   });
 }
 
-export async function getAnthropicClient(userId: string, step?: WorkflowStep): Promise<AnthropicClientHandle> {
+/** The KIE key a given KIE routing signs with. Shared by the Claude and GPT
+ *  paths so "whose key pays" is decided in exactly one place. */
+async function resolveKieKey(routing: AnthropicRouting, userId: string): Promise<string> {
+  if (routing === "heclus_kie") {
+    const key = await getActiveProductKey("heclus_kie_api_key");
+    if (!key) {
+      throw new Error("Heclus KIE key not configured — set one in Config → API Keys (service: Heclus KIE API Key).");
+    }
+    return key;
+  }
+  const key = (await getSettings(userId)).kie_api_key;
+  if (!key) throw new Error("KIE API key not configured. Add it in Settings.");
+  return key;
+}
+
+export interface AnthropicClientOptions {
+  /** Pin the model family regardless of the step's configured provider. Used by
+   *  call sites that a provider switch would break — e.g. ones that hardcode a
+   *  Claude-only model, or send content blocks the GPT facade can't translate. */
+  forceProvider?: PromptProvider;
+}
+
+export async function getAnthropicClient(
+  userId: string,
+  step?: WorkflowStep,
+  opts?: AnthropicClientOptions,
+): Promise<AnthropicClientHandle> {
   const routing = await getRoutingForUser(userId, step);
+
+  // Non-Claude provider path (Config → Anthropic → Per step). Only the prompt
+  // steps can opt in, and GPT/Gemini are reachable only through KIE — so a step
+  // routed straight to Anthropic falls back to the KIE key of the same payer
+  // rather than silently moving who pays. The handle's routing is the KIE one
+  // so the cost ledger records credits, not tokens.
+  //
+  // Both clients are facades (lib/claude/kieGptClient.ts, kieGeminiClient.ts)
+  // that mimic the slice of the Anthropic SDK the prompt steps use, which is
+  // what lets prompts-core.ts stay provider-agnostic. The cast is the one place
+  // that fiction is asserted; keep it narrow by never widening PROVIDER_STEPS
+  // to a step whose call sites use SDK surface the facades don't implement.
+  const provider = opts?.forceProvider ?? (step ? await getPromptProvider(step) : "claude");
+  if (step && supportsProviderChoice(step) && isKieProvider(provider)) {
+    const kieRouting = kieRoutingFor(routing);
+    const creditsRef: { value: number | null } = { value: null };
+    const kieKey = await resolveKieKey(kieRouting, userId);
+    const client = provider === "gemini"
+      ? new KieGeminiClient(kieKey, creditsRef)
+      : new KieGptClient(kieKey, creditsRef);
+    return {
+      client: client as unknown as Anthropic,
+      routing: kieRouting,
+      takeLastCreditsConsumed: () => {
+        const v = creditsRef.value;
+        creditsRef.value = null;
+        return v;
+      },
+      checkKieBalance: () => fetchKieBalance(kieKey),
+    };
+  }
 
   // The client's OWN Anthropic key, native API, bypassing KIE. Only reachable
   // when the step already routes client_kie and the client switched this on
@@ -290,16 +362,7 @@ export async function getAnthropicClient(userId: string, step?: WorkflowStep): P
 
   // KIE-mediated paths. The only difference between client_kie and
   // heclus_kie is whose key signs the request.
-  let kieKey: string | null | undefined;
-  if (routing === "heclus_kie") {
-    kieKey = await getActiveProductKey("heclus_kie_api_key");
-    if (!kieKey) {
-      throw new Error("Heclus KIE key not configured — set one in Config → API Keys (service: Heclus KIE API Key).");
-    }
-  } else {
-    kieKey = (await getSettings(userId)).kie_api_key;
-    if (!kieKey) throw new Error("KIE API key not configured. Add it in Settings.");
-  }
+  const kieKey = await resolveKieKey(routing, userId);
 
   // Per-handle credits ref — each Anthropic client gets its own
   // fetchViaKie wrapper closed over a private ref, so concurrent
@@ -340,6 +403,7 @@ export async function getAnthropicClient(userId: string, step?: WorkflowStep): P
       creditsRef.value = null;
       return v;
     },
+    checkKieBalance: () => fetchKieBalance(kieKey),
   };
 }
 

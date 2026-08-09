@@ -50,7 +50,10 @@ export async function POST(req: Request) {
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
     const visualProfile = (project.visual_profile ?? null) as VisualProfileOutput | null;
 
-    const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "image_prompts");
+    // Pinned to Claude even when the image_prompts step is switched to GPT:
+    // this call sends an image block and hardcodes a Claude vision model, so
+    // the GPT facade would have nothing valid to translate.
+    const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "image_prompts", { forceProvider: "claude" });
     const model = VISION_MODEL;
 
     const callModel = () =>
