@@ -22,6 +22,14 @@ export interface ApiStatusResult {
      */
     balanceIssue?: "scope" | "key_id";
   };
+  /**
+   * The client's own Anthropic key. No balance to report: Anthropic bills in
+   * tokens against the account, and there is no cheap endpoint that returns a
+   * remaining figure the way KIE and ElevenLabs do. Presence and whether it is
+   * switched on is the useful signal, since a saved-but-off key changes nothing
+   * about who pays.
+   */
+  anthropic: { configured: boolean; directEnabled: boolean };
 }
 
 export async function GET() {
@@ -33,7 +41,11 @@ export async function GET() {
     checkKie(s.kie_api_key),
     checkElevenLabs(s.elevenlabs_api_key),
   ]);
-  return NextResponse.json({ kie, elevenlabs } satisfies ApiStatusResult);
+  const anthropic = {
+    configured: !!s.anthropic_api_key,
+    directEnabled: !!s.anthropic_direct_enabled,
+  };
+  return NextResponse.json({ kie, elevenlabs, anthropic } satisfies ApiStatusResult);
 }
 
 // ElevenLabs exposes per-user quota via /v1/user/subscription.
