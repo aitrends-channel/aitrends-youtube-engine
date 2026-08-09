@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getSettings } from "@/lib/settings";
 import { getRoutingForUser, getActiveProductKey, type WorkflowStep, type AnthropicRouting } from "./routing";
 import { getPromptProvider, isKieProvider, kieRoutingFor, supportsProviderChoice, type PromptProvider } from "./providers";
+import { fetchKieBalance } from "@/lib/kie/client";
 import { KieGptClient } from "./kieGptClient";
 import { KieGeminiClient } from "./kieGeminiClient";
 
@@ -226,6 +227,17 @@ export interface AnthropicClientHandle {
   client: Anthropic;
   routing: AnthropicRouting;
   takeLastCreditsConsumed: () => number | null;
+  /**
+   * Reads the KIE balance this handle is spending, or null when it can't be
+   * read — and undefined entirely on direct-to-Anthropic routings, which have
+   * no KIE wallet.
+   *
+   * Callers use it to tell a real empty wallet from an error that merely looks
+   * like one: a bare 402 is indistinguishable from "out of credit" by message
+   * alone, and abandoning a half-finished run on that reads as broken to a user
+   * with a healthy balance. The key stays in this module; callers get a yes/no.
+   */
+  checkKieBalance?: () => Promise<number | null>;
 }
 
 // Build a direct-to-Anthropic client signed with Heclus's company key,
@@ -310,6 +322,7 @@ export async function getAnthropicClient(
         creditsRef.value = null;
         return v;
       },
+      checkKieBalance: () => fetchKieBalance(kieKey),
     };
   }
 
@@ -390,6 +403,7 @@ export async function getAnthropicClient(
       creditsRef.value = null;
       return v;
     },
+    checkKieBalance: () => fetchKieBalance(kieKey),
   };
 }
 
