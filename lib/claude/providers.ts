@@ -11,10 +11,16 @@ import type { AnthropicRouting, WorkflowStep } from "./routing";
  * GPT exists only via KIE, so picking it maps a direct routing to its KIE
  * equivalent (see kieRoutingFor). Whose key pays doesn't change.
  */
-export type PromptProvider = "claude" | "gpt";
+export type PromptProvider = "claude" | "gpt" | "gemini";
 
 export function isPromptProvider(v: unknown): v is PromptProvider {
-  return v === "claude" || v === "gpt";
+  return v === "claude" || v === "gpt" || v === "gemini";
+}
+
+/** True for the providers that reach the model through KIE rather than
+ *  Anthropic — i.e. everything except Claude. */
+export function isKieProvider(p: PromptProvider): boolean {
+  return p === "gpt" || p === "gemini";
 }
 
 /**
@@ -62,6 +68,32 @@ export function gptModelLabel(id: string): string {
   return GPT_MODELS.find((m) => m.id === id)?.label ?? id;
 }
 
+/** Fastest and cheapest of the working Gemini models, and reliable once the
+ *  shared facade unwraps its markdown-fenced JSON. */
+export const GEMINI_MODEL_FALLBACK = "gemini-3-flash";
+
+// Notes carry the measured trade-offs: on a production-scale 200-word chunk
+// (20 beats out) flash finished in ~19s at ~1.2 credits, 3.1-pro in ~53s at
+// ~1.8. Flash returns the whole payload in one chunk, so the beat-progress bar
+// won't move until it lands.
+export const GEMINI_MODELS: GptModelOption[] = [
+  { id: "gemini-3-flash",   label: "Gemini 3 Flash",   note: "Fastest of the set (~19s/chunk) and reliable. Arrives in one chunk, so beat progress won't tick mid-chunk. The default." },
+  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", note: "Previous flash generation. Kept as a cheaper comparison baseline." },
+  { id: "gemini-3.1-pro",   label: "Gemini 3.1 Pro",   note: "Strongest Gemini here. ~53s/chunk, streams in pieces so progress ticks. Costs more than flash." },
+  { id: "gemini-3-pro",     label: "Gemini 3 Pro",     note: "Previous pro generation." },
+  { id: "gemini-2.5-pro",   label: "Gemini 2.5 Pro",   note: "Older pro. Comparison baseline." },
+];
+
+export function isSelectableGeminiModel(id: unknown): id is string {
+  return typeof id === "string" && GEMINI_MODELS.some((m) => m.id === id);
+}
+
+/** The model catalog for one provider. Claude has its own catalog in
+ *  lib/claude/models.ts, so this only covers the KIE-hosted families. */
+export function modelsForProvider(p: PromptProvider): GptModelOption[] {
+  return p === "gpt" ? GPT_MODELS : p === "gemini" ? GEMINI_MODELS : [];
+}
+
 /**
  * The KIE routing equivalent of any routing. GPT is only reachable through
  * KIE, so a step routed straight to Anthropic has to fall back to the KIE key
@@ -76,12 +108,18 @@ export type PromptProviderConfig = {
   perStep: Partial<Record<WorkflowStep, PromptProvider>>;
   /** Model the gpt provider runs on. */
   gptModel: string;
+  /** Model the gemini provider runs on. */
+  geminiModel: string;
 };
 
 const CACHE_TTL_MS = 15_000;
 let cached: { at: number; value: PromptProviderConfig } | null = null;
 
-const CONFIG_FALLBACK: PromptProviderConfig = { perStep: {}, gptModel: GPT_MODEL_FALLBACK };
+const CONFIG_FALLBACK: PromptProviderConfig = {
+  perStep: {},
+  gptModel: GPT_MODEL_FALLBACK,
+  geminiModel: GEMINI_MODEL_FALLBACK,
+};
 
 function sanitisePerStep(raw: unknown): Partial<Record<WorkflowStep, PromptProvider>> {
   if (!raw || typeof raw !== "object") return {};
@@ -102,16 +140,41 @@ export async function getPromptProviderConfig(): Promise<PromptProviderConfig> {
   if (cached && now - cached.at < CACHE_TTL_MS) return cached.value;
 
   try {
-    const { data } = await supabase
+    type Row = {
+      prompt_provider_per_step?: unknown;
+      default_gpt_model?: unknown;
+      default_gemini_model?: unknown;
+    };
+
+    // Migrations here are applied by hand, so code can land before its column
+    // does. PostgREST fails the WHOLE select on one unknown column, which would
+    // wipe perStep and silently drop every step back to Claude — sending
+    // prompts to a relay the admin deliberately switched away from. So try the
+    // current shape, and on failure fall back to the previous one and use the
+    // code default for whatever is missing.
+    let row: Row | null = null;
+    const full = await supabase
       .from("product_config")
-      .select("prompt_provider_per_step, default_gpt_model")
+      .select("prompt_provider_per_step, default_gpt_model, default_gemini_model")
       .eq("service", "_global")
       .single();
-    const row = data as { prompt_provider_per_step?: unknown; default_gpt_model?: unknown } | null;
+
+    if (full.error) {
+      const prior = await supabase
+        .from("product_config")
+        .select("prompt_provider_per_step, default_gpt_model")
+        .eq("service", "_global")
+        .single();
+      if (prior.error) return CONFIG_FALLBACK;
+      row = prior.data as Row;
+    } else {
+      row = full.data as Row;
+    }
 
     const value: PromptProviderConfig = {
       perStep: sanitisePerStep(row?.prompt_provider_per_step),
       gptModel: isSelectableGptModel(row?.default_gpt_model) ? row.default_gpt_model : GPT_MODEL_FALLBACK,
+      geminiModel: isSelectableGeminiModel(row?.default_gemini_model) ? row.default_gemini_model : GEMINI_MODEL_FALLBACK,
     };
     cached = { at: now, value };
     return value;
@@ -138,4 +201,11 @@ export async function getPromptProvider(step?: WorkflowStep): Promise<PromptProv
 /** The GPT model id for the gpt provider. */
 export async function getGptModel(): Promise<string> {
   return (await getPromptProviderConfig()).gptModel;
+}
+
+/** The model id a KIE provider runs on. Claude has its own resolver in
+ *  lib/claude/models.ts and never reaches here. */
+export async function getModelForProvider(p: PromptProvider): Promise<string> {
+  const cfg = await getPromptProviderConfig();
+  return p === "gemini" ? cfg.geminiModel : cfg.gptModel;
 }
