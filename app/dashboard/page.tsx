@@ -24,6 +24,14 @@ import { ONE_CLICK_HIDDEN } from "@/lib/feature-flags";
 
 // ── Demo dashboard helpers ────────────────────────────────────────────────────
 
+type DashTab = "stats" | "keys" | "niches";
+const DASH_TAB_KEY = "heclus.dashboard.tab";
+const DASH_TABS: { id: DashTab; label: string }[] = [
+  { id: "stats",  label: "Stats" },
+  { id: "keys",   label: "API keys & usage" },
+  { id: "niches", label: "Niches & Videos" },
+];
+
 const DEMO_STEP_LABELS = ["Channel", "Topic", "Script", "Visuals", "Prompts", "Generate", "Assemble", "Complete"];
 const DEMO_STEP_HREFS  = [
   "/demo/channel", "/demo/topic", "/demo/script", "/demo/visuals",
@@ -526,6 +534,21 @@ function VideoDurationBadge({ src }: { src: string }) {
 
 export default function HomePage() {
   const router = useRouter();
+  // Dashboard sections as tabs. Lazily read from localStorage so returning
+  // from a project lands on the tab you left, and guarded because this runs
+  // during hydration where storage may be unavailable.
+  const [dashTab, setDashTab] = useState<DashTab>(() => {
+    if (typeof window === "undefined") return "stats";
+    try {
+      const saved = window.localStorage.getItem(DASH_TAB_KEY);
+      return saved === "keys" || saved === "niches" ? saved : "stats";
+    } catch { return "stats"; }
+  });
+  const selectDashTab = (t: DashTab) => {
+    setDashTab(t);
+    try { window.localStorage.setItem(DASH_TAB_KEY, t); } catch { /* storage disabled */ }
+  };
+
   const [creating, setCreating] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isPaid, setIsPaid] = useState<boolean | null>(null);
@@ -1112,10 +1135,37 @@ export default function HomePage() {
 
           return (
             <div className="space-y-6">
-              <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>General Stats</h3>
+              {/* Section tabs. Scrolls rather than wraps on a phone so the
+                  three labels never stack into a second row. */}
+              <div className="flex gap-1 p-1 rounded-xl overflow-x-auto max-w-full" style={{ marginTop: "10px", background: "var(--bg-progress)", border: "1px solid var(--bd-card)", scrollbarWidth: "none" }}>
+                {DASH_TABS.map((t) => {
+                  const active = dashTab === t.id;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => selectDashTab(t.id)}
+                      className="flex-1 shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
+                      style={active ? {
+                        background: "oklch(0.72 0.25 285 / 0.15)",
+                        border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                        color: "var(--accent-purple-text)",
+                      } : {
+                        background: "transparent",
+                        border: "1px solid transparent",
+                        color: "var(--c-55)",
+                      }}
+                    >
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {dashTab === "stats" && (<>
+              <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginBottom: "10px" }}>General Stats</h3>
               {/* Stat cards */}
               {projects === undefined ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 lg:gap-x-[150px]">
                   {[0, 1, 2, 3].map((i) => (
                     <div key={i} className="rounded-xl px-5 py-4 space-y-2" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div className="h-8 w-10 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
@@ -1190,7 +1240,7 @@ export default function HomePage() {
                 const inProgressPct = total > 0 ? inProgress / total : 0;
 
                 return (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 lg:gap-x-[150px]">
                     {/* Niches Used (lifetime — deletions don't decrement) — first */}
                     {(() => {
                       const planLabel = isAdmin
@@ -1198,8 +1248,13 @@ export default function HomePage() {
                         : usage?.plan
                           ? usage.plan.charAt(0).toUpperCase() + usage.plan.slice(1)
                           : "Free";
+                      // Was col-span-2 on mobile, which ate a whole row of the
+                      // 2-col grid and left the fourth card alone on a third
+                      // row with a hole beside it. One column makes it a clean
+                      // 2x2; the badges stack below the numbers rather than
+                      // fighting them for the width.
                       return (
-                        <div className="col-span-2 sm:col-span-1 rounded-xl px-4 sm:px-5 py-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3"
+                        <div className="rounded-xl px-4 sm:px-5 py-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3"
                           style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                           <div className="min-w-0 space-y-1">
                             <p className="leading-none">
@@ -1222,7 +1277,7 @@ export default function HomePage() {
                               </p>
                             )}
                           </div>
-                          <div className="flex flex-row sm:flex-col items-center gap-2 sm:gap-1.5 shrink-0">
+                          <div className="flex flex-col items-start sm:items-center gap-1.5 shrink-0">
                             {unlimited && (
                               <span
                                 className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider"
@@ -1481,10 +1536,14 @@ export default function HomePage() {
                 );
               })()}
 
+              </>)}
+
+              {dashTab === "keys" && (<>
               {/* API Keys Status */}
               {(() => {
                 const kie = apiStatus?.kie as { configured: boolean; valid: boolean | null; credits?: number } | undefined;
                 const elevenlabs = apiStatus?.elevenlabs as { configured: boolean; valid: boolean | null; remaining?: number; limit?: number; balanceIssue?: "scope" | "key_id" } | undefined;
+                const anthropic = apiStatus?.anthropic as { configured: boolean; directEnabled: boolean } | undefined;
 
                 function StatusBadge({ data, color }: { data: { configured: boolean; valid: boolean | null } | undefined; color: string }) {
                   void color;
@@ -1549,20 +1608,27 @@ export default function HomePage() {
 
                 const cardStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" };
 
+                // No top gap now that this opens its own tab rather than
+                // following the chart. Three cards across on desktop: the tab
+                // gives the section the full width, so a 2-col grid left the
+                // third card stranded on its own row.
                 return (
-                  <div style={{ marginTop: "40px" }}>
-                    <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Key Status</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "14px" }}>Your API Key Status</h3>
+                    {/* min-h + mt-auto on each card's footer keeps all three
+                        the same height whatever each has to say, so the status
+                        bars line up across the row. */}
+                    <div className="flex flex-wrap justify-between gap-y-8 gap-x-6 w-full mt-5 mb-10">
 
                       {/* KIE */}
-                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
-                        <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="rounded-xl p-6 sm:p-7 flex flex-col min-h-[170px] sm:min-h-[275px] w-full sm:w-[calc(50%-0.75rem)] lg:w-[27%]" style={cardStyle}>
+                        <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>KIE</p>
-                            {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mt-0.5" style={{ color: "#f0a855" }}>Pending setup</p>}
-                            <p className="text-[10px] mt-0.5" style={{ color: "var(--c-38)" }}>Script generation, TTS, images & video</p>
+                            {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mt-1" style={{ color: "#f0a855" }}>Pending setup</p>}
+                            <p className="text-[10px] mt-1.5 leading-relaxed" style={{ color: "var(--c-38)" }}>Script generation, TTS, images & video</p>
                           </div>
-                          <div className="flex flex-col items-end gap-1 shrink-0">
+                          <div className="flex flex-col items-end gap-1.5 shrink-0">
                             <StatusBadge data={kie} color="#60a5fa" />
                             {kie?.configured && kie.valid && typeof kie.credits === "number" && (
                               <span className="text-[10px] font-medium tabular-nums"
@@ -1572,25 +1638,27 @@ export default function HomePage() {
                             )}
                           </div>
                         </div>
-                        {kie?.configured && kie.valid && typeof kie.credits === "number" && (
-                          <CreditsBar credits={kie.credits} />
-                        )}
-                        {kie?.configured && kie.valid && kie.credits === undefined && (
-                          <p className="text-[10px]" style={{ color: "var(--c-30)" }}>Check balance in KIE dashboard</p>
-                        )}
+                        <div className="mt-auto pt-5">
+                          {kie?.configured && kie.valid && typeof kie.credits === "number" && (
+                            <CreditsBar credits={kie.credits} />
+                          )}
+                          {kie?.configured && kie.valid && kie.credits === undefined && (
+                            <p className="text-[10px] leading-relaxed" style={{ color: "var(--c-30)" }}>Check balance in KIE dashboard</p>
+                          )}
+                        </div>
                       </div>
 
                       {/* ElevenLabs. Uses UsageBar (used/limit) instead of
                           CreditsBar because ElevenLabs quota is bounded per
                           plan — we have both numerator and denominator. */}
-                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
-                        <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="rounded-xl p-6 sm:p-7 flex flex-col min-h-[170px] sm:min-h-[275px] w-full sm:w-[calc(50%-0.75rem)] lg:w-[27%]" style={cardStyle}>
+                        <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>ElevenLabs</p>
-                            {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mt-0.5" style={{ color: "#f0a855" }}>Pending setup</p>}
-                            <p className="text-[10px] mt-0.5" style={{ color: "var(--c-38)" }}>Voiceover generation & transcription</p>
+                            {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mt-1" style={{ color: "#f0a855" }}>Pending setup</p>}
+                            <p className="text-[10px] mt-1.5 leading-relaxed" style={{ color: "var(--c-38)" }}>Voiceover generation & transcription</p>
                           </div>
-                          <div className="flex flex-col items-end gap-1 shrink-0">
+                          <div className="flex flex-col items-end gap-1.5 shrink-0">
                             <StatusBadge data={elevenlabs} color="#c084fc" />
                             {elevenlabs?.configured && elevenlabs.valid && typeof elevenlabs.remaining === "number" && (
                               <span className="text-[10px] font-medium tabular-nums"
@@ -1600,22 +1668,56 @@ export default function HomePage() {
                             )}
                           </div>
                         </div>
-                        {elevenlabs?.configured && elevenlabs.valid && typeof elevenlabs.remaining === "number" && typeof elevenlabs.limit === "number" && (
-                          <UsageBar used={elevenlabs.limit - elevenlabs.remaining} limit={elevenlabs.limit} color="#c084fc" />
-                        )}
-                        {/* Only claim a reason when the API told us one. This
-                            used to show the scope hint for any missing balance,
-                            including a key that cannot authenticate at all,
-                            which sent people to change permissions on a key
-                            that needed replacing. */}
-                        {elevenlabs?.configured && elevenlabs.balanceIssue === "key_id" && (
-                          <p className="text-[10px]" style={{ color: "var(--accent-amber-text)" }}>
-                            That looks like a key ID, not a key. Paste the value starting with sk_, shown when you create or rotate the key.
-                          </p>
-                        )}
-                        {elevenlabs?.configured && elevenlabs.valid && elevenlabs.balanceIssue === "scope" && (
-                          <p className="text-[10px]" style={{ color: "var(--c-30)" }}>Enable user_read scope on your key to see character balance</p>
-                        )}
+                        <div className="mt-auto pt-5">
+                          {elevenlabs?.configured && elevenlabs.valid && typeof elevenlabs.remaining === "number" && typeof elevenlabs.limit === "number" && (
+                            <UsageBar used={elevenlabs.limit - elevenlabs.remaining} limit={elevenlabs.limit} color="#c084fc" />
+                          )}
+                          {/* Only claim a reason when the API told us one. This
+                              used to show the scope hint for any missing balance,
+                              including a key that cannot authenticate at all,
+                              which sent people to change permissions on a key
+                              that needed replacing. */}
+                          {elevenlabs?.configured && elevenlabs.balanceIssue === "key_id" && (
+                            <p className="text-[10px] leading-relaxed" style={{ color: "var(--accent-amber-text)" }}>
+                              That looks like a key ID, not a key. Paste the value starting with sk_, shown when you create or rotate the key.
+                            </p>
+                          )}
+                          {elevenlabs?.configured && elevenlabs.valid && elevenlabs.balanceIssue === "scope" && (
+                            <p className="text-[10px] leading-relaxed" style={{ color: "var(--c-30)" }}>Enable user_read scope on your key to see character balance</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Anthropic. No usage bar: Anthropic bills tokens
+                          against the account and exposes no cheap remaining
+                          figure, so presence and whether it is switched on is
+                          all there is to show. A saved-but-off key is worth
+                          calling out, since it changes nothing about who pays
+                          and reads as connected otherwise. */}
+                      <div className="rounded-xl p-6 sm:p-7 flex flex-col min-h-[170px] sm:min-h-[275px] w-full sm:w-[calc(50%-0.75rem)] lg:w-[27%]" style={cardStyle}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>Anthropic</p>
+                            <p className="text-[10px] mt-1.5 leading-relaxed" style={{ color: "var(--c-38)" }}>Optional. Runs the writing steps on your own account instead of through KIE</p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1.5 shrink-0">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider"
+                              style={anthropic?.configured
+                                ? (anthropic.directEnabled
+                                  ? { background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "1px solid oklch(0.55 0.15 145 / 0.3)" }
+                                  : { background: "oklch(0.6 0.18 75 / 0.12)", color: "oklch(0.7 0.16 75)", border: "1px solid oklch(0.6 0.18 75 / 0.3)" })
+                                : { background: "oklch(1 0 0 / 0.06)", color: "var(--c-40)", border: "1px solid var(--bd-card)" }}>
+                              {anthropic?.configured ? (anthropic.directEnabled ? "Active" : "Saved") : "Not set"}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-[10px] leading-relaxed mt-auto pt-5" style={{ color: "var(--c-30)" }}>
+                          {!anthropic?.configured
+                            ? "Not connected. Writing steps run through your KIE credits."
+                            : anthropic.directEnabled
+                              ? "Writing steps bill your Anthropic account. Balance lives at console.anthropic.com."
+                              : "Key saved but switched off. Turn it on in Setup to bill Anthropic instead of KIE."}
+                        </p>
                       </div>
 
                     </div>
@@ -1623,21 +1725,50 @@ export default function HomePage() {
                 );
               })()}
 
-              <h2 className="text-xl font-bold tracking-tight" style={{ color: "var(--c-85)", marginTop: "60px" }}>Your Niches & Videos</h2>
+              </>)}
+
+              {dashTab === "niches" && (
+                <h2 className="text-xl font-bold tracking-tight" style={{ color: "var(--c-85)", marginTop: "10px" }}>Your Niches & Videos</h2>
+              )}
             </div>
           );
         })()}
 
+        {/* The niche list, its loading skeleton and its empty state all belong
+            to the Niches & Videos tab. Gated together so the tab is either the
+            whole section or nothing. */}
+        {dashTab === "niches" && (<>
         {/* Channel groups */}
         {channelGroups.length > 0 && (
           <div className="space-y-12">
             {channelGroups.map((group) => {
+              // Cap the list where it would otherwise bury the niches below
+              // it, and let it scroll inside the card. Two thresholds because
+              // the grid is one card per row on a phone but two or three from
+              // sm up: 2 videos on mobile, 8 on wider screens.
+              const n = group.projects.length;
+              const listScroll = n > 2
+                ? `max-h-[70vh] overflow-y-auto pr-1 ${n > 8 ? "sm:max-h-[75vh]" : "sm:max-h-none sm:overflow-visible sm:pr-0"}`
+                : "";
               return (
                 <div key={group.channelName} className="rounded-2xl px-4 sm:px-6" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)", paddingTop: "34px", paddingBottom: "34px" }}>
-                  {/* Channel header */}
-                  <div className="flex items-center justify-between gap-3 mb-5">
+                  {/* Channel header. Stacks on phones: with the avatar, name,
+                      URL, delete and New Video all on one row the name got
+                      truncated to a couple of characters and the URL to
+                      "https://www.y…", which identifies nothing. Two rows give
+                      the name the full width and leave room for the count
+                      pill, which had to be hidden on mobile before. */}
+                  {/* Negative margins cancel the card's own padding (34px top,
+                      px-4/px-6 sides) so the band sits flush against the card
+                      edge instead of floating inset. Top corners match the
+                      card's rounded-2xl; only the bottom edge carries a rule. */}
+                  <div className="-mt-[34px] -mx-4 sm:-mx-6 px-4 sm:px-6 py-4 rounded-t-2xl mb-6"
+                    style={{ background: "oklch(0.72 0.25 285 / 0.14)", borderBottom: "1px solid oklch(0.72 0.25 285 / 0.22)" }}>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-bold shrink-0"
+                      {/* Initial tile is decorative, and on a phone it eats
+                          width the channel name and URL need. */}
+                      <div className="w-11 h-11 rounded-xl hidden sm:flex items-center justify-center text-base font-bold shrink-0"
                         style={{
                           background: "oklch(0.72 0.25 285 / 0.15)",
                           color: "var(--brand-text)",
@@ -1662,14 +1793,14 @@ export default function HomePage() {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="hidden sm:inline text-xs px-3 py-1 rounded-full"
+                    <div className="flex items-center gap-2 sm:shrink-0">
+                      <span className="text-xs px-3 py-1 rounded-full shrink-0"
                         style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}>
                         {group.projects.length} {group.projects.length === 1 ? "video" : "videos"}
                       </span>
                       <button
                         onClick={() => setDeleteTarget({ type: "niche", channelName: group.channelName, projectIds: group.projects.map(p => p.id), count: group.projects.length })}
-                        className="p-1.5 rounded-lg transition-all hover:opacity-90"
+                        className="p-2 sm:p-1.5 rounded-lg transition-all hover:opacity-90 shrink-0 ml-auto sm:ml-0"
                         style={{ color: "var(--c-55)", border: "1px solid var(--bd-7)" }}
                         title="Delete niche"
                       >
@@ -1678,16 +1809,17 @@ export default function HomePage() {
                       <button
                         onClick={() => createVideoForChannel(group)}
                         disabled={creating || !authReady || navigatingTo === `new-video-${group.channelName}`}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
+                        className="flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer shrink-0 whitespace-nowrap"
                         style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
                       >
                         {navigatingTo === `new-video-${group.channelName}` ? "Loading…" : "+ New Video"}
                       </button>
                     </div>
                   </div>
+                  </div>
 
                   {/* Project cards — auto-fill grid */}
-                  <div className="grid gap-7"
+                  <div className={`grid gap-7 ${listScroll}`}
                     style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))" }}>
                     {group.projects.map((p) => {
                       // A video is complete once its final assembled MP4
@@ -1764,7 +1896,9 @@ export default function HomePage() {
                             </div>
                           </div>
 
-                          <p className="text-lg font-semibold leading-snug mb-5"
+                          {/* Smaller on phones: a long topic ran to four lines
+                              at text-lg and pushed the progress bar off screen. */}
+                          <p className="text-[13px] sm:text-base font-semibold leading-snug mb-4 sm:mb-5"
                             style={{ color: p.selected_topic ? "var(--c-88)" : "var(--c-40)" }}>
                             {p.selected_topic ?? "No topic selected"}
                           </p>
@@ -1896,6 +2030,7 @@ export default function HomePage() {
             </div>
           </div>
         )}
+        </>)}
         </>
         )}
 
