@@ -11,11 +11,13 @@ import {
   isSelectableClaudeModel,
 } from "@/lib/claude/models";
 import {
+  GEMINI_MODELS,
   GPT_MODELS,
   PROVIDER_STEPS,
   getPromptProviderConfig,
   invalidatePromptProviderCache,
   isPromptProvider,
+  isSelectableGeminiModel,
   isSelectableGptModel,
   type PromptProvider,
 } from "@/lib/claude/providers";
@@ -84,6 +86,8 @@ export async function GET() {
     provider_steps: [...PROVIDER_STEPS],
     gpt_model: providerConfig.gptModel,
     gpt_models: GPT_MODELS,
+    gemini_model: providerConfig.geminiModel,
+    gemini_models: GEMINI_MODELS,
   });
 }
 
@@ -115,6 +119,7 @@ export async function PUT(req: Request) {
     user_selectable_models?: unknown;
     provider?: unknown;
     gpt_model?: string;
+    gemini_model?: string;
   };
 
   // The admin UI groups the three prompt sub-steps (beats, image prompts,
@@ -186,6 +191,25 @@ export async function PUT(req: Request) {
 
     invalidatePromptProviderCache();
     return NextResponse.json({ ok: true, gpt_model: body.gpt_model });
+  }
+
+  // Gemini model update path — which model the gemini provider runs on.
+  if (body.gemini_model !== undefined) {
+    if (!isSelectableGeminiModel(body.gemini_model)) {
+      return NextResponse.json(
+        { error: `Unknown Gemini model: ${body.gemini_model}. Valid: ${GEMINI_MODELS.map((m) => m.id).join(", ")}` },
+        { status: 400 },
+      );
+    }
+
+    const { error } = await supabase
+      .from("product_config")
+      .update({ default_gemini_model: body.gemini_model })
+      .eq("service", "_global");
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    invalidatePromptProviderCache();
+    return NextResponse.json({ ok: true, gemini_model: body.gemini_model });
   }
 
   // Per-step provider path. Checked before the per-step routing branch below,

@@ -1016,54 +1016,6 @@ export default function ChannelPage({ params }: PageProps) {
                 );
               })()}
             </div>
-
-            {/* Topic selection */}
-            <div className="space-y-3">
-              <label className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-50)" }}>
-                Topic Strategy
-              </label>
-              <div className="grid grid-cols-2 gap-2">
-                {(["generate", "custom"] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    onClick={() => setTopicMode(mode)}
-                    className="px-4 py-2.5 rounded-xl text-sm text-left transition-all"
-                    style={{
-                      background: topicMode === mode ? "oklch(0.72 0.25 285 / 0.12)" : "var(--bg-progress)",
-                      border: `1px solid ${topicMode === mode ? "oklch(0.72 0.25 285 / 0.3)" : "var(--bd-8)"}`,
-                      color: topicMode === mode ? "var(--brand-text)" : "var(--c-55)",
-                    }}
-                  >
-                    <p className="font-medium">{mode === "generate" ? "Generate Ideas" : "Custom Topic"}</p>
-                    <p className="text-xs mt-0.5 opacity-70">
-                      {mode === "generate" ? "AI creates 25 video ideas" : "I already have a topic"}
-                    </p>
-                  </button>
-                ))}
-              </div>
-
-              {topicMode === "generate" && (
-                <input
-                  type="text"
-                  placeholder="Optional topic direction hint (e.g. 'faith and perseverance')"
-                  value={topicHint}
-                  onChange={(e) => setTopicHint(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl text-sm outline-none transition-all"
-                  style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-8)", color: "var(--c-90)" }}
-                />
-              )}
-
-              {topicMode === "custom" && (
-                <input
-                  type="text"
-                  placeholder="Enter your video topic"
-                  value={customTopic}
-                  onChange={(e) => setCustomTopic(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl text-sm outline-none transition-all"
-                  style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-8)", color: "var(--c-90)" }}
-                />
-              )}
-            </div>
           </div>
 
           {/* Analysis progress */}

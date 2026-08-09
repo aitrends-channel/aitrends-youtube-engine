@@ -1,8 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getSettings } from "@/lib/settings";
 import { getRoutingForUser, getActiveProductKey, type WorkflowStep, type AnthropicRouting } from "./routing";
-import { getPromptProvider, kieRoutingFor, supportsProviderChoice, type PromptProvider } from "./providers";
+import { getPromptProvider, isKieProvider, kieRoutingFor, supportsProviderChoice, type PromptProvider } from "./providers";
 import { KieGptClient } from "./kieGptClient";
+import { KieGeminiClient } from "./kieGeminiClient";
 
 const KIE_CLAUDE_BASE_URL = "https://api.kie.ai/claude";
 
@@ -282,27 +283,31 @@ export async function getAnthropicClient(
 ): Promise<AnthropicClientHandle> {
   const routing = await getRoutingForUser(userId, step);
 
-  // GPT provider path (Config → Anthropic → Per step). Only the prompt steps
-  // can opt in, and GPT is reachable only through KIE — so a step routed
-  // straight to Anthropic falls back to the KIE key of the same payer rather
-  // than silently moving who pays. The handle's routing is the KIE one so the
-  // cost ledger records credits, not tokens.
+  // Non-Claude provider path (Config → Anthropic → Per step). Only the prompt
+  // steps can opt in, and GPT/Gemini are reachable only through KIE — so a step
+  // routed straight to Anthropic falls back to the KIE key of the same payer
+  // rather than silently moving who pays. The handle's routing is the KIE one
+  // so the cost ledger records credits, not tokens.
   //
-  // The client is a facade (lib/claude/kieGptClient.ts) that mimics the slice
-  // of the Anthropic SDK the prompt steps use, which is what lets
-  // prompts-core.ts stay provider-agnostic. The cast is the one place that
-  // fiction is asserted; keep it narrow by never widening PROVIDER_STEPS to a
-  // step whose call sites use SDK surface the facade doesn't implement.
+  // Both clients are facades (lib/claude/kieGptClient.ts, kieGeminiClient.ts)
+  // that mimic the slice of the Anthropic SDK the prompt steps use, which is
+  // what lets prompts-core.ts stay provider-agnostic. The cast is the one place
+  // that fiction is asserted; keep it narrow by never widening PROVIDER_STEPS
+  // to a step whose call sites use SDK surface the facades don't implement.
   const provider = opts?.forceProvider ?? (step ? await getPromptProvider(step) : "claude");
-  if (step && supportsProviderChoice(step) && provider === "gpt") {
+  if (step && supportsProviderChoice(step) && isKieProvider(provider)) {
     const kieRouting = kieRoutingFor(routing);
-    const gptCreditsRef: { value: number | null } = { value: null };
+    const creditsRef: { value: number | null } = { value: null };
+    const kieKey = await resolveKieKey(kieRouting, userId);
+    const client = provider === "gemini"
+      ? new KieGeminiClient(kieKey, creditsRef)
+      : new KieGptClient(kieKey, creditsRef);
     return {
-      client: new KieGptClient(await resolveKieKey(kieRouting, userId), gptCreditsRef) as unknown as Anthropic,
+      client: client as unknown as Anthropic,
       routing: kieRouting,
       takeLastCreditsConsumed: () => {
-        const v = gptCreditsRef.value;
-        gptCreditsRef.value = null;
+        const v = creditsRef.value;
+        creditsRef.value = null;
         return v;
       },
     };
