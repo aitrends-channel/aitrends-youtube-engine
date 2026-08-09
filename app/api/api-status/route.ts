@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getSettings } from "@/lib/settings";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { User } from "@supabase/supabase-js";
 
 export interface ApiStatusResult {
@@ -25,11 +26,13 @@ export interface ApiStatusResult {
   /**
    * The client's own Anthropic key. No balance to report: Anthropic bills in
    * tokens against the account, and there is no cheap endpoint that returns a
-   * remaining figure the way KIE and ElevenLabs do. Presence and whether it is
-   * switched on is the useful signal, since a saved-but-off key changes nothing
-   * about who pays.
+   * remaining figure the way KIE and ElevenLabs do (usage needs an admin key
+   * and the org usage report, not the key clients paste into Setup). So the
+   * usage figure comes from our own ledger instead: tokens logged against this
+   * user over the last 30 days. Undefined means the query failed, which is
+   * different from zero.
    */
-  anthropic: { configured: boolean; directEnabled: boolean };
+  anthropic: { configured: boolean; directEnabled: boolean; tokens30d?: number };
 }
 
 export async function GET() {
@@ -44,8 +47,34 @@ export async function GET() {
   const anthropic = {
     configured: !!s.anthropic_api_key,
     directEnabled: !!s.anthropic_direct_enabled,
+    tokens30d: await claudeTokens30d(user.id),
   };
   return NextResponse.json({ kie, elevenlabs, anthropic } satisfies ApiStatusResult);
+}
+
+// Anthropic gives clients no readable balance, so the card's usage figure
+// comes from project_costs, which already records token counters for every
+// call routed to the client's own key. Input and output only: cache reads and
+// cache writes are billed at different rates and adding them to a single
+// "tokens" figure would overstate what was spent.
+const CLAUDE_TOKEN_KINDS = ["claude_tokens_in", "claude_tokens_out"];
+
+async function claudeTokens30d(userId: string): Promise<number | undefined> {
+  try {
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const supabase = await createSupabaseServerClient();
+    const { data, error } = await supabase
+      .from("project_costs")
+      .select("units")
+      .eq("user_id", userId)
+      .eq("provider", "anthropic")
+      .in("unit_kind", CLAUDE_TOKEN_KINDS)
+      .gte("created_at", since);
+    if (error) return undefined;
+    return (data ?? []).reduce((sum, r) => sum + (r.units ?? 0), 0);
+  } catch {
+    return undefined;
+  }
 }
 
 // ElevenLabs exposes per-user quota via /v1/user/subscription.

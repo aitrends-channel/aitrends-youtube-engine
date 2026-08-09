@@ -1254,8 +1254,10 @@ export default function HomePage() {
                       // 2x2; the badges stack below the numbers rather than
                       // fighting them for the width.
                       return (
-                        <div className="rounded-xl px-4 sm:px-5 py-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3"
-                          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
+                        <div className="rounded-xl transition-all px-4 sm:px-5 py-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3"
+                          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
+                          onMouseEnter={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; t.style.background = "oklch(1 0 0 / 0.12)"; }}
+                          onMouseLeave={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "var(--bd-card)"; t.style.background = "oklch(1 0 0 / 0.08)"; }}>
                           <div className="min-w-0 space-y-1">
                             <p className="leading-none">
                               <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{nichesUsed}</span>
@@ -1323,15 +1325,19 @@ export default function HomePage() {
                     })()}
 
                     {/* Total Videos — plain */}
-                    <div className="rounded-xl px-5 py-4 flex flex-col items-center justify-center text-center"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
+                    <div className="rounded-xl transition-all px-5 py-4 flex flex-col items-center justify-center text-center"
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
+                      onMouseEnter={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; t.style.background = "oklch(1 0 0 / 0.12)"; }}
+                      onMouseLeave={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "var(--bd-card)"; t.style.background = "oklch(1 0 0 / 0.08)"; }}>
                       <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{total}</p>
                       <p className="text-xs" style={{ color: "var(--c-42)" }}>Total Videos</p>
                     </div>
 
                     {/* Completed */}
-                    <div className="rounded-xl px-5 py-4 flex items-center justify-between"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
+                    <div className="rounded-xl transition-all px-5 py-4 flex items-center justify-between"
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
+                      onMouseEnter={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; t.style.background = "oklch(1 0 0 / 0.12)"; }}
+                      onMouseLeave={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "var(--bd-card)"; t.style.background = "oklch(1 0 0 / 0.08)"; }}>
                       <div>
                         <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{completed}</p>
                         <p className="text-xs" style={{ color: "var(--c-42)" }}>Completed</p>
@@ -1344,8 +1350,10 @@ export default function HomePage() {
                     </div>
 
                     {/* In Progress */}
-                    <div className="rounded-xl px-5 py-4 flex items-center justify-between"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
+                    <div className="rounded-xl transition-all px-5 py-4 flex items-center justify-between"
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
+                      onMouseEnter={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; t.style.background = "oklch(1 0 0 / 0.12)"; }}
+                      onMouseLeave={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "var(--bd-card)"; t.style.background = "oklch(1 0 0 / 0.08)"; }}>
                       <div>
                         <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{inProgress}</p>
                         <p className="text-xs" style={{ color: "var(--c-42)" }}>In Progress</p>
@@ -1543,7 +1551,7 @@ export default function HomePage() {
               {(() => {
                 const kie = apiStatus?.kie as { configured: boolean; valid: boolean | null; credits?: number } | undefined;
                 const elevenlabs = apiStatus?.elevenlabs as { configured: boolean; valid: boolean | null; remaining?: number; limit?: number; balanceIssue?: "scope" | "key_id" } | undefined;
-                const anthropic = apiStatus?.anthropic as { configured: boolean; directEnabled: boolean } | undefined;
+                const anthropic = apiStatus?.anthropic as { configured: boolean; directEnabled: boolean; tokens30d?: number } | undefined;
 
                 function StatusBadge({ data, color }: { data: { configured: boolean; valid: boolean | null } | undefined; color: string }) {
                   void color;
@@ -1598,6 +1606,23 @@ export default function HomePage() {
                   );
                 }
 
+                // Same geometry as CreditsBar/UsageBar, drawn empty, for a
+                // card that has a quota but cannot read it right now. Keeps
+                // the row of cards visually level instead of leaving one with
+                // a bare line of text where its neighbour has a bar.
+                function EmptyBar({ label }: { label?: string }) {
+                  return (
+                    <div>
+                      {label && (
+                        <div className="flex justify-between text-[10px] mb-1" style={{ color: "var(--c-30)" }}>
+                          <span>{label}</span>
+                        </div>
+                      )}
+                      <div className="w-full rounded-full h-1.5" style={{ background: "oklch(1 0 0 / 0.08)" }} />
+                    </div>
+                  );
+                }
+
                 function StaticInfo({ label, value, color }: { label: string; value: string; color: string }) {
                   return (
                     <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
@@ -1643,7 +1668,10 @@ export default function HomePage() {
                             <CreditsBar credits={kie.credits} />
                           )}
                           {kie?.configured && kie.valid && kie.credits === undefined && (
-                            <p className="text-[10px] leading-relaxed" style={{ color: "var(--c-30)" }}>Check balance in KIE dashboard</p>
+                            <>
+                              <EmptyBar label="Balance unknown" />
+                              <p className="text-[10px] leading-relaxed mt-2" style={{ color: "var(--c-30)" }}>Check balance in KIE dashboard</p>
+                            </>
                           )}
                         </div>
                       </div>
@@ -1672,16 +1700,17 @@ export default function HomePage() {
                           {elevenlabs?.configured && elevenlabs.valid && typeof elevenlabs.remaining === "number" && typeof elevenlabs.limit === "number" && (
                             <UsageBar used={elevenlabs.limit - elevenlabs.remaining} limit={elevenlabs.limit} color="#c084fc" />
                           )}
+                          {/* Keep a bar in the same place when the quota can't
+                              be read, so the card matches KIE instead of
+                              collapsing to a line of text. */}
+                          {elevenlabs?.configured && !(elevenlabs.valid && typeof elevenlabs.remaining === "number" && typeof elevenlabs.limit === "number") && (
+                            <EmptyBar label="Usage" />
+                          )}
                           {/* Only claim a reason when the API told us one. This
                               used to show the scope hint for any missing balance,
                               including a key that cannot authenticate at all,
                               which sent people to change permissions on a key
                               that needed replacing. */}
-                          {elevenlabs?.configured && elevenlabs.balanceIssue === "key_id" && (
-                            <p className="text-[10px] leading-relaxed" style={{ color: "var(--accent-amber-text)" }}>
-                              That looks like a key ID, not a key. Paste the value starting with sk_, shown when you create or rotate the key.
-                            </p>
-                          )}
                           {elevenlabs?.configured && elevenlabs.valid && elevenlabs.balanceIssue === "scope" && (
                             <p className="text-[10px] leading-relaxed" style={{ color: "var(--c-30)" }}>Enable user_read scope on your key to see character balance</p>
                           )}
@@ -1711,13 +1740,31 @@ export default function HomePage() {
                             </span>
                           </div>
                         </div>
-                        <p className="text-[10px] leading-relaxed mt-auto pt-5" style={{ color: "var(--c-30)" }}>
-                          {!anthropic?.configured
-                            ? "Not connected. Writing steps run through your KIE credits."
-                            : anthropic.directEnabled
-                              ? "Writing steps bill your Anthropic account. Balance lives at console.anthropic.com."
-                              : "Key saved but switched off. Turn it on in Setup to bill Anthropic instead of KIE."}
-                        </p>
+                        <div className="mt-auto pt-5">
+                          {/* There is no quota to fill, so a bar would sit at
+                              zero forever. Show what we do know instead: the
+                              tokens our own ledger recorded against this
+                              account over the last 30 days. */}
+                          <div className="flex justify-between text-[10px]" style={{ color: "var(--c-40)" }}>
+                            <span>Tokens, 30 days</span>
+                            <span className="tabular-nums font-medium">
+                              {typeof anthropic?.tokens30d === "number"
+                                ? anthropic.tokens30d >= 1_000_000
+                                  ? `${(anthropic.tokens30d / 1_000_000).toFixed(1)}M`
+                                  : anthropic.tokens30d >= 1_000
+                                    ? `${Math.round(anthropic.tokens30d / 1_000)}k`
+                                    : anthropic.tokens30d.toLocaleString()
+                                : "—"}
+                            </span>
+                          </div>
+                          {(!anthropic?.configured || anthropic.directEnabled) && (
+                            <p className="text-[10px] leading-relaxed mt-2" style={{ color: "var(--c-30)" }}>
+                              {anthropic?.configured
+                                ? "Writing steps bill your Anthropic account. Balance lives at console.anthropic.com."
+                                : "Not connected. Writing steps run through your KIE credits."}
+                            </p>
+                          )}
+                        </div>
                       </div>
 
                     </div>
