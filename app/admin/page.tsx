@@ -3370,7 +3370,7 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
               {cardProvider ? (
                 <p className="text-[11px] leading-relaxed rounded-lg px-3 py-2"
                   style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.06)", color: "var(--c-50)" }}>
-                  Routing doesn&apos;t apply on {PROVIDER_LABELS[cardProvider]} — it&apos;s only reachable through KIE.
+                  Routing doesn&apos;t apply on {PROVIDER_LABELS[cardProvider]}, which is only reachable through KIE.
                   This step bills{" "}
                   <span className="font-semibold">
                     {paysHeclus ? "Heclus's KIE key" : "each user's own KIE key"}

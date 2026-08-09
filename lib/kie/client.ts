@@ -33,8 +33,43 @@ export class KieUpstreamError extends Error {
 // handling above.
 export function looksLikeInsufficientCredits(status: number, body: string, code?: number): boolean {
   if (status === 402 || code === 402) return true;
-  return /insufficient\s+(credit|balance|fund)|out\s+of\s+credit|no\s+credit/i.test(body);
+  // Both word orders: KIE's own /claude relay says "Credits insufficient",
+  // which the insufficient-first pattern missed entirely — a genuinely empty
+  // wallet was being reported as a generic failure and retried.
+  return /insufficient\s+(credit|balance|fund)|credits?\s+insufficient|out\s+of\s+credit|no\s+credit/i.test(body);
 }
+
+/**
+ * The account's actual KIE balance, or null if it can't be read.
+ *
+ * Exists because "looks like an out-of-credit error" is not the same as "the
+ * wallet is empty": a bare 402 from some other layer reads identically, and
+ * stopping a run on that leaves a user staring at "top up" with a hundred
+ * credits in the account. Callers that are about to abandon work should check
+ * the balance first and only believe the error if the money really is gone.
+ *
+ * Endpoint name is unintuitive — `/chat/credit` is the global account balance,
+ * not chat-specific — and the number arrives directly in `data` (it can be
+ * negative when overdrawn). Same call the API-status card uses.
+ */
+export async function fetchKieBalance(key: string): Promise<number | null> {
+  if (!key) return null;
+  try {
+    const res = await fetch(`${KIE_BASE_URL}/api/v1/chat/credit`, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (!res.ok) return null;
+    const body = await res.json() as { data?: unknown };
+    return typeof body.data === "number" ? body.data : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Below this a batch can't realistically be paid for — the priciest prompt
+ *  call we've measured runs about 5 credits. Used to decide whether an
+ *  out-of-credit-looking error is genuine. */
+export const KIE_MIN_USABLE_CREDITS = 1;
 
 // KIE sits behind Cloudflare, so a 5xx (502/503/504) comes back as a full
 // HTML error page — kilobytes of markup. Embedding that verbatim in the

@@ -6,6 +6,7 @@ import { createHash, randomUUID } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { getAnthropicClient, SYSTEM_PROMPT } from "@/lib/claude/client";
 import { modelParamsFor } from "@/lib/claude/models";
+import { KIE_MIN_USABLE_CREDITS, looksLikeInsufficientCredits } from "@/lib/kie/client";
 import {
   buildBeatsCached,
   buildBeatsDynamic,
@@ -41,6 +42,46 @@ import { logAnthropicCost } from "@/lib/costs";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 import { friendlyError } from "@/lib/errors/friendly";
+
+/**
+ * Whether a failed batch means the KIE wallet is actually empty.
+ *
+ * An empty wallet is worth stopping for: it won't fix itself, every remaining
+ * batch fails the same way, and batches persist as they land so whatever the
+ * balance covered is already saved.
+ *
+ * But "looks like an out-of-credit error" is NOT the same as "the wallet is
+ * empty". A bare 402 from any other layer reads identically, and acting on it
+ * abandoned a run with 106 credits in the account — the user was told to top up
+ * a wallet that was fine, and the 48 remaining beats never got their retry. So
+ * the message match is only a suspicion; the balance is what settles it.
+ *
+ * checkBalance is undefined on direct-to-Anthropic routings (no KIE wallet) and
+ * returns null when the balance can't be read. In both cases we DON'T stop —
+ * an unverified guess is what caused the bad call, and a wrongly-retried batch
+ * only costs a rejected request, which KIE doesn't bill.
+ */
+async function isOutOfCredits(err: unknown, checkBalance?: () => Promise<number | null>): Promise<boolean> {
+  const status = (err as { status?: number })?.status;
+  const msg =
+    (err as { message?: string })?.message ??
+    (err as { error?: { message?: string } })?.error?.message ??
+    String(err);
+  if (!looksLikeInsufficientCredits(status ?? 0, msg, status)) return false;
+
+  if (!checkBalance) return false;
+  const balance = await checkBalance();
+  if (balance === null) {
+    console.warn(`[prompts] out-of-credit-looking error but balance unreadable — treating as retryable: ${msg}`);
+    return false;
+  }
+  if (balance >= KIE_MIN_USABLE_CREDITS) {
+    console.warn(`[prompts] out-of-credit-looking error with ${balance} credits still available — treating as retryable: ${msg}`);
+    return false;
+  }
+  console.warn(`[prompts] KIE balance is ${balance} — wallet is genuinely empty: ${msg}`);
+  return true;
+}
 
 function assertComplete(stopReason: string | null | undefined, label: string) {
   if (stopReason === "max_tokens") {
@@ -1278,7 +1319,7 @@ export async function fillPrompts(
     .eq("user_id", userId)
     .gte("current_state", 14);
   try {
-    const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(userId, "image_prompts");
+    const { client: anthropic, routing, takeLastCreditsConsumed, checkKieBalance } = await getAnthropicClient(userId, "image_prompts");
     send({ type: "status", message: "Loading beats..." });
 
     // Same debris sweep as generateBeats: a beat with no segment has no
@@ -1530,7 +1571,7 @@ export async function fillPrompts(
           blankFields,
           zodIssues: parsed.error.issues,
         });
-        throw new Error(`${label} returned prompts with missing fields (${blankFields.slice(0, 3).join("; ") || "schema mismatch"}). Try again — prompts saved so far are kept.`);
+        throw new Error(`${label} returned prompts with missing fields (${blankFields.slice(0, 3).join("; ") || "schema mismatch"}). Try again. Prompts saved so far are kept.`);
       }
       return parsed.data.beats;
     }
@@ -1555,7 +1596,7 @@ export async function fillPrompts(
       const strays = filled.length - usable.length;
       if (strays > 0) console.warn(`[fill-prompts] ${label} dropped ${strays} beat(s) with numbers outside the batch`);
       if (usable.length === 0) {
-        throw new Error(`${label} returned no prompts for the beats it was given. Try again — prompts saved so far are kept.`);
+        throw new Error(`${label} returned no prompts for the beats it was given. Try again. Prompts saved so far are kept.`);
       }
       // Deliberately no assertPromptsRunActive between Claude returning and
       // this write: the work is already paid for, so a mid-call Stop still
@@ -1582,7 +1623,7 @@ export async function fillPrompts(
       console.log(`[fill-prompts] ${label} wrote ${written ?? "?"}/${usable.length} beat(s) run=${runId}`);
       if (written === 0) {
         throw new Error(
-          `${label}: the database rejected all ${usable.length} prompts (0 rows updated) — the beats may have been ` +
+          `${label}: the database rejected all ${usable.length} prompts (0 rows updated). The beats may have been ` +
           `renumbered or deleted mid-run. Prompts saved so far are kept.`,
         );
       }
@@ -1596,31 +1637,81 @@ export async function fillPrompts(
     // Admin-tunable, shared with the combined image pass — same provider,
     // same call size, so the same concurrency ceiling applies.
     const CONCURRENCY = (await getConcurrencyConfig()).image_prompts_chunks;
-    let nextIdx = 0;
     let completed = 0;
-    let firstError: Error | null = null;
 
-    async function worker() {
-      while (true) {
-        if (firstError) return;
-        const myIdx = nextIdx++;
-        if (myIdx >= batches.length) return;
-        try {
-          await processBatch(myIdx);
-          completed++;
-          if (totalBatchesAbsolute > 1) {
-            send({ type: "progress", current: Math.min(startBatchIdx + completed, totalBatchesAbsolute), total: totalBatchesAbsolute });
+    // One Generate has to finish the whole step, so a failed batch must not
+    // take the rest of the run down with it.
+    //
+    // It used to: the first error stopped every worker, and the remaining
+    // batches never ran. retryClaudeCall already gives each batch 3 attempts,
+    // but the KIE relays intermittently return an empty body, so a batch still
+    // exhausts all three often enough that across ~25 batches a single run was
+    // near-certain to die partway — leaving the user to press Generate again,
+    // which is also the button that offers to wipe what they'd already paid for.
+    //
+    // Now a failed batch is set aside and re-swept after the others finish.
+    // Sweeps stop early once nothing is left or a sweep makes no progress, so a
+    // genuinely broken batch costs a bounded number of extra attempts rather
+    // than looping. Cancellation is the one thing that still aborts everything.
+    const MAX_SWEEPS = 3;
+    let queue = batches.map((_, i) => i);
+    let cancellation: Error | null = null;
+    let outOfCredits = false;
+
+    for (let sweep = 1; sweep <= MAX_SWEEPS && queue.length > 0 && !cancellation && !outOfCredits; sweep++) {
+      const pendingIdxs = queue;
+      queue = [];
+      let cursor = 0;
+
+      async function worker() {
+        while (true) {
+          if (cancellation || outOfCredits) return;
+          const slot = cursor++;
+          if (slot >= pendingIdxs.length) return;
+          const myIdx = pendingIdxs[slot];
+          try {
+            await processBatch(myIdx);
+            completed++;
+            if (totalBatchesAbsolute > 1) {
+              send({ type: "progress", current: Math.min(startBatchIdx + completed, totalBatchesAbsolute), total: totalBatchesAbsolute });
+            }
+          } catch (err) {
+            const e = err instanceof Error ? err : new Error(String(err));
+            // A cancel is a decision, not a failure — stop the whole run.
+            if (e.message === CANCELLED_MSG) {
+              cancellation = e;
+              return;
+            }
+            // An empty wallet won't fix itself, so stop asking. Everything the
+            // balance did cover is already written by the per-batch persist.
+            if (await isOutOfCredits(e, checkKieBalance)) {
+              outOfCredits = true;
+              console.warn(`[fill-prompts] batch ${myIdx + 1} stopped on a confirmed empty KIE balance — keeping what's saved: ${e.message}`);
+              return;
+            }
+            console.warn(`[fill-prompts] batch ${myIdx + 1} failed on sweep ${sweep}: ${e.message}`);
+            queue.push(myIdx);
           }
-        } catch (err) {
-          if (!firstError) firstError = err instanceof Error ? err : new Error(String(err));
         }
       }
+
+      await Promise.all(
+        Array.from({ length: Math.min(CONCURRENCY, pendingIdxs.length) }, () => worker()),
+      );
+
+      if (cancellation || outOfCredits) break;
+      if (queue.length === 0) break;
+      if (queue.length === pendingIdxs.length) {
+        // Nothing got through this time — another identical sweep would just
+        // spend money to fail the same way. Let the completeness check below
+        // report what's left.
+        console.warn(`[fill-prompts] sweep ${sweep} made no progress on ${queue.length} batch(es) — stopping retries`);
+        break;
+      }
+      send({ type: "status", message: `Retrying ${queue.length} section${queue.length === 1 ? "" : "s"} that didn't come back…` });
     }
 
-    await Promise.all(
-      Array.from({ length: Math.min(CONCURRENCY, batches.length) }, () => worker()),
-    );
-    if (firstError) throw firstError;
+    if (cancellation) throw cancellation;
 
     // current_state 14 is the client's completion signal and it means every
     // beat has a prompt — so re-read rather than inferring it from the batch
@@ -1632,7 +1723,17 @@ export async function fillPrompts(
       .eq("project_id", projectId);
     const stillMissing = (afterRows ?? []).filter((r) => !(r.image_prompt as string | null)?.trim()).length;
     if (stillMissing > 0) {
-      throw new Error(`${stillMissing} beat${stillMissing === 1 ? "" : "s"} still need a prompt. Click Resume to finish them — prompts saved so far are kept.`);
+      const done = (afterRows ?? []).length - stillMissing;
+      // Say which of the two situations this is. Running out of credit mid-run
+      // isn't a fault to debug — the balance bought as many prompts as it could
+      // and they're all saved. Reporting it as a generic failure sent users
+      // looking for a bug instead of to the top-up page.
+      if (outOfCredits) {
+        throw new Error(
+          `Ran out of KIE credits after ${done} of ${done + stillMissing} beats. Those ${done} are saved. Top up at kie.ai, then click Resume to finish the remaining ${stillMissing}.`,
+        );
+      }
+      throw new Error(`${stillMissing} beat${stillMissing === 1 ? "" : "s"} still need a prompt. Click Resume to finish them. Prompts saved so far are kept.`);
     }
     const { error: finalUpdErr } = await supabase
       .from("projects")
@@ -1654,7 +1755,7 @@ export async function fillPrompts(
 export async function generateVideos(projectId: string, userId: string, send: (data: object) => void, model: string) {
   const runId = await claimPromptsRun(projectId, userId, "videos");
   try {
-  const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(userId, "video_prompts");
+  const { client: anthropic, routing, takeLastCreditsConsumed, checkKieBalance } = await getAnthropicClient(userId, "video_prompts");
   send({ type: "status", message: "Loading beats..." });
 
   const [beatsRes, projectRes] = await Promise.all([
@@ -1850,33 +1951,76 @@ export async function generateVideos(projectId: string, userId: string, send: (d
   // retryClaudeCall absorbs any 429s.
   // Admin-tunable: product_config.batched_processes.video_prompts_chunks.
   const CONCURRENCY = (await getConcurrencyConfig()).video_prompts_chunks;
-  let nextIdx = 0;
   let completed = 0;
-  let firstError: Error | null = null;
 
-  async function worker() {
-    while (true) {
-      if (firstError) return;
-      const myIdx = nextIdx++;
-      if (myIdx >= chunks.length) return;
-      try {
-        await processChunk(myIdx);
-        completed++;
-        // Progress tracks completions, not starts — parallel chunks may
-        // finish out of order, but the count is monotone.
-        if (totalChunksAbsolute > 1) {
-          send({ type: "progress", current: startChunkIdx + completed, total: totalChunksAbsolute });
+  // Same sweep-until-done shape as fillPrompts: a chunk that fails is set
+  // aside and retried after the others rather than killing the run, so one
+  // Generate finishes the step. Chunks write by beat number and already
+  // tolerate finishing out of order, so re-running one later is safe.
+  const MAX_SWEEPS = 3;
+  let queue = chunks.map((_, i) => i);
+  let cancellation: Error | null = null;
+  let outOfCredits = false;
+
+  for (let sweep = 1; sweep <= MAX_SWEEPS && queue.length > 0 && !cancellation && !outOfCredits; sweep++) {
+    const pendingIdxs = queue;
+    queue = [];
+    let cursor = 0;
+
+    async function worker() {
+      while (true) {
+        if (cancellation || outOfCredits) return;
+        const slot = cursor++;
+        if (slot >= pendingIdxs.length) return;
+        const myIdx = pendingIdxs[slot];
+        try {
+          await processChunk(myIdx);
+          completed++;
+          // Progress tracks completions, not starts — parallel chunks may
+          // finish out of order, but the count is monotone.
+          if (totalChunksAbsolute > 1) {
+            send({ type: "progress", current: startChunkIdx + completed, total: totalChunksAbsolute });
+          }
+        } catch (err) {
+          const e = err instanceof Error ? err : new Error(String(err));
+          if (e.message === CANCELLED_MSG) {
+            cancellation = e;
+            return;
+          }
+          // Empty wallet — stop asking, keep what the balance covered.
+          if (await isOutOfCredits(e, checkKieBalance)) {
+            outOfCredits = true;
+            console.warn(`[video-prompts] chunk ${myIdx + 1} stopped on a confirmed empty KIE balance — keeping what's saved: ${e.message}`);
+            return;
+          }
+          console.warn(`[video-prompts] chunk ${myIdx + 1} failed on sweep ${sweep}: ${e.message}`);
+          queue.push(myIdx);
         }
-      } catch (err) {
-        if (!firstError) firstError = err instanceof Error ? err : new Error(String(err));
       }
     }
+
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, pendingIdxs.length) }, () => worker())
+    );
+
+    if (cancellation || outOfCredits) break;
+    if (queue.length === 0) break;
+    if (queue.length === pendingIdxs.length) {
+      console.warn(`[video-prompts] sweep ${sweep} made no progress on ${queue.length} chunk(s) — stopping retries`);
+      break;
+    }
+    send({ type: "status", message: `Retrying ${queue.length} section${queue.length === 1 ? "" : "s"} that didn't come back…` });
   }
 
-  await Promise.all(
-    Array.from({ length: Math.min(CONCURRENCY, chunks.length) }, () => worker())
-  );
-  if (firstError) throw firstError;
+  if (cancellation) throw cancellation;
+  if (outOfCredits) {
+    throw new Error(
+      `Ran out of KIE credits after ${completed} of ${chunks.length} sections. Those are saved. Top up at kie.ai, then click Generate Remaining to finish the rest.`,
+    );
+  }
+  if (queue.length > 0) {
+    throw new Error(`${queue.length} section${queue.length === 1 ? "" : "s"} could not be written after ${MAX_SWEEPS} attempts. Click Generate Remaining to finish them. Prompts saved so far are kept.`);
+  }
 
   await supabase
     .from("projects")
