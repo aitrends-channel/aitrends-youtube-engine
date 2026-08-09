@@ -565,6 +565,26 @@ function StepCard({ num, title, description, state, windingDown, doneLabel, pend
         {isError && (
           <div className="space-y-2">
             <p className="text-xs leading-relaxed" style={{ color: "oklch(0.65 0.15 25)" }}>{state.error}</p>
+            {/* The question every failure raises is "did that just cost me
+                money". KIE bills on completed generations, so attempts that
+                fail (empty responses, relay 500s, rejected requests) are not
+                charged. Worded as "attempts that fail" rather than a blanket
+                "failed generations are free": a call that completes upstream
+                and is then discarded on our side (schema mismatch, a write that
+                lands nowhere) IS billed, and claiming otherwise would be a
+                promise the cost ledger contradicts.
+
+                Styled as an info card matching the beatsStale notice above, so
+                it reads as reassurance sitting beside the error rather than as
+                more of the error itself. */}
+            <div className="rounded-xl px-3 py-2.5 flex items-start gap-2 text-[11px] leading-relaxed"
+              style={{ background: "oklch(0.62 0.15 220 / 0.10)", border: "1px solid oklch(0.62 0.15 220 / 0.35)", color: "var(--c-60)" }}>
+              <span aria-hidden>ⓘ</span>
+              <span>
+                <strong style={{ color: "var(--c-90)" }}>NOTE:</strong> Attempts that fail aren&apos;t charged.
+                KIE only bills generations it completes, and prompts already saved are kept.
+              </span>
+            </div>
             {errorAction}
           </div>
         )}
@@ -2314,28 +2334,20 @@ export default function PromptsPage({ params }: PageProps) {
     ) : null;
 
   // Offer to move this step off KIE and onto the client's own Anthropic key.
-  // Shown only on a failure, and only when it would actually change something:
-  //   • the step's routing is client-paid (otherwise Heclus is covering it and
-  //     the client's key is never consulted), and
-  //   • they aren't already on their own key — if they are, KIE isn't in the
-  //     path and the failure came from Anthropic itself.
-  // Every recorded prompts failure so far has been a KIE 500 on /claude, which
-  // is exactly what this sidesteps.
-  function anthropicOffer(step: "beats" | "image" | "video"): ReactNode {
-    if (!anthropicRouting || anthropicRouting.enabled) return null;
-    const eligible = step === "video"
-      ? anthropicRouting.eligible.video_prompts
-      : anthropicRouting.eligible.image_prompts;
-    if (!eligible) return null;
-    return (
-      <button
-        onClick={() => { setAnthropicKeyDraft(""); setRerouteFor(step); }}
-        className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all hover:opacity-80"
-        style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "var(--accent-purple-text)" }}
-      >
-        Generate via direct Anthropic?
-      </button>
-    );
+  //
+  // Currently disabled. The offer was written when every recorded prompts
+  // failure was a KIE 500 on /claude, so rerouting to Anthropic genuinely
+  // sidestepped the cause. That is no longer the shape of a failure: the prompt
+  // steps can run on GPT or Gemini (Config → Anthropic → Per step), where a
+  // failure has nothing to do with Anthropic and the offer would move the user
+  // onto a different model family — spending their Anthropic key to "fix"
+  // something Anthropic wasn't involved in.
+  //
+  // The reroute machinery below (confirmReroute, the key dialog) is left intact
+  // so this is one line to bring back once it can tell which provider the step
+  // is actually on.
+  function anthropicOffer(_step: "beats" | "image" | "video"): ReactNode {
+    return null;
   }
 
   // Turn direct routing on (adding the key first if this is the client's first
