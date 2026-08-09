@@ -9,6 +9,12 @@ import { PROMPTS_THREE_STEP } from "@/lib/feature-flags";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 
+// Matches analyze/ideas/script. Its absence was invisible locally, where
+// next dev has no ceiling, and fatal on Vercel: the platform default killed a
+// 275-beat fill at ~282s mid-batch. A hard kill runs no finally, so the run id
+// was never released and the step sat on "Running…" with no Resume offered.
+export const maxDuration = 800;
+
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }

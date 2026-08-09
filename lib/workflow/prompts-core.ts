@@ -95,7 +95,23 @@ function assertComplete(stopReason: string | null | undefined, label: string) {
 // run) or nulled (user cleared the step). The error message is unique
 // so the SSE wrapper / client can recognize it as a user-driven cancel
 // rather than a real failure.
-const CANCELLED_MSG = "Prompts generation was cancelled — the step was cleared while in flight.";
+const CANCELLED_MSG = "Prompts generation was cancelled. The step was cleared while in flight.";
+
+/**
+ * Soft deadline, ~80s under the prompts route's maxDuration of 800s. Mirrors
+ * what the script route does.
+ *
+ * A hard platform kill is the worst way for a run to end: no finally runs, so
+ * the run id is never released, and the step is left claiming to be running
+ * with only a Stop button and no Resume offered. Stopping ourselves a little
+ * early means the normal completion path executes, the run id is released, and
+ * the remainder shows up as resumable.
+ *
+ * The buffer covers the completeness re-read and the final writes. Batches
+ * already in flight are allowed to finish and persist; the deadline only stops
+ * NEW ones from starting.
+ */
+const SOFT_DEADLINE_MS = 720_000;
 
 // How often a live stream re-checks whether the run has been cancelled.
 const CANCEL_POLL_MS = 5_000;
@@ -1657,8 +1673,12 @@ export async function fillPrompts(
     let queue = batches.map((_, i) => i);
     let cancellation: Error | null = null;
     let outOfCredits = false;
+    // Wall clock for the soft deadline. Anchored here rather than at function
+    // entry so the beat load and consistency sheet don't eat into it.
+    const runStartedAt = Date.now();
+    let deadlineHit = false;
 
-    for (let sweep = 1; sweep <= MAX_SWEEPS && queue.length > 0 && !cancellation && !outOfCredits; sweep++) {
+    for (let sweep = 1; sweep <= MAX_SWEEPS && queue.length > 0 && !cancellation && !outOfCredits && !deadlineHit; sweep++) {
       const pendingIdxs = queue;
       queue = [];
       let cursor = 0;
@@ -1666,6 +1686,15 @@ export async function fillPrompts(
       async function worker() {
         while (true) {
           if (cancellation || outOfCredits) return;
+          // Stop STARTING work near the platform ceiling. Anything already
+          // running finishes and persists; the run then ends through the
+          // normal path so the run id is released and Resume appears.
+          if (Date.now() - runStartedAt > SOFT_DEADLINE_MS) {
+            deadlineHit = true;
+            queue.push(...pendingIdxs.slice(cursor));
+            cursor = pendingIdxs.length;
+            return;
+          }
           const slot = cursor++;
           if (slot >= pendingIdxs.length) return;
           const myIdx = pendingIdxs[slot];
@@ -1699,7 +1728,7 @@ export async function fillPrompts(
         Array.from({ length: Math.min(CONCURRENCY, pendingIdxs.length) }, () => worker()),
       );
 
-      if (cancellation || outOfCredits) break;
+      if (cancellation || outOfCredits || deadlineHit) break;
       if (queue.length === 0) break;
       if (queue.length === pendingIdxs.length) {
         // Nothing got through this time — another identical sweep would just
@@ -1731,6 +1760,11 @@ export async function fillPrompts(
       if (outOfCredits) {
         throw new Error(
           `Ran out of KIE credits after ${done} of ${done + stillMissing} beats. Those ${done} are saved. Top up at kie.ai, then click Resume to finish the remaining ${stillMissing}.`,
+        );
+      }
+      if (deadlineHit) {
+        throw new Error(
+          `Paused after ${done} of ${done + stillMissing} beats to stay inside the request time limit. Those ${done} are saved. Click Resume to continue with the remaining ${stillMissing}.`,
         );
       }
       throw new Error(`${stillMissing} beat${stillMissing === 1 ? "" : "s"} still need a prompt. Click Resume to finish them. Prompts saved so far are kept.`);
@@ -1961,8 +1995,10 @@ export async function generateVideos(projectId: string, userId: string, send: (d
   let queue = chunks.map((_, i) => i);
   let cancellation: Error | null = null;
   let outOfCredits = false;
+  const runStartedAt = Date.now();
+  let deadlineHit = false;
 
-  for (let sweep = 1; sweep <= MAX_SWEEPS && queue.length > 0 && !cancellation && !outOfCredits; sweep++) {
+  for (let sweep = 1; sweep <= MAX_SWEEPS && queue.length > 0 && !cancellation && !outOfCredits && !deadlineHit; sweep++) {
     const pendingIdxs = queue;
     queue = [];
     let cursor = 0;
@@ -1970,6 +2006,14 @@ export async function generateVideos(projectId: string, userId: string, send: (d
     async function worker() {
       while (true) {
         if (cancellation || outOfCredits) return;
+        // Same soft deadline as the fill pass: stop starting work before the
+        // platform kills us, so the run ends resumable instead of wedged.
+        if (Date.now() - runStartedAt > SOFT_DEADLINE_MS) {
+          deadlineHit = true;
+          queue.push(...pendingIdxs.slice(cursor));
+          cursor = pendingIdxs.length;
+          return;
+        }
         const slot = cursor++;
         if (slot >= pendingIdxs.length) return;
         const myIdx = pendingIdxs[slot];
@@ -2003,7 +2047,7 @@ export async function generateVideos(projectId: string, userId: string, send: (d
       Array.from({ length: Math.min(CONCURRENCY, pendingIdxs.length) }, () => worker())
     );
 
-    if (cancellation || outOfCredits) break;
+    if (cancellation || outOfCredits || deadlineHit) break;
     if (queue.length === 0) break;
     if (queue.length === pendingIdxs.length) {
       console.warn(`[video-prompts] sweep ${sweep} made no progress on ${queue.length} chunk(s) — stopping retries`);
@@ -2017,6 +2061,9 @@ export async function generateVideos(projectId: string, userId: string, send: (d
     throw new Error(
       `Ran out of KIE credits after ${completed} of ${chunks.length} sections. Those are saved. Top up at kie.ai, then click Generate Remaining to finish the rest.`,
     );
+  }
+  if (deadlineHit) {
+    throw new Error(`Paused after ${completed} of ${chunks.length} sections to stay inside the request time limit. Those are saved. Click Generate Remaining to continue.`);
   }
   if (queue.length > 0) {
     throw new Error(`${queue.length} section${queue.length === 1 ? "" : "s"} could not be written after ${MAX_SWEEPS} attempts. Click Generate Remaining to finish them. Prompts saved so far are kept.`);
