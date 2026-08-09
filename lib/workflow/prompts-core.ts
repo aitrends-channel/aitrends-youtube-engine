@@ -1539,6 +1539,11 @@ export async function fillPrompts(
       await assertPromptsRunActive(projectId, runId);
       const batch = batches[i];
       const label = `fill batch ${i + 1}/${batches.length}`;
+      // Beat numbers and run id on every batch: when a step stalls while the
+      // cost ledger keeps growing, this is what distinguishes "the model kept
+      // being asked" from "a second run took over" from "the writes went
+      // nowhere".
+      console.log(`[fill-prompts] ${label} start beats=${batch[0]?.beatNumber}-${batch[batch.length - 1]?.beatNumber} run=${runId}`);
       const filled = await genFillForBeats(batch, label, 0);
 
       // Keep only beats this batch actually asked for. The model is told not
@@ -1555,7 +1560,7 @@ export async function fillPrompts(
       // Deliberately no assertPromptsRunActive between Claude returning and
       // this write: the work is already paid for, so a mid-call Stop still
       // banks it. The assert at the top of the next batch stops the run.
-      const { error: batchErr } = await supabase.rpc("batch_update_beat_image_prompts", {
+      const { data: updatedRows, error: batchErr } = await supabase.rpc("batch_update_beat_image_prompts", {
         p_project_id: projectId,
         p_updates: usable.map((b) => ({
           beat_number: b.beatNumber,
@@ -1567,6 +1572,20 @@ export async function fillPrompts(
         })),
       });
       if (batchErr) throw new Error(`Failed to save prompts for ${label}: ${batchErr.message}`);
+      // The RPC returns how many rows it actually touched, and we used to
+      // ignore it — so a write that matched nothing was indistinguishable from
+      // success. That is the one shape that burns credits invisibly: the model
+      // call is already billed by the time we get here, and a silent zero-row
+      // write leaves the step looking stuck while the ledger keeps climbing.
+      // Log every write, and treat a zero as the failure it is.
+      const written = typeof updatedRows === "number" ? updatedRows : null;
+      console.log(`[fill-prompts] ${label} wrote ${written ?? "?"}/${usable.length} beat(s) run=${runId}`);
+      if (written === 0) {
+        throw new Error(
+          `${label}: the database rejected all ${usable.length} prompts (0 rows updated) — the beats may have been ` +
+          `renumbered or deleted mid-run. Prompts saved so far are kept.`,
+        );
+      }
       // A short batch leaves its missing beats pending, which the next run
       // picks up — but say so, rather than letting the step look complete.
       if (usable.length < batch.length) {
