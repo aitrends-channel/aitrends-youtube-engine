@@ -1484,7 +1484,7 @@ export default function HomePage() {
               {/* API Keys Status */}
               {(() => {
                 const kie = apiStatus?.kie as { configured: boolean; valid: boolean | null; credits?: number } | undefined;
-                const elevenlabs = apiStatus?.elevenlabs as { configured: boolean; valid: boolean | null; remaining?: number; limit?: number } | undefined;
+                const elevenlabs = apiStatus?.elevenlabs as { configured: boolean; valid: boolean | null; remaining?: number; limit?: number; balanceIssue?: "scope" | "key_id" } | undefined;
 
                 function StatusBadge({ data, color }: { data: { configured: boolean; valid: boolean | null } | undefined; color: string }) {
                   void color;
@@ -1603,7 +1603,17 @@ export default function HomePage() {
                         {elevenlabs?.configured && elevenlabs.valid && typeof elevenlabs.remaining === "number" && typeof elevenlabs.limit === "number" && (
                           <UsageBar used={elevenlabs.limit - elevenlabs.remaining} limit={elevenlabs.limit} color="#c084fc" />
                         )}
-                        {elevenlabs?.configured && elevenlabs.valid && elevenlabs.remaining === undefined && (
+                        {/* Only claim a reason when the API told us one. This
+                            used to show the scope hint for any missing balance,
+                            including a key that cannot authenticate at all,
+                            which sent people to change permissions on a key
+                            that needed replacing. */}
+                        {elevenlabs?.configured && elevenlabs.balanceIssue === "key_id" && (
+                          <p className="text-[10px]" style={{ color: "var(--accent-amber-text)" }}>
+                            That looks like a key ID, not a key. Paste the value starting with sk_, shown when you create or rotate the key.
+                          </p>
+                        )}
+                        {elevenlabs?.configured && elevenlabs.valid && elevenlabs.balanceIssue === "scope" && (
                           <p className="text-[10px]" style={{ color: "var(--c-30)" }}>Enable user_read scope on your key to see character balance</p>
                         )}
                       </div>
