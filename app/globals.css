@@ -290,6 +290,43 @@
   --status-danger: #B0402F;
 }
 
+/* Admin runs the light theme's two surfaces the other way round: a white
+   foundation carrying cream panels, instead of a cream foundation carrying
+   near-white ones. Same pair of brand values and the same ~5% separation
+   between them, just swapped, so nothing about contrast changes.
+
+   Scoped to the admin shell rather than done in the light block above,
+   because the product's light theme keeps the brand's cream foundation.
+   Cards inside admin read the surface from --bg-card; the hairline and
+   shadow scales are unchanged and work against either value. */
+[data-theme="light"].admin-surfaces {
+  --background: #FFFFFF;
+  --bg-page: #FFFFFF;
+  --bg-page-2: #FFFFFF;
+  --bg-overlay: #FFFFFFCC;
+
+  /* Chrome stays white with the page, so white is what the screen mostly is;
+     cream is reserved for the panels sitting on it. Header and sidebar are
+     separated by the hairline border they already carry, not by a fill. */
+  --bg-header: #FFFFFFEB;
+  --bg-header-2: #FFFFFFF5;
+  --bg-nav: #FFFFFF;
+  --sidebar: #FFFFFF;
+  --card: #F1F0EA;
+  --popover: #F1F0EA;
+  --bg-card: #F1F0EA;
+  --bg-card-subtle: #F5F4EF;
+  --bg-panel: #F1F0EA;
+
+  /* Everything that sits ON a cream panel goes white: pills, table headers,
+     fields, controls. Cream on cream would vanish, and white reads as the
+     raised step now that the ground is white rather than cream. */
+  --bg-elevated: #FFFFFF;
+  --bg-input: #FFFFFF;
+  --bg-control: #FFFFFF;
+  --bg-step-idle: #FFFFFF;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

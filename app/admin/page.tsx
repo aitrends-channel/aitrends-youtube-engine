@@ -171,7 +171,7 @@ function TruncatedCell({ value, maxLen = 24, fallback = "—" }: {
       <div
         className={`absolute z-20 top-full left-0 mt-1 px-3 py-2 rounded-lg text-xs transition-opacity ${pinned ? "opacity-100" : "opacity-0 pointer-events-none group-hover:opacity-100"}`}
         style={{
-          background: "white",
+          background: "var(--bg-card)",
           border: "1px solid oklch(0 0 0 / 0.1)",
           color: "var(--c-85)",
           maxWidth: "360px",
@@ -558,7 +558,7 @@ function StatCard({
 
   return (
     <div className="p-6 rounded-2xl space-y-4"
-      style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06), 0 1px 3px oklch(0 0 0 / 0.04)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06), 0 1px 3px oklch(0 0 0 / 0.04)" }}>
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
           {label}
@@ -746,7 +746,7 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
 
   return (
     <section id="reports" className="rounded-2xl space-y-5"
-      style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
@@ -836,7 +836,7 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
               return (
                 <g pointerEvents="none">
                   <line x1={c.x} y1={SPAD_T} x2={c.x} y2={SPAD_T + splotH} stroke="rgba(0,0,0,0.15)" strokeWidth="1" />
-                  <rect x={TX} y={SPAD_T} width="112" height="34" rx="6" fill="white" stroke="rgba(0,0,0,0.12)" />
+                  <rect x={TX} y={SPAD_T} width="112" height="34" rx="6" fill="var(--bg-card)" stroke="rgba(0,0,0,0.12)" />
                   <text x={TX + 8} y={SPAD_T + 14} fontSize="9" fill="#666">
                     {new Date(d.date + "T00:00:00Z").toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" })}
                   </text>
@@ -940,7 +940,7 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
                 style={{ background: tone.bg, border: `1px solid ${tone.border}` }}>
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-                    style={{ background: "white", color: tone.chip, border: `1px solid ${tone.border}` }}>
+                    style={{ background: "var(--bg-card)", color: tone.chip, border: `1px solid ${tone.border}` }}>
                     {tone.label}
                   </span>
                   <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>{r.title}</p>
@@ -982,7 +982,7 @@ function AddUserForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <form onSubmit={handleSubmit} className="p-5 rounded-2xl space-y-3 w-full"
-      style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
       <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Email address</label>
       <div className="flex flex-col sm:flex-row gap-2">
         <input
@@ -1084,7 +1084,7 @@ function LogsSection() {
 
   return (
     <section id="logs" className="rounded-2xl space-y-4"
-      style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
       <div className="flex items-center gap-3">
         <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: "oklch(0.55 0.15 220 / 0.1)", border: "1px solid oklch(0.55 0.15 220 / 0.2)" }}>
@@ -1393,7 +1393,7 @@ function SetupSection({
   };
 
   return (
-    <section id="setup" className="rounded-2xl space-y-5" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+    <section id="setup" className="rounded-2xl space-y-5" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
       <div className="flex items-center gap-3">
         <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: "oklch(0.55 0.15 220 / 0.1)", border: "1px solid oklch(0.55 0.15 220 / 0.2)" }}>
@@ -1426,7 +1426,7 @@ function SetupSection({
             onClick={() => setSetupTab(t.id)}
             className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
             style={setupTab === t.id ? {
-              background: "white",
+              background: "var(--bg-card)",
               color: "oklch(0.62 0.15 220)",
               boxShadow: "0 1px 3px oklch(0 0 0 / 0.06)",
             } : {
@@ -1634,7 +1634,7 @@ function SetupSection({
                                   }}
                                   disabled={savingEdit === tag}
                                   className="flex-1 text-sm font-mono px-2 py-1 rounded-md outline-none"
-                                  style={{ background: "white", border: "1px solid oklch(0.62 0.15 220 / 0.4)", color: "oklch(0.2 0 0)" }}
+                                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0.62 0.15 220 / 0.4)", color: "oklch(0.2 0 0)" }}
                                 />
                                 <button
                                   onClick={() => handleSaveEdit(row.id, i)}
@@ -1671,7 +1671,7 @@ function SetupSection({
                                     <div
                                       role="menu"
                                       className="absolute right-0 top-full mt-1 z-20 min-w-[140px] rounded-lg overflow-hidden py-1"
-                                      style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.08)", boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)" }}>
+                                      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.08)", boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)" }}>
                                       <button
                                         role="menuitem"
                                         onClick={() => { setOpenMenuTag(null); setEditingKey(tag); setEditValue(k); }}
@@ -2058,7 +2058,7 @@ function ConcurrencyPanel() {
             return (
               <div key={f.key} className="p-3 rounded-xl"
                 style={{
-                  background: inGroup ? "white" : "oklch(0 0 0 / 0.02)",
+                  background: inGroup ? "var(--bg-card)" : "oklch(0 0 0 / 0.02)",
                   border: "1px solid oklch(0 0 0 / 0.06)",
                   opacity: fieldDisabled ? 0.5 : 1,
                 }}>
@@ -2222,7 +2222,7 @@ function AssemblyBeatRulesPanel() {
       <div className="space-y-2">
         {draft.map((rule, idx) => (
           <div key={idx} className="p-3 rounded-lg space-y-2"
-            style={{ background: "white", marginTop: 15, marginBottom: 4 }}>
+            style={{ background: "var(--bg-card)", marginTop: 15, marginBottom: 4 }}>
             <div className="flex items-center gap-2">
               <input
                 type="text"
@@ -2570,7 +2570,7 @@ function RoutingRadios({
             disabled={disabled}
             className="w-full text-left p-3 rounded-xl transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
             style={{
-              background: active ? "oklch(0.62 0.15 220 / 0.08)" : "white",
+              background: active ? "oklch(0.62 0.15 220 / 0.08)" : "var(--bg-card)",
               border: `1px solid ${active ? "oklch(0.62 0.15 220 / 0.45)" : "oklch(0 0 0 / 0.07)"}`,
               boxShadow: active ? "0 1px 4px oklch(0.62 0.15 220 / 0.12)" : "0 1px 2px oklch(0 0 0 / 0.04)",
             }}
@@ -2581,7 +2581,7 @@ function RoutingRadios({
                   background: active ? "oklch(0.62 0.15 220)" : "transparent",
                   border: `1.5px solid ${active ? "oklch(0.62 0.15 220)" : "oklch(0 0 0 / 0.2)"}`,
                 }}>
-                {active && <span className="w-1.5 h-1.5 rounded-full" style={{ background: "white" }} />}
+                {active && <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--bg-card)" }} />}
               </span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -3193,7 +3193,7 @@ function StepProviderControl({
                 disabled={disabled || savingModel !== null}
                 className="w-full text-left p-2.5 rounded-lg transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 style={{
-                  background: isActive ? "oklch(0.72 0.25 285 / 0.08)" : "white",
+                  background: isActive ? "oklch(0.72 0.25 285 / 0.08)" : "var(--bg-card)",
                   border: `1px solid ${isActive ? "oklch(0.72 0.25 285 / 0.45)" : "oklch(0 0 0 / 0.07)"}`,
                 }}
               >
@@ -3301,7 +3301,7 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
               key={card.id}
               className="rounded-xl p-4 space-y-3"
               style={{
-                background: "white",
+                background: "var(--bg-card)",
                 border: "1px solid oklch(0 0 0 / 0.07)",
                 boxShadow: "0 1px 2px oklch(0 0 0 / 0.04)",
               }}
@@ -3503,7 +3503,7 @@ function PlansPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl p-5 space-y-4 mt-[15px]" style={{ background: "white", border: "2px solid silver" }}>
+      <div className="rounded-2xl p-5 space-y-4 mt-[15px]" style={{ background: "var(--bg-card)", border: "2px solid silver" }}>
       <div className="rounded-xl p-3 flex items-center justify-between gap-3"
         style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid var(--bd-7)" }}>
         <div className="min-w-0">
@@ -4828,7 +4828,7 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
   return (
     <div
       className="rounded-2xl p-6 mt-[15px]"
-      style={{ background: "white", border: "2px solid silver" }}
+      style={{ background: "var(--bg-card)", border: "2px solid silver" }}
     >
       <div className="mb-6">
         <p className="text-base font-semibold" style={{ color: "var(--c-90)" }}>Dodo Variables</p>
@@ -4846,7 +4846,7 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
             disabled={saving}
             className="px-4 py-1.5 rounded-md text-sm font-semibold transition-all disabled:opacity-40 capitalize cursor-pointer"
             style={activeEnv === env
-              ? { background: "white", color: "var(--c-90)", boxShadow: "0 1px 3px oklch(0 0 0 / 0.1)" }
+              ? { background: "var(--bg-card)", color: "var(--c-90)", boxShadow: "0 1px 3px oklch(0 0 0 / 0.1)" }
               : { background: "transparent", color: "var(--c-55)" }}
           >
             {env}
@@ -5284,12 +5284,12 @@ function AdminSkeleton() {
         </div>
 
         {/* Stats cards */}
-        <div className="rounded-2xl space-y-3" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
+        <div className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
           <div className="h-3 w-10 rounded animate-pulse" style={SK} />
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-[10px]">
             {[...Array(6)].map((_, i) => (
               <div key={i} className="p-6 rounded-2xl space-y-4"
-                style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06)" }}>
+                style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06)" }}>
                 <div className="flex items-center justify-between">
                   <div className="h-3 w-16 rounded animate-pulse" style={SK} />
                   <div className="w-8 h-8 rounded-lg animate-pulse" style={SK} />
@@ -5301,7 +5301,7 @@ function AdminSkeleton() {
         </div>
 
         {/* Activity chart */}
-        <div className="p-5 rounded-2xl space-y-4" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
+        <div className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="space-y-2">
               <div className="h-3 w-40 rounded animate-pulse" style={SK} />
@@ -5315,7 +5315,7 @@ function AdminSkeleton() {
         </div>
 
         {/* Users section */}
-        <div className="rounded-2xl space-y-4" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
+        <div className="rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl animate-pulse" style={SK} />
             <div className="h-5 w-16 rounded animate-pulse" style={SK} />
@@ -5646,7 +5646,7 @@ export default function AdminPage() {
   }
 
   if (!authChecked) return (
-    <div className="min-h-screen flex flex-col" data-theme="light" style={{ background: "var(--bg-page)" }}>
+    <div className="min-h-screen flex flex-col admin-surfaces" data-theme="light" style={{ background: "var(--bg-page)" }}>
       <header className="flex items-center justify-between px-4 sm:px-8 py-4 sticky top-0 z-10"
         style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
         <Link href="/dashboard" className="flex items-center gap-3 transition-opacity hover:opacity-80">
@@ -5767,7 +5767,7 @@ export default function AdminPage() {
     : Math.max(0, (stats.activeAccounts ?? accountUsers.length) - activeUserCount);
 
   return (
-    <div className="min-h-screen flex flex-col lg:pl-[300px]" data-theme="light" style={{ background: "var(--bg-page)" }}>
+    <div className="min-h-screen flex flex-col lg:pl-[300px] admin-surfaces" data-theme="light" style={{ background: "var(--bg-page)" }}>
       {/* Full-height sidebar, fixed so it spans the viewport rather than
           starting under the header. Everything else is inset by its width.
           Below lg it is a drawer opened from the menu row. */}
@@ -5955,7 +5955,7 @@ export default function AdminPage() {
         </div>
 
         {/* Stats cards */}
-        <div id="stats" className="rounded-2xl space-y-3" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "stats" ? undefined : "none" }}>
+        <div id="stats" className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "stats" ? undefined : "none" }}>
           <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "oklch(0.50 0 0)" }}>Stats</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-[10px]">
             <StatCard label="Total Niches"      value={stats?.totalProjects}    icon={FolderOpen}                    />
@@ -6090,7 +6090,7 @@ export default function AdminPage() {
           const slotW = n > 1 ? plotW / (n - 1) : plotW;
 
           return (
-            <div id="activity" className="p-5 rounded-2xl space-y-4" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "activity" ? undefined : "none" }}>
+            <div id="activity" className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "activity" ? undefined : "none" }}>
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "oklch(0.50 0 0)" }}>Activity — {periodLabel}</p>
@@ -6201,7 +6201,7 @@ export default function AdminPage() {
                     return (
                       <g pointerEvents="none">
                         <rect x={TX} y={TY} width={TW} height={TH} rx={TR} ry={TR}
-                          fill="white" stroke="rgba(0,0,0,0.10)" strokeWidth="1" />
+                          fill="var(--bg-card)" stroke="rgba(0,0,0,0.10)" strokeWidth="1" />
                         <text x={TX + TW / 2} y={TY + 15} textAnchor="middle" fontSize="9.5" fill="#333" fontWeight="600">
                           {tooltipDate(pt.date, hoveredIdx)}
                         </text>
@@ -6281,7 +6281,7 @@ export default function AdminPage() {
           const rangeLabel = isToday ? "Today · by hour (UTC)" : usageRange === "7d" ? "Last 7 days" : "Last 30 days";
 
           return (
-            <div id="usage" className="p-5 rounded-2xl space-y-4" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "usage" ? undefined : "none" }}>
+            <div id="usage" className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "usage" ? undefined : "none" }}>
               <div className="flex items-end justify-between flex-wrap gap-3">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "oklch(0.50 0 0)" }}>
@@ -6360,7 +6360,7 @@ export default function AdminPage() {
                     return (
                       <g pointerEvents="none">
                         <line x1={c.x} y1={UPAD_T} x2={c.x} y2={UPAD_T + uPlotH} strokeWidth="1" stroke="rgba(0,0,0,0.14)" strokeDasharray="3 3" />
-                        <rect x={TX} y={TY} width={TW} height={TH} rx={TR} ry={TR} fill="white" stroke="rgba(0,0,0,0.10)" strokeWidth="1" />
+                        <rect x={TX} y={TY} width={TW} height={TH} rx={TR} ry={TR} fill="var(--bg-card)" stroke="rgba(0,0,0,0.10)" strokeWidth="1" />
                         <text x={TX + TW / 2} y={TY + 16} textAnchor="middle" fontSize="9.5" fill="#333" fontWeight="600">{pt.full}</text>
                         <circle cx={TX + 13} cy={TY + 30} r="3" fill="var(--status-warn)" />
                         <text x={TX + 21} y={TY + 33} fontSize="9" fill="#666">
@@ -6389,7 +6389,7 @@ export default function AdminPage() {
         })()}
 
         {/* Users section */}
-        <section id="users" className="rounded-2xl space-y-5 max-w-full min-w-0" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "users" ? undefined : "none" }}>
+        <section id="users" className="rounded-2xl space-y-5 max-w-full min-w-0" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "users" ? undefined : "none" }}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
               style={{ background: "oklch(0.72 0.25 285 / 0.1)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
@@ -6485,7 +6485,7 @@ export default function AdminPage() {
             </div>
           ) : (
             <div className="rounded-2xl overflow-x-auto w-full max-w-full"
-              style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+              style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
               <table className="w-full border-collapse min-w-[520px]">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -6664,7 +6664,7 @@ export default function AdminPage() {
                                   role="menu"
                                   className="absolute right-0 top-full mt-1 z-20 rounded-lg overflow-hidden min-w-[240px] py-1.5"
                                   style={{
-                                    background: "white",
+                                    background: "var(--bg-card)",
                                     border: "1px solid oklch(0 0 0 / 0.08)",
                                     boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)",
                                   }}
@@ -6805,7 +6805,7 @@ export default function AdminPage() {
         </section>
 
         {/* Projects section */}
-        <section id="projects" className="rounded-2xl space-y-5 pb-[10px] max-w-full min-w-0" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "projects" ? undefined : "none" }}>
+        <section id="projects" className="rounded-2xl space-y-5 pb-[10px] max-w-full min-w-0" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "projects" ? undefined : "none" }}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
               style={{ background: "oklch(0.55 0.15 145 / 0.1)", border: "1px solid oklch(0.55 0.15 145 / 0.2)" }}>
@@ -6966,7 +6966,7 @@ export default function AdminPage() {
               ];
               return (
                 <div className="rounded-2xl w-full max-w-full p-4 space-y-4"
-                  style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <button
                       onClick={() => setSelectedGeneralProject(null)}
@@ -7067,7 +7067,7 @@ export default function AdminPage() {
             </div>
           ) : (
             <div className="rounded-2xl overflow-x-auto w-full max-w-full"
-              style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+              style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
               <table className="w-full border-collapse min-w-[640px]">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -7272,7 +7272,7 @@ export default function AdminPage() {
               const cells = costsByProject.get(p.id);
               return (
                 <div className="rounded-2xl w-full max-w-full p-4 space-y-4"
-                  style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <button
                       onClick={() => setSelectedCostProject(null)}
@@ -7439,7 +7439,7 @@ export default function AdminPage() {
 
             return (
               <div className="rounded-2xl overflow-x-auto w-full max-w-full"
-                style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
                 <table className="w-full border-collapse min-w-[900px]">
                   <thead>
                     <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -7605,7 +7605,7 @@ export default function AdminPage() {
           const slotW = n > 1 ? plotW / (n - 1) : plotW;
 
           return (
-            <section id="revenue" className="rounded-2xl space-y-5" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "revenue" ? undefined : "none" }}>
+            <section id="revenue" className="rounded-2xl space-y-5" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "revenue" ? undefined : "none" }}>
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
                   style={{ background: "oklch(0.55 0.18 65 / 0.1)", border: "1px solid oklch(0.55 0.18 65 / 0.2)" }}>
@@ -7716,7 +7716,7 @@ export default function AdminPage() {
                       return (
                         <g pointerEvents="none">
                           <rect x={TX} y={TY} width={TW} height={TH} rx={TR} ry={TR}
-                            fill="white" stroke="rgba(0,0,0,0.10)" strokeWidth="1" />
+                            fill="var(--bg-card)" stroke="rgba(0,0,0,0.10)" strokeWidth="1" />
                           <text x={TX + TW / 2} y={TY + 15} textAnchor="middle" fontSize="9" fill="#555" fontWeight="600">{label}</text>
                           <circle cx={TX + 14} cy={TY + 32} r="3" fill="var(--status-warn)" />
                           <text x={TX + 22} y={TY + 36} fontSize="9.5" fill="#666">
@@ -7847,7 +7847,7 @@ export default function AdminPage() {
                 </p>
               ) : (
                 <div className="rounded-2xl overflow-x-auto"
-                  style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
                   <table className="w-full border-collapse min-w-[560px]">
                     <thead>
                       <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -7905,7 +7905,7 @@ export default function AdminPage() {
             id="support"
             className="rounded-2xl max-w-full min-w-0"
             style={{
-              background: "white",
+              background: "var(--bg-card)",
               border: "1px solid oklch(0 0 0 / 0.07)",
               padding: "16px",
               scrollMarginTop: "80px",
@@ -7921,7 +7921,7 @@ export default function AdminPage() {
             id="reviews"
             className="rounded-2xl max-w-full min-w-0"
             style={{
-              background: "white",
+              background: "var(--bg-card)",
               border: "1px solid oklch(0 0 0 / 0.07)",
               padding: "16px",
               scrollMarginTop: "80px",

@@ -20,6 +20,7 @@ import { DEMO_DATA } from "@/lib/demo-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { OneClickControls } from "@/components/one-click/OneClickControls";
+import { UsageStats } from "@/components/UsageStats";
 import { forkAndStartOneClick } from "@/lib/one-click/kickoff";
 import { ONE_CLICK_HIDDEN } from "@/lib/feature-flags";
 
@@ -1071,7 +1072,7 @@ export default function HomePage() {
                 shows only the three section links and then jumps as the
                 niches arrive, which reads as the list having failed. */}
             {projects === undefined && (
-              <div className="mt-3 pt-3 pl-[5px] flex flex-col gap-1.5" style={{ borderTop: "1px solid var(--bd-6)" }}>
+              <div className="pt-2 pl-[5px] flex flex-col gap-1.5" style={{ borderTop: "1px solid var(--bd-6)" }}>
                 {[0, 1, 2, 3, 4].map((i) => (
                   <div key={i} className="flex items-center gap-2 px-3.5 py-2">
                     <div className="h-3 rounded animate-pulse" style={{ background: "var(--skeleton)", width: `${["70%", "52%", "64%", "44%", "58%"][i]}` }} />
@@ -1081,7 +1082,7 @@ export default function HomePage() {
             )}
 
             {channelGroups.length > 0 && (
-              <div className="mt-3 pt-3 pl-[5px] flex-1 min-h-0 overflow-y-auto flex flex-col gap-0.5"
+              <div className="pt-2 pl-[5px] flex-1 min-h-0 overflow-y-auto flex flex-col gap-0.5"
                 style={{ borderTop: "1px solid var(--bd-6)", scrollbarWidth: "thin" }}>
                 <button
                   onClick={() => selectNiche(NICHE_ALL)}
@@ -1858,6 +1859,13 @@ export default function HomePage() {
                               <p className="text-[10px] leading-relaxed mt-2" style={{ color: "var(--c-30)" }}>Check balance in KIE dashboard</p>
                             </>
                           )}
+                          {/* Same rule as ElevenLabs: a rejected key gets the
+                              reason instead of a bar with nothing in it. */}
+                          {kie?.configured && kie.valid === false && (
+                            <p className="text-[10px] leading-relaxed" style={{ color: "#f0a855" }}>
+                              KIE rejected this key. Create a new one and save it in <Link href="/setup" className="underline">Setup</Link>.
+                            </p>
+                          )}
                         </div>
                       </div>
 
@@ -1885,10 +1893,13 @@ export default function HomePage() {
                           {elevenlabs?.configured && elevenlabs.valid && typeof elevenlabs.remaining === "number" && typeof elevenlabs.limit === "number" && (
                             <UsageBar used={elevenlabs.limit - elevenlabs.remaining} limit={elevenlabs.limit} color="#c084fc" />
                           )}
-                          {/* Keep a bar in the same place when the quota can't
-                              be read, so the card matches KIE instead of
-                              collapsing to a line of text. */}
-                          {elevenlabs?.configured && !(elevenlabs.valid && typeof elevenlabs.remaining === "number" && typeof elevenlabs.limit === "number") && (
+                          {/* Keep a bar in the same place when a working key's
+                              quota can't be read, so the card matches KIE
+                              instead of collapsing to a line of text. A
+                              rejected key gets no bar: it has no quota, and an
+                              empty one read as "nothing used yet" rather than
+                              "this key does not work". */}
+                          {elevenlabs?.configured && elevenlabs.valid === true && !(typeof elevenlabs.remaining === "number" && typeof elevenlabs.limit === "number") && (
                             <EmptyBar label="Usage" />
                           )}
                           {/* Only claim a reason when the API told us one. This
@@ -1898,6 +1909,19 @@ export default function HomePage() {
                               that needed replacing. */}
                           {elevenlabs?.configured && elevenlabs.valid && elevenlabs.balanceIssue === "scope" && (
                             <p className="text-[10px] leading-relaxed" style={{ color: "var(--c-30)" }}>Enable user_read scope on your key to see character balance</p>
+                          )}
+                          {/* A rejected key needs the reason, not a bar. The
+                              status endpoint already distinguishes the common
+                              mistake (the saved value is the key ID, which
+                              ElevenLabs shows forever, while the key itself
+                              appears once at creation) from a key that is
+                              simply bad, so say which one it is. */}
+                          {elevenlabs?.configured && elevenlabs.valid === false && (
+                            <p className="text-[10px] leading-relaxed" style={{ color: "#f0a855" }}>
+                              {elevenlabs.balanceIssue === "key_id"
+                                ? <>This is a key ID, not a key. Copy the value that starts with sk_ from ElevenLabs and save it in <Link href="/setup" className="underline">Setup</Link>.</>
+                                : <>ElevenLabs rejected this key. Create a new one and save it in <Link href="/setup" className="underline">Setup</Link>.</>}
+                            </p>
                           )}
                         </div>
                       </div>
@@ -1953,6 +1977,11 @@ export default function HomePage() {
                       </div>
 
                     </div>
+
+                    {/* What those keys have actually spent. Same tab, because
+                        "is it connected" and "what did it cost" are the two
+                        questions people open this view with. */}
+                    <UsageStats />
                   </div>
                 );
               })()}
