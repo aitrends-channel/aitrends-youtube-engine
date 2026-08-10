@@ -593,6 +593,10 @@ export default function HomePage() {
   const selectNiche = (name: string) => {
     setNicheFilter(name);
     setSidebarOpen(false);
+    // The filter only means anything on the video list, so choosing one takes
+    // you there rather than silently filtering a section you cannot see.
+    setDashTab("niches");
+    try { window.localStorage.setItem(DASH_TAB_KEY, "niches"); } catch { /* storage disabled */ }
     try { window.localStorage.setItem(NICHE_FILTER_KEY, name); } catch { /* storage disabled */ }
   };
   const selectVideoView = (v: "list" | "cards") => {
@@ -1021,13 +1025,13 @@ export default function HomePage() {
   const showDemo = isPaid === false && !isAdmin;
 
   return (
-    <div className={`min-h-screen flex flex-col overflow-x-hidden ${showDemo ? "" : (dashTab === "stats" ? "lg:pl-[228px]" : "lg:pl-[388px]")}`} style={{ background: "var(--bg-page)" }}>
+    <div className={`min-h-screen flex flex-col overflow-x-hidden ${showDemo ? "" : "lg:pl-[300px]"}`} style={{ background: "var(--bg-page)" }}>
       {/* Full-height sidebar, fixed so it spans the viewport rather than
           starting under the header. Everything else is inset by its width
           via lg:pl-[240px] on the page root. Hidden below lg, where the
           horizontal rail above the content takes over. */}
       {!showDemo && (
-        <aside className={`fixed left-0 bottom-0 top-[109px] sm:top-[117px] lg:top-0 z-40 flex flex-col transition-all duration-200 lg:translate-x-0 w-[85vw] sm:w-[380px] ${dashTab === "stats" ? "lg:w-[228px]" : "lg:w-[388px]"} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
+        <aside className={`fixed left-0 bottom-0 top-[109px] sm:top-[117px] lg:top-0 z-40 flex flex-col transition-all duration-200 lg:translate-x-0 w-[85vw] sm:w-[380px] lg:w-[300px] ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
           style={{ background: "var(--bg-header)", borderRight: "1px solid var(--bd-10)" }}>
           <Link href="/dashboard" className="hidden lg:flex items-center gap-3 px-5 h-[69px] shrink-0 transition-opacity hover:opacity-80"
             style={{ borderBottom: "1px solid var(--bd-6)" }}>
@@ -1063,7 +1067,20 @@ export default function HomePage() {
 
             {/* Niches are a filter over the video list, so they belong in the
                 nav rather than as headers repeated down the page. */}
-            {dashTab === "niches" && channelGroups.length > 0 && (
+            {/* Placeholder rows while projects load. Without them the nav
+                shows only the three section links and then jumps as the
+                niches arrive, which reads as the list having failed. */}
+            {projects === undefined && (
+              <div className="mt-3 pt-3 pl-[5px] flex flex-col gap-1.5" style={{ borderTop: "1px solid var(--bd-6)" }}>
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <div key={i} className="flex items-center gap-2 px-3.5 py-2">
+                    <div className="h-3 rounded animate-pulse" style={{ background: "var(--skeleton)", width: `${["70%", "52%", "64%", "44%", "58%"][i]}` }} />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {channelGroups.length > 0 && (
               <div className="mt-3 pt-3 pl-[5px] flex-1 min-h-0 overflow-y-auto flex flex-col gap-0.5"
                 style={{ borderTop: "1px solid var(--bd-6)", scrollbarWidth: "thin" }}>
                 <button
@@ -1107,7 +1124,7 @@ export default function HomePage() {
       )}
 
       {/* Header. Fixed, so a spacer below stands in for its height. */}
-      <header className={`flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 fixed top-0 left-0 right-0 z-50 ${showDemo ? "" : (dashTab === "stats" ? "lg:left-[228px]" : "lg:left-[388px]")}`}
+      <header className={`flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 fixed top-0 left-0 right-0 z-50 ${showDemo ? "" : "lg:left-[300px]"}`}
         style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
         <div className="flex items-center gap-2 min-w-0">
         <Link href="/dashboard" className={`items-center gap-3 transition-opacity hover:opacity-80 ${showDemo ? "flex" : "flex lg:hidden"}`}>
@@ -1356,7 +1373,7 @@ export default function HomePage() {
               {projects === undefined ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   {[0, 1, 2, 3].map((i) => (
-                    <div key={i} className="rounded-xl px-5 py-4 space-y-2" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
+                    <div key={i} className="rounded-xl min-h-[104px] px-5 py-4 space-y-2" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div className="h-8 w-10 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
                       <div className="h-3 w-20 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
                       <div className="h-2.5 w-14 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
@@ -1437,41 +1454,37 @@ export default function HomePage() {
                         : usage?.plan
                           ? usage.plan.charAt(0).toUpperCase() + usage.plan.slice(1)
                           : "Free";
-                      // Was col-span-2 on mobile, which ate a whole row of the
-                      // 2-col grid and left the fourth card alone on a third
-                      // row with a hole beside it. One column makes it a clean
-                      // 2x2; the badges stack below the numbers rather than
-                      // fighting them for the width.
+                      // Two lines and one badge, so the card matches the
+                      // height of its three neighbours. It used to carry two
+                      // stacked pills beside the numbers, which wrapped below
+                      // them in a 2-col mobile grid and made this card roughly
+                      // twice as tall as the rest of the row.
                       return (
-                        <div className="rounded-xl transition-all px-4 sm:px-5 py-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3"
+                        <div className="rounded-xl transition-all min-h-[104px] px-4 sm:px-5 py-4 flex items-start justify-between gap-3"
                           style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
                           onMouseEnter={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; t.style.background = "oklch(1 0 0 / 0.12)"; }}
                           onMouseLeave={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "var(--bd-card)"; t.style.background = "oklch(1 0 0 / 0.08)"; }}>
-                          <div className="min-w-0 space-y-1">
+                          <div className="min-w-0">
                             <p className="leading-none">
                               <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{nichesUsed}</span>
                               <span className="text-xs ml-1.5" style={{ color: "var(--c-50)" }}>used</span>
+                              {deletedNiches > 0 && (
+                                <span className="text-xs ml-2" style={{ color: "var(--c-38)" }}>{deletedNiches} deleted</span>
+                              )}
                             </p>
-                            {deletedNiches > 0 && (
-                              <p className="leading-none">
-                                <span className="text-2xl font-bold" style={{ color: "var(--c-60)" }}>{deletedNiches}</span>
-                                <span className="text-xs ml-1.5" style={{ color: "var(--c-45)" }}>deleted</span>
-                              </p>
-                            )}
-                            <p className="text-[10px] pt-1" style={{ color: "var(--c-35)" }}>
-                              {unlimited ? "Unlimited" : `of ${ratioDenominator} lifetime`}
+                            <p className="text-xs mt-2" style={{ color: "var(--c-42)" }}>
+                              {unlimited ? `${planLabel} · Unlimited` : `of ${ratioDenominator} lifetime · ${planLabel}`}
                             </p>
                             {showOverrideBadge && (
-                              <p className="text-[10px] font-semibold"
-                                style={{ color: "oklch(0.6 0.18 75)" }}>
+                              <p className="text-[10px] mt-1 font-semibold" style={{ color: "oklch(0.6 0.18 75)" }}>
                                 Override: {nicheLimitOverride}
                               </p>
                             )}
                           </div>
-                          <div className="flex flex-col items-start sm:items-center gap-1.5 shrink-0">
-                            {unlimited && (
+                          <div className="shrink-0">
+                            {unlimited ? (
                               <span
-                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider"
+                                className="px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap"
                                 style={{
                                   background: "oklch(0.55 0.15 145 / 0.15)",
                                   color: "oklch(0.65 0.15 145)",
@@ -1479,34 +1492,10 @@ export default function HomePage() {
                                 }}
                               >
                                 {planLabel}
-                              </span>
-                            )}
-                            {unlimited ? (
-                              <span
-                                className="px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider"
-                                style={{
-                                  background: "oklch(0.55 0.15 145 / 0.15)",
-                                  color: "oklch(0.65 0.15 145)",
-                                  border: "1px solid oklch(0.55 0.15 145 / 0.3)",
-                                }}
-                              >
-                                Unlimited
                               </span>
                             ) : (
                               <PieRing id="nicheGrad" pct={nichePct} color={nicheColor}
                                 centerText={`${nichesUsed}/${ratioDenominator}`} />
-                            )}
-                            {!unlimited && (
-                              <span
-                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider"
-                                style={{
-                                  background: "oklch(0.55 0.15 145 / 0.15)",
-                                  color: "oklch(0.65 0.15 145)",
-                                  border: "1px solid oklch(0.55 0.15 145 / 0.3)",
-                                }}
-                              >
-                                {planLabel}
-                              </span>
                             )}
                           </div>
                         </div>
@@ -1514,7 +1503,7 @@ export default function HomePage() {
                     })()}
 
                     {/* Total Videos — plain */}
-                    <div className="rounded-xl transition-all px-5 py-4 flex flex-col items-center justify-center text-center"
+                    <div className="rounded-xl transition-all min-h-[104px] px-5 py-4 flex flex-col items-center justify-center text-center"
                       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
                       onMouseEnter={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; t.style.background = "oklch(1 0 0 / 0.12)"; }}
                       onMouseLeave={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "var(--bd-card)"; t.style.background = "oklch(1 0 0 / 0.08)"; }}>
@@ -1523,7 +1512,7 @@ export default function HomePage() {
                     </div>
 
                     {/* Completed */}
-                    <div className="rounded-xl transition-all px-5 py-4 flex items-center justify-between"
+                    <div className="rounded-xl transition-all min-h-[104px] px-5 py-4 flex items-center justify-between"
                       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
                       onMouseEnter={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; t.style.background = "oklch(1 0 0 / 0.12)"; }}
                       onMouseLeave={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "var(--bd-card)"; t.style.background = "oklch(1 0 0 / 0.08)"; }}>
@@ -1539,7 +1528,7 @@ export default function HomePage() {
                     </div>
 
                     {/* In Progress */}
-                    <div className="rounded-xl transition-all px-5 py-4 flex items-center justify-between"
+                    <div className="rounded-xl transition-all min-h-[104px] px-5 py-4 flex items-center justify-between"
                       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
                       onMouseEnter={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; t.style.background = "oklch(1 0 0 / 0.12)"; }}
                       onMouseLeave={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "var(--bd-card)"; t.style.background = "oklch(1 0 0 / 0.08)"; }}>
