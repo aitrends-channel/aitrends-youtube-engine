@@ -1021,13 +1021,13 @@ export default function HomePage() {
   const showDemo = isPaid === false && !isAdmin;
 
   return (
-    <div className={`min-h-screen flex flex-col overflow-x-hidden ${showDemo ? "" : "lg:pl-[388px]"}`} style={{ background: "var(--bg-page)" }}>
+    <div className={`min-h-screen flex flex-col overflow-x-hidden ${showDemo ? "" : (dashTab === "stats" ? "lg:pl-[228px]" : "lg:pl-[388px]")}`} style={{ background: "var(--bg-page)" }}>
       {/* Full-height sidebar, fixed so it spans the viewport rather than
           starting under the header. Everything else is inset by its width
           via lg:pl-[240px] on the page root. Hidden below lg, where the
           horizontal rail above the content takes over. */}
       {!showDemo && (
-        <aside className={`fixed left-0 bottom-0 top-[109px] sm:top-[117px] lg:top-0 z-40 flex flex-col transition-all duration-200 lg:translate-x-0 w-[85vw] sm:w-[380px] lg:w-[388px] ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
+        <aside className={`fixed left-0 bottom-0 top-[109px] sm:top-[117px] lg:top-0 z-40 flex flex-col transition-all duration-200 lg:translate-x-0 w-[85vw] sm:w-[380px] ${dashTab === "stats" ? "lg:w-[228px]" : "lg:w-[388px]"} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
           style={{ background: "var(--bg-header)", borderRight: "1px solid var(--bd-6)" }}>
           <Link href="/dashboard" className="hidden lg:flex items-center gap-3 px-5 h-[69px] shrink-0 transition-opacity hover:opacity-80"
             style={{ borderBottom: "1px solid var(--bd-6)" }}>
@@ -1098,7 +1098,7 @@ export default function HomePage() {
       )}
 
       {/* Header. Fixed, so a spacer below stands in for its height. */}
-      <header className={`flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 fixed top-0 left-0 right-0 z-50 ${showDemo ? "" : "lg:left-[388px]"}`}
+      <header className={`flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 fixed top-0 left-0 right-0 z-50 ${showDemo ? "" : (dashTab === "stats" ? "lg:left-[228px]" : "lg:left-[388px]")}`}
         style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
         <div className="flex items-center gap-2 min-w-0">
         <Link href="/dashboard" className={`items-center gap-3 transition-opacity hover:opacity-80 ${showDemo ? "flex" : "flex lg:hidden"}`}>
@@ -1571,10 +1571,19 @@ export default function HomePage() {
                   <p className="text-xs mt-1" style={{ color: "var(--c-30)" }}>Create your first niche to see video counts here</p>
                 </div>
               ) : (() => {
-                const W = 600, PAD_X = 16, PAD_T = 16;
+                // Ten bars fill the card; past that the chart keeps the same
+                // slot width and grows wider than its container, so the extra
+                // niches are reached by scrolling rather than by squeezing
+                // every bar and its label down to nothing.
+                const VISIBLE = 10;
+                const BASE_W = 600, PAD_X = 16, PAD_T = 16;
                 const points = channelGroups.map(g => ({ label: g.channelName, count: g.projects.length }));
                 const maxCount = Math.max(...points.map(p => p.count), 1);
                 const n = points.length;
+                // viewBox and rendered width scale by the same factor, so the
+                // aspect ratio holds and the chart does not get taller.
+                const wideFactor = n > VISIBLE ? n / VISIBLE : 1;
+                const W = Math.round(BASE_W * wideFactor);
                 const plotW = W - PAD_X * 2;
                 const slotW = plotW / n;
                 const barW = Math.min(52, slotW * 0.6);
@@ -1585,7 +1594,8 @@ export default function HomePage() {
                 // "Unf*ck Everything" wraps to four stacked fragments and reads
                 // as noise. Smaller type fits more characters per line, so the
                 // same name wraps once or twice instead.
-                const LABEL_FONT = n <= 6 ? 10 : n <= 9 ? 9 : n <= 13 ? 8 : n <= 18 ? 7 : 6.5;
+                const shown = Math.min(n, VISIBLE);
+                const LABEL_FONT = shown <= 6 ? 10 : shown <= 9 ? 9 : 8;
                 // Wrapping, line spacing and the label block's height are all
                 // derived from the font size — hardcoding any of them against
                 // 10px is what made the fragments overlap when the type shrank.
@@ -1634,8 +1644,8 @@ export default function HomePage() {
                       </div>
                       <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{total}</span>
                     </div>
-                    <div style={{ overflowX: "clip" }}>
-                    <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
+                    <div style={{ overflowX: wideFactor > 1 ? "auto" : "clip", scrollbarWidth: "thin" }}>
+                    <svg viewBox={`0 0 ${W} ${H}`} className="max-w-none" style={{ width: `${wideFactor * 100}%` }}>
                       <defs>
                         <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor="#9b7ff5" stopOpacity="0.95" />
