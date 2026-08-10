@@ -1077,46 +1077,18 @@ export default function HomePage() {
                   </span>
                 </button>
 
-                {/* Each niche lists its own videos underneath, indented and
-                    expanded, so the nav doubles as the index of everything in
-                    the account rather than only its niches. */}
                 {channelGroups.map((g) => {
                   const on = nicheFilter === g.channelName;
                   return (
-                    <div key={g.channelName} className="flex flex-col gap-0.5">
-                      <button
-                        onClick={() => selectNiche(g.channelName)}
-                        className="flex items-center gap-2 pl-3.5 pr-3 py-2.5 rounded-lg text-[13px] text-left transition-all cursor-pointer"
-                        style={{ background: on ? "oklch(1 0 0 / 0.07)" : "transparent", color: on ? "var(--c-85)" : "var(--c-45)" }}
-                      >
-                        <span className="min-w-0 flex-1 truncate">{g.channelName}</span>
-                        <span className="shrink-0 tabular-nums text-[11px]" style={{ color: "var(--c-38)" }}>{g.projects.length}</span>
-                      </button>
-                      <div className="pl-[5px] flex flex-col gap-0.5">
-                      {[...g.projects]
-                        .sort((a, b) => b.created_at.localeCompare(a.created_at))
-                        .map((pr) => {
-                          const assembled = !!pr.assembled_url;
-                          const path = assembled ? "thumbnails"
-                            : (pr.current_state === 6 && pr.selected_topic) ? "script"
-                            : (PHASE_PATHS[pr.current_state] ?? "channel");
-                          return (
-                            <Link
-                              key={pr.id}
-                              href={(pr.auto_pilot && !assembled && pr.auto_pilot_status !== "stopped") ? `/projects/${pr.id}/one-click` : `/projects/${pr.id}/${path}`}
-                              prefetch
-                              onClick={() => setSidebarOpen(false)}
-                              className="flex items-center gap-2 pl-8 pr-3 py-1.5 rounded-lg text-[12px] transition-all hover:opacity-100 opacity-80"
-                              style={{ color: "var(--c-38)" }}
-                              title={pr.selected_topic ?? "No topic selected"}
-                            >
-                              <span className="shrink-0 w-1 h-1 rounded-full" style={{ background: assembled ? "oklch(0.65 0.15 145)" : "var(--brand-text)" }} />
-                              <span className="min-w-0 flex-1 truncate">{pr.selected_topic ?? "No topic selected"}</span>
-                            </Link>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    <button
+                      key={g.channelName}
+                      onClick={() => selectNiche(g.channelName)}
+                      className="flex items-center gap-2 pl-3.5 pr-3 py-2.5 rounded-lg text-[13px] text-left transition-all cursor-pointer"
+                      style={{ background: on ? "oklch(1 0 0 / 0.07)" : "transparent", color: on ? "var(--c-85)" : "var(--c-45)" }}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{g.channelName}</span>
+                      <span className="shrink-0 tabular-nums text-[11px]" style={{ color: "var(--c-38)" }}>{g.projects.length}</span>
+                    </button>
                   );
                 })}
               </div>
