@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
-import { Settings, LogOut, BarChart3, Trash2, Download, KeyRound, SlidersHorizontal, Wand2, ChevronRight, Clapperboard, Gift, X } from "lucide-react";
+import { Settings, LogOut, BarChart3, Trash2, Download, KeyRound, SlidersHorizontal, Wand2, ChevronRight, Clapperboard, Gift, X, Menu, List, LayoutGrid } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { ADMIN_EMAILS } from "@/lib/admin";
@@ -27,15 +28,20 @@ import { ONE_CLICK_HIDDEN } from "@/lib/feature-flags";
 
 type DashTab = "stats" | "keys" | "niches";
 const DASH_TAB_KEY = "heclus.dashboard.tab";
-const DASH_TABS: { id: DashTab; label: string }[] = [
-  { id: "stats",  label: "Stats" },
-  { id: "keys",   label: "API keys & usage" },
-  { id: "niches", label: "Niches & Videos" },
+const DASH_NAV: { id: DashTab; label: string; short: string; icon: LucideIcon }[] = [
+  { id: "stats",  label: "Stats",            short: "Stats",  icon: BarChart3 },
+  { id: "keys",   label: "API keys & usage", short: "Keys",   icon: KeyRound },
+  { id: "niches", label: "Niches & Videos",  short: "Niches", icon: Clapperboard },
 ];
 
 // Free-resources teaser. Shown to every account until dismissed. The suffix
 // is the user id, added at render time.
 const FREE_TEASER_KEY = "heclus.dashboard.freeTeaser";
+// Niche is a filter over one flat video list, not a container around its own
+// grid. NICHE_ALL is the unfiltered default.
+const NICHE_ALL = "__all__";
+const NICHE_FILTER_KEY = "heclus.dashboard.niche";
+const VIDEO_VIEW_KEY = "heclus.dashboard.videoView";
 
 const DEMO_STEP_LABELS = ["Channel", "Topic", "Script", "Visuals", "Prompts", "Generate", "Assemble", "Complete"];
 const DEMO_STEP_HREFS  = [
@@ -551,6 +557,7 @@ export default function HomePage() {
   });
   const selectDashTab = (t: DashTab) => {
     setDashTab(t);
+    setSidebarOpen(false);
     try { window.localStorage.setItem(DASH_TAB_KEY, t); } catch { /* storage disabled */ }
   };
 
@@ -572,6 +579,30 @@ export default function HomePage() {
       if (new URLSearchParams(window.location.search).get("teaser") === "1") setShowFreeTeaser(true);
     } catch { /* no window */ }
   }, []);
+
+  const [nicheFilter, setNicheFilter] = useState<string>(NICHE_ALL);
+  const [videoView, setVideoView] = useState<"list" | "cards">("list");
+  useEffect(() => {
+    try {
+      const n = window.localStorage.getItem(NICHE_FILTER_KEY);
+      if (n) setNicheFilter(n);
+      const v = window.localStorage.getItem(VIDEO_VIEW_KEY);
+      if (v === "cards" || v === "list") setVideoView(v);
+    } catch { /* storage disabled */ }
+  }, []);
+  const selectNiche = (name: string) => {
+    setNicheFilter(name);
+    setSidebarOpen(false);
+    try { window.localStorage.setItem(NICHE_FILTER_KEY, name); } catch { /* storage disabled */ }
+  };
+  const selectVideoView = (v: "list" | "cards") => {
+    setVideoView(v);
+    try { window.localStorage.setItem(VIDEO_VIEW_KEY, v); } catch { /* storage disabled */ }
+  };
+
+  // Below lg the sidebar is a drawer. Same layout, just off-canvas until the
+  // header's menu button opens it.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const [creating, setCreating] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -990,11 +1021,87 @@ export default function HomePage() {
   const showDemo = isPaid === false && !isAdmin;
 
   return (
-    <div className="min-h-screen flex flex-col overflow-x-hidden" style={{ background: "var(--bg-page)" }}>
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 sticky top-0 z-10"
+    <div className={`min-h-screen flex flex-col overflow-x-hidden ${showDemo ? "" : "lg:pl-[388px]"}`} style={{ background: "var(--bg-page)" }}>
+      {/* Full-height sidebar, fixed so it spans the viewport rather than
+          starting under the header. Everything else is inset by its width
+          via lg:pl-[240px] on the page root. Hidden below lg, where the
+          horizontal rail above the content takes over. */}
+      {!showDemo && (
+        <aside className={`fixed left-0 bottom-0 top-[109px] sm:top-[117px] lg:top-0 z-40 flex flex-col transition-all duration-200 lg:translate-x-0 w-[85vw] sm:w-[380px] lg:w-[388px] ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
+          style={{ background: "var(--bg-header)", borderRight: "1px solid var(--bd-6)" }}>
+          <Link href="/dashboard" className="hidden lg:flex items-center gap-3 px-5 h-[69px] shrink-0 transition-opacity hover:opacity-80"
+            style={{ borderBottom: "1px solid var(--bd-6)" }}>
+            <div className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center">
+              <Image src="/heclus-icon-white.svg" alt="Heclus" width={32} height={32} className="object-cover w-full h-full" />
+            </div>
+            <span className="text-base font-bold tracking-tight" style={{ color: "var(--c-90)" }}>Heclus</span>
+          </Link>
+          <nav className="flex-1 min-h-0 flex flex-col gap-1 pl-5 pr-[30px] py-5">
+            {DASH_NAV.map((t) => {
+              const active = dashTab === t.id;
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => selectDashTab(t.id)}
+                  className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium text-left transition-all cursor-pointer"
+                  style={active ? {
+                    background: "oklch(0.72 0.25 285 / 0.15)",
+                    border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                    color: "var(--accent-purple-text)",
+                  } : {
+                    background: "transparent",
+                    border: "1px solid transparent",
+                    color: "var(--c-55)",
+                  }}
+                >
+                  <Icon size={15} className="shrink-0" />
+                  <span className="min-w-0 truncate">{t.label}</span>
+                </button>
+              );
+            })}
+
+            {/* Niches are a filter over the video list, so they belong in the
+                nav rather than as headers repeated down the page. */}
+            {dashTab === "niches" && channelGroups.length > 0 && (
+              <div className="mt-3 pt-3 flex-1 min-h-0 overflow-y-auto flex flex-col gap-0.5"
+                style={{ borderTop: "1px solid var(--bd-6)", scrollbarWidth: "thin" }}>
+                {[{ name: NICHE_ALL, label: "All videos", count: channelGroups.reduce((n, g) => n + g.projects.length, 0) },
+                  ...channelGroups.map((g) => ({ name: g.channelName, label: g.channelName, count: g.projects.length }))
+                ].map((n) => {
+                  const on = nicheFilter === n.name;
+                  return (
+                    <button
+                      key={n.name}
+                      onClick={() => selectNiche(n.name)}
+                      className="flex items-center gap-2 pl-3.5 pr-3 py-2.5 rounded-lg text-[13px] text-left transition-all cursor-pointer"
+                      style={{ background: on ? "oklch(1 0 0 / 0.07)" : "transparent", color: on ? "var(--c-85)" : "var(--c-45)" }}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{n.label}</span>
+                      <span className="shrink-0 tabular-nums text-[11px]" style={{ color: "var(--c-38)" }}>{n.count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </nav>
+        </aside>
+      )}
+
+      {!showDemo && sidebarOpen && (
+        <div
+          className="lg:hidden fixed left-0 right-0 bottom-0 top-[109px] sm:top-[117px] z-30"
+          style={{ background: "oklch(0 0 0 / 0.55)" }}
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden
+        />
+      )}
+
+      {/* Header. Fixed, so a spacer below stands in for its height. */}
+      <header className={`flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 fixed top-0 left-0 right-0 z-50 ${showDemo ? "" : "lg:left-[388px]"}`}
         style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
-        <Link href="/dashboard" className="flex items-center gap-3 transition-opacity hover:opacity-80">
+        <div className="flex items-center gap-2 min-w-0">
+        <Link href="/dashboard" className={`items-center gap-3 transition-opacity hover:opacity-80 ${showDemo ? "flex" : "flex lg:hidden"}`}>
           <div className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center">
             <Image src="/heclus-icon-white.svg" alt="Heclus" width={32} height={32} className="object-cover w-full h-full" />
           </div>
@@ -1002,6 +1109,10 @@ export default function HomePage() {
             <span className="font-bold text-sm tracking-tight text-foreground">Heclus</span>
           </div>
         </Link>
+        </div>
+        {/* Keeps the header controls right-aligned once the brand moves into
+            the sidebar. */}
+        {!showDemo && <div className="hidden lg:block" />}
         <div className="flex items-center gap-3">
           {isAdmin && (
             <Link
@@ -1122,6 +1233,28 @@ export default function HomePage() {
           </button>
         </div>
       </header>
+      <div className="h-[61px] sm:h-[69px] shrink-0" aria-hidden />
+
+      {/* Menu row. Its own bar under the header rather than a control in it,
+          fixed so the toggle stays reachable while the drawer is open. */}
+      {!showDemo && (
+        <>
+          <div className="lg:hidden fixed left-0 right-0 top-[61px] sm:top-[69px] z-50 flex items-center gap-2 px-4 sm:px-8 h-[48px]"
+            style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
+            <button
+              onClick={() => setSidebarOpen((v) => !v)}
+              aria-label={sidebarOpen ? "Close menu" : "Open menu"}
+              aria-expanded={sidebarOpen}
+              className="inline-flex items-center gap-2 py-1.5 pr-2 -ml-1 pl-1 rounded-lg text-[13px] font-medium transition-opacity hover:opacity-70 cursor-pointer"
+              style={{ color: "var(--c-70)" }}
+            >
+              {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
+              <span>{DASH_NAV.find((t) => t.id === dashTab)?.label ?? "Menu"}</span>
+            </button>
+          </div>
+          <div className="lg:hidden h-[48px] shrink-0" aria-hidden />
+        </>
+      )}
 
       <main className="flex-1 w-full px-4 sm:px-8 pt-6 pb-4 sm:py-12 space-y-8 sm:space-y-12">
 
@@ -1166,7 +1299,9 @@ export default function HomePage() {
         ) : (
 
         /* ── Real dashboard content ─────────────────────────────────── */
-        <>{(() => {
+        <>
+        <div className="space-y-8 sm:space-y-12">
+          {(() => {
           const allProjects = channelGroups.flatMap(g => g.projects);
           const total = allProjects.length;
           // Complete = final assembled MP4 exists (thumbnails don't count).
@@ -1206,37 +1341,11 @@ export default function HomePage() {
                 </div>
               )}
 
-              {/* Section tabs. Scrolls rather than wraps on a phone so the
-                  three labels never stack into a second row. */}
-              <div className="flex gap-1 p-1 rounded-xl overflow-x-auto max-w-full" style={{ marginTop: "10px", background: "var(--bg-progress)", border: "1px solid var(--bd-card)", scrollbarWidth: "none" }}>
-                {DASH_TABS.map((t) => {
-                  const active = dashTab === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      onClick={() => selectDashTab(t.id)}
-                      className="flex-1 shrink-0 whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
-                      style={active ? {
-                        background: "oklch(0.72 0.25 285 / 0.15)",
-                        border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                        color: "var(--accent-purple-text)",
-                      } : {
-                        background: "transparent",
-                        border: "1px solid transparent",
-                        color: "var(--c-55)",
-                      }}
-                    >
-                      {t.label}
-                    </button>
-                  );
-                })}
-              </div>
-
               {dashTab === "stats" && (<>
               <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginBottom: "10px" }}>General Stats</h3>
               {/* Stat cards */}
               {projects === undefined ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 lg:gap-x-[150px]">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   {[0, 1, 2, 3].map((i) => (
                     <div key={i} className="rounded-xl px-5 py-4 space-y-2" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div className="h-8 w-10 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
@@ -1311,7 +1420,7 @@ export default function HomePage() {
                 const inProgressPct = total > 0 ? inProgress / total : 0;
 
                 return (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 lg:gap-x-[150px]">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                     {/* Niches Used (lifetime — deletions don't decrement) — first */}
                     {(() => {
                       const planLabel = isAdmin
@@ -1711,14 +1820,11 @@ export default function HomePage() {
                 return (
                   <div>
                     <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "14px" }}>Your API Key Status</h3>
-                    {/* min-h + mt-auto on each card's footer keeps all three
-                        the same height whatever each has to say, so the status
-                        bars line up across the row. */}
-                    <div className="flex flex-wrap justify-between gap-y-8 gap-x-6 w-full mt-5 mb-4 sm:mb-10">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 
                       {/* KIE */}
-                      <div className="rounded-xl p-6 sm:p-7 flex flex-col min-h-[170px] sm:min-h-[275px] w-full sm:w-[calc(50%-0.75rem)] lg:w-[27%]" style={cardStyle}>
-                        <div className="flex items-start justify-between gap-3">
+                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
+                        <div className="flex items-start justify-between gap-3 mb-3">
                           <div className="min-w-0">
                             <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>KIE</p>
                             {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mt-1" style={{ color: "#f0a855" }}>Pending setup</p>}
@@ -1734,7 +1840,7 @@ export default function HomePage() {
                             )}
                           </div>
                         </div>
-                        <div className="mt-auto pt-5">
+                        <div>
                           {kie?.configured && kie.valid && typeof kie.credits === "number" && (
                             <CreditsBar credits={kie.credits} />
                           )}
@@ -1750,8 +1856,8 @@ export default function HomePage() {
                       {/* ElevenLabs. Uses UsageBar (used/limit) instead of
                           CreditsBar because ElevenLabs quota is bounded per
                           plan — we have both numerator and denominator. */}
-                      <div className="rounded-xl p-6 sm:p-7 flex flex-col min-h-[170px] sm:min-h-[275px] w-full sm:w-[calc(50%-0.75rem)] lg:w-[27%]" style={cardStyle}>
-                        <div className="flex items-start justify-between gap-3">
+                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
+                        <div className="flex items-start justify-between gap-3 mb-3">
                           <div className="min-w-0">
                             <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>ElevenLabs</p>
                             {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mt-1" style={{ color: "#f0a855" }}>Pending setup</p>}
@@ -1767,7 +1873,7 @@ export default function HomePage() {
                             )}
                           </div>
                         </div>
-                        <div className="mt-auto pt-5">
+                        <div>
                           {elevenlabs?.configured && elevenlabs.valid && typeof elevenlabs.remaining === "number" && typeof elevenlabs.limit === "number" && (
                             <UsageBar used={elevenlabs.limit - elevenlabs.remaining} limit={elevenlabs.limit} color="#c084fc" />
                           )}
@@ -1794,8 +1900,8 @@ export default function HomePage() {
                           all there is to show. A saved-but-off key is worth
                           calling out, since it changes nothing about who pays
                           and reads as connected otherwise. */}
-                      <div className="rounded-xl p-6 sm:p-7 flex flex-col min-h-[170px] sm:min-h-[275px] w-full sm:w-[calc(50%-0.75rem)] lg:w-[27%]" style={cardStyle}>
-                        <div className="flex items-start justify-between gap-3">
+                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
+                        <div className="flex items-start justify-between gap-3 mb-3">
                           <div className="min-w-0">
                             <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>Anthropic</p>
                             <p className="text-[10px] mt-1.5 leading-relaxed" style={{ color: "var(--c-38)" }}>Optional. Runs the writing steps on your own account instead of through KIE</p>
@@ -1811,7 +1917,7 @@ export default function HomePage() {
                             </span>
                           </div>
                         </div>
-                        <div className="mt-auto pt-5">
+                        <div>
                           {/* There is no quota to fill, so a bar would sit at
                               zero forever. Show what we do know instead: the
                               tokens our own ledger recorded against this
@@ -1845,9 +1951,6 @@ export default function HomePage() {
 
               </>)}
 
-              {dashTab === "niches" && (
-                <h2 className="text-xl font-bold tracking-tight" style={{ color: "var(--c-85)", marginTop: "10px" }}>Your Niches & Videos</h2>
-              )}
             </div>
           );
         })()}
@@ -1856,219 +1959,274 @@ export default function HomePage() {
             to the Niches & Videos tab. Gated together so the tab is either the
             whole section or nothing. */}
         {dashTab === "niches" && (<>
-        {/* Channel groups */}
-        {channelGroups.length > 0 && (
-          <div className="space-y-12">
-            {channelGroups.map((group) => {
-              // Cap the list where it would otherwise bury the niches below
-              // it, and let it scroll inside the card. Two thresholds because
-              // the grid is one card per row on a phone but two or three from
-              // sm up: 2 videos on mobile, 8 on wider screens.
-              const n = group.projects.length;
-              const listScroll = n > 2
-                ? `max-h-[70vh] overflow-y-auto pr-1 ${n > 8 ? "sm:max-h-[75vh]" : "sm:max-h-none sm:overflow-visible sm:pr-0"}`
-                : "";
-              return (
-                <div key={group.channelName} className="rounded-2xl px-4 sm:px-6 pb-5 sm:pb-[34px]" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)", paddingTop: "34px" }}>
-                  {/* Channel header. Stacks on phones: with the avatar, name,
-                      URL, delete and New Video all on one row the name got
-                      truncated to a couple of characters and the URL to
-                      "https://www.y…", which identifies nothing. Two rows give
-                      the name the full width and leave room for the count
-                      pill, which had to be hidden on mobile before. */}
-                  {/* Negative margins cancel the card's own padding (34px top,
-                      px-4/px-6 sides) so the band sits flush against the card
-                      edge instead of floating inset. Top corners match the
-                      card's rounded-2xl; only the bottom edge carries a rule. */}
-                  <div className="-mt-[34px] -mx-4 sm:-mx-6 px-4 sm:px-6 py-4 rounded-t-2xl mb-6"
-                    style={{ background: "oklch(0.72 0.25 285 / 0.14)", borderBottom: "1px solid oklch(0.72 0.25 285 / 0.22)" }}>
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      {/* Initial tile is decorative, and on a phone it eats
-                          width the channel name and URL need. */}
-                      <div className="w-11 h-11 rounded-xl hidden sm:flex items-center justify-center text-base font-bold shrink-0"
-                        style={{
-                          background: "oklch(0.72 0.25 285 / 0.15)",
-                          color: "var(--brand-text)",
-                          border: "1px solid oklch(0.72 0.25 285 / 0.25)",
-                        }}>
-                        {group.channelName.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <h2 className="text-base font-bold text-foreground truncate">{group.channelName}</h2>
-                        {group.channelUrl && (
-                          <Link
-                            href={group.channelUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-xs mt-0.5 block truncate underline underline-offset-2 hover:opacity-80 transition-opacity"
-                            style={{ color: "var(--brand-text)", textDecorationColor: "color-mix(in oklch, var(--brand-text) 60%, transparent)" }}
-                            title={group.channelUrl}
-                          >
-                            {group.channelUrl}
-                          </Link>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 sm:shrink-0">
-                      <span className="text-xs px-3 py-1 rounded-full shrink-0"
-                        style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}>
-                        {group.projects.length} {group.projects.length === 1 ? "video" : "videos"}
-                      </span>
-                      <button
-                        onClick={() => setDeleteTarget({ type: "niche", channelName: group.channelName, projectIds: group.projects.map(p => p.id), count: group.projects.length })}
-                        className="p-2 sm:p-1.5 rounded-lg transition-all hover:opacity-90 shrink-0 ml-auto sm:ml-0"
-                        style={{ color: "var(--c-55)", border: "1px solid var(--bd-7)" }}
-                        title="Delete niche"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                      <button
-                        onClick={() => createVideoForChannel(group)}
-                        disabled={creating || !authReady || navigatingTo === `new-video-${group.channelName}`}
-                        className="flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer shrink-0 whitespace-nowrap"
-                        style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
-                      >
-                        {navigatingTo === `new-video-${group.channelName}` ? "Loading…" : "+ New Video"}
-                      </button>
-                    </div>
-                  </div>
-                  </div>
+        {/* One flat, filtered video list. The niche used to be a container
+            with its own grid inside; it is now a filter in the sidebar, so a
+            busy niche can't bury the ones under it and every row gets the
+            full width. */}
+        {channelGroups.length > 0 && (() => {
+          const group = channelGroups.find((g) => g.channelName === nicheFilter) ?? null;
+          const scoped = group ? group.projects : channelGroups.flatMap((g) => g.projects);
+          // Newest first. Grouping used to impose an order; a flat list needs
+          // its own, and recency is what people come back for.
+          const visible = [...scoped].sort((a, b) => b.created_at.localeCompare(a.created_at));
+          const nicheOf = new Map();
+          for (const g of channelGroups) for (const pr of g.projects) nicheOf.set(pr.id, g.channelName);
 
-                  {/* Project cards — auto-fill grid */}
-                  <div className={`grid gap-7 ${listScroll}`}
-                    style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))" }}>
-                    {group.projects.map((p) => {
-                      // A video is complete once its final assembled MP4
-                      // exists — thumbnails are an extra step that doesn't
-                      // affect progress/completion.
-                      const assembled = !!p.assembled_url;
-                      const path = assembled
-                        ? "thumbnails"
-                        : (p.current_state === 6 && p.selected_topic)
-                          ? "script"
-                          : (PHASE_PATHS[p.current_state] ?? "channel");
-                      const stateLabel = assembled
-                        ? "Complete"
-                        : (p.current_state === 6 && p.selected_topic)
-                          ? "Script"
-                          : (PHASE_LABELS[p.current_state] ?? "Setup");
-                      const progress = assembled ? 100 : Math.round(((PHASE_RANK[path] ?? 0) + 1) / 8 * 100);
-                      const isComplete = assembled;
-
-                      const isNavigating = navigatingTo === `open-video-${p.id}`;
-                      return (
-                        <Link
-                          key={p.id}
-                          href={(p.auto_pilot && !assembled && p.auto_pilot_status !== "stopped") ? `/projects/${p.id}/one-click` : `/projects/${p.id}/${path}`}
-                          prefetch
-                          onClick={() => setNavigatingTo(`open-video-${p.id}`)}
-                          className={`block relative text-left p-6 rounded-2xl transition-all ${isNavigating ? "pointer-events-none" : "hover:scale-[1.01] active:scale-[0.99]"}`}
-                          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
-                          onMouseEnter={(e) => { if (!isNavigating) (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
-                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-card)"; }}
-                        >
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
-                                style={isComplete ? {
-                                  background: "oklch(0.55 0.15 145 / 0.15)",
-                                  color: "oklch(0.65 0.15 145)",
-                                  border: "1px solid oklch(0.55 0.15 145 / 0.3)",
-                                } : {
-                                  background: "oklch(0.72 0.25 285 / 0.1)",
-                                  color: "var(--brand-text)",
-                                  border: "1px solid oklch(0.72 0.25 285 / 0.2)",
-                                }}>
-                                {stateLabel}
-                              </span>
-                              {isComplete && p.assembled_url && (
-                                <VideoDurationBadge src={p.assembled_url} />
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs" style={{ color: "var(--c-38)" }}>{timeAgo(p.created_at)}</span>
-                              {isComplete && p.assembled_url && (
-                                <button
-                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); downloadVideo(p.id, p.assembled_url!, p.selected_topic ?? "video"); }}
-                                  disabled={downloadingId === p.id}
-                                  className="p-1 rounded-lg transition-all hover:opacity-90 disabled:opacity-50"
-                                  style={{ color: "oklch(0.65 0.15 145)" }}
-                                  title="Download video"
-                                >
-                                  {downloadingId === p.id
-                                    ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
-                                    : <Download size={13} />}
-                                </button>
-                              )}
-                              <button
-                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget({ type: "video", id: p.id, label: p.selected_topic ?? "this video" }); }}
-                                className="p-1 rounded-lg transition-all hover:opacity-90"
-                                style={{ color: "var(--c-55)" }}
-                                title="Delete video"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Smaller on phones: a long topic ran to four lines
-                              at text-lg and pushed the progress bar off screen. */}
-                          <p className="text-[13px] sm:text-base font-semibold leading-snug mb-4 sm:mb-5"
-                            style={{ color: p.selected_topic ? "var(--c-88)" : "var(--c-40)" }}>
-                            {p.selected_topic ?? "No topic selected"}
-                          </p>
-
-                          {/* 1Click live controls — only for autopilot
-                              projects still in flight (running / paused /
-                              needs attention). */}
-                          {p.auto_pilot && !isComplete && !ONE_CLICK_HIDDEN && (
-                            <div className="mb-4">
-                              <OneClickControls
-                                projectId={p.id}
-                                status={p.auto_pilot_status ?? null}
-                                error={p.auto_pilot_error ?? null}
-                                onChanged={() => mutateProjects()}
-                              />
-                            </div>
-                          )}
-
-                          <div className="space-y-1.5">
-                            <div className="flex justify-between text-xs" style={{ color: "var(--c-38)" }}>
-                              <span>Progress</span>
-                              <span>{progress}%</span>
-                            </div>
-                            <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
-                              <div className="h-full rounded-full transition-all"
-                                style={{
-                                  width: `${progress}%`,
-                                  background: isComplete
-                                    ? "oklch(0.55 0.15 145)"
-                                    : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-                                }}
-                              />
-                            </div>
-                          </div>
-
-                          {isNavigating && (
-                            <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-2xl"
-                              style={{ background: "oklch(0.06 0 0 / 0.55)", backdropFilter: "blur(2px)" }}>
-                              <Spinner size={16} />
-                              <span className="text-xs font-medium" style={{ color: "var(--c-90)" }}>Opening…</span>
-                            </div>
-                          )}
-                        </Link>
-                      );
-                    })}
-
-                  </div>
+          return (
+            <div className="space-y-5">
+              {/* Toolbar: what you are looking at, and the actions for it. */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-base font-bold text-foreground truncate">
+                    {group ? group.channelName : "All videos"}
+                  </h2>
+                  {group?.channelUrl ? (
+                    <Link href={group.channelUrl} target="_blank" rel="noopener noreferrer"
+                      className="text-xs mt-0.5 block truncate underline underline-offset-2 hover:opacity-80 transition-opacity"
+                      style={{ color: "var(--brand-text)", textDecorationColor: "color-mix(in oklch, var(--brand-text) 60%, transparent)" }}
+                      title={group.channelUrl}>
+                      {group.channelUrl}
+                    </Link>
+                  ) : (
+                    <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>
+                      {visible.length} {visible.length === 1 ? "video" : "videos"} across {channelGroups.length} {channelGroups.length === 1 ? "niche" : "niches"}
+                    </p>
+                  )}
                 </div>
-              );
-            })}
-          </div>
-        )}
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex gap-0.5 p-0.5 rounded-lg" style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
+                    {(["list", "cards"] as const).map((v) => (
+                      <button key={v} onClick={() => selectVideoView(v)}
+                        aria-label={v === "list" ? "List view" : "Card view"}
+                        className="p-1.5 rounded-md transition-all cursor-pointer"
+                        style={videoView === v
+                          ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)" }
+                          : { background: "transparent", color: "var(--c-45)" }}>
+                        {v === "list" ? <List size={14} /> : <LayoutGrid size={14} />}
+                      </button>
+                    ))}
+                  </div>
+                  {group && (
+                    <button
+                      onClick={() => setDeleteTarget({ type: "niche", channelName: group.channelName, projectIds: group.projects.map((pr) => pr.id), count: group.projects.length })}
+                      className="p-2 rounded-lg transition-all hover:opacity-90 shrink-0"
+                      style={{ color: "var(--c-55)", border: "1px solid var(--bd-7)" }}
+                      title="Delete niche"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => group ? createVideoForChannel(group) : createProject()}
+                    disabled={creating || !authReady || navigatingTo === `new-video-${group?.channelName ?? ""}` || navigatingTo === "new-niche"}
+                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer shrink-0 whitespace-nowrap"
+                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
+                  >
+                    {group
+                      ? (navigatingTo === `new-video-${group.channelName}` ? "Loading…" : "+ New Video")
+                      : (navigatingTo === "new-niche" ? "Loading…" : "+ New Niche")}
+                  </button>
+                </div>
+              </div>
+
+              {videoView === "list" ? (
+                <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid var(--bd-card)" }}>
+                  {visible.map((pr, i) => {
+                    const assembled = !!pr.assembled_url;
+                    const path = assembled ? "thumbnails"
+                      : (pr.current_state === 6 && pr.selected_topic) ? "script"
+                      : (PHASE_PATHS[pr.current_state] ?? "channel");
+                    const stateLabel = assembled ? "Complete"
+                      : (pr.current_state === 6 && pr.selected_topic) ? "Script"
+                      : (PHASE_LABELS[pr.current_state] ?? "Setup");
+                    const progress = assembled ? 100 : Math.round(((PHASE_RANK[path] ?? 0) + 1) / 8 * 100);
+                    const isNavigating = navigatingTo === `open-video-${pr.id}`;
+                    return (
+                      <Link
+                        key={pr.id}
+                        href={(pr.auto_pilot && !assembled && pr.auto_pilot_status !== "stopped") ? `/projects/${pr.id}/one-click` : `/projects/${pr.id}/${path}`}
+                        prefetch
+                        onClick={() => setNavigatingTo(`open-video-${pr.id}`)}
+                        className={`relative flex items-center gap-3 px-4 py-3 transition-all ${isNavigating ? "pointer-events-none" : ""}`}
+                        style={{
+                          background: "oklch(1 0 0 / 0.04)",
+                          borderTop: i === 0 ? "none" : "1px solid var(--bd-6)",
+                        }}
+                        onMouseEnter={(e) => { if (!isNavigating) (e.currentTarget as HTMLElement).style.background = "oklch(1 0 0 / 0.08)"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "oklch(1 0 0 / 0.04)"; }}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[13px] font-semibold leading-snug truncate"
+                            style={{ color: pr.selected_topic ? "var(--c-88)" : "var(--c-40)" }}>
+                            {pr.selected_topic ?? "No topic selected"}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1 text-[11px]" style={{ color: "var(--c-38)" }}>
+                            {/* The niche column is redundant once one is selected. */}
+                            {!group && <span className="truncate max-w-[40%]">{nicheOf.get(pr.id)}</span>}
+                            {!group && <span aria-hidden>·</span>}
+                            <span>{timeAgo(pr.created_at)}</span>
+                          </div>
+                        </div>
+
+                        <div className="hidden sm:flex items-center gap-2 w-[120px] shrink-0">
+                          <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
+                            <div className="h-full rounded-full"
+                              style={{ width: `${progress}%`, background: assembled ? "oklch(0.55 0.15 145)" : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))" }} />
+                          </div>
+                          <span className="text-[11px] tabular-nums shrink-0" style={{ color: "var(--c-38)" }}>{progress}%</span>
+                        </div>
+
+                        <span className="text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0"
+                          style={assembled ? {
+                            background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                          } : {
+                            background: "oklch(0.72 0.25 285 / 0.1)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.2)",
+                          }}>
+                          {stateLabel}
+                        </span>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          {assembled && pr.assembled_url && (
+                            <button
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); downloadVideo(pr.id, pr.assembled_url!, pr.selected_topic ?? "video"); }}
+                              disabled={downloadingId === pr.id}
+                              className="p-1.5 rounded-lg transition-all hover:opacity-90 disabled:opacity-50"
+                              style={{ color: "oklch(0.65 0.15 145)" }}
+                              title="Download video"
+                            >
+                              {downloadingId === pr.id
+                                ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+                                : <Download size={13} />}
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget({ type: "video", id: pr.id, label: pr.selected_topic ?? "this video" }); }}
+                            className="p-1.5 rounded-lg transition-all hover:opacity-90"
+                            style={{ color: "var(--c-55)" }}
+                            title="Delete video"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+
+                        {isNavigating && (
+                          <div className="absolute inset-0 flex items-center justify-center gap-2"
+                            style={{ background: "oklch(0.06 0 0 / 0.55)", backdropFilter: "blur(2px)" }}>
+                            <Spinner size={14} />
+                            <span className="text-[11px] font-medium" style={{ color: "var(--c-90)" }}>Opening…</span>
+                          </div>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 320px), 1fr))" }}>
+                  {visible.map((pr) => {
+                    const assembled = !!pr.assembled_url;
+                    const path = assembled ? "thumbnails"
+                      : (pr.current_state === 6 && pr.selected_topic) ? "script"
+                      : (PHASE_PATHS[pr.current_state] ?? "channel");
+                    const stateLabel = assembled ? "Complete"
+                      : (pr.current_state === 6 && pr.selected_topic) ? "Script"
+                      : (PHASE_LABELS[pr.current_state] ?? "Setup");
+                    const progress = assembled ? 100 : Math.round(((PHASE_RANK[path] ?? 0) + 1) / 8 * 100);
+                    const isNavigating = navigatingTo === `open-video-${pr.id}`;
+                    return (
+                      <Link
+                        key={pr.id}
+                        href={(pr.auto_pilot && !assembled && pr.auto_pilot_status !== "stopped") ? `/projects/${pr.id}/one-click` : `/projects/${pr.id}/${path}`}
+                        prefetch
+                        onClick={() => setNavigatingTo(`open-video-${pr.id}`)}
+                        className={`block relative text-left p-5 rounded-2xl transition-all ${isNavigating ? "pointer-events-none" : "hover:scale-[1.01] active:scale-[0.99]"}`}
+                        style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
+                        onMouseEnter={(e) => { if (!isNavigating) (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-card)"; }}
+                      >
+                        <div className="flex items-start justify-between mb-3 gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-xs px-2.5 py-0.5 rounded-full font-medium shrink-0"
+                              style={assembled ? {
+                                background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                              } : {
+                                background: "oklch(0.72 0.25 285 / 0.1)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.2)",
+                              }}>
+                              {stateLabel}
+                            </span>
+                            {assembled && pr.assembled_url && <VideoDurationBadge src={pr.assembled_url} />}
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-xs" style={{ color: "var(--c-38)" }}>{timeAgo(pr.created_at)}</span>
+                            {assembled && pr.assembled_url && (
+                              <button
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); downloadVideo(pr.id, pr.assembled_url!, pr.selected_topic ?? "video"); }}
+                                disabled={downloadingId === pr.id}
+                                className="p-1 rounded-lg transition-all hover:opacity-90 disabled:opacity-50"
+                                style={{ color: "oklch(0.65 0.15 145)" }}
+                                title="Download video"
+                              >
+                                {downloadingId === pr.id
+                                  ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+                                  : <Download size={13} />}
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget({ type: "video", id: pr.id, label: pr.selected_topic ?? "this video" }); }}
+                              className="p-1 rounded-lg transition-all hover:opacity-90"
+                              style={{ color: "var(--c-55)" }}
+                              title="Delete video"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <p className="text-[13px] sm:text-[15px] font-semibold leading-snug mb-2"
+                          style={{ color: pr.selected_topic ? "var(--c-88)" : "var(--c-40)" }}>
+                          {pr.selected_topic ?? "No topic selected"}
+                        </p>
+                        {!group && (
+                          <p className="text-[11px] mb-4 truncate" style={{ color: "var(--c-38)" }}>{nicheOf.get(pr.id)}</p>
+                        )}
+
+                        {pr.auto_pilot && !assembled && !ONE_CLICK_HIDDEN && (
+                          <div className="mb-4">
+                            <OneClickControls
+                              projectId={pr.id}
+                              status={pr.auto_pilot_status ?? null}
+                              error={pr.auto_pilot_error ?? null}
+                              onChanged={() => mutateProjects()}
+                            />
+                          </div>
+                        )}
+
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between text-xs" style={{ color: "var(--c-38)" }}>
+                            <span>Progress</span>
+                            <span>{progress}%</span>
+                          </div>
+                          <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
+                            <div className="h-full rounded-full transition-all"
+                              style={{ width: `${progress}%`, background: assembled ? "oklch(0.55 0.15 145)" : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))" }} />
+                          </div>
+                        </div>
+
+                        {isNavigating && (
+                          <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-2xl"
+                            style={{ background: "oklch(0.06 0 0 / 0.55)", backdropFilter: "blur(2px)" }}>
+                            <Spinner size={16} />
+                            <span className="text-xs font-medium" style={{ color: "var(--c-90)" }}>Opening…</span>
+                          </div>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Loading skeleton */}
         {projects === undefined && (
@@ -2149,6 +2307,7 @@ export default function HomePage() {
           </div>
         )}
         </>)}
+        </div>
         </>
         )}
 
