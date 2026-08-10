@@ -503,6 +503,42 @@ body {
 /* A fieldset[disabled] wrapper dims its whole subtree the same way. */
 [data-theme="light"] fieldset:disabled { opacity: 0.75; }
 
+/* Hover for the client dashboard: stat tiles lift and light up, sidebar rows
+   slide along the pointer.
+
+   The tile fill and border are the same pair the Stats tab's tiles were
+   already applying through their own onMouseEnter handlers — moved here so
+   every stat item across the dashboard behaves identically instead of only
+   the four that carried the handlers. !important because these elements set
+   background and border inline, which otherwise beats any stylesheet rule.
+
+   The white tint is a no-op on the light theme, where it would land on a
+   near-white card, so that theme gets a dark tint of its own. */
+.hover-lift:hover {
+  transform: translateY(-2px);
+  background: oklch(1 0 0 / 0.12) !important;
+  border-color: oklch(0.72 0.25 285 / 0.35) !important;
+  box-shadow: 0 8px 20px oklch(0 0 0 / 0.28);
+}
+[data-theme="light"] .hover-lift:hover {
+  background: oklch(0 0 0 / 0.04) !important;
+  border-color: oklch(0.44 0.22 285 / 0.3) !important;
+  box-shadow: 0 8px 20px oklch(0 0 0 / 0.09);
+}
+
+.hover-nudge:hover {
+  transform: translateX(3px);
+  background: oklch(1 0 0 / 0.06) !important;
+  color: var(--c-75) !important;
+}
+[data-theme="light"] .hover-nudge:hover {
+  background: oklch(0 0 0 / 0.04) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hover-lift:hover, .hover-nudge:hover { transform: none; }
+}
+
 /* Step connector line animation */
 @keyframes pulse-line {
   0%, 100% { opacity: 0.3; }

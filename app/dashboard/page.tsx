@@ -198,7 +198,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {/* Niches — first, mirrors the real dashboard layout */}
-          <div className="rounded-xl px-5 py-4 flex items-center justify-between gap-3" style={cardStyle}>
+          <div className="hover-lift rounded-xl px-5 py-4 flex items-center justify-between gap-3 transition-all duration-200" style={cardStyle}>
             <div className="min-w-0">
               <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{niches}</p>
               <p className="text-xs" style={{ color: "var(--c-42)" }}>Niches Used</p>
@@ -218,11 +218,11 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
               </span>
             </div>
           </div>
-          <div className="rounded-xl px-5 py-4" style={cardStyle}>
+          <div className="hover-lift rounded-xl px-5 py-4 transition-all duration-200" style={cardStyle}>
             <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{total}</p>
             <p className="text-xs" style={{ color: "var(--c-42)" }}>Total Videos</p>
           </div>
-          <div className="rounded-xl px-5 py-4 flex items-center justify-between" style={cardStyle}>
+          <div className="hover-lift rounded-xl px-5 py-4 flex items-center justify-between transition-all duration-200" style={cardStyle}>
             <div>
               <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{completed}</p>
               <p className="text-xs" style={{ color: "var(--c-42)" }}>Completed</p>
@@ -230,7 +230,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
             </div>
             <DemoPieRing id="dcComp" pct={total > 0 ? completed / total : 0} color="#5bc48a" centerText={total > 0 ? `${Math.round((completed / total) * 100)}%` : "0%"} />
           </div>
-          <div className="rounded-xl px-5 py-4 flex items-center justify-between" style={cardStyle}>
+          <div className="hover-lift rounded-xl px-5 py-4 flex items-center justify-between transition-all duration-200" style={cardStyle}>
             <div>
               <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{inProg}</p>
               <p className="text-xs" style={{ color: "var(--c-42)" }}>In Progress</p>
@@ -1049,7 +1049,7 @@ export default function HomePage() {
                 <button
                   key={t.id}
                   onClick={() => selectDashTab(t.id)}
-                  className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium text-left transition-all cursor-pointer"
+                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium text-left transition-all cursor-pointer ${active ? "" : "hover-nudge"}`}
                   style={active ? {
                     background: "oklch(0.72 0.25 285 / 0.15)",
                     border: "1px solid oklch(0.72 0.25 285 / 0.4)",
@@ -1086,7 +1086,7 @@ export default function HomePage() {
                 style={{ borderTop: "1px solid var(--bd-6)", scrollbarWidth: "thin" }}>
                 <button
                   onClick={() => selectNiche(NICHE_ALL)}
-                  className="flex items-center gap-2 pl-3.5 pr-3 py-2.5 rounded-lg text-[13px] text-left transition-all cursor-pointer"
+                  className={`flex items-center gap-2 pl-3.5 pr-3 py-2.5 rounded-lg text-[13px] text-left transition-all cursor-pointer ${nicheFilter === NICHE_ALL ? "" : "hover-nudge"}`}
                   style={{ background: nicheFilter === NICHE_ALL ? "oklch(1 0 0 / 0.07)" : "transparent", color: nicheFilter === NICHE_ALL ? "var(--c-85)" : "var(--c-45)" }}
                 >
                   <span className="min-w-0 flex-1 truncate">All videos</span>
@@ -1101,7 +1101,7 @@ export default function HomePage() {
                     <button
                       key={g.channelName}
                       onClick={() => selectNiche(g.channelName)}
-                      className="flex items-center gap-2 pl-3.5 pr-3 py-2.5 rounded-lg text-[13px] text-left transition-all cursor-pointer"
+                      className={`flex items-center gap-2 pl-3.5 pr-3 py-2.5 rounded-lg text-[13px] text-left transition-all cursor-pointer ${on ? "" : "hover-nudge"}`}
                       style={{ background: on ? "oklch(1 0 0 / 0.07)" : "transparent", color: on ? "var(--c-85)" : "var(--c-45)" }}
                     >
                       <span className="min-w-0 flex-1 truncate">{g.channelName}</span>
@@ -1461,10 +1461,8 @@ export default function HomePage() {
                       // them in a 2-col mobile grid and made this card roughly
                       // twice as tall as the rest of the row.
                       return (
-                        <div className="rounded-xl transition-all min-h-[104px] px-4 sm:px-5 py-4 flex items-start justify-between gap-3"
-                          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
-                          onMouseEnter={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; t.style.background = "oklch(1 0 0 / 0.12)"; }}
-                          onMouseLeave={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "var(--bd-card)"; t.style.background = "oklch(1 0 0 / 0.08)"; }}>
+                        <div className="hover-lift rounded-xl transition-all min-h-[104px] px-4 sm:px-5 py-4 flex items-start justify-between gap-3"
+                          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                           <div className="min-w-0">
                             <p className="leading-none">
                               <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{nichesUsed}</span>
@@ -1504,19 +1502,15 @@ export default function HomePage() {
                     })()}
 
                     {/* Total Videos — plain */}
-                    <div className="rounded-xl transition-all min-h-[104px] px-5 py-4 flex flex-col items-center justify-center text-center"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
-                      onMouseEnter={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; t.style.background = "oklch(1 0 0 / 0.12)"; }}
-                      onMouseLeave={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "var(--bd-card)"; t.style.background = "oklch(1 0 0 / 0.08)"; }}>
+                    <div className="hover-lift rounded-xl transition-all min-h-[104px] px-5 py-4 flex flex-col items-center justify-center text-center"
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{total}</p>
                       <p className="text-xs" style={{ color: "var(--c-42)" }}>Total Videos</p>
                     </div>
 
                     {/* Completed */}
-                    <div className="rounded-xl transition-all min-h-[104px] px-5 py-4 flex items-center justify-between"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
-                      onMouseEnter={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; t.style.background = "oklch(1 0 0 / 0.12)"; }}
-                      onMouseLeave={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "var(--bd-card)"; t.style.background = "oklch(1 0 0 / 0.08)"; }}>
+                    <div className="hover-lift rounded-xl transition-all min-h-[104px] px-5 py-4 flex items-center justify-between"
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div>
                         <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{completed}</p>
                         <p className="text-xs" style={{ color: "var(--c-42)" }}>Completed</p>
@@ -1529,10 +1523,8 @@ export default function HomePage() {
                     </div>
 
                     {/* In Progress */}
-                    <div className="rounded-xl transition-all min-h-[104px] px-5 py-4 flex items-center justify-between"
-                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
-                      onMouseEnter={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; t.style.background = "oklch(1 0 0 / 0.12)"; }}
-                      onMouseLeave={(e) => { const t = e.currentTarget as HTMLElement; t.style.borderColor = "var(--bd-card)"; t.style.background = "oklch(1 0 0 / 0.08)"; }}>
+                    <div className="hover-lift rounded-xl transition-all min-h-[104px] px-5 py-4 flex items-center justify-between"
+                      style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div>
                         <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{inProgress}</p>
                         <p className="text-xs" style={{ color: "var(--c-42)" }}>In Progress</p>
@@ -1832,7 +1824,7 @@ export default function HomePage() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 
                       {/* KIE */}
-                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
+                      <div className="hover-lift rounded-xl px-5 py-4 transition-all duration-200" style={cardStyle}>
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div className="min-w-0">
                             <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>KIE</p>
@@ -1872,7 +1864,7 @@ export default function HomePage() {
                       {/* ElevenLabs. Uses UsageBar (used/limit) instead of
                           CreditsBar because ElevenLabs quota is bounded per
                           plan — we have both numerator and denominator. */}
-                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
+                      <div className="hover-lift rounded-xl px-5 py-4 transition-all duration-200" style={cardStyle}>
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div className="min-w-0">
                             <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>ElevenLabs</p>
@@ -1932,7 +1924,7 @@ export default function HomePage() {
                           all there is to show. A saved-but-off key is worth
                           calling out, since it changes nothing about who pays
                           and reads as connected otherwise. */}
-                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
+                      <div className="hover-lift rounded-xl px-5 py-4 transition-all duration-200" style={cardStyle}>
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div className="min-w-0">
                             <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>Anthropic</p>

@@ -33,7 +33,7 @@ const cardStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--
 
 function Tile({ value, unit, label, hint }: { value: string; unit?: string; label: string; hint?: string }) {
   return (
-    <div className="rounded-xl px-4 sm:px-5 py-4 min-h-[92px]" style={cardStyle}>
+    <div className="hover-lift rounded-xl px-4 sm:px-5 py-4 min-h-[92px] transition-all duration-200" style={cardStyle}>
       <p className="leading-none">
         <span className="text-2xl font-bold tabular-nums" style={{ color: "var(--c-90)" }}>{value}</span>
         {unit && <span className="text-xs ml-1.5" style={{ color: "var(--c-50)" }}>{unit}</span>}
