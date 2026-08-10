@@ -1028,7 +1028,7 @@ export default function HomePage() {
           horizontal rail above the content takes over. */}
       {!showDemo && (
         <aside className={`fixed left-0 bottom-0 top-[109px] sm:top-[117px] lg:top-0 z-40 flex flex-col transition-all duration-200 lg:translate-x-0 w-[85vw] sm:w-[380px] ${dashTab === "stats" ? "lg:w-[228px]" : "lg:w-[388px]"} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
-          style={{ background: "var(--bg-header)", borderRight: "1px solid var(--bd-6)" }}>
+          style={{ background: "var(--bg-header)", borderRight: "1px solid var(--c-90)" }}>
           <Link href="/dashboard" className="hidden lg:flex items-center gap-3 px-5 h-[69px] shrink-0 transition-opacity hover:opacity-80"
             style={{ borderBottom: "1px solid var(--bd-6)" }}>
             <div className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center">
