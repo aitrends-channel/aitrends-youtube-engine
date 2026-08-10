@@ -1028,7 +1028,7 @@ export default function HomePage() {
           horizontal rail above the content takes over. */}
       {!showDemo && (
         <aside className={`fixed left-0 bottom-0 top-[109px] sm:top-[117px] lg:top-0 z-40 flex flex-col transition-all duration-200 lg:translate-x-0 w-[85vw] sm:w-[380px] ${dashTab === "stats" ? "lg:w-[228px]" : "lg:w-[388px]"} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
-          style={{ background: "var(--bg-header)", borderRight: "1px solid var(--c-90)" }}>
+          style={{ background: "var(--bg-header)", borderRight: "1px solid var(--bd-10)" }}>
           <Link href="/dashboard" className="hidden lg:flex items-center gap-3 px-5 h-[69px] shrink-0 transition-opacity hover:opacity-80"
             style={{ borderBottom: "1px solid var(--bd-6)" }}>
             <div className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center">
@@ -1066,20 +1066,57 @@ export default function HomePage() {
             {dashTab === "niches" && channelGroups.length > 0 && (
               <div className="mt-3 pt-3 flex-1 min-h-0 overflow-y-auto flex flex-col gap-0.5"
                 style={{ borderTop: "1px solid var(--bd-6)", scrollbarWidth: "thin" }}>
-                {[{ name: NICHE_ALL, label: "All videos", count: channelGroups.reduce((n, g) => n + g.projects.length, 0) },
-                  ...channelGroups.map((g) => ({ name: g.channelName, label: g.channelName, count: g.projects.length }))
-                ].map((n) => {
-                  const on = nicheFilter === n.name;
+                <button
+                  onClick={() => selectNiche(NICHE_ALL)}
+                  className="flex items-center gap-2 pl-3.5 pr-3 py-2.5 rounded-lg text-[13px] text-left transition-all cursor-pointer"
+                  style={{ background: nicheFilter === NICHE_ALL ? "oklch(1 0 0 / 0.07)" : "transparent", color: nicheFilter === NICHE_ALL ? "var(--c-85)" : "var(--c-45)" }}
+                >
+                  <span className="min-w-0 flex-1 truncate">All videos</span>
+                  <span className="shrink-0 tabular-nums text-[11px]" style={{ color: "var(--c-38)" }}>
+                    {channelGroups.reduce((acc, g) => acc + g.projects.length, 0)}
+                  </span>
+                </button>
+
+                {/* Each niche lists its own videos underneath, indented and
+                    expanded, so the nav doubles as the index of everything in
+                    the account rather than only its niches. */}
+                {channelGroups.map((g) => {
+                  const on = nicheFilter === g.channelName;
                   return (
-                    <button
-                      key={n.name}
-                      onClick={() => selectNiche(n.name)}
-                      className="flex items-center gap-2 pl-3.5 pr-3 py-2.5 rounded-lg text-[13px] text-left transition-all cursor-pointer"
-                      style={{ background: on ? "oklch(1 0 0 / 0.07)" : "transparent", color: on ? "var(--c-85)" : "var(--c-45)" }}
-                    >
-                      <span className="min-w-0 flex-1 truncate">{n.label}</span>
-                      <span className="shrink-0 tabular-nums text-[11px]" style={{ color: "var(--c-38)" }}>{n.count}</span>
-                    </button>
+                    <div key={g.channelName} className="flex flex-col gap-0.5">
+                      <button
+                        onClick={() => selectNiche(g.channelName)}
+                        className="flex items-center gap-2 pl-3.5 pr-3 py-2.5 rounded-lg text-[13px] text-left transition-all cursor-pointer"
+                        style={{ background: on ? "oklch(1 0 0 / 0.07)" : "transparent", color: on ? "var(--c-85)" : "var(--c-45)" }}
+                      >
+                        <span className="min-w-0 flex-1 truncate">{g.channelName}</span>
+                        <span className="shrink-0 tabular-nums text-[11px]" style={{ color: "var(--c-38)" }}>{g.projects.length}</span>
+                      </button>
+                      <div className="pl-[5px] flex flex-col gap-0.5">
+                      {[...g.projects]
+                        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+                        .map((pr) => {
+                          const assembled = !!pr.assembled_url;
+                          const path = assembled ? "thumbnails"
+                            : (pr.current_state === 6 && pr.selected_topic) ? "script"
+                            : (PHASE_PATHS[pr.current_state] ?? "channel");
+                          return (
+                            <Link
+                              key={pr.id}
+                              href={(pr.auto_pilot && !assembled && pr.auto_pilot_status !== "stopped") ? `/projects/${pr.id}/one-click` : `/projects/${pr.id}/${path}`}
+                              prefetch
+                              onClick={() => setSidebarOpen(false)}
+                              className="flex items-center gap-2 pl-8 pr-3 py-1.5 rounded-lg text-[12px] transition-all hover:opacity-100 opacity-80"
+                              style={{ color: "var(--c-38)" }}
+                              title={pr.selected_topic ?? "No topic selected"}
+                            >
+                              <span className="shrink-0 w-1 h-1 rounded-full" style={{ background: assembled ? "oklch(0.65 0.15 145)" : "var(--brand-text)" }} />
+                              <span className="min-w-0 flex-1 truncate">{pr.selected_topic ?? "No topic selected"}</span>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </div>
                   );
                 })}
               </div>
