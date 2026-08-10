@@ -542,6 +542,7 @@ export default function SettingsPage() {
   const [anthropicKeySaved, setAnthropicKeySaved] = useState(false);
   const [anthropicDirect, setAnthropicDirect] = useState(false);
   const [savingDirect, setSavingDirect] = useState(false);
+  const [removing, setRemoving] = useState<keyof FormState | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState<Tier>("paid");
   // Top-level split: API keys (the existing paid/free cards), the
@@ -643,6 +644,31 @@ export default function SettingsPage() {
       toast.error(err instanceof Error ? err.message : "Failed to remove");
     } finally {
       setSavingDirect(false);
+    }
+  }
+
+  // Clearing a key is its own action, not an empty Save: the form posts every
+  // field, so a blank input means "leave it alone". Without this there was no
+  // way out of a key the provider rejects, because a stored value always wins
+  // over the platform fallback.
+  async function removeKey(field: keyof FormState, label: string) {
+    setRemoving(field);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [`remove_${field}`]: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to remove");
+      const fresh = await fetch("/api/settings").then((r) => r.json());
+      setMasked(fresh as FormState);
+      setForm((f) => ({ ...f, [field]: "" }));
+      toast.success(`${label} removed.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove");
+    } finally {
+      setRemoving(null);
     }
   }
 
@@ -977,6 +1003,21 @@ export default function SettingsPage() {
                               {isShowing ? <EyeOff size={14} /> : <Eye size={14} />}
                             </button>
                           </div>
+
+                          {/* Anthropic's remove button lives with its billing
+                              toggle below, since removing it has to switch
+                              that off too. */}
+                          {isSet && field.key !== "anthropic_api_key" && (
+                            <button
+                              type="button"
+                              onClick={() => removeKey(field.key, field.label)}
+                              disabled={removing !== null}
+                              className="text-xs font-medium transition-opacity hover:opacity-70 disabled:opacity-40"
+                              style={{ color: "oklch(0.7 0.22 25)" }}
+                            >
+                              {removing === field.key ? "Removing…" : "Remove key"}
+                            </button>
+                          )}
                         </div>
                       );
                     })}
