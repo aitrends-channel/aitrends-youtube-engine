@@ -1064,7 +1064,7 @@ export default function HomePage() {
             {/* Niches are a filter over the video list, so they belong in the
                 nav rather than as headers repeated down the page. */}
             {dashTab === "niches" && channelGroups.length > 0 && (
-              <div className="mt-3 pt-3 flex-1 min-h-0 overflow-y-auto flex flex-col gap-0.5"
+              <div className="mt-3 pt-3 pl-[5px] flex-1 min-h-0 overflow-y-auto flex flex-col gap-0.5"
                 style={{ borderTop: "1px solid var(--bd-6)", scrollbarWidth: "thin" }}>
                 <button
                   onClick={() => selectNiche(NICHE_ALL)}
@@ -2013,12 +2013,12 @@ export default function HomePage() {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0">
-                  <div className="flex gap-0.5 p-0.5 rounded-lg" style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
+                <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
+                  <div className="flex-1 sm:flex-none flex gap-0.5 p-0.5 rounded-lg" style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
                     {(["list", "cards"] as const).map((v) => (
                       <button key={v} onClick={() => selectVideoView(v)}
                         aria-label={v === "list" ? "List view" : "Card view"}
-                        className="p-1.5 rounded-md transition-all cursor-pointer"
+                        className="flex-1 sm:flex-none flex items-center justify-center p-1.5 sm:py-1.5 rounded-md transition-all cursor-pointer"
                         style={videoView === v
                           ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)" }
                           : { background: "transparent", color: "var(--c-45)" }}>
@@ -2039,7 +2039,7 @@ export default function HomePage() {
                   <button
                     onClick={() => group ? createVideoForChannel(group) : createProject()}
                     disabled={creating || !authReady || navigatingTo === `new-video-${group?.channelName ?? ""}` || navigatingTo === "new-niche"}
-                    className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer shrink-0 whitespace-nowrap"
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2.5 sm:py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer whitespace-nowrap"
                     style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
                   >
                     {group
