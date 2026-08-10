@@ -49,7 +49,7 @@ const organizationSchema = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="h-full" style={{ fontFamily: "'Inter Variable', sans-serif" }}>
+    <html lang="en" className="h-full" style={{ fontFamily: "'IBM Plex Sans Variable', 'Inter Variable', sans-serif" }}>
       <head>
         <link rel="icon" href="/heclus-white.ico" />
         <meta name="theme-color" content="#0f0a0f" />
