@@ -5,44 +5,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { X } from "lucide-react";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { useProject } from "@/hooks/useProject";
+import { compactNumber, unitSuffix } from "@/lib/cost-display";
 
 interface PageProps {
   params: { projectId: string };
-}
-
-// Same display helpers the admin Cost view uses. Kept inline here to
-// avoid a refactor that touches the (already large) admin page in the
-// same change — if a third surface needs the same logic, lift these
-// into lib/cost-display.ts and import from both places.
-function compactNumber(n: number): string {
-  if (n === 0) return "0";
-  if (n < 10 && !Number.isInteger(n)) return n.toFixed(1).replace(/\.0$/, "");
-  if (n < 1000) return Math.round(n).toString();
-  if (n < 1_000_000) {
-    const k = n / 1000;
-    return k >= 100 ? `${Math.round(k)}k` : `${k.toFixed(1).replace(/\.0$/, "")}k`;
-  }
-  const m = n / 1_000_000;
-  return m >= 100 ? `${Math.round(m)}M` : `${m.toFixed(1).replace(/\.0$/, "")}M`;
-}
-
-function unitSuffix(unitKind: string): string {
-  switch (unitKind) {
-    // "claude_tokens" is the collapsed bucket we build in renderBucket
-    // by merging all four claude_tokens_* sub-kinds together; the four
-    // sub-kinds themselves still appear here as a belt-and-suspenders
-    // fallback in case the bucket key changes upstream.
-    case "claude_tokens":
-    case "claude_tokens_in":
-    case "claude_tokens_out":
-    case "claude_tokens_cache_read":
-    case "claude_tokens_cache_creation":
-      return "tok";
-    case "kie_credits":          return "cr";
-    case "elevenlabs_chars":     return "chr";
-    case "supadata_transcripts": return "tx";
-    default:                     return unitKind;
-  }
 }
 
 type CostBreakdownEntry = {
