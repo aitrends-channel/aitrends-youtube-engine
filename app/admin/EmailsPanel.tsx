@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { toast } from "sonner";
 import { Mail, Send, RefreshCw, Search, X, Reply, Inbox as InboxIcon } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { DiagnoseButton } from "@/components/admin/DiagnoseButton";
 
 /**
  * Admin Emails tab. Two-pane layout: list on the left, detail or
@@ -274,6 +275,12 @@ function EmailDetailView({ email, onReply }: { email: EmailFull; onReply: () => 
           </span>
         </div>
       </div>
+
+      {/* Inbound only: an email we sent has no reporter to identify an account
+          by, and diagnosing our own outbound mail is meaningless. */}
+      {email.direction === "inbound" && (
+        <DiagnoseButton emailId={email.id} />
+      )}
 
       <div className="rounded-xl p-4"
         style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
