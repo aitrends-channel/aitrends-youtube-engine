@@ -8,49 +8,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Spinner } from "@/components/ui/spinner";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { FeedbackDialog } from "@/components/FeedbackDialog";
+import { SupportChat } from "@/components/SupportChat";
 
 // Floating help bubble, bottom-right on every page. Opens a small
-// white dialog with a fixed-list FAQ and a contact form that files
-// a ticket into the support_tickets table. The form auto-fills the
-// signed-in user's email and locks the field; anonymous visitors
-// type theirs in.
-//
-// Keep the FAQ list short (5–7 items) — long lists become an inert
-// wall of text people scroll past. When something becomes a recurring
-// support theme, add it here so future users find it before opening
-// a ticket.
-
-interface Faq {
-  q: string;
-  a: React.ReactNode;
-}
-
-const FAQS: Faq[] = [
-  {
-    q: "Where do I add my API keys?",
-    a: (
-      <>
-        Open <Link href="/setup" className="font-semibold text-zinc-900 underline underline-offset-2 hover:opacity-80">Config</Link> and paste your KIE and ElevenLabs keys. KIE powers script/image/video generation; ElevenLabs powers voiceovers and caption alignment.
-      </>
-    ),
-  },
-  {
-    q: "Why does a niche refuse to start?",
-    a: <>You need both KIE and ElevenLabs keys saved before creating a niche. Add them on the Config page, then try again.</>,
-  },
-  {
-    q: "Why is my voiceover slow?",
-    a: <>Voiceovers go direct to ElevenLabs and are typically 1–3 seconds per beat. If a single beat takes much longer, your ElevenLabs plan may be rate-limiting concurrent requests. Lower the per-batch parallelism or upgrade your ElevenLabs tier.</>,
-  },
-  {
-    q: "Where can I see my usage and costs?",
-    a: <>Open any project and click the Cost tab in the sidebar. Aggregates per step (script, images, video, voiceover) with the model that ran it.</>,
-  },
-  {
-    q: "How do I change or cancel my plan?",
-    a: <>Make plan changes at user profile → Plan, or <a href="/plan" className="underline font-medium" style={{ color: "oklch(0.55 0.22 285)" }}>click here</a> directly.</>,
-  },
-];
+// white dialog: live chat with the support agent for signed-in users,
+// and a contact form that files a ticket into support_tickets. The form
+// auto-fills the signed-in user's email and locks the field; anonymous
+// visitors type theirs in and get the form only.
 
 export function HelpButton() {
   const [open, setOpen] = useState(false);
@@ -76,9 +40,7 @@ export function HelpButton() {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Index of the FAQ row currently expanded. -1 = all collapsed.
   // Accordion-style: only one open at a time keeps the modal calm.
-  const [openFaqIdx, setOpenFaqIdx] = useState<number>(-1);
 
   // Look up the signed-in email lazily on first modal open. Saves the
   // unauthenticated case from paying for an auth round-trip on every
@@ -232,80 +194,48 @@ export function HelpButton() {
                 <X size={16} className="text-white" />
               </button>
             </div>
-            <DialogDescription className="!text-white/90">
-              Get help with common issues or submit a support ticket.
+            {/* Description and Discord share a row: both answer "where do I get
+                help", so stacking them made the header taller for no gain.
+                flex-wrap drops the chip below on narrow screens rather than
+                squeezing the sentence. */}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+            <DialogDescription className="!text-white/90 min-w-0 flex-1">
+              Chat with us, or file a ticket.
             </DialogDescription>
-          </DialogHeader>
 
-          {/* One scrollable region for FAQs + contact form combined.
-              min-h-0 + flex-1 lets it shrink inside the flex parent so
-              the form section can never overflow past the modal bottom. */}
-          <div className="flex-1 min-h-0 overflow-y-auto pr-1 -mr-1">
-            <div className="space-y-2 mt-2">
-              {FAQS.map((faq, idx) => {
-                const isOpen = openFaqIdx === idx;
-                return (
-                  <div
-                    key={faq.q}
-                    className="rounded-lg overflow-hidden transition-all"
-                    style={{ border: "1px solid oklch(0 0 0 / 0.08)" }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setOpenFaqIdx(isOpen ? -1 : idx)}
-                      className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left cursor-pointer hover:bg-zinc-50 transition-colors"
-                    >
-                      <span className="text-sm font-semibold text-zinc-900">{faq.q}</span>
-                      <ChevronDown
-                        size={16}
-                        className="shrink-0 text-zinc-500 transition-transform"
-                        style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }}
-                      />
-                    </button>
-                    {isOpen && (
-                      <div className="px-3 pb-3 -mt-0.5">
-                        <p className="text-sm text-zinc-600 leading-relaxed">{faq.a}</p>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Community CTA — Discord. Sits above the ticket form so
-                users see the peer channel before filing a ticket; kept
-                calm (single line, brand-tinted) so it doesn't drown
-                out the primary Contact action. Renders in both the
-                form and the post-submit "sent" states. */}
             <a
               href="https://discord.gg/N53RuARnwn"
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-4 flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 transition-colors hover:bg-[color: oklch(0.55_0.22_270/0.06)]"
-              style={{ border: "1px solid oklch(0.55 0.22 270 / 0.25)", background: "oklch(0.55 0.22 270 / 0.04)" }}
+              className="inline-flex items-center gap-2 shrink-0 rounded-lg px-2.5 py-1.5 transition-colors hover:bg-white/25"
+              style={{ background: "oklch(1 0 0 / 0.16)", border: "1px solid oklch(1 0 0 / 0.28)" }}
             >
-              <span className="flex items-center gap-2.5">
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  aria-hidden="true"
-                  className="shrink-0"
-                >
-                  <path
-                    d="M19.27 5.33A17.5 17.5 0 0 0 14.9 4l-.22.4a15.9 15.9 0 0 0-5.36 0L9.1 4a17.5 17.5 0 0 0-4.37 1.33C1.94 9.5 1.2 13.55 1.57 17.55a17.7 17.7 0 0 0 5.4 2.73l.44-.6a12.7 12.7 0 0 1-2-1c.17-.13.34-.26.5-.4a12.6 12.6 0 0 0 12.18 0l.5.4c-.62.38-1.3.72-2 1l.44.6a17.7 17.7 0 0 0 5.4-2.73c.46-4.63-.75-8.65-3.16-12.22ZM8.52 15.33c-1.06 0-1.94-1-1.94-2.22 0-1.23.85-2.22 1.94-2.22 1.09 0 1.96 1 1.94 2.22 0 1.23-.85 2.22-1.94 2.22Zm6.96 0c-1.06 0-1.93-1-1.93-2.22 0-1.23.85-2.22 1.93-2.22 1.09 0 1.96 1 1.94 2.22 0 1.23-.85 2.22-1.94 2.22Z"
-                    fill="oklch(0.55 0.22 270)"
-                  />
-                </svg>
-                <span className="flex flex-col leading-tight">
-                  <span className="text-sm font-semibold text-zinc-900">Join our Discord community</span>
-                  <span className="text-xs text-zinc-500">Ask other creators, share workflows, get faster answers.</span>
-                </span>
-              </span>
-              <span className="text-xs font-semibold shrink-0" style={{ color: "oklch(0.55 0.22 270)" }}>Open →</span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="shrink-0">
+                <path
+                  d="M19.27 5.33A17.5 17.5 0 0 0 14.9 4l-.22.4a15.9 15.9 0 0 0-5.36 0L9.1 4a17.5 17.5 0 0 0-4.37 1.33C1.94 9.5 1.2 13.55 1.57 17.55a17.7 17.7 0 0 0 5.4 2.73l.44-.6a12.7 12.7 0 0 1-2-1c.17-.13.34-.26.5-.4a12.6 12.6 0 0 0 12.18 0l.5.4c-.62.38-1.3.72-2 1l.44.6a17.7 17.7 0 0 0 5.4-2.73c.46-4.63-.75-8.65-3.16-12.22ZM8.52 15.33c-1.06 0-1.94-1-1.94-2.22 0-1.23.85-2.22 1.94-2.22 1.09 0 1.96 1 1.94 2.22 0 1.23-.85 2.22-1.94 2.22Zm6.96 0c-1.06 0-1.93-1-1.93-2.22 0-1.23.85-2.22 1.93-2.22 1.09 0 1.96 1 1.94 2.22 0 1.23-.85 2.22-1.94 2.22Z"
+                  fill="white"
+                />
+              </svg>
+              <span className="text-xs font-semibold text-white">Join Discord</span>
+              <span className="text-xs text-white/70">→</span>
             </a>
+            </div>
+          </DialogHeader>
 
+          {/* One scrollable region for the chat + contact form combined.
+              min-h-0 + flex-1 lets it shrink inside the flex parent so
+              the form section can never overflow past the modal bottom. */}
+          <div className="flex-1 min-h-0 overflow-y-auto pr-1 -mr-1">
+            <div className="mt-3">
+              <SupportChat signedIn={signedIn} />
+            </div>
+
+            {/* The ticket form is now the anonymous-only path: a signed-in
+                user has chat, which reaches the same place and answers most
+                things without a ticket at all. Kept for visitors because the
+                bubble is mounted in the root layout, so it appears on public
+                pages where there is no account to chat about. */}
+            {!signedIn && (
             <div className="mt-5 pt-4 border-t border-zinc-200">
             {sent ? (
               <div className="flex flex-col items-center text-center py-3 gap-2">
@@ -425,6 +355,7 @@ export function HelpButton() {
               </form>
             )}
           </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

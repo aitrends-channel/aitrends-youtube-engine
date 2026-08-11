@@ -31,6 +31,10 @@
     {
       "path": "/api/cron/storage-usage",
       "schedule": "35 */6 * * *"
+    },
+    {
+      "path": "/api/cron/support-auto-reply",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
