@@ -13,6 +13,7 @@ import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
 import { ONE_CLICK_HIDDEN } from "@/lib/feature-flags";
+import { PREFIX_MAX_CHARS, prefixTooLongMessage } from "@/lib/prefix-limit";
 
 type Tier = "paid" | "free";
 
@@ -440,7 +441,16 @@ function CharacterConsistencyDefaults() {
       .finally(() => setLoading(false));
   }, []);
 
+  const overBy = text.trim().length - PREFIX_MAX_CHARS;
+
   async function handleSave() {
+    // The route rejects this too. Stopping here keeps the reason next to the
+    // box being edited rather than in a toast over a different part of the page.
+    const tooLong = prefixTooLongMessage(text);
+    if (tooLong) {
+      toast.error(tooLong);
+      return;
+    }
     setSaving(true);
     try {
       const res = await fetch("/api/settings", {
@@ -489,9 +499,17 @@ function CharacterConsistencyDefaults() {
         <div className="p-5 rounded-2xl space-y-4"
           style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
           <div className="space-y-2">
-            <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>
-              Consistency text
-            </label>
+            <div className="flex items-baseline justify-between gap-3">
+              <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>
+                Consistency text
+              </label>
+              {/* Counts down rather than up, so the limit is visible before it
+                  is hit instead of only in the error afterwards. */}
+              <span className="text-[11px] font-mono tabular-nums"
+                style={{ color: overBy > 0 ? "oklch(0.6 0.19 25)" : "var(--c-40)" }}>
+                {text.trim().length} / {PREFIX_MAX_CHARS}
+              </span>
+            </div>
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
@@ -502,7 +520,14 @@ function CharacterConsistencyDefaults() {
               onFocus={(e) => { e.currentTarget.style.borderColor = "oklch(0.72 0.25 285 / 0.5)"; }}
               onBlur={(e) => { e.currentTarget.style.borderColor = "var(--bd-10)"; }}
             />
-            {fromProject && (
+            {overBy > 0 ? (
+              <p className="text-[11px] leading-relaxed" style={{ color: "oklch(0.6 0.19 25)" }}>
+                {overBy.toLocaleString()} characters too long. This is a style
+                note added to the front of every image prompt, not a script.
+                Describe only what should never change, such as the look, the
+                palette and a recurring character, and leave each scene to Heclus.
+              </p>
+            ) : fromProject && (
               <p className="text-[11px] leading-relaxed" style={{ color: "var(--brand-text)" }}>
                 Filled in from the last prefix you set on a project. Save it to
                 make it your default for every new project.
@@ -512,7 +537,8 @@ function CharacterConsistencyDefaults() {
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving}
+            title={overBy > 0 ? `Trim ${overBy.toLocaleString()} characters to save` : undefined}
+            disabled={saving || overBy > 0}
             className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
             style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
           >

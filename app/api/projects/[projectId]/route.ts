@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { deleteFolder, deleteFolderWhere, deleteObject, r2KeyFromUrl, userFolderFor } from "@/lib/supabase/storage";
+import { prefixTooLongMessage } from "@/lib/prefix-limit";
 import type { User } from "@supabase/supabase-js";
 
 export async function GET(
@@ -482,6 +483,14 @@ export async function PATCH(
       .eq("id", projectId)
       .eq("user_id", user.id);
     return NextResponse.json({ success: true });
+  }
+
+  // Null clears the project's own prefix and inherits again, so only a string
+  // is worth measuring. The same limit is enforced on the account default in
+  // /api/settings, since either one can end up in front of every image prompt.
+  if (typeof body.character_consistency_text === "string") {
+    const tooLong = prefixTooLongMessage(body.character_consistency_text);
+    if (tooLong) return NextResponse.json({ error: tooLong }, { status: 400 });
   }
 
   const { data, error } = await supabase
