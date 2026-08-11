@@ -153,6 +153,21 @@ export async function sendEmail(args: SendArgs): Promise<{ messageId: string }> 
     if (error) {
       console.warn(`[email/smtp] sent ok but DB insert failed:`, error.message);
     }
+
+    // Mark what we just replied to as answered. Every reply in the app carries
+    // In-Reply-To and passes through here, so this is the one place the inbox's
+    // answered state can be kept true without each caller remembering to.
+    if (args.inReplyTo) {
+      const { error: stampErr } = await supabase
+        .from("emails")
+        .update({ is_replied: true, replied_at: new Date().toISOString() })
+        .eq("message_id", args.inReplyTo)
+        .eq("direction", "inbound")
+        .eq("is_replied", false);
+      if (stampErr) {
+        console.warn("[email/smtp] could not mark parent as replied:", stampErr.message);
+      }
+    }
   } catch (e) {
     console.warn("[email/smtp] sent ok but DB insert threw:", e instanceof Error ? e.message : e);
   }

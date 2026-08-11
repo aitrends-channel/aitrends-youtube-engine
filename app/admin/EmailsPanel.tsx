@@ -34,6 +34,9 @@ interface EmailRow {
   received_at: string | null;
   sent_at: string | null;
   is_read: boolean;
+  is_replied?: boolean;
+  auto_replied_at?: string | null;
+  auto_reply_draft?: string | null;
   in_reply_to: string | null;
   thread_root_id: string | null;
 }
@@ -177,6 +180,8 @@ export default function EmailsPanel() {
           ) : emails.map((e) => {
             const isSelected = e.id === selectedId;
             const unread = e.direction === "inbound" && !e.is_read;
+            const awaiting = e.direction === "inbound" && !e.is_replied;
+            const draft = awaiting && !!e.auto_reply_draft;
             return (
               <button key={e.id}
                 onClick={() => { setSelectedId(e.id); setComposing(false); void mutateList(); }}
@@ -201,6 +206,14 @@ export default function EmailsPanel() {
                   <p className="text-[11px] truncate" style={{ color: "var(--c-45)" }}>
                     {e.snippet}
                   </p>
+                )}
+                {awaiting && (
+                  <span className="inline-block mt-1.5 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider"
+                    style={draft
+                      ? { background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.5 0.2 285)" }
+                      : { background: "oklch(0 0 0 / 0.05)", color: "var(--c-45)" }}>
+                    {draft ? (e.auto_replied_at ? "Agent replied" : "Agent draft") : "Awaiting reply"}
+                  </span>
                 )}
               </button>
             );
