@@ -103,7 +103,7 @@ export default function EmailsPanel() {
 
   return (
     <section className="rounded-2xl overflow-hidden"
-      style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
 
       {/* Header */}
       <div className="flex items-center justify-between gap-3 px-5 py-4 flex-wrap"
@@ -145,7 +145,7 @@ export default function EmailsPanel() {
               onClick={() => { setTab(d); setSelectedId(null); setComposing(false); }}
               className="px-3 py-1 rounded text-xs font-semibold uppercase tracking-wider transition-all cursor-pointer"
               style={tab === d
-                ? { background: "white", color: "oklch(0.72 0.25 285)", boxShadow: "0 1px 3px oklch(0 0 0 / 0.06)" }
+                ? { background: "var(--bg-card)", color: "oklch(0.72 0.25 285)", boxShadow: "0 1px 3px oklch(0 0 0 / 0.06)" }
                 : { background: "transparent", color: "var(--c-50)" }}>
               {d === "inbound" ? "Inbox" : "Sent"}
             </button>
@@ -158,7 +158,7 @@ export default function EmailsPanel() {
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search subject, from…"
             className="w-full pl-8 pr-3 py-1.5 rounded-lg text-xs outline-none"
-            style={{ background: "white", border: "1px solid var(--bd-8)", color: "var(--c-90)" }}
+            style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)", color: "var(--c-90)" }}
           />
         </div>
       </div>
@@ -276,7 +276,7 @@ function EmailDetailView({ email, onReply }: { email: EmailFull; onReply: () => 
       </div>
 
       <div className="rounded-xl p-4"
-        style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+        style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
         {email.body_html ? (
           // Render HTML in an iframe so the email's own styles can't
           // leak into the dashboard. srcDoc avoids the same-origin
@@ -347,7 +347,7 @@ function ComposeForm({ replyTo, onClose, onSent }: {
     }
   }
 
-  const fieldStyle = { background: "white", border: "1px solid var(--bd-8)", color: "var(--c-90)" };
+  const fieldStyle = { background: "var(--bg-card)", border: "1px solid var(--bd-8)", color: "var(--c-90)" };
 
   return (
     <div className="p-5 space-y-3">

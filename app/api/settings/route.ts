@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getSettings, invalidateSettingsCache } from "@/lib/settings";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { checkElevenLabs, checkKie, keyRejectionMessage } from "@/lib/key-check";
 import type { User } from "@supabase/supabase-js";
 
 function mask(value: string): string {
@@ -68,6 +69,8 @@ export async function POST(req: Request) {
       anthropic_api_key: string;
       anthropic_direct_enabled: boolean;
       remove_anthropic_api_key: boolean;
+      remove_kie_api_key: boolean;
+      remove_elevenlabs_api_key: boolean;
     }>;
 
     const update: Record<string, string | boolean | null> = {};
@@ -83,6 +86,30 @@ export async function POST(req: Request) {
       update.anthropic_direct_enabled = false;
     } else if (typeof body.anthropic_direct_enabled === "boolean") {
       update.anthropic_direct_enabled = body.anthropic_direct_enabled;
+    }
+    // Same explicit-flag rule for the other two. Without a way to clear them,
+    // a key that a provider rejects is a dead end: getSettings prefers any
+    // stored value over the platform fallback, so overwriting was the only
+    // escape and there was none at all for someone who no longer has a
+    // working key to paste.
+    if (body.remove_kie_api_key) update.kie_api_key = null;
+    if (body.remove_elevenlabs_api_key) update.elevenlabs_api_key = null;
+
+    // Check a pasted key with its provider before storing it. A credential
+    // that cannot authenticate is worse than none: it shadows the platform
+    // fallback and fails at generation time, hours after the save that
+    // reported success. Only a definitive rejection blocks the write, so an
+    // upstream outage can still be saved through.
+    const rejections = (await Promise.all([
+      typeof update.kie_api_key === "string"
+        ? checkKie(update.kie_api_key).then((c) => keyRejectionMessage("kie", c))
+        : null,
+      typeof update.elevenlabs_api_key === "string"
+        ? checkElevenLabs(update.elevenlabs_api_key).then((c) => keyRejectionMessage("elevenlabs", c))
+        : null,
+    ])).filter((m): m is string => !!m);
+    if (rejections.length > 0) {
+      return NextResponse.json({ error: rejections.join(" ") }, { status: 400 });
     }
     // Consistency text is free text, not a secret — persist it whenever
     // the key is present (unlike the API keys above, an empty string is a

@@ -2,11 +2,22 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
+@import "@fontsource-variable/sora";
+@import "@fontsource-variable/ibm-plex-sans";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/600.css";
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --font-sans: 'Inter Variable', sans-serif;
+  /* Body and UI. Inter stays as the fallback so nothing loses its metrics if
+     the Plex face fails to load. */
+  --font-sans: 'IBM Plex Sans Variable', 'Inter Variable', sans-serif;
+  /* Display, wordmark and headlines. The brand sets these at 600 with tight
+     tracking, applied on the heading rule below. */
+  --font-display: 'Sora Variable', 'Inter Variable', sans-serif;
+  /* Labels, data, technical. */
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
 }
 
 @theme inline {
@@ -163,117 +174,157 @@
      --bg-elevated, and both became invisible once light-theme surfaces went
      white. */
   --skeleton: oklch(1 0 0 / 0.08);
+
+  /* Status. Dark keeps the literals the admin panel was using, so switching
+     these to tokens changes nothing here; the light theme below maps them to
+     the brand's semantic set instead. */
+  --status-ok: #34d399;
+  --status-warn: #f59e0b;
+  --status-danger: #f87171;
 }
 
-/* Light theme overrides */
+/* Light theme overrides — MIKRAT Brand System v1.0.
+   Foundation #F1F0EA, raised card #FBFAF4, hairline #E4E2D6, anchor/type
+   #17114A, indigo raised #2A2170, and the semantic set (#55710A success,
+   #B8860B caution, #B0402F critical). The brand's green #B4D92C is NOT used
+   for buttons: primary actions keep our purple, so a control means the same
+   thing in either theme. Text is the indigo blended toward the foundation
+   rather than neutral grey, which is what makes the theme read as warm. */
 [data-theme="light"] {
-  --background: oklch(0.97 0 0);
-  --foreground: oklch(0.08 0 0);
-  /* Same reasoning as the --bg-* surfaces below: white, with borders doing the
-     separating. --secondary / --muted / --accent stay a hair off white because
-     they are fills for badges and hover states that need to register against
-     the card they sit on. */
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.08 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.08 0 0);
-  --secondary: oklch(0.96 0 0);
-  --secondary-foreground: oklch(0.35 0 0);
-  --muted: oklch(0.96 0 0);
-  --muted-foreground: oklch(0.50 0 0);
-  --accent: oklch(0.96 0 0);
-  --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.08 0 0);
+  --background: #F1F0EA;
+  --foreground: #17114A;
+  /* Raised card, one step above the foundation, with the hairline doing the
+     separating. --secondary / --muted / --accent sit between the two so badge
+     and hover fills register against the card they are on. */
+  --card: #FBFAF4;
+  --card-foreground: #17114A;
+  --popover: #FBFAF4;
+  --popover-foreground: #17114A;
+  --secondary: #EAE8DE;
+  --secondary-foreground: #3E3967;
+  --muted: #EAE8DE;
+  --muted-foreground: #7B7894;
+  --accent: #EAE8DE;
+  --sidebar: #FBFAF4;
+  --sidebar-foreground: #17114A;
   /* --border, --input and --sidebar-border are set with the rest of the border
      scale further down, so they are not declared twice here. */
 
-  /* Surfaces are WHITE, not graduated greys.
-     The dark theme builds depth by getting lighter as it stacks (0.06 page →
-     0.18 track), and mirroring that downward on light (0.97 page → 0.82) turned
-     every panel, field and control into a silver slab. Cards, panels, fields
-     and controls are white or near-white here, and the silver borders below
-     draw the boundaries instead. Only the two genuine TRACKS keep a grey fill,
-     because a progress bar needs an unfilled part you can see. */
-  --bg-page: oklch(0.97 0 0);
-  --bg-page-2: oklch(0.98 0 0);
-  --bg-header: oklch(0.99 0 0 / 0.92);
-  --bg-header-2: oklch(0.99 0 0 / 0.96);
-  --bg-overlay: oklch(0.97 0 0 / 0.8);
-  --bg-nav: oklch(1 0 0);
-  --bg-code: oklch(0.96 0 0);
-  --bg-card-subtle: oklch(0.99 0 0);
-  --bg-card: oklch(1 0 0);
-  --bg-panel: oklch(1 0 0);
-  --bg-elevated: oklch(1 0 0);
-  --bg-input: oklch(1 0 0);
-  --bg-control: oklch(0.99 0 0);
-  --bg-step-idle: oklch(0.98 0 0);
-  /* Tracks: light enough not to read as silver panels, dark enough to show an
-     unfilled bar against a white card. */
-  --bg-progress: oklch(0.94 0 0);
-  --bg-track: oklch(0.91 0 0);
+  --bg-page: #F1F0EA;
+  --bg-page-2: #F5F4EF;
+  --bg-header: #FBFAF4EB;
+  --bg-header-2: #FBFAF4F5;
+  --bg-overlay: #F1F0EACC;
+  --bg-nav: #FBFAF4;
+  --bg-code: #F5F3EC;
+  --bg-card-subtle: #F8F7F1;
+  --bg-card: #FBFAF4;
+  --bg-panel: #FBFAF4;
+  --bg-elevated: #FBFAF4;
+  --bg-input: #FBFAF4;
+  --bg-control: #F8F7F1;
+  --bg-step-idle: #F5F3EC;
+  /* Tracks take the hairline value and one step past it: a progress bar needs
+     an unfilled part that reads against the raised card. */
+  --bg-progress: #E4E2D6;
+  --bg-track: #D8D5C6;
 
-  --c-98: oklch(0.03 0 0);
-  --c-96: oklch(0.04 0 0);
-  --c-95: oklch(0.05 0 0);
-  --c-85: oklch(0.10 0 0);
-  --c-75: oklch(0.18 0 0);
-  --c-65: oklch(0.25 0 0);
-  --c-90: oklch(0.06 0 0);
-  --c-88: oklch(0.08 0 0);
-  --c-82: oklch(0.12 0 0);
-  --c-78: oklch(0.15 0 0);
-  --c-72: oklch(0.20 0 0);
-  --c-70: oklch(0.22 0 0);
-  --c-60: oklch(0.32 0 0);
-  --c-55: oklch(0.36 0 0);
-  --c-50: oklch(0.40 0 0);
-  --c-45: oklch(0.45 0 0);
-  --c-42: oklch(0.48 0 0);
-  --c-40: oklch(0.50 0 0);
-  --c-38: oklch(0.52 0 0);
-  --c-35: oklch(0.55 0 0);
-  --c-30: oklch(0.60 0 0);
-  --c-28: oklch(0.62 0 0);
-  --c-25: oklch(0.65 0 0);
-  --c-22: oklch(0.68 0 0);
+  /* Type: #17114A blended toward the foundation. */
+  --c-98: #17114A;
+  --c-96: #1B154D;
+  --c-95: #1E184F;
+  --c-90: #221C52;
+  --c-88: #262155;
+  --c-85: #2B2558;
+  --c-82: #312C5D;
+  --c-78: #3A3564;
+  --c-75: #3E3967;
+  --c-72: #47426D;
+  --c-70: #4B4770;
+  --c-65: #58547A;
+  --c-60: #656184;
+  --c-55: #706C8C;
+  --c-50: #7B7894;
+  --c-45: #88859D;
+  --c-42: #8F8CA2;
+  --c-40: #9592A7;
+  --c-38: #9C99AC;
+  --c-35: #A3A0B0;
+  --c-30: #ADABB8;
+  --c-28: #B2AFBC;
+  --c-25: #B8B6C0;
+  --c-22: #BFBDC5;
 
-  /* Silver borders. The dark theme draws edges with white at 2-10%, which
-     reads clearly on a near-black page; mirroring that as black at 3-14% on a
-     0.97 page came out almost invisible, so cards and inputs lost their edges.
-     Solid silver greys instead of black-at-low-opacity: opaque, so a border
-     looks the same whatever card tint sits behind it, and still a graduated
-     scale so the old hierarchy survives. */
-  --bd-2: oklch(0.89 0 0);
-  --bd-4: oklch(0.87 0 0);
-  --bd-5: oklch(0.85 0 0);
-  --bd-6: oklch(0.83 0 0);
-  --bd-7: oklch(0.81 0 0);
-  --bd-8: oklch(0.79 0 0);
-  --bd-9: oklch(0.76 0 0);
-  --bd-10: oklch(0.73 0 0);
-  /* The workhorse border for step and content cards. A pure-white line would
-     vanish here, so it takes the mid-silver step. */
-  --bd-card: oklch(0.79 0 0);
-  --border: oklch(0.81 0 0);
-  --sidebar-border: oklch(0.81 0 0);
+  /* Borders: the brand's #E4E2D6 hairline as the mid step, graduated either
+     side of it. Opaque, so an edge looks the same whatever surface is behind
+     it, and still a scale so the existing hierarchy survives. */
+  --bd-2: #E1DED2;
+  --bd-4: #DDDBCD;
+  --bd-5: #DAD7C9;
+  --bd-6: #D7D4C6;
+  --bd-7: #D5D2C3;
+  --bd-8: #D2CFBF;
+  --bd-9: #CFCCBC;
+  --bd-10: #CCC9B8;
+  --bd-card: #D2CFBF;
+  --border: #D5D2C3;
+  --sidebar-border: #D5D2C3;
   /* shadcn uses --input as the input BORDER (border-input); the field's own
-     fill is --bg-input. Silver, matching every other edge. */
-  --input: oklch(0.81 0 0);
+     fill is --bg-input. */
+  --input: #D5D2C3;
 
-  /* Same hues, dark enough to read on the 0.97 page and on the 10-15%
-     tinted fills these labels usually sit on. */
-  /* 0.72 lightness purple on a 0.97 page, and on the 15% lavender fills these
-     labels sit on, is washed out to the point of unreadable. Same hue, dark
-     enough to read on both. */
+  /* Semantic text. Purple stays for brand and primary actions; the rest come
+     from the brand's production values, which are already contrast-checked
+     against the foundation. */
   --brand-text: oklch(0.44 0.22 285);
   --accent-purple-text: oklch(0.45 0.2 285);
-  --accent-amber-text: oklch(0.45 0.13 70);
-  --accent-red-text: oklch(0.48 0.19 25);
-  --accent-green-text: oklch(0.42 0.14 145);
-  --accent-blue-text: oklch(0.42 0.13 200);
+  --accent-amber-text: #B8860B;
+  --accent-red-text: #B0402F;
+  --accent-green-text: #55710A;
+  --accent-blue-text: #2A2170;
 
-  --skeleton: #ecf0f1;
+  --skeleton: #E4E2D6;
+
+  --status-ok: #55710A;
+  --status-warn: #B8860B;
+  --status-danger: #B0402F;
+}
+
+/* Admin runs the light theme's two surfaces the other way round: a white
+   foundation carrying cream panels, instead of a cream foundation carrying
+   near-white ones. Same pair of brand values and the same ~5% separation
+   between them, just swapped, so nothing about contrast changes.
+
+   Scoped to the admin shell rather than done in the light block above,
+   because the product's light theme keeps the brand's cream foundation.
+   Cards inside admin read the surface from --bg-card; the hairline and
+   shadow scales are unchanged and work against either value. */
+[data-theme="light"].admin-surfaces {
+  --background: #FFFFFF;
+  --bg-page: #FFFFFF;
+  --bg-page-2: #FFFFFF;
+  --bg-overlay: #FFFFFFCC;
+
+  /* Chrome stays white with the page, so white is what the screen mostly is;
+     cream is reserved for the panels sitting on it. Header and sidebar are
+     separated by the hairline border they already carry, not by a fill. */
+  --bg-header: #FFFFFFEB;
+  --bg-header-2: #FFFFFFF5;
+  --bg-nav: #FFFFFF;
+  --sidebar: #FFFFFF;
+  --card: #F1F0EA;
+  --popover: #F1F0EA;
+  --bg-card: #F1F0EA;
+  --bg-card-subtle: #F5F4EF;
+  --bg-panel: #F1F0EA;
+
+  /* Everything that sits ON a cream panel goes white: pills, table headers,
+     fields, controls. Cream on cream would vanish, and white reads as the
+     raised step now that the ground is white rather than cream. */
+  --bg-elevated: #FFFFFF;
+  --bg-input: #FFFFFF;
+  --bg-control: #FFFFFF;
+  --bg-step-idle: #FFFFFF;
 }
 
 @layer base {
@@ -288,6 +339,12 @@
   }
   html {
     @apply font-sans;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: -0.03em;
   }
 
   /* Tailwind v4 drops the browser default pointer cursor on buttons.
@@ -445,6 +502,42 @@ body {
 [data-theme="light"] [data-disabled].disabled\:opacity-50 { opacity: 0.72 !important; }
 /* A fieldset[disabled] wrapper dims its whole subtree the same way. */
 [data-theme="light"] fieldset:disabled { opacity: 0.75; }
+
+/* Hover for the client dashboard: stat tiles lift and light up, sidebar rows
+   slide along the pointer.
+
+   The tile fill and border are the same pair the Stats tab's tiles were
+   already applying through their own onMouseEnter handlers — moved here so
+   every stat item across the dashboard behaves identically instead of only
+   the four that carried the handlers. !important because these elements set
+   background and border inline, which otherwise beats any stylesheet rule.
+
+   The white tint is a no-op on the light theme, where it would land on a
+   near-white card, so that theme gets a dark tint of its own. */
+.hover-lift:hover {
+  transform: translateY(-2px);
+  background: oklch(1 0 0 / 0.12) !important;
+  border-color: oklch(0.72 0.25 285 / 0.35) !important;
+  box-shadow: 0 8px 20px oklch(0 0 0 / 0.28);
+}
+[data-theme="light"] .hover-lift:hover {
+  background: oklch(0 0 0 / 0.04) !important;
+  border-color: oklch(0.44 0.22 285 / 0.3) !important;
+  box-shadow: 0 8px 20px oklch(0 0 0 / 0.09);
+}
+
+.hover-nudge:hover {
+  transform: translateX(3px);
+  background: oklch(1 0 0 / 0.06) !important;
+  color: var(--c-75) !important;
+}
+[data-theme="light"] .hover-nudge:hover {
+  background: oklch(0 0 0 / 0.04) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hover-lift:hover, .hover-nudge:hover { transform: none; }
+}
 
 /* Step connector line animation */
 @keyframes pulse-line {

@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
-import { Settings, LogOut, BarChart3, Trash2, Download, KeyRound, SlidersHorizontal, Wand2, ChevronRight, Clapperboard } from "lucide-react";
+import { Settings, LogOut, BarChart3, Trash2, Download, KeyRound, SlidersHorizontal, Wand2, ChevronRight, Clapperboard, Gift, X, Menu, List, LayoutGrid } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { ADMIN_EMAILS } from "@/lib/admin";
+import { FREE_TTS_COMING_SOON } from "@/lib/free-tier-flag";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
@@ -18,11 +20,29 @@ import { DEMO_DATA } from "@/lib/demo-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { OneClickControls } from "@/components/one-click/OneClickControls";
+import { UsageStats } from "@/components/UsageStats";
 import { forkAndStartOneClick } from "@/lib/one-click/kickoff";
 import { ONE_CLICK_HIDDEN } from "@/lib/feature-flags";
 
 
 // ── Demo dashboard helpers ────────────────────────────────────────────────────
+
+type DashTab = "stats" | "keys" | "niches";
+const DASH_TAB_KEY = "heclus.dashboard.tab";
+const DASH_NAV: { id: DashTab; label: string; short: string; icon: LucideIcon }[] = [
+  { id: "stats",  label: "Stats",            short: "Stats",  icon: BarChart3 },
+  { id: "keys",   label: "API keys & usage", short: "Keys",   icon: KeyRound },
+  { id: "niches", label: "Niches & Videos",  short: "Niches", icon: Clapperboard },
+];
+
+// Free-resources teaser. Shown to every account until dismissed. The suffix
+// is the user id, added at render time.
+const FREE_TEASER_KEY = "heclus.dashboard.freeTeaser";
+// Niche is a filter over one flat video list, not a container around its own
+// grid. NICHE_ALL is the unfiltered default.
+const NICHE_ALL = "__all__";
+const NICHE_FILTER_KEY = "heclus.dashboard.niche";
+const VIDEO_VIEW_KEY = "heclus.dashboard.videoView";
 
 const DEMO_STEP_LABELS = ["Channel", "Topic", "Script", "Visuals", "Prompts", "Generate", "Assemble", "Complete"];
 const DEMO_STEP_HREFS  = [
@@ -178,7 +198,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {/* Niches — first, mirrors the real dashboard layout */}
-          <div className="rounded-xl px-5 py-4 flex items-center justify-between gap-3" style={cardStyle}>
+          <div className="hover-lift rounded-xl px-5 py-4 flex items-center justify-between gap-3 transition-all duration-200" style={cardStyle}>
             <div className="min-w-0">
               <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{niches}</p>
               <p className="text-xs" style={{ color: "var(--c-42)" }}>Niches Used</p>
@@ -198,11 +218,11 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
               </span>
             </div>
           </div>
-          <div className="rounded-xl px-5 py-4" style={cardStyle}>
+          <div className="hover-lift rounded-xl px-5 py-4 transition-all duration-200" style={cardStyle}>
             <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{total}</p>
             <p className="text-xs" style={{ color: "var(--c-42)" }}>Total Videos</p>
           </div>
-          <div className="rounded-xl px-5 py-4 flex items-center justify-between" style={cardStyle}>
+          <div className="hover-lift rounded-xl px-5 py-4 flex items-center justify-between transition-all duration-200" style={cardStyle}>
             <div>
               <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{completed}</p>
               <p className="text-xs" style={{ color: "var(--c-42)" }}>Completed</p>
@@ -210,7 +230,7 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
             </div>
             <DemoPieRing id="dcComp" pct={total > 0 ? completed / total : 0} color="#5bc48a" centerText={total > 0 ? `${Math.round((completed / total) * 100)}%` : "0%"} />
           </div>
-          <div className="rounded-xl px-5 py-4 flex items-center justify-between" style={cardStyle}>
+          <div className="hover-lift rounded-xl px-5 py-4 flex items-center justify-between transition-all duration-200" style={cardStyle}>
             <div>
               <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{inProg}</p>
               <p className="text-xs" style={{ color: "var(--c-42)" }}>In Progress</p>
@@ -526,6 +546,69 @@ function VideoDurationBadge({ src }: { src: string }) {
 
 export default function HomePage() {
   const router = useRouter();
+  // Dashboard sections as tabs. Lazily read from localStorage so returning
+  // from a project lands on the tab you left, and guarded because this runs
+  // during hydration where storage may be unavailable.
+  const [dashTab, setDashTab] = useState<DashTab>(() => {
+    if (typeof window === "undefined") return "stats";
+    try {
+      const saved = window.localStorage.getItem(DASH_TAB_KEY);
+      return saved === "keys" || saved === "niches" ? saved : "stats";
+    } catch { return "stats"; }
+  });
+  const selectDashTab = (t: DashTab) => {
+    setDashTab(t);
+    setSidebarOpen(false);
+    try { window.localStorage.setItem(DASH_TAB_KEY, t); } catch { /* storage disabled */ }
+  };
+
+  // Free-resources teaser: every account, until dismissed. Keyed by user id so dismissing it on one account doesn't hide it from
+  // another on a shared browser. localStorage, not the database, so it costs
+  // no migration and no request; the trade is that it reappears in a second
+  // browser, which for a teaser is cheaper than the column.
+  const [showFreeTeaser, setShowFreeTeaser] = useState(false);
+  const [freeTeaserKey, setFreeTeaserKey] = useState("");
+  const dismissFreeTeaser = () => {
+    setShowFreeTeaser(false);
+    try { if (freeTeaserKey) window.localStorage.setItem(freeTeaserKey, "1"); } catch { /* storage disabled */ }
+  };
+
+  // ?teaser=1 forces the banner on, independent of auth. Kept out of the auth
+  // effect so it still works if the session read never reaches applyUser.
+  useEffect(() => {
+    try {
+      if (new URLSearchParams(window.location.search).get("teaser") === "1") setShowFreeTeaser(true);
+    } catch { /* no window */ }
+  }, []);
+
+  const [nicheFilter, setNicheFilter] = useState<string>(NICHE_ALL);
+  const [videoView, setVideoView] = useState<"list" | "cards">("list");
+  useEffect(() => {
+    try {
+      const n = window.localStorage.getItem(NICHE_FILTER_KEY);
+      if (n) setNicheFilter(n);
+      const v = window.localStorage.getItem(VIDEO_VIEW_KEY);
+      if (v === "cards" || v === "list") setVideoView(v);
+    } catch { /* storage disabled */ }
+  }, []);
+  const selectNiche = (name: string) => {
+    setNicheFilter(name);
+    setSidebarOpen(false);
+    // The filter only means anything on the video list, so choosing one takes
+    // you there rather than silently filtering a section you cannot see.
+    setDashTab("niches");
+    try { window.localStorage.setItem(DASH_TAB_KEY, "niches"); } catch { /* storage disabled */ }
+    try { window.localStorage.setItem(NICHE_FILTER_KEY, name); } catch { /* storage disabled */ }
+  };
+  const selectVideoView = (v: "list" | "cards") => {
+    setVideoView(v);
+    try { window.localStorage.setItem(VIDEO_VIEW_KEY, v); } catch { /* storage disabled */ }
+  };
+
+  // Below lg the sidebar is a drawer. Same layout, just off-canvas until the
+  // header's menu button opens it.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   const [creating, setCreating] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isPaid, setIsPaid] = useState<boolean | null>(null);
@@ -581,6 +664,23 @@ export default function HomePage() {
       setUserEmail(user.email ?? "");
       if (user.created_at) {
         setMemberSince(new Date(user.created_at).toLocaleDateString("en", { month: "short", year: "numeric" }));
+      }
+      // Free-resources teaser: every account until dismissed, except founders,
+      // whose plan already includes what the banner is pointing at. Outside the
+      // created_at branch because it no longer depends on account age.
+      // applyUser runs twice (cached session, then verified user), so this has
+      // to stay idempotent: read the dismissal every time rather than only
+      // showing on the first pass.
+      {
+        const key = `${FREE_TEASER_KEY}.${user.id}`;
+        setFreeTeaserKey(key);
+        let dismissed = false;
+        try { dismissed = window.localStorage.getItem(key) === "1"; } catch { /* storage disabled */ }
+        // ?teaser=1 forces it past a dismissal so the banner can be reviewed.
+        let forced = false;
+        try { forced = new URLSearchParams(window.location.search).get("teaser") === "1"; } catch { /* no window */ }
+        const isFounder = user.app_metadata?.plan === "founder";
+        setShowFreeTeaser(forced || (!dismissed && !isFounder));
       }
       const paid = (user.app_metadata?.paid === true) || false;
       setIsPaid(paid);
@@ -926,11 +1026,109 @@ export default function HomePage() {
   const showDemo = isPaid === false && !isAdmin;
 
   return (
-    <div className="min-h-screen flex flex-col overflow-x-hidden" style={{ background: "var(--bg-page)" }}>
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 sticky top-0 z-10"
+    <div className={`min-h-screen flex flex-col overflow-x-hidden ${showDemo ? "" : "lg:pl-[300px]"}`} style={{ background: "var(--bg-page)" }}>
+      {/* Full-height sidebar, fixed so it spans the viewport rather than
+          starting under the header. Everything else is inset by its width
+          via lg:pl-[240px] on the page root. Hidden below lg, where the
+          horizontal rail above the content takes over. */}
+      {!showDemo && (
+        <aside className={`fixed left-0 bottom-0 top-[109px] sm:top-[117px] lg:top-0 z-40 flex flex-col transition-all duration-200 lg:translate-x-0 w-[85vw] sm:w-[380px] lg:w-[300px] ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
+          style={{ background: "var(--bg-header)", borderRight: "1px solid var(--bd-10)" }}>
+          <Link href="/dashboard" className="hidden lg:flex items-center gap-3 px-5 h-[69px] shrink-0 transition-opacity hover:opacity-80"
+            style={{ borderBottom: "1px solid var(--bd-6)" }}>
+            <div className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center">
+              <Image src="/heclus-icon-white.svg" alt="Heclus" width={32} height={32} className="object-cover w-full h-full" />
+            </div>
+            <span className="text-base font-bold tracking-tight" style={{ color: "var(--c-90)" }}>Heclus</span>
+          </Link>
+          <nav className="flex-1 min-h-0 flex flex-col gap-1 pl-5 pr-[30px] py-5">
+            {DASH_NAV.map((t) => {
+              const active = dashTab === t.id;
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => selectDashTab(t.id)}
+                  className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium text-left transition-all cursor-pointer ${active ? "" : "hover-nudge"}`}
+                  style={active ? {
+                    background: "oklch(0.72 0.25 285 / 0.15)",
+                    border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                    color: "var(--accent-purple-text)",
+                  } : {
+                    background: "transparent",
+                    border: "1px solid transparent",
+                    color: "var(--c-55)",
+                  }}
+                >
+                  <Icon size={15} className="shrink-0" />
+                  <span className="min-w-0 truncate">{t.label}</span>
+                </button>
+              );
+            })}
+
+            {/* Niches are a filter over the video list, so they belong in the
+                nav rather than as headers repeated down the page. */}
+            {/* Placeholder rows while projects load. Without them the nav
+                shows only the three section links and then jumps as the
+                niches arrive, which reads as the list having failed. */}
+            {projects === undefined && (
+              <div className="pt-2 pl-[5px] flex flex-col gap-1.5" style={{ borderTop: "1px solid var(--bd-6)" }}>
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <div key={i} className="flex items-center gap-2 px-3.5 py-2">
+                    <div className="h-3 rounded animate-pulse" style={{ background: "var(--skeleton)", width: `${["70%", "52%", "64%", "44%", "58%"][i]}` }} />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {channelGroups.length > 0 && (
+              <div className="pt-2 pl-[5px] flex-1 min-h-0 overflow-y-auto flex flex-col gap-0.5"
+                style={{ borderTop: "1px solid var(--bd-6)", scrollbarWidth: "thin" }}>
+                <button
+                  onClick={() => selectNiche(NICHE_ALL)}
+                  className={`flex items-center gap-2 pl-3.5 pr-3 py-2.5 rounded-lg text-[13px] text-left transition-all cursor-pointer ${nicheFilter === NICHE_ALL ? "" : "hover-nudge"}`}
+                  style={{ background: nicheFilter === NICHE_ALL ? "oklch(1 0 0 / 0.07)" : "transparent", color: nicheFilter === NICHE_ALL ? "var(--c-85)" : "var(--c-45)" }}
+                >
+                  <span className="min-w-0 flex-1 truncate">All videos</span>
+                  <span className="shrink-0 tabular-nums text-[11px]" style={{ color: "var(--c-38)" }}>
+                    {channelGroups.reduce((acc, g) => acc + g.projects.length, 0)}
+                  </span>
+                </button>
+
+                {channelGroups.map((g) => {
+                  const on = nicheFilter === g.channelName;
+                  return (
+                    <button
+                      key={g.channelName}
+                      onClick={() => selectNiche(g.channelName)}
+                      className={`flex items-center gap-2 pl-3.5 pr-3 py-2.5 rounded-lg text-[13px] text-left transition-all cursor-pointer ${on ? "" : "hover-nudge"}`}
+                      style={{ background: on ? "oklch(1 0 0 / 0.07)" : "transparent", color: on ? "var(--c-85)" : "var(--c-45)" }}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{g.channelName}</span>
+                      <span className="shrink-0 tabular-nums text-[11px]" style={{ color: "var(--c-38)" }}>{g.projects.length}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </nav>
+        </aside>
+      )}
+
+      {!showDemo && sidebarOpen && (
+        <div
+          className="lg:hidden fixed left-0 right-0 bottom-0 top-[109px] sm:top-[117px] z-30"
+          style={{ background: "oklch(0 0 0 / 0.55)" }}
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden
+        />
+      )}
+
+      {/* Header. Fixed, so a spacer below stands in for its height. */}
+      <header className={`flex items-center justify-between px-4 sm:px-8 py-3 sm:py-4 fixed top-0 left-0 right-0 z-50 ${showDemo ? "" : "lg:left-[300px]"}`}
         style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
-        <Link href="/dashboard" className="flex items-center gap-3 transition-opacity hover:opacity-80">
+        <div className="flex items-center gap-2 min-w-0">
+        <Link href="/dashboard" className={`items-center gap-3 transition-opacity hover:opacity-80 ${showDemo ? "flex" : "flex lg:hidden"}`}>
           <div className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center">
             <Image src="/heclus-icon-white.svg" alt="Heclus" width={32} height={32} className="object-cover w-full h-full" />
           </div>
@@ -938,6 +1136,10 @@ export default function HomePage() {
             <span className="font-bold text-sm tracking-tight text-foreground">Heclus</span>
           </div>
         </Link>
+        </div>
+        {/* Keeps the header controls right-aligned once the brand moves into
+            the sidebar. */}
+        {!showDemo && <div className="hidden lg:block" />}
         <div className="flex items-center gap-3">
           {isAdmin && (
             <Link
@@ -1058,8 +1260,30 @@ export default function HomePage() {
           </button>
         </div>
       </header>
+      <div className="h-[61px] sm:h-[69px] shrink-0" aria-hidden />
 
-      <main className="flex-1 w-full px-4 sm:px-8 py-6 sm:py-12 space-y-8 sm:space-y-12">
+      {/* Menu row. Its own bar under the header rather than a control in it,
+          fixed so the toggle stays reachable while the drawer is open. */}
+      {!showDemo && (
+        <>
+          <div className="lg:hidden fixed left-0 right-0 top-[61px] sm:top-[69px] z-50 flex items-center gap-2 px-4 sm:px-8 h-[48px]"
+            style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
+            <button
+              onClick={() => setSidebarOpen((v) => !v)}
+              aria-label={sidebarOpen ? "Close menu" : "Open menu"}
+              aria-expanded={sidebarOpen}
+              className="inline-flex items-center gap-2 py-1.5 pr-2 -ml-1 pl-1 rounded-lg text-[13px] font-medium transition-opacity hover:opacity-70 cursor-pointer"
+              style={{ color: "var(--c-70)" }}
+            >
+              {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
+              <span>{DASH_NAV.find((t) => t.id === dashTab)?.label ?? "Menu"}</span>
+            </button>
+          </div>
+          <div className="lg:hidden h-[48px] shrink-0" aria-hidden />
+        </>
+      )}
+
+      <main className="flex-1 w-full px-4 sm:px-8 pt-6 pb-4 sm:py-12 space-y-8 sm:space-y-12">
 
         {/* ── Demo banner for free users ──────────────────────────────── */}
         {showDemo && (() => {
@@ -1102,7 +1326,9 @@ export default function HomePage() {
         ) : (
 
         /* ── Real dashboard content ─────────────────────────────────── */
-        <>{(() => {
+        <>
+        <div className="space-y-8 sm:space-y-12">
+          {(() => {
           const allProjects = channelGroups.flatMap(g => g.projects);
           const total = allProjects.length;
           // Complete = final assembled MP4 exists (thumbnails don't count).
@@ -1112,12 +1338,43 @@ export default function HomePage() {
 
           return (
             <div className="space-y-6">
-              <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>General Stats</h3>
+              {/* Free-resources teaser. Copy tracks the kill-switches so it
+                  can never advertise something the Free tab still hides:
+                  voiceover is live, images are still coming. */}
+              {showFreeTeaser && (
+                <div className="relative rounded-2xl px-4 py-4 sm:px-6 sm:py-5"
+                  style={{ background: "oklch(0.65 0.15 145 / 0.10)", border: "1px solid oklch(0.65 0.15 145 / 0.25)", marginTop: "10px" }}>
+                  <button
+                    onClick={dismissFreeTeaser}
+                    aria-label="Dismiss"
+                    className="absolute top-3 right-3 p-1 rounded-lg transition-opacity hover:opacity-70 cursor-pointer"
+                    style={{ color: "var(--c-45)" }}
+                  >
+                    <X size={15} />
+                  </button>
+                  <div className="flex items-start gap-3 pr-8">
+                    <Gift size={18} className="shrink-0 mt-0.5" style={{ color: "oklch(0.65 0.15 145)" }} />
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold" style={{ color: "var(--c-88)" }}>
+                        Free resources are included with your account
+                      </p>
+                      <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--c-45)" }}>
+                        {FREE_TTS_COMING_SOON
+                          ? "Free text-to-speech credits are on the way. It's our way of saying thank you for choosing us. Watch out for more exciting Heclus perks."
+                          : "Utilize our free text-to-speech credits to scale up your production. It's our way of saying thank you for choosing us. Watch out for more exciting Heclus perks."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {dashTab === "stats" && (<>
+              <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginBottom: "10px" }}>General Stats</h3>
               {/* Stat cards */}
               {projects === undefined ? (
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                   {[0, 1, 2, 3].map((i) => (
-                    <div key={i} className="rounded-xl px-5 py-4 space-y-2" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
+                    <div key={i} className="rounded-xl min-h-[104px] px-5 py-4 space-y-2" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div className="h-8 w-10 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
                       <div className="h-3 w-20 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
                       <div className="h-2.5 w-14 rounded animate-pulse" style={{ background: "var(--skeleton)" }} />
@@ -1198,34 +1455,35 @@ export default function HomePage() {
                         : usage?.plan
                           ? usage.plan.charAt(0).toUpperCase() + usage.plan.slice(1)
                           : "Free";
+                      // Two lines and one badge, so the card matches the
+                      // height of its three neighbours. It used to carry two
+                      // stacked pills beside the numbers, which wrapped below
+                      // them in a 2-col mobile grid and made this card roughly
+                      // twice as tall as the rest of the row.
                       return (
-                        <div className="col-span-2 sm:col-span-1 rounded-xl px-4 sm:px-5 py-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3"
+                        <div className="hover-lift rounded-xl transition-all min-h-[104px] px-4 sm:px-5 py-4 flex items-start justify-between gap-3"
                           style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
-                          <div className="min-w-0 space-y-1">
+                          <div className="min-w-0">
                             <p className="leading-none">
                               <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{nichesUsed}</span>
                               <span className="text-xs ml-1.5" style={{ color: "var(--c-50)" }}>used</span>
+                              {deletedNiches > 0 && (
+                                <span className="text-xs ml-2" style={{ color: "var(--c-38)" }}>{deletedNiches} deleted</span>
+                              )}
                             </p>
-                            {deletedNiches > 0 && (
-                              <p className="leading-none">
-                                <span className="text-2xl font-bold" style={{ color: "var(--c-60)" }}>{deletedNiches}</span>
-                                <span className="text-xs ml-1.5" style={{ color: "var(--c-45)" }}>deleted</span>
-                              </p>
-                            )}
-                            <p className="text-[10px] pt-1" style={{ color: "var(--c-35)" }}>
-                              {unlimited ? "Unlimited" : `of ${ratioDenominator} lifetime`}
+                            <p className="text-xs mt-2" style={{ color: "var(--c-42)" }}>
+                              {unlimited ? `${planLabel} · Unlimited` : `of ${ratioDenominator} lifetime · ${planLabel}`}
                             </p>
                             {showOverrideBadge && (
-                              <p className="text-[10px] font-semibold"
-                                style={{ color: "oklch(0.6 0.18 75)" }}>
+                              <p className="text-[10px] mt-1 font-semibold" style={{ color: "oklch(0.6 0.18 75)" }}>
                                 Override: {nicheLimitOverride}
                               </p>
                             )}
                           </div>
-                          <div className="flex flex-row sm:flex-col items-center gap-2 sm:gap-1.5 shrink-0">
-                            {unlimited && (
+                          <div className="shrink-0">
+                            {unlimited ? (
                               <span
-                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider"
+                                className="px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider whitespace-nowrap"
                                 style={{
                                   background: "oklch(0.55 0.15 145 / 0.15)",
                                   color: "oklch(0.65 0.15 145)",
@@ -1233,34 +1491,10 @@ export default function HomePage() {
                                 }}
                               >
                                 {planLabel}
-                              </span>
-                            )}
-                            {unlimited ? (
-                              <span
-                                className="px-2.5 py-1 rounded-full text-[10px] font-semibold uppercase tracking-wider"
-                                style={{
-                                  background: "oklch(0.55 0.15 145 / 0.15)",
-                                  color: "oklch(0.65 0.15 145)",
-                                  border: "1px solid oklch(0.55 0.15 145 / 0.3)",
-                                }}
-                              >
-                                Unlimited
                               </span>
                             ) : (
                               <PieRing id="nicheGrad" pct={nichePct} color={nicheColor}
                                 centerText={`${nichesUsed}/${ratioDenominator}`} />
-                            )}
-                            {!unlimited && (
-                              <span
-                                className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider"
-                                style={{
-                                  background: "oklch(0.55 0.15 145 / 0.15)",
-                                  color: "oklch(0.65 0.15 145)",
-                                  border: "1px solid oklch(0.55 0.15 145 / 0.3)",
-                                }}
-                              >
-                                {planLabel}
-                              </span>
                             )}
                           </div>
                         </div>
@@ -1268,14 +1502,14 @@ export default function HomePage() {
                     })()}
 
                     {/* Total Videos — plain */}
-                    <div className="rounded-xl px-5 py-4 flex flex-col items-center justify-center text-center"
+                    <div className="hover-lift rounded-xl transition-all min-h-[104px] px-5 py-4 flex flex-col items-center justify-center text-center"
                       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{total}</p>
                       <p className="text-xs" style={{ color: "var(--c-42)" }}>Total Videos</p>
                     </div>
 
                     {/* Completed */}
-                    <div className="rounded-xl px-5 py-4 flex items-center justify-between"
+                    <div className="hover-lift rounded-xl transition-all min-h-[104px] px-5 py-4 flex items-center justify-between"
                       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div>
                         <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{completed}</p>
@@ -1289,7 +1523,7 @@ export default function HomePage() {
                     </div>
 
                     {/* In Progress */}
-                    <div className="rounded-xl px-5 py-4 flex items-center justify-between"
+                    <div className="hover-lift rounded-xl transition-all min-h-[104px] px-5 py-4 flex items-center justify-between"
                       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}>
                       <div>
                         <p className="text-2xl font-bold mb-1" style={{ color: "var(--c-90)" }}>{inProgress}</p>
@@ -1328,10 +1562,19 @@ export default function HomePage() {
                   <p className="text-xs mt-1" style={{ color: "var(--c-30)" }}>Create your first niche to see video counts here</p>
                 </div>
               ) : (() => {
-                const W = 600, PAD_X = 16, PAD_T = 16;
+                // Ten bars fill the card; past that the chart keeps the same
+                // slot width and grows wider than its container, so the extra
+                // niches are reached by scrolling rather than by squeezing
+                // every bar and its label down to nothing.
+                const VISIBLE = 10;
+                const BASE_W = 600, PAD_X = 16, PAD_T = 16;
                 const points = channelGroups.map(g => ({ label: g.channelName, count: g.projects.length }));
                 const maxCount = Math.max(...points.map(p => p.count), 1);
                 const n = points.length;
+                // viewBox and rendered width scale by the same factor, so the
+                // aspect ratio holds and the chart does not get taller.
+                const wideFactor = n > VISIBLE ? n / VISIBLE : 1;
+                const W = Math.round(BASE_W * wideFactor);
                 const plotW = W - PAD_X * 2;
                 const slotW = plotW / n;
                 const barW = Math.min(52, slotW * 0.6);
@@ -1342,7 +1585,8 @@ export default function HomePage() {
                 // "Unf*ck Everything" wraps to four stacked fragments and reads
                 // as noise. Smaller type fits more characters per line, so the
                 // same name wraps once or twice instead.
-                const LABEL_FONT = n <= 6 ? 10 : n <= 9 ? 9 : n <= 13 ? 8 : n <= 18 ? 7 : 6.5;
+                const shown = Math.min(n, VISIBLE);
+                const LABEL_FONT = shown <= 6 ? 10 : shown <= 9 ? 9 : 8;
                 // Wrapping, line spacing and the label block's height are all
                 // derived from the font size — hardcoding any of them against
                 // 10px is what made the fragments overlap when the type shrank.
@@ -1391,8 +1635,8 @@ export default function HomePage() {
                       </div>
                       <span className="text-2xl font-bold" style={{ color: "var(--c-90)" }}>{total}</span>
                     </div>
-                    <div style={{ overflowX: "clip" }}>
-                    <svg viewBox={`0 0 ${W} ${H}`} className="w-full">
+                    <div style={{ overflowX: wideFactor > 1 ? "auto" : "clip", scrollbarWidth: "thin" }}>
+                    <svg viewBox={`0 0 ${W} ${H}`} className="max-w-none" style={{ width: `${wideFactor * 100}%` }}>
                       <defs>
                         <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="0%" stopColor="#9b7ff5" stopOpacity="0.95" />
@@ -1481,10 +1725,14 @@ export default function HomePage() {
                 );
               })()}
 
+              </>)}
+
+              {dashTab === "keys" && (<>
               {/* API Keys Status */}
               {(() => {
                 const kie = apiStatus?.kie as { configured: boolean; valid: boolean | null; credits?: number } | undefined;
                 const elevenlabs = apiStatus?.elevenlabs as { configured: boolean; valid: boolean | null; remaining?: number; limit?: number; balanceIssue?: "scope" | "key_id" } | undefined;
+                const anthropic = apiStatus?.anthropic as { configured: boolean; directEnabled: boolean; tokens30d?: number } | undefined;
 
                 function StatusBadge({ data, color }: { data: { configured: boolean; valid: boolean | null } | undefined; color: string }) {
                   void color;
@@ -1539,6 +1787,23 @@ export default function HomePage() {
                   );
                 }
 
+                // Same geometry as CreditsBar/UsageBar, drawn empty, for a
+                // card that has a quota but cannot read it right now. Keeps
+                // the row of cards visually level instead of leaving one with
+                // a bare line of text where its neighbour has a bar.
+                function EmptyBar({ label }: { label?: string }) {
+                  return (
+                    <div>
+                      {label && (
+                        <div className="flex justify-between text-[10px] mb-1" style={{ color: "var(--c-30)" }}>
+                          <span>{label}</span>
+                        </div>
+                      )}
+                      <div className="w-full rounded-full h-1.5" style={{ background: "oklch(1 0 0 / 0.08)" }} />
+                    </div>
+                  );
+                }
+
                 function StaticInfo({ label, value, color }: { label: string; value: string; color: string }) {
                   return (
                     <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
@@ -1549,20 +1814,24 @@ export default function HomePage() {
 
                 const cardStyle = { background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" };
 
+                // No top gap now that this opens its own tab rather than
+                // following the chart. Three cards across on desktop: the tab
+                // gives the section the full width, so a 2-col grid left the
+                // third card stranded on its own row.
                 return (
-                  <div style={{ marginTop: "40px" }}>
-                    <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Key Status</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "14px" }}>Your API Key Status</h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 
                       {/* KIE */}
-                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
+                      <div className="hover-lift rounded-xl px-5 py-4 transition-all duration-200" style={cardStyle}>
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div className="min-w-0">
                             <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>KIE</p>
-                            {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mt-0.5" style={{ color: "#f0a855" }}>Pending setup</p>}
-                            <p className="text-[10px] mt-0.5" style={{ color: "var(--c-38)" }}>Script generation, TTS, images & video</p>
+                            {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mt-1" style={{ color: "#f0a855" }}>Pending setup</p>}
+                            <p className="text-[10px] mt-1.5 leading-relaxed" style={{ color: "var(--c-38)" }}>Script generation, TTS, images & video</p>
                           </div>
-                          <div className="flex flex-col items-end gap-1 shrink-0">
+                          <div className="flex flex-col items-end gap-1.5 shrink-0">
                             <StatusBadge data={kie} color="#60a5fa" />
                             {kie?.configured && kie.valid && typeof kie.credits === "number" && (
                               <span className="text-[10px] font-medium tabular-nums"
@@ -1572,25 +1841,37 @@ export default function HomePage() {
                             )}
                           </div>
                         </div>
-                        {kie?.configured && kie.valid && typeof kie.credits === "number" && (
-                          <CreditsBar credits={kie.credits} />
-                        )}
-                        {kie?.configured && kie.valid && kie.credits === undefined && (
-                          <p className="text-[10px]" style={{ color: "var(--c-30)" }}>Check balance in KIE dashboard</p>
-                        )}
+                        <div>
+                          {kie?.configured && kie.valid && typeof kie.credits === "number" && (
+                            <CreditsBar credits={kie.credits} />
+                          )}
+                          {kie?.configured && kie.valid && kie.credits === undefined && (
+                            <>
+                              <EmptyBar label="Balance unknown" />
+                              <p className="text-[10px] leading-relaxed mt-2" style={{ color: "var(--c-30)" }}>Check balance in KIE dashboard</p>
+                            </>
+                          )}
+                          {/* Same rule as ElevenLabs: a rejected key gets the
+                              reason instead of a bar with nothing in it. */}
+                          {kie?.configured && kie.valid === false && (
+                            <p className="text-[10px] leading-relaxed" style={{ color: "#f0a855" }}>
+                              KIE rejected this key. Create a new one and save it in <Link href="/setup" className="underline">Setup</Link>.
+                            </p>
+                          )}
+                        </div>
                       </div>
 
                       {/* ElevenLabs. Uses UsageBar (used/limit) instead of
                           CreditsBar because ElevenLabs quota is bounded per
                           plan — we have both numerator and denominator. */}
-                      <div className="rounded-xl px-5 py-4" style={cardStyle}>
+                      <div className="hover-lift rounded-xl px-5 py-4 transition-all duration-200" style={cardStyle}>
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div className="min-w-0">
                             <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>ElevenLabs</p>
-                            {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mt-0.5" style={{ color: "#f0a855" }}>Pending setup</p>}
-                            <p className="text-[10px] mt-0.5" style={{ color: "var(--c-38)" }}>Voiceover generation & transcription</p>
+                            {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mt-1" style={{ color: "#f0a855" }}>Pending setup</p>}
+                            <p className="text-[10px] mt-1.5 leading-relaxed" style={{ color: "var(--c-38)" }}>Voiceover generation & transcription</p>
                           </div>
-                          <div className="flex flex-col items-end gap-1 shrink-0">
+                          <div className="flex flex-col items-end gap-1.5 shrink-0">
                             <StatusBadge data={elevenlabs} color="#c084fc" />
                             {elevenlabs?.configured && elevenlabs.valid && typeof elevenlabs.remaining === "number" && (
                               <span className="text-[10px] font-medium tabular-nums"
@@ -1600,223 +1881,381 @@ export default function HomePage() {
                             )}
                           </div>
                         </div>
-                        {elevenlabs?.configured && elevenlabs.valid && typeof elevenlabs.remaining === "number" && typeof elevenlabs.limit === "number" && (
-                          <UsageBar used={elevenlabs.limit - elevenlabs.remaining} limit={elevenlabs.limit} color="#c084fc" />
-                        )}
-                        {/* Only claim a reason when the API told us one. This
-                            used to show the scope hint for any missing balance,
-                            including a key that cannot authenticate at all,
-                            which sent people to change permissions on a key
-                            that needed replacing. */}
-                        {elevenlabs?.configured && elevenlabs.balanceIssue === "key_id" && (
-                          <p className="text-[10px]" style={{ color: "var(--accent-amber-text)" }}>
-                            That looks like a key ID, not a key. Paste the value starting with sk_, shown when you create or rotate the key.
-                          </p>
-                        )}
-                        {elevenlabs?.configured && elevenlabs.valid && elevenlabs.balanceIssue === "scope" && (
-                          <p className="text-[10px]" style={{ color: "var(--c-30)" }}>Enable user_read scope on your key to see character balance</p>
-                        )}
+                        <div>
+                          {elevenlabs?.configured && elevenlabs.valid && typeof elevenlabs.remaining === "number" && typeof elevenlabs.limit === "number" && (
+                            <UsageBar used={elevenlabs.limit - elevenlabs.remaining} limit={elevenlabs.limit} color="#c084fc" />
+                          )}
+                          {/* Keep a bar in the same place when a working key's
+                              quota can't be read, so the card matches KIE
+                              instead of collapsing to a line of text. A
+                              rejected key gets no bar: it has no quota, and an
+                              empty one read as "nothing used yet" rather than
+                              "this key does not work". */}
+                          {elevenlabs?.configured && elevenlabs.valid === true && !(typeof elevenlabs.remaining === "number" && typeof elevenlabs.limit === "number") && (
+                            <EmptyBar label="Usage" />
+                          )}
+                          {/* Only claim a reason when the API told us one. This
+                              used to show the scope hint for any missing balance,
+                              including a key that cannot authenticate at all,
+                              which sent people to change permissions on a key
+                              that needed replacing. */}
+                          {elevenlabs?.configured && elevenlabs.valid && elevenlabs.balanceIssue === "scope" && (
+                            <p className="text-[10px] leading-relaxed" style={{ color: "var(--c-30)" }}>Enable user_read scope on your key to see character balance</p>
+                          )}
+                          {/* A rejected key needs the reason, not a bar. The
+                              status endpoint already distinguishes the common
+                              mistake (the saved value is the key ID, which
+                              ElevenLabs shows forever, while the key itself
+                              appears once at creation) from a key that is
+                              simply bad, so say which one it is. */}
+                          {elevenlabs?.configured && elevenlabs.valid === false && (
+                            <p className="text-[10px] leading-relaxed" style={{ color: "#f0a855" }}>
+                              {elevenlabs.balanceIssue === "key_id"
+                                ? <>This is a key ID, not a key. Copy the value that starts with sk_ from ElevenLabs and save it in <Link href="/setup" className="underline">Setup</Link>.</>
+                                : <>ElevenLabs rejected this key. Create a new one and save it in <Link href="/setup" className="underline">Setup</Link>.</>}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Anthropic. No usage bar: Anthropic bills tokens
+                          against the account and exposes no cheap remaining
+                          figure, so presence and whether it is switched on is
+                          all there is to show. A saved-but-off key is worth
+                          calling out, since it changes nothing about who pays
+                          and reads as connected otherwise. */}
+                      <div className="hover-lift rounded-xl px-5 py-4 transition-all duration-200" style={cardStyle}>
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>Anthropic</p>
+                            <p className="text-[10px] mt-1.5 leading-relaxed" style={{ color: "var(--c-38)" }}>Optional. Runs the writing steps on your own account instead of through KIE</p>
+                          </div>
+                          <div className="flex flex-col items-end gap-1.5 shrink-0">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider"
+                              style={anthropic?.configured
+                                ? (anthropic.directEnabled
+                                  ? { background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "1px solid oklch(0.55 0.15 145 / 0.3)" }
+                                  : { background: "oklch(0.6 0.18 75 / 0.12)", color: "oklch(0.7 0.16 75)", border: "1px solid oklch(0.6 0.18 75 / 0.3)" })
+                                : { background: "oklch(1 0 0 / 0.06)", color: "var(--c-40)", border: "1px solid var(--bd-card)" }}>
+                              {anthropic?.configured ? (anthropic.directEnabled ? "Active" : "Saved") : "Not set"}
+                            </span>
+                          </div>
+                        </div>
+                        <div>
+                          {/* There is no quota to fill, so a bar would sit at
+                              zero forever. Show what we do know instead: the
+                              tokens our own ledger recorded against this
+                              account over the last 30 days. */}
+                          <div className="flex justify-between text-[10px]" style={{ color: "var(--c-40)" }}>
+                            <span>Tokens, 30 days</span>
+                            <span className="tabular-nums font-medium">
+                              {typeof anthropic?.tokens30d === "number"
+                                ? anthropic.tokens30d >= 1_000_000
+                                  ? `${(anthropic.tokens30d / 1_000_000).toFixed(1)}M`
+                                  : anthropic.tokens30d >= 1_000
+                                    ? `${Math.round(anthropic.tokens30d / 1_000)}k`
+                                    : anthropic.tokens30d.toLocaleString()
+                                : "—"}
+                            </span>
+                          </div>
+                          {(!anthropic?.configured || anthropic.directEnabled) && (
+                            <p className="text-[10px] leading-relaxed mt-2" style={{ color: "var(--c-30)" }}>
+                              {anthropic?.configured
+                                ? "Writing steps bill your Anthropic account. Balance lives at console.anthropic.com."
+                                : "Not connected. Writing steps run through your KIE credits."}
+                            </p>
+                          )}
+                        </div>
                       </div>
 
                     </div>
+
+                    {/* What those keys have actually spent. Same tab, because
+                        "is it connected" and "what did it cost" are the two
+                        questions people open this view with. */}
+                    <UsageStats />
                   </div>
                 );
               })()}
 
-              <h2 className="text-xl font-bold tracking-tight" style={{ color: "var(--c-85)", marginTop: "60px" }}>Your Niches & Videos</h2>
+              </>)}
+
             </div>
           );
         })()}
 
-        {/* Channel groups */}
-        {channelGroups.length > 0 && (
-          <div className="space-y-12">
-            {channelGroups.map((group) => {
-              return (
-                <div key={group.channelName} className="rounded-2xl px-4 sm:px-6" style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)", paddingTop: "34px", paddingBottom: "34px" }}>
-                  {/* Channel header */}
-                  <div className="flex items-center justify-between gap-3 mb-5">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-11 h-11 rounded-xl flex items-center justify-center text-base font-bold shrink-0"
-                        style={{
-                          background: "oklch(0.72 0.25 285 / 0.15)",
-                          color: "var(--brand-text)",
-                          border: "1px solid oklch(0.72 0.25 285 / 0.25)",
-                        }}>
-                        {group.channelName.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <h2 className="text-base font-bold text-foreground truncate">{group.channelName}</h2>
-                        {group.channelUrl && (
-                          <Link
-                            href={group.channelUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-xs mt-0.5 block truncate underline underline-offset-2 hover:opacity-80 transition-opacity"
-                            style={{ color: "var(--brand-text)", textDecorationColor: "color-mix(in oklch, var(--brand-text) 60%, transparent)" }}
-                            title={group.channelUrl}
-                          >
-                            {group.channelUrl}
-                          </Link>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="hidden sm:inline text-xs px-3 py-1 rounded-full"
-                        style={{ background: "var(--bg-elevated)", border: "1px solid var(--bd-6)", color: "var(--c-42)" }}>
-                        {group.projects.length} {group.projects.length === 1 ? "video" : "videos"}
-                      </span>
-                      <button
-                        onClick={() => setDeleteTarget({ type: "niche", channelName: group.channelName, projectIds: group.projects.map(p => p.id), count: group.projects.length })}
-                        className="p-1.5 rounded-lg transition-all hover:opacity-90"
-                        style={{ color: "var(--c-55)", border: "1px solid var(--bd-7)" }}
-                        title="Delete niche"
-                      >
-                        <Trash2 size={13} />
-                      </button>
-                      <button
-                        onClick={() => createVideoForChannel(group)}
-                        disabled={creating || !authReady || navigatingTo === `new-video-${group.channelName}`}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
-                        style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
-                      >
-                        {navigatingTo === `new-video-${group.channelName}` ? "Loading…" : "+ New Video"}
-                      </button>
-                    </div>
-                  </div>
+        {/* The niche list, its loading skeleton and its empty state all belong
+            to the Niches & Videos tab. Gated together so the tab is either the
+            whole section or nothing. */}
+        {dashTab === "niches" && (<>
+        {/* One flat, filtered video list. The niche used to be a container
+            with its own grid inside; it is now a filter in the sidebar, so a
+            busy niche can't bury the ones under it and every row gets the
+            full width. */}
+        {channelGroups.length > 0 && (() => {
+          const group = channelGroups.find((g) => g.channelName === nicheFilter) ?? null;
+          const scoped = group ? group.projects : channelGroups.flatMap((g) => g.projects);
+          // Newest first. Grouping used to impose an order; a flat list needs
+          // its own, and recency is what people come back for.
+          const visible = [...scoped].sort((a, b) => b.created_at.localeCompare(a.created_at));
+          const nicheOf = new Map();
+          for (const g of channelGroups) for (const pr of g.projects) nicheOf.set(pr.id, g.channelName);
 
-                  {/* Project cards — auto-fill grid */}
-                  <div className="grid gap-7"
-                    style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 340px), 1fr))" }}>
-                    {group.projects.map((p) => {
-                      // A video is complete once its final assembled MP4
-                      // exists — thumbnails are an extra step that doesn't
-                      // affect progress/completion.
-                      const assembled = !!p.assembled_url;
-                      const path = assembled
-                        ? "thumbnails"
-                        : (p.current_state === 6 && p.selected_topic)
-                          ? "script"
-                          : (PHASE_PATHS[p.current_state] ?? "channel");
-                      const stateLabel = assembled
-                        ? "Complete"
-                        : (p.current_state === 6 && p.selected_topic)
-                          ? "Script"
-                          : (PHASE_LABELS[p.current_state] ?? "Setup");
-                      const progress = assembled ? 100 : Math.round(((PHASE_RANK[path] ?? 0) + 1) / 8 * 100);
-                      const isComplete = assembled;
-
-                      const isNavigating = navigatingTo === `open-video-${p.id}`;
-                      return (
-                        <Link
-                          key={p.id}
-                          href={(p.auto_pilot && !assembled && p.auto_pilot_status !== "stopped") ? `/projects/${p.id}/one-click` : `/projects/${p.id}/${path}`}
-                          prefetch
-                          onClick={() => setNavigatingTo(`open-video-${p.id}`)}
-                          className={`block relative text-left p-6 rounded-2xl transition-all ${isNavigating ? "pointer-events-none" : "hover:scale-[1.01] active:scale-[0.99]"}`}
-                          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
-                          onMouseEnter={(e) => { if (!isNavigating) (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
-                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-card)"; }}
-                        >
-                          <div className="flex items-start justify-between mb-3">
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
-                                style={isComplete ? {
-                                  background: "oklch(0.55 0.15 145 / 0.15)",
-                                  color: "oklch(0.65 0.15 145)",
-                                  border: "1px solid oklch(0.55 0.15 145 / 0.3)",
-                                } : {
-                                  background: "oklch(0.72 0.25 285 / 0.1)",
-                                  color: "var(--brand-text)",
-                                  border: "1px solid oklch(0.72 0.25 285 / 0.2)",
-                                }}>
-                                {stateLabel}
-                              </span>
-                              {isComplete && p.assembled_url && (
-                                <VideoDurationBadge src={p.assembled_url} />
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-xs" style={{ color: "var(--c-38)" }}>{timeAgo(p.created_at)}</span>
-                              {isComplete && p.assembled_url && (
-                                <button
-                                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); downloadVideo(p.id, p.assembled_url!, p.selected_topic ?? "video"); }}
-                                  disabled={downloadingId === p.id}
-                                  className="p-1 rounded-lg transition-all hover:opacity-90 disabled:opacity-50"
-                                  style={{ color: "oklch(0.65 0.15 145)" }}
-                                  title="Download video"
-                                >
-                                  {downloadingId === p.id
-                                    ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
-                                    : <Download size={13} />}
-                                </button>
-                              )}
-                              <button
-                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget({ type: "video", id: p.id, label: p.selected_topic ?? "this video" }); }}
-                                className="p-1 rounded-lg transition-all hover:opacity-90"
-                                style={{ color: "var(--c-55)" }}
-                                title="Delete video"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </div>
-
-                          <p className="text-lg font-semibold leading-snug mb-5"
-                            style={{ color: p.selected_topic ? "var(--c-88)" : "var(--c-40)" }}>
-                            {p.selected_topic ?? "No topic selected"}
-                          </p>
-
-                          {/* 1Click live controls — only for autopilot
-                              projects still in flight (running / paused /
-                              needs attention). */}
-                          {p.auto_pilot && !isComplete && !ONE_CLICK_HIDDEN && (
-                            <div className="mb-4">
-                              <OneClickControls
-                                projectId={p.id}
-                                status={p.auto_pilot_status ?? null}
-                                error={p.auto_pilot_error ?? null}
-                                onChanged={() => mutateProjects()}
-                              />
-                            </div>
-                          )}
-
-                          <div className="space-y-1.5">
-                            <div className="flex justify-between text-xs" style={{ color: "var(--c-38)" }}>
-                              <span>Progress</span>
-                              <span>{progress}%</span>
-                            </div>
-                            <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
-                              <div className="h-full rounded-full transition-all"
-                                style={{
-                                  width: `${progress}%`,
-                                  background: isComplete
-                                    ? "oklch(0.55 0.15 145)"
-                                    : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-                                }}
-                              />
-                            </div>
-                          </div>
-
-                          {isNavigating && (
-                            <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-2xl"
-                              style={{ background: "oklch(0.06 0 0 / 0.55)", backdropFilter: "blur(2px)" }}>
-                              <Spinner size={16} />
-                              <span className="text-xs font-medium" style={{ color: "var(--c-90)" }}>Opening…</span>
-                            </div>
-                          )}
-                        </Link>
-                      );
-                    })}
-
-                  </div>
+          return (
+            <div className="space-y-5">
+              {/* Toolbar: what you are looking at, and the actions for it. */}
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-base font-bold text-foreground truncate">
+                    {group ? group.channelName : "All videos"}
+                  </h2>
+                  {group?.channelUrl ? (
+                    <Link href={group.channelUrl} target="_blank" rel="noopener noreferrer"
+                      className="text-xs mt-0.5 block truncate underline underline-offset-2 hover:opacity-80 transition-opacity"
+                      style={{ color: "var(--brand-text)", textDecorationColor: "color-mix(in oklch, var(--brand-text) 60%, transparent)" }}
+                      title={group.channelUrl}>
+                      {group.channelUrl}
+                    </Link>
+                  ) : (
+                    <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>
+                      {visible.length} {visible.length === 1 ? "video" : "videos"} across {channelGroups.length} {channelGroups.length === 1 ? "niche" : "niches"}
+                    </p>
+                  )}
                 </div>
-              );
-            })}
-          </div>
-        )}
+
+                <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
+                  <div className="flex-1 sm:flex-none flex gap-0.5 p-0.5 rounded-lg" style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
+                    {(["list", "cards"] as const).map((v) => (
+                      <button key={v} onClick={() => selectVideoView(v)}
+                        aria-label={v === "list" ? "List view" : "Card view"}
+                        className="flex-1 sm:flex-none flex items-center justify-center p-1.5 sm:py-1.5 rounded-md transition-all cursor-pointer"
+                        style={videoView === v
+                          ? { background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)" }
+                          : { background: "transparent", color: "var(--c-45)" }}>
+                        {v === "list" ? <List size={14} /> : <LayoutGrid size={14} />}
+                      </button>
+                    ))}
+                  </div>
+                  {group && (
+                    <button
+                      onClick={() => setDeleteTarget({ type: "niche", channelName: group.channelName, projectIds: group.projects.map((pr) => pr.id), count: group.projects.length })}
+                      className="p-2 rounded-lg transition-all hover:opacity-90 shrink-0"
+                      style={{ color: "var(--c-55)", border: "1px solid var(--bd-7)" }}
+                      title="Delete niche"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                  <button
+                    onClick={() => group ? createVideoForChannel(group) : createProject()}
+                    disabled={creating || !authReady || navigatingTo === `new-video-${group?.channelName ?? ""}` || navigatingTo === "new-niche"}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2.5 sm:py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer whitespace-nowrap"
+                    style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
+                  >
+                    {group
+                      ? (navigatingTo === `new-video-${group.channelName}` ? "Loading…" : "+ New Video")
+                      : (navigatingTo === "new-niche" ? "Loading…" : "+ New Niche")}
+                  </button>
+                </div>
+              </div>
+
+              {videoView === "list" ? (
+                <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid var(--bd-card)" }}>
+                  {visible.map((pr, i) => {
+                    const assembled = !!pr.assembled_url;
+                    const path = assembled ? "thumbnails"
+                      : (pr.current_state === 6 && pr.selected_topic) ? "script"
+                      : (PHASE_PATHS[pr.current_state] ?? "channel");
+                    const stateLabel = assembled ? "Complete"
+                      : (pr.current_state === 6 && pr.selected_topic) ? "Script"
+                      : (PHASE_LABELS[pr.current_state] ?? "Setup");
+                    const progress = assembled ? 100 : Math.round(((PHASE_RANK[path] ?? 0) + 1) / 8 * 100);
+                    const isNavigating = navigatingTo === `open-video-${pr.id}`;
+                    return (
+                      <Link
+                        key={pr.id}
+                        href={(pr.auto_pilot && !assembled && pr.auto_pilot_status !== "stopped") ? `/projects/${pr.id}/one-click` : `/projects/${pr.id}/${path}`}
+                        prefetch
+                        onClick={() => setNavigatingTo(`open-video-${pr.id}`)}
+                        className={`relative flex items-center gap-3 px-4 py-3 transition-all ${isNavigating ? "pointer-events-none" : ""}`}
+                        style={{
+                          background: "oklch(1 0 0 / 0.04)",
+                          borderTop: i === 0 ? "none" : "1px solid var(--bd-6)",
+                        }}
+                        onMouseEnter={(e) => { if (!isNavigating) (e.currentTarget as HTMLElement).style.background = "oklch(1 0 0 / 0.08)"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "oklch(1 0 0 / 0.04)"; }}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[13px] font-semibold leading-snug truncate"
+                            style={{ color: pr.selected_topic ? "var(--c-88)" : "var(--c-40)" }}>
+                            {pr.selected_topic ?? "No topic selected"}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1 text-[11px]" style={{ color: "var(--c-38)" }}>
+                            {/* The niche column is redundant once one is selected. */}
+                            {!group && <span className="truncate max-w-[40%]">{nicheOf.get(pr.id)}</span>}
+                            {!group && <span aria-hidden>·</span>}
+                            <span>{timeAgo(pr.created_at)}</span>
+                          </div>
+                        </div>
+
+                        <div className="hidden sm:flex items-center gap-2 w-[120px] shrink-0">
+                          <div className="h-1 flex-1 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
+                            <div className="h-full rounded-full"
+                              style={{ width: `${progress}%`, background: assembled ? "oklch(0.55 0.15 145)" : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))" }} />
+                          </div>
+                          <span className="text-[11px] tabular-nums shrink-0" style={{ color: "var(--c-38)" }}>{progress}%</span>
+                        </div>
+
+                        <span className="text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0"
+                          style={assembled ? {
+                            background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                          } : {
+                            background: "oklch(0.72 0.25 285 / 0.1)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.2)",
+                          }}>
+                          {stateLabel}
+                        </span>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          {assembled && pr.assembled_url && (
+                            <button
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); downloadVideo(pr.id, pr.assembled_url!, pr.selected_topic ?? "video"); }}
+                              disabled={downloadingId === pr.id}
+                              className="p-1.5 rounded-lg transition-all hover:opacity-90 disabled:opacity-50"
+                              style={{ color: "oklch(0.65 0.15 145)" }}
+                              title="Download video"
+                            >
+                              {downloadingId === pr.id
+                                ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+                                : <Download size={13} />}
+                            </button>
+                          )}
+                          <button
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget({ type: "video", id: pr.id, label: pr.selected_topic ?? "this video" }); }}
+                            className="p-1.5 rounded-lg transition-all hover:opacity-90"
+                            style={{ color: "var(--c-55)" }}
+                            title="Delete video"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+
+                        {isNavigating && (
+                          <div className="absolute inset-0 flex items-center justify-center gap-2"
+                            style={{ background: "oklch(0.06 0 0 / 0.55)", backdropFilter: "blur(2px)" }}>
+                            <Spinner size={14} />
+                            <span className="text-[11px] font-medium" style={{ color: "var(--c-90)" }}>Opening…</span>
+                          </div>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 320px), 1fr))" }}>
+                  {visible.map((pr) => {
+                    const assembled = !!pr.assembled_url;
+                    const path = assembled ? "thumbnails"
+                      : (pr.current_state === 6 && pr.selected_topic) ? "script"
+                      : (PHASE_PATHS[pr.current_state] ?? "channel");
+                    const stateLabel = assembled ? "Complete"
+                      : (pr.current_state === 6 && pr.selected_topic) ? "Script"
+                      : (PHASE_LABELS[pr.current_state] ?? "Setup");
+                    const progress = assembled ? 100 : Math.round(((PHASE_RANK[path] ?? 0) + 1) / 8 * 100);
+                    const isNavigating = navigatingTo === `open-video-${pr.id}`;
+                    return (
+                      <Link
+                        key={pr.id}
+                        href={(pr.auto_pilot && !assembled && pr.auto_pilot_status !== "stopped") ? `/projects/${pr.id}/one-click` : `/projects/${pr.id}/${path}`}
+                        prefetch
+                        onClick={() => setNavigatingTo(`open-video-${pr.id}`)}
+                        className={`block relative text-left p-5 rounded-2xl transition-all ${isNavigating ? "pointer-events-none" : "hover:scale-[1.01] active:scale-[0.99]"}`}
+                        style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid var(--bd-card)" }}
+                        onMouseEnter={(e) => { if (!isNavigating) (e.currentTarget as HTMLElement).style.borderColor = "oklch(0.72 0.25 285 / 0.35)"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--bd-card)"; }}
+                      >
+                        <div className="flex items-start justify-between mb-3 gap-2">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-xs px-2.5 py-0.5 rounded-full font-medium shrink-0"
+                              style={assembled ? {
+                                background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "1px solid oklch(0.55 0.15 145 / 0.3)",
+                              } : {
+                                background: "oklch(0.72 0.25 285 / 0.1)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.2)",
+                              }}>
+                              {stateLabel}
+                            </span>
+                            {assembled && pr.assembled_url && <VideoDurationBadge src={pr.assembled_url} />}
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-xs" style={{ color: "var(--c-38)" }}>{timeAgo(pr.created_at)}</span>
+                            {assembled && pr.assembled_url && (
+                              <button
+                                onClick={(e) => { e.preventDefault(); e.stopPropagation(); downloadVideo(pr.id, pr.assembled_url!, pr.selected_topic ?? "video"); }}
+                                disabled={downloadingId === pr.id}
+                                className="p-1 rounded-lg transition-all hover:opacity-90 disabled:opacity-50"
+                                style={{ color: "oklch(0.65 0.15 145)" }}
+                                title="Download video"
+                              >
+                                {downloadingId === pr.id
+                                  ? <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin inline-block" />
+                                  : <Download size={13} />}
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteTarget({ type: "video", id: pr.id, label: pr.selected_topic ?? "this video" }); }}
+                              className="p-1 rounded-lg transition-all hover:opacity-90"
+                              style={{ color: "var(--c-55)" }}
+                              title="Delete video"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <p className="text-[13px] sm:text-[15px] font-semibold leading-snug mb-2"
+                          style={{ color: pr.selected_topic ? "var(--c-88)" : "var(--c-40)" }}>
+                          {pr.selected_topic ?? "No topic selected"}
+                        </p>
+                        {!group && (
+                          <p className="text-[11px] mb-4 truncate" style={{ color: "var(--c-38)" }}>{nicheOf.get(pr.id)}</p>
+                        )}
+
+                        {pr.auto_pilot && !assembled && !ONE_CLICK_HIDDEN && (
+                          <div className="mb-4">
+                            <OneClickControls
+                              projectId={pr.id}
+                              status={pr.auto_pilot_status ?? null}
+                              error={pr.auto_pilot_error ?? null}
+                              onChanged={() => mutateProjects()}
+                            />
+                          </div>
+                        )}
+
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between text-xs" style={{ color: "var(--c-38)" }}>
+                            <span>Progress</span>
+                            <span>{progress}%</span>
+                          </div>
+                          <div className="h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
+                            <div className="h-full rounded-full transition-all"
+                              style={{ width: `${progress}%`, background: assembled ? "oklch(0.55 0.15 145)" : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))" }} />
+                          </div>
+                        </div>
+
+                        {isNavigating && (
+                          <div className="absolute inset-0 flex items-center justify-center gap-2 rounded-2xl"
+                            style={{ background: "oklch(0.06 0 0 / 0.55)", backdropFilter: "blur(2px)" }}>
+                            <Spinner size={16} />
+                            <span className="text-xs font-medium" style={{ color: "var(--c-90)" }}>Opening…</span>
+                          </div>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Loading skeleton */}
         {projects === undefined && (
@@ -1896,6 +2335,8 @@ export default function HomePage() {
             </div>
           </div>
         )}
+        </>)}
+        </div>
         </>
         )}
 

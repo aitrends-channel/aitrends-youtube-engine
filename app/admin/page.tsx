@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem, Menu,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -171,7 +171,7 @@ function TruncatedCell({ value, maxLen = 24, fallback = "—" }: {
       <div
         className={`absolute z-20 top-full left-0 mt-1 px-3 py-2 rounded-lg text-xs transition-opacity ${pinned ? "opacity-100" : "opacity-0 pointer-events-none group-hover:opacity-100"}`}
         style={{
-          background: "white",
+          background: "var(--bg-card)",
           border: "1px solid oklch(0 0 0 / 0.1)",
           color: "var(--c-85)",
           maxWidth: "360px",
@@ -558,7 +558,7 @@ function StatCard({
 
   return (
     <div className="p-6 rounded-2xl space-y-4"
-      style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06), 0 1px 3px oklch(0 0 0 / 0.04)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06), 0 1px 3px oklch(0 0 0 / 0.04)" }}>
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
           {label}
@@ -746,7 +746,7 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
 
   return (
     <section id="reports" className="rounded-2xl space-y-5"
-      style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
@@ -806,8 +806,8 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
             onMouseLeave={() => setSalesHover(null)}>
             <defs>
               <linearGradient id="salesGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.25" />
-                <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
+                <stop offset="0%" stopColor="var(--status-warn)" stopOpacity="0.25" />
+                <stop offset="100%" stopColor="var(--status-warn)" stopOpacity="0" />
               </linearGradient>
             </defs>
             {[0, 0.5, 1].map((t) => {
@@ -820,13 +820,13 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
               );
             })}
             {sArea && <path d={sArea} fill="url(#salesGrad)" />}
-            {sPath && <path d={sPath} fill="none" stroke="#f59e0b" strokeWidth="1.8" strokeLinejoin="round" />}
+            {sPath && <path d={sPath} fill="none" stroke="var(--status-warn)" strokeWidth="1.8" strokeLinejoin="round" />}
             {scs.map((c, i) => (
               <g key={i}>
                 {/* invisible hover strip per day */}
                 <rect x={c.x - splotW / Math.max(sn - 1, 1) / 2} y={0} width={splotW / Math.max(sn - 1, 1)} height={SH}
                   fill="transparent" onMouseEnter={() => setSalesHover(i)} />
-                {daily[i].count > 0 && <circle cx={c.x} cy={c.y} r="2.4" fill="#f59e0b" />}
+                {daily[i].count > 0 && <circle cx={c.x} cy={c.y} r="2.4" fill="var(--status-warn)" />}
               </g>
             ))}
             {salesHover !== null && daily[salesHover] && (() => {
@@ -836,12 +836,12 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
               return (
                 <g pointerEvents="none">
                   <line x1={c.x} y1={SPAD_T} x2={c.x} y2={SPAD_T + splotH} stroke="rgba(0,0,0,0.15)" strokeWidth="1" />
-                  <rect x={TX} y={SPAD_T} width="112" height="34" rx="6" fill="white" stroke="rgba(0,0,0,0.12)" />
+                  <rect x={TX} y={SPAD_T} width="112" height="34" rx="6" fill="var(--bg-card)" stroke="rgba(0,0,0,0.12)" />
                   <text x={TX + 8} y={SPAD_T + 14} fontSize="9" fill="#666">
                     {new Date(d.date + "T00:00:00Z").toLocaleDateString("en", { month: "short", day: "numeric", timeZone: "UTC" })}
                   </text>
                   <text x={TX + 8} y={SPAD_T + 27} fontSize="9.5" fill="#666">
-                    <tspan fill="#f59e0b" fontWeight="700">${(d.amountCents / 100).toFixed(2)}</tspan>
+                    <tspan fill="var(--status-warn)" fontWeight="700">${(d.amountCents / 100).toFixed(2)}</tspan>
                     {" · "}{d.count} payment{d.count === 1 ? "" : "s"}
                   </text>
                 </g>
@@ -940,7 +940,7 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
                 style={{ background: tone.bg, border: `1px solid ${tone.border}` }}>
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded"
-                    style={{ background: "white", color: tone.chip, border: `1px solid ${tone.border}` }}>
+                    style={{ background: "var(--bg-card)", color: tone.chip, border: `1px solid ${tone.border}` }}>
                     {tone.label}
                   </span>
                   <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>{r.title}</p>
@@ -982,7 +982,7 @@ function AddUserForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <form onSubmit={handleSubmit} className="p-5 rounded-2xl space-y-3 w-full"
-      style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
       <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Email address</label>
       <div className="flex flex-col sm:flex-row gap-2">
         <input
@@ -1084,7 +1084,7 @@ function LogsSection() {
 
   return (
     <section id="logs" className="rounded-2xl space-y-4"
-      style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
       <div className="flex items-center gap-3">
         <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: "oklch(0.55 0.15 220 / 0.1)", border: "1px solid oklch(0.55 0.15 220 / 0.2)" }}>
@@ -1393,7 +1393,7 @@ function SetupSection({
   };
 
   return (
-    <section id="setup" className="rounded-2xl space-y-5" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+    <section id="setup" className="rounded-2xl space-y-5" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
       <div className="flex items-center gap-3">
         <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: "oklch(0.55 0.15 220 / 0.1)", border: "1px solid oklch(0.55 0.15 220 / 0.2)" }}>
@@ -1426,7 +1426,7 @@ function SetupSection({
             onClick={() => setSetupTab(t.id)}
             className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
             style={setupTab === t.id ? {
-              background: "white",
+              background: "var(--bg-card)",
               color: "oklch(0.62 0.15 220)",
               boxShadow: "0 1px 3px oklch(0 0 0 / 0.06)",
             } : {
@@ -1634,7 +1634,7 @@ function SetupSection({
                                   }}
                                   disabled={savingEdit === tag}
                                   className="flex-1 text-sm font-mono px-2 py-1 rounded-md outline-none"
-                                  style={{ background: "white", border: "1px solid oklch(0.62 0.15 220 / 0.4)", color: "oklch(0.2 0 0)" }}
+                                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0.62 0.15 220 / 0.4)", color: "oklch(0.2 0 0)" }}
                                 />
                                 <button
                                   onClick={() => handleSaveEdit(row.id, i)}
@@ -1671,7 +1671,7 @@ function SetupSection({
                                     <div
                                       role="menu"
                                       className="absolute right-0 top-full mt-1 z-20 min-w-[140px] rounded-lg overflow-hidden py-1"
-                                      style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.08)", boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)" }}>
+                                      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.08)", boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)" }}>
                                       <button
                                         role="menuitem"
                                         onClick={() => { setOpenMenuTag(null); setEditingKey(tag); setEditValue(k); }}
@@ -2058,7 +2058,7 @@ function ConcurrencyPanel() {
             return (
               <div key={f.key} className="p-3 rounded-xl"
                 style={{
-                  background: inGroup ? "white" : "oklch(0 0 0 / 0.02)",
+                  background: inGroup ? "var(--bg-card)" : "oklch(0 0 0 / 0.02)",
                   border: "1px solid oklch(0 0 0 / 0.06)",
                   opacity: fieldDisabled ? 0.5 : 1,
                 }}>
@@ -2222,7 +2222,7 @@ function AssemblyBeatRulesPanel() {
       <div className="space-y-2">
         {draft.map((rule, idx) => (
           <div key={idx} className="p-3 rounded-lg space-y-2"
-            style={{ background: "white", marginTop: 15, marginBottom: 4 }}>
+            style={{ background: "var(--bg-card)", marginTop: 15, marginBottom: 4 }}>
             <div className="flex items-center gap-2">
               <input
                 type="text"
@@ -2570,7 +2570,7 @@ function RoutingRadios({
             disabled={disabled}
             className="w-full text-left p-3 rounded-xl transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
             style={{
-              background: active ? "oklch(0.62 0.15 220 / 0.08)" : "white",
+              background: active ? "oklch(0.62 0.15 220 / 0.08)" : "var(--bg-card)",
               border: `1px solid ${active ? "oklch(0.62 0.15 220 / 0.45)" : "oklch(0 0 0 / 0.07)"}`,
               boxShadow: active ? "0 1px 4px oklch(0.62 0.15 220 / 0.12)" : "0 1px 2px oklch(0 0 0 / 0.04)",
             }}
@@ -2581,7 +2581,7 @@ function RoutingRadios({
                   background: active ? "oklch(0.62 0.15 220)" : "transparent",
                   border: `1.5px solid ${active ? "oklch(0.62 0.15 220)" : "oklch(0 0 0 / 0.2)"}`,
                 }}>
-                {active && <span className="w-1.5 h-1.5 rounded-full" style={{ background: "white" }} />}
+                {active && <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--bg-card)" }} />}
               </span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -3193,7 +3193,7 @@ function StepProviderControl({
                 disabled={disabled || savingModel !== null}
                 className="w-full text-left p-2.5 rounded-lg transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 style={{
-                  background: isActive ? "oklch(0.72 0.25 285 / 0.08)" : "white",
+                  background: isActive ? "oklch(0.72 0.25 285 / 0.08)" : "var(--bg-card)",
                   border: `1px solid ${isActive ? "oklch(0.72 0.25 285 / 0.45)" : "oklch(0 0 0 / 0.07)"}`,
                 }}
               >
@@ -3301,7 +3301,7 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
               key={card.id}
               className="rounded-xl p-4 space-y-3"
               style={{
-                background: "white",
+                background: "var(--bg-card)",
                 border: "1px solid oklch(0 0 0 / 0.07)",
                 boxShadow: "0 1px 2px oklch(0 0 0 / 0.04)",
               }}
@@ -3503,7 +3503,7 @@ function PlansPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-2xl p-5 space-y-4 mt-[15px]" style={{ background: "white", border: "2px solid silver" }}>
+      <div className="rounded-2xl p-5 space-y-4 mt-[15px]" style={{ background: "var(--bg-card)", border: "2px solid silver" }}>
       <div className="rounded-xl p-3 flex items-center justify-between gap-3"
         style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid var(--bd-7)" }}>
         <div className="min-w-0">
@@ -4727,7 +4727,7 @@ function DodoVarField({
         disabled={disabled}
         placeholder={placeholder}
         className="w-full px-3 py-2.5 rounded-lg text-sm outline-none font-mono text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400"
-        style={{ background: "#ecf0f1" }}
+        style={{ background: "var(--skeleton)" }}
       />
       {hint && (
         <p className="text-xs mt-1.5" style={{ color: "var(--c-40)" }}>
@@ -4828,7 +4828,7 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
   return (
     <div
       className="rounded-2xl p-6 mt-[15px]"
-      style={{ background: "white", border: "2px solid silver" }}
+      style={{ background: "var(--bg-card)", border: "2px solid silver" }}
     >
       <div className="mb-6">
         <p className="text-base font-semibold" style={{ color: "var(--c-90)" }}>Dodo Variables</p>
@@ -4846,7 +4846,7 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
             disabled={saving}
             className="px-4 py-1.5 rounded-md text-sm font-semibold transition-all disabled:opacity-40 capitalize cursor-pointer"
             style={activeEnv === env
-              ? { background: "white", color: "var(--c-90)", boxShadow: "0 1px 3px oklch(0 0 0 / 0.1)" }
+              ? { background: "var(--bg-card)", color: "var(--c-90)", boxShadow: "0 1px 3px oklch(0 0 0 / 0.1)" }
               : { background: "transparent", color: "var(--c-55)" }}
           >
             {env}
@@ -5284,12 +5284,12 @@ function AdminSkeleton() {
         </div>
 
         {/* Stats cards */}
-        <div className="rounded-2xl space-y-3" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
+        <div className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
           <div className="h-3 w-10 rounded animate-pulse" style={SK} />
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-[10px]">
             {[...Array(6)].map((_, i) => (
               <div key={i} className="p-6 rounded-2xl space-y-4"
-                style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06)" }}>
+                style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06)" }}>
                 <div className="flex items-center justify-between">
                   <div className="h-3 w-16 rounded animate-pulse" style={SK} />
                   <div className="w-8 h-8 rounded-lg animate-pulse" style={SK} />
@@ -5301,7 +5301,7 @@ function AdminSkeleton() {
         </div>
 
         {/* Activity chart */}
-        <div className="p-5 rounded-2xl space-y-4" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
+        <div className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="space-y-2">
               <div className="h-3 w-40 rounded animate-pulse" style={SK} />
@@ -5315,7 +5315,7 @@ function AdminSkeleton() {
         </div>
 
         {/* Users section */}
-        <div className="rounded-2xl space-y-4" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
+        <div className="rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl animate-pulse" style={SK} />
             <div className="h-5 w-16 rounded animate-pulse" style={SK} />
@@ -5348,11 +5348,30 @@ function SkeletonRows({ cols, rows = 3 }: { cols: number; rows?: number }) {
   );
 }
 
+const ADMIN_NAV = [
+  { id: "stats",    label: "Stats",    icon: BarChart3 },
+  { id: "activity", label: "Activity", icon: TrendingUp },
+  { id: "usage",    label: "Usage",    icon: Activity },
+  { id: "users",    label: "Users",    icon: Users },
+  { id: "projects", label: "Videos",   icon: Clapperboard },
+  { id: "revenue",  label: "Revenue",  icon: DollarSign },
+  { id: "reports",  label: "Reports",  icon: FileText },
+  { id: "logs",     label: "Logs",     icon: FileText },
+  { id: "emails",   label: "Emails",   icon: Mail },
+  { id: "support",  label: "Support",  icon: LifeBuoy },
+  { id: "reviews",  label: "Feedback", icon: Star },
+  { id: "memory",   label: "Memory",   icon: MemoryStick },
+  { id: "setup",    label: "Config",   icon: Settings },
+] as const;
+
 export default function AdminPage() {
   const router = useRouter();
   const [authChecked, setAuthChecked] = useState(false);
   const [userEmail, setUserEmail] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  // Below lg the sidebar is a drawer, opened from the menu row under the
+  // header. Same shape as the client dashboard.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const [launchOpen, setLaunchOpen] = useState(false);
 
@@ -5627,7 +5646,7 @@ export default function AdminPage() {
   }
 
   if (!authChecked) return (
-    <div className="min-h-screen flex flex-col" data-theme="light" style={{ background: "var(--bg-page)" }}>
+    <div className="min-h-screen flex flex-col admin-surfaces" data-theme="light" style={{ background: "var(--bg-page)" }}>
       <header className="flex items-center justify-between px-4 sm:px-8 py-4 sticky top-0 z-10"
         style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
         <Link href="/dashboard" className="flex items-center gap-3 transition-opacity hover:opacity-80">
@@ -5748,11 +5767,56 @@ export default function AdminPage() {
     : Math.max(0, (stats.activeAccounts ?? accountUsers.length) - activeUserCount);
 
   return (
-    <div className="min-h-screen flex flex-col" data-theme="light" style={{ background: "var(--bg-page)" }}>
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 sm:px-8 py-4 sticky top-0 z-10"
+    <div className="min-h-screen flex flex-col lg:pl-[300px] admin-surfaces" data-theme="light" style={{ background: "var(--bg-page)" }}>
+      {/* Full-height sidebar, fixed so it spans the viewport rather than
+          starting under the header. Everything else is inset by its width.
+          Below lg it is a drawer opened from the menu row. */}
+      <aside className={`fixed left-0 bottom-0 top-[117px] lg:top-0 z-40 w-[85vw] sm:w-[380px] lg:w-[300px] flex flex-col transition-transform duration-200 lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}
+        style={{ background: "var(--bg-header)", borderRight: "1px solid var(--bd-10)" }}>
+        <Link href="/dashboard" className="hidden lg:flex items-center gap-3 px-6 h-[69px] shrink-0 transition-opacity hover:opacity-80"
+          style={{ borderBottom: "1px solid var(--bd-6)" }}>
+          <div className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center">
+            <Image src="/heclus-icon-white.svg" alt="Heclus" width={32} height={32} className="object-cover w-full h-full" />
+          </div>
+          <div>
+            <span className="text-base font-bold tracking-tight" style={{ color: "var(--c-90)" }}>Heclus</span>
+            <span className="text-base tracking-tight ml-1.5" style={{ color: "var(--c-50)" }}>Admin</span>
+          </div>
+        </Link>
+        {/* Thirteen sections, so the list scrolls rather than compressing. */}
+        <nav className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1 pl-5 pr-[30px] py-5" style={{ scrollbarWidth: "thin" }}>
+          {ADMIN_NAV.map(({ id, label, icon: Icon }) => {
+            const on = activeTab === id;
+            return (
+              <button
+                key={id}
+                onClick={() => { setActiveTab(id); setSidebarOpen(false); }}
+                className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-[13px] font-medium text-left transition-all cursor-pointer"
+                style={on
+                  ? { background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.35)" }
+                  : { background: "transparent", color: "var(--c-55)" }}
+              >
+                <Icon size={15} className="shrink-0" />
+                <span className="min-w-0 truncate">{label}</span>
+              </button>
+            );
+          })}
+        </nav>
+      </aside>
+
+      {sidebarOpen && (
+        <div
+          className="lg:hidden fixed left-0 right-0 bottom-0 top-[117px] z-30"
+          style={{ background: "oklch(0 0 0 / 0.4)" }}
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden
+        />
+      )}
+
+      {/* Header. Fixed, so a spacer below stands in for its height. */}
+      <header className="flex items-center justify-between px-4 sm:px-8 py-4 fixed top-0 left-0 right-0 lg:left-[300px] z-50"
         style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
-        <Link href="/dashboard" className="flex items-center gap-3 transition-opacity hover:opacity-80">
+        <Link href="/dashboard" className="flex lg:hidden items-center gap-3 transition-opacity hover:opacity-80">
           <div className="w-8 h-8 shrink-0 rounded-xl flex items-center justify-center">
             <Image src="/heclus-icon-white.svg" alt="Heclus" width={32} height={32} className="object-cover w-full h-full" />
           </div>
@@ -5761,6 +5825,7 @@ export default function AdminPage() {
             <span className="text-sm tracking-tight ml-1" style={{ color: "var(--c-50)" }}>Admin</span>
           </div>
         </Link>
+        <div className="hidden lg:block" />
         <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => router.push("/dashboard")}
@@ -5803,7 +5868,7 @@ export default function AdminPage() {
                     <button
                       onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
-                      style={{ color: "#f87171" }}
+                      style={{ color: "var(--status-danger)" }}
                     >
                       <LogOut size={13} />
                       <span>Sign Out</span>
@@ -5815,6 +5880,25 @@ export default function AdminPage() {
           </div>
         </div>
       </header>
+
+      <div className="h-[69px] shrink-0" aria-hidden />
+
+      {/* Menu row. Its own bar under the header rather than a control in it,
+          fixed so the toggle stays reachable while the drawer is open. */}
+      <div className="lg:hidden fixed left-0 right-0 top-[69px] z-50 flex items-center gap-2 px-4 sm:px-8 h-[48px]"
+        style={{ borderBottom: "1px solid var(--bd-6)", background: "var(--bg-header)", backdropFilter: "blur(16px)" }}>
+        <button
+          onClick={() => setSidebarOpen((v) => !v)}
+          aria-label={sidebarOpen ? "Close menu" : "Open menu"}
+          aria-expanded={sidebarOpen}
+          className="inline-flex items-center gap-2 py-1.5 pr-2 -ml-1 pl-1 rounded-lg text-[13px] font-medium transition-opacity hover:opacity-70 cursor-pointer"
+          style={{ color: "var(--c-70)" }}
+        >
+          {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
+          <span>{ADMIN_NAV.find((t) => t.id === activeTab)?.label ?? "Menu"}</span>
+        </button>
+      </div>
+      <div className="lg:hidden h-[48px] shrink-0" aria-hidden />
 
       <main className="flex-1 w-full px-[30px] py-8 sm:py-12 space-y-6 sm:space-y-10">
         {/* Page heading + Launch action, sharing one row */}
@@ -5870,50 +5954,8 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Tabs — original (in flow, always rendered, observed by IntersectionObserver) */}
-        {(() => {
-          const TAB_ITEMS = [
-            { id: "stats",    label: "Stats",    icon: BarChart3 },
-            { id: "activity", label: "Activity", icon: TrendingUp },
-            { id: "usage",    label: "Usage",    icon: Activity },
-            { id: "users",    label: "Users",    icon: Users },
-            { id: "projects", label: "Videos",   icon: Clapperboard },
-            { id: "revenue",  label: "Revenue",  icon: DollarSign },
-            { id: "reports",  label: "Reports",  icon: FileText },
-            { id: "logs",     label: "Logs",     icon: FileText },
-            { id: "emails",   label: "Emails",   icon: Mail },
-            { id: "support",  label: "Support",  icon: LifeBuoy },
-            { id: "reviews",  label: "Feedback", icon: Star },
-            { id: "memory",   label: "Memory",   icon: MemoryStick },
-            { id: "setup",    label: "Config",   icon: Settings },
-          ] as const;
-
-          const tabButtons = (TAB_ITEMS).map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => setActiveTab(id)}
-              className="flex-1 flex items-center justify-center gap-1.5 px-2 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all cursor-pointer"
-              style={activeTab === id
-                ? { background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.35)" }
-                : { color: "oklch(0.50 0 0)" }}
-            >
-              <Icon size={14} />
-              <span className="hidden sm:inline">{label}</span>
-            </button>
-          ));
-
-          return (
-            <div
-              className="flex items-center gap-1 p-1 rounded-xl w-full"
-              style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}
-            >
-              {tabButtons}
-            </div>
-          );
-        })()}
-
         {/* Stats cards */}
-        <div id="stats" className="rounded-2xl space-y-3" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "stats" ? undefined : "none" }}>
+        <div id="stats" className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "stats" ? undefined : "none" }}>
           <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "oklch(0.50 0 0)" }}>Stats</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-[10px]">
             <StatCard label="Total Niches"      value={stats?.totalProjects}    icon={FolderOpen}                    />
@@ -6048,7 +6090,7 @@ export default function AdminPage() {
           const slotW = n > 1 ? plotW / (n - 1) : plotW;
 
           return (
-            <div id="activity" className="p-5 rounded-2xl space-y-4" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "activity" ? undefined : "none" }}>
+            <div id="activity" className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "activity" ? undefined : "none" }}>
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "oklch(0.50 0 0)" }}>Activity — {periodLabel}</p>
@@ -6058,11 +6100,11 @@ export default function AdminPage() {
                       {totalProjects} niches
                     </span>
                     <span className="flex items-center gap-1.5 text-xs" style={{ color: "oklch(0.45 0 0)" }}>
-                      <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: "#f59e0b" }} />
+                      <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: "var(--status-warn)" }} />
                       {totalVideos} videos
                     </span>
                     <span className="flex items-center gap-1.5 text-xs" style={{ color: "oklch(0.45 0 0)" }}>
-                      <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: "#34d399" }} />
+                      <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: "var(--status-ok)" }} />
                       {totalUsers} new users
                     </span>
                   </div>
@@ -6089,12 +6131,12 @@ export default function AdminPage() {
                       <stop offset="100%" stopColor="#9b7ff5" stopOpacity="0" />
                     </linearGradient>
                     <linearGradient id="videoGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.18" />
-                      <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
+                      <stop offset="0%" stopColor="var(--status-warn)" stopOpacity="0.18" />
+                      <stop offset="100%" stopColor="var(--status-warn)" stopOpacity="0" />
                     </linearGradient>
                     <linearGradient id="userGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#34d399" stopOpacity="0.15" />
-                      <stop offset="100%" stopColor="#34d399" stopOpacity="0" />
+                      <stop offset="0%" stopColor="var(--status-ok)" stopOpacity="0.15" />
+                      <stop offset="100%" stopColor="var(--status-ok)" stopOpacity="0" />
                     </linearGradient>
                   </defs>
 
@@ -6118,18 +6160,18 @@ export default function AdminPage() {
 
                   {/* Lines */}
                   <path d={toPath(projCoords)} fill="none" stroke="#9b7ff5" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-                  <path d={toPath(videoCoords)} fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-                  <path d={toPath(userCoords)} fill="none" stroke="#34d399" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+                  <path d={toPath(videoCoords)} fill="none" stroke="var(--status-warn)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+                  <path d={toPath(userCoords)} fill="none" stroke="var(--status-ok)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
 
                   {/* Dots */}
                   {projCoords.map((c, i) => (
                     <circle key={i} cx={c.x} cy={c.y} r={hoveredIdx === i ? 4 : 2.5} fill="#9b7ff5" style={{ transition: "r 0.1s" }} />
                   ))}
                   {videoCoords.map((c, i) => (
-                    <circle key={i} cx={c.x} cy={c.y} r={hoveredIdx === i ? 4 : 2.5} fill="#f59e0b" style={{ transition: "r 0.1s" }} />
+                    <circle key={i} cx={c.x} cy={c.y} r={hoveredIdx === i ? 4 : 2.5} fill="var(--status-warn)" style={{ transition: "r 0.1s" }} />
                   ))}
                   {userCoords.map((c, i) => (
-                    <circle key={i} cx={c.x} cy={c.y} r={hoveredIdx === i ? 4 : 2.5} fill="#34d399" style={{ transition: "r 0.1s" }} />
+                    <circle key={i} cx={c.x} cy={c.y} r={hoveredIdx === i ? 4 : 2.5} fill="var(--status-ok)" style={{ transition: "r 0.1s" }} />
                   ))}
 
                   {/* Hover hit strips */}
@@ -6159,7 +6201,7 @@ export default function AdminPage() {
                     return (
                       <g pointerEvents="none">
                         <rect x={TX} y={TY} width={TW} height={TH} rx={TR} ry={TR}
-                          fill="white" stroke="rgba(0,0,0,0.10)" strokeWidth="1" />
+                          fill="var(--bg-card)" stroke="rgba(0,0,0,0.10)" strokeWidth="1" />
                         <text x={TX + TW / 2} y={TY + 15} textAnchor="middle" fontSize="9.5" fill="#333" fontWeight="600">
                           {tooltipDate(pt.date, hoveredIdx)}
                         </text>
@@ -6167,13 +6209,13 @@ export default function AdminPage() {
                         <text x={TX + 21} y={TY + 34} fontSize="9" fill="#666">
                           Niches: <tspan fill="#9b7ff5" fontWeight="700">{pt.projects}</tspan>
                         </text>
-                        <circle cx={TX + 13} cy={TY + 46} r="3" fill="#f59e0b" />
+                        <circle cx={TX + 13} cy={TY + 46} r="3" fill="var(--status-warn)" />
                         <text x={TX + 21} y={TY + 50} fontSize="9" fill="#666">
-                          Videos: <tspan fill="#f59e0b" fontWeight="700">{pt.videos}</tspan>
+                          Videos: <tspan fill="var(--status-warn)" fontWeight="700">{pt.videos}</tspan>
                         </text>
-                        <circle cx={TX + 13} cy={TY + 62} r="3" fill="#34d399" />
+                        <circle cx={TX + 13} cy={TY + 62} r="3" fill="var(--status-ok)" />
                         <text x={TX + 21} y={TY + 66} fontSize="9" fill="#666">
-                          Users: <tspan fill="#34d399" fontWeight="700">{pt.users}</tspan>
+                          Users: <tspan fill="var(--status-ok)" fontWeight="700">{pt.users}</tspan>
                         </text>
                       </g>
                     );
@@ -6239,7 +6281,7 @@ export default function AdminPage() {
           const rangeLabel = isToday ? "Today · by hour (UTC)" : usageRange === "7d" ? "Last 7 days" : "Last 30 days";
 
           return (
-            <div id="usage" className="p-5 rounded-2xl space-y-4" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "usage" ? undefined : "none" }}>
+            <div id="usage" className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "usage" ? undefined : "none" }}>
               <div className="flex items-end justify-between flex-wrap gap-3">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "oklch(0.50 0 0)" }}>
@@ -6270,8 +6312,8 @@ export default function AdminPage() {
                 <svg viewBox={`0 0 ${UW} ${UH}`} className="w-full" style={{ height: 360 }}>
                   <defs>
                     <linearGradient id="usageGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.18" />
-                      <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
+                      <stop offset="0%" stopColor="var(--status-warn)" stopOpacity="0.18" />
+                      <stop offset="100%" stopColor="var(--status-warn)" stopOpacity="0" />
                     </linearGradient>
                   </defs>
 
@@ -6287,10 +6329,10 @@ export default function AdminPage() {
                   })}
 
                   <path d={uArea} fill="url(#usageGrad)" />
-                  <path d={uLine} fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+                  <path d={uLine} fill="none" stroke="var(--status-warn)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
 
                   {uCoords.map((c, i) => (
-                    <circle key={i} cx={c.x} cy={c.y} r={usageHoveredIdx === i ? 4 : 2.5} fill="#f59e0b" style={{ transition: "r 0.1s" }} />
+                    <circle key={i} cx={c.x} cy={c.y} r={usageHoveredIdx === i ? 4 : 2.5} fill="var(--status-warn)" style={{ transition: "r 0.1s" }} />
                   ))}
 
                   {/* Hover hit strips — wider than the dots so the
@@ -6318,9 +6360,9 @@ export default function AdminPage() {
                     return (
                       <g pointerEvents="none">
                         <line x1={c.x} y1={UPAD_T} x2={c.x} y2={UPAD_T + uPlotH} strokeWidth="1" stroke="rgba(0,0,0,0.14)" strokeDasharray="3 3" />
-                        <rect x={TX} y={TY} width={TW} height={TH} rx={TR} ry={TR} fill="white" stroke="rgba(0,0,0,0.10)" strokeWidth="1" />
+                        <rect x={TX} y={TY} width={TW} height={TH} rx={TR} ry={TR} fill="var(--bg-card)" stroke="rgba(0,0,0,0.10)" strokeWidth="1" />
                         <text x={TX + TW / 2} y={TY + 16} textAnchor="middle" fontSize="9.5" fill="#333" fontWeight="600">{pt.full}</text>
-                        <circle cx={TX + 13} cy={TY + 30} r="3" fill="#f59e0b" />
+                        <circle cx={TX + 13} cy={TY + 30} r="3" fill="var(--status-warn)" />
                         <text x={TX + 21} y={TY + 33} fontSize="9" fill="#666">
                           Videos: <tspan fill="#333" fontWeight="700">{pt.videos}</tspan>
                         </text>
@@ -6347,7 +6389,7 @@ export default function AdminPage() {
         })()}
 
         {/* Users section */}
-        <section id="users" className="rounded-2xl space-y-5 max-w-full min-w-0" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "users" ? undefined : "none" }}>
+        <section id="users" className="rounded-2xl space-y-5 max-w-full min-w-0" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "users" ? undefined : "none" }}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
               style={{ background: "oklch(0.72 0.25 285 / 0.1)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
@@ -6443,7 +6485,7 @@ export default function AdminPage() {
             </div>
           ) : (
             <div className="rounded-2xl overflow-x-auto w-full max-w-full"
-              style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+              style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
               <table className="w-full border-collapse min-w-[520px]">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -6622,7 +6664,7 @@ export default function AdminPage() {
                                   role="menu"
                                   className="absolute right-0 top-full mt-1 z-20 rounded-lg overflow-hidden min-w-[240px] py-1.5"
                                   style={{
-                                    background: "white",
+                                    background: "var(--bg-card)",
                                     border: "1px solid oklch(0 0 0 / 0.08)",
                                     boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)",
                                   }}
@@ -6763,7 +6805,7 @@ export default function AdminPage() {
         </section>
 
         {/* Projects section */}
-        <section id="projects" className="rounded-2xl space-y-5 pb-[10px] max-w-full min-w-0" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "projects" ? undefined : "none" }}>
+        <section id="projects" className="rounded-2xl space-y-5 pb-[10px] max-w-full min-w-0" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "projects" ? undefined : "none" }}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
               style={{ background: "oklch(0.55 0.15 145 / 0.1)", border: "1px solid oklch(0.55 0.15 145 / 0.2)" }}>
@@ -6924,7 +6966,7 @@ export default function AdminPage() {
               ];
               return (
                 <div className="rounded-2xl w-full max-w-full p-4 space-y-4"
-                  style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <button
                       onClick={() => setSelectedGeneralProject(null)}
@@ -7025,7 +7067,7 @@ export default function AdminPage() {
             </div>
           ) : (
             <div className="rounded-2xl overflow-x-auto w-full max-w-full"
-              style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+              style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
               <table className="w-full border-collapse min-w-[640px]">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -7230,7 +7272,7 @@ export default function AdminPage() {
               const cells = costsByProject.get(p.id);
               return (
                 <div className="rounded-2xl w-full max-w-full p-4 space-y-4"
-                  style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <button
                       onClick={() => setSelectedCostProject(null)}
@@ -7376,12 +7418,12 @@ export default function AdminPage() {
                           <tfoot>
                             <tr style={{ borderTop: "2px solid var(--bd-7)" }}>
                               <td className="py-2.5 px-3 text-[11px] font-bold uppercase tracking-wider"
-                                style={{ color: "black", background: "#ecf0f1" }}>
+                                style={{ color: "black", background: "var(--skeleton)" }}>
                                 Total
                               </td>
                               {providers.map((prov) => (
                                 <td key={prov} className="py-2.5 px-3 text-xs font-mono font-bold tabular-nums"
-                                  style={{ color: "black", background: "#ecf0f1" }}>
+                                  style={{ color: "black", background: "var(--skeleton)" }}>
                                   {renderBucket(providerTotals[prov])}
                                 </td>
                               ))}
@@ -7397,7 +7439,7 @@ export default function AdminPage() {
 
             return (
               <div className="rounded-2xl overflow-x-auto w-full max-w-full"
-                style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
                 <table className="w-full border-collapse min-w-[900px]">
                   <thead>
                     <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -7408,7 +7450,7 @@ export default function AdminPage() {
                           <th key={h} className="text-left py-3 px-3 text-[11px] uppercase tracking-wider"
                             style={{
                               color: isTitle || isTotal ? "black" : "var(--c-40)",
-                              background: isTotal ? "#ecf0f1" : isTitle ? "oklch(0.88 0 0)" : undefined,
+                              background: isTotal ? "var(--skeleton)" : isTitle ? "oklch(0.88 0 0)" : undefined,
                               fontWeight: isTotal ? 700 : 500,
                             }}>
                             {h}
@@ -7433,7 +7475,7 @@ export default function AdminPage() {
                             <TruncatedCell value={p.selectedTopic ?? p.channelName} maxLen={24} fallback="—" />
                           </td>
                           <td className="py-3 px-3 text-xs font-mono font-bold tabular-nums"
-                            style={{ color: "black", background: "#ecf0f1" }}>
+                            style={{ color: "black", background: "var(--skeleton)" }}>
                             <CostCell summary={total} showProviders={false} />
                           </td>
                           {COLS.map((c) => (
@@ -7563,7 +7605,7 @@ export default function AdminPage() {
           const slotW = n > 1 ? plotW / (n - 1) : plotW;
 
           return (
-            <section id="revenue" className="rounded-2xl space-y-5" style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "revenue" ? undefined : "none" }}>
+            <section id="revenue" className="rounded-2xl space-y-5" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "revenue" ? undefined : "none" }}>
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
                   style={{ background: "oklch(0.55 0.18 65 / 0.1)", border: "1px solid oklch(0.55 0.18 65 / 0.2)" }}>
@@ -7624,8 +7666,8 @@ export default function AdminPage() {
                   <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 150 }}>
                     <defs>
                       <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.25" />
-                        <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
+                        <stop offset="0%" stopColor="var(--status-warn)" stopOpacity="0.25" />
+                        <stop offset="100%" stopColor="var(--status-warn)" stopOpacity="0" />
                       </linearGradient>
                     </defs>
 
@@ -7642,10 +7684,10 @@ export default function AdminPage() {
                     })}
 
                     <path d={toArea(cs)} fill="url(#revGrad)" />
-                    <path d={toPath(cs)} fill="none" stroke="#f59e0b" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+                    <path d={toPath(cs)} fill="none" stroke="var(--status-warn)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
 
                     {cs.map((c, i) => (
-                      <circle key={i} cx={c.x} cy={c.y} r={hoveredRevIdx === i ? 4 : 2.5} fill="#f59e0b" style={{ transition: "r 0.1s" }} />
+                      <circle key={i} cx={c.x} cy={c.y} r={hoveredRevIdx === i ? 4 : 2.5} fill="var(--status-warn)" style={{ transition: "r 0.1s" }} />
                     ))}
 
                     {/* Hover hit strips */}
@@ -7674,11 +7716,11 @@ export default function AdminPage() {
                       return (
                         <g pointerEvents="none">
                           <rect x={TX} y={TY} width={TW} height={TH} rx={TR} ry={TR}
-                            fill="white" stroke="rgba(0,0,0,0.10)" strokeWidth="1" />
+                            fill="var(--bg-card)" stroke="rgba(0,0,0,0.10)" strokeWidth="1" />
                           <text x={TX + TW / 2} y={TY + 15} textAnchor="middle" fontSize="9" fill="#555" fontWeight="600">{label}</text>
-                          <circle cx={TX + 14} cy={TY + 32} r="3" fill="#f59e0b" />
+                          <circle cx={TX + 14} cy={TY + 32} r="3" fill="var(--status-warn)" />
                           <text x={TX + 22} y={TY + 36} fontSize="9.5" fill="#666">
-                            Revenue: <tspan fill="#f59e0b" fontWeight="700">${pt.revenue.toFixed(2)}</tspan>
+                            Revenue: <tspan fill="var(--status-warn)" fontWeight="700">${pt.revenue.toFixed(2)}</tspan>
                           </text>
                         </g>
                       );
@@ -7805,7 +7847,7 @@ export default function AdminPage() {
                 </p>
               ) : (
                 <div className="rounded-2xl overflow-x-auto"
-                  style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
                   <table className="w-full border-collapse min-w-[560px]">
                     <thead>
                       <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -7863,7 +7905,7 @@ export default function AdminPage() {
             id="support"
             className="rounded-2xl max-w-full min-w-0"
             style={{
-              background: "white",
+              background: "var(--bg-card)",
               border: "1px solid oklch(0 0 0 / 0.07)",
               padding: "16px",
               scrollMarginTop: "80px",
@@ -7879,7 +7921,7 @@ export default function AdminPage() {
             id="reviews"
             className="rounded-2xl max-w-full min-w-0"
             style={{
-              background: "white",
+              background: "var(--bg-card)",
               border: "1px solid oklch(0 0 0 / 0.07)",
               padding: "16px",
               scrollMarginTop: "80px",
