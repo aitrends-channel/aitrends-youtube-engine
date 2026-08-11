@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem, Menu,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem, Menu, Gift,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -18,6 +18,7 @@ import useSWR from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isAdminUser } from "@/lib/admin";
 import EmailsPanel from "./EmailsPanel";
+import FreeUsagePanel from "./FreeUsagePanel";
 import { TtsCostLens } from "@/components/admin/TtsCostLens";
 import { SupportPanel } from "@/components/admin/SupportPanel";
 import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
@@ -5350,10 +5351,13 @@ function SkeletonRows({ cols, rows = 3 }: { cols: number; rows?: number }) {
 
 const ADMIN_NAV = [
   { id: "stats",    label: "Stats",    icon: BarChart3 },
+  // Activity carries both panels: the niches/videos/users series and the
+  // videos-created chart that used to be its own Usage tab. Two tabs of the
+  // same question, each holding half the answer.
   { id: "activity", label: "Activity", icon: TrendingUp },
-  { id: "usage",    label: "Usage",    icon: Activity },
   { id: "users",    label: "Users",    icon: Users },
   { id: "projects", label: "Videos",   icon: Clapperboard },
+  { id: "freeusage", label: "Free Resources Usage", icon: Gift },
   { id: "revenue",  label: "Revenue",  icon: DollarSign },
   { id: "reports",  label: "Reports",  icon: FileText },
   { id: "logs",     label: "Logs",     icon: FileText },
@@ -5507,12 +5511,18 @@ export default function AdminPage() {
   const [revDateTo, setRevDateTo] = useState("");
   const [revPlanFilter, setRevPlanFilter] = useState("");
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "activity" | "usage" | "users" | "projects" | "revenue" | "reports" | "logs" | "emails" | "support" | "reviews" | "memory" | "setup"
+    "stats" | "activity" | "usage" | "users" | "projects" | "freeusage" | "revenue" | "reports" | "logs" | "emails" | "support" | "reviews" | "memory" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "activity", "usage", "users", "projects", "revenue", "reports", "logs", "emails", "support", "reviews", "memory", "setup"],
+    ["stats", "activity", "usage", "users", "projects", "freeusage", "revenue", "reports", "logs", "emails", "support", "reviews", "memory", "setup"],
   );
+  // "usage" stays accepted as a stored value: it is what localStorage holds
+  // for anyone who last left the admin on the old Usage tab, and mapping it
+  // here saves a migration for a rename.
+  const navTab = activeTab === "usage" ? "activity" : activeTab;
+  const showActivity = navTab === "activity";
+
   // Usage tab range. "today" reads the hourly series; 7d/30d slice the
   // daily one. Persisted like the other tab selections so a refresh
   // doesn't bounce the admin back to a range they didn't pick.
@@ -5786,7 +5796,7 @@ export default function AdminPage() {
         {/* Thirteen sections, so the list scrolls rather than compressing. */}
         <nav className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1 pl-5 pr-[30px] py-5" style={{ scrollbarWidth: "thin" }}>
           {ADMIN_NAV.map(({ id, label, icon: Icon }) => {
-            const on = activeTab === id;
+            const on = navTab === id;
             return (
               <button
                 key={id}
@@ -5895,7 +5905,7 @@ export default function AdminPage() {
           style={{ color: "var(--c-70)" }}
         >
           {sidebarOpen ? <X size={18} /> : <Menu size={18} />}
-          <span>{ADMIN_NAV.find((t) => t.id === activeTab)?.label ?? "Menu"}</span>
+          <span>{ADMIN_NAV.find((t) => t.id === navTab)?.label ?? "Menu"}</span>
         </button>
       </div>
       <div className="lg:hidden h-[48px] shrink-0" aria-hidden />
@@ -6090,7 +6100,7 @@ export default function AdminPage() {
           const slotW = n > 1 ? plotW / (n - 1) : plotW;
 
           return (
-            <div id="activity" className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "activity" ? undefined : "none" }}>
+            <div id="activity" className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: showActivity ? undefined : "none" }}>
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "oklch(0.50 0 0)" }}>Activity — {periodLabel}</p>
@@ -6281,7 +6291,7 @@ export default function AdminPage() {
           const rangeLabel = isToday ? "Today · by hour (UTC)" : usageRange === "7d" ? "Last 7 days" : "Last 30 days";
 
           return (
-            <div id="usage" className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "usage" ? undefined : "none" }}>
+            <div id="usage" className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: showActivity ? undefined : "none" }}>
               <div className="flex items-end justify-between flex-wrap gap-3">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "oklch(0.50 0 0)" }}>
@@ -7896,6 +7906,8 @@ export default function AdminPage() {
 
         {/* Emails section — Inbox/Sent + compose. Backed by Hostinger
             IMAP/SMTP via /api/admin/emails. */}
+        {activeTab === "freeusage" && <FreeUsagePanel />}
+
         {activeTab === "emails" && <EmailsPanel />}
 
         {/* Support section — in-app HelpButton ticket queue, status
