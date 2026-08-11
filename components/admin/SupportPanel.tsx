@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { ChevronDown, ChevronRight, Inbox, ArrowDownLeft, ArrowUpRight, Mail } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { BulkMailPanel } from "@/components/admin/BulkMailPanel";
+import { DiagnoseButton } from "@/components/admin/DiagnoseButton";
 
 interface ThreadEmail {
   id: string;
@@ -442,6 +443,13 @@ function TicketRow({
                 First response stamped <span className="font-mono">{new Date(ticket.responded_at).toLocaleString()}</span>.
               </span>
             )}
+          </div>
+
+          {/* The probe sits above the notes because it is what you read
+              before writing them, and above the reply for the same reason. */}
+          <div>
+            <label className="text-xs uppercase tracking-wider block mb-1.5" style={{ color: "var(--c-40)" }}>Probe</label>
+            <DiagnoseButton ticketId={ticket.id} />
           </div>
 
           <div>
