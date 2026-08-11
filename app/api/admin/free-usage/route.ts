@@ -34,6 +34,9 @@ export interface FreeUsageUserRow {
   email: string;
   plan: string;
   isAdmin: boolean;
+  /** Characters today, per kind. free_usage buckets by UTC day, so this is
+   *  the finest granularity available: there is no hourly counter. */
+  today: Record<string, number>;
   /** Characters this calendar month, per kind. */
   month: Record<string, number>;
   /** Characters over all time, per kind. */
@@ -49,9 +52,11 @@ export interface FreeUsageResult {
   kinds: string[];
   activeKinds: string[];
   totals: {
+    today: Record<string, number>;
     month: Record<string, number>;
     allTime: Record<string, number>;
-    /** Accounts with any usage this month / ever. */
+    /** Accounts with any usage today / this month / ever. */
+    usersToday: number;
     usersMonth: number;
     usersAllTime: number;
     /** Sum of ai33 allowances across accounts that used any this month. */
@@ -65,6 +70,8 @@ export interface FreeUsageResult {
   /** Estimated ai33 spend this month, null when no rate is configured. */
   estimatedMonthUsd: number | null;
   month: string;
+  /** UTC date the "today" figures cover. */
+  today: string;
 }
 
 interface UsageRow {
@@ -96,11 +103,15 @@ export async function GET() {
 
   const monthStart = new Date().toISOString().slice(0, 8) + "01";
   const isThisMonth = (day: string) => day >= monthStart;
+  // free_usage.day defaults to CURRENT_DATE on the database, so "today" is a
+  // UTC date comparison, not a local one.
+  const todayKey = new Date().toISOString().slice(0, 10);
 
   const kindsSeen = new Set<string>();
+  const totalsToday: Record<string, number> = {};
   const totalsMonth: Record<string, number> = {};
   const totalsAll: Record<string, number> = {};
-  const perUser = new Map<string, { month: Record<string, number>; allTime: Record<string, number>; lastUsed: string | null }>();
+  const perUser = new Map<string, { today: Record<string, number>; month: Record<string, number>; allTime: Record<string, number>; lastUsed: string | null }>();
 
   for (const r of rows) {
     const n = Number(r.count) || 0;
@@ -108,11 +119,13 @@ export async function GET() {
     kindsSeen.add(r.kind);
     totalsAll[r.kind] = (totalsAll[r.kind] ?? 0) + n;
     if (isThisMonth(r.day)) totalsMonth[r.kind] = (totalsMonth[r.kind] ?? 0) + n;
+    if (r.day === todayKey) totalsToday[r.kind] = (totalsToday[r.kind] ?? 0) + n;
 
     let u = perUser.get(r.user_id);
-    if (!u) { u = { month: {}, allTime: {}, lastUsed: null }; perUser.set(r.user_id, u); }
+    if (!u) { u = { today: {}, month: {}, allTime: {}, lastUsed: null }; perUser.set(r.user_id, u); }
     u.allTime[r.kind] = (u.allTime[r.kind] ?? 0) + n;
     if (isThisMonth(r.day)) u.month[r.kind] = (u.month[r.kind] ?? 0) + n;
+    if (r.day === todayKey) u.today[r.kind] = (u.today[r.kind] ?? 0) + n;
     if (!u.lastUsed || r.day > u.lastUsed) u.lastUsed = r.day;
   }
 
@@ -137,6 +150,7 @@ export async function GET() {
       email: account?.email ?? "(deleted account)",
       plan,
       isAdmin: admin,
+      today: u.today,
       month: u.month,
       allTime: u.allTime,
       quota,
@@ -170,8 +184,10 @@ export async function GET() {
     kinds,
     activeKinds: [...REPORTED_KINDS],
     totals: {
+      today: totalsToday,
       month: totalsMonth,
       allTime: totalsAll,
+      usersToday: users.filter((u) => sumOf(u.today) > 0).length,
       usersMonth: users.filter((u) => sumOf(u.month) > 0).length,
       usersAllTime: users.length,
       quotaAllocatedMonth: users
@@ -185,5 +201,6 @@ export async function GET() {
       ? (monthAi33 / 1_000_000) * AI33_TTS_USD_PER_MILLION_CHARS
       : null,
     month: monthStart.slice(0, 7),
+    today: todayKey,
   } satisfies FreeUsageResult);
 }

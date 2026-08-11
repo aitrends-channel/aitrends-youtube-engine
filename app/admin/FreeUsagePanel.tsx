@@ -12,6 +12,15 @@ import type { FreeUsageResult, FreeUsageUserRow } from "@/app/api/admin/free-usa
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
+// free_usage buckets by UTC day, so "Today" is a day total rather than an
+// hourly series. Same three ranges on both sections.
+type Scope = "today" | "month" | "allTime";
+const SCOPES: readonly (readonly [Scope, string])[] = [
+  ["today", "Today"],
+  ["month", "This month"],
+  ["allTime", "All time"],
+];
+
 // Kinds carry their provider name: "ai33" on its own means nothing to anyone
 // reading this later. Qwen stays mapped even though only ai33 is reported
 // today, so re-reporting it needs no change here.
@@ -175,8 +184,8 @@ function QuotaBar({ used, quota, pct }: { used: number; quota: number; pct: numb
 
 export default function FreeUsagePanel() {
   const { data, error, isLoading } = useSWR<FreeUsageResult>("/api/admin/free-usage", fetcher);
-  const [scope, setScope] = useState<"month" | "allTime">("month");
-  const [userScope, setUserScope] = useState<"month" | "allTime">("month");
+  const [scope, setScope] = useState<Scope>("month");
+  const [userScope, setUserScope] = useState<Scope>("month");
   const [userSearch, setUserSearch] = useState("");
 
   if (isLoading) {
@@ -203,17 +212,20 @@ export default function FreeUsagePanel() {
     );
   }
 
-  const totals = scope === "month" ? data.totals.month : data.totals.allTime;
+  const totals = scope === "today" ? data.totals.today : scope === "month" ? data.totals.month : data.totals.allTime;
   const monthName = new Date(`${data.month}-01T00:00:00Z`)
     .toLocaleDateString("en", { month: "long", year: "numeric", timeZone: "UTC" });
-  const scopeLabel = scope === "month" ? monthName : "All time";
+  const todayName = new Date(`${data.today}T00:00:00Z`)
+    .toLocaleDateString("en", { month: "long", day: "numeric", timeZone: "UTC" });
+  const nameFor = (v: Scope) => (v === "today" ? `${todayName} (UTC)` : v === "month" ? monthName : "All time");
+  const scopeLabel = nameFor(scope);
 
   const ai33Month = data.totals.month.ai33_tts_chars ?? 0;
   const allocated = data.totals.quotaAllocatedMonth;
   const utilisation = allocated > 0 ? Math.round((ai33Month / allocated) * 100) : null;
   const overQuota = data.users.filter((u) => u.quotaPct !== null && u.quotaPct >= 100);
   const sumOf = (m: Record<string, number>) => Object.values(m).reduce((a, b) => a + b, 0);
-  const rowValue = (u: FreeUsageUserRow) => (userScope === "month" ? u.month : u.allTime);
+  const rowValue = (u: FreeUsageUserRow) => (userScope === "today" ? u.today : userScope === "month" ? u.month : u.allTime);
 
   // Re-sorted client-side so the order matches the column being read: the
   // endpoint sorts by this month, which looks arbitrary on the all-time view.
@@ -223,7 +235,7 @@ export default function FreeUsagePanel() {
       || u.email.toLowerCase().includes(needle)
       || (u.isAdmin ? "admin" : u.plan).toLowerCase().includes(needle))
     .sort((a, b) => sumOf(rowValue(b)) - sumOf(rowValue(a)));
-  const userScopeLabel = userScope === "month" ? monthName : "All time";
+  const userScopeLabel = nameFor(userScope);
 
   return (
     <div className="space-y-4">
@@ -237,7 +249,7 @@ export default function FreeUsagePanel() {
           </p>
         </div>
         <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
-          {([["month", "This month"], ["allTime", "All time"]] as const).map(([v, text]) => (
+          {SCOPES.map(([v, text]) => (
             <button key={v} onClick={() => setScope(v)}
               className="px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer"
               style={scope === v
@@ -253,13 +265,13 @@ export default function FreeUsagePanel() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-[10px]">
         {data.activeKinds.filter((k) => (totals[k] ?? 0) > 0 || (data.totals.allTime[k] ?? 0) > 0).map((k) => (
           <Tile key={k} value={compact(totals[k] ?? 0)} suffix={unit(k)} label={label(k)}
-            hint={scope === "month" ? `${compact(data.totals.allTime[k] ?? 0)} all time` : undefined} />
+            hint={scope === "allTime" ? undefined : `${compact(data.totals.allTime[k] ?? 0)} all time`} />
         ))}
         <Tile
-          value={String(scope === "month" ? data.totals.usersMonth : data.totals.usersAllTime)}
+          value={String(scope === "today" ? data.totals.usersToday : scope === "month" ? data.totals.usersMonth : data.totals.usersAllTime)}
           suffix="accounts"
           label="Accounts consuming perks"
-          hint={scope === "month" ? `${data.totals.usersAllTime} have ever used one` : undefined}
+          hint={scope === "allTime" ? undefined : `${data.totals.usersAllTime} have ever used one`}
         />
         {utilisation !== null && (
           <Tile value={`${utilisation}%`} label="Allowance used this month"
@@ -325,7 +337,7 @@ export default function FreeUsagePanel() {
               )}
             </div>
             <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
-              {([["month", "This month"], ["allTime", "All time"]] as const).map(([v, text]) => (
+              {SCOPES.map(([v, text]) => (
                 <button key={v} onClick={() => setUserScope(v)}
                   className="px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer"
                   style={userScope === v
