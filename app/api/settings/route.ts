@@ -4,6 +4,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getSettings, invalidateSettingsCache } from "@/lib/settings";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { checkElevenLabs, checkKie, keyRejectionMessage } from "@/lib/key-check";
+import { prefixTooLongMessage } from "@/lib/prefix-limit";
 import type { User } from "@supabase/supabase-js";
 
 function mask(value: string): string {
@@ -130,7 +131,11 @@ export async function POST(req: Request) {
     // Consistency text is free text, not a secret — persist it whenever
     // the key is present (unlike the API keys above, an empty string is a
     // valid value here: it clears a previously-set default).
-    if (body.character_consistency_text !== undefined) update.character_consistency_text = body.character_consistency_text;
+    if (body.character_consistency_text !== undefined) {
+      const tooLong = prefixTooLongMessage(body.character_consistency_text);
+      if (tooLong) return NextResponse.json({ error: tooLong }, { status: 400 });
+      update.character_consistency_text = body.character_consistency_text;
+    }
 
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ error: "No keys provided" }, { status: 400 });
