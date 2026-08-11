@@ -217,7 +217,7 @@ export default function EmailsPanel() {
               onSent={() => { setComposing(false); setTab("outbound"); void mutateList(); }}
             />
           ) : selectedEmail ? (
-            <EmailDetailView email={selectedEmail} onReply={handleReply} />
+            <EmailDetailView email={selectedEmail} onReply={handleReply} onSent={() => void mutateList()} />
           ) : (
             <div className="h-full flex items-center justify-center p-10 text-center text-xs" style={{ color: "var(--c-45)" }}>
               <div>
@@ -232,7 +232,7 @@ export default function EmailsPanel() {
   );
 }
 
-function EmailDetailView({ email, onReply }: { email: EmailFull; onReply: () => void }) {
+function EmailDetailView({ email, onReply, onSent }: { email: EmailFull; onReply: () => void; onSent: () => void }) {
   return (
     <div className="p-5 space-y-4">
       <div className="flex items-start justify-between gap-3">
@@ -279,7 +279,11 @@ function EmailDetailView({ email, onReply }: { email: EmailFull; onReply: () => 
       {/* Inbound only: an email we sent has no reporter to identify an account
           by, and diagnosing our own outbound mail is meaningless. */}
       {email.direction === "inbound" && (
-        <DiagnoseButton emailId={email.id} />
+        <DiagnoseButton
+          emailId={email.id}
+          reply={{ to: email.from_address, subject: email.subject, messageId: email.message_id }}
+          onSent={onSent}
+        />
       )}
 
       <div className="rounded-xl p-4"

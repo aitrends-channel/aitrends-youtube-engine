@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Stethoscope, ChevronDown, ChevronRight, Copy, X } from "lucide-react";
+import { Stethoscope, ChevronDown, ChevronRight, Copy, X, Send, Check } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import type { Diagnosis, DiagnoseResponse } from "@/app/api/admin/diagnose/route";
 
@@ -21,11 +21,24 @@ const CONFIDENCE_TONE: Record<Diagnosis["confidence"], { bg: string; fg: string;
   unknown:   { bg: "oklch(0 0 0 / 0.05)",          fg: "var(--c-50)",          border: "oklch(0 0 0 / 0.1)",         label: "Not sure" },
 };
 
-export function DiagnoseButton({ ticketId, emailId }: { ticketId?: string; emailId?: string }) {
+export function DiagnoseButton({ ticketId, emailId, reply, onSent }: {
+  ticketId?: string;
+  emailId?: string;
+  /** Where a reply goes when probing an email. Tickets don't need it — the
+   *  ticket reply endpoint derives the address, subject and threading itself. */
+  reply?: { to: string; subject: string | null; messageId: string | null };
+  /** Refresh the caller's thread after a send, so the reply appears in it. */
+  onSent?: () => void;
+}) {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<DiagnoseResponse | null>(null);
   const [showWorking, setShowWorking] = useState(false);
   const [showEvidence, setShowEvidence] = useState(false);
+  // The draft is editable from the moment it arrives — it is a starting point,
+  // and nothing should go to a customer without a person having read it.
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sentAt, setSentAt] = useState<string | null>(null);
 
   async function run() {
     setRunning(true);
@@ -37,7 +50,10 @@ export function DiagnoseButton({ ticketId, emailId }: { ticketId?: string; email
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Probe failed");
-      setResult(data as DiagnoseResponse);
+      const payload = data as DiagnoseResponse;
+      setResult(payload);
+      setDraft(payload.diagnosis.replyDraft ?? "");
+      setSentAt(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Probe failed");
     } finally {
@@ -49,9 +65,55 @@ export function DiagnoseButton({ ticketId, emailId }: { ticketId?: string; email
     setResult(null);
     setShowWorking(false);
     setShowEvidence(false);
+    setDraft("");
+    setSentAt(null);
+  }
+
+  // Tickets go through the ticket reply endpoint, which owns the [HS##]
+  // subject, the In-Reply-To threading, the responded_at stamp and the status
+  // bump. Emails go through the same endpoint the compose form uses. Neither
+  // path is reimplemented here.
+  async function send() {
+    const message = draft.trim();
+    if (!message) { toast.error("The reply is empty."); return; }
+    setSending(true);
+    try {
+      const res = ticketId
+        ? await fetch(`/api/admin/support-tickets/${ticketId}/reply`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message }),
+          })
+        : await fetch("/api/admin/emails", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              from: "support@heclus.com",
+              to: reply!.to,
+              subject: reply!.subject
+                ? (reply!.subject.startsWith("Re:") ? reply!.subject : `Re: ${reply!.subject}`)
+                : "Re: your message",
+              text: message,
+              inReplyTo: reply!.messageId ?? undefined,
+            }),
+          });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error ?? "Send failed");
+      setSentAt(new Date().toLocaleTimeString());
+      toast.success("Reply sent.");
+      onSent?.();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Send failed");
+    } finally {
+      setSending(false);
+    }
   }
 
   const tone = result ? CONFIDENCE_TONE[result.diagnosis.confidence] : null;
+  // Naming the recipient on the label is the guard here: an outward-facing
+  // send should say where it is going before it is clicked.
+  const sendTarget = reply?.to
+    ?? (result?.gathered.account.found ? result.gathered.account.email : result?.gathered.report.from);
 
   return (
     <div className="space-y-3">
@@ -147,22 +209,60 @@ export function DiagnoseButton({ ticketId, emailId }: { ticketId?: string; email
               </div>
             )}
 
-            {d.replyDraft && (
+            {/* Editable, because the draft is a starting point and the person
+                sending it is accountable for what the customer reads. Sending
+                goes through the same endpoints the reply forms use, so
+                threading, the responded_at stamp and the status bump all
+                behave exactly as a hand-written reply. */}
+            {(draft || d.replyDraft) && (
               <div>
                 <div className="flex items-center justify-between gap-2 mb-1">
-                  <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>Draft reply</p>
-                  <button type="button"
-                    onClick={() => { void navigator.clipboard.writeText(d.replyDraft); toast.success("Copied"); }}
-                    className="inline-flex items-center gap-1 text-[10px] font-medium transition-opacity hover:opacity-70 cursor-pointer"
-                    style={{ color: "oklch(0.62 0.15 220)" }}>
-                    <Copy size={11} /> Copy
-                  </button>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
+                    Reply to {sendTarget ?? "the customer"}
+                  </p>
+                  <div className="flex items-center gap-3">
+                    {draft !== d.replyDraft && (
+                      <button type="button" onClick={() => setDraft(d.replyDraft)}
+                        className="text-[10px] font-medium transition-opacity hover:opacity-70 cursor-pointer"
+                        style={{ color: "var(--c-45)" }}>
+                        Reset
+                      </button>
+                    )}
+                    <button type="button"
+                      onClick={() => { void navigator.clipboard.writeText(draft); toast.success("Copied"); }}
+                      className="inline-flex items-center gap-1 text-[10px] font-medium transition-opacity hover:opacity-70 cursor-pointer"
+                      style={{ color: "oklch(0.62 0.15 220)" }}>
+                      <Copy size={11} /> Copy
+                    </button>
+                  </div>
                 </div>
-                <p className="text-xs leading-relaxed whitespace-pre-wrap rounded-lg px-3 py-2"
-                  style={{ background: "oklch(0 0 0 / 0.03)", border: "1px solid oklch(0 0 0 / 0.06)", color: "var(--c-70)" }}>
-                  {d.replyDraft}
+                <textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  disabled={sending}
+                  rows={6}
+                  className="w-full px-3 py-2 rounded-lg text-xs leading-relaxed outline-none resize-y bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400 disabled:opacity-60"
+                />
+                <div className="flex items-center gap-2 mt-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={send}
+                    disabled={sending || !draft.trim()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
+                    style={{ background: "oklch(0.52 0.20 145)", color: "white" }}
+                  >
+                    {sending ? <Spinner size={13} /> : <Send size={13} />}
+                    {sending ? "Sending…" : sentAt ? "Send again" : "Send reply"}
+                  </button>
+                  {sentAt && (
+                    <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: "oklch(0.42 0.15 145)" }}>
+                      <Check size={12} /> Sent at {sentAt}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] mt-1.5" style={{ color: "var(--c-35)" }}>
+                  Read it before sending. This goes straight to the customer.
                 </p>
-                <p className="text-[10px] mt-1" style={{ color: "var(--c-35)" }}>Read it before sending.</p>
               </div>
             )}
 
