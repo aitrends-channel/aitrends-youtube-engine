@@ -449,7 +449,7 @@ function TicketRow({
               before writing them, and above the reply for the same reason. */}
           <div>
             <label className="text-xs uppercase tracking-wider block mb-1.5" style={{ color: "var(--c-40)" }}>Probe</label>
-            <DiagnoseButton ticketId={ticket.id} />
+            <DiagnoseButton ticketId={ticket.id} onSent={() => { void mutateThread(); onUpdated(); }} />
           </div>
 
           <div>
