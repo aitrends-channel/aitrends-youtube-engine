@@ -15,6 +15,7 @@ import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
 import { planBulkMerge, findStubs } from "@/lib/text/mergePlan";
 import { MERGE_BEATS_HIDDEN, PROMPTS_THREE_STEP } from "@/lib/feature-flags";
 import { friendlyError } from "@/lib/errors/friendly";
+import { PREFIX_MAX_CHARS } from "@/lib/prefix-limit";
 import type { Beat } from "@/lib/types";
 
 // ── Sub-components ─────────────────────────────────────────────────────────
@@ -940,6 +941,9 @@ function PrefixPanel({
   // comparison is against the account default instead, and an existing
   // project override counts as work to do (it has to be cleared).
   const draft = (text ?? "").trim();
+  // Checked on both scopes: "all videos" writes the account default, which is
+  // the same field the Setup page guards.
+  const overBy = draft.length - PREFIX_MAX_CHARS;
   const canSave = scope === "all"
     ? draft.length > 0 && (draft !== defText.trim() || savedText !== null)
     : text !== null && text !== savedText;
@@ -1010,7 +1014,13 @@ function PrefixPanel({
           </p>
 
           <div className="space-y-1.5">
-            <label className="text-[11px] font-medium" style={{ color: "var(--c-50)" }}>Prefix text</label>
+            <div className="flex items-baseline justify-between gap-3">
+              <label className="text-[11px] font-medium" style={{ color: "var(--c-50)" }}>Prefix text</label>
+              <span className="text-[10px] font-mono tabular-nums"
+                style={{ color: overBy > 0 ? "oklch(0.65 0.24 25)" : "var(--c-42)" }}>
+                {draft.length} / {PREFIX_MAX_CHARS}
+              </span>
+            </div>
             {/* Always editable. With the Add button gone there's no switch
                 to turn application back on, so disabling this while removed
                 would leave no route back to having a prefix — Save is that
@@ -1075,7 +1085,16 @@ function PrefixPanel({
             </button>
           </div>
 
-          {scope === "all" && (
+          {overBy > 0 && (
+            <p className="text-[11px] leading-relaxed" style={{ color: "oklch(0.65 0.24 25)" }}>
+              {overBy.toLocaleString()} characters too long. A prefix is a short
+              style note that leads every prompt, not a script. Describe only
+              what should never change, such as the look, the palette and a
+              recurring character, and leave each scene to Heclus.
+            </p>
+          )}
+
+          {scope === "all" && overBy <= 0 && (
             <p className="text-[11px] leading-relaxed" style={{ color: "var(--brand-text)" }}>
               Saves as your account default, so it leads prompts on every
               project. This project stops keeping its own copy and follows the
@@ -1090,7 +1109,8 @@ function PrefixPanel({
               onClick={() => scope === "all"
                 ? saveForAllVideos(draft)
                 : persist(text, true, "Prefix saved for this project.")}
-              disabled={saving || !canSave}
+              disabled={saving || !canSave || overBy > 0}
+              title={overBy > 0 ? `Trim ${overBy.toLocaleString()} characters to save` : undefined}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50"
               style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
             >
