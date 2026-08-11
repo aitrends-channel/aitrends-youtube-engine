@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound, CreditCard, Gift, Brain, Wand2, Pilcrow } from "lucide-react";
 import { OneClickConfigPanel } from "@/components/one-click/OneClickConfigPanel";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import Image from "next/image";
@@ -68,7 +69,7 @@ const KEY_FIELDS: KeyField[] = [
   {
     key: "elevenlabs_api_key",
     label: "ElevenLabs API Key",
-    description: "Powers TTS voiceovers (direct ElevenLabs call — fast per-beat synthesis at per-character pricing) and assembler speech-to-text alignment for captions.",
+    description: "Powers TTS voiceovers (direct ElevenLabs call — fast per-beat synthesis at per-character pricing) and assembler speech-to-text alignment for captions. Must be the key itself, which starts with sk_, not the key ID the list shows.",
     placeholder: "sk_…",
     tier: "paid",
   },
@@ -135,7 +136,8 @@ const SERVICES: ServiceCard[] = [
     linkLabel: "elevenlabs.io",
     steps: [
       <>Create your account at <ExtLink href="https://elevenlabs.io/app/sign-up">elevenlabs.io/app/sign-up</ExtLink>.</>,
-      <>Open the <ExtLink href="https://elevenlabs.io/app/settings/api-keys">API Keys page</ExtLink> → <b>Create API Key</b> → make sure <b>Text to Speech</b> and <b>Speech to Text</b> permissions are enabled → copy the key right away (it&apos;s shown only once).</>,
+      <>Open the <ExtLink href="https://elevenlabs.io/app/settings/api-keys">API Keys page</ExtLink> → <b>Create API Key</b> → enable all four permissions Heclus uses: <b>Text to Speech</b> (voiceover), <b>Speech to Text</b> (caption alignment), <b>Voices: read</b> (so your own voices appear in the picker) and <b>User: read</b> (so your character balance shows on the dashboard).</>,
+      <>Copy the key that begins with <b>sk_</b>. It is shown once: in the dialog that appears right after <b>Create API Key</b> or <b>Rotate</b>. The 64-character value listed beside each key on that page is the key <b>ID</b>, not the key, and ElevenLabs rejects it. No longer have the key? Hit <b>Rotate</b>, then copy the new one before closing the dialog.</>,
       <>Pick a plan on the <ExtLink href="https://elevenlabs.io/app/subscription">Subscription page</ExtLink> that covers your monthly character volume.</>,
       <>Optional: browse the <ExtLink href="https://elevenlabs.io/app/voice-library">Voice Library</ExtLink> and add voices to <b>My Voices</b> — they&apos;ll show up in the Voiceover step.</>,
       <>Paste the key below and hit <b>Save</b>.</>,
@@ -543,6 +545,9 @@ export default function SettingsPage() {
   const [anthropicDirect, setAnthropicDirect] = useState(false);
   const [savingDirect, setSavingDirect] = useState(false);
   const [removing, setRemoving] = useState<keyof FormState | null>(null);
+  const [revealed, setRevealed] = useState<Partial<Record<keyof FormState, string>>>({});
+  const [revealing, setRevealing] = useState<keyof FormState | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState<{ field: keyof FormState; label: string } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState<Tier>("paid");
   // Top-level split: API keys (the existing paid/free cards), the
@@ -664,6 +669,8 @@ export default function SettingsPage() {
       const fresh = await fetch("/api/settings").then((r) => r.json());
       setMasked(fresh as FormState);
       setForm((f) => ({ ...f, [field]: "" }));
+      setRevealed((r) => { const next = { ...r }; delete next[field]; return next; });
+      setConfirmRemove(null);
       toast.success(`${label} removed.`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to remove");
@@ -674,6 +681,33 @@ export default function SettingsPage() {
 
   function toggle(key: string) {
     setVisible((v) => ({ ...v, [key]: !v[key] }));
+  }
+
+  // Reveal what is actually stored. The masked row only ever showed the last
+  // four characters, which is not enough to spot a key that was pasted short
+  // or is one of several the user holds. Fetched on demand rather than sent
+  // with the page so the full value only leaves the server when asked for.
+  async function toggleStoredKey(field: keyof FormState) {
+    if (revealed[field]) {
+      setRevealed((r) => { const next = { ...r }; delete next[field]; return next; });
+      return;
+    }
+    setRevealing(field);
+    try {
+      const res = await fetch("/api/settings/reveal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ field }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not read the saved key");
+      if (!data.value) { toast.error("No key stored on your account for this service."); return; }
+      setRevealed((r) => ({ ...r, [field]: data.value as string }));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not read the saved key");
+    } finally {
+      setRevealing(null);
+    }
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -974,9 +1008,22 @@ export default function SettingsPage() {
                           </div>
 
                           {isSet && (
-                            <div className="text-xs font-mono px-3 py-2 rounded-lg"
+                            <div className="text-xs font-mono px-3 py-2 rounded-lg flex items-center gap-2"
                               style={{ background: "var(--bg-code)", color: "var(--c-40)", border: "1px solid var(--bd-5)" }}>
-                              Current: {currentMasked}
+                              {/* The "Current:" prefix only earns its place
+                                  next to a masked stub. Beside the real key it
+                                  is noise in front of the thing being read. */}
+                              <span className="min-w-0 flex-1 break-all">
+                                {revealed[field.key] ?? `Current: ${currentMasked}`}
+                              </span>
+                              <button type="button" tabIndex={-1}
+                                onClick={() => toggleStoredKey(field.key)}
+                                disabled={revealing === field.key}
+                                title={revealed[field.key] ? "Hide the saved key" : "Show the saved key"}
+                                className="shrink-0 transition-opacity hover:opacity-70 disabled:opacity-40"
+                                style={{ color: "var(--c-40)" }}>
+                                {revealed[field.key] ? <EyeOff size={14} /> : <Eye size={14} />}
+                              </button>
                             </div>
                           )}
 
@@ -1004,18 +1051,30 @@ export default function SettingsPage() {
                             </button>
                           </div>
 
+                          {/* Say it while they are still looking at the field.
+                              The save path checks with ElevenLabs anyway, but
+                              the key ID is long and plausible-looking, and a
+                              round trip to find out is a worse way to learn. */}
+                          {field.key === "elevenlabs_api_key"
+                            && form[field.key].trim().length > 0
+                            && !form[field.key].trim().startsWith("sk_") && (
+                            <p className="text-[11px] leading-relaxed" style={{ color: "var(--accent-amber-text)" }}>
+                              ElevenLabs keys begin with sk_. The 64-character value listed beside a key is its ID, not the key, and it will not work.
+                            </p>
+                          )}
+
                           {/* Anthropic's remove button lives with its billing
                               toggle below, since removing it has to switch
                               that off too. */}
                           {isSet && field.key !== "anthropic_api_key" && (
                             <button
                               type="button"
-                              onClick={() => removeKey(field.key, field.label)}
+                              onClick={() => setConfirmRemove({ field: field.key, label: field.label })}
                               disabled={removing !== null}
                               className="text-xs font-medium transition-opacity hover:opacity-70 disabled:opacity-40"
                               style={{ color: "oklch(0.7 0.22 25)" }}
                             >
-                              {removing === field.key ? "Removing…" : "Remove key"}
+                              Remove key
                             </button>
                           )}
                         </div>
@@ -1092,6 +1151,43 @@ export default function SettingsPage() {
         )}
 
       </main>
+
+      {/* Removing a key is one click on a page people open to fix things, and
+          the value cannot be recovered afterwards: providers show a key once.
+          Worth a confirm. Stays open while the request runs. */}
+      <Dialog open={!!confirmRemove} onOpenChange={(open) => { if (!open && !removing) setConfirmRemove(null); }}>
+        <DialogContent className="sm:max-w-md" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>Remove {confirmRemove?.label}?</DialogTitle>
+            <DialogDescription>
+              Heclus stops using it right away, and the steps that need it will fail until you save a new key. The value is not recoverable from here afterwards, so copy it first if you still need it.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setConfirmRemove(null)}
+              disabled={!!removing}
+              className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
+              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => { if (confirmRemove) removeKey(confirmRemove.field, confirmRemove.label); }}
+              disabled={!!removing}
+              className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+              style={{ background: "oklch(0.5 0.22 25)", color: "white" }}
+            >
+              {removing ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  Removing…
+                </span>
+              ) : "Remove key"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -16,6 +16,7 @@ import { SubscriptionModal } from "@/components/SubscriptionModal";
 import { NicheLimitModal } from "@/components/NicheLimitModal";
 import { ApiKeysRequiredModal } from "@/components/ApiKeysRequiredModal";
 import type { ApiKeysStatus } from "@/app/api/me/api-keys-status/route";
+import type { ElevenLabsCheck, KieCheck } from "@/lib/key-check";
 import { DEMO_DATA } from "@/lib/demo-data";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
@@ -1730,8 +1731,11 @@ export default function HomePage() {
               {dashTab === "keys" && (<>
               {/* API Keys Status */}
               {(() => {
-                const kie = apiStatus?.kie as { configured: boolean; valid: boolean | null; credits?: number } | undefined;
-                const elevenlabs = apiStatus?.elevenlabs as { configured: boolean; valid: boolean | null; remaining?: number; limit?: number; balanceIssue?: "scope" | "key_id" } | undefined;
+                // Shapes come from lib/key-check, so a new field there (the
+                // missing-scope list, most recently) reaches this card without
+                // a second declaration drifting out of step with it.
+                const kie = apiStatus?.kie as KieCheck | undefined;
+                const elevenlabs = apiStatus?.elevenlabs as ElevenLabsCheck | undefined;
                 const anthropic = apiStatus?.anthropic as { configured: boolean; directEnabled: boolean; tokens30d?: number } | undefined;
 
                 function StatusBadge({ data, color }: { data: { configured: boolean; valid: boolean | null } | undefined; color: string }) {
@@ -1858,6 +1862,13 @@ export default function HomePage() {
                               KIE rejected this key. Create a new one and save it in <Link href="/setup" className="underline">Setup</Link>.
                             </p>
                           )}
+                          {/* An empty card under a "Not set" badge left people
+                              guessing whether something was still loading. */}
+                          {kie && !kie.configured && (
+                            <p className="text-[10px] leading-relaxed" style={{ color: "var(--c-30)" }}>
+                              No key saved yet. Add yours in <Link href="/setup" className="underline">Setup</Link> to run scripts, images and video.
+                            </p>
+                          )}
                         </div>
                       </div>
 
@@ -1898,20 +1909,40 @@ export default function HomePage() {
                               used to show the scope hint for any missing balance,
                               including a key that cannot authenticate at all,
                               which sent people to change permissions on a key
-                              that needed replacing. */}
-                          {elevenlabs?.configured && elevenlabs.valid && elevenlabs.balanceIssue === "scope" && (
-                            <p className="text-[10px] leading-relaxed" style={{ color: "var(--c-30)" }}>Enable user_read scope on your key to see character balance</p>
-                          )}
+                              that needed replacing.
+
+                              voices_read is named here too. A key without it
+                              authenticates and synthesizes fine, so nothing
+                              failed loudly: the voice picker just fell back to
+                              the static list and the user's own voices were
+                              missing with no explanation on any screen. */}
+                          {elevenlabs?.configured && elevenlabs.valid && (elevenlabs.missingScopes?.length ?? 0) > 0 && (() => {
+                            const missing = elevenlabs.missingScopes ?? [];
+                            const effects = [
+                              missing.includes("user_read") ? "your character balance stays hidden" : null,
+                              missing.includes("voices_read") ? "your own voices are missing from the picker" : null,
+                            ].filter(Boolean);
+                            return (
+                              <p className="text-[10px] leading-relaxed" style={{ color: "var(--c-30)" }}>
+                                Enable {missing.join(" and ")} on your key. Until then {effects.join(", and ")}.
+                              </p>
+                            );
+                          })()}
                           {/* A rejected key needs the reason, not a bar. The
                               status endpoint already distinguishes the common
                               mistake (the saved value is the key ID, which
                               ElevenLabs shows forever, while the key itself
                               appears once at creation) from a key that is
                               simply bad, so say which one it is. */}
+                          {elevenlabs && !elevenlabs.configured && (
+                            <p className="text-[10px] leading-relaxed" style={{ color: "var(--c-30)" }}>
+                              No key saved yet. Add yours in <Link href="/setup" className="underline">Setup</Link> to generate voiceovers.
+                            </p>
+                          )}
                           {elevenlabs?.configured && elevenlabs.valid === false && (
                             <p className="text-[10px] leading-relaxed" style={{ color: "#f0a855" }}>
                               {elevenlabs.balanceIssue === "key_id"
-                                ? <>This is a key ID, not a key. Copy the value that starts with sk_ from ElevenLabs and save it in <Link href="/setup" className="underline">Setup</Link>.</>
+                                ? <>This is the key ID, not the key. The key starts with sk_ and is shown once, when you create or rotate it. Save that value in <Link href="/setup" className="underline">Setup</Link>.</>
                                 : <>ElevenLabs rejected this key. Create a new one and save it in <Link href="/setup" className="underline">Setup</Link>.</>}
                             </p>
                           )}

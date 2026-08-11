@@ -19,6 +19,22 @@ export async function GET() {
   try {
     const s = await getSettings(user.id);
 
+    // Masks are built from what this ACCOUNT stores, not from getSettings,
+    // which resolves kie_api_key and elevenlabs_api_key to the platform env
+    // key when the user has none. Reading through it meant two things: every
+    // account without its own key saw the last four characters of ours, and
+    // removing a key left the section still showing "Configured", a Current
+    // row and a Remove button, because the fallback kept the mask non-empty.
+    const { data: own } = await supabase
+      .from("account_settings")
+      .select("kie_api_key, elevenlabs_api_key, anthropic_api_key")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const stored = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+    const ownKie        = stored((own as Record<string, unknown> | null)?.kie_api_key);
+    const ownElevenlabs = stored((own as Record<string, unknown> | null)?.elevenlabs_api_key);
+    const ownAnthropic  = stored((own as Record<string, unknown> | null)?.anthropic_api_key);
+
     // A user who only ever set a prefix in a project's Prompts step has no
     // account default, so the Setup field would open blank and look like
     // they never wrote one. Surface their most recent project-level prefix
@@ -39,13 +55,13 @@ export async function GET() {
     }
 
     return NextResponse.json({
-      kie_api_key: mask(s.kie_api_key),
-      elevenlabs_api_key: mask(s.elevenlabs_api_key),
-      anthropic_api_key: mask(s.anthropic_api_key),
+      kie_api_key: mask(ownKie),
+      elevenlabs_api_key: mask(ownElevenlabs),
+      anthropic_api_key: mask(ownAnthropic),
       // Whether the key is actually in use. The toggle needs the real boolean,
       // and the UI needs to know a key exists to decide if it can be turned on.
       anthropic_direct_enabled: s.anthropic_direct_enabled,
-      has_anthropic_api_key: !!s.anthropic_api_key,
+      has_anthropic_api_key: !!ownAnthropic,
       // Not a secret — returned in full so the prompts step can show the
       // inherited account default as a placeholder / prefill.
       character_consistency_text: s.character_consistency_text,

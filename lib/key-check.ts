@@ -24,11 +24,60 @@ export interface KieCheck extends KeyCheck {
   credits?: number;
 }
 
+/** The scopes we actually call. A key can authenticate while lacking either. */
+export type ElevenLabsScope = "user_read" | "voices_read";
+
 export interface ElevenLabsCheck extends KeyCheck {
   /** Characters remaining this billing cycle. */
   remaining?: number;
   /** Total characters in the plan (e.g. 10000 for Free, 30000 for Starter). */
   limit?: number;
+  /** Scopes ElevenLabs says the key is missing. Absent when it has both, or
+   *  when we couldn't tell (an unreachable API is not a missing scope). */
+  missingScopes?: ElevenLabsScope[];
+}
+
+/**
+ * Whether the key may list voices. Its own request because
+ * /v1/user/subscription only ever reports on user_read: a key without
+ * voices_read passes that check and then quietly returns nothing from the
+ * voice picker, which falls back to the static list rather than erroring. A
+ * third of paying accounts were missing a scope with nothing on screen saying
+ * so.
+ *
+ * null means unknown, kept distinct from false so a blip never reads as a
+ * missing permission.
+ */
+async function checkVoicesScope(key: string): Promise<boolean | null> {
+  try {
+    const res = await fetch("https://api.elevenlabs.io/v1/voices", {
+      headers: { "xi-api-key": key },
+    });
+    if (res.ok) return true;
+    if (res.status === 401 || res.status === 403) {
+      const body = await res.json().catch(() => null) as { detail?: { status?: string } } | null;
+      if (body?.detail?.status === "missing_permissions") return false;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function checkElevenLabs(key: string): Promise<ElevenLabsCheck> {
+  if (!key) return { configured: false, valid: null };
+  // Both probes in flight together: the scope answer is worth having on every
+  // status read, but not at the cost of a second round trip's latency.
+  const [base, voicesRead] = await Promise.all([
+    readSubscription(key),
+    checkVoicesScope(key),
+  ]);
+  if (base.valid !== true) return base;
+
+  const missingScopes: ElevenLabsScope[] = [];
+  if (base.balanceIssue === "scope") missingScopes.push("user_read");
+  if (voicesRead === false) missingScopes.push("voices_read");
+  return missingScopes.length > 0 ? { ...base, missingScopes } : base;
 }
 
 // ElevenLabs exposes per-user quota via /v1/user/subscription.
@@ -36,8 +85,7 @@ export interface ElevenLabsCheck extends KeyCheck {
 // plan's allowance. Remaining = limit - used. We swallow non-2xx
 // non-auth responses as "valid: true" (configured but unknown balance)
 // so a transient ElevenLabs hiccup doesn't make the UI look broken.
-export async function checkElevenLabs(key: string): Promise<ElevenLabsCheck> {
-  if (!key) return { configured: false, valid: null };
+async function readSubscription(key: string): Promise<ElevenLabsCheck> {
   try {
     const res = await fetch("https://api.elevenlabs.io/v1/user/subscription", {
       headers: { "xi-api-key": key },
@@ -103,6 +151,17 @@ export async function checkKie(key: string): Promise<KieCheck> {
       return { configured: true, valid: true };
     }
     const body = await res.json() as { code?: number; data?: unknown };
+    // KIE answers 200 to everything and puts the real status in the body:
+    //   { code: 200, msg: "success",       data: 655.75 }
+    //   { code: 401, msg: "Unauthorized …" }
+    // Reading res.status alone reported a rejected key as configured-and-valid
+    // with an unknown balance, so the dashboard showed a green Active badge
+    // for a credential that fails every generation, and the save path let it
+    // through. Only 401/403 count as a rejection; any other code stays
+    // "valid, balance unknown" so a KIE-side blip can't lock anyone out.
+    if (body.code === 401 || body.code === 403) {
+      return { configured: true, valid: false };
+    }
     const credits = typeof body.data === "number" ? body.data : undefined;
     return { configured: true, valid: true, ...(credits !== undefined ? { credits } : {}) };
   } catch {
@@ -118,8 +177,12 @@ export async function checkKie(key: string): Promise<KieCheck> {
 export function keyRejectionMessage(provider: "kie" | "elevenlabs", check: KeyCheck): string | null {
   if (check.valid !== false) return null;
   if (provider === "elevenlabs") {
+    // The key ID really is the common mistake, not an expired key: of the 16
+    // prod accounts holding one, the 12 that ever had working voiceover each
+    // stopped on a different date, which is what individual mis-pastes look
+    // like. An expiry would have stopped them all on the same day.
     return check.balanceIssue === "key_id"
-      ? "That is an ElevenLabs key ID, not a key. Open the API Keys page, create or rotate a key, and paste the value starting with sk_ that it shows once."
+      ? "That is the key ID, not the key. The key starts with sk_ and is shown once, in the dialog right after you create or rotate it on the API Keys page."
       : "ElevenLabs rejected that key. Check the whole value was copied, or create a new key.";
   }
   return "KIE rejected that key. Check the whole value was copied, or create a new key.";
