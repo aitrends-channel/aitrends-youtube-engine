@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getSettings } from "@/lib/settings";
+import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { checkElevenLabs, checkKie, type ElevenLabsCheck, type KieCheck } from "@/lib/key-check";
@@ -25,13 +26,26 @@ export async function GET() {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
+  // The card answers "what have I connected", so it reports THIS ACCOUNT's
+  // keys. getSettings resolves kie_api_key and elevenlabs_api_key to the
+  // platform env key when the user has none, which made the card show Active
+  // and the platform balance to someone who had never saved a key: nothing on
+  // screen said what was missing, and the number shown was not theirs.
   const s = await getSettings(user.id);
+  const { data: row } = await supabase
+    .from("account_settings")
+    .select("kie_api_key, elevenlabs_api_key, anthropic_api_key")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  const own = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const stored = row as Record<string, unknown> | null;
+
   const [kie, elevenlabs] = await Promise.all([
-    checkKie(s.kie_api_key),
-    checkElevenLabs(s.elevenlabs_api_key),
+    checkKie(own(stored?.kie_api_key)),
+    checkElevenLabs(own(stored?.elevenlabs_api_key)),
   ]);
   const anthropic = {
-    configured: !!s.anthropic_api_key,
+    configured: !!own(stored?.anthropic_api_key),
     directEnabled: !!s.anthropic_direct_enabled,
     tokens30d: await claudeTokens30d(user.id),
   };
