@@ -1,5 +1,28 @@
+// Where the in-app AI support chat is switched on.
+//
+// The flag it feeds (lib/feature-flags.ts) is read in a client component, so it
+// has to be a NEXT_PUBLIC_ value inlined at build time. Vercel's own
+// VERCEL_ENV / VERCEL_GIT_COMMIT_REF are build-time-only and never reach the
+// browser, so they are translated here instead.
+//
+// Deciding it in the repo rather than in the Vercel dashboard means the rule is
+// reviewable, cannot silently drift per environment, and does not have to be
+// re-applied when a project is recreated. An explicit env var still wins, so a
+// dashboard value or a local .env can override either way.
+//
+// Production is deliberately absent from the condition: main deploys with the
+// chat off until that is changed here, on purpose.
+const supportChatEnabled =
+  process.env.NEXT_PUBLIC_SUPPORT_CHAT_ENABLED
+  ?? ((process.env.VERCEL_ENV === "preview" || process.env.VERCEL_GIT_COMMIT_REF === "staging")
+    ? "true"
+    : "");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  env: {
+    NEXT_PUBLIC_SUPPORT_CHAT_ENABLED: supportChatEnabled,
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "**" },
