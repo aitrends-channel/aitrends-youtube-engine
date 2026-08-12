@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { sendEmail } from "@/lib/email/smtp";
 import { answerSupportQuestion, getSupportAgentConfig, type AgentTurn } from "@/lib/support-agent/agent";
+import { SUPPORT_CHAT_HIDDEN } from "@/lib/feature-flags";
 import type { User } from "@supabase/supabase-js";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +57,9 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   const config = await getSupportAgentConfig();
-  if (!config.chat_enabled) {
+  // The flag is the outer kill switch: with the chat hidden there is no UI to
+  // reach this, and nothing should be able to reach it another way either.
+  if (SUPPORT_CHAT_HIDDEN || !config.chat_enabled) {
     return NextResponse.json(
       { error: "Chat support is not available right now. Please use the contact form." },
       { status: 503 },
