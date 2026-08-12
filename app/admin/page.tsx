@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem, Menu, Gift, Bot,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem, Menu, Gift, Bot, Lightbulb,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -21,6 +21,7 @@ import FreeUsagePanel from "./FreeUsagePanel";
 import { TtsCostLens } from "@/components/admin/TtsCostLens";
 import { SupportPanel } from "@/components/admin/SupportPanel";
 import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
+import { FeatureRequestsPanel } from "@/components/admin/FeatureRequestsPanel";
 import { MemoryPanel } from "@/components/admin/MemoryPanel";
 import { QuotasPanel } from "@/components/admin/quotas";
 import { HeclusAgentPanel } from "@/components/admin/HeclusAgentPanel";
@@ -4977,6 +4978,7 @@ const TAB_BLURB: Record<string, string> = {
   support:   "Tickets from customers",
   agent:     "Teach the agent, and switch it on or off",
   reviews:   "What users think of the product",
+  features:  "What customers have asked for, and how often",
   memory:    "Notes this dashboard keeps for itself",
   setup:     "Keys, models, quotas and payment configuration",
 };
@@ -5004,6 +5006,7 @@ const ADMIN_NAV = [
   // TAB_HEADING below, where there is room for it.
   { id: "agent",    label: "Heclus agent", icon: Bot },
   { id: "reviews",  label: "Feedback", icon: Star },
+  { id: "features", label: "Feature requests", icon: Lightbulb },
   { id: "memory",   label: "Memory",   icon: MemoryStick },
   { id: "setup",    label: "Config",   icon: Settings },
 ] as const;
@@ -5150,11 +5153,11 @@ export default function AdminPage() {
   const [revDateTo, setRevDateTo] = useState("");
   const [revPlanFilter, setRevPlanFilter] = useState("");
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "activity" | "usage" | "users" | "projects" | "freeusage" | "revenue" | "agent" | "reports" | "logs" | "emails" | "support" | "reviews" | "memory" | "setup"
+    "stats" | "activity" | "usage" | "users" | "projects" | "freeusage" | "revenue" | "agent" | "reports" | "logs" | "emails" | "support" | "reviews" | "features" | "memory" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "activity", "usage", "users", "projects", "freeusage", "revenue", "agent", "reports", "logs", "emails", "support", "reviews", "memory", "setup"],
+    ["stats", "activity", "usage", "users", "projects", "freeusage", "revenue", "agent", "reports", "logs", "emails", "support", "reviews", "features", "memory", "setup"],
   );
   // "usage" stays accepted as a stored value: it is what localStorage holds
   // for anyone who last left the admin on the old Usage tab, and mapping it
@@ -7568,6 +7571,22 @@ export default function AdminPage() {
             }}
           >
             <FeedbackPanel />
+          </section>
+        )}
+
+        {activeTab === "features" && (
+          <section
+            id="features"
+            className="rounded-2xl max-w-full min-w-0"
+            style={{
+              background: "var(--bg-card)",
+              border: "1px solid oklch(0 0 0 / 0.07)",
+              padding: "16px",
+              scrollMarginTop: "80px",
+              boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)",
+            }}
+          >
+            <FeatureRequestsPanel />
           </section>
         )}
 
