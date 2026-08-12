@@ -9,6 +9,7 @@ import {
 } from "@/lib/credits";
 import {
   submitFramesToVideo, getTaskStatus, GENAIPRO_RATE_LIMIT_PER_MINUTE, GenAIProError,
+  GENAIPRO_VIDEO_MODEL_ID, GENAIPRO_MODEL_PREFIX,
 } from "@/lib/genaipro/client";
 
 export const maxDuration = 300;
@@ -28,11 +29,6 @@ export const maxDuration = 300;
 // against KIE.
 
 const CRON_SECRET = process.env.CRON_SECRET;
-
-/** The model id that marks a beat as ours. Both queue paths stamp the beat's
- *  own video_model_id, so this is never inferred from the project row. */
-export const GENAIPRO_VIDEO_MODEL_ID = "genaipro-veo-2";
-const GENAIPRO_MODEL_PREFIX = "genaipro";
 
 // Well under the ceiling, because submits and polls both draw on it and the
 // cron fires every two minutes: 20 of each is 10 a minute, leaving room for a

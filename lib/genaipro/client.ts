@@ -22,6 +22,12 @@ import { getActiveProductKey } from "@/lib/claude/routing";
 
 const BASE = "https://genaipro.io/api";
 
+/** Marks a beat as belonging to this lane. Both queue paths stamp the beat's
+ *  own video_model_id, the app's cron claims on this prefix, and the separate
+ *  video-worker excludes it. Defined here so those three cannot drift apart. */
+export const GENAIPRO_VIDEO_MODEL_ID = "genaipro-veo-2";
+export const GENAIPRO_MODEL_PREFIX = "genaipro";
+
 /** Their aspect-ratio enum has exactly two values, so every Heclus ratio has to
  *  land on one of them. Anything taller than it is wide is portrait. */
 export type GenAIProAspect = "VIDEO_ASPECT_RATIO_LANDSCAPE" | "VIDEO_ASPECT_RATIO_PORTRAIT";

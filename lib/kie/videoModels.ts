@@ -1,4 +1,5 @@
 import type { KieModel } from "@/lib/types";
+import { GENAIPRO_VIDEO_MODEL_ID } from "@/lib/genaipro/client";
 
 function m(id: string, name: string, tags: string[]): KieModel {
   return { id, name, type: "video", tags };
@@ -18,6 +19,11 @@ export const VIDEO_MODELS: KieModel[] = [
   m("bytedance/seedance-2-fast",        "Seedance 2 Fast",  ["Image-to-Video", "ByteDance", "Fast"]),
   m("bytedance/seedance-1.5-pro",       "Seedance 1.5 Pro", ["Image-to-Video", "ByteDance"]),
   m("runway",                           "Runway",           ["Image-to-Video"]),
+  // Not a KIE model. It runs on Heclus's own GenAIPro account against the
+  // credit wallet, submitted by /api/cron/genaipro-video rather than by the
+  // video-worker. It lives in this list because this list is what the picker
+  // renders; the models route only includes it for plans with an allowance.
+  m(GENAIPRO_VIDEO_MODEL_ID,            "Veo (free credits)", ["Image-to-Video", "Google", "Included"]),
 ];
 
 export interface DurationOption {
@@ -43,6 +49,10 @@ const sec = (n: number): DurationOption => ({ label: `${n}s`, value: n });
 const secStr = (n: number): DurationOption => ({ label: `${n}s`, value: String(n) });
 
 export const VIDEO_MODEL_CONFIGS: Record<string, VideoModelConfig> = {
+  // GenAIPro's submit takes no duration and only two aspect ratios, so the
+  // picker offers exactly what the provider accepts. 16:9 and 9:16 map onto
+  // their LANDSCAPE / PORTRAIT enum.
+  [GENAIPRO_VIDEO_MODEL_ID]:          { durations: [], aspectRatios: ["16:9", "9:16"] },
   // Kling 3.0 uses "mode" (std / pro / 4K) instead of a "resolution"
   // enum — the three modes map to 720p / 1080p / 4K under the hood.
   "kling-3.0/video":                  { durations: [3, 5, 8, 10, 12, 15].map(secStr), aspectRatios: ["16:9", "9:16", "1:1"], resolutions: ["std", "pro", "4K"], resolutionKey: "mode" },
