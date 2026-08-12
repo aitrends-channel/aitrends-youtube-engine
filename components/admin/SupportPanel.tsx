@@ -48,6 +48,8 @@ interface Ticket {
   is_open: boolean;
   admin_notes: string | null;
   responded_at: string | null;
+  auto_replied_at: string | null;
+  auto_reply_draft: string | null;
   created_at: string;
   updated_at: string;
   plan: string | null;
@@ -76,6 +78,24 @@ const STATUS_LABELS: Record<TicketStatus, string> = {
   resolved:    "Resolved",
   closed:      "Closed",
 };
+
+// A machine's reply and a person's reply never share a colour, here or in the
+// inbox: purple is always the agent, green is always someone answering.
+const AGENT_TONE = { bg: "oklch(0.72 0.25 285 / 0.12)", fg: "oklch(0.5 0.2 285)" };
+const REPLIED_TONE = { bg: "oklch(0.55 0.15 145 / 0.12)", fg: "oklch(0.45 0.15 145)" };
+
+// Whether the customer has heard back, and from whom. The status pill says
+// where a ticket sits in the queue, which is a different question: a resolved
+// ticket may have been closed without a word, and an open one may already have
+// three replies on it. Nothing renders for an unanswered ticket, since "Open"
+// says that already.
+function replyBadge(t: Ticket): { label: string; bg: string; fg: string } | null {
+  if (t.auto_replied_at) return { label: "Agent replied", ...AGENT_TONE };
+  if (t.responded_at) return { label: "Replied", ...REPLIED_TONE };
+  // Dry run, or waiting for an admin to send it. Worth seeing from the queue.
+  if (t.auto_reply_draft) return { label: "Agent draft", ...AGENT_TONE };
+  return null;
+}
 
 const STATUS_COLORS: Record<TicketStatus, { bg: string; fg: string }> = {
   open:        { bg: "oklch(0.62 0.15 220 / 0.12)", fg: "oklch(0.45 0.15 220)" },
@@ -271,6 +291,7 @@ function TicketRow({
   const dirty = statusDraft !== ticket.status || notesDraft !== (ticket.admin_notes ?? "");
   const statusStyle = STATUS_COLORS[ticket.status];
   const isPriority = isPriorityPlan(ticket.plan);
+  const reply = replyBadge(ticket);
   const ticketRef = formatTicketRef(ticket.ticket_number);
 
   // Thread fetched lazily — only after the row is expanded, so the
@@ -350,6 +371,14 @@ function TicketRow({
             title={`Plan: ${ticket.plan}`}
           >
             {ticket.plan}
+          </span>
+        )}
+        {reply && (
+          <span
+            className="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-semibold"
+            style={{ background: reply.bg, color: reply.fg }}
+          >
+            {reply.label}
           </span>
         )}
         {/* On mobile this drops to its own full-width line (order-last) so

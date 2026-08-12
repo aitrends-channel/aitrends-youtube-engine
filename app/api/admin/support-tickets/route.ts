@@ -22,7 +22,7 @@ export async function GET(req: Request) {
 
   let query = supabase
     .from("support_tickets")
-    .select("id, ticket_number, user_id, email, subject, message, status, is_open, admin_notes, responded_at, created_at, updated_at, plan")
+    .select("id, ticket_number, user_id, email, subject, message, status, is_open, admin_notes, responded_at, auto_replied_at, auto_reply_draft, created_at, updated_at, plan")
     .order("created_at", { ascending: false })
     .limit(500);
 
