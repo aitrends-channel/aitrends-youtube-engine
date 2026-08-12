@@ -9,6 +9,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { FeedbackDialog } from "@/components/FeedbackDialog";
 import { SupportChat } from "@/components/SupportChat";
+import { SUPPORT_CHAT_HIDDEN } from "@/lib/feature-flags";
 
 // Floating help bubble, bottom-right on every page. Opens a small
 // white dialog: live chat with the support agent for signed-in users,
@@ -200,7 +201,7 @@ export function HelpButton() {
                 squeezing the sentence. */}
             <div className="flex items-center justify-between gap-3 flex-wrap">
             <DialogDescription className="!text-white/90 min-w-0 flex-1">
-              Chat with us, or file a ticket.
+              {SUPPORT_CHAT_HIDDEN ? "Send us a message and we'll get back to you." : "Chat with us, or file a ticket."}
             </DialogDescription>
 
             <a
@@ -226,16 +227,18 @@ export function HelpButton() {
               min-h-0 + flex-1 lets it shrink inside the flex parent so
               the form section can never overflow past the modal bottom. */}
           <div className="flex-1 min-h-0 overflow-y-auto pr-1 -mr-1">
-            <div className="mt-3">
-              <SupportChat signedIn={signedIn} />
-            </div>
+            {!SUPPORT_CHAT_HIDDEN && (
+              <div className="mt-3">
+                <SupportChat signedIn={signedIn} />
+              </div>
+            )}
 
             {/* The ticket form is now the anonymous-only path: a signed-in
                 user has chat, which reaches the same place and answers most
                 things without a ticket at all. Kept for visitors because the
                 bubble is mounted in the root layout, so it appears on public
                 pages where there is no account to chat about. */}
-            {!signedIn && (
+            {(!signedIn || SUPPORT_CHAT_HIDDEN) && (
             <div className="mt-5 pt-4 border-t border-zinc-200">
             {sent ? (
               <div className="flex flex-col items-center text-center py-3 gap-2">
