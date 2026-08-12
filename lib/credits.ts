@@ -206,3 +206,51 @@ export async function listLedger(userId: string, limit = 50): Promise<LedgerRow[
  *  sweep. Generous: a Veo clip can take minutes, and releasing a live
  *  reservation would let the same generation be paid for twice. */
 export const RESERVATION_STALE_MINUTES = 60;
+
+/** The open reservation for a beat, so a completing generation can be settled
+ *  without threading a reservation id through the provider round trip. */
+export async function findOpenReservation(
+  projectId: string, beatNumber: number,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("credit_reservations")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("beat_number", beatNumber)
+    .eq("state", "open")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (error) {
+    console.warn("[credits] reservation lookup failed:", error.message);
+    return null;
+  }
+  return (data?.[0] as { id?: string } | undefined)?.id ?? null;
+}
+
+/**
+ * Release reservations whose generation never reported back.
+ *
+ * Without this, a submit that crashed between reserve and provider call holds
+ * a customer's credit for ever. Deliberately blunt: anything open past the
+ * stale window is released, because the alternative is credit that leaks and
+ * never comes back, and a released reservation for a generation that somehow
+ * does complete is caught by the debit that never lands.
+ */
+export async function sweepStaleReservations(limit = 50): Promise<number> {
+  const cutoff = new Date(Date.now() - RESERVATION_STALE_MINUTES * 60_000).toISOString();
+  const { data, error } = await supabase
+    .from("credit_reservations")
+    .select("id")
+    .eq("state", "open")
+    .lt("created_at", cutoff)
+    .limit(limit);
+  if (error) {
+    console.warn("[credits] stale sweep query failed:", error.message);
+    return 0;
+  }
+  let released = 0;
+  for (const row of (data ?? []) as { id: string }[]) {
+    if (await releaseReservation(row.id, "Generation never reported back")) released++;
+  }
+  return released;
+}
