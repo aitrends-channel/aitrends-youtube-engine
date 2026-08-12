@@ -7,13 +7,12 @@ import Image from "next/image";
 import { toast } from "sonner";
 import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
-  CheckCircle2, UserCog, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
-  DollarSign, SlidersHorizontal, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem, Menu, Gift,
+  CheckCircle2, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
+  DollarSign, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem, Menu, Gift, Bot, Lightbulb,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { launchAllowedClient } from "@/lib/env";
 import useSWR from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isAdminUser } from "@/lib/admin";
@@ -22,8 +21,10 @@ import FreeUsagePanel from "./FreeUsagePanel";
 import { TtsCostLens } from "@/components/admin/TtsCostLens";
 import { SupportPanel } from "@/components/admin/SupportPanel";
 import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
+import { FeatureRequestsPanel } from "@/components/admin/FeatureRequestsPanel";
 import { MemoryPanel } from "@/components/admin/MemoryPanel";
 import { QuotasPanel } from "@/components/admin/quotas";
+import { HeclusAgentPanel } from "@/components/admin/HeclusAgentPanel";
 
 const PHASE_PATHS: Record<number, string> = {
   1: "channel", 2: "channel", 3: "channel", 4: "channel", 5: "channel",
@@ -748,22 +749,14 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
   return (
     <section id="reports" className="rounded-2xl space-y-5"
       style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-            style={{ background: "oklch(0.72 0.25 285 / 0.1)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
-            <FileText size={16} style={{ color: "oklch(0.72 0.25 285)" }} />
-          </div>
-          <div>
-            <h2 className="text-lg font-bold text-foreground">Report</h2>
-            <p className="text-xs" style={{ color: "var(--c-42)" }}>
-              Generated {new Date().toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}
-              {revenue?.launchedAt ? ` · data since launch (${new Date(revenue.launchedAt).toLocaleDateString("en", { month: "short", day: "numeric" })})` : ""}
-              {" · customers only"}
-            </p>
-          </div>
-        </div>
-      </div>
+      {/* Icon and title dropped: the page heading above already says Reports.
+          The generated-on line stays — it dates the numbers below, which the
+          page heading cannot know. */}
+      <p className="text-xs" style={{ color: "var(--c-42)" }}>
+        Generated {new Date().toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" })}
+        {revenue?.launchedAt ? ` · data since launch (${new Date(revenue.launchedAt).toLocaleDateString("en", { month: "short", day: "numeric" })})` : ""}
+        {" · customers only"}
+      </p>
 
       {/* Headline numbers */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-[10px]">
@@ -1086,17 +1079,6 @@ function LogsSection() {
   return (
     <section id="logs" className="rounded-2xl space-y-4"
       style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-          style={{ background: "oklch(0.55 0.15 220 / 0.1)", border: "1px solid oklch(0.55 0.15 220 / 0.2)" }}>
-          <FileText size={16} style={{ color: "oklch(0.62 0.15 220)" }} />
-        </div>
-        <div>
-          <h2 className="text-lg font-bold text-foreground">Logs</h2>
-          <p className="text-xs" style={{ color: "var(--c-42)" }}>Recent activity, system errors, and worker output</p>
-        </div>
-      </div>
-
       <div className="flex items-center gap-1 p-1 rounded-xl w-full sm:w-auto sm:inline-flex"
         style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
         {subTabs.map(({ id, label, icon: Icon }) => (
@@ -1396,12 +1378,7 @@ function SetupSection({
   return (
     <section id="setup" className="rounded-2xl space-y-5" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-          style={{ background: "oklch(0.55 0.15 220 / 0.1)", border: "1px solid oklch(0.55 0.15 220 / 0.2)" }}>
-          <SlidersHorizontal size={16} style={{ color: "oklch(0.62 0.15 220)" }} />
-        </div>
         <div>
-          <h2 className="text-lg font-bold text-foreground">Config</h2>
           <p className="text-xs" style={{ color: "var(--c-42)" }}>Product-wide API keys — first key is default, auto-rotates on quota exceeded</p>
         </div>
         {setupTab === "keys" && (
@@ -4146,369 +4123,6 @@ interface LaunchStepResult {
   detail?: string;
 }
 
-function LaunchModal({ onClose }: { onClose: () => void }) {
-  const [excludeEmails, setExcludeEmails] = useState<string[]>([]);
-  const [excludeInput, setExcludeInput] = useState("");
-  const [clearAllLogs, setClearAllLogs] = useState(false);
-  const [clearAllActivity, setClearAllActivity] = useState(false);
-  const [resetFounderSlots, setResetFounderSlots] = useState(false);
-  const [clearEmails, setClearEmails] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmText, setConfirmText] = useState("");
-  const [launching, setLaunching] = useState(false);
-  const [results, setResults] = useState<LaunchStepResult[] | null>(null);
-  const allOk = results !== null && results.every((r) => r.ok);
-
-  async function fireLaunch() {
-    setLaunching(true);
-    try {
-      const res = await fetch("/api/admin/launch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          excludeEmails,
-          clearLogs: clearAllLogs,
-          clearActivity: clearAllActivity,
-          resetFounderSlots,
-          clearEmails,
-        }),
-      });
-      const json = await res.json().catch(() => ({})) as { results?: LaunchStepResult[]; error?: string };
-      if (json.results) {
-        setResults(json.results);
-        if (res.ok) toast.success("Launch complete");
-        else toast.error("Launch finished with errors — see details");
-      } else {
-        throw new Error(json.error ?? `Launch failed (${res.status})`);
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Launch failed");
-    } finally {
-      setLaunching(false);
-    }
-  }
-
-  function addExcludeEmail() {
-    const candidate = excludeInput.trim().toLowerCase();
-    if (!candidate) return;
-    // Loose email shape check — the deletion endpoint will validate
-    // against auth.users anyway; this just guards against obvious
-    // fat-finger entries.
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(candidate)) {
-      toast.error("Not a valid email");
-      return;
-    }
-    if (excludeEmails.includes(candidate)) {
-      toast.error("Already in the list");
-      return;
-    }
-    setExcludeEmails((prev) => [...prev, candidate]);
-    setExcludeInput("");
-  }
-
-  function removeExcludeEmail(email: string) {
-    setExcludeEmails((prev) => prev.filter((e) => e !== email));
-  }
-
-  return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogContent showCloseButton={false} className="sm:max-w-2xl text-base">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-lg">
-            <Rocket size={18} style={{ color: "oklch(0.55 0.15 145)" }} />
-            Launch Heclus
-          </DialogTitle>
-          <DialogDescription className="text-sm">
-            Review what gets cleared from each surface before flipping the switch.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="max-h-[60vh] overflow-y-auto space-y-5 pr-1">
-          {/* ── Users section ─────────────────────────────────── */}
-          <section className="space-y-3">
-            <div className="space-y-1">
-              <p className="text-sm font-semibold text-zinc-800">Users</p>
-              <p className="text-xs text-zinc-500">
-                Enter one email at a time and click Add. Listed accounts (and everything they own — niches, videos, files) are preserved. Everyone else gets fully deleted when launch fires.
-              </p>
-            </div>
-
-            <div className="flex items-stretch gap-2">
-              <input
-                type="email"
-                value={excludeInput}
-                onChange={(e) => setExcludeInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addExcludeEmail();
-                  }
-                }}
-                placeholder="admin@heclus.io"
-                className="flex-1 px-3 py-2.5 rounded-lg text-sm outline-none font-mono bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400"
-              />
-              <button
-                type="button"
-                onClick={addExcludeEmail}
-                disabled={!excludeInput.trim()}
-                className="px-4 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ background: "oklch(0.55 0.15 145)", color: "white" }}
-              >
-                Add
-              </button>
-            </div>
-
-            {excludeEmails.length === 0 ? (
-              <p className="text-xs italic text-zinc-400">No emails added yet.</p>
-            ) : (
-              <ul className="space-y-1">
-                {excludeEmails.map((email) => (
-                  <li
-                    key={email}
-                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-zinc-50 ring-1 ring-zinc-200"
-                  >
-                    <span className="text-sm font-mono text-zinc-700 truncate">{email}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeExcludeEmail(email)}
-                      className="p-1 rounded transition-all hover:bg-red-100 cursor-pointer"
-                      title="Remove"
-                    >
-                      <X size={14} className="text-red-600" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          {/* ── Logs section ──────────────────────────────────── */}
-          <section className="space-y-2 pt-4 border-t border-zinc-200">
-            <p className="text-sm font-semibold text-zinc-800">Logs</p>
-            <label className="flex items-center gap-3 cursor-pointer text-sm text-zinc-700">
-              <input
-                type="checkbox"
-                checked={clearAllLogs}
-                onChange={(e) => setClearAllLogs(e.target.checked)}
-                className="w-5 h-5 cursor-pointer accent-emerald-600"
-              />
-              Clear all system logs
-            </label>
-          </section>
-
-          {/* ── Activity section ──────────────────────────────── */}
-          <section className="space-y-2 pt-4 border-t border-zinc-200">
-            <p className="text-sm font-semibold text-zinc-800">Activity</p>
-            <label className="flex items-center gap-3 cursor-pointer text-sm text-zinc-700">
-              <input
-                type="checkbox"
-                checked={clearAllActivity}
-                onChange={(e) => setClearAllActivity(e.target.checked)}
-                className="w-5 h-5 cursor-pointer accent-emerald-600"
-              />
-              Reset activity chart from launch day
-            </label>
-          </section>
-
-          {/* ── Founder promo section ─────────────────────────── */}
-          <section className="space-y-2 pt-4 border-t border-zinc-200">
-            <p className="text-sm font-semibold text-zinc-800">Founder promo</p>
-            <label className="flex items-center gap-3 cursor-pointer text-sm text-zinc-700">
-              <input
-                type="checkbox"
-                checked={resetFounderSlots}
-                onChange={(e) => setResetFounderSlots(e.target.checked)}
-                className="w-5 h-5 cursor-pointer accent-emerald-600"
-              />
-              Reset founder slot counter and clear claims log
-            </label>
-          </section>
-
-          {/* ── Emails section ────────────────────────────────── */}
-          <section className="space-y-2 pt-4 border-t border-zinc-200">
-            <p className="text-sm font-semibold text-zinc-800">Emails</p>
-            <label className="flex items-center gap-3 cursor-pointer text-sm text-zinc-700">
-              <input
-                type="checkbox"
-                checked={clearEmails}
-                onChange={(e) => setClearEmails(e.target.checked)}
-                className="w-5 h-5 cursor-pointer accent-emerald-600"
-              />
-              Clear email history (admin Emails panel)
-            </label>
-          </section>
-        </div>
-
-        {results && (
-          <div className="rounded-lg p-3 space-y-2 bg-zinc-50 ring-1 ring-zinc-200">
-            <p className="text-sm font-semibold text-zinc-700">Launch results</p>
-            <ul className="space-y-1">
-              {results.map((r) => (
-                <li key={r.step} className="flex items-start gap-2 text-xs">
-                  <span className="mt-0.5 shrink-0">
-                    {r.ok ? <Check size={14} className="text-emerald-600" /> : <X size={14} className="text-red-600" />}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="font-mono text-zinc-700">{r.step}</p>
-                    {r.detail && <p className="text-zinc-500 break-words">{r.detail}</p>}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        <DialogFooter>
-          {!results ? (
-            <>
-              {(() => {
-                // Disable Launch when the admin hasn't configured the
-                // form at all — either no exclude emails entered, or
-                // none of the optional cleanups checked. Forces an
-                // explicit "I picked who to keep AND what to clean"
-                // decision instead of a silent click-through.
-                const hasExcludes = excludeEmails.length > 0;
-                const hasAnyCheck = clearAllLogs || clearAllActivity || resetFounderSlots || clearEmails;
-                const canSubmit = hasExcludes && hasAnyCheck;
-                const reason = !hasExcludes && !hasAnyCheck
-                  ? "Add at least one exclude email and check at least one cleanup option"
-                  : !hasExcludes
-                    ? "Add at least one email to exclude from deletion"
-                    : "Check at least one cleanup option";
-                return (
-                  <button
-                    onClick={() => { setConfirmText(""); setConfirmOpen(true); }}
-                    disabled={launching || !canSubmit}
-                    title={canSubmit ? "Launch Heclus" : reason}
-                    className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
-                    style={{
-                      background: "oklch(0.55 0.15 145)",
-                      color: "white",
-                      boxShadow: canSubmit ? "0 0 12px oklch(0.55 0.15 145 / 0.25)" : "none",
-                    }}
-                  >
-                    <span className="inline-flex items-center justify-center gap-2">
-                      <Rocket size={14} />
-                      Launch
-                    </span>
-                  </button>
-                );
-              })()}
-              <button
-                onClick={onClose}
-                disabled={launching}
-                className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-40"
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100"
-            >
-              Close
-            </button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-
-      {confirmOpen && (
-        <Dialog open onOpenChange={(open) => { if (!open && !launching) setConfirmOpen(false); }}>
-          <DialogContent showCloseButton={false} className="sm:max-w-md">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-base">
-                <Rocket size={16} style={{ color: "oklch(0.55 0.15 145)" }} />
-                Confirm launch
-              </DialogTitle>
-              <DialogDescription className="text-sm">
-                The following will happen, in order. None of it is reversible without backup.
-              </DialogDescription>
-            </DialogHeader>
-
-            <ul className="text-sm space-y-2 list-disc pl-5 text-zinc-700 max-h-[40vh] overflow-y-auto">
-              <li>
-                Delete <span className="font-semibold">every user</span> in auth.users except the {excludeEmails.length} email{excludeEmails.length === 1 ? "" : "s"} you excluded. Their projects, beats, voiceovers, account_settings, and other per-user rows cascade.
-              </li>
-              <li>
-                Sweep <code className="text-xs bg-zinc-100 px-1 rounded">project_costs</code> — delete every cost row not owned by an excluded user (catches orphans the FK cascade missed).
-              </li>
-              <li>
-                Wipe each deleted user&apos;s <span className="font-semibold">R2 bucket folder</span> (<code className="text-xs bg-zinc-100 px-1 rounded">&lt;email&gt;/</code>) — all their generated images, voiceovers, thumbnails, and assembled MP4s.
-              </li>
-              <li>
-                Drop any <code className="text-xs bg-zinc-100 px-1 rounded">assembly:&lt;projectId&gt;</code> entries from <span className="font-semibold">Upstash Redis</span> for the deleted projects.
-              </li>
-              {clearAllLogs && <li>Truncate <code className="text-xs bg-zinc-100 px-1 rounded">system_logs</code>.</li>}
-              {clearAllActivity && <li>Set the activity-chart cutoff to now — the admin chart starts fresh from launch day.</li>}
-              {resetFounderSlots && <li>Reset founder slot counter to 0, re-arm the promo, and truncate <code className="text-xs bg-zinc-100 px-1 rounded">founder_claims_log</code>.</li>}
-              {clearEmails && <li>Truncate <code className="text-xs bg-zinc-100 px-1 rounded">emails</code>.</li>}
-              <li>Flip <code className="text-xs bg-zinc-100 px-1 rounded">dodo_payment_mode</code> to <span className="font-semibold">production</span>.</li>
-            </ul>
-
-            <div className="space-y-1">
-              <label className="text-xs font-semibold text-zinc-700">
-                Type <span className="font-mono">LAUNCH</span> to confirm
-              </label>
-              <input
-                value={confirmText}
-                onChange={(e) => setConfirmText(e.target.value)}
-                disabled={launching}
-                autoFocus
-                placeholder="LAUNCH"
-                className="w-full px-3 py-2 rounded-lg text-sm outline-none font-mono bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400"
-              />
-            </div>
-
-            <DialogFooter>
-              <button
-                onClick={async () => {
-                  setConfirmOpen(false);
-                  await fireLaunch();
-                }}
-                disabled={launching || confirmText !== "LAUNCH"}
-                className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed bg-red-600 text-white"
-              >
-                {launching ? (
-                  <span className="inline-flex items-center justify-center gap-2">
-                    <Spinner size={14} className="text-white" />
-                    Launching…
-                  </span>
-                ) : "Yes, launch"}
-              </button>
-              <button
-                onClick={() => setConfirmOpen(false)}
-                disabled={launching}
-                className="flex-1 py-2 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-40"
-              >
-                Cancel
-              </button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {launching && (
-        <Dialog open onOpenChange={() => {}}>
-          <DialogContent showCloseButton={false} className="sm:max-w-xs">
-            <div className="flex flex-col items-center gap-3 py-4">
-              <Spinner size={24} className="text-emerald-600" />
-              <p className="text-sm font-semibold text-zinc-700">Launching…</p>
-              <p className="text-xs text-zinc-500 text-center">
-                Deleting users, then cleanup, then flipping payment mode. Don&apos;t close this tab.
-              </p>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* allOk drives an emerald banner above results when present;
-          kept inline so the modal layout stays single-scroll. */}
-      {results && allOk && null}
-    </Dialog>
-  );
-}
-
 function ProductionTestEditModal({
   initialLink,
   onClose,
@@ -5349,6 +4963,31 @@ function SkeletonRows({ cols, rows = 3 }: { cols: number; rows?: number }) {
   );
 }
 
+/** Subtitle under the page heading, per tab. Says what the view is for, not
+ *  what it contains — the view itself shows that. */
+const TAB_BLURB: Record<string, string> = {
+  stats:     "Signups, revenue and production at a glance",
+  activity:  "What has been created over time, and by whom",
+  users:     "Every account, its plan and its keys",
+  projects:  "Every video, its progress and what it cost",
+  freeusage: "Perks Heclus pays for, and who is using them",
+  revenue:   "Payments, plans and reconciliation",
+  reports:   "Generated reports and exports",
+  logs:      "Errors and events from the running app",
+  emails:    "Inbound and outbound support mail",
+  support:   "Tickets from customers",
+  agent:     "Teach the agent, and switch it on or off",
+  reviews:   "What users think of the product",
+  features:  "What customers have asked for, and how often",
+  memory:    "Notes this dashboard keeps for itself",
+  setup:     "Keys, models, quotas and payment configuration",
+};
+
+/** Page heading, where it should differ from the sidebar label. */
+const TAB_HEADING: Record<string, string> = {
+  agent: "Heclus AI Agent",
+};
+
 const ADMIN_NAV = [
   { id: "stats",    label: "Stats",    icon: BarChart3 },
   // Activity carries both panels: the niches/videos/users series and the
@@ -5363,7 +5002,11 @@ const ADMIN_NAV = [
   { id: "logs",     label: "Logs",     icon: FileText },
   { id: "emails",   label: "Emails",   icon: Mail },
   { id: "support",  label: "Support",  icon: LifeBuoy },
+  // Sidebar keeps the short label; the page heading spells it out via
+  // TAB_HEADING below, where there is room for it.
+  { id: "agent",    label: "Heclus agent", icon: Bot },
   { id: "reviews",  label: "Feedback", icon: Star },
+  { id: "features", label: "Feature requests", icon: Lightbulb },
   { id: "memory",   label: "Memory",   icon: MemoryStick },
   { id: "setup",    label: "Config",   icon: Settings },
 ] as const;
@@ -5377,7 +5020,6 @@ export default function AdminPage() {
   // header. Same shape as the client dashboard.
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
-  const [launchOpen, setLaunchOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -5511,11 +5153,11 @@ export default function AdminPage() {
   const [revDateTo, setRevDateTo] = useState("");
   const [revPlanFilter, setRevPlanFilter] = useState("");
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "activity" | "usage" | "users" | "projects" | "freeusage" | "revenue" | "reports" | "logs" | "emails" | "support" | "reviews" | "memory" | "setup"
+    "stats" | "activity" | "usage" | "users" | "projects" | "freeusage" | "revenue" | "agent" | "reports" | "logs" | "emails" | "support" | "reviews" | "features" | "memory" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "activity", "usage", "users", "projects", "freeusage", "revenue", "reports", "logs", "emails", "support", "reviews", "memory", "setup"],
+    ["stats", "activity", "usage", "users", "projects", "freeusage", "revenue", "agent", "reports", "logs", "emails", "support", "reviews", "features", "memory", "setup"],
   );
   // "usage" stays accepted as a stored value: it is what localStorage holds
   // for anyone who last left the admin on the old Usage tab, and mapping it
@@ -5914,52 +5556,49 @@ export default function AdminPage() {
         {/* Page heading + Launch action, sharing one row */}
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-              style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-              <BarChart3 size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-2xl font-bold text-foreground">Admin Dashboard</h1>
-              <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                Users, projects, and system overview
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-col items-end gap-1 shrink-0">
             {(() => {
-              const canLaunch = launchAllowedClient();
+              const current = ADMIN_NAV.find((t) => t.id === navTab);
+              const Icon = current?.icon ?? BarChart3;
               return (
-                <button
-                  onClick={() => setLaunchOpen(true)}
-                  disabled={!canLaunch}
-                  title={canLaunch ? "Launch Heclus" : "Disabled on staging — only enabled in production or local dev"}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-lg text-base font-bold transition-all hover:opacity-90 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-                  style={{
-                    width: "100px",
-                    height: "50px",
-                    padding: "10px",
-                    background: "oklch(0.55 0.15 145)",
-                    color: "white",
-                    boxShadow: canLaunch ? "0 0 12px oklch(0.55 0.15 145 / 0.25)" : "none",
-                  }}
-                >
-                  <Rocket size={16} />
-                  Launch
-                </button>
+                <>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                    style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+                    <Icon size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+                  </div>
+                  <div className="min-w-0">
+                    <h1 className="text-2xl font-bold text-foreground">
+                      {TAB_HEADING[navTab] ?? current?.label ?? "Admin"}
+                    </h1>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                      {TAB_BLURB[navTab] ?? "Users, projects, and system overview"}
+                    </p>
+                  </div>
+                </>
               );
             })()}
-            {revenue?.launchedAt && (
-              <p className="text-xs" style={{ color: "var(--c-50)" }}>
-                Launched on:{" "}
-                <span className="font-semibold" style={{ color: "var(--c-78)" }}>
-                  {new Date(revenue.launchedAt).toLocaleDateString("en", {
-                    day: "numeric",
-                    month: "short",
-                    year: "numeric",
-                  })}
-                </span>
-              </p>
+          </div>
+
+          {/* The launch button is gone — launching is a once-ever action and it
+              sat one click from every page of the dashboard. The date stays,
+              because it is what every "since launch" figure below is measured
+              from. Rendered only once the revenue read lands, so a slow request
+              never flashes "not launched" at an app that is. */}
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            {revenue && (
+              revenue.launchedAt ? (
+                <p className="text-xs" style={{ color: "var(--c-50)" }}>
+                  Launched on:{" "}
+                  <span className="font-semibold" style={{ color: "var(--c-78)" }}>
+                    {new Date(revenue.launchedAt).toLocaleDateString("en", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </span>
+                </p>
+              ) : (
+                <p className="text-xs" style={{ color: "var(--c-40)" }}>Not launched yet</p>
+              )
             )}
           </div>
         </div>
@@ -6400,12 +6039,9 @@ export default function AdminPage() {
 
         {/* Users section */}
         <section id="users" className="rounded-2xl space-y-5 max-w-full min-w-0" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "users" ? undefined : "none" }}>
+          {/* Icon and title dropped — the page heading names this view. The
+              count chip stays: it is data, not a label. */}
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-              style={{ background: "oklch(0.72 0.25 285 / 0.1)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
-              <UserCog size={16} style={{ color: "oklch(0.72 0.25 285)" }} />
-            </div>
-            <h2 className="text-lg font-bold text-foreground">Users</h2>
             <span className="text-xs px-2.5 py-0.5 rounded-full"
               style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
               {users.length}
@@ -6817,11 +6453,6 @@ export default function AdminPage() {
         {/* Projects section */}
         <section id="projects" className="rounded-2xl space-y-5 pb-[10px] max-w-full min-w-0" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "projects" ? undefined : "none" }}>
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-              style={{ background: "oklch(0.55 0.15 145 / 0.1)", border: "1px solid oklch(0.55 0.15 145 / 0.2)" }}>
-              <FolderOpen size={16} style={{ color: "oklch(0.65 0.15 145)" }} />
-            </div>
-            <h2 className="text-lg font-bold text-foreground">All Videos</h2>
             <span className="text-xs px-2.5 py-0.5 rounded-full"
               style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
               {projects.length}
@@ -7616,14 +7247,6 @@ export default function AdminPage() {
 
           return (
             <section id="revenue" className="rounded-2xl space-y-5" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "revenue" ? undefined : "none" }}>
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                  style={{ background: "oklch(0.55 0.18 65 / 0.1)", border: "1px solid oklch(0.55 0.18 65 / 0.2)" }}>
-                  <DollarSign size={16} style={{ color: "oklch(0.72 0.18 65)" }} />
-                </div>
-                <h2 className="text-lg font-bold text-foreground">Revenue</h2>
-              </div>
-
               {(revenue?.unconverted?.count ?? 0) > 0 && (
                 <p className="text-xs px-3 py-2 rounded-lg"
                   style={{ background: "oklch(0.75 0.15 65 / 0.12)", border: "1px solid oklch(0.75 0.15 65 / 0.3)", color: "oklch(0.45 0.12 65)" }}>
@@ -7908,6 +7531,13 @@ export default function AdminPage() {
             IMAP/SMTP via /api/admin/emails. */}
         {activeTab === "freeusage" && <FreeUsagePanel />}
 
+        {activeTab === "agent" && (
+          <section id="agent" className="rounded-2xl max-w-full min-w-0"
+            style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+            <HeclusAgentPanel />
+          </section>
+        )}
+
         {activeTab === "emails" && <EmailsPanel />}
 
         {/* Support section — in-app HelpButton ticket queue, status
@@ -7944,6 +7574,22 @@ export default function AdminPage() {
           </section>
         )}
 
+        {activeTab === "features" && (
+          <section
+            id="features"
+            className="rounded-2xl max-w-full min-w-0"
+            style={{
+              background: "var(--bg-card)",
+              border: "1px solid oklch(0 0 0 / 0.07)",
+              padding: "16px",
+              scrollMarginTop: "80px",
+              boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)",
+            }}
+          >
+            <FeatureRequestsPanel />
+          </section>
+        )}
+
         {/* Memory section — per-stage RSS + timing from the video
             worker's projects.assembly_metrics column. Helps locate
             where assembly memory peaks and which stage takes longest. */}
@@ -7962,8 +7608,6 @@ export default function AdminPage() {
           onSaved={() => mutate()}
         />
       )}
-
-      {launchOpen && <LaunchModal onClose={() => setLaunchOpen(false)} />}
 
       <Dialog
         open={promoteTarget !== null}

@@ -12,6 +12,7 @@ import { CostTipsModal } from "@/components/CostTipsModal";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { isAdminUser } from "@/lib/admin";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { checkChannelInput, channelInputMessage, type ChannelInputProblem } from "@/lib/youtube/channel-input";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { toast } from "sonner";
 import { useProject } from "@/hooks/useProject";
@@ -347,6 +348,9 @@ export default function ChannelPage({ params }: PageProps) {
   // instead of creating a duplicate. Only fires before any expensive
   // pipeline step (transcripts, Claude calls) runs.
   const [existingNiche, setExistingNiche] = useState<{ projectId: string; channelName: string } | null>(null);
+  // Set when Analyze is pressed on something that is not a channel. Holds the
+  // problem rather than a boolean so the modal can name the actual mistake.
+  const [wrongInput, setWrongInput] = useState<ChannelInputProblem | null>(null);
   // Long-video consent gate. When the top-10 average duration exceeds
   // MAX_AVG_DURATION_SECONDS we pause runFullAnalysis on this resolver
   // and surface a modal so the user can accept the degraded analysis
@@ -410,6 +414,18 @@ export default function ChannelPage({ params }: PageProps) {
     if (!isWorking) return;
     progressRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [isWorking]);
+
+  // Every user-initiated Analyze goes through here: a video link is the
+  // commonest mistake at this step, and catching it before the run starts
+  // saves a YouTube call and a generic "channel not found" further down.
+  function attemptAnalysis() {
+    const check = checkChannelInput(channelUrl);
+    if (!check.ok && check.problem) {
+      setWrongInput(check.problem);
+      return;
+    }
+    void runFullAnalysis();
+  }
 
   async function runFullAnalysis() {
     if (!channelUrl.trim()) return;
@@ -983,7 +999,7 @@ export default function ChannelPage({ params }: PageProps) {
                         // channel.
                         if (channelInfo) setChannelInfo(null);
                       }}
-                      onKeyDown={(e) => e.key === "Enter" && !buttonDisabled && runFullAnalysis()}
+                      onKeyDown={(e) => e.key === "Enter" && !buttonDisabled && attemptAnalysis()}
                       className="flex-1 min-w-0 px-4 py-2.5 rounded-xl text-sm outline-none transition-all"
                       style={{
                         background: "var(--bg-progress)",
@@ -996,7 +1012,7 @@ export default function ChannelPage({ params }: PageProps) {
                       onBlur={(e) => { (e.target as HTMLElement).style.borderColor = "var(--bd-8)"; }}
                     />
                     <button
-                      onClick={runFullAnalysis}
+                      onClick={attemptAnalysis}
                       disabled={buttonDisabled}
                       className="shrink-0 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40"
                       style={{
@@ -1239,6 +1255,46 @@ export default function ChannelPage({ params }: PageProps) {
           }}
         />
       )}
+
+      {/* Wrong thing pasted into the channel field. Dark on purpose, and every
+          colour is literal: DialogContent is bg-white/text-zinc-900 by default,
+          and the app's --c-* tokens are light greys, so using them here painted
+          light text onto a white sheet and the hint was invisible. */}
+      <Dialog
+        open={wrongInput !== null}
+        onOpenChange={(open) => { if (!open) setWrongInput(null); }}
+      >
+        <DialogContent
+          className="sm:max-w-sm"
+          showCloseButton={false}
+          style={{ background: "oklch(0.19 0.012 285)", color: "oklch(0.95 0 0)", boxShadow: "0 24px 60px oklch(0 0 0 / 0.55)" }}
+        >
+          {wrongInput && (() => {
+            const m = channelInputMessage(wrongInput);
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle style={{ color: "oklch(0.98 0 0)" }}>{m.title}</DialogTitle>
+                  <DialogDescription style={{ color: "oklch(0.76 0 0)" }}>{m.body}</DialogDescription>
+                </DialogHeader>
+                <p className="text-xs leading-relaxed rounded-lg px-3 py-2"
+                  style={{ background: "oklch(1 0 0 / 0.06)", border: "1px solid oklch(1 0 0 / 0.12)", color: "oklch(0.86 0 0)" }}>
+                  {m.hint}
+                </p>
+                <DialogFooter style={{ background: "oklch(1 0 0 / 0.03)", borderTopColor: "oklch(1 0 0 / 0.1)" }}>
+                  <button
+                    onClick={() => setWrongInput(null)}
+                    className="flex-1 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 cursor-pointer"
+                    style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+                  >
+                    Let me fix it
+                  </button>
+                </DialogFooter>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={existingNiche !== null}

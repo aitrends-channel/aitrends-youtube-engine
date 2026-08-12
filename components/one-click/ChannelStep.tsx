@@ -13,6 +13,7 @@ import {
   needsLongVideoConsent,
   formatSecondsAsHHMMSS,
 } from "@/lib/youtube/duration";
+import { checkChannelInput, channelInputMessage, type ChannelInputProblem } from "@/lib/youtube/channel-input";
 
 export type ContentType = "long" | "shorts" | "both";
 
@@ -36,6 +37,9 @@ export function useChannelUrl(contentType: ContentType) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [duplicate, setDuplicate] = useState<{ id: string; channelName: string } | null>(null);
+  // Not a channel. Same hard-stop treatment as a duplicate niche: 1Click runs
+  // unattended once started, so a wrong channel is worth stopping dead here.
+  const [wrongInput, setWrongInput] = useState<ChannelInputProblem | null>(null);
   // Resolver pattern: resolve() parks on this promise while the user answers,
   // the same way the wizard's channel step handles the gate.
   const [consent, setConsent] = useState<{ avgSeconds: number; resolve: (ok: boolean) => void } | null>(null);
@@ -46,6 +50,14 @@ export function useChannelUrl(contentType: ContentType) {
   async function resolve(): Promise<ChannelPlan | null> {
     const url = channelUrl.trim();
     if (!url) return null;
+    // Checked before the request: the server refuses these too, but a video
+    // link is common enough that it should not cost a round trip to find out.
+    const shape = checkChannelInput(url);
+    if (!shape.ok && shape.problem) {
+      setWrongInput(shape.problem);
+      return null;
+    }
+    setWrongInput(null);
     setBusy(true);
     setError(null);
     try {
@@ -73,7 +85,7 @@ export function useChannelUrl(contentType: ContentType) {
       <input
         type="url"
         value={channelUrl}
-        onChange={(e) => { setChannelUrl(e.target.value); setError(null); setDuplicate(null); }}
+        onChange={(e) => { setChannelUrl(e.target.value); setError(null); setDuplicate(null); setWrongInput(null); }}
         placeholder="https://youtube.com/@channel"
         autoFocus
         className="w-full px-3.5 py-2.5 rounded-xl text-sm outline-none transition-all"
@@ -90,6 +102,19 @@ export function useChannelUrl(contentType: ContentType) {
           {error}
         </p>
       )}
+
+      {/* Wrong thing pasted in — a hard stop too, and the commonest one. */}
+      {wrongInput && (() => {
+        const m = channelInputMessage(wrongInput);
+        return (
+          <div className="rounded-xl px-4 py-3 space-y-1.5"
+            style={{ background: "oklch(0.6 0.22 25 / 0.1)", border: "1px solid oklch(0.6 0.22 25 / 0.25)" }}>
+            <p className="text-sm font-semibold" style={{ color: "oklch(0.7 0.2 25)" }}>{m.title}</p>
+            <p className="text-xs leading-relaxed" style={{ color: "var(--c-70)" }}>{m.body}</p>
+            <p className="text-xs leading-relaxed" style={{ color: "var(--c-70)" }}>{m.hint}</p>
+          </div>
+        );
+      })()}
 
       {/* Duplicate niche — a hard stop, not a warning. */}
       {duplicate && (

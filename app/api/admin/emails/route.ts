@@ -30,7 +30,7 @@ export async function GET(req: Request) {
 
   let query = supabase
     .from("emails")
-    .select("id, direction, message_id, from_address, to_addresses, subject, body_text, received_at, sent_at, is_read, in_reply_to, thread_root_id");
+    .select("id, direction, message_id, from_address, to_addresses, subject, body_text, received_at, sent_at, is_read, in_reply_to, thread_root_id, is_replied, replied_at, auto_replied_at, auto_reply_draft");
 
   if (direction === "inbound" || direction === "outbound") {
     query = query.eq("direction", direction);

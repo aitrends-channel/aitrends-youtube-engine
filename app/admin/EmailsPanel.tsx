@@ -34,6 +34,9 @@ interface EmailRow {
   received_at: string | null;
   sent_at: string | null;
   is_read: boolean;
+  is_replied?: boolean;
+  auto_replied_at?: string | null;
+  auto_reply_draft?: string | null;
   in_reply_to: string | null;
   thread_root_id: string | null;
 }
@@ -45,6 +48,22 @@ interface EmailFull extends Omit<EmailRow, "snippet"> {
 }
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+// Same four states and the same two colours as the ticket queue: purple is
+// always the agent, green is always someone answering. Only inbound mail has
+// this state at all, since a sent message is its own answer.
+const AGENT_TONE = { bg: "oklch(0.72 0.25 285 / 0.12)", fg: "oklch(0.5 0.2 285)" };
+const REPLIED_TONE = { bg: "oklch(0.55 0.15 145 / 0.12)", fg: "oklch(0.45 0.15 145)" };
+
+function replyBadge(e: EmailRow): { label: string; bg: string; fg: string } | null {
+  if (e.direction !== "inbound") return null;
+  // Checked before is_replied, which a send also sets: who answered matters
+  // more here than that someone did.
+  if (e.auto_replied_at) return { label: "Agent replied", ...AGENT_TONE };
+  if (e.is_replied) return { label: "Replied", ...REPLIED_TONE };
+  if (e.auto_reply_draft) return { label: "Agent draft", ...AGENT_TONE };
+  return { label: "Awaiting reply", bg: "oklch(0 0 0 / 0.05)", fg: "var(--c-45)" };
+}
 
 function timeAgoShort(date: string | null): string {
   if (!date) return "—";
@@ -177,6 +196,7 @@ export default function EmailsPanel() {
           ) : emails.map((e) => {
             const isSelected = e.id === selectedId;
             const unread = e.direction === "inbound" && !e.is_read;
+            const reply = replyBadge(e);
             return (
               <button key={e.id}
                 onClick={() => { setSelectedId(e.id); setComposing(false); void mutateList(); }}
@@ -201,6 +221,12 @@ export default function EmailsPanel() {
                   <p className="text-[11px] truncate" style={{ color: "var(--c-45)" }}>
                     {e.snippet}
                   </p>
+                )}
+                {reply && (
+                  <span className="inline-block mt-1.5 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider"
+                    style={{ background: reply.bg, color: reply.fg }}>
+                    {reply.label}
+                  </span>
                 )}
               </button>
             );
