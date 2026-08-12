@@ -32,3 +32,15 @@ export const ONE_CLICK_HIDDEN = true;
 // and that function missing, step 2 pays for its Claude calls and then fails at
 // the write.
 export const PROMPTS_THREE_STEP = true;
+
+// In-app support chat: the help-bubble chat box and the route behind it.
+//
+// Env-driven rather than a constant so production can hide it while staging
+// shows it, and so a promotion from staging cannot quietly turn it on. Absent
+// variable means hidden, which is the safe direction.
+//
+// Hiding it also restores the ticket form for signed-in users. The form was
+// narrowed to anonymous visitors on the reasoning that a signed-in user has
+// chat instead, so hiding the chat without that would leave a signed-in
+// customer no way to reach support at all.
+export const SUPPORT_CHAT_HIDDEN = process.env.NEXT_PUBLIC_SUPPORT_CHAT_ENABLED !== "true";
