@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
+import { GENAIPRO_QUEUED_STATUS } from "@/lib/genaipro/client";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
       .from("project_beats")
       .update({ video_status: "failed", video_error: reason, video_job_id: null })
       .eq("project_id", projectId)
-      .in("video_status", ["queued", "submitting", "rendering"])
+      .in("video_status", [GENAIPRO_QUEUED_STATUS, "queued", "submitting", "rendering"])
       .select("beat_number");
 
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

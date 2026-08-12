@@ -28,6 +28,20 @@ const BASE = "https://genaipro.io/api";
 export const GENAIPRO_VIDEO_MODEL_ID = "genaipro-veo-2";
 export const GENAIPRO_MODEL_PREFIX = "genaipro";
 
+/**
+ * Where a GenAIPro beat waits for the lane to pick it up.
+ *
+ * Not "queued", which is what the separate video-worker claims, and not
+ * "submitting" or "rendering" either: that worker's stale-recovery resets
+ * both of those back to "queued" when they carry no job id, which would hand
+ * a GenAIPro beat straight to KIE two minutes after it was queued.
+ *
+ * A status outside all three means correctness does not depend on that worker
+ * being redeployed. The filter added there is now defence in depth rather than
+ * the thing holding this together.
+ */
+export const GENAIPRO_QUEUED_STATUS = "gp_queued";
+
 /** Their aspect-ratio enum has exactly two values, so every Heclus ratio has to
  *  land on one of them. Anything taller than it is wide is portrait. */
 export type GenAIProAspect = "VIDEO_ASPECT_RATIO_LANDSCAPE" | "VIDEO_ASPECT_RATIO_PORTRAIT";

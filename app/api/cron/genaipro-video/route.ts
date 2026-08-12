@@ -9,7 +9,7 @@ import {
 } from "@/lib/credits";
 import {
   submitFramesToVideo, getTaskStatus, GENAIPRO_RATE_LIMIT_PER_MINUTE, GenAIProError,
-  GENAIPRO_VIDEO_MODEL_ID, GENAIPRO_MODEL_PREFIX,
+  GENAIPRO_VIDEO_MODEL_ID, GENAIPRO_MODEL_PREFIX, GENAIPRO_QUEUED_STATUS,
 } from "@/lib/genaipro/client";
 
 export const maxDuration = 300;
@@ -70,7 +70,7 @@ async function submitQueued(): Promise<{ submitted: number; refused: number; fai
   const { data, error } = await supabase
     .from("project_beats")
     .select("project_id, beat_number, video_prompt, image_url, video_aspect_ratio, projects!inner(user_id)")
-    .eq("video_status", "queued")
+    .eq("video_status", GENAIPRO_QUEUED_STATUS)
     .ilike("video_model_id", `${GENAIPRO_MODEL_PREFIX}%`)
     .limit(SUBMIT_MAX);
   if (error) {
@@ -84,13 +84,15 @@ async function submitQueued(): Promise<{ submitted: number; refused: number; fai
     const userId = userIdOf(row);
     if (!userId) continue;
 
-    // Conditional claim: whoever flips "queued" to "submitting" owns the beat.
+    // Conditional claim: whoever flips the parking status to "submitting" owns
+    // the beat. From here on the status vocabulary is the shared one, so the
+    // progress UI, cancel and merge all behave as they do for KIE clips.
     const { data: claimed } = await supabase
       .from("project_beats")
       .update({ video_status: "submitting", video_started_at: new Date().toISOString() })
       .eq("project_id", row.project_id)
       .eq("beat_number", row.beat_number)
-      .eq("video_status", "queued")
+      .eq("video_status", GENAIPRO_QUEUED_STATUS)
       .select("beat_number")
       .maybeSingle();
     if (!claimed) continue;
