@@ -158,9 +158,18 @@ export function ModelPicker(props: ModelPickerProps) {
   // Sort the model list according to the active tab. Fastest/Cheapest
   // are ledger-driven and hide models without observed data so the tab
   // only shows ranked entries. "all" preserves the upstream order.
+  // Free-tier models are marked by tag rather than by id, so the picker needs
+  // no knowledge of which provider is behind them and a second free model
+  // later needs no change here. Video has one (GenAIPro, on Heclus's own
+  // account); image and voiceover have none yet, which is why the Free tab
+  // still shows its teaser for those.
+  const freeModels = (models ?? []).filter((m) => (m.tags ?? []).some((t) => t.toLowerCase() === "free"));
+  const hasFree = freeModels.length > 0;
+
   const list: KieModel[] | null = (() => {
     if (!models) return null;
     const base = models.slice();
+    if (tab === "free") return freeModels.filter(matchesSearch);
     if (tab === "fastest") {
       return base
         .filter((m) => typeof m.avgSpeedMs === "number" && m.avgSpeedMs > 0 && matchesSearch(m))
@@ -175,7 +184,9 @@ export function ModelPicker(props: ModelPickerProps) {
   })();
 
   const empty = models && (
-    tab === "fastest"
+    tab === "free"
+      ? !hasFree
+      : tab === "fastest"
       ? !models.some((m) => typeof m.avgSpeedMs === "number" && m.avgSpeedMs > 0)
       : tab === "cheapest"
         ? !models.some((m) => m.costPerUnit !== undefined && m.costPerUnit !== null)
@@ -217,7 +228,7 @@ export function ModelPicker(props: ModelPickerProps) {
               boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.35)",
             } : { background: "transparent", color: "var(--c-55)" }}
           >
-            {t === "free" && FREE_TIER_COMING_SOON ? (
+            {t === "free" && FREE_TIER_COMING_SOON && !hasFree ? (
               <span className="flex flex-col items-center leading-tight">
                 <span>😄 Free</span>
                 <span className="text-[9px] font-semibold normal-case">coming soon</span>
@@ -228,7 +239,7 @@ export function ModelPicker(props: ModelPickerProps) {
       </div>
       )}
 
-      {tab === "free" && !props.hideCategoryTabs ? (
+      {tab === "free" && !hasFree && !props.hideCategoryTabs ? (
         // Free tier is a teaser for now — the BYO implementations behind
         // it were removed.
         <div className="rounded-xl px-4 py-8 text-center"

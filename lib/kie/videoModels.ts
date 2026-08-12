@@ -23,7 +23,8 @@ export const VIDEO_MODELS: KieModel[] = [
   // credit wallet, submitted by /api/cron/genaipro-video rather than by the
   // video-worker. It lives in this list because this list is what the picker
   // renders; the models route only includes it for plans with an allowance.
-  m(GENAIPRO_VIDEO_MODEL_ID,            "Veo (free credits)", ["Image-to-Video", "Google", "Included"]),
+  // The "Free" tag is what puts it under the picker's Free tab.
+  m(GENAIPRO_VIDEO_MODEL_ID,            "Veo (free credits)", ["Free", "Image-to-Video", "Google"]),
 ];
 
 export interface DurationOption {
