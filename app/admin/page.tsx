@@ -481,7 +481,7 @@ interface ProductApiKey {
   created_at: string;
 }
 
-const SERVICES = ["youtube_data_api_key", "supadata_api_key", "heclus_kie_api_key", "anthropic_api_key"] as const;
+const SERVICES = ["youtube_data_api_key", "supadata_api_key", "heclus_kie_api_key", "anthropic_api_key", "genaipro_api_key"] as const;
 type Service = typeof SERVICES[number];
 
 const SERVICE_LABELS: Record<Service, string> = {
@@ -489,6 +489,7 @@ const SERVICE_LABELS: Record<Service, string> = {
   supadata_api_key: "Supadata API Key",
   heclus_kie_api_key: "Heclus KIE API Key",
   anthropic_api_key: "Anthropic API Key (direct)",
+  genaipro_api_key: "GenAIPro API Key",
 };
 
 interface ActivityPoint {

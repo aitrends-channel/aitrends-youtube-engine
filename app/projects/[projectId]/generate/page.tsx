@@ -24,6 +24,7 @@ import { friendlyError, isModelTerminalError } from "@/lib/errors/friendly";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
 import { getModelConfig } from "@/lib/kie/imageModels";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
+import { VideoCreditsPanel } from "@/components/VideoCreditsPanel";
 import { removeLongPauses, encodeMp3 } from "@/lib/audio/silenceRemover";
 
 const fetcher = (url: string) =>
@@ -2411,6 +2412,11 @@ export default function GeneratePage({ params }: PageProps) {
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon={<Video size={18} />} title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
+              {/* Renders nothing for a plan with no allowance and no bought
+                  credit, so Founder never sees it. Sits above the picker
+                  because it is what the free model option depends on, and it
+                  is where Dodo returns after a top-up. */}
+              <div className="mb-3"><VideoCreditsPanel /></div>
               <ModelPicker
                 type="video"
                 models={videoModels}

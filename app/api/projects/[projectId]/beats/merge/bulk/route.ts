@@ -6,6 +6,7 @@ import { planBulkMerge, findStubs, type MergeDirection } from "@/lib/text/mergeP
 import { decideMergeSides } from "@/lib/text/autoMergeSide";
 import { deleteObject, r2KeyFromUrl } from "@/lib/supabase/storage";
 import type { User } from "@supabase/supabase-js";
+import { GENAIPRO_QUEUED_STATUS } from "@/lib/genaipro/client";
 
 export const maxDuration = 120;
 
@@ -74,7 +75,7 @@ export async function POST(req: Request, { params }: { params: { projectId: stri
   // renumber anywhere, so any outstanding job is a hazard. See that route for
   // why a busy status alone doesn't count.
   const IMAGE_BUSY = new Set(["queued", "generating"]);
-  const VIDEO_BUSY = new Set(["queued", "submitting", "rendering"]);
+  const VIDEO_BUSY = new Set([GENAIPRO_QUEUED_STATUS, "queued", "submitting", "rendering"]);
   const VOICE_BUSY = new Set(["queued", "generating"]);
   const busy = beats.find((b) =>
     (IMAGE_BUSY.has(b.image_status ?? "") && !b.image_url && !!b.image_task_id) ||

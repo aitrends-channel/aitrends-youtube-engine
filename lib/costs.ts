@@ -43,6 +43,8 @@ export type CostUnitKind =
   | "claude_tokens_cache_read"
   | "claude_tokens_cache_creation"
   | "kie_credits"
+  // One clip. Heclus buys these in $6/300 packs, so a row here is $0.02.
+  | "genaipro_clips"
   | "elevenlabs_chars"
   | "supadata_transcripts";
 
@@ -50,7 +52,7 @@ export interface CostEntry {
   projectId: string;
   userId: string;
   step: CostStep;
-  provider: "anthropic" | "kie" | "elevenlabs" | "supadata";
+  provider: "anthropic" | "kie" | "genaipro" | "elevenlabs" | "supadata";
   model?: string | null;
   units: number;
   unitKind: CostUnitKind;

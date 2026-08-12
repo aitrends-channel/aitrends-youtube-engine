@@ -4,6 +4,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
+import { GENAIPRO_QUEUED_STATUS, GENAIPRO_MODEL_PREFIX } from "@/lib/genaipro/client";
 
 export const maxDuration = 30;
 
@@ -29,6 +30,11 @@ export async function POST(req: Request) {
     if (!projectId || !beats?.length || !modelId) {
       return NextResponse.json({ error: "projectId, beats, and modelId are required" }, { status: 400 });
     }
+
+    // GenAIPro clips are parked in a status the shared video-worker never
+    // claims or recovers, so they wait for this app's own lane instead of
+    // being sent to KIE two minutes later.
+    const isGenAIPro = modelId.toLowerCase().startsWith(GENAIPRO_MODEL_PREFIX);
 
     // Store job config on the project so the worker can read it.
     // video_resolution is always written — NULL when the client omitted
@@ -93,7 +99,7 @@ export async function POST(req: Request) {
       const { data, error } = await supabase
         .from("project_beats")
         .update({
-          video_status: "queued",
+          video_status: isGenAIPro ? GENAIPRO_QUEUED_STATUS : "queued",
           video_job_id: null,
           video_error: null,
           // Snapshot the config on the beat itself so a later settings

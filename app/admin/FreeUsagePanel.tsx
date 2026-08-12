@@ -4,6 +4,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import { Gift, Search, X } from "lucide-react";
 import type { FreeUsageResult, FreeUsageUserRow } from "@/app/api/admin/free-usage/route";
+import { GenAIProCard } from "@/components/admin/GenAIProCard";
 
 // Perks Heclus funds: what they have consumed overall, and which accounts are
 // consuming them. This spend never reaches project_costs, which records what
@@ -239,6 +240,11 @@ export default function FreeUsagePanel() {
 
   return (
     <div className="space-y-4">
+      {/* Video credits are the newest perk Heclus funds, and the only one whose
+          upstream account can run dry mid-render, so its health sits at the top
+          of the tab that already covers everything we pay for. */}
+      <GenAIProCard />
+
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wider mb-1 flex items-center gap-1.5" style={{ color: "oklch(0.50 0 0)" }}>

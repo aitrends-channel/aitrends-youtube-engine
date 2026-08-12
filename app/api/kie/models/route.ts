@@ -8,6 +8,8 @@ import { supabase } from "@/lib/supabase/client";
 import { getMinCostPerSecByModel, getMinKieCreditsByModel, getAvgElapsedByModel } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 import type { KieModel } from "@/lib/types";
+import { monthlyGrantFor } from "@/lib/credits";
+import { GENAIPRO_VIDEO_MODEL_ID } from "@/lib/genaipro/client";
 
 /** Round a fractional credit value to 2 decimals for display.
  *  KIE returns NUMERIC values (e.g. 9.6 cr per 6s = 1.6 cr/s). */
@@ -60,6 +62,21 @@ function promote(models: KieModel[], defaultId: string | null): KieModel[] {
   return out;
 }
 
+/**
+ * GenAIPro runs on Heclus's account, so it is only offered to plans that have
+ * an allowance. Founder has none, which is how that plan never sees the option
+ * at all rather than seeing one it cannot use.
+ *
+ * Filtering here rather than in the picker means the answer is the same for
+ * every surface that asks for the model list, and a plan without an allowance
+ * cannot select it by crafting a request either.
+ */
+async function gateHeclusPaidVideo(models: KieModel[], user: User): Promise<KieModel[]> {
+  const allowance = await monthlyGrantFor(user);
+  if (allowance > 0) return models;
+  return models.filter((m) => m.id !== GENAIPRO_VIDEO_MODEL_ID);
+}
+
 export async function GET(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
@@ -88,7 +105,8 @@ export async function GET(req: Request) {
         getMinCostPerSecByModel("video_gen"),
         getAvgElapsedByModel("video_gen"),
       ]);
-      return NextResponse.json(promote(withAvgSpeed(withMinCredits(models, mins), speeds), defaults.video));
+      const gated = await gateHeclusPaidVideo(models, user);
+      return NextResponse.json(promote(withAvgSpeed(withMinCredits(gated, mins), speeds), defaults.video));
     }
 
     // Return all
@@ -105,7 +123,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       tts,
       images: promote(withAvgSpeed(withMinCredits(images, imageMins), imageSpeeds), defaults.image),
-      videos: promote(withAvgSpeed(withMinCredits(videos, videoMins), videoSpeeds), defaults.video),
+      videos: promote(withAvgSpeed(withMinCredits(await gateHeclusPaidVideo(videos, user), videoMins), videoSpeeds), defaults.video),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch models";

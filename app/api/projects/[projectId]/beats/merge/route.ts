@@ -6,6 +6,7 @@ import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
 import { joinSegments } from "@/lib/text/joinSegments";
 import { deleteObject, r2KeyFromUrl } from "@/lib/supabase/storage";
 import type { User } from "@supabase/supabase-js";
+import { GENAIPRO_QUEUED_STATUS } from "@/lib/genaipro/client";
 
 // Fold a beat into its neighbour. The script splitter sometimes leaves a
 // beat holding one or two words, which doesn't deserve its own image and
@@ -99,7 +100,7 @@ export async function POST(req: Request, { params }: { params: { projectId: stri
   // submitting leaves "generating" with no task id and nothing ever coming
   // back. Either one would block merging forever.
   const IMAGE_BUSY = new Set(["queued", "generating"]);
-  const VIDEO_BUSY = new Set(["queued", "submitting", "rendering"]);
+  const VIDEO_BUSY = new Set([GENAIPRO_QUEUED_STATUS, "queued", "submitting", "rendering"]);
   const VOICE_BUSY = new Set(["queued", "generating"]);
   const busy = beats.find((b) => b.beat_number >= absorb && (
     (IMAGE_BUSY.has(b.image_status ?? "") && !b.image_url && !!b.image_task_id) ||
