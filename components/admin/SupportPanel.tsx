@@ -7,6 +7,7 @@ import { ChevronDown, ChevronRight, Inbox, ArrowDownLeft, ArrowUpRight, Mail } f
 import { Spinner } from "@/components/ui/spinner";
 import { BulkMailPanel } from "@/components/admin/BulkMailPanel";
 import { DiagnoseButton } from "@/components/admin/DiagnoseButton";
+import { CreateTodoButton } from "@/components/admin/CreateTodoButton";
 
 interface ThreadEmail {
   id: string;
@@ -478,7 +479,18 @@ function TicketRow({
               before writing them, and above the reply for the same reason. */}
           <div>
             <label className="text-xs uppercase tracking-wider block mb-1.5" style={{ color: "var(--c-40)" }}>Probe</label>
-            <DiagnoseButton ticketId={ticket.id} onSent={() => { void mutateThread(); onUpdated(); }} />
+            <DiagnoseButton
+              ticketId={ticket.id}
+              onSent={() => { void mutateThread(); onUpdated(); }}
+              actions={
+                <CreateTodoButton
+                  ticketRef={ticketRef}
+                  subject={ticket.subject}
+                  message={ticket.message}
+                  email={ticket.email}
+                />
+              }
+            />
           </div>
 
           <div>

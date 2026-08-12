@@ -21,7 +21,7 @@ const CONFIDENCE_TONE: Record<Diagnosis["confidence"], { bg: string; fg: string;
   unknown:   { bg: "oklch(0 0 0 / 0.05)",          fg: "var(--c-50)",          border: "oklch(0 0 0 / 0.1)",         label: "Not sure" },
 };
 
-export function DiagnoseButton({ ticketId, emailId, reply, onSent }: {
+export function DiagnoseButton({ ticketId, emailId, reply, onSent, actions }: {
   ticketId?: string;
   emailId?: string;
   /** Where a reply goes when probing an email. Tickets don't need it — the
@@ -29,6 +29,9 @@ export function DiagnoseButton({ ticketId, emailId, reply, onSent }: {
   reply?: { to: string; subject: string | null; messageId: string | null };
   /** Refresh the caller's thread after a send, so the reply appears in it. */
   onSent?: () => void;
+  /** Rendered on the same row as Probe. Anything a ticket can be turned into
+   *  from here belongs beside it rather than in a row of its own. */
+  actions?: React.ReactNode;
 }) {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<DiagnoseResponse | null>(null);
@@ -117,7 +120,7 @@ export function DiagnoseButton({ ticketId, emailId, reply, onSent }: {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <button
           type="button"
           onClick={run}
@@ -138,6 +141,7 @@ export function DiagnoseButton({ ticketId, emailId, reply, onSent }: {
             Close
           </button>
         )}
+        {actions}
       </div>
 
       {result && tone && (() => {
