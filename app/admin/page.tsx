@@ -22,6 +22,7 @@ import { TtsCostLens } from "@/components/admin/TtsCostLens";
 import { SupportPanel } from "@/components/admin/SupportPanel";
 import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
 import { FeatureRequestsPanel } from "@/components/admin/FeatureRequestsPanel";
+import { paidModelsOnly } from "@/lib/model-tier";
 import { MemoryPanel } from "@/components/admin/MemoryPanel";
 import { QuotasPanel } from "@/components/admin/quotas";
 import { HeclusAgentPanel } from "@/components/admin/HeclusAgentPanel";
@@ -1757,7 +1758,12 @@ function ModelDefaultsPanel() {
     default_video_model: string | null;
   }>("/api/admin/default-models", fetcher, { revalidateOnFocus: false });
   const { data: imageModels } = useSWR<{ id: string; name: string }[]>("/api/kie/models?type=image", fetcher);
-  const { data: videoModels } = useSWR<{ id: string; name: string }[]>("/api/kie/models?type=video", fetcher);
+  // Tags come through so the free-tier model can be excluded: making a
+  // Heclus-funded model the platform default would have every eligible user
+  // spending free credits by default, which is a cost decision rather than a
+  // default. It stays selectable per project from the picker's Free tab.
+  const { data: rawVideoModels } = useSWR<{ id: string; name: string; tags?: string[] }[]>("/api/kie/models?type=video", fetcher);
+  const videoModels = rawVideoModels ? paidModelsOnly(rawVideoModels) : rawVideoModels;
 
   const [imageSel, setImageSel] = useState<string>("");
   const [videoSel, setVideoSel] = useState<string>("");

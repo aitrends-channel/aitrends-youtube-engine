@@ -25,6 +25,7 @@ import type { ApiStatusResult } from "@/app/api/api-status/route";
 import { getModelConfig } from "@/lib/kie/imageModels";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
 import { VideoCreditsPanel } from "@/components/VideoCreditsPanel";
+import { paidModelsOnly } from "@/lib/model-tier";
 import { removeLongPauses, encodeMp3 } from "@/lib/audio/silenceRemover";
 
 const fetcher = (url: string) =>
@@ -3360,7 +3361,8 @@ export default function GeneratePage({ params }: PageProps) {
                     className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs p-2.5 outline-none focus:border-zinc-400 disabled:opacity-40"
                   >
                     <option value="" disabled>Select a model…</option>
-                    {(previewBeat.type === "image" ? imageModels : videoModels)?.map((m) => (
+                    {/* Free models are selectable only from the picker's Free tab. */}
+                    {paidModelsOnly(previewBeat.type === "image" ? imageModels : videoModels).map((m) => (
                       <option key={m.id} value={m.id}>{m.name}</option>
                     ))}
                   </select>

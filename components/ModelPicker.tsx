@@ -6,6 +6,7 @@ import type { KieModel } from "@/lib/types";
 import { getModelConfig } from "@/lib/kie/imageModels";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
 import { FREE_TIER_COMING_SOON } from "@/lib/free-tier-flag";
+import { isFreeTierModel, paidModelsOnly } from "@/lib/model-tier";
 
 // Shared model + variant selector used wherever the user picks an
 // image or video model. Lives in one place so every step in the
@@ -164,7 +165,7 @@ export function ModelPicker(props: ModelPickerProps) {
   // later needs no change here. Video has one (GenAIPro, on Heclus's own
   // account); image and voiceover have none yet, which is why the Free tab
   // still shows its teaser for those.
-  const freeModels = (models ?? []).filter((m) => (m.tags ?? []).some((t) => t.toLowerCase() === "free"));
+  const freeModels = (models ?? []).filter(isFreeTierModel);
   const hasFree = freeModels.length > 0;
 
   // A free model is only listed under the Free tab, so a user coming back to a
@@ -184,7 +185,7 @@ export function ModelPicker(props: ModelPickerProps) {
     if (tab === "free") return freeModels.filter(matchesSearch);
     // Every other tab excludes them: the Free tab is their home, and listing
     // them twice makes the free option look like just another paid model.
-    const paid = base.filter((m) => !(m.tags ?? []).some((t) => t.toLowerCase() === "free"));
+    const paid = paidModelsOnly(base);
     if (tab === "fastest") {
       return paid
         .filter((m) => typeof m.avgSpeedMs === "number" && m.avgSpeedMs > 0 && matchesSearch(m))
