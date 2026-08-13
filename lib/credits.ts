@@ -17,6 +17,38 @@ import type { User } from "@supabase/supabase-js";
  *  provider's price, so a top-up is a pass-through rather than a margin line. */
 export const CREDIT_PACK = { credits: 300, priceUsd: 6 } as const;
 
+/**
+ * Restrict the whole credits feature to admins.
+ *
+ * On while GenAIPro is being brought up: the upstream account holds no package,
+ * the stored Dodo keys cannot read payments, and a customer who found the
+ * surface would meet a balance they cannot spend and a top-up that cannot
+ * confirm. Better absent than broken.
+ *
+ * Deliberately enforced in monthlyGrantFor rather than in each surface, so one
+ * flag hides all of them at once: the Balance section on the account page, the
+ * balance panel on the Generate step, the free model in the picker, and the
+ * top-up button. A non-admin's allowance resolves to zero, and zero allowance
+ * with no bought credit is what every one of those already treats as "no
+ * wallet".
+ */
+export const VIDEO_CREDITS_ADMIN_ONLY = true;
+
+/**
+ * TESTING SHIM — grant one full pack for any confirmed payment, whatever was
+ * paid and whatever quantity was bought.
+ *
+ * On while the flow is being tested with small real charges: a $1 payment still
+ * yields 300 credits, which is $6 of GenAIPro capacity. That is a deliberate
+ * loss for the sake of exercising the path end to end.
+ *
+ * Turn this off before real customers can buy: with it on, anyone who finds the
+ * checkout link and edits the amount gets a full pack for whatever they pay.
+ * The correct behaviour is already implemented behind it — purchasedQuantity()
+ * reads the cart — so this is a one-line switch, not a rewrite.
+ */
+export const TOPUP_GRANTS_FLAT_PACK = true;
+
 /** Provider tag written onto ledger and reservation rows. */
 export const CREDIT_PROVIDER_GENAIPRO = "genaipro";
 
@@ -44,6 +76,7 @@ const EMPTY: CreditBalance = { grant: 0, paid: 0, total: 0, reserved: 0, monthly
 /** The monthly allowance for a user's plan. 0 for any plan the admin has not
  *  allocated, which is how Founder is excluded. */
 export async function monthlyGrantFor(user: User): Promise<number> {
+  if (VIDEO_CREDITS_ADMIN_ONLY && !isAdminUser(user)) return 0;
   const config = await getQuotaConfig();
   return capFromConfig(config, "genaipro_video_credits", planSlugOf(user), isAdminUser(user));
 }

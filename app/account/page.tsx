@@ -5,9 +5,10 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Eye, EyeOff, HardDrive, KeyRound, LogOut, Save, Star } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, HardDrive, KeyRound, LogOut, Save, Sparkles, Star } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { startTopUp } from "@/lib/credits-checkout";
 
 const GB = 1024 ** 3;
 
@@ -93,6 +94,136 @@ function StorageCard() {
           {" "}Measured {measuredAgo(measuredAt)}, refreshed every few hours.
         </p>
       </div>
+    </div>
+  );
+}
+
+interface CreditsData {
+  grant: number; paid: number; total: number; reserved: number;
+  monthlyGrant: number; eligible: boolean;
+  setupHint?: string | null;
+  pack: { credits: number; priceUsd: number };
+  checkoutUrl: string | null;
+  ledger: { id: string; kind: string; credits: number; note: string | null; created_at: string }[];
+}
+
+/** Video credits. Mirrors StorageCard's shape because it answers the same kind
+ *  of question, and like it, renders nothing when there is nothing true to say:
+ *  a plan with no allowance and no bought credit has no wallet, which is how
+ *  Founder never sees this. `eligible` is decided server-side. */
+function WalletCard({ data }: { data: CreditsData | null }) {
+  if (!data?.eligible) return null;
+
+  const { grant, paid, total, reserved, monthlyGrant, pack, checkoutUrl, ledger, setupHint } = data;
+  const used = Math.max(monthlyGrant - grant, 0);
+  const pct = monthlyGrant > 0 ? Math.min(used / monthlyGrant, 1) : 0;
+  const empty = total === 0;
+  const barColor = empty
+    ? "oklch(0.6 0.19 25)"
+    : pct >= 0.9
+      ? "oklch(0.72 0.17 75)"
+      : "oklch(0.72 0.25 285)";
+
+  // Ledger rows in the customer's terms. The stored note is written for
+  // support, so the kind decides the wording here.
+  const label = (kind: string, note: string | null) => {
+    switch (kind) {
+      case "monthly_grant": return "Monthly free credits";
+      case "grant_expiry":  return "Unused free credits expired";
+      case "topup":         return "Credits purchased";
+      case "debit":         return note ? `Video clip (${note})` : "Video clip";
+      case "refund":        return "Refunded — clip did not render";
+      default:              return "Adjustment";
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+          <Sparkles size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Video credits</h2>
+          <p className="text-xs" style={{ color: "var(--c-45)" }}>
+            One credit generates one video clip. Free credits refresh every month; purchased credits never expire.
+          </p>
+        </div>
+      </div>
+
+      <div className="p-5 rounded-2xl space-y-3"
+        style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+        <div className="flex items-end justify-between gap-3 flex-wrap">
+          <p className="leading-none">
+            <span className="text-2xl font-bold tabular-nums" style={{ color: "var(--c-90)" }}>
+              {total.toLocaleString()}
+            </span>
+            <span className="text-xs ml-1.5" style={{ color: "var(--c-50)" }}>
+              credits left{reserved > 0 ? ` · ${reserved} in use right now` : ""}
+            </span>
+          </p>
+          {checkoutUrl && (
+            <a href={checkoutUrl}
+              onClick={(e) => {
+              // The redirect_url has to be built here, not in the JSX: window is
+              // not available while a client component is prerendered on the
+              // server. Without it Dodo keeps the customer on its own receipt.
+              e.preventDefault();
+              startTopUp(checkoutUrl);
+            }}
+              className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:opacity-90"
+              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}>
+              Top up {pack.credits} for ${pack.priceUsd}
+            </a>
+          )}
+        </div>
+
+        {monthlyGrant > 0 && (
+          <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(0 0 0 / 0.18)" }}>
+            <div className="h-full rounded-full transition-all"
+              style={{ width: `${Math.max(pct * 100, 1.5)}%`, background: barColor }} />
+          </div>
+        )}
+
+        <p className="text-[11px] leading-relaxed" style={{ color: empty ? "oklch(0.68 0.19 25)" : "var(--c-42)" }}>
+          {monthlyGrant > 0
+            ? `${grant.toLocaleString()} of this month's ${monthlyGrant.toLocaleString()} free credits left`
+            : "No monthly credits on your plan"}
+          {paid > 0 && ` · ${paid.toLocaleString()} purchased`}
+          {empty && " — top up to keep generating, or wait for next month's free credits."}
+        </p>
+      </div>
+
+      {setupHint && (
+        <p className="text-[11px] leading-relaxed px-4 py-2.5 rounded-xl"
+          style={{ background: "oklch(0.72 0.18 65 / 0.1)", border: "1px solid oklch(0.72 0.18 65 / 0.3)", color: "var(--accent-amber-text)" }}>
+          {setupHint}
+        </p>
+      )}
+
+      {ledger.length > 0 && (
+        <div className="rounded-2xl overflow-hidden"
+          style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+          <p className="text-xs font-semibold px-4 py-2.5" style={{ color: "var(--c-55)", borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
+            Recent activity
+          </p>
+          <ul>
+            {ledger.slice(0, 8).map((row) => (
+              <li key={row.id} className="flex items-center justify-between gap-3 px-4 py-2"
+                style={{ borderTop: "1px solid oklch(1 0 0 / 0.04)" }}>
+                <span className="text-xs min-w-0 truncate" style={{ color: "var(--c-70)" }}>
+                  {label(row.kind, row.note)}
+                </span>
+                <span className="text-xs font-semibold tabular-nums shrink-0"
+                  style={{ color: row.credits > 0 ? "oklch(0.62 0.15 145)" : "var(--c-55)" }}>
+                  {row.credits > 0 ? `+${row.credits}` : row.credits}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -303,6 +434,35 @@ function FeedbackCard() {
 export default function AccountPage() {
   const router = useRouter();
 
+  // ── Section state ─────────────────────────────────────────────
+  // The credits fetch lives here rather than in WalletCard because the sidebar
+  // needs the same answer: a plan with no allowance and no bought credit has no
+  // balance to show, so the nav item should not exist rather than lead to an
+  // empty page.
+  const [section, setSection] = useState<"settings" | "balance">("settings");
+  const [credits, setCredits] = useState<CreditsData | null>(null);
+
+  // Arriving from a completed top-up: open the section the customer just paid
+  // to affect. Waits for the credits fetch, because the Balance pane only
+  // exists for a plan that has one — otherwise a stale link would open an empty
+  // pane. Read off window rather than useSearchParams to avoid forcing a
+  // Suspense boundary around the whole page for one optional param.
+  useEffect(() => {
+    if (!credits?.eligible) return;
+    if (new URLSearchParams(window.location.search).get("section") === "balance") {
+      setSection("balance");
+    }
+  }, [credits]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/credits", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (!cancelled && d && typeof d.total === "number") setCredits(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // ── Header state ──────────────────────────────────────────────
   const [userEmail, setUserEmail] = useState("");
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -456,7 +616,40 @@ export default function AccountPage() {
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-2xl mx-auto px-4 sm:px-8 py-8 sm:py-14">
+      <main className="flex-1 w-full max-w-none px-4 sm:px-8 lg:px-12 py-8 sm:py-14">
+        {/* Sidebar on the left from lg up; above the content on narrow screens,
+            where a fixed column would leave the forms too cramped to use. */}
+        <div className="flex flex-col lg:flex-row lg:items-start gap-6 lg:gap-8">
+          <nav className="lg:w-48 shrink-0 flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible">
+            {([
+              ["settings", "Account settings", <KeyRound key="s" size={15} />],
+              ...(credits?.eligible ? [["balance", "Balance", <Sparkles key="b" size={15} />] as const] : []),
+            ] as [("settings" | "balance"), string, React.ReactNode][]).map(([id, label, icon]) => {
+              const on = section === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setSection(id)}
+                  className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-[13px] font-medium text-left whitespace-nowrap transition-all cursor-pointer"
+                  style={on
+                    ? { background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.35)" }
+                    : { background: "transparent", color: "var(--c-55)" }}
+                >
+                  <span className="shrink-0">{icon}</span>
+                  <span className="min-w-0 truncate">{label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* The pane fills the page, but its contents stay in a readable
+              column: a password field or a ledger row stretched across a wide
+              monitor is harder to use, not easier. */}
+          <div className="flex-1 min-w-0 max-w-3xl">
+        {section === "balance" ? (
+          <WalletCard data={credits} />
+        ) : (
         <div className="space-y-5">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
@@ -569,6 +762,9 @@ export default function AccountPage() {
 
           <StorageCard />
           <FeedbackCard />
+        </div>
+        )}
+          </div>
         </div>
       </main>
     </div>

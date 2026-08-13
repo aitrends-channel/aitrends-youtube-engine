@@ -5,6 +5,7 @@ import useSWR from "swr";
 import { toast } from "sonner";
 import { Sparkles, Plus } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
+import { startTopUp } from "@/lib/credits-checkout";
 
 // The video-credit balance, shown where clips are generated.
 //
@@ -26,6 +27,7 @@ interface CreditsResponse {
   monthlyGrant: number;
   period: string;
   eligible: boolean;
+  setupHint?: string | null;
   pack: { credits: number; priceUsd: number };
   checkoutUrl: string | null;
 }
@@ -67,7 +69,7 @@ export function VideoCreditsPanel() {
 
   if (isLoading || !data || !data.eligible) return null;
 
-  const { grant, paid, total, reserved, monthlyGrant, pack, checkoutUrl } = data;
+  const { grant, paid, total, reserved, monthlyGrant, pack, checkoutUrl, setupHint } = data;
   const used = Math.max(monthlyGrant - grant, 0);
   const pct = monthlyGrant > 0 ? Math.min(100, Math.round((used / monthlyGrant) * 100)) : 0;
   const empty = total === 0;
@@ -96,6 +98,13 @@ export function VideoCreditsPanel() {
         {checkoutUrl && (
           <a
             href={checkoutUrl}
+            onClick={(e) => {
+              // The redirect_url has to be built here, not in the JSX: window is
+              // not available while a client component is prerendered on the
+              // server. Without it Dodo keeps the customer on its own receipt.
+              e.preventDefault();
+              startTopUp(checkoutUrl);
+            }}
             className="inline-flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
             style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
           >
@@ -116,6 +125,12 @@ export function VideoCreditsPanel() {
             {paid > 0 && ` · ${paid.toLocaleString()} bought credits, which do not expire`}
           </p>
         </div>
+      )}
+
+      {setupHint && (
+        <p className="text-[11px] leading-relaxed" style={{ color: "var(--accent-amber-text)" }}>
+          {setupHint}
+        </p>
       )}
 
       {empty && (

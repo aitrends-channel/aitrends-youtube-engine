@@ -2,8 +2,8 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
-import { confirmDodoPayment } from "@/lib/dodo/payment";
-import { addCredits, CREDIT_PACK } from "@/lib/credits";
+import { confirmDodoPayment, purchasedQuantity } from "@/lib/dodo/payment";
+import { addCredits, CREDIT_PACK, TOPUP_GRANTS_FLAT_PACK } from "@/lib/credits";
 import type { User } from "@supabase/supabase-js";
 
 // Credit a top-up after the customer comes back from Dodo.
@@ -39,18 +39,31 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: confirmed.error }, { status: confirmed.status });
   }
 
+  // Normally scales with what was bought, since the checkout's quantity is
+  // editable and one payment can cover several packs. While the testing shim is
+  // on, any confirmed payment grants exactly one pack instead — see
+  // TOPUP_GRANTS_FLAT_PACK for why that must not ship to real customers.
+  const units = TOPUP_GRANTS_FLAT_PACK ? 1 : purchasedQuantity(confirmed.raw);
+  const credits = CREDIT_PACK.credits * units;
+  if (TOPUP_GRANTS_FLAT_PACK) {
+    console.warn(
+      `[credits/topup] flat-pack testing shim: granting ${credits} credits for payment ` +
+      `${confirmed.paymentId} (${confirmed.amountCents} ${confirmed.currency})`,
+    );
+  }
+
   const credited = await addCredits({
     userId: user.id,
-    credits: CREDIT_PACK.credits,
+    credits,
     kind: "topup",
     externalRef: confirmed.paymentId,
-    note: `${CREDIT_PACK.credits} video credits`,
+    note: units > 1 ? `${credits} video credits (${units} packs)` : `${credits} video credits`,
   });
 
   // Not an error: the same payment arriving twice is the expected shape of a
   // refreshed page, and the customer already has the credits.
   if (!credited) {
-    return NextResponse.json({ ok: true, alreadyCredited: true, credits: CREDIT_PACK.credits });
+    return NextResponse.json({ ok: true, alreadyCredited: true, credits });
   }
 
   // Mirror the plan route's ledger write so a top-up shows up in revenue
@@ -76,5 +89,5 @@ export async function POST(req: Request) {
     console.warn(`[credits/topup] credited ${confirmed.paymentId} with no usable amount — no revenue row`);
   }
 
-  return NextResponse.json({ ok: true, credits: CREDIT_PACK.credits });
+  return NextResponse.json({ ok: true, credits });
 }
