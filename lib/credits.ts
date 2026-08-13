@@ -17,6 +17,21 @@ import type { User } from "@supabase/supabase-js";
  *  provider's price, so a top-up is a pass-through rather than a margin line. */
 export const CREDIT_PACK = { credits: 300, priceUsd: 6 } as const;
 
+/**
+ * TESTING SHIM — grant one full pack for any confirmed payment, whatever was
+ * paid and whatever quantity was bought.
+ *
+ * On while the flow is being tested with small real charges: a $1 payment still
+ * yields 300 credits, which is $6 of GenAIPro capacity. That is a deliberate
+ * loss for the sake of exercising the path end to end.
+ *
+ * Turn this off before real customers can buy: with it on, anyone who finds the
+ * checkout link and edits the amount gets a full pack for whatever they pay.
+ * The correct behaviour is already implemented behind it — purchasedQuantity()
+ * reads the cart — so this is a one-line switch, not a rewrite.
+ */
+export const TOPUP_GRANTS_FLAT_PACK = true;
+
 /** Provider tag written onto ledger and reservation rows. */
 export const CREDIT_PROVIDER_GENAIPRO = "genaipro";
 

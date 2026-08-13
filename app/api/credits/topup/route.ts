@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import { confirmDodoPayment, purchasedQuantity } from "@/lib/dodo/payment";
-import { addCredits, CREDIT_PACK } from "@/lib/credits";
+import { addCredits, CREDIT_PACK, TOPUP_GRANTS_FLAT_PACK } from "@/lib/credits";
 import type { User } from "@supabase/supabase-js";
 
 // Credit a top-up after the customer comes back from Dodo.
@@ -39,10 +39,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: confirmed.error }, { status: confirmed.status });
   }
 
-  // Scales with what was bought: the checkout's quantity is editable, so one
-  // payment can cover several packs.
-  const units = purchasedQuantity(confirmed.raw);
+  // Normally scales with what was bought, since the checkout's quantity is
+  // editable and one payment can cover several packs. While the testing shim is
+  // on, any confirmed payment grants exactly one pack instead — see
+  // TOPUP_GRANTS_FLAT_PACK for why that must not ship to real customers.
+  const units = TOPUP_GRANTS_FLAT_PACK ? 1 : purchasedQuantity(confirmed.raw);
   const credits = CREDIT_PACK.credits * units;
+  if (TOPUP_GRANTS_FLAT_PACK) {
+    console.warn(
+      `[credits/topup] flat-pack testing shim: granting ${credits} credits for payment ` +
+      `${confirmed.paymentId} (${confirmed.amountCents} ${confirmed.currency})`,
+    );
+  }
 
   const credited = await addCredits({
     userId: user.id,
