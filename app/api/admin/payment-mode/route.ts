@@ -24,6 +24,8 @@ interface PaymentSettingsPatch {
   webhookSecretProduction?: unknown;
   customerPortalUrlTest?: unknown;
   customerPortalUrlProduction?: unknown;
+  creditPackLinkTest?: unknown;
+  creditPackLinkProduction?: unknown;
 }
 
 // Normalize an arbitrary string-or-null patch value into the form
@@ -40,7 +42,23 @@ export async function GET() {
   const guard = await requireAdmin();
   if (!guard.ok) return guard.response;
   const settings = await getPaymentSettings();
-  return NextResponse.json(settings);
+  // Read separately from getPaymentSettings: that function's single select
+  // feeds every payment path, so adding a column there would null out the
+  // secret keys on any deployment where migration 126 has not run yet.
+  const { data } = await supabase
+    .from("product_config")
+    .select("credit_pack_checkout_url_test, credit_pack_checkout_url_production")
+    .eq("service", "_global")
+    .maybeSingle();
+  const packs = data as {
+    credit_pack_checkout_url_test: string | null;
+    credit_pack_checkout_url_production: string | null;
+  } | null;
+  return NextResponse.json({
+    ...settings,
+    creditPackLinkTest: packs?.credit_pack_checkout_url_test?.trim() || null,
+    creditPackLinkProduction: packs?.credit_pack_checkout_url_production?.trim() || null,
+  });
 }
 
 export async function PATCH(req: Request) {
@@ -64,6 +82,25 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "productionTestLink must be string, null, or ''" }, { status: 400 });
     }
     update.dodo_production_test_link = normalized;
+  }
+
+  // Where the wallet's "Top up" button points, per Dodo environment. Test and
+  // live are separate Dodo accounts with separate product ids, so a single
+  // shared link would send staging checkouts at the live product.
+  if (body.creditPackLinkTest !== undefined) {
+    const normalized = normalizeNullableString(body.creditPackLinkTest);
+    if (normalized === undefined) {
+      return NextResponse.json({ error: "creditPackLinkTest must be string, null, or ''" }, { status: 400 });
+    }
+    update.credit_pack_checkout_url_test = normalized;
+  }
+
+  if (body.creditPackLinkProduction !== undefined) {
+    const normalized = normalizeNullableString(body.creditPackLinkProduction);
+    if (normalized === undefined) {
+      return NextResponse.json({ error: "creditPackLinkProduction must be string, null, or ''" }, { status: 400 });
+    }
+    update.credit_pack_checkout_url_production = normalized;
   }
 
   if (body.secretKeyTest !== undefined) {
@@ -169,7 +206,7 @@ export async function PATCH(req: Request) {
       .from("product_config")
       .update(update)
       .eq("service", "_global")
-      .select("service, dodo_secret_key_test, dodo_secret_key_production, dodo_base_url_test, dodo_base_url_production, dodo_webhook_secret_test, dodo_webhook_secret_production");
+      .select("service, dodo_secret_key_test, dodo_secret_key_production, dodo_base_url_test, dodo_base_url_production, dodo_webhook_secret_test, dodo_webhook_secret_production, credit_pack_checkout_url_test, credit_pack_checkout_url_production");
     if (error) {
       console.error("[payment-mode PATCH] update error:", error);
       return NextResponse.json({ error: error.message }, { status: 500 });
