@@ -4,6 +4,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import { getCreditBalance, listLedger, CREDIT_PACK } from "@/lib/credits";
 import { getPaymentSettings } from "@/lib/plans";
+import { isAdminUser } from "@/lib/admin";
 import type { User } from "@supabase/supabase-js";
 
 // What the video-credits panel reads.
@@ -54,8 +55,17 @@ export async function GET() {
     creditPackCheckoutUrl(),
   ]);
 
+  // A missing checkout link is a configuration gap, not a customer-facing
+  // state: they get no button, which is correct, but an admin looking at the
+  // same screen has no way to tell whether it is broken or unconfigured. Say so,
+  // to admins only.
+  const setupHint = !checkoutUrl && isAdminUser(user)
+    ? "No top-up link configured. Add the credit-pack checkout link in Admin → Payment → Dodo Variables."
+    : null;
+
   return NextResponse.json({
     ...balance,
+    setupHint,
     eligible: balance.monthlyGrant > 0 || balance.paid > 0,
     pack: CREDIT_PACK,
     checkoutUrl,

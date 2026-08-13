@@ -100,6 +100,7 @@ function StorageCard() {
 interface CreditsData {
   grant: number; paid: number; total: number; reserved: number;
   monthlyGrant: number; eligible: boolean;
+  setupHint?: string | null;
   pack: { credits: number; priceUsd: number };
   checkoutUrl: string | null;
   ledger: { id: string; kind: string; credits: number; note: string | null; created_at: string }[];
@@ -112,7 +113,7 @@ interface CreditsData {
 function WalletCard({ data }: { data: CreditsData | null }) {
   if (!data?.eligible) return null;
 
-  const { grant, paid, total, reserved, monthlyGrant, pack, checkoutUrl, ledger } = data;
+  const { grant, paid, total, reserved, monthlyGrant, pack, checkoutUrl, ledger, setupHint } = data;
   const used = Math.max(monthlyGrant - grant, 0);
   const pct = monthlyGrant > 0 ? Math.min(used / monthlyGrant, 1) : 0;
   const empty = total === 0;
@@ -185,6 +186,13 @@ function WalletCard({ data }: { data: CreditsData | null }) {
           {empty && " — top up to keep generating, or wait for next month's free credits."}
         </p>
       </div>
+
+      {setupHint && (
+        <p className="text-[11px] leading-relaxed px-4 py-2.5 rounded-xl"
+          style={{ background: "oklch(0.72 0.18 65 / 0.1)", border: "1px solid oklch(0.72 0.18 65 / 0.3)", color: "var(--accent-amber-text)" }}>
+          {setupHint}
+        </p>
+      )}
 
       {ledger.length > 0 && (
         <div className="rounded-2xl overflow-hidden"
