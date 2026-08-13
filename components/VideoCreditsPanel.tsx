@@ -97,6 +97,13 @@ export function VideoCreditsPanel() {
         {checkoutUrl && (
           <a
             href={checkoutUrl}
+            onClick={() => {
+              // Marked before leaving so the return page knows this was a credit
+              // purchase and not a plan one. Both stores: the checkout can open
+              // in a new tab, where sessionStorage does not carry over.
+              try { localStorage.setItem("dodo_pending_purchase", "credits"); } catch {}
+              try { sessionStorage.setItem("dodo_pending_purchase", "credits"); } catch {}
+            }}
             className="inline-flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
             style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
           >

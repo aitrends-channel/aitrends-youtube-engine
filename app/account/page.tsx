@@ -164,6 +164,13 @@ function WalletCard({ data }: { data: CreditsData | null }) {
           </p>
           {checkoutUrl && (
             <a href={checkoutUrl}
+              onClick={() => {
+              // Marked before leaving so the return page knows this was a credit
+              // purchase and not a plan one. Both stores: the checkout can open
+              // in a new tab, where sessionStorage does not carry over.
+              try { localStorage.setItem("dodo_pending_purchase", "credits"); } catch {}
+              try { sessionStorage.setItem("dodo_pending_purchase", "credits"); } catch {}
+            }}
               className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:opacity-90"
               style={{ background: "oklch(0.72 0.25 285)", color: "white" }}>
               Top up {pack.credits} for ${pack.priceUsd}
@@ -433,6 +440,18 @@ export default function AccountPage() {
   // empty page.
   const [section, setSection] = useState<"settings" | "balance">("settings");
   const [credits, setCredits] = useState<CreditsData | null>(null);
+
+  // Arriving from a completed top-up: open the section the customer just paid
+  // to affect. Waits for the credits fetch, because the Balance pane only
+  // exists for a plan that has one — otherwise a stale link would open an empty
+  // pane. Read off window rather than useSearchParams to avoid forcing a
+  // Suspense boundary around the whole page for one optional param.
+  useEffect(() => {
+    if (!credits?.eligible) return;
+    if (new URLSearchParams(window.location.search).get("section") === "balance") {
+      setSection("balance");
+    }
+  }, [credits]);
 
   useEffect(() => {
     let cancelled = false;

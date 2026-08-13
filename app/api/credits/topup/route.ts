@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
-import { confirmDodoPayment } from "@/lib/dodo/payment";
+import { confirmDodoPayment, purchasedQuantity } from "@/lib/dodo/payment";
 import { addCredits, CREDIT_PACK } from "@/lib/credits";
 import type { User } from "@supabase/supabase-js";
 
@@ -39,18 +39,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: confirmed.error }, { status: confirmed.status });
   }
 
+  // Scales with what was bought: the checkout's quantity is editable, so one
+  // payment can cover several packs.
+  const units = purchasedQuantity(confirmed.raw);
+  const credits = CREDIT_PACK.credits * units;
+
   const credited = await addCredits({
     userId: user.id,
-    credits: CREDIT_PACK.credits,
+    credits,
     kind: "topup",
     externalRef: confirmed.paymentId,
-    note: `${CREDIT_PACK.credits} video credits`,
+    note: units > 1 ? `${credits} video credits (${units} packs)` : `${credits} video credits`,
   });
 
   // Not an error: the same payment arriving twice is the expected shape of a
   // refreshed page, and the customer already has the credits.
   if (!credited) {
-    return NextResponse.json({ ok: true, alreadyCredited: true, credits: CREDIT_PACK.credits });
+    return NextResponse.json({ ok: true, alreadyCredited: true, credits });
   }
 
   // Mirror the plan route's ledger write so a top-up shows up in revenue
@@ -76,5 +81,5 @@ export async function POST(req: Request) {
     console.warn(`[credits/topup] credited ${confirmed.paymentId} with no usable amount — no revenue row`);
   }
 
-  return NextResponse.json({ ok: true, credits: CREDIT_PACK.credits });
+  return NextResponse.json({ ok: true, credits });
 }

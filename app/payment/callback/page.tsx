@@ -42,6 +42,53 @@ function CallbackContent() {
     }
 
     (async () => {
+      // A credit top-up is not a plan purchase: it grants credits and can be
+      // bought repeatedly, so it must not go through /api/dodo/verify, which
+      // would rewrite the customer's plan and expiry. It also carries no plan,
+      // which is why this page used to reject it with "Plan selection was lost".
+      //
+      // Intent is marked the same way the plan flow marks its own: a URL param
+      // when the product's return URL provides one, plus storage set at click
+      // time so it works whatever the product is configured with.
+      let buyingCredits = searchParams.get("type") === "credits";
+      if (!buyingCredits) {
+        try { buyingCredits = localStorage.getItem("dodo_pending_purchase") === "credits"; } catch {}
+      }
+      if (!buyingCredits) {
+        try { buyingCredits = sessionStorage.getItem("dodo_pending_purchase") === "credits"; } catch {}
+      }
+
+      if (buyingCredits) {
+        if (!paymentId) {
+          setStage("failed");
+          setErrorMsg("Credit purchases need a payment id. Contact support with your receipt — do not retry payment.");
+          return;
+        }
+        try {
+          const res = await fetch("/api/credits/topup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ payment_id: paymentId }),
+          });
+          const data = await res.json().catch(() => ({})) as { error?: string; credits?: number };
+          if (!res.ok) {
+            setStage("failed");
+            setErrorMsg(data.error ?? "We could not confirm that payment. Contact support with your payment ID.");
+            return;
+          }
+          // Cleared only after the credits actually landed, so a refresh after a
+          // transient failure still knows what was being bought.
+          try { localStorage.removeItem("dodo_pending_purchase"); } catch {}
+          try { sessionStorage.removeItem("dodo_pending_purchase"); } catch {}
+          setStage("success");
+          setTimeout(() => router.replace("/account?section=balance"), 2000);
+        } catch {
+          setStage("failed");
+          setErrorMsg("Could not reach the credit service. Contact support with your payment ID.");
+        }
+        return;
+      }
+
       // Read the plan the user selected before redirecting to Dodo.
       // Do NOT remove until verify succeeds — on a transient failure +
       // page refresh we'd lose the selection and a fallback default

@@ -148,3 +148,32 @@ export async function confirmDodoPayment(
 
   return lastError;
 }
+
+/**
+ * How many units the customer actually bought.
+ *
+ * The checkout link carries ?quantity=1, and that is editable at checkout, so a
+ * customer can pay for three packs in one payment. Crediting a fixed pack size
+ * would short-change them.
+ *
+ * Read from the cart rather than derived from the amount: settlement amounts come
+ * back in the buyer's own currency, so dividing money by a USD unit price would
+ * be wrong for every non-USD payment. The existing plan route disabled its own
+ * price guard for exactly that reason.
+ *
+ * Capped, because a wrong reading here mints credit. One is the floor: a
+ * confirmed payment bought at least one of something.
+ */
+export function purchasedQuantity(raw: Record<string, unknown>, max = 50): number {
+  const cart = raw.product_cart;
+  if (Array.isArray(cart) && cart.length > 0) {
+    const total = cart.reduce((sum, item) => {
+      const q = Number((item as { quantity?: unknown })?.quantity ?? 0);
+      return sum + (Number.isFinite(q) && q > 0 ? Math.floor(q) : 0);
+    }, 0);
+    if (total > 0) return Math.min(total, max);
+  }
+  const flat = Number(raw.quantity ?? 0);
+  if (Number.isFinite(flat) && flat > 0) return Math.min(Math.floor(flat), max);
+  return 1;
+}
