@@ -4518,13 +4518,13 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
         />
 
         <DodoVarField
-          label={`Video credit pack link (${activeEnv})`}
+          label="GenAI Credit Package Link"
           saved={savedPack}
           value={packValue}
           onChange={(v) => (activeEnv === "test" ? setTestPack(v) : setProdPack(v))}
           placeholder="https://checkout.dodopayments.com/buy/…"
           disabled={saving}
-          hint="Checkout link for the 300-credit pack. Its Dodo return URL must land on a page carrying the wallet (the account page or the Generate step) — that page confirms the payment and adds the credits. With no link the wallet shows no top-up button."
+          hint={`Checkout link for the 300-credit GenAI video pack, saved against the ${activeEnv} Dodo environment. Its return URL must land on a page carrying the wallet (the account page or the Generate step) — that page confirms the payment and adds the credits. With no link the wallet shows no top-up button.`}
         />
 
         <DodoVarField
