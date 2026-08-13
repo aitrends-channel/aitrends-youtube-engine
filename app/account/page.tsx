@@ -587,7 +587,7 @@ export default function AccountPage() {
         </div>
       </header>
 
-      <main className="flex-1 w-full max-w-4xl mx-auto px-4 sm:px-8 py-8 sm:py-14">
+      <main className="flex-1 w-full max-w-none px-4 sm:px-8 lg:px-12 py-8 sm:py-14">
         {/* Sidebar on the left from lg up; above the content on narrow screens,
             where a fixed column would leave the forms too cramped to use. */}
         <div className="flex flex-col lg:flex-row lg:items-start gap-6 lg:gap-8">
@@ -614,7 +614,10 @@ export default function AccountPage() {
             })}
           </nav>
 
-          <div className="flex-1 min-w-0">
+          {/* The pane fills the page, but its contents stay in a readable
+              column: a password field or a ledger row stretched across a wide
+              monitor is harder to use, not easier. */}
+          <div className="flex-1 min-w-0 max-w-3xl">
         {section === "wallet" ? (
           <WalletCard data={credits} />
         ) : (
