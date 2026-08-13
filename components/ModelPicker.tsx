@@ -297,8 +297,10 @@ export function ModelPicker(props: ModelPickerProps) {
       )}
 
       {/* Above the list, not below it: it is guidance for choosing, so it has
-          to be read before the options rather than after scrolling past them. */}
-      {tipText && (
+          to be read before the options rather than after scrolling past them.
+          Not on the Free tab: it tells the reader to pick another model, and
+          there is nothing else there to pick. */}
+      {tipText && tab !== "free" && (
         <p className="text-[11px] mb-2 leading-snug" style={{ color: "var(--c-40)" }}>
           {tipText}
         </p>
