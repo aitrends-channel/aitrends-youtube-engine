@@ -6,6 +6,7 @@ import Image from "next/image";
 import { CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { PENDING_CREDIT_PURCHASE_KEY } from "@/lib/credits-checkout";
 
 type Stage = "verifying" | "success" | "failed" | "cancelled";
 
@@ -52,10 +53,10 @@ function CallbackContent() {
       // time so it works whatever the product is configured with.
       let buyingCredits = searchParams.get("type") === "credits";
       if (!buyingCredits) {
-        try { buyingCredits = localStorage.getItem("dodo_pending_purchase") === "credits"; } catch {}
+        try { buyingCredits = localStorage.getItem(PENDING_CREDIT_PURCHASE_KEY) === "credits"; } catch {}
       }
       if (!buyingCredits) {
-        try { buyingCredits = sessionStorage.getItem("dodo_pending_purchase") === "credits"; } catch {}
+        try { buyingCredits = sessionStorage.getItem(PENDING_CREDIT_PURCHASE_KEY) === "credits"; } catch {}
       }
 
       if (buyingCredits) {
@@ -78,8 +79,8 @@ function CallbackContent() {
           }
           // Cleared only after the credits actually landed, so a refresh after a
           // transient failure still knows what was being bought.
-          try { localStorage.removeItem("dodo_pending_purchase"); } catch {}
-          try { sessionStorage.removeItem("dodo_pending_purchase"); } catch {}
+          try { localStorage.removeItem(PENDING_CREDIT_PURCHASE_KEY); } catch {}
+          try { sessionStorage.removeItem(PENDING_CREDIT_PURCHASE_KEY); } catch {}
           setStage("success");
           setTimeout(() => router.replace("/account?section=balance"), 2000);
         } catch {

@@ -8,6 +8,7 @@ import Link from "next/link";
 import { ArrowLeft, Eye, EyeOff, HardDrive, KeyRound, LogOut, Save, Sparkles, Star } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { startTopUp } from "@/lib/credits-checkout";
 
 const GB = 1024 ** 3;
 
@@ -164,12 +165,12 @@ function WalletCard({ data }: { data: CreditsData | null }) {
           </p>
           {checkoutUrl && (
             <a href={checkoutUrl}
-              onClick={() => {
-              // Marked before leaving so the return page knows this was a credit
-              // purchase and not a plan one. Both stores: the checkout can open
-              // in a new tab, where sessionStorage does not carry over.
-              try { localStorage.setItem("dodo_pending_purchase", "credits"); } catch {}
-              try { sessionStorage.setItem("dodo_pending_purchase", "credits"); } catch {}
+              onClick={(e) => {
+              // The redirect_url has to be built here, not in the JSX: window is
+              // not available while a client component is prerendered on the
+              // server. Without it Dodo keeps the customer on its own receipt.
+              e.preventDefault();
+              startTopUp(checkoutUrl);
             }}
               className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:opacity-90"
               style={{ background: "oklch(0.72 0.25 285)", color: "white" }}>
