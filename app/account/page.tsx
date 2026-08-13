@@ -429,8 +429,9 @@ export default function AccountPage() {
   // ── Section state ─────────────────────────────────────────────
   // The credits fetch lives here rather than in WalletCard because the sidebar
   // needs the same answer: a plan with no allowance and no bought credit has no
-  // wallet, so the nav item should not exist rather than lead to an empty page.
-  const [section, setSection] = useState<"settings" | "wallet">("settings");
+  // balance to show, so the nav item should not exist rather than lead to an
+  // empty page.
+  const [section, setSection] = useState<"settings" | "balance">("settings");
   const [credits, setCredits] = useState<CreditsData | null>(null);
 
   useEffect(() => {
@@ -602,8 +603,8 @@ export default function AccountPage() {
           <nav className="lg:w-48 shrink-0 flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible">
             {([
               ["settings", "Account settings", <KeyRound key="s" size={15} />],
-              ...(credits?.eligible ? [["wallet", "Wallet", <Sparkles key="w" size={15} />] as const] : []),
-            ] as [("settings" | "wallet"), string, React.ReactNode][]).map(([id, label, icon]) => {
+              ...(credits?.eligible ? [["balance", "Balance", <Sparkles key="b" size={15} />] as const] : []),
+            ] as [("settings" | "balance"), string, React.ReactNode][]).map(([id, label, icon]) => {
               const on = section === id;
               return (
                 <button
@@ -626,7 +627,7 @@ export default function AccountPage() {
               column: a password field or a ledger row stretched across a wide
               monitor is harder to use, not easier. */}
           <div className="flex-1 min-w-0 max-w-3xl">
-        {section === "wallet" ? (
+        {section === "balance" ? (
           <WalletCard data={credits} />
         ) : (
         <div className="space-y-5">
