@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Search } from "lucide-react";
 import type { KieModel } from "@/lib/types";
 import { getModelConfig } from "@/lib/kie/imageModels";
@@ -146,6 +146,7 @@ function VariantPill<T>({
 export function ModelPicker(props: ModelPickerProps) {
   const { type, models, selectedModelId, onSelectModel, disabled = false } = props;
   const [tab, setTab] = useState<ModelTab>("all");
+  const openedOnFree = useRef(false);
   const [query, setQuery] = useState("");
 
   const searchQ = query.trim().toLowerCase();
@@ -166,21 +167,35 @@ export function ModelPicker(props: ModelPickerProps) {
   const freeModels = (models ?? []).filter((m) => (m.tags ?? []).some((t) => t.toLowerCase() === "free"));
   const hasFree = freeModels.length > 0;
 
+  // A free model is only listed under the Free tab, so a user coming back to a
+  // saved free selection would open on All and see nothing selected. Land them
+  // on the tab that holds their choice — once, so it never fights a click.
+  useEffect(() => {
+    if (openedOnFree.current || !selectedModelId || !hasFree) return;
+    if (freeModels.some((m) => m.id === selectedModelId)) {
+      openedOnFree.current = true;
+      setTab("free");
+    }
+  }, [selectedModelId, hasFree, freeModels]);
+
   const list: KieModel[] | null = (() => {
     if (!models) return null;
     const base = models.slice();
     if (tab === "free") return freeModels.filter(matchesSearch);
+    // Every other tab excludes them: the Free tab is their home, and listing
+    // them twice makes the free option look like just another paid model.
+    const paid = base.filter((m) => !(m.tags ?? []).some((t) => t.toLowerCase() === "free"));
     if (tab === "fastest") {
-      return base
+      return paid
         .filter((m) => typeof m.avgSpeedMs === "number" && m.avgSpeedMs > 0 && matchesSearch(m))
         .sort((a, b) => (a.avgSpeedMs ?? Infinity) - (b.avgSpeedMs ?? Infinity));
     }
     if (tab === "cheapest") {
-      return base
+      return paid
         .filter((m) => m.costPerUnit !== undefined && m.costPerUnit !== null && matchesSearch(m))
         .sort((a, b) => Number(a.costPerUnit) - Number(b.costPerUnit));
     }
-    return base.filter(matchesSearch);
+    return paid.filter(matchesSearch);
   })();
 
   const empty = models && (
@@ -259,6 +274,9 @@ export function ModelPicker(props: ModelPickerProps) {
         </div>
       ) : (
       <>
+      {/* The Free tab holds a handful of models at most, so a search field
+          there is furniture rather than help. */}
+      {tab !== "free" && (
       <div className="relative mb-2">
         <Search
           size={13}
@@ -275,6 +293,15 @@ export function ModelPicker(props: ModelPickerProps) {
           style={{ background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-70)" }}
         />
       </div>
+      )}
+
+      {/* Above the list, not below it: it is guidance for choosing, so it has
+          to be read before the options rather than after scrolling past them. */}
+      {tipText && (
+        <p className="text-[11px] mb-2 leading-snug" style={{ color: "var(--c-40)" }}>
+          {tipText}
+        </p>
+      )}
 
       <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
         {list?.map((m) => (
@@ -310,12 +337,6 @@ export function ModelPicker(props: ModelPickerProps) {
         )}
         {!models && <p className="text-xs" style={{ color: "var(--c-40)" }}>Loading models...</p>}
       </div>
-
-      {tipText && (
-        <p className="text-[11px] mt-2 leading-snug" style={{ color: "var(--c-40)" }}>
-          {tipText}
-        </p>
-      )}
 
       {/* Image aspect-ratio + resolution selectors were moved out of this
           non-free branch to below the tab ternary, so the Free tab shows
