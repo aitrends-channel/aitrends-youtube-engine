@@ -81,14 +81,75 @@ function isRetryableStatus(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
-async function readError(res: Response): Promise<string> {
-  const text = await res.text().catch(() => "");
-  try {
-    const parsed = JSON.parse(text) as { message?: string; error?: string; detail?: string };
-    return parsed.message ?? parsed.error ?? parsed.detail ?? text.slice(0, 300) ?? res.statusText;
-  } catch {
-    return (text || res.statusText).slice(0, 300);
+/**
+ * Their own auth failures, observed by probing the live endpoint: an absent
+ * header gives token_is_empty, an empty or malformed Bearer gives invalid_token,
+ * and a well-formed key they do not know gives invalid_api_key.
+ *
+ * The list matters because a 401 that is NOT one of these did not come from
+ * their API. genaipro.io sits behind Cloudflare, and that layer has answered our
+ * submits with both an HTML error page and a bare "No access token found" while
+ * the configured key was valid. Those are interceptions in front of the API, not
+ * a verdict on our key, so they are worth retrying — whereas retrying a key they
+ * genuinely reject would just fail all day.
+ */
+const AUTH_ERROR_CODES = new Set(["invalid_api_key", "invalid_token", "token_is_empty"]);
+
+interface UpstreamError {
+  /** For a human: the provider's own words, or a short description of a
+   *  response that had none. */
+  message: string;
+  retryable: boolean;
+}
+
+async function readError(res: Response): Promise<UpstreamError> {
+  const text = (await res.text().catch(() => "")).trim();
+
+  // An HTML body is never their API. It is the edge in front of it, so it says
+  // nothing about the request and should not be pasted into a user's error
+  // slot — a beat error reading "<!DOCTYPE html>" tells nobody anything.
+  if (text.startsWith("<")) {
+    return {
+      message: `The provider returned an error page instead of a reply (HTTP ${res.status}). This is usually temporary.`,
+      retryable: true,
+    };
   }
+
+  interface ApiError { message?: string; error?: string; detail?: string }
+  let parsed: ApiError | null = null;
+  try {
+    parsed = JSON.parse(text) as ApiError;
+  } catch {
+    parsed = null;
+  }
+  const raw = parsed?.message ?? parsed?.error ?? parsed?.detail ?? text.slice(0, 300) ?? res.statusText;
+  const code = typeof parsed?.error === "string" ? parsed.error : "";
+
+  // Out of credit upstream. Said plainly, because the customer's own wallet is
+  // fine and blaming "quota" sends them looking at a balance that is not the
+  // problem. Not retryable: it will keep failing until a package is bought.
+  if (/insufficient quota/i.test(raw)) {
+    return {
+      message: "Heclus's video provider account is out of credit. This is on our side, not your balance — we are topping it up.",
+      retryable: false,
+    };
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    if (AUTH_ERROR_CODES.has(code)) {
+      return {
+        message: "The video provider rejected our API key. Set a valid GenAIPro key in Config → API Keys.",
+        retryable: false,
+      };
+    }
+    // A 401 in a shape they do not use: the edge, not them. Retry.
+    return {
+      message: `The provider's gateway refused the request (HTTP ${res.status}: ${raw}). This is usually temporary.`,
+      retryable: true,
+    };
+  }
+
+  return { message: raw, retryable: isRetryableStatus(res.status) };
 }
 
 export interface GenAIProCredits {
@@ -115,7 +176,8 @@ export async function getGenAIProCredits(): Promise<GenAIProCredits> {
     cache: "no-store",
   });
   if (!res.ok) {
-    throw new GenAIProError(`GenAIPro credits: ${await readError(res)}`, res.status, isRetryableStatus(res.status));
+    const err = await readError(res);
+    throw new GenAIProError(`GenAIPro credits: ${err.message}`, res.status, err.retryable);
   }
   const body = await res.json() as unknown;
   // Documented as an array of packages; tolerate a bare object.
@@ -174,7 +236,8 @@ export async function submitFramesToVideo(opts: {
     body: form,
   });
   if (!res.ok) {
-    throw new GenAIProError(`GenAIPro submit: ${await readError(res)}`, res.status, isRetryableStatus(res.status));
+    const err = await readError(res);
+    throw new GenAIProError(`GenAIPro submit: ${err.message}`, res.status, err.retryable);
   }
 
   const body = await res.json() as { histories?: { id?: string; status?: string }[] };
@@ -203,7 +266,8 @@ export async function getTaskStatus(taskId: string): Promise<TaskStatus> {
     cache: "no-store",
   });
   if (!res.ok) {
-    throw new GenAIProError(`GenAIPro status: ${await readError(res)}`, res.status, isRetryableStatus(res.status));
+    const err = await readError(res);
+    throw new GenAIProError(`GenAIPro status: ${err.message}`, res.status, err.retryable);
   }
   const body = await res.json() as { status?: string; file_urls?: unknown; error?: string };
   const raw = String(body?.status ?? "processing").toLowerCase();

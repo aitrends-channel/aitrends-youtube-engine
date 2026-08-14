@@ -2414,11 +2414,12 @@ export default function GeneratePage({ params }: PageProps) {
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon={<Video size={18} />} title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
               {/* Renders nothing for a plan with no allowance and no bought
-                  credit, so Founder never sees it. Sits above the picker
-                  because it is what the free model option depends on, and it
-                  is where Dodo returns after a top-up. */}
-              <div className="mb-3"><VideoCreditsPanel /></div>
+                  credit, so Founder never sees it. Passed into the picker so it
+                  sits under the category tabs: the balance belongs to the model
+                  choice, since the free model is what spends it. It is also
+                  where Dodo returns after a top-up. */}
               <ModelPicker
+                belowTabs={<VideoCreditsPanel />}
                 type="video"
                 models={videoModels}
                 selectedModelId={selectedVideoModel}
