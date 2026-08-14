@@ -635,7 +635,11 @@ export default function AccountPage() {
         {/* Tabs rather than a sidebar, matching /setup: these two pages are
             siblings, and a two-item sidebar spent a whole column on a choice a
             single row makes just as clearly. */}
-        <div className="max-w-3xl">
+        {/* Centred and wider than the old reading column: with tabs across the
+            top there is no sidebar to anchor it left, and the ledger reads
+            better with room. Still capped, since a password field spanning a
+            wide monitor is harder to use, not easier. */}
+        <div className="max-w-5xl mx-auto">
           <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
             {([
               ["settings", "Account settings", <KeyRound key="s" size={13} />],
