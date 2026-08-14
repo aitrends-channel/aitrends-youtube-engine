@@ -27,7 +27,11 @@ export async function GET() {
 
   const account = accountResult.status === "fulfilled" ? accountResult.value : null;
   const accountError = accountResult.status === "rejected"
-    ? (accountResult.reason instanceof GenAIProError || accountResult.reason instanceof Error
+    ? (accountResult.reason instanceof GenAIProError
+        // Operators need the provider named and the fix stated, which is exactly
+        // what the customer-facing message leaves out.
+        ? (accountResult.reason.operatorMessage ?? accountResult.reason.message)
+        : accountResult.reason instanceof Error
         ? accountResult.reason.message
         : "Could not read the GenAIPro account")
     : null;

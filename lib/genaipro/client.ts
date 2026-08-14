@@ -61,17 +61,34 @@ export function aspectFor(ratio: string | null | undefined): GenAIProAspect {
 }
 
 export class GenAIProError extends Error {
-  constructor(message: string, readonly status?: number, readonly retryable = false) {
+  constructor(
+    message: string,
+    readonly status?: number,
+    readonly retryable = false,
+    /**
+     * The same failure named plainly, for logs and the admin card.
+     *
+     * `message` ends up in a beat's video_error, which a customer reads, and the
+     * provider is not something a customer should ever be told about: it is our
+     * supplier, not their concern, and naming it invites them to go looking for
+     * an account they do not have. Operators need the opposite, so the detail
+     * lives here instead of being dropped.
+     */
+    readonly operatorMessage?: string,
+  ) {
     super(message);
   }
 }
 
+/** What a customer is told when the fault is ours to fix. Deliberately says
+ *  nothing about which provider or why. */
+const UNAVAILABLE = "Free video generation is temporarily unavailable. Our team has been notified.";
+
 async function apiKey(): Promise<string> {
   const key = await getActiveProductKey("genaipro_api_key");
   if (!key) {
-    throw new GenAIProError(
-      "GenAIPro key not configured — set one in Config → API Keys (service: GenAIPro API Key).",
-    );
+    throw new GenAIProError(UNAVAILABLE, undefined, false,
+      "GenAIPro key not configured. Set one in Config → API Keys (service: GenAIPro API Key).");
   }
   return key;
 }
@@ -96,9 +113,10 @@ function isRetryableStatus(status: number): boolean {
 const AUTH_ERROR_CODES = new Set(["invalid_api_key", "invalid_token", "token_is_empty"]);
 
 interface UpstreamError {
-  /** For a human: the provider's own words, or a short description of a
-   *  response that had none. */
+  /** Customer-facing, and never naming the provider. */
   message: string;
+  /** Operator-facing: which provider, which code, what to do. */
+  operatorMessage: string;
   retryable: boolean;
 }
 
@@ -110,7 +128,8 @@ async function readError(res: Response): Promise<UpstreamError> {
   // slot — a beat error reading "<!DOCTYPE html>" tells nobody anything.
   if (text.startsWith("<")) {
     return {
-      message: `The provider returned an error page instead of a reply (HTTP ${res.status}). This is usually temporary.`,
+      message: "The video service did not respond properly. Retrying usually clears this.",
+      operatorMessage: `GenAIPro gateway returned an HTML error page (HTTP ${res.status}).`,
       retryable: true,
     };
   }
@@ -130,7 +149,8 @@ async function readError(res: Response): Promise<UpstreamError> {
   // problem. Not retryable: it will keep failing until a package is bought.
   if (/insufficient quota/i.test(raw)) {
     return {
-      message: "Heclus's video provider account is out of credit. This is on our side, not your balance — we are topping it up.",
+      message: "Free video generation is paused while we top up capacity. Your credits were not spent.",
+      operatorMessage: "GenAIPro account is out of credit. Buy a package on genaipro.io.",
       retryable: false,
     };
   }
@@ -138,18 +158,22 @@ async function readError(res: Response): Promise<UpstreamError> {
   if (res.status === 401 || res.status === 403) {
     if (AUTH_ERROR_CODES.has(code)) {
       return {
-        message: "The video provider rejected our API key. Set a valid GenAIPro key in Config → API Keys.",
+        message: UNAVAILABLE,
+        operatorMessage: `GenAIPro rejected our API key (${code}). Set a valid key in Config → API Keys.`,
         retryable: false,
       };
     }
     // A 401 in a shape they do not use: the edge, not them. Retry.
     return {
-      message: `The provider's gateway refused the request (HTTP ${res.status}: ${raw}). This is usually temporary.`,
+      message: "The video service refused the request. Retrying usually clears this.",
+      operatorMessage: `GenAIPro gateway refused with HTTP ${res.status}: ${raw}`,
       retryable: true,
     };
   }
 
-  return { message: raw, retryable: isRetryableStatus(res.status) };
+  // Anything else in their own words. Their messages describe the request, not
+  // the account, so there is nothing here to hide from a customer.
+  return { message: raw, operatorMessage: `GenAIPro HTTP ${res.status}: ${raw}`, retryable: isRetryableStatus(res.status) };
 }
 
 export interface GenAIProCredits {
@@ -177,7 +201,7 @@ export async function getGenAIProCredits(): Promise<GenAIProCredits> {
   });
   if (!res.ok) {
     const err = await readError(res);
-    throw new GenAIProError(`GenAIPro credits: ${err.message}`, res.status, err.retryable);
+    throw new GenAIProError(err.message, res.status, err.retryable, `credits: ${err.operatorMessage}`);
   }
   const body = await res.json() as unknown;
   // Documented as an array of packages; tolerate a bare object.
@@ -218,7 +242,9 @@ export async function submitFramesToVideo(opts: {
   if (!imgRes.ok) {
     // Ours, not theirs: the beat's still is unreachable, so there is nothing to
     // animate and no reason to spend a credit finding that out.
-    throw new GenAIProError(`Could not read the beat image (${imgRes.status})`, imgRes.status, false);
+    throw new GenAIProError(
+      "The image for this beat could not be read, so there was nothing to animate.",
+      imgRes.status, false, `submit: beat image unreadable (HTTP ${imgRes.status}) at ${opts.imageUrl}`);
   }
   const bytes = await imgRes.blob();
 
@@ -237,13 +263,15 @@ export async function submitFramesToVideo(opts: {
   });
   if (!res.ok) {
     const err = await readError(res);
-    throw new GenAIProError(`GenAIPro submit: ${err.message}`, res.status, err.retryable);
+    throw new GenAIProError(err.message, res.status, err.retryable, `submit: ${err.operatorMessage}`);
   }
 
   const body = await res.json() as { histories?: { id?: string; status?: string }[] };
   const first = body?.histories?.[0];
   if (!first?.id) {
-    throw new GenAIProError("GenAIPro accepted the job but returned no task id", res.status, true);
+    throw new GenAIProError(
+      "The video service accepted the clip but did not confirm it. Retrying usually clears this.",
+      res.status, true, "submit: GenAIPro returned no task id");
   }
   return { taskId: String(first.id), status: String(first.status ?? "processing") };
 }
@@ -267,7 +295,7 @@ export async function getTaskStatus(taskId: string): Promise<TaskStatus> {
   });
   if (!res.ok) {
     const err = await readError(res);
-    throw new GenAIProError(`GenAIPro status: ${err.message}`, res.status, err.retryable);
+    throw new GenAIProError(err.message, res.status, err.retryable, `status: ${err.operatorMessage}`);
   }
   const body = await res.json() as { status?: string; file_urls?: unknown; error?: string };
   const raw = String(body?.status ?? "processing").toLowerCase();

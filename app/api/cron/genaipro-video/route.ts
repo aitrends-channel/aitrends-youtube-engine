@@ -137,6 +137,11 @@ async function submitQueued(): Promise<{ submitted: number; refused: number; fai
       // Nothing was generated, so nothing is charged.
       await releaseReservation(reservation, "Submit failed");
       const msg = e instanceof GenAIProError ? e.message : (e instanceof Error ? e.message : "Submit failed");
+      // The beat gets the customer-safe wording; the log gets the provider,
+      // the code and the fix. Without this line the detail is simply lost.
+      if (e instanceof GenAIProError && e.operatorMessage) {
+        console.warn(`[genaipro] ${e.operatorMessage}`);
+      }
       await failBeat(row.project_id, row.beat_number, msg);
       failed++;
       // A rate limit means the whole batch is going to fail; stop early and
