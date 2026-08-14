@@ -13,7 +13,7 @@
 /** Marks the purchase so the callback routes it to credits, not to a plan. */
 export const PENDING_CREDIT_PURCHASE_KEY = "dodo_pending_purchase";
 
-export function buildTopUpUrl(checkoutUrl: string, origin: string): string {
+export function buildTopUpUrl(checkoutUrl: string, origin: string, units = 1): string {
   try {
     const callback = new URL("/payment/callback", origin);
     // Third fallback after the two storages, for a private window that blocks
@@ -22,6 +22,11 @@ export function buildTopUpUrl(checkoutUrl: string, origin: string): string {
 
     const url = new URL(checkoutUrl);
     url.searchParams.set("redirect_url", callback.toString());
+    // How the picker's options are bought: quantity of one product, overwriting
+    // the ?quantity=1 the configured link carries. Floored and floored again at
+    // one, since this ends up as money — and it is only the request. What gets
+    // credited is read back from the confirmed payment, never from this.
+    url.searchParams.set("quantity", String(Math.max(1, Math.floor(units))));
     return url.toString();
   } catch {
     // A malformed configured link should still be clickable rather than dead.
@@ -30,10 +35,10 @@ export function buildTopUpUrl(checkoutUrl: string, origin: string): string {
 }
 
 /** Remembers the intent, then leaves for Dodo. */
-export function startTopUp(checkoutUrl: string): void {
+export function startTopUp(checkoutUrl: string, units = 1): void {
   try { localStorage.setItem(PENDING_CREDIT_PURCHASE_KEY, "credits"); } catch {}
   try { sessionStorage.setItem(PENDING_CREDIT_PURCHASE_KEY, "credits"); } catch {}
-  window.location.href = buildTopUpUrl(checkoutUrl, window.location.origin);
+  window.location.href = buildTopUpUrl(checkoutUrl, window.location.origin, units);
 }
 
 /**
