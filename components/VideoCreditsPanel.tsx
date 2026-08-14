@@ -27,6 +27,7 @@ interface CreditsResponse {
   monthlyGrant: number;
   period: string;
   eligible: boolean;
+  used?: { thisMonth: number; allTime: number };
   setupHint?: string | null;
   pack: { credits: number; priceUsd: number };
   checkoutUrl: string | null;
@@ -69,7 +70,7 @@ export function VideoCreditsPanel() {
 
   if (isLoading || !data || !data.eligible) return null;
 
-  const { grant, paid, total, reserved, monthlyGrant, pack, checkoutUrl, setupHint } = data;
+  const { grant, paid, total, reserved, monthlyGrant, pack, checkoutUrl, setupHint, used: usage } = data;
   const used = Math.max(monthlyGrant - grant, 0);
   const pct = monthlyGrant > 0 ? Math.min(100, Math.round((used / monthlyGrant) * 100)) : 0;
   const empty = total === 0;
@@ -121,6 +122,7 @@ export function VideoCreditsPanel() {
               style={{ width: `${pct}%`, background: pct >= 100 ? "oklch(0.6 0.22 25)" : "oklch(0.72 0.25 285)" }} />
           </div>
           <p className="text-[10px]" style={{ color: "var(--c-45)" }}>
+            {usage ? `${usage.thisMonth.toLocaleString()} used this month · ` : ""}
             {grant.toLocaleString()} of this month&apos;s {monthlyGrant.toLocaleString()} free credits left
             {paid > 0 && ` · ${paid.toLocaleString()} bought credits, which do not expire`}
           </p>

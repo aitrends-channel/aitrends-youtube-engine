@@ -101,6 +101,7 @@ function StorageCard() {
 interface CreditsData {
   grant: number; paid: number; total: number; reserved: number;
   monthlyGrant: number; eligible: boolean;
+  used?: { thisMonth: number; allTime: number };
   setupHint?: string | null;
   pack: { credits: number; priceUsd: number };
   checkoutUrl: string | null;
@@ -114,7 +115,7 @@ interface CreditsData {
 function WalletCard({ data }: { data: CreditsData | null }) {
   if (!data?.eligible) return null;
 
-  const { grant, paid, total, reserved, monthlyGrant, pack, checkoutUrl, ledger, setupHint } = data;
+  const { grant, paid, total, reserved, monthlyGrant, pack, checkoutUrl, ledger, setupHint, used: usage } = data;
   const used = Math.max(monthlyGrant - grant, 0);
   const pct = monthlyGrant > 0 ? Math.min(used / monthlyGrant, 1) : 0;
   const empty = total === 0;
@@ -187,12 +188,18 @@ function WalletCard({ data }: { data: CreditsData | null }) {
         )}
 
         <p className="text-[11px] leading-relaxed" style={{ color: empty ? "oklch(0.68 0.19 25)" : "var(--c-42)" }}>
+          {usage ? `${usage.thisMonth.toLocaleString()} used this month · ` : ""}
           {monthlyGrant > 0
             ? `${grant.toLocaleString()} of this month's ${monthlyGrant.toLocaleString()} free credits left`
             : "No monthly credits on your plan"}
           {paid > 0 && ` · ${paid.toLocaleString()} purchased`}
           {empty && " — top up to keep generating, or wait for next month's free credits."}
         </p>
+        {usage && usage.allTime > usage.thisMonth && (
+          <p className="text-[11px]" style={{ color: "var(--c-42)" }}>
+            {usage.allTime.toLocaleString()} used in total
+          </p>
+        )}
       </div>
 
       {setupHint && (
@@ -210,10 +217,18 @@ function WalletCard({ data }: { data: CreditsData | null }) {
           </p>
           <ul>
             {ledger.slice(0, 8).map((row) => (
-              <li key={row.id} className="flex items-center justify-between gap-3 px-4 py-2"
+              <li key={row.id} className="flex items-start justify-between gap-3 px-4 py-2"
                 style={{ borderTop: "1px solid oklch(1 0 0 / 0.04)" }}>
-                <span className="text-xs min-w-0 truncate" style={{ color: "var(--c-70)" }}>
-                  {label(row.kind, row.note)}
+                <span className="min-w-0">
+                  <span className="text-xs block truncate" style={{ color: "var(--c-70)" }}>
+                    {label(row.kind, row.note)}
+                  </span>
+                  <span className="text-[10px] block" style={{ color: "var(--c-42)" }}>
+                    {new Date(row.created_at).toLocaleString(undefined, {
+                      day: "numeric", month: "short", year: "numeric",
+                      hour: "2-digit", minute: "2-digit",
+                    })}
+                  </span>
                 </span>
                 <span className="text-xs font-semibold tabular-nums shrink-0"
                   style={{ color: row.credits > 0 ? "oklch(0.62 0.15 145)" : "var(--c-55)" }}>
@@ -617,13 +632,18 @@ export default function AccountPage() {
       </header>
 
       <main className="flex-1 w-full max-w-none px-4 sm:px-8 lg:px-12 py-8 sm:py-14">
-        {/* Sidebar on the left from lg up; above the content on narrow screens,
-            where a fixed column would leave the forms too cramped to use. */}
-        <div className="flex flex-col lg:flex-row lg:items-start gap-6 lg:gap-8">
-          <nav className="lg:w-48 shrink-0 flex lg:flex-col gap-1 overflow-x-auto lg:overflow-visible">
+        {/* Tabs rather than a sidebar, matching /setup: these two pages are
+            siblings, and a two-item sidebar spent a whole column on a choice a
+            single row makes just as clearly. */}
+        {/* Centred and wider than the old reading column: with tabs across the
+            top there is no sidebar to anchor it left, and the ledger reads
+            better with room. Still capped, since a password field spanning a
+            wide monitor is harder to use, not easier. */}
+        <div className="max-w-5xl mx-auto">
+          <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
             {([
-              ["settings", "Account settings", <KeyRound key="s" size={15} />],
-              ...(credits?.eligible ? [["balance", "Balance", <Sparkles key="b" size={15} />] as const] : []),
+              ["settings", "Account settings", <KeyRound key="s" size={13} />],
+              ...(credits?.eligible ? [["balance", "Balance", <Sparkles key="b" size={13} />] as const] : []),
             ] as [("settings" | "balance"), string, React.ReactNode][]).map(([id, label, icon]) => {
               const on = section === id;
               return (
@@ -631,22 +651,19 @@ export default function AccountPage() {
                   key={id}
                   type="button"
                   onClick={() => setSection(id)}
-                  className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-[13px] font-medium text-left whitespace-nowrap transition-all cursor-pointer"
+                  className="flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-bold tracking-widest uppercase transition-all cursor-pointer"
                   style={on
-                    ? { background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.35)" }
-                    : { background: "transparent", color: "var(--c-55)" }}
+                    ? { background: "oklch(0.72 0.25 285)", color: "white" }
+                    : { background: "transparent", color: "var(--c-45)" }}
                 >
                   <span className="shrink-0">{icon}</span>
                   <span className="min-w-0 truncate">{label}</span>
                 </button>
               );
             })}
-          </nav>
+          </div>
 
-          {/* The pane fills the page, but its contents stay in a readable
-              column: a password field or a ledger row stretched across a wide
-              monitor is harder to use, not easier. */}
-          <div className="flex-1 min-w-0 max-w-3xl">
+          <div className="min-w-0">
         {section === "balance" ? (
           <WalletCard data={credits} />
         ) : (
