@@ -4,6 +4,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import { getCreditBalance, listLedger, CREDIT_PACK } from "@/lib/credits";
 import { getPaymentSettings } from "@/lib/plans";
+import { pickPackLink } from "@/lib/credits-checkout";
 import { isAdminUser } from "@/lib/admin";
 import type { User } from "@supabase/supabase-js";
 
@@ -20,29 +21,35 @@ import type { User } from "@supabase/supabase-js";
 /** Where "Top up" sends the customer. Admin-editable in product_config so a
  *  product can be swapped without a redeploy, with an env fallback. */
 async function creditPackCheckoutUrl(): Promise<string | null> {
-  // Chosen by the active payment mode, so a staging checkout never points at
-  // the live product. Admin-editable on the Payment tab; the env vars are a
-  // bootstrap fallback for a deployment with no config row yet.
+  // Chosen by the active payment mode so a staging checkout never points at the
+  // live product, and read from product_config first so whatever an admin saves
+  // on the Payment tab is what customers get.
   const settings = await getPaymentSettings();
-  const column = settings.mode === "production"
-    ? "credit_pack_checkout_url_production"
-    : "credit_pack_checkout_url_test";
 
   const { data, error } = await supabase
     .from("product_config")
-    .select(column)
+    .select("credit_pack_checkout_url_test, credit_pack_checkout_url_production")
     .eq("service", "_global")
     .maybeSingle();
   if (error) {
-    // An unapplied migration 126 must not break the wallet: no link simply
-    // means no top-up button.
+    // An unapplied migration 126 must not break the wallet: no link simply means
+    // no top-up button.
     console.warn("[credits] checkout url read failed:", error.message);
   }
-  const fromDb = (data as Record<string, string | null> | null)?.[column];
-  const fromEnv = settings.mode === "production"
-    ? process.env.NEXT_PUBLIC_DODO_CREDIT_PACK_LINK_PRODUCTION
-    : process.env.NEXT_PUBLIC_DODO_CREDIT_PACK_LINK_TEST;
-  return (fromDb?.trim() || fromEnv?.trim() || process.env.NEXT_PUBLIC_DODO_CREDIT_PACK_LINK?.trim()) ?? null;
+  const row = data as {
+    credit_pack_checkout_url_test: string | null;
+    credit_pack_checkout_url_production: string | null;
+  } | null;
+
+  return pickPackLink(
+    settings.mode,
+    { test: row?.credit_pack_checkout_url_test, production: row?.credit_pack_checkout_url_production },
+    {
+      test: process.env.NEXT_PUBLIC_DODO_CREDIT_PACK_LINK_TEST,
+      production: process.env.NEXT_PUBLIC_DODO_CREDIT_PACK_LINK_PRODUCTION,
+      legacy: process.env.NEXT_PUBLIC_DODO_CREDIT_PACK_LINK,
+    },
+  );
 }
 
 export async function GET() {
