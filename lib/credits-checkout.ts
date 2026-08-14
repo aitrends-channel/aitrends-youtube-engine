@@ -35,3 +35,28 @@ export function startTopUp(checkoutUrl: string): void {
   try { sessionStorage.setItem(PENDING_CREDIT_PURCHASE_KEY, "credits"); } catch {}
   window.location.href = buildTopUpUrl(checkoutUrl, window.location.origin);
 }
+
+/**
+ * Which checkout link to use, in priority order.
+ *
+ * The admin dashboard is the source of truth: a value saved on the Payment tab
+ * takes effect immediately, with no redeploy and without any env var being able
+ * to override it. The env vars exist only so a fresh deployment with no config
+ * row yet is not dead, and the legacy unsuffixed one only for the bootstrap
+ * setup that predates per-environment links.
+ *
+ * Pure, so the ordering is testable instead of asserted.
+ */
+export function pickPackLink(
+  mode: "test" | "production",
+  db: { test?: string | null; production?: string | null },
+  env: { test?: string | null; production?: string | null; legacy?: string | null } = {},
+): string | null {
+  const fromDb = mode === "production" ? db.production : db.test;
+  if (fromDb?.trim()) return fromDb.trim();
+
+  const fromEnv = mode === "production" ? env.production : env.test;
+  if (fromEnv?.trim()) return fromEnv.trim();
+
+  return env.legacy?.trim() || null;
+}
