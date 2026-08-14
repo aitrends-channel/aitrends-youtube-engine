@@ -18,6 +18,23 @@ import type { User } from "@supabase/supabase-js";
 export const CREDIT_PACK = { credits: 300, priceUsd: 6 } as const;
 
 /**
+ * What the top-up picker offers: one to four packs.
+ *
+ * Derived from CREDIT_PACK rather than written out, so the pack price stays the
+ * only place a price lives. Strictly linear, with no bulk discount, because the
+ * pack is sold at the provider's own price: a discount here would be sold at a
+ * loss. That is also why no option is badged "best value" — none of them is.
+ *
+ * Bought as a quantity of one Dodo product, not four products, so the checkout
+ * link an admin configures keeps working for every option.
+ */
+export const CREDIT_PACK_OPTIONS = [1, 2, 3, 4].map((units) => ({
+  units,
+  credits: CREDIT_PACK.credits * units,
+  priceUsd: CREDIT_PACK.priceUsd * units,
+}));
+
+/**
  * Restrict the whole credits feature to admins.
  *
  * On while GenAIPro is being brought up: the upstream account holds no package,
@@ -35,19 +52,17 @@ export const CREDIT_PACK = { credits: 300, priceUsd: 6 } as const;
 export const VIDEO_CREDITS_ADMIN_ONLY = true;
 
 /**
- * TESTING SHIM — grant one full pack for any confirmed payment, whatever was
- * paid and whatever quantity was bought.
+ * Grant one pack per confirmed payment regardless of quantity bought.
  *
- * On while the flow is being tested with small real charges: a $1 payment still
- * yields 300 credits, which is $6 of GenAIPro capacity. That is a deliberate
- * loss for the sake of exercising the path end to end.
+ * OFF, and it has to stay off now that the top-up picker sells quantities. With
+ * it on, the 1,200-credit option takes $24 and credits 300: the picker would be
+ * a way to overcharge, not a choice. purchasedQuantity() reads the cart instead,
+ * so what was paid for is what lands.
  *
- * Turn this off before real customers can buy: with it on, anyone who finds the
- * checkout link and edits the amount gets a full pack for whatever they pay.
- * The correct behaviour is already implemented behind it — purchasedQuantity()
- * reads the cart — so this is a one-line switch, not a rewrite.
+ * It was on while the flow was tested with small real charges, where granting a
+ * full pack for $1 was a deliberate and harmless loss.
  */
-export const TOPUP_GRANTS_FLAT_PACK = true;
+export const TOPUP_GRANTS_FLAT_PACK = false;
 
 /** Provider tag written onto ledger and reservation rows. */
 export const CREDIT_PROVIDER_GENAIPRO = "genaipro";
