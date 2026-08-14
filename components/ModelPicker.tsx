@@ -41,6 +41,10 @@ interface CommonProps {
    *  list to "all". Used by the 1Click config, where category browsing
    *  is noise and the Free tab's BYO gating doesn't apply. */
   hideCategoryTabs?: boolean;
+  /** Slot rendered directly under the category tabs, above the model list.
+   *  The video panel puts the credit balance here: it belongs to the model
+   *  choice (the free model spends it) rather than to the section header. */
+  belowTabs?: React.ReactNode;
 }
 
 interface ImageModelPickerProps extends CommonProps {
@@ -254,6 +258,8 @@ export function ModelPicker(props: ModelPickerProps) {
         ))}
       </div>
       )}
+
+      {props.belowTabs && <div className="mb-2">{props.belowTabs}</div>}
 
       {tab === "free" && !hasFree && !props.hideCategoryTabs ? (
         // Free tier is a teaser for now — the BYO implementations behind
