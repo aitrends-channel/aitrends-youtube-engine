@@ -211,6 +211,48 @@ export async function addCredits(opts: {
   return data === true;
 }
 
+export interface CreditsUsed {
+  /** Credits spent on clips during the current grant period. */
+  thisMonth: number;
+  /** Credits spent on clips since the account existed. */
+  allTime: number;
+}
+
+/**
+ * How many credits have actually been spent.
+ *
+ * Summed from debit rows rather than derived from the balance, because a
+ * refunded clip returns its credit: balance arithmetic would report a failed
+ * generation as usage. Refund rows are excluded, so this is work delivered.
+ *
+ * Fail-soft: this is a display figure, and reporting zero is better than
+ * breaking the panel that shows the balance beside it.
+ */
+export async function getCreditsUsed(userId: string): Promise<CreditsUsed> {
+  try {
+    const { data, error } = await supabase
+      .from("credit_ledger")
+      .select("credits, created_at")
+      .eq("user_id", userId)
+      .eq("kind", "debit");
+    if (error) {
+      console.warn("[credits] used read failed:", error.message);
+      return { thisMonth: 0, allTime: 0 };
+    }
+    const monthStart = `${currentPeriod()}-01`;
+    let thisMonth = 0, allTime = 0;
+    for (const row of (data ?? []) as { credits: number; created_at: string }[]) {
+      const spent = Math.abs(row.credits ?? 0);
+      allTime += spent;
+      if (row.created_at >= monthStart) thisMonth += spent;
+    }
+    return { thisMonth, allTime };
+  } catch (e) {
+    console.warn("[credits] used threw:", e instanceof Error ? e.message : e);
+    return { thisMonth: 0, allTime: 0 };
+  }
+}
+
 export interface LedgerRow {
   id: string;
   kind: string;
