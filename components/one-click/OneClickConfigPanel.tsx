@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode, useMemo } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { Wand2, X, ArrowLeft, ArrowRight } from "lucide-react";
@@ -12,6 +12,7 @@ import { AI33_VOICES } from "@/lib/ai33/tts";
 import type { OneClickConfig } from "@/lib/one-click/config";
 import { emptyConfig } from "@/lib/one-click/config";
 import type { KieModel } from "@/lib/types";
+import { paidModelsOnly } from "@/lib/model-tier";
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(r.status)));
 
@@ -127,7 +128,13 @@ export function OneClickConfigPanel({
   );
   const { data: voices } = useSWR<KieModel[]>("/api/kie/models?type=tts", fetcher);
   const { data: imageModels } = useSWR<KieModel[]>("/api/kie/models?type=image", fetcher);
-  const { data: videoModels } = useSWR<KieModel[]>("/api/kie/models?type=video", fetcher);
+  const { data: rawVideoModels } = useSWR<KieModel[]>("/api/kie/models?type=video", fetcher);
+  // 1Click queues clips into "queued" like any KIE clip, and a free clip has to
+  // be parked where the shared video-worker cannot claim it. Offering a free
+  // model here would produce beats that worker sends to KIE, so the option is
+  // absent rather than broken. Free clips are chosen from the picker's Free tab
+  // on the Generate step.
+  const videoModels = useMemo(() => (rawVideoModels ? paidModelsOnly(rawVideoModels) : rawVideoModels), [rawVideoModels]);
 
   const [cfg, setCfg] = useState<OneClickConfig>(emptyConfig());
   const [hydrated, setHydrated] = useState(false);

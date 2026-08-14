@@ -26,7 +26,8 @@ export const AI33_TTS_USD_PER_MILLION_CHARS =
  *  it has no counter. Only perks we pay for are allocated here — Google
  *  TTS and Cloudflare images run on the user's own key, and Qwen isn't
  *  reachable in the picker. */
-export type QuotaKind = Extract<FreeUsageKind, "ai33_tts_chars"> | "voice_clones" | "storage_bytes";
+export type QuotaKind = Extract<FreeUsageKind, "ai33_tts_chars">
+  | "voice_clones" | "storage_bytes" | "genaipro_video_credits";
 
 export type QuotaAllocation = {
   /** Allowance per plan slug. A slug with no entry gets nothing — every
@@ -36,6 +37,10 @@ export type QuotaAllocation = {
 };
 
 export type QuotaConfig = Record<QuotaKind, QuotaAllocation>;
+
+/** GenAIPro sells 300 clips for $6, so one clip costs $0.02 and a million
+ *  would be $20,000. Expressed per-million to match the other rates. */
+export const GENAIPRO_USD_PER_MILLION_CLIPS = 20_000;
 
 export const QUOTA_VALUE_MAX = 50_000_000;
 
@@ -86,6 +91,18 @@ export const QUOTA_FIELDS: {
     description: "Chars of free voiceover per user each month. We pay for these.",
   },
   {
+    key: "genaipro_video_credits",
+    label: "Free video credits",
+    unit: "clips",
+    period: "monthly",
+    funding: "heclus",
+    // $6 per 300 clips = $20,000 per 1M. Real spend, so it stays bounded:
+    // no allowUnlimited on this field.
+    usdPerMillionUnits: GENAIPRO_USD_PER_MILLION_CLIPS,
+    perPlan: true,
+    description: "Clips of free video generation per user each month, one credit per clip. We pay for these. Unused credits expire at month end; bought credits do not. 0 = not included on this plan.",
+  },
+  {
     key: "voice_clones",
     label: "Custom voice clones",
     unit: "voices",
@@ -122,6 +139,12 @@ export const QUOTA_FIELDS: {
  *  unapplied migration 104 doesn't zero the perk for every user. Not
  *  exposed in the admin UI. */
 export const QUOTA_DEFAULTS: QuotaConfig = {
+  genaipro_video_credits: {
+    // 300 clips is one $6 GenAIPro pack, about two finished videos at the
+    // median beat count. Founder is absent on purpose: the plan gets no
+    // allowance and the Free videos tab does not appear for it at all.
+    byPlan: { founder: 0, starter: 300, pro: 300 },
+  },
   ai33_tts_chars: {
     byPlan: { founder: 0, starter: AI33_TTS_CAP_STARTER, pro: AI33_TTS_CAP_PRO },
   },
@@ -153,6 +176,7 @@ function coerceValue(raw: unknown, allowUnlimited = false): number | null {
  *  number can't brick every quota. */
 export function coerceQuotaConfig(raw: unknown): QuotaConfig {
   const out: QuotaConfig = {
+    genaipro_video_credits: { byPlan: { ...QUOTA_DEFAULTS.genaipro_video_credits.byPlan } },
     ai33_tts_chars: { byPlan: { ...QUOTA_DEFAULTS.ai33_tts_chars.byPlan } },
     voice_clones: { byPlan: { ...QUOTA_DEFAULTS.voice_clones.byPlan } },
     storage_bytes: { byPlan: { ...QUOTA_DEFAULTS.storage_bytes.byPlan } },

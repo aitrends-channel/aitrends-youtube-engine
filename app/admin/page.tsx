@@ -22,6 +22,7 @@ import { TtsCostLens } from "@/components/admin/TtsCostLens";
 import { SupportPanel } from "@/components/admin/SupportPanel";
 import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
 import { FeatureRequestsPanel } from "@/components/admin/FeatureRequestsPanel";
+import { paidModelsOnly } from "@/lib/model-tier";
 import { MemoryPanel } from "@/components/admin/MemoryPanel";
 import { QuotasPanel } from "@/components/admin/quotas";
 import { HeclusAgentPanel } from "@/components/admin/HeclusAgentPanel";
@@ -481,7 +482,7 @@ interface ProductApiKey {
   created_at: string;
 }
 
-const SERVICES = ["youtube_data_api_key", "supadata_api_key", "heclus_kie_api_key", "anthropic_api_key"] as const;
+const SERVICES = ["youtube_data_api_key", "supadata_api_key", "heclus_kie_api_key", "anthropic_api_key", "genaipro_api_key"] as const;
 type Service = typeof SERVICES[number];
 
 const SERVICE_LABELS: Record<Service, string> = {
@@ -489,6 +490,7 @@ const SERVICE_LABELS: Record<Service, string> = {
   supadata_api_key: "Supadata API Key",
   heclus_kie_api_key: "Heclus KIE API Key",
   anthropic_api_key: "Anthropic API Key (direct)",
+  genaipro_api_key: "GenAIPro API Key",
 };
 
 interface ActivityPoint {
@@ -1756,7 +1758,12 @@ function ModelDefaultsPanel() {
     default_video_model: string | null;
   }>("/api/admin/default-models", fetcher, { revalidateOnFocus: false });
   const { data: imageModels } = useSWR<{ id: string; name: string }[]>("/api/kie/models?type=image", fetcher);
-  const { data: videoModels } = useSWR<{ id: string; name: string }[]>("/api/kie/models?type=video", fetcher);
+  // Tags come through so the free-tier model can be excluded: making a
+  // Heclus-funded model the platform default would have every eligible user
+  // spending free credits by default, which is a cost decision rather than a
+  // default. It stays selectable per project from the picker's Free tab.
+  const { data: rawVideoModels } = useSWR<{ id: string; name: string; tags?: string[] }[]>("/api/kie/models?type=video", fetcher);
+  const videoModels = rawVideoModels ? paidModelsOnly(rawVideoModels) : rawVideoModels;
 
   const [imageSel, setImageSel] = useState<string>("");
   const [videoSel, setVideoSel] = useState<string>("");
@@ -3432,6 +3439,8 @@ function PlansPanel() {
     webhookSecretProduction: string | null;
     customerPortalUrlTest: string | null;
     customerPortalUrlProduction: string | null;
+    creditPackLinkTest: string | null;
+    creditPackLinkProduction: string | null;
   }>("/api/admin/payment-mode", fetcher, { revalidateOnFocus: false });
   const [editingProdTest, setEditingProdTest] = useState(false);
   const [deletingProdTest, setDeletingProdTest] = useState(false);
@@ -4274,6 +4283,8 @@ interface DodoApiKeysCardProps {
     webhookSecretProduction: string | null;
     customerPortalUrlTest: string | null;
     customerPortalUrlProduction: string | null;
+    creditPackLinkTest: string | null;
+    creditPackLinkProduction: string | null;
   } | null;
   // Deployment env (HECLUS_ENV). When "production", the Test tab is
   // hidden so the admin can't edit test credentials on a live
@@ -4382,26 +4393,30 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
   const [prodWebhook, setProdWebhook] = useState("");
   const [testPortal, setTestPortal] = useState("");
   const [prodPortal, setProdPortal] = useState("");
+  const [testPack, setTestPack] = useState("");
+  const [prodPack, setProdPack] = useState("");
   const [saving, setSaving] = useState(false);
 
   const keyValue = activeEnv === "test" ? testKey : prodKey;
   const urlValue = activeEnv === "test" ? testUrl : prodUrl;
   const webhookValue = activeEnv === "test" ? testWebhook : prodWebhook;
   const portalValue = activeEnv === "test" ? testPortal : prodPortal;
+  const packValue = activeEnv === "test" ? testPack : prodPack;
   const savedKey = (activeEnv === "test" ? settings?.secretKeyTest : settings?.secretKeyProduction) ?? "";
   const savedUrl = (activeEnv === "test" ? settings?.baseUrlTest : settings?.baseUrlProduction) ?? "";
   const savedWebhook = (activeEnv === "test" ? settings?.webhookSecretTest : settings?.webhookSecretProduction) ?? "";
   const savedPortal = (activeEnv === "test" ? settings?.customerPortalUrlTest : settings?.customerPortalUrlProduction) ?? "";
+  const savedPack = (activeEnv === "test" ? settings?.creditPackLinkTest : settings?.creditPackLinkProduction) ?? "";
   // Dirty when the admin has typed something into any of the inputs
   // for the active env. Empty inputs are a no-op — clearing a saved
   // value isn't supported through this card on purpose.
-  const dirty = !!keyValue.trim() || !!urlValue.trim() || !!webhookValue.trim() || !!portalValue.trim();
+  const dirty = !!keyValue.trim() || !!urlValue.trim() || !!webhookValue.trim() || !!portalValue.trim() || !!packValue.trim();
 
   function clearActiveEnvBuffers() {
     if (activeEnv === "test") {
-      setTestKey(""); setTestUrl(""); setTestWebhook(""); setTestPortal("");
+      setTestKey(""); setTestUrl(""); setTestWebhook(""); setTestPortal(""); setTestPack("");
     } else {
-      setProdKey(""); setProdUrl(""); setProdWebhook(""); setProdPortal("");
+      setProdKey(""); setProdUrl(""); setProdWebhook(""); setProdPortal(""); setProdPack("");
     }
   }
 
@@ -4420,6 +4435,9 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
       }
       if (portalValue.trim()) {
         patch[activeEnv === "test" ? "customerPortalUrlTest" : "customerPortalUrlProduction"] = portalValue.trim();
+      }
+      if (packValue.trim()) {
+        patch[activeEnv === "test" ? "creditPackLinkTest" : "creditPackLinkProduction"] = packValue.trim();
       }
       const res = await fetch("/api/admin/payment-mode", {
         method: "PATCH",
@@ -4497,6 +4515,16 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
           placeholder="whsec_…"
           disabled={saving}
           hint="Per-environment Dodo webhook signing secret. The handler tries every configured secret on each request, so test + production can both target the same /api/webhooks/dodo URL."
+        />
+
+        <DodoVarField
+          label="GenAI Credit Package Link"
+          saved={savedPack}
+          value={packValue}
+          onChange={(v) => (activeEnv === "test" ? setTestPack(v) : setProdPack(v))}
+          placeholder="https://checkout.dodopayments.com/buy/…"
+          disabled={saving}
+          hint={`Checkout link for the 300-credit GenAI video pack, saved against the ${activeEnv} Dodo environment. Its return URL must land on a page carrying the wallet (the account page or the Generate step) — that page confirms the payment and adds the credits. With no link the wallet shows no top-up button.`}
         />
 
         <DodoVarField

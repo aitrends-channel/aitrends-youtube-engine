@@ -4,7 +4,12 @@
       "source": "/(.*)",
       "destination": "https://app.heclus.io/$1",
       "permanent": true,
-      "has": [{ "type": "host", "value": "aitrends-youtube-engine.vercel.app" }]
+      "has": [
+        {
+          "type": "host",
+          "value": "aitrends-youtube-engine.vercel.app"
+        }
+      ]
     }
   ],
   "crons": [
@@ -35,6 +40,10 @@
     {
       "path": "/api/cron/support-auto-reply",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/genaipro-video",
+      "schedule": "*/2 * * * *"
     }
   ]
 }

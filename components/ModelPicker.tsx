@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Search } from "lucide-react";
 import type { KieModel } from "@/lib/types";
 import { getModelConfig } from "@/lib/kie/imageModels";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
 import { FREE_TIER_COMING_SOON } from "@/lib/free-tier-flag";
+import { isFreeTierModel, paidModelsOnly } from "@/lib/model-tier";
 
 // Shared model + variant selector used wherever the user picks an
 // image or video model. Lives in one place so every step in the
@@ -146,6 +147,7 @@ function VariantPill<T>({
 export function ModelPicker(props: ModelPickerProps) {
   const { type, models, selectedModelId, onSelectModel, disabled = false } = props;
   const [tab, setTab] = useState<ModelTab>("all");
+  const openedOnFree = useRef(false);
   const [query, setQuery] = useState("");
 
   const searchQ = query.trim().toLowerCase();
@@ -158,24 +160,49 @@ export function ModelPicker(props: ModelPickerProps) {
   // Sort the model list according to the active tab. Fastest/Cheapest
   // are ledger-driven and hide models without observed data so the tab
   // only shows ranked entries. "all" preserves the upstream order.
+  // Free-tier models are marked by tag rather than by id, so the picker needs
+  // no knowledge of which provider is behind them and a second free model
+  // later needs no change here. Video has one (GenAIPro, on Heclus's own
+  // account); image and voiceover have none yet, which is why the Free tab
+  // still shows its teaser for those.
+  const freeModels = (models ?? []).filter(isFreeTierModel);
+  const hasFree = freeModels.length > 0;
+
+  // A free model is only listed under the Free tab, so a user coming back to a
+  // saved free selection would open on All and see nothing selected. Land them
+  // on the tab that holds their choice — once, so it never fights a click.
+  useEffect(() => {
+    if (openedOnFree.current || !selectedModelId || !hasFree) return;
+    if (freeModels.some((m) => m.id === selectedModelId)) {
+      openedOnFree.current = true;
+      setTab("free");
+    }
+  }, [selectedModelId, hasFree, freeModels]);
+
   const list: KieModel[] | null = (() => {
     if (!models) return null;
     const base = models.slice();
+    if (tab === "free") return freeModels.filter(matchesSearch);
+    // Every other tab excludes them: the Free tab is their home, and listing
+    // them twice makes the free option look like just another paid model.
+    const paid = paidModelsOnly(base);
     if (tab === "fastest") {
-      return base
+      return paid
         .filter((m) => typeof m.avgSpeedMs === "number" && m.avgSpeedMs > 0 && matchesSearch(m))
         .sort((a, b) => (a.avgSpeedMs ?? Infinity) - (b.avgSpeedMs ?? Infinity));
     }
     if (tab === "cheapest") {
-      return base
+      return paid
         .filter((m) => m.costPerUnit !== undefined && m.costPerUnit !== null && matchesSearch(m))
         .sort((a, b) => Number(a.costPerUnit) - Number(b.costPerUnit));
     }
-    return base.filter(matchesSearch);
+    return paid.filter(matchesSearch);
   })();
 
   const empty = models && (
-    tab === "fastest"
+    tab === "free"
+      ? !hasFree
+      : tab === "fastest"
       ? !models.some((m) => typeof m.avgSpeedMs === "number" && m.avgSpeedMs > 0)
       : tab === "cheapest"
         ? !models.some((m) => m.costPerUnit !== undefined && m.costPerUnit !== null)
@@ -217,7 +244,7 @@ export function ModelPicker(props: ModelPickerProps) {
               boxShadow: "inset 0 0 0 1px oklch(0.72 0.25 285 / 0.35)",
             } : { background: "transparent", color: "var(--c-55)" }}
           >
-            {t === "free" && FREE_TIER_COMING_SOON ? (
+            {t === "free" && FREE_TIER_COMING_SOON && !hasFree ? (
               <span className="flex flex-col items-center leading-tight">
                 <span>😄 Free</span>
                 <span className="text-[9px] font-semibold normal-case">coming soon</span>
@@ -228,7 +255,7 @@ export function ModelPicker(props: ModelPickerProps) {
       </div>
       )}
 
-      {tab === "free" && !props.hideCategoryTabs ? (
+      {tab === "free" && !hasFree && !props.hideCategoryTabs ? (
         // Free tier is a teaser for now — the BYO implementations behind
         // it were removed.
         <div className="rounded-xl px-4 py-8 text-center"
@@ -248,6 +275,9 @@ export function ModelPicker(props: ModelPickerProps) {
         </div>
       ) : (
       <>
+      {/* The Free tab holds a handful of models at most, so a search field
+          there is furniture rather than help. */}
+      {tab !== "free" && (
       <div className="relative mb-2">
         <Search
           size={13}
@@ -264,6 +294,17 @@ export function ModelPicker(props: ModelPickerProps) {
           style={{ background: "var(--bg-input)", border: "1px solid var(--bd-7)", color: "var(--c-70)" }}
         />
       </div>
+      )}
+
+      {/* Above the list, not below it: it is guidance for choosing, so it has
+          to be read before the options rather than after scrolling past them.
+          Not on the Free tab: it tells the reader to pick another model, and
+          there is nothing else there to pick. */}
+      {tipText && tab !== "free" && (
+        <p className="text-[11px] mb-2 leading-snug" style={{ color: "var(--c-40)" }}>
+          {tipText}
+        </p>
+      )}
 
       <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
         {list?.map((m) => (
@@ -299,12 +340,6 @@ export function ModelPicker(props: ModelPickerProps) {
         )}
         {!models && <p className="text-xs" style={{ color: "var(--c-40)" }}>Loading models...</p>}
       </div>
-
-      {tipText && (
-        <p className="text-[11px] mt-2 leading-snug" style={{ color: "var(--c-40)" }}>
-          {tipText}
-        </p>
-      )}
 
       {/* Image aspect-ratio + resolution selectors were moved out of this
           non-free branch to below the tab ternary, so the Free tab shows

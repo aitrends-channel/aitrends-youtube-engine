@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { GENAIPRO_QUEUED_STATUS } from "@/lib/genaipro/client";
 
 export async function GET(req: Request) {
   try { await getRequiredUser(); } catch (e) { return e as Response; }
@@ -15,7 +16,7 @@ export async function GET(req: Request) {
     supabase.from("project_beats")
       .select("beat_number")
       .eq("project_id", projectId)
-      .in("video_status", ["queued", "submitting", "rendering"]),
+      .in("video_status", [GENAIPRO_QUEUED_STATUS, "queued", "submitting", "rendering"]),
     supabase.from("project_beats")
       .select("video_error")
       .eq("project_id", projectId)
