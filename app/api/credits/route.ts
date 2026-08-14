@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
-import { getCreditBalance, listLedger, CREDIT_PACK } from "@/lib/credits";
+import { getCreditBalance, listLedger, getCreditsUsed, CREDIT_PACK } from "@/lib/credits";
 import { getPaymentSettings } from "@/lib/plans";
 import { pickPackLink } from "@/lib/credits-checkout";
 import { isAdminUser } from "@/lib/admin";
@@ -56,10 +56,11 @@ export async function GET() {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
-  const [balance, ledger, checkoutUrl] = await Promise.all([
+  const [balance, ledger, checkoutUrl, used] = await Promise.all([
     getCreditBalance(user),
     listLedger(user.id, 25),
     creditPackCheckoutUrl(),
+    getCreditsUsed(user.id),
   ]);
 
   // A missing checkout link is a configuration gap, not a customer-facing
@@ -72,6 +73,7 @@ export async function GET() {
 
   return NextResponse.json({
     ...balance,
+    used,
     setupHint,
     eligible: balance.monthlyGrant > 0 || balance.paid > 0,
     pack: CREDIT_PACK,
