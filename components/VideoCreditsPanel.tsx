@@ -5,7 +5,7 @@ import useSWR from "swr";
 import { toast } from "sonner";
 import { Sparkles, Plus } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
-import { startTopUp } from "@/lib/credits-checkout";
+import { TopUpOptions } from "@/components/TopUpOptions";
 
 // The video-credit balance, shown where clips are generated.
 //
@@ -38,6 +38,7 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 export function VideoCreditsPanel() {
   const { data, mutate, isLoading } = useSWR<CreditsResponse>("/api/credits", fetcher);
   const [claiming, setClaiming] = useState(false);
+  const [picking, setPicking] = useState(false);
   // One attempt per payment id per mount: effects run twice in development and
   // the server is idempotent anyway, but there is no reason to ask twice.
   const claimed = useRef<string | null>(null);
@@ -70,7 +71,7 @@ export function VideoCreditsPanel() {
 
   if (isLoading || !data || !data.eligible) return null;
 
-  const { grant, paid, total, reserved, monthlyGrant, pack, checkoutUrl, setupHint, used: usage } = data;
+  const { grant, paid, total, reserved, monthlyGrant, checkoutUrl, setupHint, used: usage } = data;
   const used = Math.max(monthlyGrant - grant, 0);
   const pct = monthlyGrant > 0 ? Math.min(100, Math.round((used / monthlyGrant) * 100)) : 0;
   const empty = total === 0;
@@ -96,26 +97,24 @@ export function VideoCreditsPanel() {
           </p>
         </div>
 
-        {checkoutUrl && (
-          <a
-            href={checkoutUrl}
-            onClick={(e) => {
-              // The redirect_url has to be built here, not in the JSX: window is
-              // not available while a client component is prerendered on the
-              // server. Without it Dodo keeps the customer on its own receipt.
-              e.preventDefault();
-              startTopUp(checkoutUrl);
-            }}
+        {checkoutUrl && !picking && (
+          <button
+            type="button"
+            onClick={() => setPicking(true)}
             className="inline-flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
             style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
           >
             {claiming ? <Spinner size={12} /> : <Plus size={12} />}
-            {claiming ? "Confirming…" : `Top up ${pack.credits} for $${pack.priceUsd}`}
-          </a>
+            {claiming ? "Confirming…" : "Top up"}
+          </button>
         )}
       </div>
 
-      {monthlyGrant > 0 && (
+      {checkoutUrl && picking && (
+        <TopUpOptions checkoutUrl={checkoutUrl} onCancel={() => setPicking(false)} compact />
+      )}
+
+      {monthlyGrant > 0 && !picking && (
         <div className="space-y-1">
           <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "oklch(0 0 0 / 0.12)" }}>
             <div className="h-full rounded-full transition-all"
@@ -135,7 +134,7 @@ export function VideoCreditsPanel() {
         </p>
       )}
 
-      {empty && (
+      {empty && !picking && (
         <p className="text-[11px] leading-relaxed" style={{ color: "oklch(0.7 0.2 25)" }}>
           You have no credits left. Free credits refresh at the start of next month, or top up to keep generating now.
         </p>

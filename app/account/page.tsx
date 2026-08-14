@@ -8,7 +8,7 @@ import Link from "next/link";
 import { ArrowLeft, Eye, EyeOff, HardDrive, KeyRound, LogOut, Save, Sparkles, Star } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { startTopUp } from "@/lib/credits-checkout";
+import { TopUpOptions } from "@/components/TopUpOptions";
 
 const GB = 1024 ** 3;
 
@@ -113,9 +113,12 @@ interface CreditsData {
  *  a plan with no allowance and no bought credit has no wallet, which is how
  *  Founder never sees this. `eligible` is decided server-side. */
 function WalletCard({ data }: { data: CreditsData | null }) {
+  // Opening the picker in place of the balance row, not over it. A modal would
+  // hide the balance behind the decision it informs.
+  const [picking, setPicking] = useState(false);
   if (!data?.eligible) return null;
 
-  const { grant, paid, total, reserved, monthlyGrant, pack, checkoutUrl, ledger, setupHint, used: usage } = data;
+  const { grant, paid, total, reserved, monthlyGrant, checkoutUrl, ledger, setupHint, used: usage } = data;
   const used = Math.max(monthlyGrant - grant, 0);
   const pct = monthlyGrant > 0 ? Math.min(used / monthlyGrant, 1) : 0;
   const empty = total === 0;
@@ -164,38 +167,40 @@ function WalletCard({ data }: { data: CreditsData | null }) {
               credits left{reserved > 0 ? ` · ${reserved} in use right now` : ""}
             </span>
           </p>
-          {checkoutUrl && (
-            <a href={checkoutUrl}
-              onClick={(e) => {
-              // The redirect_url has to be built here, not in the JSX: window is
-              // not available while a client component is prerendered on the
-              // server. Without it Dodo keeps the customer on its own receipt.
-              e.preventDefault();
-              startTopUp(checkoutUrl);
-            }}
+          {checkoutUrl && !picking && (
+            <button type="button" onClick={() => setPicking(true)}
               className="text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:opacity-90"
               style={{ background: "oklch(0.72 0.25 285)", color: "white" }}>
-              Top up {pack.credits} for ${pack.priceUsd}
-            </a>
+              Top up
+            </button>
           )}
         </div>
 
-        {monthlyGrant > 0 && (
+        {/* Replaces the meter and the usage line while open: the amounts are the
+            decision at hand, and leaving the button up alongside them would give
+            two ways to start the same purchase. */}
+        {checkoutUrl && picking && (
+          <TopUpOptions checkoutUrl={checkoutUrl} onCancel={() => setPicking(false)} />
+        )}
+
+        {monthlyGrant > 0 && !picking && (
           <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(0 0 0 / 0.18)" }}>
             <div className="h-full rounded-full transition-all"
               style={{ width: `${Math.max(pct * 100, 1.5)}%`, background: barColor }} />
           </div>
         )}
 
+        {!picking && (
         <p className="text-[11px] leading-relaxed" style={{ color: empty ? "oklch(0.68 0.19 25)" : "var(--c-42)" }}>
           {usage ? `${usage.thisMonth.toLocaleString()} used this month · ` : ""}
           {monthlyGrant > 0
             ? `${grant.toLocaleString()} of this month's ${monthlyGrant.toLocaleString()} free credits left`
             : "No monthly credits on your plan"}
           {paid > 0 && ` · ${paid.toLocaleString()} purchased`}
-          {empty && " — top up to keep generating, or wait for next month's free credits."}
+          {empty && ". Top up to keep generating, or wait for next month's free credits."}
         </p>
-        {usage && usage.allTime > usage.thisMonth && (
+        )}
+        {!picking && usage && usage.allTime > usage.thisMonth && (
           <p className="text-[11px]" style={{ color: "var(--c-42)" }}>
             {usage.allTime.toLocaleString()} used in total
           </p>
