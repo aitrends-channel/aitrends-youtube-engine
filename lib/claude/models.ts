@@ -54,6 +54,39 @@ export const CLAUDE_MODELS: ClaudeModelOption[] = [
   { id: "claude-haiku-4-5", label: "Haiku 4.5", tier: "fast", note: "Cheapest and fastest. Looser tool_choice adherence.", thinking: "off" },
 ];
 
+/** USD per million tokens, for the cost readouts in the admin dashboard.
+ *  `intro` is a launch price that expires — after `introUntil` the list rate
+ *  applies, so a figure shown today stays right next month without an edit.
+ *  Cache reads bill at 0.1x input and 5-minute cache writes at 1.25x; neither
+ *  is modelled here because the steps these numbers describe don't cache. */
+export type ClaudeModelPrice = {
+  in: number;
+  out: number;
+  intro?: { in: number; out: number; until: string };
+};
+
+export const CLAUDE_MODEL_PRICING: Record<string, ClaudeModelPrice> = {
+  "claude-fable-5": { in: 10, out: 50 },
+  "claude-opus-5": { in: 5, out: 25 },
+  "claude-opus-4-8": { in: 5, out: 25 },
+  "claude-opus-4-7": { in: 5, out: 25 },
+  "claude-opus-4-6": { in: 5, out: 25 },
+  "claude-sonnet-5": { in: 3, out: 15, intro: { in: 2, out: 10, until: "2026-08-31" } },
+  "claude-sonnet-4-6": { in: 3, out: 15 },
+  "claude-haiku-4-5": { in: 1, out: 5 },
+};
+
+/** The rate in force on `on` (defaults to now), so intro pricing expires by
+ *  itself rather than needing a follow-up edit. */
+export function claudeRateFor(modelId: string, on: Date = new Date()): ClaudeModelPrice | null {
+  const price = CLAUDE_MODEL_PRICING[modelId];
+  if (!price) return null;
+  if (price.intro && on <= new Date(`${price.intro.until}T23:59:59Z`)) {
+    return { in: price.intro.in, out: price.intro.out, intro: price.intro };
+  }
+  return { in: price.in, out: price.out };
+}
+
 /** Steps where a user's own pick is honoured. Deliberately only the
  *  high-volume prompt grind: those runs are where model cost actually adds
  *  up and where a weaker model degrades output least visibly. Channel
@@ -141,8 +174,22 @@ export function invalidateDefaultClaudeModelCache(): void {
   cached = null;
 }
 
-/** The one call sites use for steps that always run the admin default. */
-export async function resolveDefaultModel(): Promise<ClaudeModelParams> {
+/** The one call sites use for steps that always run the admin default.
+ *
+ *  Pass the step. Provider is resolved first, exactly as resolveModelForUser
+ *  does: a step switched to GPT or Gemini must not be handed a Claude model id,
+ *  because getAnthropicClient will have built a KIE facade for it and the relay
+ *  rejects the request. Omitting the step keeps the old Claude-only behaviour,
+ *  which is right for callers whose step can't change provider. */
+export async function resolveDefaultModel(step?: WorkflowStep): Promise<ClaudeModelParams> {
+  if (step) {
+    try {
+      const provider = await getPromptProvider(step);
+      if (isKieProvider(provider)) return { model: await getModelForProvider(provider) };
+    } catch {
+      // Provider unreadable — fall through to Claude rather than fail the step.
+    }
+  }
   return modelParamsFor(await getDefaultClaudeModel());
 }
 

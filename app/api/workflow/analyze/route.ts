@@ -22,7 +22,7 @@ export async function POST(req: Request) {
   try {
     const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "analyze");
     const { projectId, transcripts, topicMode, topicHint } = await req.json();
-    const modelParams = await resolveDefaultModel();
+    const modelParams = await resolveDefaultModel("analyze");
     const model = modelParams.model;
 
     if (!transcripts?.length) {
