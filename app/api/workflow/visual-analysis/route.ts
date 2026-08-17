@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { getAnthropicClient, getHeclusDirectClient, VISION_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { getAnthropicClient, getHeclusDirectClient, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { getVisionConfig } from "@/lib/claude/vision";
+import { modelParamsFor } from "@/lib/claude/models";
 
 export const maxDuration = 800;
 import { visualProfileInputSchema } from "@/lib/claude/anthropicSchemas";
@@ -46,6 +48,40 @@ function toHttpsImageUrls(urls: string[]): string[] {
   return out;
 }
 
+/**
+ * Reorders frame URLs so one frame from every video comes before a second
+ * frame from any of them.
+ *
+ * The client builds the list grouped by video (videoA-frame-1, videoA-frame-2,
+ * videoB-frame-1, ...), so capping with a plain slice would keep both frames
+ * from the first few videos and drop the rest of the channel entirely. Ten
+ * frames spread across ten videos describes a channel's visual style far
+ * better than ten frames from five of them.
+ *
+ * Groups on the videoId in the auto-frames path. Manually uploaded images
+ * don't match it and keep their original order, which is what we want.
+ */
+function spreadAcrossVideos(urls: string[]): string[] {
+  const groups = new Map<string, string[]>();
+  urls.forEach((url, i) => {
+    const match = url.match(/\/auto-frames\/(.+?)-frame-\d+\.jpg/);
+    const key = match ? match[1] : `ungrouped:${i}`;
+    const existing = groups.get(key);
+    if (existing) existing.push(url);
+    else groups.set(key, [url]);
+  });
+
+  const spread: string[] = [];
+  const lists = [...groups.values()];
+  const deepest = Math.max(0, ...lists.map((l) => l.length));
+  for (let round = 0; round < deepest; round++) {
+    for (const list of lists) {
+      if (list[round]) spread.push(list[round]);
+    }
+  }
+  return spread;
+}
+
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
@@ -63,7 +99,13 @@ export async function POST(req: Request) {
       videoImageUrls?: string[];
       thumbnailImageUrls?: string[];
     };
-    const model = VISION_MODEL;
+    // Model and frame count are admin-set (Config → Anthropic → Per step,
+    // Visual analysis card). Going through modelParamsFor also applies the
+    // thinking pin, which this route used to skip by passing a bare model id —
+    // harmless on Opus 4.7, but a model that thinks by default would have eaten
+    // the max_tokens budget below.
+    const vision = await getVisionConfig();
+    const model = vision.model;
 
     // Normalize to https up-front so a malformed URL doesn't 400 the
     // whole Anthropic call. Recompute hasVideo/hasThumbnails off the
@@ -89,19 +131,23 @@ export async function POST(req: Request) {
       }, { status: 400 });
     }
 
-    // Bumped from 10 → 20 to consume all 2-frame × 10-video stills the
-    // screenshots route now captures. Claude vision tokens are ~1.6k
-    // each at high-res, so 20 images ≈ 32k input tokens — manageable
-    // for a one-shot analysis call.
-    const MAX_VIDEO_IMAGES = 20;
-    const cappedVideoImages = videoUrls.slice(0, MAX_VIDEO_IMAGES);
+    // Vision tokens run ~1.6k per image at high-res, so the frame count is the
+    // main driver of what this step costs. Admin-set; see migration 127.
+    //
+    // Applied to each list separately rather than as a combined total: the
+    // schema below is built from hasVideo/hasThumbnails, so a cap that empties
+    // one list would leave the model asked for a section it was given no
+    // images for. A call carrying both kinds therefore sends up to 20.
+    const MAX_ANALYSIS_IMAGES = vision.maxImages;
+    const cappedVideoImages = spreadAcrossVideos(videoUrls).slice(0, MAX_ANALYSIS_IMAGES);
+    const cappedThumbnails = thumbnailUrls.slice(0, MAX_ANALYSIS_IMAGES);
 
     const imageBlocks = [
       ...cappedVideoImages.map((url) => ({
         type: "image" as const,
         source: { type: "url" as const, url },
       })),
-      ...thumbnailUrls.map((url) => ({
+      ...cappedThumbnails.map((url) => ({
         type: "image" as const,
         source: { type: "url" as const, url },
       })),
@@ -138,7 +184,7 @@ export async function POST(req: Request) {
     // without duplicating the request body.
     const callModel = (client: Anthropic) =>
       client.messages.create({
-        model: model,
+        ...modelParamsFor(model),
         max_tokens: 2048,
         system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
         tools: [{

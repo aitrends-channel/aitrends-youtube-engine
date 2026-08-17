@@ -1,7 +1,8 @@
 import { createHash } from "crypto";
 import { supabase } from "@/lib/supabase/client";
-import { getAnthropicClient, VISION_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
-import { resolveDefaultModel, resolveModelForUser } from "@/lib/claude/models";
+import { getAnthropicClient, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { getVisionConfig } from "@/lib/claude/vision";
+import { modelParamsFor, resolveDefaultModel, resolveModelForUser } from "@/lib/claude/models";
 import { buildScriptPrompt, buildVisualAnalysisPrompt, buildVideoIdeasPrompt } from "@/lib/claude/prompts";
 import { visualProfileInputSchema, videoIdeasInputSchema } from "@/lib/claude/anthropicSchemas";
 import { VisualProfileSchema, VideoIdeasSchema } from "@/lib/claude/schemas";
@@ -218,7 +219,7 @@ async function generateMoreTopics(
   try {
     const { client } = await getAnthropicClient(userId, "ideas");
     const res = await client.messages.create({
-      ...await resolveDefaultModel(),
+      ...await resolveDefaultModel("ideas"),
       max_tokens: 2048,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       tools: [{ name: "save_video_ideas", description: "Save the generated video ideas", input_schema: videoIdeasInputSchema }],
@@ -280,7 +281,7 @@ async function runScriptStep(project: ProjectRow, cfg: OneClickConfig): Promise<
   try {
     const { client: anthropic } = await getAnthropicClient(project.user_id, "script");
     const res = await anthropic.messages.create({
-      ...await resolveDefaultModel(),
+      ...await resolveDefaultModel("script"),
       max_tokens: 8192,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: buildScriptPrompt(analysis, topic) }],
@@ -349,7 +350,17 @@ async function runVisualsStep(project: ProjectRow): Promise<AdvanceResult> {
     return { videoId, title, thumbnailUrl: "", frameUrls: frames.map((f) => f.r2Url), base64s: frames.map((f) => f.base64) };
   }));
   const framesByVideo = captured.map(({ videoId, title, thumbnailUrl, frameUrls }) => ({ videoId, title, thumbnailUrl, frameUrls }));
-  const base64Frames = captured.flatMap((c) => c.base64s).slice(0, 12);
+  const visionCfg = await getVisionConfig();
+  // One frame per video before a second from any of them, so the cap keeps every
+  // video represented rather than the first few twice. Mirrors spreadAcrossVideos
+  // in the visual-analysis route; here the grouping is already per-capture.
+  const byVideo = captured.map((c) => c.base64s);
+  const deepest = Math.max(0, ...byVideo.map((b) => b.length));
+  const spread: string[] = [];
+  for (let round = 0; round < deepest; round++) {
+    for (const frames of byVideo) if (frames[round]) spread.push(frames[round]);
+  }
+  const base64Frames = spread.slice(0, visionCfg.maxImages);
   if (base64Frames.length === 0) return RESULT.attention("Couldn't capture reference frames — finish the visuals step in the editor.");
 
   // Vision analysis — video-only branch, so the tool returns just the
@@ -363,7 +374,7 @@ async function runVisualsStep(project: ProjectRow): Promise<AdvanceResult> {
   try {
     const { client } = await getAnthropicClient(project.user_id, "visual_analysis");
     const callModel = () => client.messages.create({
-      model: VISION_MODEL,
+      ...modelParamsFor(visionCfg.model),
       max_tokens: 2048,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       tools: [{ name: "save_visual_analysis", description: "Save the extracted visual style profile", input_schema: schema }],

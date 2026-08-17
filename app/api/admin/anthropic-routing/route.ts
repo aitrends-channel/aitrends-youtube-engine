@@ -6,10 +6,20 @@ import {
   CLAUDE_MODELS,
   CLAUDE_MODEL_FALLBACK,
   USER_CHOICE_STEPS,
+  claudeRateFor,
   getClaudeModelConfig,
   invalidateDefaultClaudeModelCache,
   isSelectableClaudeModel,
 } from "@/lib/claude/models";
+import {
+  MAX_VISUAL_ANALYSIS_IMAGES,
+  MIN_VISUAL_ANALYSIS_IMAGES,
+  VISION_MODEL_IDS,
+  getVisionConfig,
+  invalidateVisionConfigCache,
+  isSelectableVisionModel,
+  visionModels,
+} from "@/lib/claude/vision";
 import {
   GEMINI_MODELS,
   GPT_MODELS,
@@ -68,6 +78,9 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  const vision = await getVisionConfig();
+  const visionCost = await visionSpend14d();
+
   // Read through the shared resolvers so the tab shows exactly what
   // generation will use, including the allowlist and provider filtering.
   const modelConfig = await getClaudeModelConfig();
@@ -88,7 +101,58 @@ export async function GET() {
     gpt_models: GPT_MODELS,
     gemini_model: providerConfig.geminiModel,
     gemini_models: GEMINI_MODELS,
+    vision_model: vision.model,
+    vision_models: visionModels(),
+    visual_analysis_max_images: vision.maxImages,
+    visual_analysis_image_bounds: { min: MIN_VISUAL_ANALYSIS_IMAGES, max: MAX_VISUAL_ANALYSIS_IMAGES },
+    vision_cost_14d: visionCost,
   });
+}
+
+/**
+ * What the vision step actually cost over the last 14 days, plus what the same
+ * traffic would cost on each selectable model. Measured tokens, not an
+ * estimate: the admin picking a model can see the trade rather than guess it.
+ *
+ * Reads project_costs for the visuals step. Rows carry the model that served
+ * them, so the "actual" figure prices each row at its own rate even if the
+ * model changed mid-window.
+ */
+async function visionSpend14d() {
+  const since = new Date(Date.now() - 14 * 86_400_000).toISOString();
+  const { data, error } = await supabase
+    .from("project_costs")
+    .select("model, unit_kind, units")
+    .eq("step", "visuals")
+    .eq("provider", "anthropic")
+    .gte("created_at", since);
+  if (error || !data) return null;
+
+  let actual = 0;
+  let inTokens = 0;
+  let outTokens = 0;
+  for (const row of data as Array<{ model: string | null; unit_kind: string; units: number | null }>) {
+    const units = Number(row.units ?? 0);
+    const rate = claudeRateFor(row.model ?? "") ?? { in: 0, out: 0 };
+    if (row.unit_kind === "claude_tokens_in") { inTokens += units; actual += (units / 1e6) * rate.in; }
+    else if (row.unit_kind === "claude_tokens_out") { outTokens += units; actual += (units / 1e6) * rate.out; }
+  }
+
+  // Same token volume repriced per model, so the picker can show the delta.
+  const byModel: Record<string, number> = {};
+  for (const id of VISION_MODEL_IDS) {
+    const rate = claudeRateFor(id);
+    if (rate) byModel[id] = +((inTokens / 1e6) * rate.in + (outTokens / 1e6) * rate.out).toFixed(2);
+  }
+
+  return {
+    days: 14,
+    calls: data.filter((r) => r.unit_kind === "claude_tokens_in").length,
+    input_tokens: inTokens,
+    output_tokens: outTokens,
+    actual_usd: +actual.toFixed(2),
+    by_model_usd: byModel,
+  };
 }
 
 /**
@@ -120,7 +184,48 @@ export async function PUT(req: Request) {
     provider?: unknown;
     gpt_model?: string;
     gemini_model?: string;
+    vision_model?: string;
+    visual_analysis_max_images?: unknown;
   };
+
+  // Vision model — the image-reading steps (visual analysis, prompts-from-image).
+  // Separate from default_claude_model on purpose: those steps pay per image and
+  // the right trade there is not the same as for the text steps.
+  if (body.vision_model !== undefined) {
+    if (!isSelectableVisionModel(body.vision_model)) {
+      return NextResponse.json(
+        { error: `Unknown vision model: ${body.vision_model}. Valid: ${VISION_MODEL_IDS.join(", ")}` },
+        { status: 400 },
+      );
+    }
+    const { error } = await supabase
+      .from("product_config")
+      .update({ vision_model: body.vision_model })
+      .eq("service", "_global");
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    invalidateVisionConfigCache();
+    console.log(`[admin] ${user.email} set vision model to ${body.vision_model}`);
+    return NextResponse.json({ ok: true, vision_model: body.vision_model });
+  }
+
+  // How many frames the visual-analysis step sends per call.
+  if (body.visual_analysis_max_images !== undefined) {
+    const n = Number(body.visual_analysis_max_images);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < MIN_VISUAL_ANALYSIS_IMAGES || n > MAX_VISUAL_ANALYSIS_IMAGES) {
+      return NextResponse.json(
+        { error: `Images must be a whole number between ${MIN_VISUAL_ANALYSIS_IMAGES} and ${MAX_VISUAL_ANALYSIS_IMAGES}.` },
+        { status: 400 },
+      );
+    }
+    const { error } = await supabase
+      .from("product_config")
+      .update({ visual_analysis_max_images: n })
+      .eq("service", "_global");
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    invalidateVisionConfigCache();
+    console.log(`[admin] ${user.email} set visual-analysis images to ${n}`);
+    return NextResponse.json({ ok: true, visual_analysis_max_images: n });
+  }
 
   // The admin UI groups the three prompt sub-steps (beats, image prompts,
   // video prompts) into one card, so a single click has to land on both

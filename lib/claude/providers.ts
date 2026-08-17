@@ -24,15 +24,43 @@ export function isKieProvider(p: PromptProvider): boolean {
 }
 
 /**
- * Steps that may run on a non-Claude provider — the three that make up the
- * wizard's Prompts step (beat segmentation, image prompts, video prompts).
- * Deliberately just the prompt grind: it's the highest-volume Claude workload,
- * its output is strictly structured (so a schema swap is mechanical), and a
- * weaker model degrades it least visibly. Channel analysis, ideas and script
- * stay Claude-only — analysis feeds styleDNA into everything downstream and
- * the script is what customers judge the product on.
+ * Steps that may run on a non-Claude provider. These all force a single
+ * tool_choice, which the GPT and Gemini facades turn into a strict json_schema
+ * (see kieGptClient.ts) — a stronger guarantee than tool_choice, and immune to
+ * the fake-<tool_calls>-text failure Claude has on these schemas.
+ *
+ * visual_analysis is the one step that cannot switch: it sends image content
+ * blocks, and flattenContent on both KIE facades only translates text (it
+ * throws a 400 on anything else). Same reason prompts-from-image pins itself
+ * to Claude via getAnthropicClient's forceProvider.
+ *
+ * Everything listed still defaults to Claude until an admin moves it under
+ * Config → Anthropic → Per step. Two are worth watching after a switch:
+ *
+ *   script — the only long-form prose step, at a 5-6k word target. The GPT
+ *   relay ignores max_output_tokens upstream and intermittently returns an
+ *   empty body with stop_reason end_turn (see kieGptClient.ts). The script
+ *   route now refuses to advance the wizard on an empty result rather than
+ *   silently blanking the step, so a bad run is visible, but expect retries.
+ *
+ *   analyze — feeds styleDNA into every later step, so a quality regression
+ *   there is invisible until the finished video is wrong. Move it last.
+ *
+ * Provider is only half the picture: routing decides the gateway. A step left
+ * on the Claude provider with client_kie or heclus_kie routing reaches KIE's
+ * /claude endpoint, which is a Cursor agent harness rather than the Anthropic
+ * API — it drops tool_choice entirely and answers from whichever Cursor mode
+ * it happens to be in. Claude steps belong on heclus_direct or client_direct.
  */
-export const PROVIDER_STEPS = new Set<WorkflowStep>(["beats", "image_prompts", "video_prompts"]);
+export const PROVIDER_STEPS = new Set<WorkflowStep>([
+  "analyze",
+  "ideas",
+  "script",
+  "beats",
+  "image_prompts",
+  "video_prompts",
+  "thumbnails",
+]);
 
 export function supportsProviderChoice(step: WorkflowStep): boolean {
   return PROVIDER_STEPS.has(step);
