@@ -7151,8 +7151,6 @@ export default function AdminPage() {
                       summable. The Total bar above already gives
                       the project-level grand total. */}
                   {(() => {
-                    // Build the list of providers present + per
-                    // (step, provider) units bucketed by unit_kind.
                     type StepProviderBucket = Record<string /* unit_kind */, number>;
                     const providersSet = new Set<string>();
                     const matrix: Record<CostColumn, Record<string /* provider */, StepProviderBucket>> = {} as Record<CostColumn, Record<string, StepProviderBucket>>;
