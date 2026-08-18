@@ -393,6 +393,12 @@ interface AdminUser {
   plan: string | null;
   paidAt: string | null;
   planExpiresAt: string | null;
+  // Subscription lifecycle as last reported by Dodo or stamped by our own
+  // cancel route. planExpiresAt is the period end either way, so it alone
+  // can't tell a renewal that's coming from one that's been called off.
+  subscriptionStatus: string | null;
+  subscriptionEvent: string | null;
+  subscriptionUpdatedAt: string | null;
   nichesUsed: number;
   // Account setup complete = API key saved on the Setup page.
   hasSetup: boolean;
@@ -5142,7 +5148,7 @@ export default function AdminPage() {
   const [userSearch, setUserSearch] = useState("");
   // "zero-video" / "no-setup" are cross-cutting slices (they overlap the
   // plan buckets), matched by predicate rather than bucketOf below.
-  type PlanBucket = "all" | "admin" | "founder" | "pro" | "starter" | "free" | "pending" | "zero-video" | "no-setup" | "anthropic";
+  type PlanBucket = "all" | "admin" | "founder" | "pro" | "starter" | "free" | "pending" | "zero-video" | "no-setup" | "anthropic" | "renewal-today" | "renewal-week" | "sub-renewed" | "sub-cancelled";
   const [planFilter, setPlanFilter] = useState<PlanBucket>("all");
   const [nicheLimitUser, setNicheLimitUser] = useState<AdminUser | null>(null);
   const [projectsPage, setProjectsPage] = useState(1);
@@ -5358,9 +5364,10 @@ export default function AdminPage() {
   // the plan, and that only fires if the user lands on the callback)
   // fall back to "starter" — the cheapest paid tier — instead of
   // Free/Demo, since they did pay something.
-  // The plan buckets only. "anthropic", like "zero-video" and "no-setup", is a
-  // cross-cutting flag a user can have in any plan, so it is never a bucket.
-  function bucketOf(u: AdminUser): Exclude<PlanBucket, "all" | "zero-video" | "no-setup" | "anthropic"> {
+  // The plan buckets only. "anthropic", like "zero-video", "no-setup" and the
+  // four subscription slices, is a cross-cutting flag a user can have in any
+  // plan, so it is never a bucket.
+  function bucketOf(u: AdminUser): Exclude<PlanBucket, "all" | "zero-video" | "no-setup" | "anthropic" | "renewal-today" | "renewal-week" | "sub-renewed" | "sub-cancelled"> {
     if (u.isAdmin) return "admin";
     if (u.status === "Pending") return "pending";
     const planNorm = (u.plan ?? "").toLowerCase().trim();
@@ -5383,6 +5390,43 @@ export default function AdminPage() {
   const hasAnthropicKey = (u: AdminUser) =>
     !u.isAdmin && u.status !== "Pending" && u.hasAnthropicKey;
 
+  // Subscription slices. All four read app_metadata.dodo, which both the
+  // Dodo webhook and our own cancel route write, so they describe paying
+  // customers only — a Free or Pending row has nothing to report.
+  const isCancelled = (u: AdminUser) =>
+    u.subscriptionStatus === "cancelled" || u.subscriptionEvent === "subscription.cancelled";
+  // A cancelled subscription keeps its plan_expires_at: that date is when
+  // access ends, not when a payment lands. Counting it as a renewal due
+  // would put churned accounts in the list of money about to arrive, which
+  // is the opposite of what these two pills are for.
+  const renewalDue = (u: AdminUser, within: (iso: string) => boolean) =>
+    !u.isAdmin && u.status === "Paid" && !isCancelled(u)
+    && u.planExpiresAt !== null && within(u.planExpiresAt);
+  const renewsToday = (u: AdminUser) => renewalDue(u, (iso) => isOnLocalDay(iso, 0));
+  // Today through the end of the sixth day out, so "this week" is a rolling
+  // seven days rather than a calendar week that shrinks to nothing by
+  // Sunday. Strictly a superset of the today pill.
+  const renewsThisWeek = (u: AdminUser) =>
+    renewalDue(u, (iso) => {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 7);
+      const t = new Date(iso).getTime();
+      return t >= start.getTime() && t < end.getTime();
+    });
+  // Renewed = the last thing we heard was a billing cycle starting over,
+  // as opposed to the first payment (payment.verified / subscription.active
+  // via checkout). Dodo fires payment.succeeded on renewal too, but only
+  // ever after a subscription exists, so a subscription_id is the thing
+  // that separates a renewal from a one-off purchase.
+  const hasRenewed = (u: AdminUser) =>
+    !u.isAdmin && (
+      u.subscriptionEvent === "subscription.renewed"
+      || (u.subscriptionEvent === "payment.succeeded" && u.plan !== null)
+    );
+  const hasCancelled = (u: AdminUser) => !u.isAdmin && u.status !== "Pending" && isCancelled(u);
+
   const userSearchLower = userSearch.trim().toLowerCase();
   const filteredUsers = users.filter((u) => {
     const matchesBucket =
@@ -5390,6 +5434,10 @@ export default function AdminPage() {
       : planFilter === "zero-video" ? hasZeroVideos(u)
       : planFilter === "no-setup" ? hasNoSetup(u)
       : planFilter === "anthropic" ? hasAnthropicKey(u)
+      : planFilter === "renewal-today" ? renewsToday(u)
+      : planFilter === "renewal-week" ? renewsThisWeek(u)
+      : planFilter === "sub-renewed" ? hasRenewed(u)
+      : planFilter === "sub-cancelled" ? hasCancelled(u)
       : bucketOf(u) === planFilter;
     if (!matchesBucket) return false;
     if (userSearchLower && !u.email.toLowerCase().includes(userSearchLower)) return false;
@@ -6092,6 +6140,10 @@ export default function AdminPage() {
               { id: "zero-video", label: "With zero video", value: users.filter(hasZeroVideos).length,  accent: "oklch(0.6 0.19 25)",   bg: "oklch(0.6 0.19 25 / 0.12)",    color: "oklch(0.55 0.19 25)", border: "oklch(0.6 0.19 25 / 0.3)" },
               { id: "no-setup",   label: "With no setup",   value: users.filter(hasNoSetup).length,     accent: "oklch(0.6 0.19 25)",   bg: "oklch(0.6 0.19 25 / 0.12)",    color: "oklch(0.55 0.19 25)", border: "oklch(0.6 0.19 25 / 0.3)" },
               { id: "anthropic",  label: "With Anthropic key", value: users.filter(hasAnthropicKey).length, accent: "oklch(0.62 0.15 220)", bg: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.5 0.13 220)", border: "oklch(0.62 0.15 220 / 0.35)" },
+              { id: "renewal-today",  label: "Renewal due today",     value: users.filter(renewsToday).length,     accent: "oklch(0.72 0.18 75)",  bg: "oklch(0.72 0.18 75 / 0.15)",   color: "oklch(0.6 0.18 75)",   border: "oklch(0.72 0.18 75 / 0.4)" },
+              { id: "renewal-week",   label: "Renewal due this week", value: users.filter(renewsThisWeek).length,  accent: "oklch(0.72 0.18 75)",  bg: "oklch(0.72 0.18 75 / 0.15)",   color: "oklch(0.6 0.18 75)",   border: "oklch(0.72 0.18 75 / 0.4)" },
+              { id: "sub-renewed",    label: "Subscription renewed",  value: users.filter(hasRenewed).length,      accent: "oklch(0.55 0.15 145)", bg: "oklch(0.55 0.15 145 / 0.15)",  color: "oklch(0.65 0.15 145)", border: "oklch(0.55 0.15 145 / 0.3)" },
+              { id: "sub-cancelled",  label: "Subscription cancelled", value: users.filter(hasCancelled).length,   accent: "oklch(0.6 0.19 25)",   bg: "oklch(0.6 0.19 25 / 0.12)",    color: "oklch(0.55 0.19 25)",  border: "oklch(0.6 0.19 25 / 0.3)" },
             ] as const).map((s) => {
               const isActive = planFilter === s.id;
               // Every pill except Total carries its share of all users.
