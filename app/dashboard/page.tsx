@@ -613,6 +613,10 @@ export default function HomePage() {
   const [creating, setCreating] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isPaid, setIsPaid] = useState<boolean | null>(null);
+  // Has this account ever completed a purchase? Distinct from isPaid, which is
+  // only about right now. An ex-subscriber whose period lapsed keeps their own
+  // dashboard; only a never-subscribed visitor sees the demo one.
+  const [everSubscribed, setEverSubscribed] = useState(false);
   const [demoProgress, setDemoProgress] = useState<DemoProgress>({ topic: "", highestStep: 0, channelDone: false });
   const [demoNicheCreated, setDemoNicheCreated] = useState(false);
   const [userEmail, setUserEmail] = useState("");
@@ -685,6 +689,15 @@ export default function HomePage() {
       }
       const paid = (user.app_metadata?.paid === true) || false;
       setIsPaid(paid);
+      // Same predicate as subscriptionExpired() in lib/subscription.ts, read
+      // off the session user so it resolves in the same tick as isPaid. Going
+      // through /api/usage instead would leave a frame where this is unknown,
+      // and the dashboard would visibly swap itself out.
+      {
+        const meta = user.app_metadata ?? {};
+        const dodo = (meta.dodo ?? {}) as Record<string, unknown>;
+        setEverSubscribed(Boolean(meta.paid_at || meta.plan_expires_at || dodo.subscription_id));
+      }
       if (user.app_metadata?.plan) setUserPlan(user.app_metadata.plan as string);
       if (!paid) {
         const plan = localStorage.getItem("heclus_selected_plan");
@@ -1023,8 +1036,16 @@ export default function HomePage() {
   }
 
   const authReady = !!userEmail || isAdmin;
-  // Show demo data to users who are not yet subscribed (once auth is resolved)
-  const showDemo = isPaid === false && !isAdmin;
+  // Show demo data only to users who have NEVER subscribed (once auth is
+  // resolved). A lapsed subscriber used to land here too, which swapped their
+  // sidebar, niches and videos for demo content and read as though the account
+  // had been wiped. They stay on their own dashboard; the spend-triggering
+  // actions are gated by requireSubscription, which is the same predicate the
+  // server's 403 uses.
+  const showDemo = isPaid === false && !isAdmin && !everSubscribed;
+  // Lapsed subscriber on their own dashboard: the calls to action have to say
+  // renew, not subscribe, to someone who has already paid.
+  const isLapsed = isPaid === false && !isAdmin && everSubscribed;
 
   return (
     <div className={`min-h-screen flex flex-col overflow-x-hidden ${showDemo ? "" : "lg:pl-[300px]"}`} style={{ background: "var(--bg-page)" }}>
@@ -1197,7 +1218,7 @@ export default function HomePage() {
                           onClick={() => setShowProfileMenu(false)}
                           className="text-[10px] font-semibold px-2.5 py-1 rounded-full capitalize transition-opacity hover:opacity-75"
                           style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
-                          {isPaid ? userPlan : "Free"} plan →
+                          {isPaid || isLapsed ? userPlan : "Free"} plan →
                         </Link>
                       )}
                     </div>
@@ -1832,7 +1853,7 @@ export default function HomePage() {
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div className="min-w-0">
                             <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>KIE</p>
-                            {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mt-1" style={{ color: "#f0a855" }}>Pending setup</p>}
+                            {(!isPaid && !isAdmin && !isLapsed) && <p className="text-[10px] font-medium mt-1" style={{ color: "#f0a855" }}>Pending setup</p>}
                             <p className="text-[10px] mt-1.5 leading-relaxed" style={{ color: "var(--c-38)" }}>Script generation, TTS, images & video</p>
                           </div>
                           <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -1879,7 +1900,7 @@ export default function HomePage() {
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div className="min-w-0">
                             <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>ElevenLabs</p>
-                            {(!isPaid && !isAdmin) && <p className="text-[10px] font-medium mt-1" style={{ color: "#f0a855" }}>Pending setup</p>}
+                            {(!isPaid && !isAdmin && !isLapsed) && <p className="text-[10px] font-medium mt-1" style={{ color: "#f0a855" }}>Pending setup</p>}
                             <p className="text-[10px] mt-1.5 leading-relaxed" style={{ color: "var(--c-38)" }}>Voiceover generation & transcription</p>
                           </div>
                           <div className="flex flex-col items-end gap-1.5 shrink-0">
@@ -2346,7 +2367,7 @@ export default function HomePage() {
               </p>
             </div>
             <div className="flex flex-col items-center gap-3">
-              {(!isPaid && !isAdmin) && (
+              {(!isPaid && !isAdmin && !isLapsed) && (
                 <button
                   onClick={() => router.push("/demo/channel")}
                   className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 cursor-pointer"
@@ -2361,7 +2382,7 @@ export default function HomePage() {
                 className="px-6 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50 cursor-pointer"
                 style={{ background: "oklch(0.72 0.25 285)", color: "var(--c-98)" }}
               >
-                {navigatingTo === "new-niche" ? "Loading…" : creating ? "Creating…" : isPaid || isAdmin ? "New Project →" : "Subscribe & Start →"}
+                {navigatingTo === "new-niche" ? "Loading…" : creating ? "Creating…" : isPaid || isAdmin ? "New Project →" : isLapsed ? "Renew to continue →" : "Subscribe & Start →"}
               </button>
             </div>
           </div>

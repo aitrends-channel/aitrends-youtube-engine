@@ -4492,6 +4492,7 @@ function DodoVarField({
   placeholder,
   disabled,
   hint,
+  invalidReason,
 }: {
   label: string;
   saved: string;
@@ -4500,11 +4501,17 @@ function DodoVarField({
   placeholder: string;
   disabled: boolean;
   hint?: string;
+  /** Called with the SAVED value. Returning a string marks the stored value as
+   *  wrong and shows it. The save path already rejects a URL in a secret field,
+   *  but values stored before that check went in are still there, and a 12-char
+   *  preview reading "https://app…" is easy to scroll past. */
+  invalidReason?: (saved: string) => string | null;
 }) {
   const [revealed, setRevealed] = useState(false);
   // 12 chars + ellipsis is enough to recognize the prefix (sk_test_,
   // sk_live_, whsec_, https://) without revealing the secret material.
   const preview = saved.length > 12 ? `${saved.slice(0, 12)}…` : saved;
+  const invalid = saved ? (invalidReason?.(saved) ?? null) : null;
 
   return (
     <div>
@@ -4531,6 +4538,11 @@ function DodoVarField({
             {revealed ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
         </div>
+      )}
+      {invalid && (
+        <p className="text-xs font-medium mb-1.5 leading-relaxed" style={{ color: "oklch(0.6 0.19 25)" }}>
+          {invalid}
+        </p>
       )}
       <input
         value={value}
@@ -4699,6 +4711,13 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
           onChange={(v) => (activeEnv === "test" ? setTestWebhook(v) : setProdWebhook(v))}
           placeholder="whsec_…"
           disabled={saving}
+          invalidReason={(v) =>
+            /^https?:\/\//i.test(v)
+              ? "This is the webhook URL, not the signing secret. Every delivery fails signature checks, so renewals never reach us. Paste the whsec_… value from Dodo → Webhooks → this endpoint → Signing Secret."
+              : !v.startsWith("whsec_")
+                ? "Expected a whsec_… value. It will be tried as a raw base64 secret, which works only if that is genuinely what Dodo gave you."
+                : null
+          }
           hint="Per-environment Dodo webhook signing secret. The handler tries every configured secret on each request, so test + production can both target the same /api/webhooks/dodo URL."
         />
 
