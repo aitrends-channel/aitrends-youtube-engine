@@ -3435,7 +3435,7 @@ function VisionControl({ data, mutate, disabled }: {
   const [saving, setSaving] = useState(false);
   const [images, setImages] = useState<string>("");
   const bounds = data?.visual_analysis_image_bounds ?? { min: 3, max: 20 };
-  const serverImages = data?.visual_analysis_max_images ?? 10;
+  const serverImages = data?.visual_analysis_max_images ?? 20;
   const cost = data?.vision_cost_14d;
   const current = images === "" ? String(serverImages) : images;
   const parsed = Number(current);

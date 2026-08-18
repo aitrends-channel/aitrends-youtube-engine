@@ -9,9 +9,11 @@ import { CLAUDE_MODELS, type ClaudeModelOption } from "@/lib/claude/models";
 /** What the engine ran on before this setting existed. */
 export const VISION_MODEL_FALLBACK = "claude-opus-4-7";
 
-/** Frames per image list. Was a hardcoded 20 in the route and 12 in the
- *  one-click orchestrator; 10 is the shipped default for both. */
-export const VISUAL_ANALYSIS_MAX_IMAGES_FALLBACK = 10;
+/** Frames per image list. 20 is what the visual-analysis route hardcoded before
+ *  this setting existed, so an unset column leaves that step exactly as it was.
+ *  The one-click orchestrator hardcoded 12 and now follows the same number —
+ *  one admin setting drives both paths, so lower it there to split them. */
+export const VISUAL_ANALYSIS_MAX_IMAGES_FALLBACK = 20;
 
 /** Guardrails on the admin input. Below 3 there isn't enough material to read a
  *  channel's style from; above 20 the input tokens outrun what the step is
