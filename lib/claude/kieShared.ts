@@ -70,10 +70,17 @@ export interface KieMessage {
   };
 }
 
-/** Only the event shapes prompts-core branches on. Everything else it treats as
- *  activity and uses purely to reset the idle timer. */
+/** Only the event shapes our consumers branch on. Everything else they treat as
+ *  activity and use purely to reset the idle timer.
+ *
+ *  Both delta shapes exist because the two consumers ask for different things.
+ *  A structured call (one forced tool) streams the tool's JSON, which
+ *  prompts-core tallies as input_json_delta. A plain-text call streams prose,
+ *  which the script route reads as text_delta. Emitting one shape for both is
+ *  what silently swallowed every streamed script on a KIE routing. */
 export type KieStreamEvent =
   | { type: "content_block_delta"; index: number; delta: { type: "input_json_delta"; partial_json: string } }
+  | { type: "content_block_delta"; index: number; delta: { type: "text_delta"; text: string } }
   | { type: "ping" };
 
 /** Error carrying an HTTP-ish status so retryClaudeCall (lib/claude/retry.ts)
@@ -333,6 +340,7 @@ export class KieStream {
 
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
+    const isToolCall = Boolean(params.tools?.[0]);
     let buf = "";
     let accum = "";
     let meta: { id?: string; truncated?: boolean; usage?: UsageLike | null } = {};
@@ -367,9 +375,13 @@ export class KieStream {
 
           if (parsedEvent.delta) {
             accum += parsedEvent.delta;
-            // The model's text IS the tool input here, so it maps onto
-            // input_json_delta — which is what the beat tally counts.
-            yield { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: parsedEvent.delta } };
+            // Same discriminator toMessage uses for the final content block, so
+            // the streamed shape and the settled shape can never disagree: with
+            // a tool the text IS that tool's input (input_json_delta, which the
+            // beat tally counts), without one it is prose (text_delta).
+            yield isToolCall
+              ? { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: parsedEvent.delta } }
+              : { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: parsedEvent.delta } };
           } else {
             // Any other event still counts as activity — prompts-core resets
             // its idle timer on every yielded event.
