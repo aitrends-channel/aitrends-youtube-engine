@@ -2,7 +2,9 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 import { NextResponse } from "next/server";
 import type Anthropic from "@anthropic-ai/sdk";
-import { getAnthropicClient, VISION_MODEL, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { getAnthropicClient, SYSTEM_PROMPT } from "@/lib/claude/client";
+import { getVisionConfig } from "@/lib/claude/vision";
+import { modelParamsFor } from "@/lib/claude/models";
 import { buildPromptsFromImagePrompt } from "@/lib/claude/prompts";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { extractToolInputFromText } from "@/lib/claude/textFallback";
@@ -54,11 +56,11 @@ export async function POST(req: Request) {
     // this call sends an image block and hardcodes a Claude vision model, so
     // the GPT facade would have nothing valid to translate.
     const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "image_prompts", { forceProvider: "claude" });
-    const model = VISION_MODEL;
+    const model = (await getVisionConfig()).model;
 
     const callModel = () =>
       anthropic.messages.create({
-        model,
+        ...modelParamsFor(model),
         max_tokens: 1500,
         system: [{ type: "text", text: SYSTEM_PROMPT }],
         tools: [{ name: "save_prompts", description: "Save the image and video prompts derived from the attached image", input_schema: saveSchema }],

@@ -2472,6 +2472,18 @@ interface RoutingResponse {
   gpt_models: GptModelOption[];
   gemini_model: string;
   gemini_models: GptModelOption[];
+  vision_model: string;
+  vision_models: ClaudeModelOption[];
+  visual_analysis_max_images: number;
+  visual_analysis_image_bounds: { min: number; max: number };
+  vision_cost_14d: {
+    days: number;
+    calls: number;
+    input_tokens: number;
+    output_tokens: number;
+    actual_usd: number;
+    by_model_usd: Record<string, number>;
+  } | null;
 }
 
 function AnthropicRoutingPanel() {
@@ -2540,6 +2552,7 @@ function RoutingRadios({
   serverActive,
   disabled,
   onPick,
+  underSelected,
 }: {
   options: RoutingChoice[];
   /** "mixed" matches no option, so a grouped card whose steps disagree renders
@@ -2548,6 +2561,10 @@ function RoutingRadios({
   serverActive?: RoutingValue | "mixed";
   disabled?: boolean;
   onPick: (id: RoutingValue) => void;
+  /** Rendered directly beneath whichever option is selected, so settings that
+   *  only make sense for the routing in force sit with it and travel with the
+   *  selection instead of stranding at the bottom of the list. */
+  underSelected?: React.ReactNode;
 }) {
   return (
     <div className="space-y-2">
@@ -2555,8 +2572,8 @@ function RoutingRadios({
         const active = selected === opt.id;
         const isServerActive = serverActive === opt.id;
         return (
+          <div key={opt.id} className="space-y-2">
           <button
-            key={opt.id}
             onClick={() => { if (!active) onPick(opt.id); }}
             disabled={disabled}
             className="w-full text-left p-3 rounded-xl transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
@@ -2601,6 +2618,8 @@ function RoutingRadios({
               </div>
             </div>
           </button>
+          {active && underSelected}
+          </div>
         );
       })}
     </div>
@@ -3375,6 +3394,13 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
                   serverActive={selectedValue}
                   disabled={disabled}
                   onPick={(id) => setPending({ card, value: id })}
+                  // Sits under whichever routing is selected, because the cost
+                  // figures it shows are only Heclus's bill while the step is on
+                  // a Heclus key. Anchored to the choice, it can't be read as a
+                  // standalone number.
+                  underSelected={card.id === "visual_analysis"
+                    ? <VisionControl data={data} mutate={mutate} disabled={disabled} />
+                    : undefined}
                 />
               )}
             </div>
@@ -3393,6 +3419,159 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
         onConfirm={() => { if (pending) applyStepRouting(pending.card, pending.value); }}
         onCancel={() => setPending(null)}
       />
+    </div>
+  );
+}
+
+/**
+ * Model + frame-count controls for the vision step, with what the last 14 days
+ * of real traffic cost on each model.
+ *
+ * These two settings are the only levers on what this step costs and they pull
+ * against each other, so they belong on one card: frames drive the input-token
+ * count, the model sets the rate those tokens bill at. The cost row is measured
+ * from project_costs rather than estimated, and reprices the same token volume
+ * per model so the trade is visible before the switch, not after.
+ */
+function VisionControl({ data, mutate, disabled }: {
+  data?: RoutingResponse;
+  mutate: () => void;
+  disabled: boolean;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [images, setImages] = useState<string>("");
+  const bounds = data?.visual_analysis_image_bounds ?? { min: 3, max: 20 };
+  const serverImages = data?.visual_analysis_max_images ?? 20;
+  const cost = data?.vision_cost_14d;
+  const current = images === "" ? String(serverImages) : images;
+  const parsed = Number(current);
+  const imagesValid = Number.isInteger(parsed) && parsed >= bounds.min && parsed <= bounds.max;
+  const imagesDirty = imagesValid && parsed !== serverImages;
+
+  async function save(body: Record<string, unknown>, label: string) {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/anthropic-routing", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error ?? "Save failed");
+      toast.success(label);
+      mutate();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const busy = disabled || saving;
+  const money = (n: number) => `$${n.toFixed(2)}`;
+
+  return (
+    <div className="rounded-lg p-3 space-y-3"
+      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+
+      <div className="flex items-baseline justify-between gap-2 flex-wrap">
+        <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--c-50)" }}>
+          Vision model
+        </span>
+        {cost && (
+          <span className="text-[11px]" style={{ color: "var(--c-50)" }}>
+            Last {cost.days} days: <span className="font-semibold" style={{ color: "var(--c-80)" }}>{money(cost.actual_usd)}</span>
+            {" · "}{cost.calls} call{cost.calls === 1 ? "" : "s"}
+            {" · "}{(cost.input_tokens / 1000).toFixed(0)}k in / {(cost.output_tokens / 1000).toFixed(0)}k out
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-1.5">
+        {(data?.vision_models ?? []).map((m) => {
+          const active = m.id === data?.vision_model;
+          // Same 14 days of tokens repriced on this model — the number that
+          // actually answers "what does switching cost me".
+          const projected = cost?.by_model_usd?.[m.id];
+          const delta = projected != null && cost ? projected - cost.actual_usd : null;
+          return (
+            <button
+              key={m.id}
+              onClick={() => { if (!active && !busy) save({ vision_model: m.id }, `Vision model set to ${m.label}`); }}
+              disabled={busy || active}
+              className="text-left rounded-lg px-3 py-2 transition-all"
+              style={{
+                background: active ? "oklch(0.62 0.15 220 / 0.10)" : "var(--bg-card)",
+                border: `1px solid ${active ? "oklch(0.62 0.15 220 / 0.45)" : "oklch(0 0 0 / 0.08)"}`,
+                cursor: busy || active ? "default" : "pointer",
+                opacity: busy && !active ? 0.6 : 1,
+              }}
+            >
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs font-semibold" style={{ color: active ? "oklch(0.45 0.13 220)" : "var(--c-80)" }}>
+                  {m.label}
+                </span>
+                {active && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold"
+                    style={{ background: "oklch(0.6 0.15 150 / 0.14)", color: "oklch(0.42 0.15 150)" }}>
+                    active
+                  </span>
+                )}
+              </div>
+              {projected != null && (
+                <div className="text-[11px] mt-1" style={{ color: "var(--c-50)" }}>
+                  {money(projected)} / {cost?.days}d
+                  {delta != null && Math.abs(delta) >= 0.01 && (
+                    <span className="ml-1 font-semibold"
+                      style={{ color: delta < 0 ? "oklch(0.45 0.15 150)" : "oklch(0.5 0.15 40)" }}>
+                      {delta < 0 ? "−" : "+"}{money(Math.abs(delta)).slice(1)}
+                    </span>
+                  )}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex items-end gap-2 flex-wrap pt-1">
+        <div>
+          <label className="text-[11px] font-semibold uppercase tracking-wide block mb-1" style={{ color: "var(--c-50)" }}>
+            Images per analysis
+          </label>
+          <input
+            type="number"
+            min={bounds.min}
+            max={bounds.max}
+            value={current}
+            disabled={busy}
+            onChange={(e) => setImages(e.target.value)}
+            className="w-24 px-2.5 py-1.5 rounded-lg text-sm"
+            style={{
+              background: "var(--bg-card)",
+              border: `1px solid ${imagesValid ? "oklch(0 0 0 / 0.12)" : "oklch(0.6 0.18 25 / 0.55)"}`,
+              color: "var(--c-80)",
+            }}
+          />
+        </div>
+        <button
+          onClick={() => { if (imagesDirty) save({ visual_analysis_max_images: parsed }, `Now analysing up to ${parsed} images`); }}
+          disabled={busy || !imagesDirty}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+          style={{
+            background: imagesDirty && !busy ? "oklch(0.62 0.15 220)" : "oklch(0 0 0 / 0.06)",
+            color: imagesDirty && !busy ? "white" : "var(--c-45)",
+            cursor: imagesDirty && !busy ? "pointer" : "default",
+          }}
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+        <p className="text-[11px] leading-relaxed flex-1 min-w-[240px]" style={{ color: "var(--c-50)" }}>
+          {bounds.min}–{bounds.max}. Frames are spread one per video before a second from any of
+          them, so a lower number drops extra frames rather than whole videos. Applied per image
+          list, so a call carrying frames and thumbnails sends up to twice this.
+        </p>
+      </div>
     </div>
   );
 }
@@ -7024,8 +7203,6 @@ export default function AdminPage() {
                       summable. The Total bar above already gives
                       the project-level grand total. */}
                   {(() => {
-                    // Build the list of providers present + per
-                    // (step, provider) units bucketed by unit_kind.
                     type StepProviderBucket = Record<string /* unit_kind */, number>;
                     const providersSet = new Set<string>();
                     const matrix: Record<CostColumn, Record<string /* provider */, StepProviderBucket>> = {} as Record<CostColumn, Record<string, StepProviderBucket>>;

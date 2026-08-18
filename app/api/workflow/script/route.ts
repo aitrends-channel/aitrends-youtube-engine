@@ -136,7 +136,7 @@ export async function POST(req: Request) {
       topic: string;
       mode?: "fresh" | "continue";
     };
-    const modelParams = await resolveDefaultModel();
+    const modelParams = await resolveDefaultModel("script");
     const model = modelParams.model;
 
     if (!analysis || !topic) {
@@ -416,7 +416,13 @@ export async function POST(req: Request) {
             selected_topic: topic,
             script_active_run_id: null,
           };
-          if (!deadlineHit) {
+          // An empty result must not advance the wizard. The GPT relay
+          // intermittently returns an empty body with stop_reason end_turn and
+          // zero output tokens (see kieGptClient.ts); bumping the state there
+          // left the project at 7 with script NULL, which renders as the
+          // untouched "Generate with AI" prompt and looks like the run never
+          // happened at all.
+          if (!deadlineHit && finalScript.length > 0) {
             update.current_state = 7;
           }
           const writeQuery = supabase
@@ -427,7 +433,13 @@ export async function POST(req: Request) {
           if (runId) writeQuery.eq("script_active_run_id", runId);
           await writeQuery;
 
-          send({ done: true, wordCount, ...(deadlineHit ? { partial: true } : {}) });
+          if (finalScript.length === 0) {
+            // Reporting done on an empty script is what made this look like a
+            // success followed by an inexplicably blank step.
+            send({ error: "The model returned an empty script. Try again." });
+          } else {
+            send({ done: true, wordCount, ...(deadlineHit ? { partial: true } : {}) });
+          }
         } catch (err) {
           const message = err instanceof Error ? err.message : "Generation failed mid-stream";
 
