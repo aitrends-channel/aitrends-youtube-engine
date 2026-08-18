@@ -3,6 +3,7 @@ import { getQuotaConfig, capFromConfig } from "@/lib/quota-config";
 import { planSlugOf } from "@/lib/plans-gating";
 import { isAdminUser } from "@/lib/admin";
 import type { User } from "@supabase/supabase-js";
+import { FREE_VIDEO_COMING_SOON } from "@/lib/free-tier-flag";
 
 // The credit wallet, in TypeScript. Every balance-changing operation is a
 // Postgres function call (migration 125) rather than a read-modify-write here,
@@ -91,6 +92,7 @@ const EMPTY: CreditBalance = { grant: 0, paid: 0, total: 0, reserved: 0, monthly
 /** The monthly allowance for a user's plan. 0 for any plan the admin has not
  *  allocated, which is how Founder is excluded. */
 export async function monthlyGrantFor(user: User): Promise<number> {
+  if (FREE_VIDEO_COMING_SOON) return 0;
   if (VIDEO_CREDITS_ADMIN_ONLY && !isAdminUser(user)) return 0;
   const config = await getQuotaConfig();
   return capFromConfig(config, "genaipro_video_credits", planSlugOf(user), isAdminUser(user));
@@ -107,6 +109,11 @@ export async function monthlyGrantFor(user: User): Promise<number> {
 export async function getCreditBalance(user: User): Promise<CreditBalance> {
   const monthlyGrant = await monthlyGrantFor(user);
   const period = currentPeriod();
+  // Zeroing the allowance is not enough on its own: an account holding bought
+  // credits would still render a wallet, and admins bringing GenAIPro up have
+  // some. Report empty and skip ensure_monthly_grant entirely, so the flag also
+  // stops issuing allowances for a period nobody can spend in.
+  if (FREE_VIDEO_COMING_SOON) return { ...EMPTY, period };
   try {
     const { data, error } = await supabase.rpc("ensure_monthly_grant", {
       p_user: user.id,

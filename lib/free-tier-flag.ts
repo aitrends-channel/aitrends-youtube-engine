@@ -12,3 +12,15 @@ export const FREE_TIER_COMING_SOON = true;
 // the other free voiceover providers (Qwen, BYO Google) are hidden from
 // the Free tab while this ships.
 export const FREE_TTS_COMING_SOON = false;
+
+// Free VIDEO tier kill-switch, separate again so video can launch on its own.
+// Covers the GenAIPro credit wallet, not a BYO key: while true, monthlyGrantFor
+// and getCreditBalance report an empty wallet for EVERY account, admins
+// included. That is what hides the Balance section on the account page, the
+// credits panel and Top up button on the Generate step, and the free model in
+// the picker, which falls back to the "coming soon" tab and teaser card.
+//
+// Bought credits are hidden, not destroyed: the wallet rows stay in the
+// database and reappear when this flips. The reserve and settle paths are
+// deliberately left alone so anything already queued can still finish.
+export const FREE_VIDEO_COMING_SOON = true;
