@@ -42,6 +42,11 @@ const HECLUS_CREDIT_COVERS = [
 interface HeclusCreditsData {
   credits: number;
   reserved: number;
+  /** Over the life of the account, for the usage bar. Summed server-side rather
+   *  than from the visible rows, or the bar would shrink as history grew. */
+  purchased?: number;
+  spent?: number;
+  partial?: boolean;
   ledger: { id: string; kind: string; credits: number; note: string | null; provider: string | null; created_at: string }[];
   pack: { credits: number; priceUsd: number } | null;
   checkoutUrl: string | null;
@@ -58,6 +63,19 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
   const credits = data?.credits ?? 0;
   const reserved = data?.reserved ?? 0;
   const ledger = data?.ledger ?? [];
+  const purchased = data?.purchased ?? 0;
+  const spent = data?.spent ?? 0;
+  // Share of everything ever bought that has been spent. Nothing bought means no
+  // bar: an empty track next to a zero balance says nothing the number has not
+  // already said, which is why the free-video card hides its own when a plan
+  // grants nothing.
+  const usedPct = purchased > 0 ? Math.min(spent / purchased, 1) : 0;
+  const empty = credits === 0;
+  const barColor = empty
+    ? "oklch(0.6 0.19 25)"
+    : usedPct >= 0.9
+      ? "oklch(0.72 0.17 75)"
+      : "oklch(0.72 0.25 285)";
 
   const label = (kind: string, provider: string | null) => {
     switch (kind) {
@@ -126,6 +144,24 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
             </button>
           )}
         </div>
+        {purchased > 0 && (
+          <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(0 0 0 / 0.18)" }}>
+            <div className="h-full rounded-full transition-all"
+              style={{ width: `${Math.max(usedPct * 100, 1.5)}%`, background: barColor }} />
+          </div>
+        )}
+
+        {purchased > 0 && (
+          <p className="text-[11px] leading-relaxed" style={{ color: empty ? "oklch(0.68 0.19 25)" : "var(--c-42)" }}>
+            {spent.toLocaleString(undefined, { maximumFractionDigits: 2 })} used
+            {" · "}
+            {credits.toLocaleString(undefined, { maximumFractionDigits: 2 })} of{" "}
+            {purchased.toLocaleString(undefined, { maximumFractionDigits: 2 })} purchased credits left
+            {data?.partial ? " (recent history only)" : ""}
+            {empty ? ". Top up to keep generating." : ""}
+          </p>
+        )}
+
         {!data?.checkoutUrl && (
           <p className="text-[11px] leading-relaxed" style={{ color: "var(--c-42)" }}>
             Top-ups are not open yet. Nothing is charged, and nothing is spent from this balance.
@@ -368,7 +404,7 @@ export function BalanceCards() {
     // match. Each card is a flex column filling its cell, and the block that
     // grows is the one with room to spare: the ledger where there is one, the
     // balance box where there is not.
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid gap-[60px] lg:grid-cols-2">
       <HeclusCreditsCard data={heclusCredits} />
       <WalletCard data={credits} />
     </div>

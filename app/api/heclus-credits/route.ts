@@ -17,16 +17,60 @@ export async function GET() {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
-  const [balance, ledger] = await Promise.all([
+  const [balance, ledger, lifetime] = await Promise.all([
     getHeclusBalance(user),
     listHeclusLedger(user.id, 25),
+    lifetimeTotals(user.id),
   ]);
 
   return NextResponse.json({
     ...balance,
+    ...lifetime,
     ledger,
     ...(await pack()),
   });
+}
+
+/**
+ * Bought and spent over the life of the account, for the usage bar.
+ *
+ * Summed here rather than from the 25 rows the panel displays: a bar drawn from
+ * a page of history would shrink as the account got busier, which is worse than
+ * no bar.
+ *
+ * Capped, and the cap is reported. A wallet with more movements than this is not
+ * a case that exists yet, and if it ever does, `partial` is what stops the bar
+ * quietly lying about it.
+ */
+const LIFETIME_ROW_CAP = 5000;
+
+async function lifetimeTotals(userId: string): Promise<{
+  purchased: number;
+  spent: number;
+  partial: boolean;
+}> {
+  const none = { purchased: 0, spent: 0, partial: false };
+  try {
+    const { data, error } = await supabase
+      // credit_ledger, not heclus_credit_ledger: migration 129 gave the general
+      // wallet the plain names and renamed the free-video one to genai_credits.
+      .from("credit_ledger")
+      .select("credits")
+      .eq("user_id", userId)
+      .limit(LIFETIME_ROW_CAP);
+    if (error || !data) return none;
+
+    let purchased = 0;
+    let spent = 0;
+    for (const row of data as { credits: number | string }[]) {
+      const n = Number(row.credits);
+      if (n > 0) purchased += n;
+      else spent += -n;
+    }
+    return { purchased, spent, partial: data.length === LIFETIME_ROW_CAP };
+  } catch {
+    return none;
+  }
 }
 
 /**
