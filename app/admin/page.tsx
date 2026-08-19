@@ -5230,6 +5230,7 @@ const TAB_BLURB: Record<string, string> = {
 /** Page heading, where it should differ from the sidebar label. */
 const TAB_HEADING: Record<string, string> = {
   agent: "Heclus AI Agent",
+  query: "Query for answers",
 };
 
 const ADMIN_NAV = [
