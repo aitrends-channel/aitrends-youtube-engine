@@ -1255,12 +1255,8 @@ export default function HomePage() {
                       <KeyRound size={15} />
                       <span>Account</span>
                     </Link>
-                    {/* The account page already has a balance section and reads
-                        ?section=balance on mount, so this is a link to what
-                        exists rather than a second surface showing the same
-                        wallet. */}
                     <Link
-                      href="/account?section=balance"
+                      href="/balance"
                       onClick={() => setShowProfileMenu(false)}
                       className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all hover:opacity-80"
                       style={{ color: "var(--c-60)" }}
