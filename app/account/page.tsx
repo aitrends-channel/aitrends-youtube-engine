@@ -116,7 +116,15 @@ function WalletCard({ data }: { data: CreditsData | null }) {
   // Opening the picker in place of the balance row, not over it. A modal would
   // hide the balance behind the decision it informs.
   const [picking, setPicking] = useState(false);
-  if (!data?.eligible) return null;
+  // Eligible means "already has an allowance or bought credit". That was the
+  // right gate while the wallet only existed to spend a monthly perk, but it
+  // shuts out the person this page is now for: someone with nothing who wants to
+  // buy some. If there is a top-up link, there is something true to say, so the
+  // card renders and the zero state is the invitation.
+  //
+  // Still nothing when no checkout link is configured: a balance of zero with no
+  // way to change it is the one case where saying nothing is kinder.
+  if (!data || (!data.eligible && !data.checkoutUrl)) return null;
 
   const { grant, paid, total, reserved, monthlyGrant, checkoutUrl, ledger, setupHint, used: usage } = data;
   const used = Math.max(monthlyGrant - grant, 0);
@@ -197,7 +205,12 @@ function WalletCard({ data }: { data: CreditsData | null }) {
             ? `${grant.toLocaleString()} of this month's ${monthlyGrant.toLocaleString()} free credits left`
             : "No monthly credits on your plan"}
           {paid > 0 && ` · ${paid.toLocaleString()} purchased`}
-          {empty && ". Top up to keep generating, or wait for next month's free credits."}
+          {/* Only promise next month's credits to someone whose plan actually
+              grants them. For a user with no allowance, the top-up is the only
+              route and saying otherwise sends them away to wait for nothing. */}
+          {empty && (monthlyGrant > 0
+            ? ". Top up to keep generating, or wait for next month's free credits."
+            : ". Top up to start generating.")}
         </p>
         )}
         {!picking && usage && usage.allTime > usage.thisMonth && (
