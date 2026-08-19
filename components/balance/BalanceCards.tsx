@@ -57,7 +57,7 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 flex flex-col h-full">
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
@@ -71,7 +71,7 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
         </div>
       </div>
 
-      <div className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}>
+      <div className="rounded-2xl p-5 space-y-3 flex flex-col justify-center" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)", flex: "1 1 auto" }}>
         <div className="flex items-end justify-between gap-3">
           <p className="leading-none">
             <span className="text-3xl font-bold text-foreground tabular-nums">
@@ -81,22 +81,36 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
               credit{credits === 1 ? "" : "s"}
             </span>
           </p>
+          {/* The button is always here, so the wallet reads the same as the one
+              beside it. Disabled until a pack is configured, rather than hidden:
+              its absence looked like a missing feature, and a link to a checkout
+              that grants nothing is worse than a button that says why. */}
           {data?.checkoutUrl && data.pack ? (
             <a
               href={data.checkoutUrl}
-              className="px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+              title={`${data.pack.credits.toLocaleString()} credits for $${data.pack.priceUsd}`}
+              className="px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 shrink-0"
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
             >
               Top up
             </a>
           ) : (
-            // No pack configured yet, so no button: a Top up that cannot charge
-            // anything is worse than none. Says why instead.
-            <span className="text-xs text-right max-w-[13rem]" style={{ color: "var(--c-42)" }}>
-              Top-ups are not open yet. Nothing is charged and nothing is spent from here.
-            </span>
+            <button
+              type="button"
+              disabled
+              title="No top-up pack is configured yet, so this cannot charge anything."
+              className="px-4 py-2 rounded-xl text-sm font-semibold shrink-0 opacity-40 cursor-not-allowed"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              Top up
+            </button>
           )}
         </div>
+        {!data?.checkoutUrl && (
+          <p className="text-[11px] leading-relaxed" style={{ color: "var(--c-42)" }}>
+            Top-ups are not open yet. Nothing is charged, and nothing is spent from this balance.
+          </p>
+        )}
         {reserved > 0 && (
           <p className="text-[11px]" style={{ color: "var(--c-42)" }}>
             {reserved.toLocaleString(undefined, { maximumFractionDigits: 2 })} held by work in progress
@@ -172,7 +186,7 @@ function WalletCard({ data }: { data: CreditsData | null }) {
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 flex flex-col h-full">
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
@@ -312,7 +326,11 @@ export function BalanceCards() {
   }, []);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2 items-start">
+    // items-stretch (the default) rather than items-start, so the two columns
+    // match. Each card is a flex column filling its cell, and the block that
+    // grows is the one with room to spare: the ledger where there is one, the
+    // balance box where there is not.
+    <div className="grid gap-6 lg:grid-cols-2">
       <HeclusCreditsCard data={heclusCredits} />
       <WalletCard data={credits} />
     </div>
