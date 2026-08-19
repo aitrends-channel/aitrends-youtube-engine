@@ -134,9 +134,18 @@ export function kieRoutingFor(routing: AnthropicRouting): AnthropicRouting {
 export type PromptProviderConfig = {
   /** Per-step overrides. A missing key means claude. */
   perStep: Partial<Record<WorkflowStep, PromptProvider>>;
-  /** Model the gpt provider runs on. */
+  /** Per-step model override, for steps that want a different model from the
+   *  provider default. A missing key means "use gptModel / geminiModel".
+   *
+   *  Stored in the same JSONB column as perStep: a step's value is either a
+   *  bare provider string (the original shape, still written when there is no
+   *  model override) or { provider, model }. Reading both shapes is what let
+   *  this land without a migration, which matters because production migrations
+   *  here are applied by hand. */
+  modelPerStep: Partial<Record<WorkflowStep, string>>;
+  /** Default model the gpt provider runs on, for steps with no override. */
   gptModel: string;
-  /** Model the gemini provider runs on. */
+  /** Default model the gemini provider runs on, for steps with no override. */
   geminiModel: string;
 };
 
@@ -145,19 +154,47 @@ let cached: { at: number; value: PromptProviderConfig } | null = null;
 
 const CONFIG_FALLBACK: PromptProviderConfig = {
   perStep: {},
+  modelPerStep: {},
   gptModel: GPT_MODEL_FALLBACK,
   geminiModel: GEMINI_MODEL_FALLBACK,
 };
 
-function sanitisePerStep(raw: unknown): Partial<Record<WorkflowStep, PromptProvider>> {
-  if (!raw || typeof raw !== "object") return {};
-  const out: Partial<Record<WorkflowStep, PromptProvider>> = {};
+/** Reads both stored shapes: "gpt" and { provider: "gpt", model: "gpt-5-6-sol" }.
+ *  Returns the provider map and the model map separately, so callers that only
+ *  care about the provider are unaffected by the second shape existing. */
+function sanitisePerStep(raw: unknown): {
+  perStep: Partial<Record<WorkflowStep, PromptProvider>>;
+  modelPerStep: Partial<Record<WorkflowStep, string>>;
+} {
+  const perStep: Partial<Record<WorkflowStep, PromptProvider>> = {};
+  const modelPerStep: Partial<Record<WorkflowStep, string>> = {};
+  if (!raw || typeof raw !== "object") return { perStep, modelPerStep };
+
   for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
     // Filtered against PROVIDER_STEPS on read, so a slug that was valid when
     // written can't keep steering a step we've since taken off the feature.
-    if (PROVIDER_STEPS.has(k as WorkflowStep) && isPromptProvider(v)) out[k as WorkflowStep] = v;
+    if (!PROVIDER_STEPS.has(k as WorkflowStep)) continue;
+    const step = k as WorkflowStep;
+
+    if (isPromptProvider(v)) { perStep[step] = v; continue; }
+
+    if (v && typeof v === "object") {
+      const entry = v as { provider?: unknown; model?: unknown };
+      if (!isPromptProvider(entry.provider)) continue;
+      perStep[step] = entry.provider;
+      // The model has to belong to the provider this step now runs on. An admin
+      // who switches a step from gpt to gemini leaves a gpt id behind in the
+      // row, and sending that to the Gemini endpoint is a rejected request.
+      const model = typeof entry.model === "string" ? entry.model : null;
+      if (model && modelBelongsTo(entry.provider, model)) modelPerStep[step] = model;
+    }
   }
-  return out;
+  return { perStep, modelPerStep };
+}
+
+/** Whether a model id is in the given provider's catalog. */
+export function modelBelongsTo(provider: PromptProvider, model: string): boolean {
+  return provider === "gemini" ? isSelectableGeminiModel(model) : isSelectableGptModel(model);
 }
 
 /** Cached so a per-step lookup doesn't hammer Supabase on every workflow call.
@@ -200,7 +237,7 @@ export async function getPromptProviderConfig(): Promise<PromptProviderConfig> {
     }
 
     const value: PromptProviderConfig = {
-      perStep: sanitisePerStep(row?.prompt_provider_per_step),
+      ...sanitisePerStep(row?.prompt_provider_per_step),
       gptModel: isSelectableGptModel(row?.default_gpt_model) ? row.default_gpt_model : GPT_MODEL_FALLBACK,
       geminiModel: isSelectableGeminiModel(row?.default_gemini_model) ? row.default_gemini_model : GEMINI_MODEL_FALLBACK,
     };
@@ -231,9 +268,14 @@ export async function getGptModel(): Promise<string> {
   return (await getPromptProviderConfig()).gptModel;
 }
 
-/** The model id a KIE provider runs on. Claude has its own resolver in
- *  lib/claude/models.ts and never reaches here. */
-export async function getModelForProvider(p: PromptProvider): Promise<string> {
+/** The model id a KIE provider runs on for a given step. Claude has its own
+ *  resolver in lib/claude/models.ts and never reaches here.
+ *
+ *  The step's own override wins, then the provider default. Passing no step
+ *  returns the default, which is what a caller with no step context wants. */
+export async function getModelForProvider(p: PromptProvider, step?: WorkflowStep): Promise<string> {
   const cfg = await getPromptProviderConfig();
+  const override = step ? cfg.modelPerStep[step] : undefined;
+  if (override && modelBelongsTo(p, override)) return override;
   return p === "gemini" ? cfg.geminiModel : cfg.gptModel;
 }

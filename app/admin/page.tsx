@@ -2461,6 +2461,9 @@ interface RoutingResponse {
   user_selectable_models: string[];
   user_choice_steps: WorkflowStep[];
   provider_per_step: Partial<Record<WorkflowStep, PromptProvider>>;
+  /** Per-step model override. Absent key means the step uses the provider
+   *  default in gpt_model / gemini_model. */
+  model_per_step?: Partial<Record<WorkflowStep, string>>;
   provider_steps: WorkflowStep[];
   gpt_model: string;
   gpt_models: GptModelOption[];
@@ -3070,8 +3073,19 @@ function StepProviderControl({
   // Each KIE provider has its own catalog and its own stored default.
   const isGemini = provider === "gemini";
   const models = isGemini ? data?.gemini_models ?? [] : data?.gpt_models ?? [];
-  const activeModel = isGemini ? data?.gemini_model : data?.gpt_model;
   const modelField = isGemini ? "gemini_model" : "gpt_model";
+  // This card's own model, not the global one. Reading the global here is what
+  // made a change on one step look like a change to all of them: every card
+  // displayed the same value and wrote to the same column.
+  //
+  // sharedValue keeps a grouped card (the three prompt sub-steps) honest: if its
+  // steps disagree it resolves to null and no option reads as selected.
+  const perStepModel = sharedValue(card.steps.map((st) => data?.model_per_step?.[st] ?? null));
+  const providerDefault = isGemini ? data?.gemini_model : data?.gpt_model;
+  // "mixed" means the grouped card's steps are on different models, so nothing
+  // is selected rather than one of them being shown as if it spoke for all.
+  // null means no override, which is the provider default.
+  const activeModel = perStepModel === "mixed" ? undefined : (perStepModel ?? providerDefault);
   const routesDirect = card.steps.some((s) => (data?.per_step?.[s] ?? data?.routing) === "heclus_direct");
 
   async function applyProvider(next: PromptProvider) {
@@ -3100,11 +3114,13 @@ function StepProviderControl({
       const res = await fetch("/api/admin/anthropic-routing", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [modelField]: id }),
+        // Scoped to this card's steps. Without them the route writes the
+        // provider-wide default, which is the bug this fixes.
+        body: JSON.stringify({ steps: card.steps, [modelField]: id }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "Failed to save");
-      toast.success(`${isGemini ? "Gemini" : "GPT"} model set to ${models.find((m) => m.id === id)?.label ?? id}`);
+      toast.success(`${card.title} now runs on ${models.find((m) => m.id === id)?.label ?? id}`);
       mutate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save");
