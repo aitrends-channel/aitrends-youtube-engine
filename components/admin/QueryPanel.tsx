@@ -163,16 +163,27 @@ export function QueryPanel() {
           style={{ background: "var(--bg-input)", color: "var(--c-88)", border: "1px solid var(--bd-10)" }}
         />
         <div className="flex items-center justify-between gap-3">
-          <span className="text-xs" style={{ color: "var(--c-35)" }}>
-            Enter to ask, Shift+Enter for a new line
-          </span>
+          {/* The keyboard hint is only useful before you have asked. While a
+              question is in flight this is the spot the eye is already on, so it
+              carries the progress instead. */}
+          {running ? (
+            <span className="text-xs font-medium animate-pulse" style={{ color: "var(--brand-text)" }}>
+              Querying…
+            </span>
+          ) : (
+            <span className="text-xs" style={{ color: "var(--c-35)" }}>
+              Enter to ask, Shift+Enter for a new line
+            </span>
+          )}
           <button
             onClick={() => void ask(question)}
             disabled={running || !question.trim()}
-            className="px-5 py-2.5 rounded-xl text-base font-semibold inline-flex items-center gap-2 transition-all hover:opacity-90 disabled:opacity-40"
+            aria-label={running ? "Querying" : "Ask"}
+            title={running ? "Querying…" : "Ask"}
+            className="px-5 py-2.5 rounded-xl text-base font-semibold inline-flex items-center justify-center gap-2 min-w-[92px] transition-all hover:opacity-90 disabled:opacity-40"
             style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
           >
-            {running ? <><Spinner size={14} /> Looking…</> : <><Send size={14} /> Ask</>}
+            {running ? <Spinner size={16} /> : <><Send size={14} /> Ask</>}
           </button>
         </div>
       </div>
