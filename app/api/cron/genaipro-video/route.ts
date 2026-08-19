@@ -89,8 +89,14 @@ async function pollRendering(): Promise<{ done: number; failed: number; pending:
     let storedUrl: string;
     try {
       const folder = userFolderFor({ id: userId });
+      // The timestamp is what makes a regenerate visible. Without it every
+      // render of a beat writes the same object at the same URL, so video_url
+      // comes back byte-identical and the browser and CDN keep serving the
+      // clip they already cached: a first generation appeared, a regeneration
+      // looked like it never arrived. The KIE lane has always done this — see
+      // app/api/webhooks/kie/video/route.ts — and this lane was the outlier.
       storedUrl = await uploadFromUrl(
-        `${folder}/${raw.project_id}/videos/beat-${raw.beat_number}.mp4`,
+        `${folder}/${raw.project_id}/videos/beat-${raw.beat_number}_${Date.now()}.mp4`,
         status.url,
         "video/mp4",
       );
