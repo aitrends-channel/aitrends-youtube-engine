@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowLeft, Eye, EyeOff, HardDrive, KeyRound, LogOut, Save, Sparkles, Star } from "lucide-react";
+import { ArrowLeft, Eye, EyeOff, HardDrive, KeyRound, LogOut, Save, Sparkles, Star, Wallet } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { TopUpOptions } from "@/components/TopUpOptions";
@@ -108,6 +108,111 @@ interface CreditsData {
   ledger: { id: string; kind: string; credits: number; note: string | null; created_at: string }[];
 }
 
+interface HeclusCreditsData {
+  credits: number;
+  reserved: number;
+  ledger: { id: string; kind: string; credits: number; note: string | null; provider: string | null; created_at: string }[];
+  pack: { credits: number; priceUsd: number } | null;
+  checkoutUrl: string | null;
+}
+
+/** Heclus Credits: the general wallet, bought from us and spent on work that runs
+ *  on Heclus's own provider accounts.
+ *
+ *  Always rendered, unlike the free video wallet beside it. That one hides when a
+ *  plan has no allowance, because there was nothing true to say; this one is the
+ *  thing anyone can buy, so a zero balance is information rather than an absence.
+ */
+function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
+  const credits = data?.credits ?? 0;
+  const reserved = data?.reserved ?? 0;
+  const ledger = data?.ledger ?? [];
+
+  const label = (kind: string, provider: string | null) => {
+    switch (kind) {
+      case "topup":      return "Credits purchased";
+      case "refund":     return "Refunded";
+      case "adjustment": return "Adjusted by Heclus";
+      // Spend rows name the provider, since that is the part a user recognises:
+      // "spent" alone tells them nothing about which step took it.
+      default:           return provider ? `Spent on ${provider}` : "Spent";
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
+          <Wallet size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-foreground">Heclus Credits</h2>
+          <p className="text-xs" style={{ color: "var(--c-45)" }}>
+            Buy credit from us and spend it across the workflow, with no provider key of your own to manage.
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl p-5 space-y-3" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}>
+        <div className="flex items-end justify-between gap-3">
+          <p className="leading-none">
+            <span className="text-3xl font-bold text-foreground tabular-nums">
+              {credits.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            </span>
+            <span className="text-sm ml-2" style={{ color: "var(--c-45)" }}>
+              credit{credits === 1 ? "" : "s"}
+            </span>
+          </p>
+          {data?.checkoutUrl && data.pack ? (
+            <a
+              href={data.checkoutUrl}
+              className="px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              Top up
+            </a>
+          ) : (
+            // No pack configured yet, so no button: a Top up that cannot charge
+            // anything is worse than none. Says why instead.
+            <span className="text-xs text-right max-w-[13rem]" style={{ color: "var(--c-42)" }}>
+              Top-ups are not open yet. Nothing is charged and nothing is spent from here.
+            </span>
+          )}
+        </div>
+        {reserved > 0 && (
+          <p className="text-[11px]" style={{ color: "var(--c-42)" }}>
+            {reserved.toLocaleString(undefined, { maximumFractionDigits: 2 })} held by work in progress
+          </p>
+        )}
+      </div>
+
+      {ledger.length > 0 && (
+        <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}>
+          <p className="px-4 py-3 text-xs font-semibold" style={{ color: "var(--c-55)", borderBottom: "1px solid var(--bd-8)" }}>
+            Recent activity
+          </p>
+          {ledger.map((row) => (
+            <div key={row.id} className="flex items-center justify-between gap-3 px-4 py-3"
+              style={{ borderTop: "1px solid var(--bd-6)" }}>
+              <div className="min-w-0">
+                <p className="text-sm truncate" style={{ color: "var(--c-75)" }}>{label(row.kind, row.provider)}</p>
+                <p className="text-[11px]" style={{ color: "var(--c-42)" }}>
+                  {new Date(row.created_at).toLocaleString()}
+                </p>
+              </div>
+              <span className="text-sm font-semibold tabular-nums shrink-0"
+                style={{ color: row.credits > 0 ? "oklch(0.7 0.15 145)" : "var(--c-55)" }}>
+                {row.credits > 0 ? "+" : ""}{row.credits.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Video credits. Mirrors StorageCard's shape because it answers the same kind
  *  of question, and like it, renders nothing when there is nothing true to say:
  *  a plan with no allowance and no bought credit has no wallet, which is how
@@ -157,9 +262,9 @@ function WalletCard({ data }: { data: CreditsData | null }) {
           <Sparkles size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-foreground">Video credits</h2>
+          <h2 className="text-lg font-bold text-foreground">Free video credits</h2>
           <p className="text-xs" style={{ color: "var(--c-45)" }}>
-            One credit generates one video clip. Free credits refresh every month; purchased credits never expire.
+            One credit generates one free video clip. Refreshes every month; purchased clip credits never expire. Separate from Heclus Credits.
           </p>
         </div>
       </div>
@@ -474,6 +579,11 @@ export default function AccountPage() {
   // empty page.
   const [section, setSection] = useState<"settings" | "balance">("settings");
   const [credits, setCredits] = useState<CreditsData | null>(null);
+  // Heclus Credits is fetched separately because it is a separate wallet with a
+  // separate ledger, and merging the two payloads would mean a number on screen
+  // could not say which balance it came from. They are counted in different
+  // units: whole clips there, fractional credits here.
+  const [heclusCredits, setHeclusCredits] = useState<HeclusCreditsData | null>(null);
 
   // Arriving from a completed top-up: open the section the customer just paid
   // to affect. Waits for the credits fetch, because the Balance pane only
@@ -481,17 +591,32 @@ export default function AccountPage() {
   // pane. Read off window rather than useSearchParams to avoid forcing a
   // Suspense boundary around the whole page for one optional param.
   useEffect(() => {
-    if (!credits?.eligible) return;
+    // No longer waits on credits?.eligible. That guard was there so a completed
+    // top-up could not open a pane the user was not entitled to see, but Balance
+    // is now a pane everyone has, and the profile menu links straight at it.
     if (new URLSearchParams(window.location.search).get("section") === "balance") {
       setSection("balance");
     }
-  }, [credits]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     fetch("/api/credits", { cache: "no-store" })
       .then((r) => r.ok ? r.json() : null)
       .then((d) => { if (!cancelled && d && typeof d.total === "number") setCredits(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Failure leaves this null and the card shows a zero balance, which is the
+    // truth for anyone who has not topped up. It must not take the pane down
+    // with it: the wallet beside it is a separate fetch and still has something
+    // to say.
+    fetch("/api/heclus-credits", { cache: "no-store" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => { if (!cancelled && d && typeof d.credits === "number") setHeclusCredits(d); })
       .catch(() => {});
     return () => { cancelled = true; };
   }, []);
@@ -661,7 +786,12 @@ export default function AccountPage() {
           <div className="flex gap-1 mb-6 p-1 rounded-xl" style={{ background: "oklch(1 0 0 / 0.04)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
             {([
               ["settings", "Account settings", <KeyRound key="s" size={13} />],
-              ...(credits?.eligible ? [["balance", "Balance", <Sparkles key="b" size={13} />] as const] : []),
+              // Always present now. The gate was credits?.eligible, from when
+              // Balance meant only the free video wallet and an ineligible plan
+              // would have landed on an empty pane. Heclus Credits is a balance
+              // anyone can hold and top up, so there is always something here,
+              // and the profile menu links straight to it.
+              ["balance", "Balance", <Wallet key="b" size={13} />],
             ] as [("settings" | "balance"), string, React.ReactNode][]).map(([id, label, icon]) => {
               const on = section === id;
               return (
@@ -683,7 +813,12 @@ export default function AccountPage() {
 
           <div className="min-w-0">
         {section === "balance" ? (
-          <WalletCard data={credits} />
+          // Side by side from lg, stacked below it. items-start so the shorter
+          // card is not stretched to match the taller one's ledger.
+          <div className="grid gap-6 lg:grid-cols-2 items-start">
+            <HeclusCreditsCard data={heclusCredits} />
+            <WalletCard data={credits} />
+          </div>
         ) : (
         <div className="space-y-5">
           <div className="flex items-center gap-3">

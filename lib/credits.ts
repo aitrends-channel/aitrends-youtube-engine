@@ -5,6 +5,11 @@ import { isAdminUser } from "@/lib/admin";
 import type { User } from "@supabase/supabase-js";
 import { FREE_VIDEO_COMING_SOON } from "@/lib/free-tier-flag";
 
+// The FREE GENAI VIDEO wallet, in TypeScript. genai_credits since migration
+// 129, which handed the general names to Heclus Credits (lib/heclus-credits.ts).
+// This one is whole clips and a monthly grant; that one is fractional and
+// purchased-only.
+//
 // The credit wallet, in TypeScript. Every balance-changing operation is a
 // Postgres function call (migration 125) rather than a read-modify-write here,
 // because a 300-beat project fires many submits at once and JS cannot hold a
@@ -119,7 +124,7 @@ export async function getCreditBalance(user: User): Promise<CreditBalance> {
   // stops issuing allowances for a period nobody can spend in.
   if (FREE_VIDEO_COMING_SOON) return { ...EMPTY, period };
   try {
-    const { data, error } = await supabase.rpc("ensure_monthly_grant", {
+    const { data, error } = await supabase.rpc("genai_credits_ensure_grant", {
       p_user: user.id,
       p_credits: monthlyGrant,
       p_period: period,
@@ -157,7 +162,7 @@ export async function reserveCredits(opts: {
   beatNumber?: number | null;
 }): Promise<string | null> {
   if (opts.credits <= 0) return null;
-  const { data, error } = await supabase.rpc("reserve_credits", {
+  const { data, error } = await supabase.rpc("genai_credits_reserve", {
     p_user: opts.userId,
     p_credits: opts.credits,
     p_provider: opts.provider ?? CREDIT_PROVIDER_GENAIPRO,
@@ -178,7 +183,7 @@ export async function settleReservation(
   reservationId: string, actual?: number, note?: string,
 ): Promise<boolean> {
   try {
-    const { data, error } = await supabase.rpc("settle_reservation", {
+    const { data, error } = await supabase.rpc("genai_credits_settle", {
       p_reservation: reservationId,
       p_actual: actual ?? null,
       p_note: note ?? null,
@@ -198,7 +203,7 @@ export async function settleReservation(
  *  fifth of video generations fail, so this path is ordinary, not exceptional. */
 export async function releaseReservation(reservationId: string, reason?: string): Promise<boolean> {
   try {
-    const { data, error } = await supabase.rpc("release_reservation", {
+    const { data, error } = await supabase.rpc("genai_credits_release", {
       p_reservation: reservationId,
       p_reason: reason ?? null,
     });
@@ -223,7 +228,7 @@ export async function addCredits(opts: {
   externalRef?: string | null;
   note?: string | null;
 }): Promise<boolean> {
-  const { data, error } = await supabase.rpc("add_credits", {
+  const { data, error } = await supabase.rpc("genai_credits_add", {
     p_user: opts.userId,
     p_credits: opts.credits,
     p_kind: opts.kind,
@@ -257,7 +262,7 @@ export interface CreditsUsed {
 export async function getCreditsUsed(userId: string): Promise<CreditsUsed> {
   try {
     const { data, error } = await supabase
-      .from("credit_ledger")
+      .from("genai_credits_ledger")
       .select("credits, created_at")
       .eq("user_id", userId)
       .eq("kind", "debit");
@@ -291,7 +296,7 @@ export interface LedgerRow {
 /** History for the user-facing balance panel and the admin account view. */
 export async function listLedger(userId: string, limit = 50): Promise<LedgerRow[]> {
   const { data, error } = await supabase
-    .from("credit_ledger")
+    .from("genai_credits_ledger")
     .select("id, kind, credits, bucket, note, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
@@ -314,7 +319,7 @@ export async function findOpenReservation(
   projectId: string, beatNumber: number,
 ): Promise<string | null> {
   const { data, error } = await supabase
-    .from("credit_reservations")
+    .from("genai_credits_reservations")
     .select("id")
     .eq("project_id", projectId)
     .eq("beat_number", beatNumber)
@@ -340,7 +345,7 @@ export async function findOpenReservation(
 export async function sweepStaleReservations(limit = 50): Promise<number> {
   const cutoff = new Date(Date.now() - RESERVATION_STALE_MINUTES * 60_000).toISOString();
   const { data, error } = await supabase
-    .from("credit_reservations")
+    .from("genai_credits_reservations")
     .select("id")
     .eq("state", "open")
     .lt("created_at", cutoff)
