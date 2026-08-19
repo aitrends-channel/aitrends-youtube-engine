@@ -3144,10 +3144,12 @@ export default function PromptsPage({ params }: PageProps) {
       </Dialog>
 
       <Dialog open={bulkOpen} onOpenChange={(open) => { if (!open && !bulkRunning) setBulkOpen(false); }}>
-        <DialogContent className="sm:max-w-2xl bg-zinc-900 text-zinc-100 ring-zinc-700" showCloseButton={false}>
+        <DialogContent className="sm:max-w-2xl max-h-[88vh] overflow-y-auto bg-zinc-900 text-zinc-100 ring-zinc-700" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle className="text-zinc-50">
-              {bulkFromCompletion ? "Your script is split into beats" : "Merge beats"}
+              {bulkFromCompletion
+                ? `This video project has ${beats.length.toLocaleString()} beat${beats.length === 1 ? "" : "s"}`
+                : "Merge beats"}
             </DialogTitle>
             <DialogDescription className="text-zinc-400">
               {bulkFromCompletion ? (
@@ -3155,8 +3157,7 @@ export default function PromptsPage({ params }: PageProps) {
                   {/* Every count is the beat count: one image prompt, one video
                       prompt, one image and one video per beat. Four numbers, no
                       explanation — the scale is the argument. */}
-                  <span className="font-semibold text-zinc-100">{beats.length.toLocaleString()} beats</span>
-                  {" "}means {beats.length.toLocaleString()} image prompts, {beats.length.toLocaleString()} video prompts,
+                  That means {beats.length.toLocaleString()} image prompts, {beats.length.toLocaleString()} video prompts,
                   {" "}{beats.length.toLocaleString()} images and {beats.length.toLocaleString()} videos.
                   {" "}Merging short beats brings that down, and it is free until prompts are written.
                 </>
@@ -3206,7 +3207,7 @@ export default function PromptsPage({ params }: PageProps) {
             {(bulkDirection === "auto" ? bulkStubs.map((s) => s.beatNumber) : bulkPlan.absorbedOriginals).length > 0 && (
               // max-h-40 fitted about three rows, so a plan touching a dozen
               // beats had to be scrolled a line at a time to be read at all.
-              <div className="max-h-72 overflow-y-auto rounded-lg ring-1 ring-zinc-700 divide-y divide-zinc-800">
+              <div className="max-h-[45vh] overflow-y-auto rounded-lg ring-1 ring-zinc-700 divide-y divide-zinc-800">
                 {(bulkDirection === "auto" ? bulkStubs.map((s) => s.beatNumber) : bulkPlan.absorbedOriginals).map((n) => (
                   <div key={n} className="flex gap-2 px-3 py-1.5 text-xs text-zinc-400">
                     <span className="font-semibold text-zinc-500 shrink-0">{n}</span>
