@@ -107,8 +107,14 @@ async function pack(): Promise<{
     const priceUsd = Number(row.heclus_pack_price_usd ?? 0);
     const link = typeof url === "string" && url.trim() ? url.trim() : null;
 
-    if (!link || !(credits > 0) || !(priceUsd > 0)) return none;
-    return { pack: { credits, priceUsd }, checkoutUrl: link };
+    // The link alone opens the button. Credits and price are optional and only
+    // sharpen what it says: requiring them meant a configured checkout still
+    // showed a dead button, which is the opposite of useful.
+    if (!link) return none;
+    return {
+      pack: credits > 0 && priceUsd > 0 ? { credits, priceUsd } : null,
+      checkoutUrl: link,
+    };
   } catch {
     return none;
   }
