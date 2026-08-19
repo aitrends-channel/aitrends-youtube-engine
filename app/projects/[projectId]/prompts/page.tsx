@@ -1347,6 +1347,11 @@ export default function PromptsPage({ params }: PageProps) {
   const [bulkMinWords, setBulkMinWords] = useState(SHORT_BEAT_WORDS);
   const [bulkDirection, setBulkDirection] = useState<"up" | "down" | "auto">("up");
   const [bulkRunning, setBulkRunning] = useState(false);
+  // True when the modal opened itself the moment the last beat landed, rather
+  // than the user clicking Merge beats. Only the wording differs: at that point
+  // the scale of what the split just committed them to is the useful thing to
+  // say, and it is the one moment merging is still free of a rewrite cost.
+  const [bulkFromCompletion, setBulkFromCompletion] = useState(false);
 
   const beats: Beat[] = project?.beats ?? [];
   const videoBeats = beats.filter((b) => b.videoPrompt);
@@ -2332,6 +2337,27 @@ export default function PromptsPage({ params }: PageProps) {
     imageStep.status === "running" ||
     videoStep.status === "running";
 
+  // Pop the merge modal the moment the last beat lands. Merging is only free
+  // before prompts exist: afterwards the merged beat's prompt has to be paid
+  // for again, so this is the one moment the offer is worth interrupting for.
+  //
+  // Fires on the false → true transition only. The ref starts as null and is
+  // seeded on the first render, so arriving at a project whose beats finished
+  // days ago does not reopen it, and neither does any later re-render.
+  //
+  // Held back while the review gate is already open or a step is running: a
+  // user who has written prompts is past this decision, and a modal landing
+  // mid-run reads as an error rather than an offer.
+  const beatsCompletePrev = useRef<boolean | null>(null);
+  useEffect(() => {
+    const prev = beatsCompletePrev.current;
+    beatsCompletePrev.current = beatsComplete;
+    if (prev !== false || !beatsComplete) return;
+    if (beatsGateOpen || anyRunning || beats.length === 0) return;
+    setBulkFromCompletion(true);
+    setBulkOpen(true);
+  }, [beatsComplete, beatsGateOpen, anyRunning, beats.length]);
+
   // Rendered in two places on purpose: on the Beats step, where the decision
   // belongs, and above the beat list, where the user is actually looking at
   // the beats. Defined once so the two copies cannot drift apart. `shape`
@@ -2340,7 +2366,7 @@ export default function PromptsPage({ params }: PageProps) {
   const mergeBeatsButton = (shape: string) =>
     beats.length > 1 && !MERGE_BEATS_HIDDEN ? (
       <button
-        onClick={() => setBulkOpen(true)}
+        onClick={() => { setBulkFromCompletion(false); setBulkOpen(true); }}
         disabled={anyRunning || remoteRunInProgress || !canMergeBeats}
         title={mergeHint ?? "Merge beats that are too short to hold a shot"}
         className={`flex items-center gap-1.5 px-3 py-1.5 ${shape} text-xs font-medium transition-all hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40`}
@@ -3056,9 +3082,23 @@ export default function PromptsPage({ params }: PageProps) {
       <Dialog open={bulkOpen} onOpenChange={(open) => { if (!open && !bulkRunning) setBulkOpen(false); }}>
         <DialogContent className="sm:max-w-2xl bg-zinc-900 text-zinc-100 ring-zinc-700" showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle className="text-zinc-50">Merge beats</DialogTitle>
+            <DialogTitle className="text-zinc-50">
+              {bulkFromCompletion ? "Your script is split into beats" : "Merge beats"}
+            </DialogTitle>
             <DialogDescription className="text-zinc-400">
-              Merges short beats into a neighbour. Fewer, longer beats cost less to generate but match the narration less closely.
+              {bulkFromCompletion ? (
+                <>
+                  {/* Every count is the beat count: the steps ahead write one
+                      image prompt and one video prompt per beat, then generate
+                      one image and one video from each. Saying it as four
+                      numbers is what makes the scale land. */}
+                  This project has <span className="font-semibold text-zinc-100">{beats.length.toLocaleString()} beats</span>,
+                  so {beats.length.toLocaleString()} image prompts and {beats.length.toLocaleString()} video prompts
+                  will be written, and {beats.length.toLocaleString()} images and {beats.length.toLocaleString()} videos
+                  will be generated. Merging short beats into a neighbour brings all of that down, and now is the moment
+                  it is free: after prompts are written, a merged beat has to have its prompt paid for again.
+                </>
+              ) : "Merges short beats into a neighbour. Fewer, longer beats cost less to generate but match the narration less closely."}
             </DialogDescription>
           </DialogHeader>
 
@@ -3119,7 +3159,7 @@ export default function PromptsPage({ params }: PageProps) {
               disabled={bulkRunning}
               className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40 bg-zinc-800 text-zinc-200 ring-1 ring-zinc-600 hover:bg-zinc-700"
             >
-              Cancel
+              {bulkFromCompletion ? "Not now" : "Cancel"}
             </button>
             <button
               onClick={runBulkMerge}
