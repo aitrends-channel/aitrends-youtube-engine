@@ -23,4 +23,12 @@ export const FREE_TTS_COMING_SOON = false;
 // Bought credits are hidden, not destroyed: the wallet rows stay in the
 // database and reappear when this flips. The reserve and settle paths are
 // deliberately left alone so anything already queued can still finish.
-export const FREE_VIDEO_COMING_SOON = true;
+//
+// OFF while GenAIPro is brought up. That does NOT put the feature in front of
+// customers: VIDEO_CREDITS_ADMIN_ONLY in lib/credits.ts still zeroes a
+// non-admin's allowance, so the Free tab on the Generate step is live for
+// admins and stays a coming-soon teaser for everyone else. Turning it on for
+// customers means flipping that second flag, which is a spend decision:
+// starter and pro carry 300 clips a month each from QUOTA_DEFAULTS, at $0.02
+// a clip of Heclus's money.
+export const FREE_VIDEO_COMING_SOON = false;
