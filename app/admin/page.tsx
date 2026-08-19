@@ -5219,6 +5219,7 @@ const TAB_BLURB: Record<string, string> = {
   logs:      "Errors and events from the running app",
   emails:    "Inbound and outbound support mail",
   support:   "Tickets from customers",
+  query:     "Ask the database anything, in plain English",
   agent:     "Teach the agent, and switch it on or off",
   reviews:   "What users think of the product",
   features:  "What customers have asked for, and how often",
