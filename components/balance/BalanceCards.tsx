@@ -404,7 +404,7 @@ export function BalanceCards() {
     // match. Each card is a flex column filling its cell, and the block that
     // grows is the one with room to spare: the ledger where there is one, the
     // balance box where there is not.
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid gap-[30px] lg:grid-cols-2">
       <HeclusCreditsCard data={heclusCredits} />
       <WalletCard data={credits} />
     </div>
