@@ -71,7 +71,7 @@ function AnswerBody({ text }: { text: string }) {
           const body = clean(block.lines.join("\n")).trim();
           if (!body) return null;
           return (
-            <p key={i} className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--c-88)" }}>
+            <p key={i} className="text-base leading-relaxed whitespace-pre-wrap" style={{ color: "var(--c-88)" }}>
               {body}
             </p>
           );
@@ -82,7 +82,7 @@ function AnswerBody({ text }: { text: string }) {
         const [header, ...body] = rows;
         return (
           <div key={i} className="overflow-x-auto rounded-lg" style={{ border: "1px solid var(--bd-10)" }}>
-            <table className="w-full text-xs">
+            <table className="w-full text-sm">
               <thead>
                 <tr style={{ background: "var(--bg-track)" }}>
                   {header.map((h, c) => (
@@ -147,13 +147,6 @@ export function QueryPanel() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-bold" style={{ color: "var(--c-88)" }}>Query</h2>
-        <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--c-45)" }}>
-          Ask about the production database in plain English. Read-only: it can look at anything and change nothing.
-        </p>
-      </div>
-
       <div className="rounded-2xl p-4 space-y-3" style={cardStyle}>
         <textarea
           value={question}
@@ -166,17 +159,17 @@ export function QueryPanel() {
           rows={3}
           disabled={running}
           placeholder="How much has this user spent at the prompts step this month?"
-          className="w-full rounded-xl px-3 py-2.5 text-sm outline-none resize-y disabled:opacity-60"
+          className="w-full rounded-xl px-4 py-3 text-base outline-none resize-y disabled:opacity-60"
           style={{ background: "var(--bg-input)", color: "var(--c-88)", border: "1px solid var(--bd-10)" }}
         />
         <div className="flex items-center justify-between gap-3">
-          <span className="text-[11px]" style={{ color: "var(--c-35)" }}>
+          <span className="text-xs" style={{ color: "var(--c-35)" }}>
             Enter to ask, Shift+Enter for a new line
           </span>
           <button
             onClick={() => void ask(question)}
             disabled={running || !question.trim()}
-            className="px-4 py-2 rounded-xl text-sm font-semibold inline-flex items-center gap-2 transition-all hover:opacity-90 disabled:opacity-40"
+            className="px-5 py-2.5 rounded-xl text-base font-semibold inline-flex items-center gap-2 transition-all hover:opacity-90 disabled:opacity-40"
             style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
           >
             {running ? <><Spinner size={14} /> Looking…</> : <><Send size={14} /> Ask</>}
@@ -186,12 +179,12 @@ export function QueryPanel() {
 
       {!result && !running && (
         <div className="rounded-2xl p-4 space-y-2" style={cardStyle}>
-          <p className="text-xs font-semibold" style={{ color: "var(--c-55)" }}>Try one of these</p>
+          <p className="text-sm font-semibold" style={{ color: "var(--c-55)" }}>Try one of these</p>
           {EXAMPLES.map((ex) => (
             <button
               key={ex}
               onClick={() => { setQuestion(ex); void ask(ex); }}
-              className="block w-full text-left text-xs px-3 py-2 rounded-lg transition-all hover:opacity-80"
+              className="block w-full text-left text-sm px-3 py-2.5 rounded-lg transition-all hover:opacity-80"
               style={{ background: "var(--bg-track)", color: "var(--c-60)" }}
             >
               {ex}
@@ -201,7 +194,7 @@ export function QueryPanel() {
       )}
 
       {result?.error && (
-        <div className="rounded-2xl p-4 text-sm" style={{ background: "oklch(0.6 0.19 25 / 0.1)", border: "1px solid oklch(0.6 0.19 25 / 0.3)", color: "oklch(0.7 0.2 25)" }}>
+        <div className="rounded-2xl p-4 text-base" style={{ background: "oklch(0.6 0.19 25 / 0.1)", border: "1px solid oklch(0.6 0.19 25 / 0.3)", color: "oklch(0.7 0.2 25)" }}>
           {result.error}
         </div>
       )}
@@ -210,7 +203,7 @@ export function QueryPanel() {
         <div className="rounded-2xl p-4" style={cardStyle}>
           <AnswerBody text={result.answer} />
           {result.exhausted && (
-            <p className="text-[11px] mt-2" style={{ color: "oklch(0.7 0.18 75)" }}>
+            <p className="text-xs mt-2" style={{ color: "oklch(0.7 0.18 75)" }}>
               Stopped after the query limit rather than guessing from a half-finished look.
             </p>
           )}
@@ -218,7 +211,7 @@ export function QueryPanel() {
       )}
 
       {!!result?.trail?.length && (
-        <p className="text-[11px] px-1" style={{ color: "var(--c-35)" }}>
+        <p className="text-xs px-1" style={{ color: "var(--c-35)" }}>
           {/* Count only. A query that failed is usually the model probing for a
               column name and missing, which is how the loop is supposed to work
               — with no SQL on screen there is nothing the reader could do about
