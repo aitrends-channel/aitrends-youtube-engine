@@ -60,7 +60,10 @@ export default function BalancePage() {
       </header>
 
       <main className="flex-1 px-4 sm:px-8 py-8">
-        <div className="max-w-5xl mx-auto space-y-6">
+        {/* Wider than the account page's reading column: two wallets with a
+            ledger each need the room, and nothing here is a text field where a
+            long line hurts. */}
+        <div className="max-w-7xl mx-auto space-y-6">
           <div>
             <h1 className="text-2xl font-bold text-foreground">Balance</h1>
             <p className="text-sm mt-1" style={{ color: "var(--c-45)" }}>
