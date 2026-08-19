@@ -65,8 +65,12 @@ export const VIDEO_MODEL_CONFIGS: Record<string, VideoModelConfig> = {
   "sora-2-image-to-video":            { durations: [{ label: "10 frames", value: "10" }, { label: "15 frames", value: "15" }], durationKey: "n_frames", aspectRatios: [] },
   // Veo3's aspect enum is 16:9 / 9:16 / Auto — 1:1 is NOT supported;
   // Auto stays out of the UI to keep beat output size predictable.
-  "veo3":                             { durations: [{ label: "4s", value: "4" }, { label: "6s", value: "6" }, { label: "8s", value: "8" }], endpoint: "/api/v1/veo/generate",    aspectRatios: ["16:9", "9:16"], resolutions: ["720p"] },
-  "veo3_fast":                        { durations: [{ label: "4s", value: "4" }, { label: "6s", value: "6" }, { label: "8s", value: "8" }], endpoint: "/api/v1/veo/generate",    aspectRatios: ["16:9", "9:16"], resolutions: ["720p"] },
+  // Veo takes 720p, 1080p or 4k, and KIE documents both 16:9 and 9:16 as
+  // supporting 1080p. 4k is left out deliberately: it bills at roughly double
+  // a Fast-mode clip. 720p stays first in the list, which is what the picker
+  // selects on every model change, so the default cost is unchanged.
+  "veo3":                             { durations: [{ label: "4s", value: "4" }, { label: "6s", value: "6" }, { label: "8s", value: "8" }], endpoint: "/api/v1/veo/generate",    aspectRatios: ["16:9", "9:16"], resolutions: ["720p", "1080p"] },
+  "veo3_fast":                        { durations: [{ label: "4s", value: "4" }, { label: "6s", value: "6" }, { label: "8s", value: "8" }], endpoint: "/api/v1/veo/generate",    aspectRatios: ["16:9", "9:16"], resolutions: ["720p", "1080p"] },
   // Runway's resolution enum is "quality" (720p / 1080p). KIE also
   // rejects 1080p when duration = 10s; we don't enforce that cross-
   // constraint in the picker — a 10s + 1080p submit will surface as

@@ -26,7 +26,8 @@ const BASE = "https://genaipro.io/api";
  *  own video_model_id, the app's cron claims on this prefix, and the separate
  *  video-worker excludes it. Defined here so those three cannot drift apart. */
 export const GENAIPRO_VIDEO_MODEL_ID = "genaipro-veo-2";
-export const GENAIPRO_MODEL_PREFIX = "genaipro";
+// Re-exported; defined in ./status so the client bundle can reach it.
+export { GENAIPRO_MODEL_PREFIX } from "./status";
 
 /**
  * Where a GenAIPro beat waits for the lane to pick it up.
@@ -40,7 +41,9 @@ export const GENAIPRO_MODEL_PREFIX = "genaipro";
  * being redeployed. The filter added there is now defence in depth rather than
  * the thing holding this together.
  */
-export const GENAIPRO_QUEUED_STATUS = "gp_queued";
+// Re-exported so server code can keep importing it from here, while the
+// definition lives in a leaf module the client bundle can reach.
+export { GENAIPRO_QUEUED_STATUS } from "./status";
 
 /** Their aspect-ratio enum has exactly two values, so every Heclus ratio has to
  *  land on one of them. Anything taller than it is wide is portrait. */
