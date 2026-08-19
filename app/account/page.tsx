@@ -264,7 +264,7 @@ function WalletCard({ data }: { data: CreditsData | null }) {
         <div>
           <h2 className="text-lg font-bold text-foreground">Free video credits</h2>
           <p className="text-xs" style={{ color: "var(--c-45)" }}>
-            One credit generates one free video clip. Refreshes every month; purchased clip credits never expire. Separate from Heclus Credits below.
+            One credit generates one free video clip. Refreshes every month; purchased clip credits never expire. Separate from Heclus Credits.
           </p>
         </div>
       </div>
@@ -813,7 +813,9 @@ export default function AccountPage() {
 
           <div className="min-w-0">
         {section === "balance" ? (
-          <div className="space-y-8">
+          // Side by side from lg, stacked below it. items-start so the shorter
+          // card is not stretched to match the taller one's ledger.
+          <div className="grid gap-6 lg:grid-cols-2 items-start">
             <HeclusCreditsCard data={heclusCredits} />
             <WalletCard data={credits} />
           </div>
