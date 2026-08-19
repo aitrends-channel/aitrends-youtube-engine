@@ -38,19 +38,23 @@ export const CREDIT_PACK_OPTIONS = [1, 2, 3, 4].map((units) => ({
 /**
  * Restrict the whole credits feature to admins.
  *
- * On while GenAIPro is being brought up: the upstream account holds no package,
- * the stored Dodo keys cannot read payments, and a customer who found the
- * surface would meet a balance they cannot spend and a top-up that cannot
- * confirm. Better absent than broken.
+ * OFF: starter, pro and admin now have the free video lane. Who gets what is
+ * decided by the allowance, not by this flag — genaipro_video_credits in
+ * QUOTA_DEFAULTS carries starter 300, pro 300 and founder 0, and capFromConfig
+ * resolves an admin to pro's number. A plan with no entry gets nothing, which
+ * is how founder and demo stay out.
  *
- * Deliberately enforced in monthlyGrantFor rather than in each surface, so one
- * flag hides all of them at once: the Balance section on the account page, the
- * balance panel on the Generate step, the free model in the picker, and the
- * top-up button. A non-admin's allowance resolves to zero, and zero allowance
- * with no bought credit is what every one of those already treats as "no
- * wallet".
+ * Turning it back on is still the one-line way to withdraw the feature from
+ * customers without touching allowances, and FREE_VIDEO_COMING_SOON in
+ * lib/free-tier-flag.ts is the harder switch that hides it from admins too.
+ *
+ * Enforced in monthlyGrantFor rather than in each surface, so one flag governs
+ * all of them: the Balance section on the account page, the balance panel on
+ * the Generate step, the free model in the picker and in the per-beat edit
+ * modal, and the top-up button. A zero allowance with no bought credit is what
+ * every one of those already treats as "no wallet".
  */
-export const VIDEO_CREDITS_ADMIN_ONLY = true;
+export const VIDEO_CREDITS_ADMIN_ONLY = false;
 
 /**
  * Grant one pack per confirmed payment regardless of quantity bought.

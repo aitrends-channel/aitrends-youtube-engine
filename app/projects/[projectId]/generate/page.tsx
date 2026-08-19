@@ -3384,8 +3384,22 @@ export default function GeneratePage({ params }: PageProps) {
                     className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs p-2.5 outline-none focus:border-zinc-400 disabled:opacity-40"
                   >
                     <option value="" disabled>Select a model…</option>
-                    {/* Free models are selectable only from the picker's Free tab. */}
-                    {paidModelsOnly(previewBeat.type === "image" ? imageModels : videoModels).map((m) => (
+                    {/* Videos include the free lane here. Save & regenerate goes
+                        through regenerateVideoBeat → /api/generate/videos, which
+                        parks a GenAIPro clip in the status the shared worker
+                        cannot claim, so the correctness reason model-tier.ts
+                        gives for hiding it does not apply: that one is about the
+                        1Click orchestrator, which queues into plain "queued" and
+                        would hand the clip to KIE. Eligibility is still enforced
+                        upstream — /api/kie/models only returns the free model to
+                        an account with a video-credit allowance, so it simply is
+                        not in this list for anyone else.
+
+                        Images stay filtered: the free image tier is BYO
+                        Cloudflare behind FREE_TIER_COMING_SOON and has no models
+                        yet, so this is a no-op there today and a guard if that
+                        changes. */}
+                    {(previewBeat.type === "image" ? paidModelsOnly(imageModels) : videoModels ?? []).map((m) => (
                       <option key={m.id} value={m.id}>{m.name}</option>
                     ))}
                   </select>
