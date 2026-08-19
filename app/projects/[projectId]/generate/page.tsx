@@ -1122,6 +1122,17 @@ export default function GeneratePage({ params }: PageProps) {
   const previewPaidVideoModels = paidModelsOnly(videoModels);
   const previewFreeVideoModels = (videoModels ?? []).filter(isFreeTierModel);
 
+  // With no dropdown on the Free lane there is nothing for the user to correct,
+  // so the selection has to stay true to what that lane displays. The tab click
+  // already does this; this covers the modal opening straight onto Free, and the
+  // model list arriving after the tab was chosen.
+  useEffect(() => {
+    if (previewModelTab !== "free" || previewFreeVideoModels.length === 0) return;
+    if (!previewFreeVideoModels.some((m) => m.id === selectedVideoModel)) {
+      setSelectedVideoModel(previewFreeVideoModels[0].id);
+    }
+  }, [previewModelTab, previewFreeVideoModels, selectedVideoModel]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const videosInFlight = queuingVideos || beats.some((b) => isVideoInFlight(b.videoStatus));
   const beatsStale = beats.length > 0
     && !generatingImages
@@ -3395,7 +3406,11 @@ export default function GeneratePage({ params }: PageProps) {
                       than an empty one. Zinc utilities because the modal is
                       white regardless of the app theme. */}
                   {previewBeat.type === "video" && previewFreeVideoModels.length > 0 && (
-                    <div className="flex gap-1 mb-2 p-0.5 rounded-lg bg-zinc-100">
+                    /* The app's pill-group tabs, retuned for a white surface:
+                       the canonical active text oklch(0.88 0.12 285) is meant
+                       for the dark panels and is unreadable here, so the same
+                       purple is used at a darker lightness against the tint. */
+                    <div className="flex gap-1 mb-2 p-1 rounded-xl w-fit bg-zinc-100 border border-zinc-200">
                       {(["paid", "free"] as const).map((lane) => {
                         const active = previewModelTab === lane;
                         return (
@@ -3403,6 +3418,14 @@ export default function GeneratePage({ params }: PageProps) {
                             key={lane}
                             type="button"
                             disabled={previewSubmitting}
+                            style={active ? {
+                              background: "oklch(0.72 0.25 285 / 0.15)",
+                              border: "1px solid oklch(0.72 0.25 285 / 0.5)",
+                              color: "oklch(0.45 0.2 285)",
+                            } : {
+                              background: "transparent",
+                              border: "1px solid transparent",
+                            }}
                             onClick={() => {
                               setPreviewModelTab(lane);
                               // Switching lanes must not leave a selection the
@@ -3414,8 +3437,8 @@ export default function GeneratePage({ params }: PageProps) {
                                 setSelectedVideoModel(list[0]?.id ?? "");
                               }
                             }}
-                            className={`flex-1 px-2 py-1 rounded-md text-xs font-semibold capitalize transition-all disabled:opacity-40 cursor-pointer ${
-                              active ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"
+                            className={`px-3 py-1 rounded-lg text-xs font-semibold capitalize transition-all disabled:opacity-40 cursor-pointer ${
+                              active ? "" : "text-zinc-500 hover:text-zinc-800"
                             }`}
                           >
                             {lane}
@@ -3424,38 +3447,54 @@ export default function GeneratePage({ params }: PageProps) {
                       })}
                     </div>
                   )}
-                  <select
-                    value={(previewBeat.type === "image" ? selectedImageModel : selectedVideoModel) ?? ""}
-                    onChange={(e) => {
-                      if (previewBeat.type === "image") setSelectedImageModel(e.target.value);
-                      else setSelectedVideoModel(e.target.value);
-                    }}
-                    disabled={previewSubmitting}
-                    className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs p-2.5 outline-none focus:border-zinc-400 disabled:opacity-40"
-                  >
-                    <option value="" disabled>Select a model…</option>
-                    {/* Videos include the free lane here. Save & regenerate goes
-                        through regenerateVideoBeat → /api/generate/videos, which
-                        parks a GenAIPro clip in the status the shared worker
-                        cannot claim, so the correctness reason model-tier.ts
-                        gives for hiding it does not apply: that one is about the
-                        1Click orchestrator, which queues into plain "queued" and
-                        would hand the clip to KIE. Eligibility is still enforced
-                        upstream — /api/kie/models only returns the free model to
-                        an account with a video-credit allowance, so it simply is
-                        not in this list for anyone else.
+                  {previewBeat.type === "video" && previewModelTab === "free" ? (
+                    // One free model, so a dropdown would be a control with
+                    // nothing to choose. Show what is already selected instead.
+                    <div
+                      className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-xs p-2.5 flex items-center justify-between gap-2"
+                      aria-label="Model, pre-selected"
+                    >
+                      <span className="text-zinc-800 font-medium truncate">
+                        {previewFreeVideoModels[0]?.name ?? "Free model"}
+                      </span>
+                      <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                        Pre-selected
+                      </span>
+                    </div>
+                  ) : (
+                    <select
+                      value={(previewBeat.type === "image" ? selectedImageModel : selectedVideoModel) ?? ""}
+                      onChange={(e) => {
+                        if (previewBeat.type === "image") setSelectedImageModel(e.target.value);
+                        else setSelectedVideoModel(e.target.value);
+                      }}
+                      disabled={previewSubmitting}
+                      className="w-full rounded-lg border border-zinc-200 bg-zinc-50 text-zinc-800 text-xs p-2.5 outline-none focus:border-zinc-400 disabled:opacity-40"
+                    >
+                      <option value="" disabled>Select a model…</option>
+                      {/* Videos include the free lane here. Save & regenerate goes
+                          through regenerateVideoBeat → /api/generate/videos, which
+                          parks a GenAIPro clip in the status the shared worker
+                          cannot claim, so the correctness reason model-tier.ts
+                          gives for hiding it does not apply: that one is about the
+                          1Click orchestrator, which queues into plain "queued" and
+                          would hand the clip to KIE. Eligibility is still enforced
+                          upstream — /api/kie/models only returns the free model to
+                          an account with a video-credit allowance, so it simply is
+                          not in this list for anyone else.
 
-                        Images stay filtered: the free image tier is BYO
-                        Cloudflare behind FREE_TIER_COMING_SOON and has no models
-                        yet, so this is a no-op there today and a guard if that
-                        changes. */}
-                    {(previewBeat.type === "image"
-                      ? paidModelsOnly(imageModels)
-                      : previewModelTab === "free" ? previewFreeVideoModels : previewPaidVideoModels
-                    ).map((m) => (
-                      <option key={m.id} value={m.id}>{m.name}</option>
-                    ))}
-                  </select>
+                          Images stay filtered: the free image tier is BYO
+                          Cloudflare behind FREE_TIER_COMING_SOON and has no models
+                          yet, so this is a no-op there today and a guard if that
+                          changes. */}
+                      {(previewBeat.type === "image"
+                        ? paidModelsOnly(imageModels)
+                        : previewModelTab === "free" ? previewFreeVideoModels : previewPaidVideoModels
+                      ).map((m) => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 {previewBeat.type === "image" ? (
                   (() => {
