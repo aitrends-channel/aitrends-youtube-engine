@@ -180,7 +180,11 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
           the workflow" in the description above is a claim, and a customer
           deciding whether to top up wants the list. It also gives the space below
           the box something to say while this wallet has no history yet. */}
-      <div className="rounded-2xl p-4 space-y-2" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}>
+      {/* flex-1 on this block rather than an empty spacer below it. A spacer
+          stretches the card but leaves the last visible box short, which is
+          exactly the ragged bottom edge it was meant to fix: the block that
+          should grow is the last one the reader can see. */}
+      <div className="rounded-2xl p-4 space-y-2 flex-1" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}>
         <p className="text-xs font-semibold" style={{ color: "var(--c-55)" }}>What it covers</p>
         {/* One per row, in the order a video is made, so the list reads as the
             workflow it describes rather than a bag of tags. */}
@@ -192,11 +196,6 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
           ))}
         </div>
       </div>
-
-      {/* Absorbs whatever height difference is left between the two wallets.
-          Without it the shorter card's own boxes would have to stretch, which is
-          what threw the numbers out of line. */}
-      {ledger.length === 0 && <div className="flex-1" />}
 
       {ledger.length > 0 && (
         <div className="rounded-2xl overflow-hidden flex-1" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}>
