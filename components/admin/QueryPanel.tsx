@@ -2,15 +2,17 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Send, ChevronDown, ChevronRight, Database } from "lucide-react";
+import { Send } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 
-// Ask the database something in plain English.
+// Ask the database something in plain English, and get plain English back.
 //
-// The admin writes prose. The SQL is shown, but collapsed: it is the working, not
-// the point, and an admin who wanted to write SQL would not be here. It is one
-// click away because an answer whose working is hidden is a rumour, and the first
-// thing anyone does with a surprising number is check where it came from.
+// Deliberately no SQL in the interface. An admin here is asking a question, not
+// reviewing a query, and showing the statements turned an answer into homework.
+// The route still records what it ran and returns it, so the queries are there in
+// the response for debugging; the panel reports only how many there were, which
+// is the one part of the working that tells the reader something: whether it
+// actually looked.
 
 interface QueryStep {
   sql: string;
@@ -38,18 +40,93 @@ const EXAMPLES = [
   "Which users have saved a KIE key but never created a project?",
 ];
 
+// Renders the model's answer: paragraphs, plus any pipe-delimited table turned
+// into a real one.
+//
+// A markdown dependency would be a lot of bundle for the one construct this
+// needs, and a table is the only rich thing an answer here ever contains. If the
+// parse ever fails the text still reads, which is the right way for this to
+// degrade.
+function AnswerBody({ text }: { text: string }) {
+  const isRow = (l: string) => /^\s*\|.*\|\s*$/.test(l);
+  // A markdown separator row (|---|---|) is scaffolding, not data.
+  const isSeparator = (l: string) => /^\s*\|[\s|:-]+\|\s*$/.test(l);
+  const cells = (l: string) => l.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+  // The prompt asks for no emphasis, but a stray ** should not reach the reader
+  // as asterisks if the model forgets.
+  const clean = (t: string) => t.replace(/\*\*/g, "");
+
+  const blocks: { type: "text" | "table"; lines: string[] }[] = [];
+  for (const line of text.split("\n")) {
+    const type = isRow(line) ? "table" : "text";
+    const last = blocks[blocks.length - 1];
+    if (last && last.type === type) last.lines.push(line);
+    else blocks.push({ type, lines: [line] });
+  }
+
+  return (
+    <div className="space-y-3">
+      {blocks.map((block, i) => {
+        if (block.type === "text") {
+          const body = clean(block.lines.join("\n")).trim();
+          if (!body) return null;
+          return (
+            <p key={i} className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--c-80)" }}>
+              {body}
+            </p>
+          );
+        }
+
+        const rows = block.lines.filter((l) => !isSeparator(l)).map(cells);
+        if (rows.length === 0) return null;
+        const [header, ...body] = rows;
+        return (
+          <div key={i} className="overflow-x-auto rounded-lg" style={{ border: "1px solid var(--bd-10)" }}>
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ background: "var(--bg-track)" }}>
+                  {header.map((h, c) => (
+                    <th key={c} className="text-left font-semibold px-3 py-2 whitespace-nowrap" style={{ color: "var(--c-55)" }}>
+                      {clean(h)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {body.map((r, ri) => (
+                  <tr key={ri} style={{ borderTop: "1px solid var(--bd-8)" }}>
+                    {r.map((cell, ci) => (
+                      <td
+                        key={ci}
+                        // Numbers right-aligned and tabular so a column of them
+                        // can be scanned down rather than read across.
+                        className={`px-3 py-2 ${/^[-+]?[\d.,%$]+$/.test(cell.trim()) ? "text-right tabular-nums" : ""}`}
+                        style={{ color: "var(--c-75)" }}
+                      >
+                        {clean(cell)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function QueryPanel() {
   const [question, setQuestion] = useState("");
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<QueryResult | null>(null);
-  const [trailOpen, setTrailOpen] = useState(false);
 
   async function ask(q: string) {
     const text = q.trim();
     if (!text || running) return;
     setRunning(true);
     setResult(null);
-    setTrailOpen(false);
     try {
       const res = await fetch("/api/admin/query", {
         method: "POST",
@@ -59,9 +136,6 @@ export function QueryPanel() {
       const body = await res.json().catch(() => ({})) as QueryResult;
       if (!res.ok) throw new Error(body.error ?? `Request failed (HTTP ${res.status})`);
       setResult(body);
-      // Open the working automatically when there is nothing else to look at, or
-      // when a query failed — those are the moments the SQL is the answer.
-      if (!body.answer || body.trail?.some((t) => t.error)) setTrailOpen(true);
     } catch (err) {
       const message = err instanceof Error ? err.message : "The query failed";
       setResult({ error: message });
@@ -134,9 +208,7 @@ export function QueryPanel() {
 
       {result?.answer && (
         <div className="rounded-2xl p-4" style={cardStyle}>
-          <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--c-80)" }}>
-            {result.answer}
-          </p>
+          <AnswerBody text={result.answer} />
           {result.exhausted && (
             <p className="text-[11px] mt-2" style={{ color: "oklch(0.7 0.18 75)" }}>
               Stopped after the query limit rather than guessing from a half-finished look.
@@ -146,43 +218,12 @@ export function QueryPanel() {
       )}
 
       {!!result?.trail?.length && (
-        <div className="rounded-2xl overflow-hidden" style={cardStyle}>
-          <button
-            onClick={() => setTrailOpen((o) => !o)}
-            className="w-full flex items-center gap-2 px-4 py-3 text-xs font-semibold transition-all hover:opacity-80"
-            style={{ color: "var(--c-55)" }}
-          >
-            {trailOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            <Database size={13} />
-            {result.trail.length} quer{result.trail.length === 1 ? "y" : "ies"} run
-            {result.trail.some((t) => t.error) && (
-              <span style={{ color: "oklch(0.7 0.2 25)" }}>
-                · {result.trail.filter((t) => t.error).length} failed
-              </span>
-            )}
-          </button>
-          {trailOpen && (
-            <div className="px-4 pb-4 space-y-3">
-              {result.trail.map((t, i) => (
-                <div key={i} className="rounded-lg p-3 space-y-1.5" style={{ background: "var(--bg-track)" }}>
-                  <div className="flex items-center justify-between gap-2 text-[11px]" style={{ color: "var(--c-45)" }}>
-                    <span className="truncate">{t.purpose ?? `Query ${i + 1}`}</span>
-                    <span className="shrink-0 tabular-nums">
-                      {t.error ? "failed" : `${t.rows} row${t.rows === 1 ? "" : "s"}`} · {t.ms}ms
-                    </span>
-                  </div>
-                  <pre className="text-[11px] font-mono whitespace-pre-wrap break-all" style={{ color: "var(--c-70)" }}>
-                    {t.sql || "(no statement)"}
-                  </pre>
-                  {t.error && (
-                    <p className="text-[11px]" style={{ color: "oklch(0.7 0.2 25)" }}>{t.error}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <p className="text-[11px] px-1" style={{ color: "var(--c-35)" }}>
+          Answered from {result.trail.length} quer{result.trail.length === 1 ? "y" : "ies"}
+          {result.trail.some((t) => t.error) ? ", some of which failed" : ""}.
+        </p>
       )}
+
     </div>
   );
 }
