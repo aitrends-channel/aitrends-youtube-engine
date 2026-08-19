@@ -144,12 +144,14 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
             </button>
           )}
         </div>
-        {purchased > 0 && (
-          <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(0 0 0 / 0.18)" }}>
-            <div className="h-full rounded-full transition-all"
-              style={{ width: `${Math.max(usedPct * 100, 1.5)}%`, background: barColor }} />
-          </div>
-        )}
+        {/* Always shown, so the wallet has the same anatomy as the one beside it
+            even before a first top-up. The fill is genuinely zero then, rather
+            than the 1.5% sliver used elsewhere to keep a bar visible: a sliver
+            here would imply usage that has not happened. */}
+        <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(0 0 0 / 0.18)" }}>
+          <div className="h-full rounded-full transition-all"
+            style={{ width: purchased > 0 ? `${Math.max(usedPct * 100, 1.5)}%` : "0%", background: barColor }} />
+        </div>
 
         {purchased > 0 && (
           <p className="text-[11px] leading-relaxed" style={{ color: empty ? "oklch(0.68 0.19 25)" : "var(--c-42)" }}>
@@ -404,7 +406,7 @@ export function BalanceCards() {
     // match. Each card is a flex column filling its cell, and the block that
     // grows is the one with room to spare: the ledger where there is one, the
     // balance box where there is not.
-    <div className="grid gap-[60px] lg:grid-cols-2">
+    <div className="grid gap-[100px] lg:grid-cols-2">
       <HeclusCreditsCard data={heclusCredits} />
       <WalletCard data={credits} />
     </div>
