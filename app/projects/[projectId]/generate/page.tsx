@@ -25,7 +25,7 @@ import type { ApiStatusResult } from "@/app/api/api-status/route";
 import { getModelConfig } from "@/lib/kie/imageModels";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
 import { VideoCreditsPanel } from "@/components/VideoCreditsPanel";
-import { paidModelsOnly } from "@/lib/model-tier";
+import { paidModelsOnly, isFreeTierModel } from "@/lib/model-tier";
 import { isVideoInFlight, videoStatusLabel, isGenAIProModel } from "@/lib/genaipro/status";
 import { removeLongPauses, encodeMp3 } from "@/lib/audio/silenceRemover";
 
@@ -806,6 +806,11 @@ export default function GeneratePage({ params }: PageProps) {
   // (Replaced the old desktop floating hover preview.)
   const [previewBeat, setPreviewBeat] = useState<{ beat: Beat; type: "image" | "video" } | null>(null);
   const [previewEditing, setPreviewEditing] = useState(false);
+  // Which lane the edit modal's model dropdown is showing. The two are kept
+  // apart rather than merged into one list because a Heclus-funded model listed
+  // beside the paid ones reads as just another option, which is the same reason
+  // the panel's ModelPicker gives the free tier its own tab.
+  const [previewModelTab, setPreviewModelTab] = useState<"paid" | "free">("paid");
   const [previewEditedPrompt, setPreviewEditedPrompt] = useState("");
   const [previewSubmitting, setPreviewSubmitting] = useState(false);
   // Read-only prompt visibility toggle ("Show prompt") — independent
@@ -1112,6 +1117,11 @@ export default function GeneratePage({ params }: PageProps) {
   // motion clips were generated against an out-of-date beat list and
   // need to be regenerated upstream (Prompt Studio → Regenerate) before
   // images/videos can match the current script again.
+  // The edit modal's two lanes. Split once here so the tab strip, the option
+  // list and the lane-switch reset all read from the same arrays.
+  const previewPaidVideoModels = paidModelsOnly(videoModels);
+  const previewFreeVideoModels = (videoModels ?? []).filter(isFreeTierModel);
+
   const videosInFlight = queuingVideos || beats.some((b) => isVideoInFlight(b.videoStatus));
   const beatsStale = beats.length > 0
     && !generatingImages
@@ -3214,6 +3224,10 @@ export default function GeneratePage({ params }: PageProps) {
                   onClick={() => {
                     if (!previewBeat) return;
                     setPreviewEditedPrompt((previewBeat.type === "image" ? previewBeat.beat.imagePrompt : previewBeat.beat.videoPrompt) ?? "");
+                    // Open on whichever lane the beat's current model is in, so a
+                    // clip already on the free model does not appear unselected.
+                    const current = (videoModels ?? []).find((m) => m.id === selectedVideoModel);
+                    setPreviewModelTab(current && isFreeTierModel(current) ? "free" : "paid");
                     setPreviewEditing(true);
                   }}
                   title="Edit prompt"
@@ -3374,6 +3388,42 @@ export default function GeneratePage({ params }: PageProps) {
                   <label className="block text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>
                     Model
                   </label>
+                  {/* Paid / Free lanes, kept separate. Rendered only for videos
+                      and only when the account actually has a free model in the
+                      list: /api/kie/models withholds it without a video-credit
+                      allowance, so an ineligible user sees no tabs at all rather
+                      than an empty one. Zinc utilities because the modal is
+                      white regardless of the app theme. */}
+                  {previewBeat.type === "video" && previewFreeVideoModels.length > 0 && (
+                    <div className="flex gap-1 mb-2 p-0.5 rounded-lg bg-zinc-100">
+                      {(["paid", "free"] as const).map((lane) => {
+                        const active = previewModelTab === lane;
+                        return (
+                          <button
+                            key={lane}
+                            type="button"
+                            disabled={previewSubmitting}
+                            onClick={() => {
+                              setPreviewModelTab(lane);
+                              // Switching lanes must not leave a selection the
+                              // visible list does not contain — the dropdown
+                              // would read as empty while a model from the other
+                              // lane is what actually gets submitted.
+                              const list = lane === "free" ? previewFreeVideoModels : previewPaidVideoModels;
+                              if (!list.some((m) => m.id === selectedVideoModel)) {
+                                setSelectedVideoModel(list[0]?.id ?? "");
+                              }
+                            }}
+                            className={`flex-1 px-2 py-1 rounded-md text-xs font-semibold capitalize transition-all disabled:opacity-40 cursor-pointer ${
+                              active ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-700"
+                            }`}
+                          >
+                            {lane}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                   <select
                     value={(previewBeat.type === "image" ? selectedImageModel : selectedVideoModel) ?? ""}
                     onChange={(e) => {
@@ -3399,7 +3449,10 @@ export default function GeneratePage({ params }: PageProps) {
                         Cloudflare behind FREE_TIER_COMING_SOON and has no models
                         yet, so this is a no-op there today and a guard if that
                         changes. */}
-                    {(previewBeat.type === "image" ? paidModelsOnly(imageModels) : videoModels ?? []).map((m) => (
+                    {(previewBeat.type === "image"
+                      ? paidModelsOnly(imageModels)
+                      : previewModelTab === "free" ? previewFreeVideoModels : previewPaidVideoModels
+                    ).map((m) => (
                       <option key={m.id} value={m.id}>{m.name}</option>
                     ))}
                   </select>
