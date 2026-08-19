@@ -43,7 +43,7 @@
     },
     {
       "path": "/api/cron/genaipro-video",
-      "schedule": "*/2 * * * *"
+      "schedule": "*/1 * * * *"
     }
   ]
 }

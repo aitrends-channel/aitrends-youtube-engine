@@ -3579,7 +3579,22 @@ export default function GeneratePage({ params }: PageProps) {
                   const trimmed = previewEditedPrompt.trim();
                   const original = ((previewBeat.type === "image" ? previewBeat.beat.imagePrompt : previewBeat.beat.videoPrompt) ?? "").trim();
                   const modelPicked = previewBeat.type === "image" ? !!selectedImageModel : !!selectedVideoModel;
-                  const canSave = !!trimmed && trimmed !== original && modelPicked && !previewSubmitting;
+                  // Changing the model is a change worth regenerating for, so it
+                  // has to enable the button on its own. It previously required
+                  // edited prompt text, which left Save dead for the whole point
+                  // of the new Paid/Free tabs: switch lane, touch nothing else,
+                  // and the only action in the dialog was greyed out.
+                  //
+                  // videoModelId is the snapshot of what this beat was last
+                  // queued with (migration 091). It is undefined on older beats,
+                  // and undefined must not read as "changed" or Save would be
+                  // live on open with nothing actually different.
+                  const lastModel = previewBeat.type === "image"
+                    ? previewBeat.beat.imageModelId
+                    : previewBeat.beat.videoModelId;
+                  const picked = previewBeat.type === "image" ? selectedImageModel : selectedVideoModel;
+                  const modelChanged = !!lastModel && !!picked && lastModel !== picked;
+                  const canSave = !!trimmed && (trimmed !== original || modelChanged) && modelPicked && !previewSubmitting;
                   return (
                     <button
                       onClick={async () => {
