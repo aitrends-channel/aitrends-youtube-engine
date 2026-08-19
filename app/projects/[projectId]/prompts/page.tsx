@@ -2103,8 +2103,35 @@ export default function PromptsPage({ params }: PageProps) {
   // side is Claude's call server-side — so it previews as "up" for the count
   // (the set of stubs is the same either way) and the dialog says so.
   const bulkPlanBeats = beats.map((b) => ({ beatNumber: b.beatNumber, scriptSegment: b.scriptSegment ?? "" }));
+  // The shortest beat's length, using the same wordCount the planner uses, so
+  // the threshold means exactly what the plan below it computes.
+  const shortestBeatWords = bulkPlanBeats.length > 0
+    ? Math.min(...bulkPlanBeats.map((b) => wordCount(b.scriptSegment)))
+    : 0;
+  // One more than the shortest beat, so the default always selects at least that
+  // beat: a threshold equal to it would select nothing, since the planner tests
+  // wordCount < minWords. Clamped to the input's own 1..50 range.
+  const defaultMinWords = shortestBeatWords > 0
+    ? Math.min(50, Math.max(1, shortestBeatWords + 1))
+    : SHORT_BEAT_WORDS;
+
   const bulkPlan = planBulkMerge(bulkPlanBeats, bulkMinWords, bulkDirection === "auto" ? "up" : bulkDirection);
   const bulkStubs = bulkDirection === "auto" ? findStubs(bulkPlanBeats, bulkMinWords) : [];
+
+  // Reset the threshold to the default each time the modal opens, rather than
+  // seeding state once: the beats change under it (a re-split, a merge, an
+  // edited segment), and a stale number from a previous shape would silently
+  // select the wrong beats.
+  //
+  // On the open transition only. Depending on defaultMinWords as well would let
+  // a beat list refreshing under an open modal overwrite a threshold the user
+  // had just typed.
+  const bulkOpenPrev = useRef(false);
+  useEffect(() => {
+    const justOpened = bulkOpen && !bulkOpenPrev.current;
+    bulkOpenPrev.current = bulkOpen;
+    if (justOpened) setBulkMinWords(defaultMinWords);
+  }, [bulkOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function runBulkMerge() {
     setBulkRunning(true);
