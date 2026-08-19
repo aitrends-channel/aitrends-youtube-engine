@@ -3637,6 +3637,10 @@ function PlansPanel() {
     customerPortalUrlProduction: string | null;
     creditPackLinkTest: string | null;
     creditPackLinkProduction: string | null;
+    heclusPackLinkTest?: string | null;
+    heclusPackLinkProduction?: string | null;
+    heclusPackCredits?: number | null;
+    heclusPackPriceUsd?: number | null;
   }>("/api/admin/payment-mode", fetcher, { revalidateOnFocus: false });
   const [editingProdTest, setEditingProdTest] = useState(false);
   const [deletingProdTest, setDeletingProdTest] = useState(false);
@@ -4481,6 +4485,10 @@ interface DodoApiKeysCardProps {
     customerPortalUrlProduction: string | null;
     creditPackLinkTest: string | null;
     creditPackLinkProduction: string | null;
+    heclusPackLinkTest?: string | null;
+    heclusPackLinkProduction?: string | null;
+    heclusPackCredits?: number | null;
+    heclusPackPriceUsd?: number | null;
   } | null;
   // Deployment env (HECLUS_ENV). When "production", the Test tab is
   // hidden so the admin can't edit test credentials on a live
@@ -4603,6 +4611,11 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
   const [prodPortal, setProdPortal] = useState("");
   const [testPack, setTestPack] = useState("");
   const [prodPack, setProdPack] = useState("");
+  // Heclus Credits' own pack. A separate link on purpose: the GenAI one credits
+  // genai_credits, so sharing it would charge for Heclus Credits and grant video
+  // clips instead.
+  const [testHeclusPack, setTestHeclusPack] = useState("");
+  const [prodHeclusPack, setProdHeclusPack] = useState("");
   const [saving, setSaving] = useState(false);
 
   const keyValue = activeEnv === "test" ? testKey : prodKey;
@@ -4610,21 +4623,23 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
   const webhookValue = activeEnv === "test" ? testWebhook : prodWebhook;
   const portalValue = activeEnv === "test" ? testPortal : prodPortal;
   const packValue = activeEnv === "test" ? testPack : prodPack;
+  const heclusPackValue = activeEnv === "test" ? testHeclusPack : prodHeclusPack;
   const savedKey = (activeEnv === "test" ? settings?.secretKeyTest : settings?.secretKeyProduction) ?? "";
   const savedUrl = (activeEnv === "test" ? settings?.baseUrlTest : settings?.baseUrlProduction) ?? "";
   const savedWebhook = (activeEnv === "test" ? settings?.webhookSecretTest : settings?.webhookSecretProduction) ?? "";
   const savedPortal = (activeEnv === "test" ? settings?.customerPortalUrlTest : settings?.customerPortalUrlProduction) ?? "";
   const savedPack = (activeEnv === "test" ? settings?.creditPackLinkTest : settings?.creditPackLinkProduction) ?? "";
+  const savedHeclusPack = (activeEnv === "test" ? settings?.heclusPackLinkTest : settings?.heclusPackLinkProduction) ?? "";
   // Dirty when the admin has typed something into any of the inputs
   // for the active env. Empty inputs are a no-op — clearing a saved
   // value isn't supported through this card on purpose.
-  const dirty = !!keyValue.trim() || !!urlValue.trim() || !!webhookValue.trim() || !!portalValue.trim() || !!packValue.trim();
+  const dirty = !!keyValue.trim() || !!urlValue.trim() || !!webhookValue.trim() || !!portalValue.trim() || !!packValue.trim() || !!heclusPackValue.trim();
 
   function clearActiveEnvBuffers() {
     if (activeEnv === "test") {
-      setTestKey(""); setTestUrl(""); setTestWebhook(""); setTestPortal(""); setTestPack("");
+      setTestKey(""); setTestUrl(""); setTestWebhook(""); setTestPortal(""); setTestPack(""); setTestHeclusPack("");
     } else {
-      setProdKey(""); setProdUrl(""); setProdWebhook(""); setProdPortal(""); setProdPack("");
+      setProdKey(""); setProdUrl(""); setProdWebhook(""); setProdPortal(""); setProdPack(""); setProdHeclusPack("");
     }
   }
 
@@ -4643,6 +4658,9 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
       }
       if (portalValue.trim()) {
         patch[activeEnv === "test" ? "customerPortalUrlTest" : "customerPortalUrlProduction"] = portalValue.trim();
+      }
+      if (heclusPackValue.trim()) {
+        patch[activeEnv === "test" ? "heclusPackLinkTest" : "heclusPackLinkProduction"] = heclusPackValue.trim();
       }
       if (packValue.trim()) {
         patch[activeEnv === "test" ? "creditPackLinkTest" : "creditPackLinkProduction"] = packValue.trim();
@@ -4740,6 +4758,16 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
           placeholder="https://checkout.dodopayments.com/buy/…"
           disabled={saving}
           hint={`Checkout link for the 300-credit GenAI video pack, saved against the ${activeEnv} Dodo environment. Its return URL must land on a page carrying the wallet (the account page or the Generate step) — that page confirms the payment and adds the credits. With no link the wallet shows no top-up button.`}
+        />
+
+        <DodoVarField
+          label="Heclus Credits Package Link"
+          saved={savedHeclusPack}
+          value={heclusPackValue}
+          onChange={(v) => (activeEnv === "test" ? setTestHeclusPack(v) : setProdHeclusPack(v))}
+          placeholder="https://checkout.dodopayments.com/buy/…"
+          disabled={saving}
+          hint={`Checkout link for the Heclus Credits top-up, saved against the ${activeEnv} Dodo environment. Separate from the GenAI pack above on purpose: that one credits the free video wallet, so sharing a link would charge for Heclus Credits and grant video clips. The Top up button on /balance appears as soon as this is set.`}
         />
 
         <DodoVarField

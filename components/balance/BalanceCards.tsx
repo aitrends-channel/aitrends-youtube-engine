@@ -126,10 +126,12 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
               beside it. Disabled until a pack is configured, rather than hidden:
               its absence looked like a missing feature, and a link to a checkout
               that grants nothing is worse than a button that says why. */}
-          {data?.checkoutUrl && data.pack ? (
+          {data?.checkoutUrl ? (
             <a
               href={data.checkoutUrl}
-              title={`${data.pack.credits.toLocaleString()} credits for $${data.pack.priceUsd}`}
+              title={data.pack
+                ? `${data.pack.credits.toLocaleString()} credits for $${data.pack.priceUsd}`
+                : "Top up your Heclus Credits"}
               className="px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 shrink-0"
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
             >
