@@ -1336,9 +1336,9 @@ export default function PromptsPage({ params }: PageProps) {
   // Scroll container for the floating jump-to buttons — the per-beat prompt
   // list below can run to hundreds of cards. Mirrors the voiceover step.
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
-  const [clearTarget, setClearTarget] = useState<"image" | "video" | null>(null);
+  const [clearTarget, setClearTarget] = useState<"image" | "video" | "beats" | null>(null);
   const [clearing, setClearing] = useState(false);
-  const [regenTarget, setRegenTarget] = useState<"image" | "video" | null>(null);
+  const [regenTarget, setRegenTarget] = useState<"image" | "video" | "beats" | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [mergeTarget, setMergeTarget] = useState<{ beatNumber: number; direction: "up" | "down" } | null>(null);
   const [mergeDraft, setMergeDraft] = useState("");
@@ -1550,6 +1550,19 @@ export default function PromptsPage({ params }: PageProps) {
   // "done" from the first moment, because every beat is already there.
   const fillMode = PROMPTS_THREE_STEP && hasImageBeats;
   const promptedBeats = beats.filter((b) => !!b.imagePrompt).length;
+  // What a beats clear takes with it. Counted from the rows themselves so the
+  // confirmation names real losses rather than a generic warning: deleting the
+  // beats deletes their prompts, renders and voiceovers by definition.
+  const generatedImages = beats.filter((b) => !!b.imageUrl).length;
+  const generatedVideos = beats.filter((b) => !!b.videoUrl).length;
+  const generatedVoiceovers = beats.filter((b) => !!b.audioUrl).length;
+  const beatsLossSummary = [
+    promptedBeats > 0 ? `${promptedBeats} image prompt${promptedBeats === 1 ? "" : "s"}` : null,
+    videoBeats.length > 0 ? `${videoBeats.length} video prompt${videoBeats.length === 1 ? "" : "s"}` : null,
+    generatedImages > 0 ? `${generatedImages} generated image${generatedImages === 1 ? "" : "s"}` : null,
+    generatedVideos > 0 ? `${generatedVideos} generated video${generatedVideos === 1 ? "" : "s"}` : null,
+    generatedVoiceovers > 0 ? `${generatedVoiceovers} voiceover${generatedVoiceovers === 1 ? "" : "s"}` : null,
+  ].filter(Boolean) as string[];
   const imageTotal = fillMode ? beats.length : estimatedTotalBeats;
   const imageWritten = fillMode ? promptedBeats : beats.length;
   const imageProgress = imageTotal > 0
@@ -1937,6 +1950,15 @@ export default function PromptsPage({ params }: PageProps) {
   // through a confirmation modal first. Idle/error states fire the
   // normal run path — the route's chunk-resume logic keeps partial
   // beats and only fills the gap.
+  // Card 1's action when beats already exist. Destructive in a way the prompt
+  // cards are not: the beat rows are the parent of every image prompt, video
+  // prompt, render and voiceover, so re-splitting takes all of it. That is why
+  // it goes through a confirmation that names what is about to be lost.
+  function requestRunBeatsStep() {
+    if (beats.length > 0 && !beatsResumable) { setRegenTarget("beats"); return; }
+    runBeatsStep();
+  }
+
   function requestRunImageStep() {
     if (effectiveImage.status === "done") { setRegenTarget("image"); return; }
     runImageStep();
@@ -1953,9 +1975,15 @@ export default function PromptsPage({ params }: PageProps) {
       // In the three-step flow, clear the prompt text and keep the rows: the
       // beats belong to card 1, and deleting them here would take the
       // segmentation — and the user's merges — with them.
-      const body = regenTarget === "image"
-        ? (fillMode ? { clear_image_prompt_text: true } : { clear_image_prompts: true })
-        : { clear_video_prompts: true };
+      // Beats reuse the script-regen cascade rather than a narrower flag: the
+      // rows are deleted, so a partial clear would leave the images, videos and
+      // voiceovers generated from them orphaned in R2 with nothing pointing at
+      // them. One existing, tested path beats a new half-cascade.
+      const body = regenTarget === "beats"
+        ? { clear_for_script_regen: true }
+        : regenTarget === "image"
+          ? (fillMode ? { clear_image_prompt_text: true } : { clear_image_prompts: true })
+          : { clear_video_prompts: true };
       const res = await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1968,7 +1996,14 @@ export default function PromptsPage({ params }: PageProps) {
       const target = regenTarget;
       // Image clear also wipes video prompts (they live on the same
       // rows), mirroring confirmClear above.
-      if (target === "image") {
+      if (target === "beats") {
+        setBeatsStep(IDLE);
+        setImageStep(IDLE);
+        setVideoStep(IDLE);
+        // The merge gate has to reopen: a fresh split is a new set of beats and
+        // the user has not reviewed it yet.
+        setBeatsConfirmed(false);
+      } else if (target === "image") {
         setImageStep(IDLE);
         setVideoStep(IDLE);
       } else {
@@ -1977,7 +2012,9 @@ export default function PromptsPage({ params }: PageProps) {
       await mutate();
       setRegenTarget(null);
       setRegenerating(false);
-      if (target === "image") {
+      if (target === "beats") {
+        await runBeatsStep();
+      } else if (target === "image") {
         await runImageStep();
       } else {
         await runVideoStep();
@@ -1992,9 +2029,14 @@ export default function PromptsPage({ params }: PageProps) {
     if (!clearTarget) return;
     setClearing(true);
     try {
-      const body = clearTarget === "image"
-        ? (fillMode ? { clear_image_prompt_text: true } : { clear_image_prompts: true })
-        : { clear_video_prompts: true };
+      // Same cascade as the beats regenerate, for the same reason: the rows are
+      // the parent of every prompt, render and voiceover, so a narrower clear
+      // would orphan those files in R2.
+      const body = clearTarget === "beats"
+        ? { clear_for_script_regen: true }
+        : clearTarget === "image"
+          ? (fillMode ? { clear_image_prompt_text: true } : { clear_image_prompts: true })
+          : { clear_video_prompts: true };
       const res = await fetch(`/api/projects/${projectId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -2004,7 +2046,15 @@ export default function PromptsPage({ params }: PageProps) {
         const err = await res.json().catch(() => ({})) as { error?: string };
         throw new Error(err.error ?? "Failed to clear");
       }
-      if (clearTarget === "image") {
+      if (clearTarget === "beats") {
+        setBeatsStep(IDLE);
+        setImageStep(IDLE);
+        setVideoStep(IDLE);
+        setImageStoppedByUser(false);
+        setVideoStoppedByUser(false);
+        // A cleared project has no split to have reviewed.
+        setBeatsConfirmed(false);
+      } else if (clearTarget === "image") {
         setImageStep(IDLE);
         setVideoStep(IDLE); // video prompts live on the same rows
         setImageStoppedByUser(false);
@@ -2014,7 +2064,11 @@ export default function PromptsPage({ params }: PageProps) {
         setVideoStoppedByUser(false);
       }
       await mutate();
-      toast.success(clearTarget === "image" ? "Cleared image prompts" : "Cleared video prompts");
+      toast.success(
+        clearTarget === "beats" ? "Cleared beats"
+          : clearTarget === "image" ? "Cleared image prompts"
+            : "Cleared video prompts",
+      );
       setClearTarget(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to clear");
@@ -2571,23 +2625,27 @@ export default function PromptsPage({ params }: PageProps) {
             description="Your script split into beats. Merge any that are too short before prompts are written for them"
             state={beatsStepState}
             doneLabel={beats.length > 0 ? `${beats.length} beat${beats.length === 1 ? "" : "s"}` : undefined}
-            // Generate while there is nothing, Merge once there is. Notably no
-            // Regenerate: re-splitting deletes the beat rows, taking the paid
-            // image prompts, renders and voiceovers with them.
+            // Generate while there is nothing, Resume mid-walk, Regenerate once
+            // the split is done. Regenerate and Clear both delete the beat rows,
+            // which takes the paid image prompts, renders and voiceovers with
+            // them, so both route through a confirmation that names the loss
+            // rather than firing on the click.
             //
-            // The Generate is also gated on the split being live — until then
-            // there is no beats-only run, so the only thing it could fire is
-            // the combined Image Prompts call, which would create prompts in
-            // the same breath and destroy the merge window this step exists
-            // to open.
-            hideAction={!PROMPTS_THREE_STEP || (beats.length > 0 && !beatsResumable)}
-            actionLabel={beats.length > 0 ? "Resume" : null}
+            // The action is still gated on the split being live — without it
+            // there is no beats-only run, so the only thing a click could fire
+            // is the combined Image Prompts call, which would create prompts in
+            // the same breath and destroy the merge window this step exists to
+            // open. With no beats and no split there is nothing to regenerate
+            // either, so StepCard's own "Generate" wording applies.
+            hideAction={!PROMPTS_THREE_STEP}
+            actionLabel={beats.length > 0 && beatsResumable ? "Resume" : null}
+            onClear={PROMPTS_THREE_STEP && beats.length > 0 && !anyRunning ? () => setClearTarget("beats") : null}
             pendingLabel={beatsPendingLabel}
             errorAction={anthropicOffer("beats")}
             extraAction={<>{beatsRemoteRunning && resetRunButton}{mergeBeatsButton("rounded-lg")}{continueButton}</>}
             windingDown={beatsRemoteRunning && promptsStopRequested}
             onStop={handleStopPrompts}
-            onGenerate={runBeatsStep}
+            onGenerate={requestRunBeatsStep}
           />
           <StepCard
             num={2}
@@ -3003,10 +3061,13 @@ export default function PromptsPage({ params }: PageProps) {
         <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>
-              {regenTarget === "image" ? "Regenerate image prompts?" : "Regenerate video prompts?"}
+              {regenTarget === "beats" ? "Re-split the script into beats?"
+                : regenTarget === "image" ? "Regenerate image prompts?" : "Regenerate video prompts?"}
             </DialogTitle>
             <DialogDescription>
-              {regenTarget === "image"
+              {regenTarget === "beats"
+                ? `This deletes all ${beats.length} beat${beats.length === 1 ? "" : "s"} and splits your script again from scratch, so your merges go too.${beatsLossSummary.length ? ` It also destroys ${beatsLossSummary.join(", ")}, along with any thumbnails and the assembled video, because those are built on the beats being deleted.` : ""} This can't be undone.`
+                : regenTarget === "image"
                 ? fillMode
                   ? `This rewrites the image prompt on all ${beats.length} beat${beats.length === 1 ? "" : "s"} and clears any video prompts attached to them. Your beats and how you've merged them stay as they are. This can't be undone.`
                   : `This discards all ${beats.length} existing image beat${beats.length === 1 ? "" : "s"} (and any video prompts attached to them) and rebuilds them from your current script. This can't be undone.`
@@ -3043,10 +3104,13 @@ export default function PromptsPage({ params }: PageProps) {
         <DialogContent className="sm:max-w-md" showCloseButton={false}>
           <DialogHeader>
             <DialogTitle>
-              {clearTarget === "image" ? "Clear image prompts?" : "Clear video prompts?"}
+              {clearTarget === "beats" ? "Clear all beats?"
+                : clearTarget === "image" ? "Clear image prompts?" : "Clear video prompts?"}
             </DialogTitle>
             <DialogDescription>
-              {clearTarget === "image"
+              {clearTarget === "beats"
+                ? `This permanently removes all ${beats.length} beat${beats.length === 1 ? "" : "s"} and your merges, leaving the script step to be split again.${beatsLossSummary.length ? ` ${beatsLossSummary.join(", ")}, any thumbnails and the assembled video go with them, because those are built on these beats.` : ""} This can't be undone.`
+                : clearTarget === "image"
                 ? fillMode
                   ? `This removes the image prompt from all ${beats.length} beat${beats.length === 1 ? "" : "s"}, along with any video prompts attached to them. The beats themselves stay, so you won't have to split or merge them again. This can't be undone.`
                   : `This permanently removes all ${beats.length} image beat${beats.length === 1 ? "" : "s"} from the database. Video prompts attached to those beats will also be cleared. This can't be undone.`
