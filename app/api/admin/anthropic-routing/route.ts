@@ -29,6 +29,7 @@ import {
   isPromptProvider,
   isSelectableGeminiModel,
   isSelectableGptModel,
+  modelBelongsTo,
   type PromptProvider,
 } from "@/lib/claude/providers";
 import type { User } from "@supabase/supabase-js";
@@ -96,6 +97,9 @@ export async function GET() {
     user_selectable_models: modelConfig.userSelectable,
     user_choice_steps: [...USER_CHOICE_STEPS],
     provider_per_step: providerConfig.perStep,
+    // Per-step model overrides. Absent key means the step uses the provider
+    // default below, which is what every step did before this existed.
+    model_per_step: providerConfig.modelPerStep,
     provider_steps: [...PROVIDER_STEPS],
     gpt_model: providerConfig.gptModel,
     gpt_models: GPT_MODELS,
@@ -236,6 +240,47 @@ export async function PUT(req: Request) {
   const invalidTarget = rawTargets.find((s) => !isWorkflowStep(s));
   const targets = rawTargets.filter(isWorkflowStep);
 
+
+  // Writes a model override onto specific steps instead of the global default.
+  // Stored in prompt_provider_per_step as { provider, model }, alongside the
+  // bare-string entries the provider-only path writes: one column, two shapes,
+  // no migration. The step has to already be on this provider — a gpt model on
+  // a claude step would be dead config that springs to life the day someone
+  // switches that step over.
+  async function setPerStepModel(provider: PromptProvider, model: string) {
+    const { data: cur, error: readErr } = await supabase
+      .from("product_config")
+      .select("prompt_provider_per_step")
+      .eq("service", "_global")
+      .single();
+    if (readErr) return NextResponse.json({ error: readErr.message }, { status: 500 });
+
+    const raw = (cur?.prompt_provider_per_step ?? {}) as Record<string, unknown>;
+    const next: Record<string, unknown> = { ...raw };
+    for (const target of targets) {
+      const entry = next[target];
+      const currentProvider = typeof entry === "string"
+        ? entry
+        : (entry as { provider?: unknown } | undefined)?.provider;
+      if (currentProvider !== provider) {
+        return NextResponse.json(
+          { error: `${target} is not running on ${provider}. Switch its provider first.` },
+          { status: 400 },
+        );
+      }
+      next[target] = { provider, model };
+    }
+
+    const { error } = await supabase
+      .from("product_config")
+      .update({ prompt_provider_per_step: next })
+      .eq("service", "_global");
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    invalidatePromptProviderCache();
+    return NextResponse.json({ ok: true, model_per_step: next });
+  }
+
   // Allowlist update path — which models Pro users may choose. An empty
   // array turns the feature off; every user then runs the admin default.
   if (body.user_selectable_models !== undefined) {
@@ -288,6 +333,12 @@ export async function PUT(req: Request) {
       );
     }
 
+    // With steps named, this is a per-step override. Without, it is the default
+    // every gpt step falls back to. Before this split, the admin UI's per-step
+    // model picker wrote the global column, so changing the model on one step
+    // silently changed it for all of them.
+    if (targets.length > 0) return setPerStepModel("gpt", body.gpt_model);
+
     const { error } = await supabase
       .from("product_config")
       .update({ default_gpt_model: body.gpt_model })
@@ -306,6 +357,8 @@ export async function PUT(req: Request) {
         { status: 400 },
       );
     }
+
+    if (targets.length > 0) return setPerStepModel("gemini", body.gemini_model);
 
     const { error } = await supabase
       .from("product_config")
@@ -342,12 +395,24 @@ export async function PUT(req: Request) {
       .single();
     if (readErr) return NextResponse.json({ error: readErr.message }, { status: 500 });
 
-    const next = sanitiseProviderPerStep(cur?.prompt_provider_per_step);
+    const rawCur = (cur?.prompt_provider_per_step ?? {}) as Record<string, unknown>;
+    const next = sanitiseProviderPerStep(cur?.prompt_provider_per_step) as Record<string, unknown>;
     for (const target of targets) {
       // Claude is the default, so store it as an absent key rather than an
       // explicit value — keeps the map to just the steps that deviate.
-      if (body.provider === "claude") delete next[target];
-      else next[target] = body.provider;
+      if (body.provider === "claude") { delete next[target]; continue; }
+
+      // Keep a model override across a provider save, but only when it still
+      // belongs to the provider being set. Re-selecting the provider a step is
+      // already on should not quietly reset its model, and switching gpt to
+      // gemini must not carry a gpt id across into a rejected request.
+      const prev = rawCur[target];
+      const prevModel = typeof prev === "object" && prev !== null
+        ? (prev as { model?: unknown }).model
+        : undefined;
+      next[target] = typeof prevModel === "string" && modelBelongsTo(body.provider, prevModel)
+        ? { provider: body.provider, model: prevModel }
+        : body.provider;
     }
 
     const { error } = await supabase

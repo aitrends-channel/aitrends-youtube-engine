@@ -185,7 +185,7 @@ export async function resolveDefaultModel(step?: WorkflowStep): Promise<ClaudeMo
   if (step) {
     try {
       const provider = await getPromptProvider(step);
-      if (isKieProvider(provider)) return { model: await getModelForProvider(provider) };
+      if (isKieProvider(provider)) return { model: await getModelForProvider(provider, step) };
     } catch {
       // Provider unreadable — fall through to Claude rather than fail the step.
     }
@@ -235,7 +235,7 @@ export async function resolveModelForUser(
   // want — no `thinking` field.
   try {
     const provider = await getPromptProvider(step);
-    if (isKieProvider(provider)) return { model: await getModelForProvider(provider) };
+    if (isKieProvider(provider)) return { model: await getModelForProvider(provider, step) };
   } catch {
     // Provider unreadable — fall through to Claude rather than fail the step.
   }
