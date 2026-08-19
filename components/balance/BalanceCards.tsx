@@ -95,7 +95,10 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
           style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
           <Wallet size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
         </div>
-        <div>
+        {/* min-h so both headers occupy the same space whatever their
+            description wraps to: without it the two balance boxes start at
+            different heights and nothing below them lines up. */}
+        <div className="min-h-[3.25rem]">
           <h2 className="text-lg font-bold text-foreground">Heclus Credits</h2>
           <p className="text-xs" style={{ color: "var(--c-45)" }}>
             Buy credit from us and spend it across the workflow, with no provider key of your own to manage.
@@ -153,22 +156,23 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
             style={{ width: purchased > 0 ? `${Math.max(usedPct * 100, 1.5)}%` : "0%", background: barColor }} />
         </div>
 
-        {purchased > 0 && (
-          <p className="text-[11px] leading-relaxed" style={{ color: empty ? "oklch(0.68 0.19 25)" : "var(--c-42)" }}>
-            {spent.toLocaleString(undefined, { maximumFractionDigits: 2 })} used
-            {" · "}
-            {credits.toLocaleString(undefined, { maximumFractionDigits: 2 })} of{" "}
-            {purchased.toLocaleString(undefined, { maximumFractionDigits: 2 })} purchased credits left
-            {data?.partial ? " (recent history only)" : ""}
-            {empty ? ". Top up to keep generating." : ""}
-          </p>
-        )}
-
-        {!data?.checkoutUrl && (
-          <p className="text-[11px] leading-relaxed" style={{ color: "var(--c-42)" }}>
-            Top-ups are not open yet. Nothing is charged, and nothing is spent from this balance.
-          </p>
-        )}
+        {/* Exactly one status line, always, so this box is the same height as the
+            one beside it. Usage once there is any, otherwise why the balance is
+            zero. Two paragraphs here is what threw the alignment out. */}
+        <p className="text-[11px] leading-relaxed" style={{ color: empty && purchased > 0 ? "oklch(0.68 0.19 25)" : "var(--c-42)" }}>
+          {purchased > 0 ? (
+            <>
+              {spent.toLocaleString(undefined, { maximumFractionDigits: 2 })} used
+              {" · "}
+              {credits.toLocaleString(undefined, { maximumFractionDigits: 2 })} of{" "}
+              {purchased.toLocaleString(undefined, { maximumFractionDigits: 2 })} purchased credits left
+              {data?.partial ? " (recent history only)" : ""}
+              {empty ? ". Top up to keep generating." : ""}
+            </>
+          ) : data?.checkoutUrl
+            ? "Nothing purchased yet. Top up to start spending from this balance."
+            : "Top-ups are not open yet. Nothing is charged, and nothing is spent from this balance."}
+        </p>
 
       </div>
 
@@ -262,13 +266,16 @@ function WalletCard({ data }: { data: CreditsData | null }) {
   };
 
   return (
-    <div className="space-y-5 flex flex-col h-full">
+    <div className="space-y-4 flex flex-col h-full">
       <div className="flex items-center gap-3">
         <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
           style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
           <Sparkles size={18} style={{ color: "oklch(0.72 0.25 285)" }} />
         </div>
-        <div>
+        {/* min-h so both headers occupy the same space whatever their
+            description wraps to: without it the two balance boxes start at
+            different heights and nothing below them lines up. */}
+        <div className="min-h-[3.25rem]">
           <h2 className="text-lg font-bold text-foreground">Free video credits</h2>
           <p className="text-xs" style={{ color: "var(--c-45)" }}>
             One credit generates one free video clip. Refreshes every month; purchased clip credits never expire. Separate from Heclus Credits.
@@ -303,10 +310,10 @@ function WalletCard({ data }: { data: CreditsData | null }) {
           <TopUpOptions checkoutUrl={checkoutUrl} onCancel={() => setPicking(false)} />
         )}
 
-        {monthlyGrant > 0 && !picking && (
+        {!picking && (
           <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(0 0 0 / 0.18)" }}>
             <div className="h-full rounded-full transition-all"
-              style={{ width: `${Math.max(pct * 100, 1.5)}%`, background: barColor }} />
+              style={{ width: monthlyGrant > 0 ? `${Math.max(pct * 100, 1.5)}%` : "0%", background: barColor }} />
           </div>
         )}
 
@@ -323,12 +330,11 @@ function WalletCard({ data }: { data: CreditsData | null }) {
           {empty && (monthlyGrant > 0
             ? ". Top up to keep generating, or wait for next month's free credits."
             : ". Top up to start generating.")}
+          {/* Folded into this line rather than a second paragraph below it: the
+              wallet beside this one has exactly one status line, and a box that
+              sometimes grows a line cannot stay aligned with it. */}
+          {usage && usage.allTime > usage.thisMonth && ` · ${usage.allTime.toLocaleString()} used in total`}
         </p>
-        )}
-        {!picking && usage && usage.allTime > usage.thisMonth && (
-          <p className="text-[11px]" style={{ color: "var(--c-42)" }}>
-            {usage.allTime.toLocaleString()} used in total
-          </p>
         )}
       </div>
 
