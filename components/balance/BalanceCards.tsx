@@ -140,12 +140,13 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
           the box something to say while this wallet has no history yet. */}
       <div className="rounded-2xl p-4 space-y-2" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}>
         <p className="text-xs font-semibold" style={{ color: "var(--c-55)" }}>What it covers</p>
-        <div className="flex flex-wrap gap-1.5">
+        {/* One per row, in the order a video is made, so the list reads as the
+            workflow it describes rather than a bag of tags. */}
+        <div className="divide-y" style={{ borderColor: "var(--bd-6)" }}>
           {HECLUS_CREDIT_COVERS.map((item) => (
-            <span key={item} className="text-[11px] px-2 py-1 rounded-lg"
-              style={{ background: "var(--bg-track)", color: "var(--c-60)" }}>
+            <p key={item} className="text-xs py-2" style={{ color: "var(--c-60)" }}>
               {item}
-            </span>
+            </p>
           ))}
         </div>
       </div>
