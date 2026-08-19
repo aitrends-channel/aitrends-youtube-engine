@@ -71,7 +71,7 @@ function AnswerBody({ text }: { text: string }) {
           const body = clean(block.lines.join("\n")).trim();
           if (!body) return null;
           return (
-            <p key={i} className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--c-80)" }}>
+            <p key={i} className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--c-88)" }}>
               {body}
             </p>
           );
@@ -219,8 +219,11 @@ export function QueryPanel() {
 
       {!!result?.trail?.length && (
         <p className="text-[11px] px-1" style={{ color: "var(--c-35)" }}>
-          Answered from {result.trail.length} quer{result.trail.length === 1 ? "y" : "ies"}
-          {result.trail.some((t) => t.error) ? ", some of which failed" : ""}.
+          {/* Count only. A query that failed is usually the model probing for a
+              column name and missing, which is how the loop is supposed to work
+              — with no SQL on screen there is nothing the reader could do about
+              it, so reporting failures here only worried them. */}
+          Answered from {result.trail.length} quer{result.trail.length === 1 ? "y" : "ies"}.
         </p>
       )}
 
