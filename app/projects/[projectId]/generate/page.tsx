@@ -26,6 +26,7 @@ import { getModelConfig } from "@/lib/kie/imageModels";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
 import { VideoCreditsPanel } from "@/components/VideoCreditsPanel";
 import { paidModelsOnly } from "@/lib/model-tier";
+import { isVideoInFlight, videoStatusLabel, isGenAIProModel } from "@/lib/genaipro/status";
 import { removeLongPauses, encodeMp3 } from "@/lib/audio/silenceRemover";
 
 const fetcher = (url: string) =>
@@ -631,6 +632,23 @@ export default function GeneratePage({ params }: PageProps) {
   // switches to the fast GEN_MS poll right away. The subsequent mutate()
   // (on success or failure) reconciles the cache with server truth —
   // which reverts this if the request failed.
+  // The free lane parks clips in a status only this app's own cron drains, and
+  // that cron fires every two minutes. Nudging it means the first tiles move to
+  // submitting within seconds of the click instead of sitting on "queued" long
+  // enough to look broken. Best-effort by design: the cron is still the thing
+  // that guarantees the work happens, so a failure here costs nothing.
+  async function warmStartVideos() {
+    if (!isGenAIProModel(selectedVideoModel)) return;
+    try {
+      await fetch("/api/generate/videos/warm-start", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+    } catch { /* the cron picks these up regardless */ }
+    await mutate();
+  }
+
   function optimisticQueueVideos(beatNumbers: Set<number>) {
     void mutate(
       (current?: { beats?: Beat[] } & Record<string, unknown>) => {
@@ -701,6 +719,7 @@ export default function GeneratePage({ params }: PageProps) {
       } else {
         toast.success(`Beat ${beat.beatNumber} re-queued`);
         setVideosSubmitted(true);
+        void warmStartVideos();
       }
       // Reconcile with server truth (queued/submitting, or reverts the
       // optimistic flip if the submit was rejected per-beat).
@@ -1093,8 +1112,7 @@ export default function GeneratePage({ params }: PageProps) {
   // motion clips were generated against an out-of-date beat list and
   // need to be regenerated upstream (Prompt Studio → Regenerate) before
   // images/videos can match the current script again.
-  const videosInFlight = queuingVideos
-    || beats.some((b) => b.videoStatus === "queued" || b.videoStatus === "submitting" || b.videoStatus === "rendering");
+  const videosInFlight = queuingVideos || beats.some((b) => isVideoInFlight(b.videoStatus));
   const beatsStale = beats.length > 0
     && !generatingImages
     && !videosInFlight
@@ -1312,8 +1330,7 @@ export default function GeneratePage({ params }: PageProps) {
     setSelectedVideoAspectRatio(selectedAspectRatio);
   }, [selectedAspectRatio]);
 
-  const hasActiveVideos = beats.some((b) =>
-    b.videoStatus === "queued" || b.videoStatus === "submitting" || b.videoStatus === "rendering");
+  const hasActiveVideos = beats.some((b) => isVideoInFlight(b.videoStatus));
   const hasActiveImages = generatingImages
     || beats.some((b) => (b.imageStatus === "generating" || b.imageStatus === "queued") && !b.imageUrl);
 
@@ -1927,6 +1944,7 @@ export default function GeneratePage({ params }: PageProps) {
       const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? `Request failed (HTTP ${res.status})`);
       setVideosSubmitted(true);
+      void warmStartVideos();
       const verb = mode === "failed" ? "re-submitted" : "submitted";
       if ((data.submitted ?? 0) > 0) toast.success(`${data.submitted ?? 0} video clips ${verb}`);
       if (data.failures?.length) {
@@ -2563,8 +2581,12 @@ export default function GeneratePage({ params }: PageProps) {
                                 batch stay on "queued" until the worker
                                 gets to them. The transition the user
                                 sees per beat is:
-                                queued → submitting → rendering → done. */}
-                            {b.videoStatus}
+                                queued → submitting → rendering → done.
+
+                                The free lane parks in "gp_queued" so the
+                                shared worker cannot claim it; that is an
+                                internal name, so it reads as "queued". */}
+                            {videoStatusLabel(b.videoStatus)}
                           </span>
                         )}
 
@@ -2576,12 +2598,12 @@ export default function GeneratePage({ params }: PageProps) {
                             right now" signal. Sits over the video
                             too, dimming the old frame while a regen
                             is mid-flight. */}
-                        {(b.videoStatus === "submitting" || b.videoStatus === "rendering") && (
+                        {isVideoInFlight(b.videoStatus) && (
                           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1"
                             style={{ background: "oklch(0 0 0 / 0.55)" }}>
                             <Spinner size={20} className="text-white" />
                             <span className="text-[10px] font-medium" style={{ color: "var(--c-90)" }}>
-                              {b.videoStatus}…
+                              {videoStatusLabel(b.videoStatus)}…
                             </span>
                           </div>
                         )}
@@ -2596,7 +2618,7 @@ export default function GeneratePage({ params }: PageProps) {
                             so we don't double-queue the same task,
                             and during global active-video ops. */}
                         {(() => {
-                          const inFlight = b.videoStatus === "queued" || b.videoStatus === "submitting" || b.videoStatus === "rendering";
+                          const inFlight = isVideoInFlight(b.videoStatus);
                           // In-flight beats get a Stop affordance so the
                           // user can cancel a single beat without waiting
                           // for the whole batch. Once cancelled the beat
