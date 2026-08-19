@@ -9,7 +9,7 @@ import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem, Menu, Gift, Bot, Lightbulb,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem, Menu, Gift, Bot, Lightbulb, Search,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -26,6 +26,7 @@ import { paidModelsOnly } from "@/lib/model-tier";
 import { MemoryPanel } from "@/components/admin/MemoryPanel";
 import { QuotasPanel } from "@/components/admin/quotas";
 import { HeclusAgentPanel } from "@/components/admin/HeclusAgentPanel";
+import { QueryPanel } from "@/components/admin/QueryPanel";
 
 const PHASE_PATHS: Record<number, string> = {
   1: "channel", 2: "channel", 3: "channel", 4: "channel", 5: "channel",
@@ -5246,6 +5247,7 @@ const ADMIN_NAV = [
   { id: "support",  label: "Support",  icon: LifeBuoy },
   // Sidebar keeps the short label; the page heading spells it out via
   // TAB_HEADING below, where there is room for it.
+  { id: "query",    label: "Query",       icon: Search },
   { id: "agent",    label: "Heclus agent", icon: Bot },
   { id: "reviews",  label: "Feedback", icon: Star },
   { id: "features", label: "Feature requests", icon: Lightbulb },
@@ -5395,11 +5397,11 @@ export default function AdminPage() {
   const [revDateTo, setRevDateTo] = useState("");
   const [revPlanFilter, setRevPlanFilter] = useState("");
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "activity" | "usage" | "users" | "projects" | "freeusage" | "revenue" | "agent" | "reports" | "logs" | "emails" | "support" | "reviews" | "features" | "memory" | "setup"
+    "stats" | "activity" | "usage" | "users" | "projects" | "freeusage" | "revenue" | "query" | "agent" | "reports" | "logs" | "emails" | "support" | "reviews" | "features" | "memory" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "activity", "usage", "users", "projects", "freeusage", "revenue", "agent", "reports", "logs", "emails", "support", "reviews", "features", "memory", "setup"],
+    ["stats", "activity", "usage", "users", "projects", "freeusage", "revenue", "query", "agent", "reports", "logs", "emails", "support", "reviews", "features", "memory", "setup"],
   );
   // "usage" stays accepted as a stored value: it is what localStorage holds
   // for anyone who last left the admin on the old Usage tab, and mapping it
@@ -7770,6 +7772,13 @@ export default function AdminPage() {
         {/* Emails section — Inbox/Sent + compose. Backed by Hostinger
             IMAP/SMTP via /api/admin/emails. */}
         {activeTab === "freeusage" && <FreeUsagePanel />}
+
+        {activeTab === "query" && (
+          <section id="query" className="rounded-2xl max-w-full min-w-0"
+            style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+            <QueryPanel />
+          </section>
+        )}
 
         {activeTab === "agent" && (
           <section id="agent" className="rounded-2xl max-w-full min-w-0"
