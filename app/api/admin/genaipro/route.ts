@@ -22,7 +22,7 @@ export async function GET() {
 
   const [accountResult, walletResult] = await Promise.allSettled([
     getGenAIProCredits(),
-    supabase.from("credit_accounts").select("grant_credits, paid_credits, reserved_credits"),
+    supabase.from("genai_credits").select("grant_credits, paid_credits, reserved_credits"),
   ]);
 
   const account = accountResult.status === "fulfilled" ? accountResult.value : null;
