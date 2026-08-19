@@ -31,14 +31,6 @@ interface QueryResult {
 
 const cardStyle = { background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)" } as const;
 
-// Starting points, not a menu. They exist to show the shape of question that
-// works: specific, about data the database actually holds.
-const EXAMPLES = [
-  "How much has timasidra@gmail.com spent at the prompts step, in KIE credits, on their last 3 videos?",
-  "Which paying subscribers renew in the next 14 days?",
-  "How many projects reached a finished video this month, and how many stalled before it?",
-  "Which users have saved a KIE key but never created a project?",
-];
 
 // Renders the model's answer: paragraphs, plus any pipe-delimited table turned
 // into a real one.
@@ -187,22 +179,6 @@ export function QueryPanel() {
           </button>
         </div>
       </div>
-
-      {!result && !running && (
-        <div className="rounded-2xl p-4 space-y-2" style={cardStyle}>
-          <p className="text-sm font-semibold" style={{ color: "var(--c-55)" }}>Try one of these</p>
-          {EXAMPLES.map((ex) => (
-            <button
-              key={ex}
-              onClick={() => { setQuestion(ex); void ask(ex); }}
-              className="block w-full text-left text-sm px-3 py-2.5 rounded-lg transition-all hover:opacity-80"
-              style={{ background: "var(--bg-track)", color: "var(--c-60)" }}
-            >
-              {ex}
-            </button>
-          ))}
-        </div>
-      )}
 
       {result?.error && (
         <div className="rounded-2xl p-4 text-base" style={{ background: "oklch(0.6 0.19 25 / 0.1)", border: "1px solid oklch(0.6 0.19 25 / 0.3)", color: "oklch(0.7 0.2 25)" }}>
