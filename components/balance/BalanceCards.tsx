@@ -25,6 +25,20 @@ interface CreditsData {
   ledger: { id: string; kind: string; credits: number; note: string | null; created_at: string }[];
 }
 
+// Every step that runs on Heclus's own provider accounts, in the order a video
+// is made. Listed rather than summarised, because "across the workflow" is a
+// claim and this is the answer to "what am I buying?".
+const HECLUS_CREDIT_COVERS = [
+  "Channel analysis",
+  "Topic generation",
+  "Script writing",
+  "Visual analysis",
+  "Beats and prompts",
+  "Voiceovers",
+  "Assemble",
+  "Thumbnails",
+] as const;
+
 interface HeclusCreditsData {
   credits: number;
   reserved: number;
@@ -71,14 +85,20 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
         </div>
       </div>
 
-      <div className="rounded-2xl p-5 space-y-3 flex flex-col justify-center" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)", flex: "1 1 auto" }}>
-        <div className="flex items-end justify-between gap-3">
+      {/* Same surface and same type scale as the free-video box beside it, so the
+          two balances read as one row rather than two designs. Notably NOT
+          stretched to fill: growing this box centred its number and pushed it out
+          of line with the other wallet's. The slack goes to a spacer at the
+          bottom of the card instead. */}
+      <div className="p-5 rounded-2xl space-y-3"
+        style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
+        <div className="flex items-end justify-between gap-3 flex-wrap">
           <p className="leading-none">
-            <span className="text-3xl font-bold text-foreground tabular-nums">
+            <span className="text-2xl font-bold tabular-nums" style={{ color: "var(--c-90)" }}>
               {credits.toLocaleString(undefined, { maximumFractionDigits: 2 })}
             </span>
-            <span className="text-sm ml-2" style={{ color: "var(--c-45)" }}>
-              credit{credits === 1 ? "" : "s"}
+            <span className="text-xs ml-1.5" style={{ color: "var(--c-50)" }}>
+              credit{credits === 1 ? "" : "s"}{reserved > 0 ? ` · ${reserved.toLocaleString(undefined, { maximumFractionDigits: 2 })} in use right now` : ""}
             </span>
           </p>
           {/* The button is always here, so the wallet reads the same as the one
@@ -111,15 +131,33 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
             Top-ups are not open yet. Nothing is charged, and nothing is spent from this balance.
           </p>
         )}
-        {reserved > 0 && (
-          <p className="text-[11px]" style={{ color: "var(--c-42)" }}>
-            {reserved.toLocaleString(undefined, { maximumFractionDigits: 2 })} held by work in progress
-          </p>
-        )}
+
       </div>
 
+      {/* What the balance actually pays for. Worth spelling out: "spend it across
+          the workflow" in the description above is a claim, and a customer
+          deciding whether to top up wants the list. It also gives the space below
+          the box something to say while this wallet has no history yet. */}
+      <div className="rounded-2xl p-4 space-y-2" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}>
+        <p className="text-xs font-semibold" style={{ color: "var(--c-55)" }}>What it covers</p>
+        {/* One per row, in the order a video is made, so the list reads as the
+            workflow it describes rather than a bag of tags. */}
+        <div className="divide-y" style={{ borderColor: "var(--bd-6)" }}>
+          {HECLUS_CREDIT_COVERS.map((item) => (
+            <p key={item} className="text-xs py-2" style={{ color: "var(--c-60)" }}>
+              {item}
+            </p>
+          ))}
+        </div>
+      </div>
+
+      {/* Absorbs whatever height difference is left between the two wallets.
+          Without it the shorter card's own boxes would have to stretch, which is
+          what threw the numbers out of line. */}
+      {ledger.length === 0 && <div className="flex-1" />}
+
       {ledger.length > 0 && (
-        <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}>
+        <div className="rounded-2xl overflow-hidden flex-1" style={{ background: "var(--bg-card)", border: "1px solid var(--bd-8)" }}>
           <p className="px-4 py-3 text-xs font-semibold" style={{ color: "var(--c-55)", borderBottom: "1px solid var(--bd-8)" }}>
             Recent activity
           </p>
