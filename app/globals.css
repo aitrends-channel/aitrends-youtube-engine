@@ -125,6 +125,9 @@
   --c-90: oklch(0.95 0 0);
   --c-88: oklch(0.93 0 0);
   --c-82: oklch(0.89 0 0);
+  /* Referenced in 15 components and never defined, so that text inherited
+     whatever colour its parent had. Sits between --c-82 and --c-78. */
+  --c-80: oklch(0.88 0 0);
   --c-78: oklch(0.87 0 0);
   --c-72: oklch(0.83 0 0);
   --c-70: oklch(0.82 0 0);
@@ -237,6 +240,7 @@
   --c-88: #262155;
   --c-85: #2B2558;
   --c-82: #312C5D;
+  --c-80: #363159;
   --c-78: #3A3564;
   --c-75: #3E3967;
   --c-72: #47426D;
