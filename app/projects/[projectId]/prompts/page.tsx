@@ -3152,15 +3152,13 @@ export default function PromptsPage({ params }: PageProps) {
             <DialogDescription className="text-zinc-400">
               {bulkFromCompletion ? (
                 <>
-                  {/* Every count is the beat count: the steps ahead write one
-                      image prompt and one video prompt per beat, then generate
-                      one image and one video from each. Saying it as four
-                      numbers is what makes the scale land. */}
-                  This project has <span className="font-semibold text-zinc-100">{beats.length.toLocaleString()} beats</span>,
-                  so {beats.length.toLocaleString()} image prompts and {beats.length.toLocaleString()} video prompts
-                  will be written, and {beats.length.toLocaleString()} images and {beats.length.toLocaleString()} videos
-                  will be generated. Merging short beats into a neighbour brings all of that down, and now is the moment
-                  it is free: after prompts are written, a merged beat has to have its prompt paid for again.
+                  {/* Every count is the beat count: one image prompt, one video
+                      prompt, one image and one video per beat. Four numbers, no
+                      explanation — the scale is the argument. */}
+                  <span className="font-semibold text-zinc-100">{beats.length.toLocaleString()} beats</span>
+                  {" "}means {beats.length.toLocaleString()} image prompts, {beats.length.toLocaleString()} video prompts,
+                  {" "}{beats.length.toLocaleString()} images and {beats.length.toLocaleString()} videos.
+                  {" "}Merging short beats brings that down, and it is free until prompts are written.
                 </>
               ) : "Merges short beats into a neighbour. Fewer, longer beats cost less to generate but match the narration less closely."}
             </DialogDescription>
@@ -3206,7 +3204,9 @@ export default function PromptsPage({ params }: PageProps) {
             </div>
 
             {(bulkDirection === "auto" ? bulkStubs.map((s) => s.beatNumber) : bulkPlan.absorbedOriginals).length > 0 && (
-              <div className="max-h-40 overflow-y-auto rounded-lg ring-1 ring-zinc-700 divide-y divide-zinc-800">
+              // max-h-40 fitted about three rows, so a plan touching a dozen
+              // beats had to be scrolled a line at a time to be read at all.
+              <div className="max-h-72 overflow-y-auto rounded-lg ring-1 ring-zinc-700 divide-y divide-zinc-800">
                 {(bulkDirection === "auto" ? bulkStubs.map((s) => s.beatNumber) : bulkPlan.absorbedOriginals).map((n) => (
                   <div key={n} className="flex gap-2 px-3 py-1.5 text-xs text-zinc-400">
                     <span className="font-semibold text-zinc-500 shrink-0">{n}</span>
