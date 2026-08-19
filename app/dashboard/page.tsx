@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
-import { Settings, LogOut, BarChart3, Trash2, Download, KeyRound, SlidersHorizontal, Wand2, ChevronRight, Clapperboard, Gift, X, Menu, List, LayoutGrid } from "lucide-react";
+import { Settings, LogOut, BarChart3, Trash2, Download, KeyRound, SlidersHorizontal, Wand2, ChevronRight, Clapperboard, Gift, X, Menu, List, LayoutGrid, Wallet } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import useSWR, { mutate as globalMutate } from "swr";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -1254,6 +1254,19 @@ export default function HomePage() {
                     >
                       <KeyRound size={15} />
                       <span>Account</span>
+                    </Link>
+                    {/* The account page already has a balance section and reads
+                        ?section=balance on mount, so this is a link to what
+                        exists rather than a second surface showing the same
+                        wallet. */}
+                    <Link
+                      href="/account?section=balance"
+                      onClick={() => setShowProfileMenu(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all hover:opacity-80"
+                      style={{ color: "var(--c-60)" }}
+                    >
+                      <Wallet size={15} />
+                      <span>Balance</span>
                     </Link>
                     <button
                       onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
