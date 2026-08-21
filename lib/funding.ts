@@ -44,12 +44,22 @@ export function invalidateFundingCache(userId: string) {
  * Heclus's. Being wrong the other way would generate on credit nobody has.
  */
 export async function getFundingMode(user: User): Promise<FundingMode> {
+  // Short-circuits the admin lookup inside getFundingModeById, since the answer
+  // is already here in the user object.
   if (WALLET_FUNDING_ADMIN_ONLY && !isAdminUser(user)) return "byo";
   return getFundingModeById(user.id);
 }
 
-/** For the call sites that only carry a user id. Does NOT apply the admin gate,
- *  which needs the user object: pass through getFundingMode where you have one. */
+/**
+ * Same answer, for the call sites that only carry a user id.
+ *
+ * The choke points are all in this position, and they are the ones that actually
+ * move money, so this applies the admin gate too rather than trusting callers to
+ * remember. It costs an admin lookup, cached with the mode: skipping it meant a
+ * new signup, whose column defaults to wallet, ran their generations on Heclus's
+ * keys while every gate and surface still treated them as BYO. The flag has to
+ * mean the same thing everywhere or it is not a flag.
+ */
 export async function getFundingModeById(userId: string): Promise<FundingMode> {
   const cached = cacheMap.get(userId);
   if (cached && Date.now() - cached.at < TTL_MS) return cached.mode;
@@ -94,6 +104,22 @@ export async function getFundingModeById(userId: string): Promise<FundingMode> {
     return "byo";
   }
 
+  if (mode === "wallet" && WALLET_FUNDING_ADMIN_ONLY && !(await isAdminById(userId))) {
+    mode = "byo";
+  }
+
   cacheMap.set(userId, { mode, at: Date.now() });
   return mode;
+}
+
+/** isAdminUser needs the user object, and the choke points only have an id.
+ *  Fail-closed: an unreadable account is not an admin, so the gate holds. */
+async function isAdminById(userId: string): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.auth.admin.getUserById(userId);
+    if (error || !data.user) return false;
+    return isAdminUser(data.user);
+  } catch {
+    return false;
+  }
 }
