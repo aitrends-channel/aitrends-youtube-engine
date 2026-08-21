@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
+import type { HeclusCreditsConfig } from "@/app/api/admin/heclus-credits/route";
 import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem, Menu, Gift, Bot, Lightbulb, Search,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem, Menu, Gift, Bot, Lightbulb, Search, Wallet,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -1219,8 +1220,8 @@ function SetupSection({
   keysLoading: boolean;
   mutateKeys: () => void;
 }) {
-  const [setupTab, setSetupTab] = usePersistentTab<"keys" | "models" | "anthropic" | "concurrency" | "plans" | "quotas">(
-    "config", "keys", ["keys", "models", "anthropic", "concurrency", "plans", "quotas"],
+  const [setupTab, setSetupTab] = usePersistentTab<"keys" | "models" | "anthropic" | "concurrency" | "plans" | "credits" | "quotas">(
+    "config", "keys", ["keys", "models", "anthropic", "concurrency", "plans", "credits", "quotas"],
   );
   const [serviceInput, setServiceInput] = useState<Service>("youtube_data_api_key");
   const [keyInput, setKeyInput] = useState("");
@@ -1401,6 +1402,7 @@ function SetupSection({
           { id: "anthropic", label: "Anthropic" },
           { id: "concurrency", label: "Batched process" },
           { id: "plans", label: "Payment" },
+          { id: "credits", label: "Heclus Credits" },
           { id: "quotas", label: "Quotas" },
         ] as const).map((t) => (
           <button
@@ -1425,6 +1427,7 @@ function SetupSection({
       {setupTab === "anthropic" && <AnthropicRoutingPanel />}
       {setupTab === "concurrency" && <ConcurrencyPanel />}
       {setupTab === "plans" && <PlansPanel />}
+      {setupTab === "credits" && <HeclusCreditsPanel />}
       {setupTab === "quotas" && <QuotasPanel />}
 
       {setupTab === "keys" && <>
@@ -1920,6 +1923,336 @@ const CONCURRENCY_FIELDS: {
   { key: "finish_images_poll",     label: "Image finishers",     description: "Workers finalizing completed images.", default: 5, min: 1, max: 50, group: "Others" },
   { key: "thumbnail_batch",        label: "Thumbnail batch",     description: "Thumbnails generated per batch.",      default: 2, min: 1, max: 20, group: "Others" },
 ];
+
+// Everything the Heclus Credits wallet needs configured, in one tab.
+//
+// The pack link used to sit on the Payment tab beside the subscription plumbing,
+// where nothing else about the wallet lived. Grouped here with the pack size, the
+// starter grant and the rates, because those four numbers only make sense read
+// together: what a purchase costs, what it grants, what a signup gets free, and
+// what the work draws down.
+function HeclusCreditsPanel() {
+  const { data, mutate, isLoading } = useSWR<HeclusCreditsConfig>(
+    "/api/admin/heclus-credits",
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+
+  const [packLinkTest, setPackLinkTest] = useState("");
+  const [packLinkProd, setPackLinkProd] = useState("");
+  const [packCredits, setPackCredits] = useState("");
+  const [packPrice, setPackPrice] = useState("");
+  const [grant, setGrant] = useState("");
+  const [rates, setRates] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+  const hydrated = useRef(false);
+
+  useEffect(() => {
+    if (!data || hydrated.current || typeof data.activeEnv !== "string") return;
+    hydrated.current = true;
+    setPackLinkTest(data.packLinkTest ?? "");
+    setPackLinkProd(data.packLinkProduction ?? "");
+    setPackCredits(data.packCredits != null ? String(data.packCredits) : "");
+    setPackPrice(data.packPriceUsd != null ? String(data.packPriceUsd) : "");
+    setGrant(data.signupGrantCredits != null ? String(data.signupGrantCredits) : "");
+    setRates(Object.fromEntries(Object.entries(data.rates ?? {}).map(([k, v]) => [k, String(v)])));
+  }, [data]);
+
+  async function save(section: string, patch: Record<string, unknown>) {
+    setSaving(section);
+    try {
+      const res = await fetch("/api/admin/heclus-credits", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? "Failed to save");
+      toast.success("Saved");
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  const cardStyle = {
+    background: "oklch(0 0 0 / 0.02)",
+    border: "1px solid oklch(0 0 0 / 0.06)",
+  } as const;
+  const inputStyle = {
+    background: "var(--bg-input)",
+    border: "1px solid var(--bd-10)",
+    color: "var(--c-90)",
+  } as const;
+  const saveStyle = (enabled: boolean) => ({
+    background: enabled ? "oklch(0.62 0.15 220)" : "oklch(0 0 0 / 0.06)",
+    color: enabled ? "white" : "var(--c-50)",
+    minWidth: 78,
+  });
+
+  const activeEnv = data?.activeEnv ?? "test";
+  const activeLink = activeEnv === "production" ? data?.packLinkProduction : data?.packLinkTest;
+  const sellable = !!activeLink && data?.packCredits != null;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start gap-2.5">
+        <Wallet size={18} className="shrink-0 mt-0.5" style={{ color: "oklch(0.62 0.15 220)" }} />
+        <div>
+          <h3 className="text-base font-bold leading-tight" style={{ color: "var(--c-90)" }}>
+            Heclus Credits
+          </h3>
+          <p className="text-xs mt-1" style={{ color: "var(--c-50)" }}>
+            The wallet customers buy from us and spend on work that runs on Heclus&apos;s own provider
+            accounts. This deployment reads the <span style={{ fontWeight: 600 }}>{activeEnv}</span> link.
+          </p>
+        </div>
+      </div>
+
+      {/* Can a customer buy, and can the work run */}
+      <div className="p-3 rounded-xl grid gap-2 sm:grid-cols-2" style={cardStyle}>
+        <StatusLine
+          ok={sellable}
+          label="Top up"
+          detail={sellable
+            ? "Live. The button is enabled on /balance."
+            : !activeLink
+              ? `No ${activeEnv} checkout link, so the button is disabled.`
+              : "Link set but no pack size, so a purchase could not be credited."}
+        />
+        <StatusLine
+          ok={!!data?.keys.kie}
+          label="Heclus KIE key"
+          detail={data?.keys.kie
+            ? "Set. Images, videos and KIE-routed writing steps can run."
+            : "Missing. Add it on the API Keys tab or every wallet generation fails."}
+        />
+        <StatusLine
+          ok={!!data?.keys.elevenlabs}
+          label="Heclus ElevenLabs key"
+          detail={data?.keys.elevenlabs
+            ? "Set. Voiceovers and caption alignment can run."
+            : "Missing. Add it on the API Keys tab or voiceovers fail for wallet users."}
+        />
+        <StatusLine
+          ok={data?.walletAdminOnly === false}
+          neutral={data?.walletAdminOnly !== false}
+          label="Rollout"
+          detail={data?.walletAdminOnly === false
+            ? "Live for customers."
+            : "Admins only. Flip WALLET_FUNDING_ADMIN_ONLY in lib/funding.ts to release it."}
+        />
+        <div className="sm:col-span-2 text-xs pt-1" style={{ color: "var(--c-42)" }}>
+          {data?.wallet.accounts ?? 0} wallet{(data?.wallet.accounts ?? 0) === 1 ? "" : "s"} holding{" "}
+          <span className="font-semibold tabular-nums" style={{ color: "var(--c-90)" }}>
+            {(data?.wallet.creditsOutstanding ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          </span>{" "}
+          credits between them.
+        </div>
+      </div>
+
+      {data && !data.schema.pack && (
+        <MigrationWarning migration="130_heclus_pack.sql" what="the pack link, size and price" />
+      )}
+
+      {/* Pack */}
+      <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
+        <div>
+          <p className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>Top-up pack</p>
+          <p className="text-xs mt-0.5" style={{ color: "var(--c-50)" }}>
+            One Dodo product, bought in quantities. Must not be the GenAI video pack: that one grants
+            clips from the other wallet.
+          </p>
+        </div>
+
+        {(["test", "production"] as const).map((env) => (
+          <div key={env}>
+            <label className="text-xs font-medium flex items-center gap-2" style={{ color: "var(--c-55)" }}>
+              Checkout link ({env})
+              {env === activeEnv && (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                  style={{ background: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.62 0.15 220)" }}>
+                  in use here
+                </span>
+              )}
+            </label>
+            <input
+              type="text"
+              value={env === "test" ? packLinkTest : packLinkProd}
+              onChange={(e) => (env === "test" ? setPackLinkTest(e.target.value) : setPackLinkProd(e.target.value))}
+              placeholder="https://checkout.dodopayments.com/buy/…"
+              disabled={isLoading || saving !== null}
+              className="w-full mt-1 px-3 py-2 rounded-lg text-sm outline-none transition-all"
+              style={inputStyle}
+            />
+          </div>
+        ))}
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="text-xs font-medium" style={{ color: "var(--c-55)" }}>Credits per pack</label>
+            <input
+              type="number" min={1} step="any" value={packCredits}
+              onChange={(e) => setPackCredits(e.target.value)}
+              disabled={isLoading || saving !== null}
+              className="w-32 mt-1 px-3 py-2 rounded-lg text-sm outline-none tabular-nums"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium" style={{ color: "var(--c-55)" }}>Price USD</label>
+            <input
+              type="number" min={0} step="any" value={packPrice}
+              onChange={(e) => setPackPrice(e.target.value)}
+              disabled={isLoading || saving !== null}
+              className="w-32 mt-1 px-3 py-2 rounded-lg text-sm outline-none tabular-nums"
+              style={inputStyle}
+            />
+          </div>
+          <button
+            onClick={() => save("pack", {
+              packLinkTest: packLinkTest.trim() || null,
+              packLinkProduction: packLinkProd.trim() || null,
+              packCredits: packCredits.trim() || null,
+              packPriceUsd: packPrice.trim() || null,
+            })}
+            disabled={saving !== null || isLoading}
+            className="px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            style={saveStyle(saving === null && !isLoading)}
+          >
+            {saving === "pack" ? "Saving…" : "Save pack"}
+          </button>
+        </div>
+        <p className="text-xs" style={{ color: "var(--c-42)" }}>
+          The price is display only. What lands is the pack size times the quantity Dodo confirms, so a
+          reprice never changes what an old payment granted.
+        </p>
+      </div>
+
+      {data && !data.schema.signupGrant && (
+        <MigrationWarning migration="132_signup_grant.sql" what="the starter grant" />
+      )}
+
+      {/* Starter grant */}
+      <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
+        <div>
+          <p className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>Starter grant</p>
+          <p className="text-xs mt-0.5" style={{ color: "var(--c-50)" }}>
+            Granted once per account, the first time a balance is read. Existing accounts receive it too.
+            Empty disables it.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="text-xs font-medium" style={{ color: "var(--c-55)" }}>Credits</label>
+            <input
+              type="number" min={1} step="any" value={grant}
+              onChange={(e) => setGrant(e.target.value)}
+              disabled={isLoading || saving !== null}
+              className="w-32 mt-1 px-3 py-2 rounded-lg text-sm outline-none tabular-nums"
+              style={inputStyle}
+            />
+          </div>
+          <button
+            onClick={() => save("grant", { signupGrantCredits: grant.trim() || null })}
+            disabled={saving !== null || isLoading}
+            className="px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            style={saveStyle(saving === null && !isLoading)}
+          >
+            {saving === "grant" ? "Saving…" : "Save grant"}
+          </button>
+        </div>
+        <p className="text-xs" style={{ color: "var(--c-42)" }}>
+          Changing this does not top up anyone who already received the old amount.
+        </p>
+      </div>
+
+      {data && !data.schema.rates && (
+        <MigrationWarning migration="133_credit_rates.sql" what="the rate overrides" />
+      )}
+
+      {/* Rates */}
+      <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
+        <div>
+          <p className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>What the work draws down</p>
+          <p className="text-xs mt-0.5" style={{ color: "var(--c-50)" }}>
+            One credit is one KIE credit, so images, videos and KIE-routed writing need no rate. These are
+            the two providers billed in their own units. Empty uses the default.
+          </p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {HECLUS_RATE_FIELDS.map((f) => (
+            <div key={f.key} className="flex items-end justify-between gap-2 p-2 rounded-lg"
+              style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+              <div className="min-w-0">
+                <label className="text-xs font-medium" style={{ color: "var(--c-55)" }}>{f.label}</label>
+                <p className="text-xs" style={{ color: "var(--c-42)" }}>
+                  default {data?.defaultRates?.[f.key] ?? "—"}
+                </p>
+              </div>
+              <input
+                type="number" min={0} step="any"
+                value={rates[f.key] ?? ""}
+                placeholder={String(data?.defaultRates?.[f.key] ?? "")}
+                onChange={(e) => setRates({ ...rates, [f.key]: e.target.value })}
+                disabled={isLoading || saving !== null}
+                className="w-24 px-2 py-1.5 rounded-lg text-sm outline-none tabular-nums text-center"
+                style={inputStyle}
+              />
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={() => save("rates", { rates })}
+          disabled={saving !== null || isLoading}
+          className="px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          style={saveStyle(saving === null && !isLoading)}
+        >
+          {saving === "rates" ? "Saving…" : "Save rates"}
+        </button>
+        <p className="text-xs" style={{ color: "var(--c-42)" }}>
+          Check the result with <span className="font-mono">scripts/wallet-margin.mjs</span>: credits spent
+          should track KIE credits consumed one to one.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+const HECLUS_RATE_FIELDS = [
+  { key: "perKieCredit", label: "Per KIE credit" },
+  { key: "perThousandTtsChars", label: "Per 1k voiceover chars" },
+  { key: "perMillionTokensIn", label: "Per 1M input tokens" },
+  { key: "perMillionTokensOut", label: "Per 1M output tokens" },
+  { key: "perMillionTokensCacheRead", label: "Per 1M cache reads" },
+  { key: "perMillionTokensCacheWrite", label: "Per 1M cache writes" },
+] as const;
+
+function StatusLine({ ok, neutral, label, detail }: { ok: boolean; neutral?: boolean; label: string; detail: string }) {
+  const color = neutral ? "oklch(0.72 0.18 65)" : ok ? "oklch(0.55 0.15 145)" : "oklch(0.62 0.18 25)";
+  return (
+    <div className="flex items-start gap-2">
+      <span className="mt-1.5 w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+      <div className="min-w-0">
+        <p className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>{label}</p>
+        <p className="text-xs" style={{ color: "var(--c-50)" }}>{detail}</p>
+      </div>
+    </div>
+  );
+}
+
+function MigrationWarning({ migration, what }: { migration: string; what: string }) {
+  return (
+    <div className="p-3 rounded-xl text-xs leading-relaxed"
+      style={{ background: "oklch(0.72 0.18 65 / 0.1)", border: "1px solid oklch(0.72 0.18 65 / 0.3)", color: "var(--c-70)" }}>
+      <span style={{ fontWeight: 600 }}>Migration not applied.</span>{" "}
+      <span className="font-mono">supabase/migrations/{migration}</span> has not run on this database, so
+      {" "}{what} cannot be saved yet.
+    </div>
+  );
+}
 
 function ConcurrencyPanel() {
   const { data, mutate, isLoading } = useSWR<ConcurrencyConfig>(
@@ -3638,10 +3971,6 @@ function PlansPanel() {
     customerPortalUrlProduction: string | null;
     creditPackLinkTest: string | null;
     creditPackLinkProduction: string | null;
-    heclusPackLinkTest?: string | null;
-    heclusPackLinkProduction?: string | null;
-    heclusPackCredits?: number | null;
-    heclusPackPriceUsd?: number | null;
   }>("/api/admin/payment-mode", fetcher, { revalidateOnFocus: false });
   const [editingProdTest, setEditingProdTest] = useState(false);
   const [deletingProdTest, setDeletingProdTest] = useState(false);
@@ -4486,10 +4815,6 @@ interface DodoApiKeysCardProps {
     customerPortalUrlProduction: string | null;
     creditPackLinkTest: string | null;
     creditPackLinkProduction: string | null;
-    heclusPackLinkTest?: string | null;
-    heclusPackLinkProduction?: string | null;
-    heclusPackCredits?: number | null;
-    heclusPackPriceUsd?: number | null;
   } | null;
   // Deployment env (HECLUS_ENV). When "production", the Test tab is
   // hidden so the admin can't edit test credentials on a live
@@ -4615,8 +4940,6 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
   // Heclus Credits' own pack. A separate link on purpose: the GenAI one credits
   // genai_credits, so sharing it would charge for Heclus Credits and grant video
   // clips instead.
-  const [testHeclusPack, setTestHeclusPack] = useState("");
-  const [prodHeclusPack, setProdHeclusPack] = useState("");
   const [saving, setSaving] = useState(false);
 
   const keyValue = activeEnv === "test" ? testKey : prodKey;
@@ -4624,23 +4947,21 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
   const webhookValue = activeEnv === "test" ? testWebhook : prodWebhook;
   const portalValue = activeEnv === "test" ? testPortal : prodPortal;
   const packValue = activeEnv === "test" ? testPack : prodPack;
-  const heclusPackValue = activeEnv === "test" ? testHeclusPack : prodHeclusPack;
   const savedKey = (activeEnv === "test" ? settings?.secretKeyTest : settings?.secretKeyProduction) ?? "";
   const savedUrl = (activeEnv === "test" ? settings?.baseUrlTest : settings?.baseUrlProduction) ?? "";
   const savedWebhook = (activeEnv === "test" ? settings?.webhookSecretTest : settings?.webhookSecretProduction) ?? "";
   const savedPortal = (activeEnv === "test" ? settings?.customerPortalUrlTest : settings?.customerPortalUrlProduction) ?? "";
   const savedPack = (activeEnv === "test" ? settings?.creditPackLinkTest : settings?.creditPackLinkProduction) ?? "";
-  const savedHeclusPack = (activeEnv === "test" ? settings?.heclusPackLinkTest : settings?.heclusPackLinkProduction) ?? "";
   // Dirty when the admin has typed something into any of the inputs
   // for the active env. Empty inputs are a no-op — clearing a saved
   // value isn't supported through this card on purpose.
-  const dirty = !!keyValue.trim() || !!urlValue.trim() || !!webhookValue.trim() || !!portalValue.trim() || !!packValue.trim() || !!heclusPackValue.trim();
+  const dirty = !!keyValue.trim() || !!urlValue.trim() || !!webhookValue.trim() || !!portalValue.trim() || !!packValue.trim();
 
   function clearActiveEnvBuffers() {
     if (activeEnv === "test") {
-      setTestKey(""); setTestUrl(""); setTestWebhook(""); setTestPortal(""); setTestPack(""); setTestHeclusPack("");
+      setTestKey(""); setTestUrl(""); setTestWebhook(""); setTestPortal(""); setTestPack("");
     } else {
-      setProdKey(""); setProdUrl(""); setProdWebhook(""); setProdPortal(""); setProdPack(""); setProdHeclusPack("");
+      setProdKey(""); setProdUrl(""); setProdWebhook(""); setProdPortal(""); setProdPack("");
     }
   }
 
@@ -4659,9 +4980,6 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
       }
       if (portalValue.trim()) {
         patch[activeEnv === "test" ? "customerPortalUrlTest" : "customerPortalUrlProduction"] = portalValue.trim();
-      }
-      if (heclusPackValue.trim()) {
-        patch[activeEnv === "test" ? "heclusPackLinkTest" : "heclusPackLinkProduction"] = heclusPackValue.trim();
       }
       if (packValue.trim()) {
         patch[activeEnv === "test" ? "creditPackLinkTest" : "creditPackLinkProduction"] = packValue.trim();
@@ -4761,15 +5079,6 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
           hint={`Checkout link for the 300-credit GenAI video pack, saved against the ${activeEnv} Dodo environment. Its return URL must land on a page carrying the wallet (the account page or the Generate step) — that page confirms the payment and adds the credits. With no link the wallet shows no top-up button.`}
         />
 
-        <DodoVarField
-          label="Heclus Credits Package Link"
-          saved={savedHeclusPack}
-          value={heclusPackValue}
-          onChange={(v) => (activeEnv === "test" ? setTestHeclusPack(v) : setProdHeclusPack(v))}
-          placeholder="https://checkout.dodopayments.com/buy/…"
-          disabled={saving}
-          hint={`Checkout link for the Heclus Credits top-up, saved against the ${activeEnv} Dodo environment. Separate from the GenAI pack above on purpose: that one credits the free video wallet, so sharing a link would charge for Heclus Credits and grant video clips. The Top up button on /balance appears as soon as this is set.`}
-        />
 
         <DodoVarField
           label={`Customer portal URL (${activeEnv})`}

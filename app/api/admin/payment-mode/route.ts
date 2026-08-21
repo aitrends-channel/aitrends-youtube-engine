@@ -26,10 +26,6 @@ interface PaymentSettingsPatch {
   customerPortalUrlProduction?: unknown;
   creditPackLinkTest?: unknown;
   creditPackLinkProduction?: unknown;
-  heclusPackLinkTest?: unknown;
-  heclusPackLinkProduction?: unknown;
-  heclusPackCredits?: unknown;
-  heclusPackPriceUsd?: unknown;
 }
 
 // Normalize an arbitrary string-or-null patch value into the form
@@ -51,25 +47,17 @@ export async function GET() {
   // secret keys on any deployment where migration 126 has not run yet.
   const { data } = await supabase
     .from("product_config")
-    .select("credit_pack_checkout_url_test, credit_pack_checkout_url_production, heclus_pack_checkout_url_test, heclus_pack_checkout_url_production, heclus_pack_credits, heclus_pack_price_usd")
+    .select("credit_pack_checkout_url_test, credit_pack_checkout_url_production")
     .eq("service", "_global")
     .maybeSingle();
   const packs = data as {
     credit_pack_checkout_url_test: string | null;
     credit_pack_checkout_url_production: string | null;
-    heclus_pack_checkout_url_test: string | null;
-    heclus_pack_checkout_url_production: string | null;
-    heclus_pack_credits: number | string | null;
-    heclus_pack_price_usd: number | string | null;
   } | null;
   return NextResponse.json({
     ...settings,
     creditPackLinkTest: packs?.credit_pack_checkout_url_test?.trim() || null,
     creditPackLinkProduction: packs?.credit_pack_checkout_url_production?.trim() || null,
-    heclusPackLinkTest: packs?.heclus_pack_checkout_url_test?.trim() || null,
-    heclusPackLinkProduction: packs?.heclus_pack_checkout_url_production?.trim() || null,
-    heclusPackCredits: packs?.heclus_pack_credits != null ? Number(packs.heclus_pack_credits) : null,
-    heclusPackPriceUsd: packs?.heclus_pack_price_usd != null ? Number(packs.heclus_pack_price_usd) : null,
   });
 }
 
@@ -115,41 +103,9 @@ export async function PATCH(req: Request) {
     update.credit_pack_checkout_url_production = normalized;
   }
 
-  // Heclus Credits has its own pack, deliberately not the video one's: that link
-  // credits genai_credits, so sharing it would charge for Heclus Credits and
-  // grant video clips instead. Migration 130.
-  if (body.heclusPackLinkTest !== undefined) {
-    const normalized = normalizeNullableString(body.heclusPackLinkTest);
-    if (normalized === undefined) {
-      return NextResponse.json({ error: "heclusPackLinkTest must be string, null, or ''" }, { status: 400 });
-    }
-    update.heclus_pack_checkout_url_test = normalized;
-  }
-
-  if (body.heclusPackLinkProduction !== undefined) {
-    const normalized = normalizeNullableString(body.heclusPackLinkProduction);
-    if (normalized === undefined) {
-      return NextResponse.json({ error: "heclusPackLinkProduction must be string, null, or ''" }, { status: 400 });
-    }
-    update.heclus_pack_checkout_url_production = normalized;
-  }
-
-  // Credits and price are what the pack grants and costs. Optional: the button
-  // works on the link alone, and these only sharpen what it says. Empty clears
-  // them rather than storing zero, since a pack of zero credits is not a pack.
-  for (const [key, column] of [
-    ["heclusPackCredits", "heclus_pack_credits"],
-    ["heclusPackPriceUsd", "heclus_pack_price_usd"],
-  ] as const) {
-    const raw = (body as Record<string, unknown>)[key];
-    if (raw === undefined) continue;
-    if (raw === null || raw === "") { update[column] = null; continue; }
-    const n = Number(raw);
-    if (!Number.isFinite(n) || n <= 0) {
-      return NextResponse.json({ error: `${key} must be a positive number, or empty to clear it` }, { status: 400 });
-    }
-    update[column] = n;
-  }
+  // The Heclus Credits pack lives on its own tab and its own endpoint, so this
+  // route no longer writes those columns: two writers for one setting is how the
+  // pack size and its link drift apart. See app/api/admin/heclus-credits.
 
   if (body.secretKeyTest !== undefined) {
     const normalized = normalizeNullableString(body.secretKeyTest);
