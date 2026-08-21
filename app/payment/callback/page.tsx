@@ -51,13 +51,28 @@ function CallbackContent() {
       // Intent is marked the same way the plan flow marks its own: a URL param
       // when the product's return URL provides one, plus storage set at click
       // time so it works whatever the product is configured with.
-      let buyingCredits = searchParams.get("type") === "credits";
-      if (!buyingCredits) {
-        try { buyingCredits = localStorage.getItem(PENDING_CREDIT_PURCHASE_KEY) === "credits"; } catch {}
-      }
-      if (!buyingCredits) {
-        try { buyingCredits = sessionStorage.getItem(PENDING_CREDIT_PURCHASE_KEY) === "credits"; } catch {}
-      }
+      //
+      // Which wallet, as well as whether: "credits" is the GenAI video wallet
+      // and "heclus" is the general one. They credit different balances from
+      // different routes, so guessing between them would hand a customer the
+      // wrong thing for their money.
+      const marker = (): string | null => {
+        const fromUrl = searchParams.get("type");
+        if (fromUrl === "credits" || fromUrl === "heclus") return fromUrl;
+        // localStorage before sessionStorage: it is what survives a new-tab
+        // checkout, which is how the Balance page opens Dodo.
+        try {
+          const v = localStorage.getItem(PENDING_CREDIT_PURCHASE_KEY);
+          if (v === "credits" || v === "heclus") return v;
+        } catch {}
+        try {
+          const v = sessionStorage.getItem(PENDING_CREDIT_PURCHASE_KEY);
+          if (v === "credits" || v === "heclus") return v;
+        } catch {}
+        return null;
+      };
+      const wallet = marker();
+      const buyingCredits = wallet !== null;
 
       if (buyingCredits) {
         if (!paymentId) {
@@ -66,7 +81,7 @@ function CallbackContent() {
           return;
         }
         try {
-          const res = await fetch("/api/credits/topup", {
+          const res = await fetch(wallet === "heclus" ? "/api/heclus-credits/topup" : "/api/credits/topup", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ payment_id: paymentId }),

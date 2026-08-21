@@ -3,6 +3,11 @@ import { supabase } from "@/lib/supabase/client";
 import { createHmac } from "crypto";
 import { getPaymentSettings } from "@/lib/plans";
 import { shouldWelcome, sendWelcomeEmail } from "@/lib/email/welcome";
+import { walletForPayment } from "@/lib/dodo/pack-products";
+import { addHeclusCredits } from "@/lib/heclus-credits";
+import { getHeclusPack } from "@/lib/heclus-pack";
+import { addCredits, CREDIT_PACK } from "@/lib/credits";
+import { purchasedQuantity } from "@/lib/dodo/payment";
 
 // Standard Webhooks spec: webhook-id + webhook-timestamp + webhook-signature headers
 // signed payload: "{msgId}\n{timestamp}\n{body}", secret is base64-encoded (whsec_ prefix)
@@ -144,7 +149,86 @@ export async function POST(request: Request) {
     ...(!customerId && baseDodo.customer_id ? { customer_id: baseDodo.customer_id } : {}),
   };
 
+  // A credit purchase arrives on this same event, and it is NOT a subscription
+  // payment: crediting a wallet must not flip app_metadata.paid, extend a plan
+  // or send a welcome email. Handled before the plan branch and returning early,
+  // so a top-up can never be mistaken for someone buying access.
+  //
+  // This is a backstop, not the path. Crediting normally happens on the verified
+  // return in /api/*-credits/topup, because production's webhook signing secret
+  // has never been correct. Both are idempotent on the payment id, so whichever
+  // arrives second is a no-op.
   if (event === "payment.succeeded") {
+    const wallet = await walletForPayment(data);
+    if (wallet) {
+      const dodoPaymentId = (data.payment_id ?? data.id) as string | undefined;
+      if (!dodoPaymentId) {
+        console.warn("[dodo-webhook] credit purchase with no payment id — cannot credit idempotently");
+        return NextResponse.json({ success: true, event, credited: false });
+      }
+      if (!existing) {
+        // No account to credit. Deliberately not inviting one: a wallet with no
+        // owner is not a thing, and the verified-return path will credit them
+        // once they are signed in.
+        console.warn(`[dodo-webhook] credit purchase for unknown account ${email} — left for the return path`);
+        return NextResponse.json({ success: true, event, credited: false });
+      }
+
+      const units = purchasedQuantity(data);
+      if (wallet === "heclus") {
+        const pack = await getHeclusPack();
+        if (pack.credits === null) {
+          console.error(`[dodo-webhook] heclus purchase ${dodoPaymentId} with no pack size configured — cannot credit`);
+          return NextResponse.json({ success: true, event, credited: false });
+        }
+        const credits = pack.credits * units;
+        const credited = await addHeclusCredits({
+          userId: existing.id,
+          credits,
+          kind: "topup",
+          dodoPaymentId,
+          note: units > 1 ? `${credits} credits (${units} packs)` : `${credits} credits`,
+        });
+        console.log(`[dodo-webhook] heclus wallet ${credited ? "credited" : "already credited"} ${credits} for ${email}`);
+      } else {
+        const credits = CREDIT_PACK.credits * units;
+        const credited = await addCredits({
+          userId: existing.id,
+          credits,
+          kind: "topup",
+          externalRef: dodoPaymentId,
+          note: units > 1 ? `${credits} video credits (${units} packs)` : `${credits} video credits`,
+        });
+        console.log(`[dodo-webhook] video wallet ${credited ? "credited" : "already credited"} ${credits} for ${email}`);
+      }
+
+      // Revenue still gets recorded, labelled as the purchase it was rather
+      // than as the customer's plan. Deduped on dodo_payment_id, so the return
+      // path having written it first is the expected case.
+      const settlement = Number(data.settlement_amount ?? 0);
+      const amountCents = settlement > 0 ? settlement : Number(data.total_amount ?? data.amount ?? 0);
+      if (amountCents > 0) {
+        const { error: revErr } = await supabase.from("revenue_events").insert({
+          user_id: existing.id,
+          user_email: email,
+          event_type: "payment_succeeded",
+          amount_cents: amountCents,
+          currency: settlement > 0
+            ? (((data.settlement_currency as string | undefined) ?? "usd").toLowerCase())
+            : (((data.currency as string | undefined) ?? "usd").toLowerCase()),
+          plan: wallet === "heclus" ? "heclus_credits" : "credit_pack",
+          dodo_payment_id: dodoPaymentId,
+          dodo_raw: data,
+          occurred_at: updatedAt,
+        });
+        if (revErr && revErr.code !== "23505") {
+          console.warn("[dodo-webhook] revenue_events insert failed:", revErr.message);
+        }
+      }
+
+      return NextResponse.json({ success: true, event, wallet, credited: true });
+    }
+
     const metadata = {
       ...baseMetadata,
       paid: true,

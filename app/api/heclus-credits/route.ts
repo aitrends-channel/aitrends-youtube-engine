@@ -3,8 +3,8 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 import { getHeclusBalance, listHeclusLedger } from "@/lib/heclus-credits";
 import { supabase } from "@/lib/supabase/client";
-import { isProductionEnv } from "@/lib/env";
 import { isAdminUser } from "@/lib/admin";
+import { getHeclusPack } from "@/lib/heclus-pack";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +22,7 @@ export async function GET() {
     getHeclusBalance(user),
     listHeclusLedger(user.id, 25),
     lifetimeTotals(user.id),
-    pack(),
+    getHeclusPack(),
   ]);
 
   // The disabled button reads "no pack is configured yet" either way, which is
@@ -33,13 +33,17 @@ export async function GET() {
     ? null
     : packInfo.reason === "no-columns"
       ? "Migration 130 has not run on this database, so there are no pack columns to configure. Apply supabase/migrations/130_heclus_pack.sql, then set the link in Admin, Payment, Dodo Variables."
-      : "No top-up link set. Add the Heclus Credits Package Link in Admin, Payment, Dodo Variables.";
+      : packInfo.reason === "no-credits"
+        ? "The link is set but the pack size is not, so a purchase could not be credited. Set the credits per pack in Admin, Payment, Dodo Variables."
+        : "No top-up link set. Add the Heclus Credits Package Link in Admin, Payment, Dodo Variables.";
 
   return NextResponse.json({
     ...balance,
     ...lifetime,
     ledger,
-    pack: packInfo.pack,
+    pack: packInfo.credits !== null && packInfo.priceUsd !== null
+      ? { credits: packInfo.credits, priceUsd: packInfo.priceUsd }
+      : null,
     checkoutUrl: packInfo.checkoutUrl,
     setupHint,
   });
@@ -87,56 +91,3 @@ async function lifetimeTotals(userId: string): Promise<{
   }
 }
 
-/**
- * The top-up pack, per environment.
- *
- * Its own link and its own numbers, never the video pack's: that one credits
- * genai_credits, so borrowing it would charge for Heclus Credits and grant video
- * clips instead. Migration 130.
- *
- * Both the link and the size have to be set for the button to work, so a
- * half-configured pack reports as none rather than sending a customer to a
- * checkout that grants nothing.
- */
-async function pack(): Promise<{
-  pack: { credits: number; priceUsd: number } | null;
-  checkoutUrl: string | null;
-  /** Why there is no pack, for the admin-only hint. */
-  reason: "ok" | "no-columns" | "unset";
-}> {
-  const none = { pack: null, checkoutUrl: null, reason: "unset" as const };
-  try {
-    const { data, error } = await supabase
-      .from("product_config")
-      .select("heclus_pack_checkout_url_test, heclus_pack_checkout_url_production, heclus_pack_credits, heclus_pack_price_usd")
-      .eq("service", "_global")
-      .maybeSingle();
-    // Migrations here are applied by hand, so the columns may not exist yet.
-    // That reads as "no pack" to a customer, which is the correct answer either
-    // way, but an unapplied migration and an unset link need different fixes,
-    // so the two are told apart for the admin hint.
-    if (error)
-      return { ...none, reason: /column .* does not exist/i.test(error.message) ? "no-columns" : "unset" };
-    if (!data) return none;
-
-    const row = data as Record<string, unknown>;
-    const url = isProductionEnv()
-      ? row.heclus_pack_checkout_url_production
-      : row.heclus_pack_checkout_url_test;
-    const credits = Number(row.heclus_pack_credits ?? 0);
-    const priceUsd = Number(row.heclus_pack_price_usd ?? 0);
-    const link = typeof url === "string" && url.trim() ? url.trim() : null;
-
-    // The link alone opens the button. Credits and price are optional and only
-    // sharpen what it says: requiring them meant a configured checkout still
-    // showed a dead button, which is the opposite of useful.
-    if (!link) return none;
-    return {
-      pack: credits > 0 && priceUsd > 0 ? { credits, priceUsd } : null,
-      checkoutUrl: link,
-      reason: "ok",
-    };
-  } catch {
-    return none;
-  }
-}

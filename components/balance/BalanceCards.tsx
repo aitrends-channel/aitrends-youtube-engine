@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Sparkles, Wallet } from "lucide-react";
 import { TopUpOptions } from "@/components/TopUpOptions";
+import { buildTopUpUrl, markPendingTopUp } from "@/lib/credits-checkout";
 
 // The two wallets, and the fetching behind them.
 //
@@ -53,6 +54,22 @@ interface HeclusCreditsData {
   /** Admin-only: why the button is disabled, since the customer-facing wording
    *  cannot say whether the link is unset or the migration never ran. */
   setupHint?: string | null;
+}
+
+/**
+ * The checkout link with a return URL attached.
+ *
+ * Without redirect_url Dodo leaves the buyer on its own receipt page, so the
+ * page that confirms the payment and credits the wallet is never reached: the
+ * money is taken and nothing lands. Built at click time rather than on the
+ * server because it has to point at whichever host the customer is on.
+ *
+ * Falls back to the bare link during server rendering, where there is no
+ * origin to build against. The anchor is only ever clicked in the browser.
+ */
+function heclusCheckoutHref(checkoutUrl: string): string {
+  if (typeof window === "undefined") return checkoutUrl;
+  return buildTopUpUrl(checkoutUrl, window.location.origin, 1, "heclus");
 }
 
 /** Heclus Credits: the general wallet, bought from us and spent on work that runs
@@ -131,7 +148,8 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
               that grants nothing is worse than a button that says why. */}
           {data?.checkoutUrl ? (
             <a
-              href={data.checkoutUrl}
+              href={heclusCheckoutHref(data.checkoutUrl)}
+              onClick={() => markPendingTopUp("heclus")}
               // New tab, so the wallet stays open behind the checkout: a
               // customer who abandons the payment comes back to the page they
               // were on rather than to a Dodo receipt with no way back.
