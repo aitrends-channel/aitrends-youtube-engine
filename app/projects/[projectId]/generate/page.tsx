@@ -20,7 +20,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { ModelPicker } from "@/components/ModelPicker";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
-import { friendlyError, isModelTerminalError } from "@/lib/errors/friendly";
+import { friendlyError, isModelTerminalError, isContentBlockMessage } from "@/lib/errors/friendly";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
 import { getModelConfig } from "@/lib/kie/imageModels";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
@@ -2377,9 +2377,14 @@ export default function GeneratePage({ params }: PageProps) {
                       <div ref={imageErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug flex items-start gap-2"
                         style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "var(--accent-red-text)" }}>
                         <div className="flex-1 space-y-1">
-                          <p>
-                            {pendingCount} image{pendingCount === 1 ? "" : "s"} didn't generate on <span style={{ fontWeight: 600 }}>{workingImageName}</span>. Try switching to a different model above, then run again.
-                          </p>
+                          {/* A content block is fixed by rephrasing, not by
+                              switching models, so the advice is dropped when
+                              that's the only failure we have. */}
+                          {!isContentBlockMessage(imageRunError) && (
+                            <p>
+                              {pendingCount} image{pendingCount === 1 ? "" : "s"} didn't generate on <span style={{ fontWeight: 600 }}>{workingImageName}</span>. Try switching to a different model above, then run again.
+                            </p>
+                          )}
                           {imageRunError && (
                             <p style={{ color: "var(--accent-red-text)" }}>{imageRunError}</p>
                           )}
@@ -2812,8 +2817,7 @@ export default function GeneratePage({ params }: PageProps) {
                 // not by switching models — so drop the generic "switch
                 // model" advice when every surfaced error is a content block
                 // (the per-error message already routes them to Prompt Studio).
-                const isContentBlock = (e: string) => e.startsWith("Content policy block");
-                const allContentBlocks = errors.length > 0 && errors.every(isContentBlock);
+                const allContentBlocks = errors.length > 0 && errors.every(isContentBlockMessage);
                 const MAX_SHOWN = 3;
                 const shown = errors.slice(0, MAX_SHOWN);
                 const extra = errors.length - shown.length;
