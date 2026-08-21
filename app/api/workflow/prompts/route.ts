@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { requireActiveSubscription } from "@/lib/subscription";
+import { requireWalletFunds } from "@/lib/heclus-charge";
 import { resolveModelForUser } from "@/lib/claude/models";
 import type { WorkflowStep } from "@/lib/claude/routing";
 import { supabase } from "@/lib/supabase/client";
@@ -20,6 +21,10 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
   const expired = requireActiveSubscription(user);
   if (expired) return expired;
+  // Wallet-funded users pay for this step in credits, so an empty balance is
+  // refused before any provider is called.
+  const broke = await requireWalletFunds(user);
+  if (broke) return broke;
 
   const body = await req.json() as {
     step: "beats" | "fill" | "images" | "videos" | "thumbnails";

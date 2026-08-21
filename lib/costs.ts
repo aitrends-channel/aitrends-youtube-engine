@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import { isDirectRouting, type AnthropicRouting } from "@/lib/claude/routing";
+import { chargeForCostEntry } from "@/lib/heclus-charge";
 
 /**
  * Workflow step that the cost belongs to. Mapped to display columns
@@ -56,6 +57,9 @@ export interface CostEntry {
   model?: string | null;
   units: number;
   unitKind: CostUnitKind;
+  /** Which beat the cost belongs to, when it is per-beat work. Recorded on the
+   *  credit ledger row so a charge can be traced to the clip that caused it. */
+  beatNumber?: number | null;
   /** Generation duration in seconds. Used for video_gen kie_credits
    *  rows so the picker can compute units/durationSec as a per-second
    *  cost. Omit (or pass null) for steps where seconds aren't the
@@ -103,6 +107,19 @@ export async function logProjectCost(entry: CostEntry): Promise<void> {
   } catch (e) {
     console.warn(`[costs] insert threw step=${entry.step}:`, e instanceof Error ? e.message : e);
   }
+
+  // Bill it, if this user's work runs on Heclus's keys.
+  //
+  // Hung off the meter rather than off each route on purpose: every provider
+  // unit the product knows about already passes through here, including the
+  // one-click orchestrator and the webhook completions, so there is no path
+  // that can generate on Heclus's account without a ledger row. A BYO user, a
+  // free-lane unit, and an unpriced unit all charge nothing.
+  //
+  // Awaited but never allowed to throw: the meter has already recorded the
+  // work, and a failed debit must not take the generation down with it. The
+  // charge module logs its own failures.
+  await chargeForCostEntry(entry).catch(() => undefined);
 }
 
 /** Map the cost ledger step to the model_cost_and_speed model_type

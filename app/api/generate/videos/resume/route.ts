@@ -3,12 +3,17 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
+import { requireWalletFunds } from "@/lib/heclus-charge";
 
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
   const expired = requireActiveSubscription(user);
   if (expired) return expired;
+  // Wallet-funded users pay for this step in credits, so an empty balance is
+  // refused before any provider is called.
+  const broke = await requireWalletFunds(user);
+  if (broke) return broke;
 
   const { projectId, modelId, duration, aspectRatio, resolution } = await req.json() as {
     projectId?: string; modelId?: string; duration?: string | number | null; aspectRatio?: string; resolution?: string | null;

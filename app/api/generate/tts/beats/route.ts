@@ -12,6 +12,7 @@ import { logProjectCost } from "@/lib/costs";
 import { incrementFreeUsage } from "@/lib/freeUsage";
 import type { User } from "@supabase/supabase-js";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
+import { requireWalletFunds, canStartWalletWork, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 
 export const maxDuration = 800;
 
@@ -86,6 +87,10 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
   const noRoom = await requireStorageHeadroom(user);
   if (noRoom) return noRoom;
+  // Wallet-funded users pay for this step in credits, so an empty balance is
+  // refused before any provider is called.
+  const broke = await requireWalletFunds(user);
+  if (broke) return broke;
 
   const body = await req.json().catch(() => ({})) as {
     projectId?: string;
@@ -299,6 +304,20 @@ export async function POST(req: Request) {
             // duplicate), keep the raw text — better to ship a repeat
             // than silence.
             const ttsText = segment || rawSegment;
+            // Re-checked per beat: a voiceover is one call per beat, so a wallet
+            // that empties partway would otherwise keep synthesising on Heclus's
+            // key to the end of the script.
+            if (!(await canStartWalletWork(user.id))) {
+              await supabase
+                .from("project_beats")
+                .update({ voiceover_status: "failed", voiceover_error: OUT_OF_CREDITS_MESSAGE })
+                .eq("project_id", projectId)
+                .eq("beat_number", beat.beat_number);
+              send({ type: "beat", beatNumber: beat.beat_number, status: "failed", error: OUT_OF_CREDITS_MESSAGE });
+              completed++;
+              send({ type: "progress", current: completed, total: totalToGenerate });
+              return;
+            }
             try {
               send({ type: "beat", beatNumber: beat.beat_number, status: "generating" });
               await supabase

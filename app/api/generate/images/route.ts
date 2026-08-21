@@ -10,6 +10,7 @@ import { logProjectCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
+import { requireWalletFunds, canStartWalletWork, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 
 export const maxDuration = 60;
 
@@ -29,6 +30,10 @@ export async function POST(req: Request) {
   if (expired) return expired;
   const noRoom = await requireStorageHeadroom(user);
   if (noRoom) return noRoom;
+  // Wallet-funded users pay for this step in credits, so an empty balance is
+  // refused before any provider is called.
+  const broke = await requireWalletFunds(user);
+  if (broke) return broke;
 
   try {
     const { projectId, beats, modelId, aspectRatio = "16:9", resolution, clearFirst = false } = await req.json() as {
@@ -58,6 +63,19 @@ export async function POST(req: Request) {
 
     for (let i = 0; i < beats.length; i += batchSize) {
       const batch = beats.slice(i, i + batchSize);
+
+      // Re-checked per batch, not just at the door. A project is hundreds of
+      // generations, so a wallet that empties on beat 12 would otherwise keep
+      // spending Heclus's balance all the way to the last beat. The remaining
+      // beats are reported as failures with the same message the banner routes
+      // to a top-up, rather than left looking like they never ran.
+      if (!(await canStartWalletWork(user.id))) {
+        for (const remaining of beats.slice(i)) {
+          failures.push({ beatNumber: remaining.beatNumber, error: OUT_OF_CREDITS_MESSAGE });
+          await supabase.from("project_beats").update({ image_status: "failed" }).eq("project_id", projectId).eq("beat_number", remaining.beatNumber);
+        }
+        break;
+      }
 
       const batchResults = await Promise.allSettled(
         batch.map(async (beat) => {
