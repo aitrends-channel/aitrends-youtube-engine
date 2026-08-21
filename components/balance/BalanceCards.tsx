@@ -50,6 +50,9 @@ interface HeclusCreditsData {
   ledger: { id: string; kind: string; credits: number; note: string | null; provider: string | null; created_at: string }[];
   pack: { credits: number; priceUsd: number } | null;
   checkoutUrl: string | null;
+  /** Admin-only: why the button is disabled, since the customer-facing wording
+   *  cannot say whether the link is unset or the migration never ran. */
+  setupHint?: string | null;
 }
 
 /** Heclus Credits: the general wallet, bought from us and spent on work that runs
@@ -129,6 +132,11 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
           {data?.checkoutUrl ? (
             <a
               href={data.checkoutUrl}
+              // New tab, so the wallet stays open behind the checkout: a
+              // customer who abandons the payment comes back to the page they
+              // were on rather than to a Dodo receipt with no way back.
+              target="_blank"
+              rel="noopener noreferrer"
               title={data.pack
                 ? `${data.pack.credits.toLocaleString()} credits for $${data.pack.priceUsd}`
                 : "Top up your Heclus Credits"}
@@ -141,7 +149,7 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
             <button
               type="button"
               disabled
-              title="No top-up pack is configured yet, so this cannot charge anything."
+              title={data?.setupHint ?? "No top-up pack is configured yet, so this cannot charge anything."}
               className="px-4 py-2 rounded-xl text-sm font-semibold shrink-0 opacity-40 cursor-not-allowed"
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
             >

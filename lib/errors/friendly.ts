@@ -57,6 +57,26 @@ function looksLikeMachineOutput(text: string): boolean {
   return false;
 }
 
+// The four content-policy outcomes. They are constants because the generate
+// step has to recognise them: a policy block is fixed by rephrasing the beat,
+// not by switching models, so the banner must drop its "try another model"
+// advice when every failure is one of these. It used to test for a prefix no
+// message actually carried, so that advice showed on every content block.
+const BLOCK_PERSON = "Blocked: reads as a real person or brand. Rephrase this beat's prompt.";
+const BLOCK_UNSAFE = "Blocked as unsafe. Rephrase this beat's prompt.";
+const BLOCK_AUDIO = "Blocked by the audio filter. Remove dialogue and lyrics from this beat's prompt.";
+const BLOCK_GENERIC = "Blocked by the content filter. Rephrase this beat's prompt.";
+
+const CONTENT_BLOCK_MESSAGES: ReadonlySet<string> = new Set([
+  BLOCK_PERSON, BLOCK_UNSAFE, BLOCK_AUDIO, BLOCK_GENERIC,
+]);
+
+/** True for a friendlyError() result the user fixes by rewriting the prompt.
+ *  Takes the mapped message, not the raw provider text. */
+export function isContentBlockMessage(message: string | undefined | null): boolean {
+  return CONTENT_BLOCK_MESSAGES.has((message ?? "").trim());
+}
+
 export function isModelTerminalError(raw: string | undefined | null): boolean {
   const msg = (raw ?? "").toLowerCase();
   return msg.includes("this field is required")
@@ -73,6 +93,23 @@ export function friendlyError(raw: string | undefined | null): string {
 
   const { text, errorType, status } = unwrapPayload(original);
   const msg = `${text} ${errorType ?? ""}`.toLowerCase();
+
+  // ── Veo filter codes ────────────────────────────────────────────────────
+  // The free lane forwards Veo's own code verbatim ("Video generation failed:
+  // PUBLIC_ERROR_PROMINENT_PEOPLE_FILTER_FAILED"), which reads as a crash to a
+  // customer. Matched before everything else because the code names the exact
+  // filter that fired, and because a payload carrying one alongside a 5xx
+  // would otherwise be reported as a transient error and retried forever.
+  const veoFilter = /public_error_([a-z0-9_]+)/.exec(msg)?.[1];
+  if (veoFilter) {
+    if (veoFilter.includes("prominent_people") || veoFilter.includes("celebrity") || veoFilter.includes("face"))
+      return BLOCK_PERSON;
+    if (veoFilter.includes("audio")) return BLOCK_AUDIO;
+    if (veoFilter.includes("danger") || veoFilter.includes("violence") || veoFilter.includes("sexual")
+      || veoFilter.includes("unsafe") || veoFilter.includes("child") || veoFilter.includes("rai"))
+      return BLOCK_UNSAFE;
+    return BLOCK_GENERIC;
+  }
 
   // ── LLM / API provider failures ─────────────────────────────────────────
   // These are the shapes the script, topic, prompts and visuals steps hit.
@@ -158,9 +195,9 @@ export function friendlyError(raw: string | undefined | null): string {
     || msg.includes("prominent public figure")
     || msg.includes("content policy") || msg.includes("policy violation")
     || msg.includes("blocked by moderation") || msg.includes("moderated"))
-    return "Content blocked by the model (real person, brand, or restricted topic). Rephrase this beat's prompt, then retry.";
+    return BLOCK_PERSON;
   if (msg.includes("nsfw") || msg.includes("unsafe content") || msg.includes("adult content"))
-    return "Content flagged as unsafe. Rephrase this beat's prompt, then retry.";
+    return BLOCK_UNSAFE;
   if (msg.includes("no url") || msg.includes("no image url") || msg.includes("completed but no url"))
     return "Image generated but could not be retrieved. Try again.";
   if (msg.includes("rate limit") || msg.includes("too many requests"))
