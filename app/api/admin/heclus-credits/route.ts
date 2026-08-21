@@ -3,7 +3,8 @@ import { supabase } from "@/lib/supabase/client";
 import { requireAdmin } from "@/lib/admin-server";
 import { getEffectivePaymentMode } from "@/lib/env";
 import { WALLET_FUNDING_ADMIN_ONLY } from "@/lib/funding";
-import { DEFAULT_CREDIT_RATES, invalidateRatesCache, type CreditRates } from "@/lib/pricing";
+import { DEFAULT_CREDIT_RATES, USD_PER_CREDIT, invalidateRatesCache, creditsForUnits, type CreditRates } from "@/lib/pricing";
+import type { CostStep, CostUnitKind } from "@/lib/costs";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,35 @@ export interface HeclusCreditsConfig {
   /** Rollout state of the funding mode itself. A code constant, so read-only. */
   walletAdminOnly: boolean;
   wallet: { accounts: number; creditsOutstanding: number };
+  /** What a video actually costs, computed from metered usage rather than from
+   *  an example. Null when there is not enough history to be worth showing. */
+  breakdown: Breakdown | null;
+}
+
+export interface BreakdownLine {
+  label: string;
+  /** What the provider bills for, in its own units. */
+  unit: string;
+  /** Credits per one of those units, as configured. */
+  rate: number;
+  /** The rate as a person reads it. "0.072 per character" is the same number as
+   *  "72 per 1,000 characters" and only one of them is the number an admin typed
+   *  into the field above. */
+  rateLabel: string;
+  /** How many units a video takes, median across projects with history. */
+  quantity: number;
+  credits: number;
+}
+
+export interface Breakdown {
+  usdPerCredit: number;
+  lines: BreakdownLine[];
+  totalCredits: number;
+  /** Projects the medians are drawn from. Small numbers mean take it lightly. */
+  projects: number;
+  /** What the configured pack and grant buy, in videos. */
+  packVideos: number | null;
+  grantVideos: number | null;
 }
 
 export async function GET() {
@@ -63,10 +93,12 @@ export async function GET() {
     }
   }
 
-  const [kie, elevenlabs, wallet] = await Promise.all([
+  const effectiveRates = { ...DEFAULT_CREDIT_RATES, ...rates };
+  const [kie, elevenlabs, wallet, breakdown] = await Promise.all([
     hasProductKey("heclus_kie_api_key"),
     hasProductKey("heclus_elevenlabs_api_key"),
     walletTotals(),
+    typicalVideo(effectiveRates, num(row.heclus_pack_credits), num(row.heclus_signup_grant_credits)),
   ]);
 
   return NextResponse.json({
@@ -86,6 +118,7 @@ export async function GET() {
     keys: { kie, elevenlabs },
     walletAdminOnly: WALLET_FUNDING_ADMIN_ONLY,
     wallet,
+    breakdown,
   } satisfies HeclusCreditsConfig);
 }
 
@@ -212,5 +245,118 @@ async function walletTotals(): Promise<{ accounts: number; creditsOutstanding: n
   return {
     accounts: rows.length,
     creditsOutstanding: rows.reduce((sum, r) => sum + (Number(r.credits) || 0), 0),
+  };
+}
+
+/**
+ * What one video costs, from what the product has actually metered.
+ *
+ * Computed rather than illustrated, because the only version of this worth
+ * putting in front of a pricing decision is the one drawn from real projects.
+ *
+ * Aggregated in the database, not here. Totalling by hand meant reading
+ * project_costs row by row, and PostgREST caps a response at 1,000 rows whatever
+ * limit is asked for: the medians came from an arbitrary slice, a project could
+ * be counted half-way through, and paging to 12,000 rows still truncated at 31
+ * projects while taking a dozen round trips. One SELECT returns the medians over
+ * all history in one.
+ *
+ * Medians per project, not means, and per step only across the projects that
+ * used that step: averaging in the zeros of every project that skipped
+ * thumbnails would report a cost nobody ever paid.
+ */
+const MIN_PROJECTS = 3;
+
+/** Priced the way a wallet user is actually billed. Their writing steps route
+ *  heclus_kie and arrive as kie_credits, so the claude_tokens_* rows in the
+ *  ledger belong to BYO and direct-routed accounts and would double-count. */
+const BREAKDOWN_GROUPS: {
+  label: string;
+  unit: string;
+  steps: CostStep[];
+  unitKind: CostUnitKind;
+}[] = [
+  { label: "Images", unit: "KIE credits", unitKind: "kie_credits", steps: ["image_gen"] },
+  { label: "Video clips", unit: "KIE credits", unitKind: "kie_credits", steps: ["video_gen"] },
+  { label: "Voiceover", unit: "characters", unitKind: "elevenlabs_chars", steps: ["tts"] },
+  { label: "Captions", unit: "characters", unitKind: "elevenlabs_chars", steps: ["assemble"] },
+  {
+    label: "Writing steps", unit: "KIE credits", unitKind: "kie_credits",
+    steps: ["channel_analysis", "topic", "script", "visuals", "prompts_image", "prompts_video"],
+  },
+  { label: "Thumbnails", unit: "KIE credits", unitKind: "kie_credits", steps: ["thumbnail_concept", "thumbnail_image"] },
+];
+
+// Per project first, then the median across projects. Both halves have to happen
+// in SQL: a median of per-row values would answer a different and useless
+// question ("what does one image cost", not "what does a video cost").
+const BREAKDOWN_SQL = `
+  with per_project as (
+    select project_id, step, unit_kind, sum(units) as units
+      from project_costs
+     group by 1, 2, 3
+  )
+  select step,
+         unit_kind,
+         percentile_cont(0.5) within group (order by units) as median_units,
+         count(*) as projects
+    from per_project
+   group by 1, 2
+`;
+
+interface MedianRow { step: string; unit_kind: string; median_units: number | string; projects: number }
+
+async function typicalVideo(
+  rates: CreditRates,
+  packCredits: number | null,
+  grantCredits: number | null,
+): Promise<Breakdown | null> {
+  // The read-only SQL helper from migration 128. It forces a read-only
+  // transaction and a statement timeout, so the worst this can do is time out.
+  const { data, error } = await supabase.rpc("admin_readonly_query", { q: BREAKDOWN_SQL, row_cap: 500 });
+  if (error || !data) {
+    console.warn("[heclus-credits] breakdown query failed:", error?.message);
+    return null;
+  }
+
+  const medians = (Array.isArray(data) ? data : []) as MedianRow[];
+  if (medians.length === 0) return null;
+
+  const lines: BreakdownLine[] = [];
+  let projects = 0;
+  for (const g of BREAKDOWN_GROUPS) {
+    // A group can span several steps (the writing steps do), so its per-video
+    // quantity is the sum of their medians.
+    let quantity = 0;
+    let groupProjects = 0;
+    for (const row of medians) {
+      if (row.unit_kind !== g.unitKind || !(g.steps as string[]).includes(row.step)) continue;
+      quantity += Number(row.median_units) || 0;
+      groupProjects = Math.max(groupProjects, Number(row.projects) || 0);
+    }
+    if (quantity <= 0 || groupProjects < MIN_PROJECTS) continue;
+    projects = Math.max(projects, groupProjects);
+    const rate = creditsForUnits(g.unitKind, 1, rates, g.steps[0]);
+    lines.push({
+      label: g.label,
+      unit: g.unit,
+      rate,
+      rateLabel: g.unitKind === "kie_credits"
+        ? "1 to 1"
+        : `${creditsForUnits(g.unitKind, 1_000, rates, g.steps[0]).toLocaleString()} per 1k`,
+      quantity,
+      credits: creditsForUnits(g.unitKind, quantity, rates, g.steps[0]),
+    });
+  }
+  if (lines.length === 0) return null;
+
+  const totalCredits = lines.reduce((sum, l) => sum + l.credits, 0);
+  return {
+    usdPerCredit: USD_PER_CREDIT,
+    lines,
+    totalCredits,
+    projects,
+    packVideos: packCredits && totalCredits > 0 ? packCredits / totalCredits : null,
+    grantVideos: grantCredits && totalCredits > 0 ? grantCredits / totalCredits : null,
   };
 }

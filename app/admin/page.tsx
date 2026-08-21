@@ -2217,9 +2217,141 @@ function HeclusCreditsPanel() {
           should track KIE credits consumed one to one.
         </p>
       </div>
+
+      {data && <BillingBreakdown data={data} />}
     </div>
   );
 }
+
+/**
+ * What one video costs, and therefore what the pack and the grant are worth.
+ *
+ * Last on the tab because it is the consequence of everything above it: change a
+ * rate, a pack size or a grant, and this is where you see what you did. Every
+ * figure is metered usage rather than an example, so it moves as the product
+ * does.
+ */
+function BillingBreakdown({ data }: { data: HeclusCreditsConfig }) {
+  const b = data.breakdown;
+  const usd = (credits: number) => `$${(credits * (b?.usdPerCredit ?? 0)).toFixed(2)}`;
+  const n = (v: number, dp = 0) => v.toLocaleString(undefined, { maximumFractionDigits: dp });
+
+  return (
+    <div className="p-3 rounded-xl space-y-3"
+      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+      <div>
+        <p className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>What a video costs</p>
+        <p className="text-xs mt-0.5" style={{ color: "var(--c-50)" }}>
+          {b
+            ? `Median metered usage across ${b.projects} project${b.projects === 1 ? "" : "s"}, priced at the rates above. Not an example: these move as the product does.`
+            : "Needs a few projects of metered history before there is anything worth calling typical."}
+        </p>
+      </div>
+
+      {b && (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ color: "var(--c-45)" }}>
+                  <th className="text-left font-medium py-1.5 pr-3">Step</th>
+                  <th className="text-right font-medium py-1.5 px-3 whitespace-nowrap">Per video</th>
+                  <th className="text-right font-medium py-1.5 px-3 whitespace-nowrap">Rate</th>
+                  <th className="text-right font-medium py-1.5 pl-3 whitespace-nowrap">Credits</th>
+                </tr>
+              </thead>
+              <tbody>
+                {b.lines.map((l) => (
+                  <tr key={l.label} style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }}>
+                    <td className="py-1.5 pr-3" style={{ color: "var(--c-90)" }}>{l.label}</td>
+                    <td className="py-1.5 px-3 text-right tabular-nums" style={{ color: "var(--c-55)" }}>
+                      {n(l.quantity, 1)} <span style={{ color: "var(--c-42)" }}>{l.unit}</span>
+                    </td>
+                    <td className="py-1.5 px-3 text-right tabular-nums" style={{ color: "var(--c-42)" }}>
+                      {l.rateLabel}
+                    </td>
+                    <td className="py-1.5 pl-3 text-right tabular-nums font-semibold" style={{ color: "var(--c-90)" }}>
+                      {n(l.credits)}
+                    </td>
+                  </tr>
+                ))}
+                <tr style={{ borderTop: "2px solid oklch(0 0 0 / 0.12)" }}>
+                  <td className="py-2 pr-3 font-semibold" style={{ color: "var(--c-90)" }}>One video</td>
+                  <td className="py-2 px-3" />
+                  <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-42)" }}>
+                    {usd(1)} / credit
+                  </td>
+                  <td className="py-2 pl-3 text-right tabular-nums font-bold" style={{ color: "var(--brand-text)" }}>
+                    {n(b.totalCredits)}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="pb-1 pr-3" style={{ color: "var(--c-45)" }}>Provider cost of that video</td>
+                  <td colSpan={2} />
+                  <td className="pb-1 pl-3 text-right tabular-nums" style={{ color: "var(--c-45)" }}>
+                    {usd(b.totalCredits)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* The two questions the table exists to answer */}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <WorthLine
+              label="One pack buys"
+              value={b.packVideos}
+              detail={data.packCredits
+                ? `${n(data.packCredits)} credits${data.packPriceUsd ? ` for $${data.packPriceUsd}` : ""}`
+                : "No pack size set"}
+              price={data.packPriceUsd && b.packVideos ? `$${(data.packPriceUsd / b.packVideos).toFixed(2)} a video to the customer` : null}
+              cost={b.packVideos ? `${usd(b.totalCredits)} a video to us` : null}
+            />
+            <WorthLine
+              label="The starter grant buys"
+              value={b.grantVideos}
+              detail={data.signupGrantCredits ? `${n(data.signupGrantCredits)} credits per signup` : "No grant set"}
+              price={null}
+              cost={data.signupGrantCredits ? `costs us ${usd(data.signupGrantCredits)} per signup` : null}
+            />
+          </div>
+
+          <p className="text-xs" style={{ color: "var(--c-42)" }}>
+            KIE units are one credit to one credit by design, so images, clips and the writing steps carry no
+            conversion and no margin risk. Only voiceover and captions convert, and both hang off the
+            dollars-per-credit figure above.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function WorthLine({ label, value, detail, price, cost }: {
+  label: string;
+  value: number | null;
+  detail: string;
+  price: string | null;
+  cost: string | null;
+}) {
+  return (
+    <div className="p-2.5 rounded-lg"
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+      <p className="text-xs" style={{ color: "var(--c-45)" }}>{label}</p>
+      <p className="text-base font-bold tabular-nums" style={{ color: value ? "var(--c-90)" : "var(--c-45)" }}>
+        {/* Under one video, a percentage is the honest reading: "0.0 videos"
+            looks like a rendering bug and "0.04" says nothing. */}
+        {value === null ? "—"
+          : value < 1 ? `${(value * 100).toFixed(0)}% of a video`
+          : `${value.toFixed(value < 10 ? 1 : 0)} video${value >= 2 ? "s" : ""}`}
+      </p>
+      <p className="text-xs" style={{ color: "var(--c-42)" }}>{detail}</p>
+      {price && <p className="text-xs" style={{ color: "var(--c-42)" }}>{price}</p>}
+      {cost && <p className="text-xs" style={{ color: "var(--c-42)" }}>{cost}</p>}
+    </div>
+  );
+}
+
 
 const HECLUS_RATE_FIELDS = [
   { key: "perKieCredit", label: "Per KIE credit" },
