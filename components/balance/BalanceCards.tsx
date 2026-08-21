@@ -80,6 +80,7 @@ function heclusCheckoutHref(checkoutUrl: string): string {
  *  thing anyone can buy, so a zero balance is information rather than an absence.
  */
 function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
+  const [picking, setPicking] = useState(false);
   const credits = data?.credits ?? 0;
   const reserved = data?.reserved ?? 0;
   const ledger = data?.ledger ?? [];
@@ -96,6 +97,18 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
     : usedPct >= 0.9
       ? "oklch(0.72 0.17 75)"
       : "oklch(0.72 0.25 285)";
+
+  // Quantities of the one configured product, derived from the pack rather than
+  // typed out, so a repriced pack cannot leave a stale number on screen. Null
+  // when there is no price to quote, which is what keeps the button a plain link
+  // in that case: an option list reading "$NaN" would be worse than no choice.
+  const options = data?.pack
+    ? [1, 2, 3, 4].map((units) => ({
+        units,
+        credits: data.pack!.credits * units,
+        priceUsd: data.pack!.priceUsd * units,
+      }))
+    : null;
 
   const label = (kind: string, provider: string | null) => {
     switch (kind) {
@@ -146,7 +159,21 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
               beside it. Disabled until a pack is configured, rather than hidden:
               its absence looked like a missing feature, and a link to a checkout
               that grants nothing is worse than a button that says why. */}
-          {data?.checkoutUrl ? (
+          {data?.checkoutUrl && options && !picking ? (
+            /* With a priced pack there are quantities to choose from, so the
+               button opens the picker below rather than buying one pack blind,
+               matching the wallet beside it. */
+            <button
+              type="button"
+              onClick={() => setPicking(true)}
+              className="px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 shrink-0"
+              style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
+            >
+              Top up
+            </button>
+          ) : data?.checkoutUrl && !options ? (
+            /* Priced pack size but no price: there is nothing to quote, so the
+               link buys one pack directly. */
             <a
               href={heclusCheckoutHref(data.checkoutUrl)}
               onClick={() => markPendingTopUp("heclus")}
@@ -155,15 +182,13 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
               // were on rather than to a Dodo receipt with no way back.
               target="_blank"
               rel="noopener noreferrer"
-              title={data.pack
-                ? `${data.pack.credits.toLocaleString()} credits for $${data.pack.priceUsd}`
-                : "Top up your Heclus Credits"}
+              title="Top up your Heclus Credits"
               className="px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:opacity-90 shrink-0"
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
             >
               Top up
             </a>
-          ) : (
+          ) : data?.checkoutUrl && picking ? null : (
             <button
               type="button"
               disabled
@@ -175,19 +200,37 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
             </button>
           )}
         </div>
+        {/* Replaces the meter and the status line while open: the amounts are the
+            decision at hand, and leaving the button up alongside them would give
+            two ways to start the same purchase. Opens in a new tab, so an
+            abandoned payment comes back to this page. */}
+        {data?.checkoutUrl && options && picking && (
+          <TopUpOptions
+            checkoutUrl={data.checkoutUrl}
+            onCancel={() => setPicking(false)}
+            options={options}
+            wallet="heclus"
+            newTab
+            unitNoun=""
+          />
+        )}
+
         {/* Always shown, so the wallet has the same anatomy as the one beside it
             even before a first top-up. The fill is genuinely zero then, rather
             than the 1.5% sliver used elsewhere to keep a bar visible: a sliver
             here would imply usage that has not happened. */}
-        <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(0 0 0 / 0.18)" }}>
-          <div className="h-full rounded-full transition-all"
-            style={{ width: purchased > 0 ? `${Math.max(usedPct * 100, 1.5)}%` : "0%", background: barColor }} />
-        </div>
+        {!picking && (
+          <div className="h-2 rounded-full overflow-hidden" style={{ background: "oklch(0 0 0 / 0.18)" }}>
+            <div className="h-full rounded-full transition-all"
+              style={{ width: purchased > 0 ? `${Math.max(usedPct * 100, 1.5)}%` : "0%", background: barColor }} />
+          </div>
+        )}
 
         {/* Exactly one status line, always, so this box is the same height as the
             one beside it. Usage once there is any, otherwise why the balance is
             zero. Two paragraphs here is what threw the alignment out. */}
-        <p className="text-[11px] leading-relaxed" style={{ color: empty && purchased > 0 ? "oklch(0.68 0.19 25)" : "var(--c-42)" }}>
+        <p className="text-[11px] leading-relaxed" hidden={picking}
+          style={{ color: empty && purchased > 0 ? "oklch(0.68 0.19 25)" : "var(--c-42)" }}>
           {purchased > 0 ? (
             <>
               {spent.toLocaleString(undefined, { maximumFractionDigits: 2 })} used

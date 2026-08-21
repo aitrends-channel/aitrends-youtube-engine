@@ -54,10 +54,29 @@ export function buildTopUpUrl(
   }
 }
 
-/** Remembers the intent, then leaves for Dodo. */
-export function startTopUp(checkoutUrl: string, units = 1, wallet: TopUpWallet = "genai"): void {
+/**
+ * Remembers the intent, then leaves for Dodo.
+ *
+ * `newTab` keeps the app open behind the checkout, which is what the Balance
+ * page wants: a customer who abandons the payment comes back to the page they
+ * were on rather than to a Dodo receipt with no way back. The callback still
+ * works there, because the marker is written to localStorage, which is shared
+ * across tabs, and carried on the return URL besides.
+ */
+export function startTopUp(
+  checkoutUrl: string,
+  units = 1,
+  wallet: TopUpWallet = "genai",
+  newTab = false,
+): void {
   markPendingTopUp(wallet);
-  window.location.href = buildTopUpUrl(checkoutUrl, window.location.origin, units, wallet);
+  const url = buildTopUpUrl(checkoutUrl, window.location.origin, units, wallet);
+  if (newTab) {
+    // Blocked pop-ups fall back to this tab rather than silently doing nothing.
+    const opened = window.open(url, "_blank", "noopener,noreferrer");
+    if (opened) return;
+  }
+  window.location.href = url;
 }
 
 /**

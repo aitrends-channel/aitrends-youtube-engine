@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import { getFundingMode } from "@/lib/funding";
 
 // Heclus Credits: the general wallet a user buys from us and spends on work that
 // runs on Heclus's own provider accounts.
@@ -46,6 +47,14 @@ const EMPTY: HeclusBalance = { credits: 0, reserved: 0 };
  * refuses work, and that one is not fail-soft.
  */
 export async function getHeclusBalance(user: User): Promise<HeclusBalance> {
+  // The starter grant is issued here, on first read, rather than at signup.
+  //
+  // Lazily for two reasons: no cron has to walk every account, and an account
+  // that never comes back never gets an allowance it cannot use. It also means
+  // accounts that predate the grant receive it the first time they look at their
+  // balance, which is what makes this rollout not need a backfill.
+  await ensureSignupGrant(user);
+
   try {
     const { data, error } = await supabase
       .from("credit_accounts")
@@ -67,6 +76,58 @@ export async function getHeclusBalance(user: User): Promise<HeclusBalance> {
     return EMPTY;
   }
 }
+
+/**
+ * Grant the starter credits once, if this account should have them.
+ *
+ * Idempotent without any new schema: credits_add dedupes on the payment id, so
+ * "signup:<user id>" spends the unique index the top-up path already relies on.
+ * A second call is a no-op, which is what makes it safe to run on every balance
+ * read.
+ *
+ * Only wallet-funded accounts. A BYO client spends their own provider keys, so
+ * credits would sit there unusable, and getFundingMode also carries the
+ * admin-only rollout gate: while that is on, nothing is granted to customers.
+ *
+ * Fail-soft throughout. A grant that cannot be issued must not stop the balance
+ * from rendering, and the next read will try again.
+ */
+async function ensureSignupGrant(user: User): Promise<void> {
+  try {
+    if (await getFundingMode(user) !== "wallet") return;
+    const credits = await signupGrantCredits();
+    if (credits <= 0) return;
+    const granted = await addHeclusCredits({
+      userId: user.id,
+      credits,
+      kind: "adjustment",
+      note: `${credits} starter credits`,
+      dodoPaymentId: `signup:${user.id}`,
+    });
+    if (granted) console.log(`[heclus-credits] granted ${credits} starter credits to ${user.id}`);
+  } catch (e) {
+    console.warn("[heclus-credits] signup grant failed:", e instanceof Error ? e.message : e);
+  }
+}
+
+/** How many starter credits, from config. Falls back to the launch figure when
+ *  the column is missing, so an unapplied migration 132 still grants. */
+async function signupGrantCredits(): Promise<number> {
+  const { data, error } = await supabase
+    .from("product_config")
+    .select("heclus_signup_grant_credits")
+    .eq("service", "_global")
+    .maybeSingle();
+  if (error) return DEFAULT_SIGNUP_GRANT;
+  const raw = (data as { heclus_signup_grant_credits?: unknown } | null)?.heclus_signup_grant_credits;
+  if (raw === undefined) return DEFAULT_SIGNUP_GRANT;
+  const n = Number(raw ?? 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** Provisional, and it lives in product_config so changing it is not a deploy.
+ *  See migration 132. */
+const DEFAULT_SIGNUP_GRANT = 100;
 
 /** Recent movements, newest first, for the Balance panel and admin views. */
 export async function listHeclusLedger(userId: string, limit = 50): Promise<HeclusLedgerRow[]> {

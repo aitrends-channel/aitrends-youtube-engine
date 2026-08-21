@@ -6,6 +6,8 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { checkElevenLabs, checkKie, type ElevenLabsCheck, type KieCheck } from "@/lib/key-check";
 import type { User } from "@supabase/supabase-js";
+import { getFundingMode, type FundingMode } from "@/lib/funding";
+import { getHeclusBalance } from "@/lib/heclus-credits";
 
 export interface ApiStatusResult {
   kie: KieCheck;
@@ -20,6 +22,23 @@ export interface ApiStatusResult {
    * different from zero.
    */
   anthropic: { configured: boolean; directEnabled: boolean; tokens30d?: number };
+  /**
+   * Whose provider account pays. A wallet-funded account has no KIE or
+   * ElevenLabs key of its own, so the balances above are all zero and mean
+   * nothing: every surface that reads this has to check the mode before telling
+   * a customer their KIE credits are exhausted and sending them to kie.ai to
+   * top up an account they never opened.
+   */
+  fundingMode: FundingMode;
+  /**
+   * The Heclus Credits balance, for wallet-funded accounts only.
+   *
+   * Carried on this payload rather than fetched separately because every step
+   * page already polls it for the balance chip: a second endpoint would double
+   * the requests to say the same thing. Absent for BYO accounts, whose balances
+   * are the two above.
+   */
+  wallet?: { credits: number; reserved: number };
 }
 
 export async function GET() {
@@ -49,7 +68,9 @@ export async function GET() {
     directEnabled: !!s.anthropic_direct_enabled,
     tokens30d: await claudeTokens30d(user.id),
   };
-  return NextResponse.json({ kie, elevenlabs, anthropic } satisfies ApiStatusResult);
+  const fundingMode = await getFundingMode(user);
+  const wallet = fundingMode === "wallet" ? await getHeclusBalance(user) : undefined;
+  return NextResponse.json({ kie, elevenlabs, anthropic, fundingMode, wallet } satisfies ApiStatusResult);
 }
 
 // Anthropic gives clients no readable balance, so the card's usage figure

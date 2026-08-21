@@ -576,6 +576,15 @@ export default function SettingsPage() {
   const [confirmRemove, setConfirmRemove] = useState<{ field: keyof FormState; label: string } | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState<Tier>("paid");
+  // Whose providers pay. Drives the framing only: the key fields stay usable
+  // either way, since a wallet user may prefer to bring their own.
+  const [walletFunded, setWalletFunded] = useState(false);
+  useEffect(() => {
+    fetch("/api/me/api-keys-status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) setWalletFunded(d.fundingMode === "wallet"); })
+      .catch(() => {});
+  }, []);
   // Top-level split: API keys (the existing paid/free cards), the
   // full-page 1Click preference editor, and the account-level
   // Character Consistency default. Deep-linkable via
@@ -933,6 +942,23 @@ export default function SettingsPage() {
               One card per service, with its keys right there. Saved securely and
               live immediately.
             </p>
+            {walletFunded && (
+              /* A wallet-funded account does not need any of this, and a page
+                 headed "API Keys" reads as a required step. Say so at the top
+                 rather than leaving them to work it out card by card: the keys
+                 below are a way to stop spending credits, not a way to start
+                 generating. */
+              <div className="px-4 py-3 rounded-xl text-sm leading-relaxed"
+                style={{ background: "oklch(0.55 0.15 145 / 0.1)", border: "1px solid oklch(0.55 0.15 145 / 0.25)", color: "var(--c-70)" }}>
+                <span style={{ fontWeight: 600, color: "oklch(0.65 0.15 145)" }}>Nothing here is required.</span>{" "}
+                Your account runs on Heclus&apos;s providers and is billed in Heclus Credits, so you can generate
+                without connecting anything. Add your own keys below only if you would rather spend your own
+                provider balance than your credits.{" "}
+                <a href="/balance" style={{ textDecoration: "underline", fontWeight: 600, color: "var(--brand-text)" }}>
+                  See your balance
+                </a>
+              </div>
+            )}
           </div>
 
           {tab === "free" && FREE_TTS_COMING_SOON ? (

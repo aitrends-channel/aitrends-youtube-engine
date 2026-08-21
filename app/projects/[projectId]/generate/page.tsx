@@ -2354,8 +2354,15 @@ export default function GeneratePage({ params }: PageProps) {
                 const isPartial = generatedImages > 0 && pendingCount > 0;
                 const isAllDone = generatedImages > 0 && pendingCount === 0;
                 const workingImageName = imageModels?.find((m) => m.id === selectedImageModel)?.name ?? "the selected model";
+                // A wallet-funded account has no KIE key, so its reported KIE
+                // balance is zero for the wrong reason: showing this banner
+                // would send a customer to kie.ai to top up an account they
+                // never opened. Their own empty-wallet refusal comes back from
+                // the generating routes and shows in the error banner below.
+                const walletFunded = apiStatus?.fundingMode === "wallet";
                 const kieCredits = apiStatus?.kie?.credits;
-                const showCreditBanner = outOfCredits || (typeof kieCredits === "number" && kieCredits <= 0);
+                const showCreditBanner = !walletFunded
+                  && (outOfCredits || (typeof kieCredits === "number" && kieCredits <= 0));
                 return (
                   <>
                     {showCreditBanner && (

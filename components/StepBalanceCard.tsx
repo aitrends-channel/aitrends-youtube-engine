@@ -28,6 +28,12 @@ export function StepBalanceCard() {
     { refreshInterval: hasActivity ? 30_000 : 0, revalidateOnFocus: false },
   );
 
+  // A wallet-funded account has no KIE or ElevenLabs key, so those two numbers
+  // are zero for the wrong reason. What it can spend is credits, and the chip
+  // becomes a link to top them up: this card is on every step, which is exactly
+  // where somebody notices they are running low.
+  const wallet = data?.fundingMode === "wallet" ? data?.wallet : undefined;
+
   const kie = data?.kie?.credits;
   const el  = data?.elevenlabs?.remaining;
 
@@ -49,6 +55,36 @@ export function StepBalanceCard() {
   const bodyBg    = isEmpty ? "oklch(0.70 0.18 45 / 0.12)" : "oklch(0.55 0.15 240 / 0.12)";
   const bodyColor = isEmpty ? "oklch(0.60 0.18 45)"        : "oklch(0.55 0.15 240)";
   const borderCol = isEmpty ? "oklch(0.70 0.18 45 / 0.3)"  : "oklch(0.55 0.15 240 / 0.3)";
+
+  if (wallet) {
+    const credits = wallet.credits;
+    const low = credits <= 0;
+    const wLabelBg   = low ? "oklch(0.70 0.18 45)"        : "oklch(0.55 0.15 240)";
+    const wBodyBg    = low ? "oklch(0.70 0.18 45 / 0.12)" : "oklch(0.55 0.15 240 / 0.12)";
+    const wBodyColor = low ? "oklch(0.60 0.18 45)"        : "oklch(0.55 0.15 240)";
+    const wBorder    = low ? "oklch(0.70 0.18 45 / 0.3)"  : "oklch(0.55 0.15 240 / 0.3)";
+    return (
+      <a
+        href="/balance"
+        title={low ? "Out of Heclus Credits — top up to keep generating" : "Heclus Credits available. Click to top up."}
+        className="inline-flex items-center rounded-md overflow-hidden text-xs font-medium break-words max-w-full transition-opacity hover:opacity-90"
+        style={{ border: `1px solid ${wBorder}` }}
+      >
+        <span className="uppercase tracking-wider px-2 py-1"
+          style={{ fontSize: "10px", background: wLabelBg, color: "oklch(1 0 0)" }}>
+          Credits
+        </span>
+        <span className="tabular-nums px-2.5 py-1" style={{ background: wBodyBg, color: wBodyColor }}>
+          {credits.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          {wallet.reserved > 0 && (
+            <span style={{ opacity: 0.75 }}>
+              {" "}· {wallet.reserved.toLocaleString(undefined, { maximumFractionDigits: 2 })} held
+            </span>
+          )}
+        </span>
+      </a>
+    );
+  }
 
   return (
     <span
