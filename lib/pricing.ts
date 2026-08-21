@@ -39,18 +39,22 @@ export interface CreditRates {
 /**
  * What one credit is worth in dollars.
  *
- * The single anchor every non-KIE rate below is derived from, and the one number
- * to correct against a KIE invoice. Inferred rather than invoiced: nano-banana-2
- * bills 8 KIE credits per image (182 samples in model_cost_and_speed) against a
- * list price of roughly $0.02, and imagen4-ultra's 12 credits against roughly
- * $0.06 agrees. Sanity check on any change: multiply by 8 and see whether the
- * answer is a plausible price for one image.
+ * The single anchor every non-KIE rate below is derived from. KIE's published
+ * rate: $5 buys 1,000 credits, and their per-model prices agree (Veo 3 Fast at
+ * 60 credits is listed at $0.30). Large top-ups carry a 10% bonus, so the
+ * effective rate is nearer $0.0045; the list price is used here because
+ * over-recovering slightly is the safe direction.
+ *
+ * This was $0.0025 for one commit, inferred from guessed image list prices, and
+ * it made every non-KIE rate half what it should be. Sanity check on any change:
+ * multiply by 8 and see whether the answer is a plausible price for one
+ * nano-banana image, since that model bills 8 credits.
  *
  * Not used for KIE units at all, which are one to one by definition. It exists
  * so ElevenLabs characters and Anthropic tokens can be expressed in the same
  * currency as everything else.
  */
-export const USD_PER_CREDIT = 0.0025;
+export const USD_PER_CREDIT = 0.005;
 
 /** ElevenLabs Creator-plan effective per-character cost, the same anchor the TTS
  *  cost analysis in app/api/admin/tts-cost-analysis uses. */
@@ -83,11 +87,9 @@ const STT_USD_PER_THOUSAND_CHARS = 0.40 / 54;
 
 const perMillion = (usd: number) => Math.ceil(usd / USD_PER_CREDIT);
 
-// Derived, not typed in. The first version of this file carried hand-written
-// numbers that were internally consistent but anchored on an implied $0.0167 a
-// credit, six times the real figure, which under-charged every non-KIE unit and
-// under-charged voiceover by roughly twenty. Deriving them means the mistake can
-// only be made once, in USD_PER_CREDIT, where it is visible.
+// Derived, not typed in. Two versions of this file carried hand-written or
+// mis-anchored numbers before the rate was looked up: the mistake can only be
+// made once now, in USD_PER_CREDIT, where it is visible and sourced.
 export const DEFAULT_CREDIT_RATES: CreditRates = {
   perKieCredit: 1,
   perMillionTokensIn: perMillion(CLAUDE_USD_PER_MILLION_IN),
