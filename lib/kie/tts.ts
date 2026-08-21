@@ -320,6 +320,26 @@ export async function listTTSVoices(userId?: string): Promise<KieModel[]> {
 }
 
 /**
+ * Heclus's own ElevenLabs key, from config or from the environment.
+ *
+ * product_config first, so an admin can rotate the key on a live deployment
+ * without a redeploy. HECLUS_ELEVENLABS_API_KEY behind it, because that row
+ * lives in whichever database the deployment points at: local and staging read
+ * the dev database and production reads its own, so a key entered in production
+ * admin is invisible to the other two by construction. One env var set to the
+ * same value is how all three spend the same ElevenLabs account.
+ *
+ * Deliberately its own variable rather than ELEVENLABS_API_KEY, which is the
+ * developer's personal key in local .env files and would otherwise be charged
+ * for customer work the moment wallet funding is switched on.
+ */
+async function heclusElevenLabsKey(): Promise<string | null> {
+  const configured = await getActiveProductKey("heclus_elevenlabs_api_key");
+  if (configured) return configured;
+  return process.env.HECLUS_ELEVENLABS_API_KEY?.trim() || null;
+}
+
+/**
  * Whose ElevenLabs key synthesises this voiceover.
  *
  * Same rule as the KIE choke point: a wallet user runs on Heclus's key and is
@@ -329,9 +349,9 @@ export async function listTTSVoices(userId?: string): Promise<KieModel[]> {
  */
 async function resolveElevenLabsKey(userId: string): Promise<string> {
   if (await getFundingModeById(userId) === "wallet") {
-    const key = await getActiveProductKey("heclus_elevenlabs_api_key");
+    const key = await heclusElevenLabsKey();
     if (!key) {
-      throw new Error("Heclus ElevenLabs key not configured — set one in Config → API Keys (service: Heclus ElevenLabs API Key).");
+      throw new Error("Heclus ElevenLabs key not configured — set HECLUS_ELEVENLABS_API_KEY, or add one in Config → API Keys (service: Heclus ElevenLabs API Key).");
     }
     return key;
   }

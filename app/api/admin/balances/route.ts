@@ -193,10 +193,14 @@ export async function GET() {
  * whole point: zero means stop generating, null means we could not ask.
  */
 async function heclusProviderBalances(): Promise<BalancesResponse["providers"]> {
-  const [kieKey, elKey] = await Promise.all([
+  const [kieRow, elRow] = await Promise.all([
     getActiveProductKey("heclus_kie_api_key"),
     getActiveProductKey("heclus_elevenlabs_api_key"),
   ]);
+  // Same order the resolvers use, so this tile reports the key that would
+  // actually be spent rather than only what is in the database.
+  const kieKey = kieRow ?? process.env.HECLUS_KIE_API_KEY?.trim() ?? null;
+  const elKey = elRow ?? process.env.HECLUS_ELEVENLABS_API_KEY?.trim() ?? null;
 
   const [kie, elevenlabs] = await Promise.all([
     kieKey ? checkKie(kieKey) : null,

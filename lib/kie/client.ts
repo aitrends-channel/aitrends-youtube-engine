@@ -102,9 +102,16 @@ export function sanitizeKieErrorBody(body: string): string {
 async function getKieKey(userId?: string): Promise<string> {
   if (userId) {
     if (await getFundingModeById(userId) === "wallet") {
-      const key = await getActiveProductKey("heclus_kie_api_key");
+      // product_config first so an admin can rotate without a redeploy, then a
+      // shared env var: the config row lives in whichever database the
+      // deployment reads, so local and staging cannot see what production
+      // admin holds. One variable set alike is how all three spend the same
+      // KIE account.
+      const key = await getActiveProductKey("heclus_kie_api_key")
+        ?? process.env.HECLUS_KIE_API_KEY?.trim()
+        ?? null;
       if (!key) {
-        throw new Error("Heclus KIE key not configured — set one in Config → API Keys (service: Heclus KIE API Key).");
+        throw new Error("Heclus KIE key not configured — set HECLUS_KIE_API_KEY, or add one in Config → API Keys (service: Heclus KIE API Key).");
       }
       return key;
     }
