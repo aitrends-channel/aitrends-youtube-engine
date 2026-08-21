@@ -2,6 +2,10 @@
 // what we were actually paid. Both ledger writers are best-effort and
 // have dropped rows before; missing payments never reappear on their own.
 //
+// Credit top-ups are labelled by wallet (heclus_credits / credit_pack) rather
+// than by the buyer's plan, so a purchase of credits does not read as a
+// subscription payment in the revenue views.
+//
 //   node scripts/reconcile-revenue.mjs            # dry run
 //   node scripts/reconcile-revenue.mjs --apply
 //   node scripts/reconcile-revenue.mjs --apply --replace-backfills
@@ -95,6 +99,40 @@ const matchUser = (p) =>
   byEmail.get((p.customer?.email ?? "").toLowerCase()) ??
   null;
 
+// ── Which purchases are credit top-ups ────────────────────────────────
+// Told apart by product id, read from the configured pack links, exactly as the
+// Dodo webhook does. Anything unrecognised is treated as a plan payment, which
+// is what every row was before the wallets existed.
+const { data: packCfg } = await supabase
+  .from("product_config")
+  .select("heclus_pack_checkout_url_test, heclus_pack_checkout_url_production, credit_pack_checkout_url_test, credit_pack_checkout_url_production")
+  .eq("service", "_global")
+  .maybeSingle();
+
+const productId = (url) => {
+  const m = /\/buy\/([A-Za-z0-9_]+)/.exec(url ?? "");
+  return m ? m[1] : null;
+};
+const heclusProducts = new Set([
+  productId(packCfg?.heclus_pack_checkout_url_test),
+  productId(packCfg?.heclus_pack_checkout_url_production),
+].filter(Boolean));
+const genaiProducts = new Set([
+  productId(packCfg?.credit_pack_checkout_url_test),
+  productId(packCfg?.credit_pack_checkout_url_production),
+].filter(Boolean));
+
+function walletFor(payment) {
+  const ids = [];
+  if (Array.isArray(payment?.product_cart)) {
+    for (const item of payment.product_cart) if (item?.product_id) ids.push(item.product_id);
+  }
+  if (payment?.product_id) ids.push(payment.product_id);
+  if (ids.some((id) => heclusProducts.has(id))) return "heclus_credits";
+  if (ids.some((id) => genaiProducts.has(id))) return "credit_pack";
+  return null;
+}
+
 // ── Build the insert plan ─────────────────────────────────────────────
 // Default to launch onward: everything earlier is pre-launch QA at 50¢–$1.
 const cutoff = ALL ? null : new Date(SINCE ?? cfg?.activity_cutoff_at ?? 0).getTime();
@@ -119,8 +157,12 @@ for (const p of missing) {
     event_type: "payment_succeeded",
     amount_cents: amountCents,
     currency,
-    // Prefer the plan slug the app recorded; Dodo doesn't know our slugs.
-    plan: user?.app_metadata?.plan ?? null,
+    // A credit purchase is not the customer's plan. Recording their plan slug
+    // against a top-up makes it look like a subscription payment in every
+    // revenue view, and there are two wallets to tell apart besides. Falls back
+    // to the plan slug for anything that is not a pack purchase; Dodo does not
+    // know our slugs.
+    plan: walletFor(full) ?? user?.app_metadata?.plan ?? null,
     dodo_payment_id: p.payment_id,
     dodo_raw: full,
     occurred_at: p.created_at,
