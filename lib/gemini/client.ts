@@ -1,4 +1,6 @@
 import { getSettings } from "@/lib/settings";
+import { getFundingModeById } from "@/lib/funding";
+import { getActiveProductKey } from "@/lib/claude/routing";
 
 // Gemini-via-KIE for long-form text generation. KIE uses model-prefixed
 // paths (the same way Claude lives at /claude/v1/messages), so each
@@ -18,7 +20,14 @@ interface ChatMessage {
   content: string;
 }
 
+// Whose KIE key, on the same rule as every other KIE call: a wallet-funded user
+// runs on Heclus's rotating key and is metered against their credits.
 async function getKieKey(userId: string): Promise<string> {
+  if (await getFundingModeById(userId) === "wallet") {
+    const key = await getActiveProductKey("heclus_kie_api_key");
+    if (!key) throw new Error("Heclus KIE key not configured — set one in Config → API Keys (service: Heclus KIE API Key).");
+    return key;
+  }
   const { kie_api_key } = await getSettings(userId);
   if (!kie_api_key) throw new Error("KIE API key not configured. Add it in Settings.");
   return kie_api_key;

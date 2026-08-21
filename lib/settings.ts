@@ -28,6 +28,11 @@ export interface AppSettings {
   anthropic_direct_enabled: boolean;
 }
 
+/** In local development the shared key genuinely is the developer's own. */
+function devEnv(name: string): string {
+  return process.env.NODE_ENV === "development" ? (process.env[name] ?? "") : "";
+}
+
 const cacheMap = new Map<string, { data: AppSettings; at: number }>();
 const TTL_MS = 60_000;
 
@@ -56,8 +61,16 @@ export async function getSettings(userId: string): Promise<AppSettings> {
   }
 
   const result: AppSettings = {
-    kie_api_key: data?.kie_api_key?.trim() || process.env.KIE_API_KEY || "",
-    elevenlabs_api_key: data?.elevenlabs_api_key?.trim() || process.env.ELEVENLABS_API_KEY || "",
+    // The shared environment keys are a LOCAL DEVELOPMENT fallback only.
+    //
+    // They used to apply everywhere, which meant an account with no key of its
+    // own quietly ran on Heclus's KIE and ElevenLabs balances with no ledger row
+    // anywhere: not a convenience, a hole. A user who should be spending
+    // Heclus's providers is now wallet-funded and routed to the rotating
+    // product keys instead, where the work is metered. Anyone else gets an
+    // error telling them to add a key, which is the truth.
+    kie_api_key: data?.kie_api_key?.trim() || devEnv("KIE_API_KEY"),
+    elevenlabs_api_key: data?.elevenlabs_api_key?.trim() || devEnv("ELEVENLABS_API_KEY"),
     // BYO free providers — strictly per-user, no shared env fallback.
     // Free text, not a secret — preserve as stored (only the surrounding
     // whitespace is trimmed at append time, not here).

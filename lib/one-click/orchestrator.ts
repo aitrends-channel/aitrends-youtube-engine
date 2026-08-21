@@ -28,6 +28,7 @@ import { redis } from "@/lib/queue/client";
 import { isProTier } from "@/lib/plans-gating";
 import { sendEmail } from "@/lib/email/smtp";
 import { storageFullNote } from "@/lib/storage-quota";
+import { canStartWalletWork, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { ModelChain, OneClickConfig } from "@/lib/one-click/config";
 
@@ -624,6 +625,14 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
   // images, clips and a video, and the returns above are the common case.
   const storageNote = await storageFullNote(project.user_id);
   if (storageNote) return RESULT.attention(storageNote);
+
+  // Same place, same reason: a wallet-funded project must not keep generating on
+  // Heclus's providers with nothing to bill it to. The tick stops and says so
+  // rather than failing beat by beat, since 1Click runs unattended and the user
+  // is not watching a banner.
+  if (!(await canStartWalletWork(project.user_id))) {
+    return RESULT.attention(OUT_OF_CREDITS_MESSAGE);
+  }
 
   const attempts = (proj?.auto_pilot_attempts as Record<string, number> | null) ?? {};
   const imgIdx = attempts["genImageModelIdx"] ?? 0;
