@@ -4,6 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import { getHeclusBalance, listHeclusLedger } from "@/lib/heclus-credits";
 import { supabase } from "@/lib/supabase/client";
 import { isProductionEnv } from "@/lib/env";
+import { isAdminUser } from "@/lib/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -17,17 +18,30 @@ export async function GET() {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
-  const [balance, ledger, lifetime] = await Promise.all([
+  const [balance, ledger, lifetime, packInfo] = await Promise.all([
     getHeclusBalance(user),
     listHeclusLedger(user.id, 25),
     lifetimeTotals(user.id),
+    pack(),
   ]);
+
+  // The disabled button reads "no pack is configured yet" either way, which is
+  // the right thing to tell a customer and useless to whoever has to fix it:
+  // an unset link and an unapplied migration 130 look identical from there.
+  // Admins get the difference, and only admins.
+  const setupHint = packInfo.checkoutUrl || !isAdminUser(user)
+    ? null
+    : packInfo.reason === "no-columns"
+      ? "Migration 130 has not run on this database, so there are no pack columns to configure. Apply supabase/migrations/130_heclus_pack.sql, then set the link in Admin, Payment, Dodo Variables."
+      : "No top-up link set. Add the Heclus Credits Package Link in Admin, Payment, Dodo Variables.";
 
   return NextResponse.json({
     ...balance,
     ...lifetime,
     ledger,
-    ...(await pack()),
+    pack: packInfo.pack,
+    checkoutUrl: packInfo.checkoutUrl,
+    setupHint,
   });
 }
 
@@ -87,8 +101,10 @@ async function lifetimeTotals(userId: string): Promise<{
 async function pack(): Promise<{
   pack: { credits: number; priceUsd: number } | null;
   checkoutUrl: string | null;
+  /** Why there is no pack, for the admin-only hint. */
+  reason: "ok" | "no-columns" | "unset";
 }> {
-  const none = { pack: null, checkoutUrl: null };
+  const none = { pack: null, checkoutUrl: null, reason: "unset" as const };
   try {
     const { data, error } = await supabase
       .from("product_config")
@@ -96,8 +112,12 @@ async function pack(): Promise<{
       .eq("service", "_global")
       .maybeSingle();
     // Migrations here are applied by hand, so the columns may not exist yet.
-    // That reads as "no pack", which is the correct answer either way.
-    if (error || !data) return none;
+    // That reads as "no pack" to a customer, which is the correct answer either
+    // way, but an unapplied migration and an unset link need different fixes,
+    // so the two are told apart for the admin hint.
+    if (error)
+      return { ...none, reason: /column .* does not exist/i.test(error.message) ? "no-columns" : "unset" };
+    if (!data) return none;
 
     const row = data as Record<string, unknown>;
     const url = isProductionEnv()
@@ -114,6 +134,7 @@ async function pack(): Promise<{
     return {
       pack: credits > 0 && priceUsd > 0 ? { credits, priceUsd } : null,
       checkoutUrl: link,
+      reason: "ok",
     };
   } catch {
     return none;
