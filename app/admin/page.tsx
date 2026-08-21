@@ -4174,8 +4174,12 @@ function PlansPanel() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-2xl p-5 space-y-4 mt-[15px]" style={{ background: "var(--bg-card)", border: "2px solid silver" }}>
+    // Same rhythm as the Heclus Credits tab: 80px between sections, on the
+    // containers rather than per card. Outer gap separates the plans card from
+    // the Dodo variables card, inner gap separates the env header from the plan
+    // list. The modals below are portalled, so the spacing never reaches them.
+    <div className="space-y-20">
+      <div className="rounded-2xl p-5 space-y-20 mt-[15px]" style={{ background: "var(--bg-card)", border: "2px solid silver" }}>
       <div className="rounded-xl p-3 flex items-center justify-between gap-3"
         style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid var(--bd-7)" }}>
         <div className="min-w-0">
