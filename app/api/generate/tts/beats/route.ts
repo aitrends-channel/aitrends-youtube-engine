@@ -71,6 +71,13 @@ function hashSegment(text: string): string {
  *    - its voiceover_voice_id differs from the requested voice
  *    - its voiceover_script_hash differs from the current script hash
  */
+/** A free-lane voice costs no credits: Qwen and ai33 run on Heclus's own tokens
+ *  and are capped by the per-plan character allowance instead, so the wallet
+ *  gate must not stand in front of them. */
+function isFreeLaneVoice(voiceId: string): boolean {
+  return isQwenVoice(voiceId) || isAi33Voice(voiceId);
+}
+
 function selectStaleBeats(beats: BeatRow[], voiceId: string): BeatRow[] {
   return beats.filter((b) => {
     if (!b.script_segment?.trim()) return false; // skip blank
@@ -87,11 +94,6 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
   const noRoom = await requireStorageHeadroom(user);
   if (noRoom) return noRoom;
-  // Wallet-funded users pay for this step in credits, so an empty balance is
-  // refused before any provider is called.
-  const broke = await requireWalletFunds(user);
-  if (broke) return broke;
-
   const body = await req.json().catch(() => ({})) as {
     projectId?: string;
     voiceId?: string;
@@ -111,6 +113,14 @@ export async function POST(req: Request) {
   }
   const projectId = body.projectId;
   const voiceId = body.voiceId;
+
+  // Wallet-funded users pay for a paid voice in credits, so an empty balance is
+  // refused before any provider is called. A free-lane voice is exempt: it costs
+  // credits nothing and is capped by its own character allowance.
+  if (!isFreeLaneVoice(voiceId)) {
+    const broke = await requireWalletFunds(user);
+    if (broke) return broke;
+  }
   // Cloned voices sit on Heclus's shared provider account — an id alone
   // can't be treated as permission to use one.
   if (!(await canUseVoice(user.id, voiceId))) {
@@ -307,7 +317,7 @@ export async function POST(req: Request) {
             // Re-checked per beat: a voiceover is one call per beat, so a wallet
             // that empties partway would otherwise keep synthesising on Heclus's
             // key to the end of the script.
-            if (!(await canStartWalletWork(user.id))) {
+            if (!isFreeLaneVoice(voiceId) && !(await canStartWalletWork(user.id))) {
               await supabase
                 .from("project_beats")
                 .update({ voiceover_status: "failed", voiceover_error: OUT_OF_CREDITS_MESSAGE })

@@ -22,11 +22,6 @@ export async function POST(req: Request) {
   if (expired) return expired;
   const noRoom = await requireStorageHeadroom(user);
   if (noRoom) return noRoom;
-  // Wallet-funded users pay for this step in credits, so an empty balance is
-  // refused before any provider is called.
-  const broke = await requireWalletFunds(user);
-  if (broke) return broke;
-
   const { projectId, script, voiceId } = await req.json();
 
   if (!projectId || !script || !voiceId) {
@@ -35,6 +30,13 @@ export async function POST(req: Request) {
 
   // Cloned voices sit on Heclus's shared provider account, so an id alone
   // would otherwise let any user synthesize with someone else's clone.
+  // Paid voices only: a Qwen or ai33 voice costs no credits, so an empty wallet
+  // must not block it.
+  if (!isQwenVoice(voiceId) && !isAi33Voice(voiceId)) {
+    const broke = await requireWalletFunds(user);
+    if (broke) return broke;
+  }
+
   if (!(await canUseVoice(user.id, voiceId))) {
     return Response.json({ error: "That voice isn't available on your account." }, { status: 403 });
   }
