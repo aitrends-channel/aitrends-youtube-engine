@@ -6,6 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
 import type { HeclusCreditsConfig } from "@/app/api/admin/heclus-credits/route";
+import type { BalancesResponse } from "@/app/api/admin/balances/route";
 import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
@@ -1931,6 +1932,170 @@ const CONCURRENCY_FIELDS: {
 // starter grant and the rates, because those four numbers only make sense read
 // together: what a purchase costs, what it grants, what a signup gets free, and
 // what the work draws down.
+/**
+ * Every account holding credit, in both wallets.
+ *
+ * Side by side rather than summed: Heclus Credits are fractional and bought from
+ * us, video credits are whole clips with a monthly allowance, and a total of the
+ * two would be a number in no unit at all.
+ *
+ * Accounts with nothing in either wallet and no history are left out. This view
+ * answers "who holds credit and what have they done with it", and a page of
+ * zeroes buries the rows that do.
+ */
+function BalancesPanel({ visible }: { visible: boolean }) {
+  const { data, isLoading, mutate } = useSWR<BalancesResponse>(
+    visible ? "/api/admin/balances" : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+  const [query, setQuery] = useState("");
+
+  const n = (v: number, dp = 2) => v.toLocaleString(undefined, { maximumFractionDigits: dp });
+  const rows = (data?.rows ?? []).filter((r) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return (r.email ?? r.userId).toLowerCase().includes(q);
+  });
+
+  return (
+    <div className="space-y-5">
+      {(data?.warnings ?? []).map((w) => (
+        <p key={w} className="text-sm px-3 py-2 rounded-lg"
+          style={{ background: "oklch(0.75 0.15 65 / 0.12)", border: "1px solid oklch(0.75 0.15 65 / 0.3)", color: "oklch(0.45 0.12 65)" }}>
+          {w}
+        </p>
+      ))}
+
+      {/* The four figures worth knowing before reading any row */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Tile label="Accounts holding credit" value={n(data?.totals.accounts ?? 0, 0)}
+          note={`${n(data?.totals.walletFunded ?? 0, 0)} funded by Heclus`} />
+        <Tile label="Heclus Credits outstanding" value={n(data?.totals.credits ?? 0)}
+          note={`${n(data?.totals.reserved ?? 0)} held by work in flight`} accent />
+        <Tile label="Bought, all time" value={n(data?.totals.purchased ?? 0)}
+          note={`${n(data?.totals.granted ?? 0)} granted on top`} />
+        <Tile label="Video clips outstanding" value={n(data?.totals.clips ?? 0, 0)}
+          note="allowance plus bought clips" />
+      </div>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter by email"
+          className="px-3 py-2 rounded-lg text-sm outline-none w-full sm:w-72"
+          style={{ background: "var(--bg-input)", border: "1px solid var(--input)", color: "var(--c-90)" }}
+        />
+        <button
+          onClick={() => mutate()}
+          className="px-3 py-2 rounded-lg text-sm font-semibold cursor-pointer transition-all hover:opacity-90"
+          style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
+        >
+          Refresh
+        </button>
+      </div>
+
+      {isLoading && !data ? (
+        <p className="text-sm py-6" style={{ color: "var(--c-45)" }}>Loading balances…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm py-6" style={{ color: "var(--c-45)" }}>
+          {data?.rows.length ? "No account matches that filter." : "No account holds credit in either wallet yet."}
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-xl" style={{ border: "1px solid var(--input)" }}>
+          <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "oklch(0 0 0 / 0.02)", color: "var(--c-45)" }}>
+                <th className="text-left font-medium py-2 px-3">Account</th>
+                <th className="text-left font-medium py-2 px-3">Funding</th>
+                <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Credits</th>
+                <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Held</th>
+                <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Bought</th>
+                <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Granted</th>
+                <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Spent</th>
+                <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Clips</th>
+                <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Last movement</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                // A wallet-funded account with nothing spendable cannot generate
+                // at all, which is the one row that needs to stand out.
+                const stuck = r.fundingMode === "wallet" && r.credits <= 0;
+                return (
+                  <tr key={r.userId} style={{ borderTop: "1px solid var(--bd-8)" }}>
+                    <td className="py-2 px-3">
+                      <span style={{ color: "var(--c-90)" }}>{r.email ?? r.userId}</span>
+                      {r.isAdmin && (
+                        <span className="ml-2 px-1.5 py-0.5 rounded text-[11px] font-semibold"
+                          style={{ background: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.62 0.15 220)" }}>
+                          admin
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 px-3">
+                      <span className="px-1.5 py-0.5 rounded text-[11px] font-semibold"
+                        style={r.fundingMode === "wallet"
+                          ? { background: "oklch(0.55 0.15 145 / 0.12)", color: "oklch(0.45 0.13 145)" }
+                          : { background: "oklch(0 0 0 / 0.05)", color: "var(--c-50)" }}>
+                        {r.fundingMode === "wallet" ? "Heclus" : "own keys"}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums font-semibold"
+                      style={{ color: stuck ? "oklch(0.55 0.19 25)" : "var(--c-90)" }}>
+                      {n(r.credits)}
+                      {stuck && <span className="block text-[11px] font-normal">empty, cannot generate</span>}
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-50)" }}>
+                      {r.reserved > 0 ? n(r.reserved) : "—"}
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-55)" }}>
+                      {r.purchased > 0 ? n(r.purchased) : "—"}
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-55)" }}>
+                      {r.granted > 0 ? n(r.granted) : "—"}
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-55)" }}>
+                      {r.spent > 0 ? n(r.spent) : "—"}
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-55)" }}>
+                      {r.clipsGrant + r.clipsPaid > 0 ? n(r.clipsGrant + r.clipsPaid, 0) : "—"}
+                    </td>
+                    <td className="py-2 px-3 text-right whitespace-nowrap" style={{ color: "var(--c-42)" }}>
+                      {r.lastMovement ? new Date(r.lastMovement).toLocaleDateString() : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p className="text-sm" style={{ color: "var(--c-42)" }}>
+        Credits are the general wallet, fractional and bought from us. Clips are the free video wallet,
+        whole units with a monthly allowance. Bought, granted and spent are lifetime figures from the
+        ledger, so a balance can be read against what fed it.
+      </p>
+    </div>
+  );
+}
+
+function Tile({ label, value, note, accent }: { label: string; value: string; note: string; accent?: boolean }) {
+  return (
+    <div className="p-3 rounded-xl" style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" }}>
+      <p className="text-sm" style={{ color: "var(--c-45)" }}>{label}</p>
+      <p className="text-xl font-bold tabular-nums leading-tight"
+        style={{ color: accent ? "oklch(0.62 0.15 220)" : "var(--c-90)" }}>
+        {value}
+      </p>
+      <p className="text-[11px]" style={{ color: "var(--c-42)" }}>{note}</p>
+    </div>
+  );
+}
+
 function HeclusCreditsPanel() {
   const { data, mutate, isLoading } = useSWR<HeclusCreditsConfig>(
     "/api/admin/heclus-credits",
@@ -5707,6 +5872,7 @@ function SkeletonRows({ cols, rows = 3 }: { cols: number; rows?: number }) {
  *  what it contains — the view itself shows that. */
 const TAB_BLURB: Record<string, string> = {
   stats:     "Signups, revenue and production at a glance",
+  balances:  "Every account holding credit, in both wallets",
   activity:  "What has been created over time, and by whom",
   users:     "Every account, its plan and its keys",
   projects:  "Every video, its progress and what it cost",
@@ -5732,6 +5898,7 @@ const TAB_HEADING: Record<string, string> = {
 
 const ADMIN_NAV = [
   { id: "stats",    label: "Stats",    icon: BarChart3 },
+  { id: "balances", label: "Balance",  icon: Wallet },
   // Activity carries both panels: the niches/videos/users series and the
   // videos-created chart that used to be its own Usage tab. Two tabs of the
   // same question, each holding half the answer.
@@ -5896,11 +6063,11 @@ export default function AdminPage() {
   const [revDateTo, setRevDateTo] = useState("");
   const [revPlanFilter, setRevPlanFilter] = useState("");
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "activity" | "usage" | "users" | "projects" | "freeusage" | "revenue" | "query" | "agent" | "reports" | "logs" | "emails" | "support" | "reviews" | "features" | "memory" | "setup"
+    "stats" | "balances" | "activity" | "usage" | "users" | "projects" | "freeusage" | "revenue" | "query" | "agent" | "reports" | "logs" | "emails" | "support" | "reviews" | "features" | "memory" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "activity", "usage", "users", "projects", "freeusage", "revenue", "query", "agent", "reports", "logs", "emails", "support", "reviews", "features", "memory", "setup"],
+    ["stats", "balances", "activity", "usage", "users", "projects", "freeusage", "revenue", "query", "agent", "reports", "logs", "emails", "support", "reviews", "features", "memory", "setup"],
   );
   // "usage" stays accepted as a stored value: it is what localStorage holds
   // for anyone who last left the admin on the old Usage tab, and mapping it
@@ -6414,6 +6581,14 @@ export default function AdminPage() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Balance. Its own section rather than a card inside Stats: Stats is
+            the platform at a glance, this is a ledger you read row by row. */}
+        <div id="balances" className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "balances" ? undefined : "none" }}>
+          {/* Fetches only while shown: it reads four tables and the account
+              list, which is not work to do on every other tab. */}
+          <BalancesPanel visible={activeTab === "balances"} />
         </div>
 
         {/* Activity chart */}
