@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import { getSettings } from "@/lib/settings";
+import { getFundingModeById } from "@/lib/funding";
 
 /**
  * Where Claude calls get routed. Set globally by admin in Config → Anthropic.
@@ -104,6 +105,17 @@ export async function getAnthropicRouting(step?: WorkflowStep): Promise<Anthropi
 export async function getRoutingForUser(userId: string, step?: WorkflowStep): Promise<AnthropicRouting> {
   const routing = await getAnthropicRouting(step);
   if (routing !== "client_kie") return routing;
+  // A wallet user has no key of their own to spend, so client_kie is not a
+  // routing they can run: it would resolve to a KIE key that does not exist and
+  // fail the step. Their work goes on Heclus's KIE key and is metered against
+  // their credits. Checked before the client_direct upgrade below, which is
+  // also about a key they do not have.
+  try {
+    if (await getFundingModeById(userId) === "wallet") return "heclus_kie";
+  } catch {
+    // Unreadable funding mode — fall through to the client paths, which is what
+    // every account did before the column existed.
+  }
   try {
     const { anthropic_api_key, anthropic_direct_enabled } = await getSettings(userId);
     if (anthropic_direct_enabled && anthropic_api_key) return "client_direct";
