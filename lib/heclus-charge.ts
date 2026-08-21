@@ -50,7 +50,7 @@ export async function chargeForCostEntry(entry: CostEntry): Promise<ChargeResult
     }
 
     const rates = await getCreditRates();
-    const credits = roundCredits(creditsForUnits(entry.unitKind, entry.units, rates));
+    const credits = roundCredits(creditsForUnits(entry.unitKind, entry.units, rates, entry.step));
     if (credits <= 0) return { ...NOTHING, skipped: "unpriced" };
 
     const note = `${entry.step} · ${entry.units.toLocaleString()} ${entry.unitKind}`;

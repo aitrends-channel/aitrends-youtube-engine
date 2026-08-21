@@ -2224,6 +2224,7 @@ function HeclusCreditsPanel() {
 const HECLUS_RATE_FIELDS = [
   { key: "perKieCredit", label: "Per KIE credit" },
   { key: "perThousandTtsChars", label: "Per 1k voiceover chars" },
+  { key: "perThousandSttChars", label: "Per 1k caption chars" },
   { key: "perMillionTokensIn", label: "Per 1M input tokens" },
   { key: "perMillionTokensOut", label: "Per 1M output tokens" },
   { key: "perMillionTokensCacheRead", label: "Per 1M cache reads" },

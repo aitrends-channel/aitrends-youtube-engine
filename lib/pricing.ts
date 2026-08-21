@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
-import type { CostUnitKind } from "@/lib/costs";
+import type { CostStep, CostUnitKind } from "@/lib/costs";
 
 // What a provider unit costs in Heclus Credits.
 //
@@ -30,6 +30,10 @@ export interface CreditRates {
   perMillionTokensCacheRead: number;
   perMillionTokensCacheWrite: number;
   perThousandTtsChars: number;
+  /** Transcription, which is NOT the same product as synthesis even though both
+   *  arrive as elevenlabs_chars. Priced per hour of audio upstream, so per
+   *  character it is two orders of magnitude cheaper than speaking them. */
+  perThousandSttChars: number;
 }
 
 /**
@@ -64,6 +68,19 @@ const ELEVENLABS_USD_PER_CHAR = 0.00018;
 const CLAUDE_USD_PER_MILLION_IN = 5;
 const CLAUDE_USD_PER_MILLION_OUT = 25;
 
+/**
+ * Transcription, for caption alignment. Billed by the hour of audio rather than
+ * by the character, so it is converted through a speech-rate assumption: about
+ * 900 characters a minute, 54,000 an hour, against roughly $0.40 an hour.
+ *
+ * Worth keeping separate rather than reusing the synthesis rate. Speaking a
+ * thousand characters costs $0.18; transcribing a thousand costs well under a
+ * cent, and charging the one for the other would bill a customer roughly
+ * twenty-five times what the caption pass actually costs. Both arrive as
+ * elevenlabs_chars, which is exactly why the step has to disambiguate them.
+ */
+const STT_USD_PER_THOUSAND_CHARS = 0.40 / 54;
+
 const perMillion = (usd: number) => Math.ceil(usd / USD_PER_CREDIT);
 
 // Derived, not typed in. The first version of this file carried hand-written
@@ -78,6 +95,7 @@ export const DEFAULT_CREDIT_RATES: CreditRates = {
   perMillionTokensCacheRead: perMillion(CLAUDE_USD_PER_MILLION_IN * 0.1),
   perMillionTokensCacheWrite: perMillion(CLAUDE_USD_PER_MILLION_IN * 1.25),
   perThousandTtsChars: Math.ceil((ELEVENLABS_USD_PER_CHAR * 1000) / USD_PER_CREDIT),
+  perThousandSttChars: Math.ceil(STT_USD_PER_THOUSAND_CHARS / USD_PER_CREDIT),
 };
 
 let cached: { rates: CreditRates; at: number } | null = null;
@@ -128,7 +146,12 @@ function pickNumbers(raw: Record<string, unknown>): Partial<CreditRates> {
  * rather than throwing means a new unit kind added upstream is free until
  * somebody prices it, which is the failure everyone would rather have.
  */
-export function creditsForUnits(unitKind: CostUnitKind, units: number, rates: CreditRates): number {
+export function creditsForUnits(
+  unitKind: CostUnitKind,
+  units: number,
+  rates: CreditRates,
+  step?: CostStep,
+): number {
   if (!(units > 0)) return 0;
   switch (unitKind) {
     case "kie_credits":
@@ -142,7 +165,9 @@ export function creditsForUnits(unitKind: CostUnitKind, units: number, rates: Cr
     case "claude_tokens_cache_creation":
       return (units / 1_000_000) * rates.perMillionTokensCacheWrite;
     case "elevenlabs_chars":
-      return (units / 1_000) * rates.perThousandTtsChars;
+      // The assemble step is transcription, every other step is synthesis. Same
+      // unit, different product, and a factor of twenty-five between them.
+      return (units / 1_000) * (step === "assemble" ? rates.perThousandSttChars : rates.perThousandTtsChars);
     case "genaipro_clips":
     case "supadata_transcripts":
       return 0;
