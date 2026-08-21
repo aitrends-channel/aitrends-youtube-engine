@@ -29,7 +29,7 @@ interface QueryResult {
   exhausted?: boolean;
 }
 
-const cardStyle = { background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)" } as const;
+const cardStyle = { background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)" } as const;
 
 
 // Renders the model's answer: paragraphs, plus any pipe-delimited table turned

@@ -565,7 +565,7 @@ function StatCard({
 
   return (
     <div className="p-6 rounded-2xl space-y-4"
-      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06), 0 1px 3px oklch(0 0 0 / 0.04)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06), 0 1px 3px oklch(0 0 0 / 0.04)" }}>
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
           {label}
@@ -741,7 +741,7 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
     : "";
 
   const card = "p-4 rounded-2xl space-y-3";
-  const cardStyle = { background: "oklch(0 0 0 / 0.015)", border: "1px solid oklch(0 0 0 / 0.07)" } as const;
+  const cardStyle = { background: "oklch(0 0 0 / 0.015)", border: "1px solid oklch(0 0 0 / 0.10)" } as const;
   const h = "text-xs font-medium uppercase tracking-wider";
   const hStyle = { color: "oklch(0.5 0 0)" } as const;
   const Row = ({ label, value }: { label: string; value: string }) => (
@@ -753,7 +753,7 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
 
   return (
     <section id="reports" className="rounded-2xl space-y-5"
-      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
       {/* Icon and title dropped: the page heading above already says Reports.
           The generated-on line stays — it dates the numbers below, which the
           page heading cannot know. */}
@@ -981,7 +981,7 @@ function AddUserForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <form onSubmit={handleSubmit} className="p-5 rounded-2xl space-y-3 w-full"
-      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
       <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Email address</label>
       <div className="flex flex-col sm:flex-row gap-2">
         <input
@@ -1083,9 +1083,9 @@ function LogsSection() {
 
   return (
     <section id="logs" className="rounded-2xl space-y-4"
-      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
       <div className="flex items-center gap-1 p-1 rounded-xl w-full sm:w-auto sm:inline-flex"
-        style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+        style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
         {subTabs.map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => setLogTab(id)}
             className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
@@ -1100,7 +1100,7 @@ function LogsSection() {
       </div>
 
       {data?.notice && (
-        <p className="text-xs italic px-3 py-2 rounded-lg" style={{ color: "var(--c-42)", background: "oklch(0 0 0 / 0.03)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+        <p className="text-xs italic px-3 py-2 rounded-lg" style={{ color: "var(--c-42)", background: "oklch(0 0 0 / 0.03)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
           {data.notice}
         </p>
       )}
@@ -1151,7 +1151,7 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
 
   return (
     <div className="flex items-start gap-3 px-3 py-2 rounded-xl"
-      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.05)" }}>
+      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
       <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 mt-0.5"
         style={{ background: bg, color: fg }}>
         {label}
@@ -1381,21 +1381,21 @@ function SetupSection({
   };
 
   return (
-    <section id="setup" className="rounded-2xl space-y-5" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+    <section id="setup" className="rounded-2xl space-y-5" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
       <div className="flex items-center gap-3">
         <div>
           <p className="text-xs" style={{ color: "var(--c-42)" }}>Product-wide API keys — first key is default, auto-rotates on quota exceeded</p>
         </div>
         {setupTab === "keys" && (
           <span className="ml-auto text-xs px-2.5 py-0.5 rounded-full"
-            style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
+            style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.02)", color: "var(--c-42)" }}>
             {totalKeys} key{totalKeys !== 1 ? "s" : ""}
           </span>
         )}
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-xl" style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+      <div className="flex gap-1 p-1 rounded-xl" style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
         {([
           { id: "keys", label: "API Keys" },
           { id: "models", label: "Models" },
@@ -1434,7 +1434,7 @@ function SetupSection({
 
       {/* Add key form */}
       <form onSubmit={handleAdd} className="p-4 rounded-2xl space-y-3"
-        style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.07)" }}>
+        style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.10)" }}>
         <p className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Add API Key</p>
         <div className="flex flex-col sm:flex-row gap-2">
           <select
@@ -1481,10 +1481,10 @@ function SetupSection({
             const row = serviceMap.get(service);
             return (
               <div key={service} className="rounded-2xl overflow-hidden"
-                style={{ border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 8px oklch(0 0 0 / 0.04)" }}>
+                style={{ border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 8px oklch(0 0 0 / 0.04)" }}>
                 {/* Service header */}
                 <div className="flex items-center gap-3 px-4 py-3"
-                  style={{ background: "oklch(0 0 0 / 0.025)", borderBottom: row && row.keys.length > 0 ? "1px solid oklch(0 0 0 / 0.06)" : "none" }}>
+                  style={{ background: "oklch(0 0 0 / 0.025)", borderBottom: row && row.keys.length > 0 ? "1px solid oklch(0 0 0 / 0.09)" : "none" }}>
                   <span className="text-xs font-semibold tracking-wide" style={{ color: "oklch(0.62 0.15 220)" }}>
                     {SERVICE_LABELS[service]}
                   </span>
@@ -1533,7 +1533,7 @@ function SetupSection({
                   const remaining = Math.max(0, max - used);
                   return (
                     <div className="px-4 py-3 space-y-2"
-                      style={{ background: "oklch(0 0 0 / 0.015)", borderBottom: row && row.keys.length > 0 ? "1px solid oklch(0 0 0 / 0.05)" : "none" }}>
+                      style={{ background: "oklch(0 0 0 / 0.015)", borderBottom: row && row.keys.length > 0 ? "1px solid oklch(0 0 0 / 0.11)" : "none" }}>
                       <div className="flex items-center justify-between text-xs">
                         <span style={{ color: "var(--c-42)" }}>Account usage</span>
                         <span style={{ color: "var(--c-42)" }}>
@@ -1580,7 +1580,7 @@ function SetupSection({
                         <div key={i}
                           className="px-4 py-3 space-y-2"
                           style={{
-                            borderBottom: i < row.keys.length - 1 ? "1px solid oklch(0 0 0 / 0.05)" : "none",
+                            borderBottom: i < row.keys.length - 1 ? "1px solid oklch(0 0 0 / 0.11)" : "none",
                             background: isCurrent ? "oklch(0.55 0.15 145 / 0.03)" : "transparent",
                           }}>
                           {/* Key row */}
@@ -1602,7 +1602,7 @@ function SetupSection({
                             )}
                             {!isCurrent && !isExhausted && (
                               <span className="text-xs px-1.5 py-0.5 rounded font-medium shrink-0"
-                                style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-40)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+                                style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-40)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
                                 Standby
                               </span>
                             )}
@@ -1632,7 +1632,7 @@ function SetupSection({
                                   onClick={() => { setEditingKey(null); setEditValue(""); }}
                                   disabled={savingEdit === tag}
                                   className="text-xs px-2 py-1 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 cursor-pointer shrink-0"
-                                  style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-50)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+                                  style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-50)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
                                   Cancel
                                 </button>
                               </>
@@ -1656,7 +1656,7 @@ function SetupSection({
                                     <div
                                       role="menu"
                                       className="absolute right-0 top-full mt-1 z-20 min-w-[140px] rounded-lg overflow-hidden py-1"
-                                      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.08)", boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)" }}>
+                                      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.11)", boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)" }}>
                                       <button
                                         role="menuitem"
                                         onClick={() => { setOpenMenuTag(null); setEditingKey(tag); setEditValue(k); }}
@@ -1977,9 +1977,13 @@ function HeclusCreditsPanel() {
     }
   }
 
+  // Sections are defined by their border now, not by a fill: the same value as
+  // --input, which is the strongest in the scale, because an outline doing
+  // structural work has to be seen. Nested tiles inside a section stay a step
+  // lighter so the hierarchy still reads.
   const cardStyle = {
-    background: "oklch(0 0 0 / 0.02)",
-    border: "1px solid oklch(0 0 0 / 0.06)",
+    background: "oklch(0 0 0 / 0.015)",
+    border: "1px solid var(--input)",
   } as const;
   const inputStyle = {
     background: "var(--bg-input)",
@@ -1997,14 +2001,18 @@ function HeclusCreditsPanel() {
   const sellable = !!activeLink && data?.packCredits != null;
 
   return (
-    <div className="space-y-4">
+    // 80px between sections, set here rather than per card so every section on
+    // the view is spaced the same and a new one inherits it. A migration warning
+    // is wrapped with the section it warns about, so it stays attached to it
+    // rather than floating between two.
+    <div className="space-y-20">
       <div className="flex items-start gap-2.5">
         <Wallet size={18} className="shrink-0 mt-0.5" style={{ color: "oklch(0.62 0.15 220)" }} />
         <div>
-          <h3 className="text-base font-bold leading-tight" style={{ color: "var(--c-90)" }}>
+          <h3 className="text-lg font-bold leading-tight" style={{ color: "var(--c-90)" }}>
             Heclus Credits
           </h3>
-          <p className="text-xs mt-1" style={{ color: "var(--c-50)" }}>
+          <p className="text-sm mt-1" style={{ color: "var(--c-50)" }}>
             The wallet customers buy from us and spend on work that runs on Heclus&apos;s own provider
             accounts. This deployment reads the <span style={{ fontWeight: 600 }}>{activeEnv}</span> link.
           </p>
@@ -2044,7 +2052,7 @@ function HeclusCreditsPanel() {
             ? "Live for customers."
             : "Admins only. Flip WALLET_FUNDING_ADMIN_ONLY in lib/funding.ts to release it."}
         />
-        <div className="sm:col-span-2 text-xs pt-1" style={{ color: "var(--c-42)" }}>
+        <div className="sm:col-span-2 text-sm pt-1" style={{ color: "var(--c-42)" }}>
           {data?.wallet.accounts ?? 0} wallet{(data?.wallet.accounts ?? 0) === 1 ? "" : "s"} holding{" "}
           <span className="font-semibold tabular-nums" style={{ color: "var(--c-90)" }}>
             {(data?.wallet.creditsOutstanding ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
@@ -2053,6 +2061,7 @@ function HeclusCreditsPanel() {
         </div>
       </div>
 
+      <div className="space-y-2">
       {data && !data.schema.pack && (
         <MigrationWarning migration="130_heclus_pack.sql" what="the pack link, size and price" />
       )}
@@ -2060,8 +2069,8 @@ function HeclusCreditsPanel() {
       {/* Pack */}
       <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
         <div>
-          <p className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>Top-up pack</p>
-          <p className="text-xs mt-0.5" style={{ color: "var(--c-50)" }}>
+          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Top-up pack</p>
+          <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
             One Dodo product, bought in quantities. Must not be the GenAI video pack: that one grants
             clips from the other wallet.
           </p>
@@ -2069,10 +2078,10 @@ function HeclusCreditsPanel() {
 
         {(["test", "production"] as const).map((env) => (
           <div key={env}>
-            <label className="text-xs font-medium flex items-center gap-2" style={{ color: "var(--c-55)" }}>
+            <label className="text-sm font-medium flex items-center gap-2" style={{ color: "var(--c-55)" }}>
               Checkout link ({env})
               {env === activeEnv && (
-                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                <span className="px-1.5 py-0.5 rounded text-[11px] font-semibold"
                   style={{ background: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.62 0.15 220)" }}>
                   in use here
                 </span>
@@ -2092,7 +2101,7 @@ function HeclusCreditsPanel() {
 
         <div className="flex flex-wrap items-end gap-3">
           <div>
-            <label className="text-xs font-medium" style={{ color: "var(--c-55)" }}>Credits per pack</label>
+            <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>Credits per pack</label>
             <input
               type="number" min={1} step="any" value={packCredits}
               onChange={(e) => setPackCredits(e.target.value)}
@@ -2102,7 +2111,7 @@ function HeclusCreditsPanel() {
             />
           </div>
           <div>
-            <label className="text-xs font-medium" style={{ color: "var(--c-55)" }}>Price USD</label>
+            <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>Price USD</label>
             <input
               type="number" min={0} step="any" value={packPrice}
               onChange={(e) => setPackPrice(e.target.value)}
@@ -2119,18 +2128,21 @@ function HeclusCreditsPanel() {
               packPriceUsd: packPrice.trim() || null,
             })}
             disabled={saving !== null || isLoading}
-            className="px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            className="px-3 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             style={saveStyle(saving === null && !isLoading)}
           >
             {saving === "pack" ? "Saving…" : "Save pack"}
           </button>
         </div>
-        <p className="text-xs" style={{ color: "var(--c-42)" }}>
+        <p className="text-sm" style={{ color: "var(--c-42)" }}>
           The price is display only. What lands is the pack size times the quantity Dodo confirms, so a
           reprice never changes what an old payment granted.
         </p>
       </div>
 
+      </div>
+
+      <div className="space-y-2">
       {data && !data.schema.signupGrant && (
         <MigrationWarning migration="132_signup_grant.sql" what="the starter grant" />
       )}
@@ -2138,15 +2150,15 @@ function HeclusCreditsPanel() {
       {/* Starter grant */}
       <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
         <div>
-          <p className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>Starter grant</p>
-          <p className="text-xs mt-0.5" style={{ color: "var(--c-50)" }}>
+          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Starter grant</p>
+          <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
             Granted once per account, the first time a balance is read. Existing accounts receive it too.
             Empty disables it.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <div>
-            <label className="text-xs font-medium" style={{ color: "var(--c-55)" }}>Credits</label>
+            <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>Credits</label>
             <input
               type="number" min={1} step="any" value={grant}
               onChange={(e) => setGrant(e.target.value)}
@@ -2158,26 +2170,31 @@ function HeclusCreditsPanel() {
           <button
             onClick={() => save("grant", { signupGrantCredits: grant.trim() || null })}
             disabled={saving !== null || isLoading}
-            className="px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            className="px-3 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             style={saveStyle(saving === null && !isLoading)}
           >
             {saving === "grant" ? "Saving…" : "Save grant"}
           </button>
         </div>
-        <p className="text-xs" style={{ color: "var(--c-42)" }}>
+        <p className="text-sm" style={{ color: "var(--c-42)" }}>
           Changing this does not top up anyone who already received the old amount.
         </p>
       </div>
 
+      </div>
+
+      <div className="space-y-2">
       {data && !data.schema.rates && (
         <MigrationWarning migration="133_credit_rates.sql" what="the rate overrides" />
       )}
 
-      {/* Rates */}
+      {/* Rates. Set apart like the breakdown below it: the three cards above are
+          what to sell, these are what it costs, and reading the two as one list
+          is how a rate gets changed by accident. */}
       <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
         <div>
-          <p className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>What the work draws down</p>
-          <p className="text-xs mt-0.5" style={{ color: "var(--c-50)" }}>
+          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>What the work draws down</p>
+          <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
             One credit is one KIE credit, so images, videos and KIE-routed writing need no rate. These are
             the two providers billed in their own units. Empty uses the default.
           </p>
@@ -2185,10 +2202,10 @@ function HeclusCreditsPanel() {
         <div className="grid gap-2 sm:grid-cols-2">
           {HECLUS_RATE_FIELDS.map((f) => (
             <div key={f.key} className="flex items-end justify-between gap-2 p-2 rounded-lg"
-              style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+              style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
               <div className="min-w-0">
-                <label className="text-xs font-medium" style={{ color: "var(--c-55)" }}>{f.label}</label>
-                <p className="text-xs" style={{ color: "var(--c-42)" }}>
+                <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>{f.label}</label>
+                <p className="text-sm" style={{ color: "var(--c-42)" }}>
                   default {data?.defaultRates?.[f.key] ?? "—"}
                 </p>
               </div>
@@ -2207,15 +2224,17 @@ function HeclusCreditsPanel() {
         <button
           onClick={() => save("rates", { rates })}
           disabled={saving !== null || isLoading}
-          className="px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          className="px-3 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           style={saveStyle(saving === null && !isLoading)}
         >
           {saving === "rates" ? "Saving…" : "Save rates"}
         </button>
-        <p className="text-xs" style={{ color: "var(--c-42)" }}>
+        <p className="text-sm" style={{ color: "var(--c-42)" }}>
           Check the result with <span className="font-mono">scripts/wallet-margin.mjs</span>: credits spent
           should track KIE credits consumed one to one.
         </p>
+      </div>
+
       </div>
 
       {data && <BillingBreakdown data={data} />}
@@ -2236,12 +2255,15 @@ function BillingBreakdown({ data }: { data: HeclusCreditsConfig }) {
   const usd = (credits: number) => `$${(credits * (b?.usdPerCredit ?? 0)).toFixed(2)}`;
   const n = (v: number, dp = 0) => v.toLocaleString(undefined, { maximumFractionDigits: dp });
 
+  // Set off from the settings above it: this is the consequence of them, not
+  // another field, and the panel's own rhythm would read as one more card.
+  // Inline, so it wins over the parent's space-y.
   return (
     <div className="p-3 rounded-xl space-y-3"
-      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+      style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" }}>
       <div>
-        <p className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>What a video costs</p>
-        <p className="text-xs mt-0.5" style={{ color: "var(--c-50)" }}>
+        <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>What a video costs</p>
+        <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
           {b
             ? `Median metered usage across ${b.projects} project${b.projects === 1 ? "" : "s"}, priced at the rates above. Not an example: these move as the product does.`
             : "Needs a few projects of metered history before there is anything worth calling typical."}
@@ -2251,7 +2273,7 @@ function BillingBreakdown({ data }: { data: HeclusCreditsConfig }) {
       {b && (
         <>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs" style={{ borderCollapse: "collapse" }}>
+            <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ color: "var(--c-45)" }}>
                   <th className="text-left font-medium py-1.5 pr-3">Step</th>
@@ -2262,7 +2284,7 @@ function BillingBreakdown({ data }: { data: HeclusCreditsConfig }) {
               </thead>
               <tbody>
                 {b.lines.map((l) => (
-                  <tr key={l.label} style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }}>
+                  <tr key={l.label} style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }}>
                     <td className="py-1.5 pr-3" style={{ color: "var(--c-90)" }}>{l.label}</td>
                     <td className="py-1.5 px-3 text-right tabular-nums" style={{ color: "var(--c-55)" }}>
                       {n(l.quantity, 1)} <span style={{ color: "var(--c-42)" }}>{l.unit}</span>
@@ -2316,7 +2338,7 @@ function BillingBreakdown({ data }: { data: HeclusCreditsConfig }) {
             />
           </div>
 
-          <p className="text-xs" style={{ color: "var(--c-42)" }}>
+          <p className="text-sm" style={{ color: "var(--c-42)" }}>
             KIE units are one credit to one credit by design, so images, clips and the writing steps carry no
             conversion and no margin risk. Only voiceover and captions convert, and both hang off the
             dollars-per-credit figure above.
@@ -2336,18 +2358,18 @@ function WorthLine({ label, value, detail, price, cost }: {
 }) {
   return (
     <div className="p-2.5 rounded-lg"
-      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
-      <p className="text-xs" style={{ color: "var(--c-45)" }}>{label}</p>
-      <p className="text-base font-bold tabular-nums" style={{ color: value ? "var(--c-90)" : "var(--c-45)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
+      <p className="text-sm" style={{ color: "var(--c-45)" }}>{label}</p>
+      <p className="text-lg font-bold tabular-nums" style={{ color: value ? "var(--c-90)" : "var(--c-45)" }}>
         {/* Under one video, a percentage is the honest reading: "0.0 videos"
             looks like a rendering bug and "0.04" says nothing. */}
         {value === null ? "—"
           : value < 1 ? `${(value * 100).toFixed(0)}% of a video`
           : `${value.toFixed(value < 10 ? 1 : 0)} video${value >= 2 ? "s" : ""}`}
       </p>
-      <p className="text-xs" style={{ color: "var(--c-42)" }}>{detail}</p>
-      {price && <p className="text-xs" style={{ color: "var(--c-42)" }}>{price}</p>}
-      {cost && <p className="text-xs" style={{ color: "var(--c-42)" }}>{cost}</p>}
+      <p className="text-sm" style={{ color: "var(--c-42)" }}>{detail}</p>
+      {price && <p className="text-sm" style={{ color: "var(--c-42)" }}>{price}</p>}
+      {cost && <p className="text-sm" style={{ color: "var(--c-42)" }}>{cost}</p>}
     </div>
   );
 }
@@ -2369,8 +2391,8 @@ function StatusLine({ ok, neutral, label, detail }: { ok: boolean; neutral?: boo
     <div className="flex items-start gap-2">
       <span className="mt-1.5 w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
       <div className="min-w-0">
-        <p className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>{label}</p>
-        <p className="text-xs" style={{ color: "var(--c-50)" }}>{detail}</p>
+        <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>{label}</p>
+        <p className="text-sm" style={{ color: "var(--c-50)" }}>{detail}</p>
       </div>
     </div>
   );
@@ -2378,7 +2400,7 @@ function StatusLine({ ok, neutral, label, detail }: { ok: boolean; neutral?: boo
 
 function MigrationWarning({ migration, what }: { migration: string; what: string }) {
   return (
-    <div className="p-3 rounded-xl text-xs leading-relaxed"
+    <div className="p-3 rounded-xl text-sm leading-relaxed"
       style={{ background: "oklch(0.72 0.18 65 / 0.1)", border: "1px solid oklch(0.72 0.18 65 / 0.3)", color: "var(--c-70)" }}>
       <span style={{ fontWeight: 600 }}>Migration not applied.</span>{" "}
       <span className="font-mono">supabase/migrations/{migration}</span> has not run on this database, so
@@ -2512,7 +2534,7 @@ function ConcurrencyPanel() {
               <div key={f.key} className="p-3 rounded-xl"
                 style={{
                   background: inGroup ? "var(--bg-card)" : "oklch(0 0 0 / 0.02)",
-                  border: "1px solid oklch(0 0 0 / 0.06)",
+                  border: "1px solid oklch(0 0 0 / 0.09)",
                   opacity: fieldDisabled ? 0.5 : 1,
                 }}>
                 <div className="flex items-start gap-3">
@@ -2966,7 +2988,7 @@ function AnthropicRoutingPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-1 p-1 rounded-xl w-full"
-        style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+        style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
         {subTabs.map((t) => (
           <button
             key={t.id}
@@ -3160,7 +3182,7 @@ function RoutingConfirmDialog({
             onClick={onCancel}
             disabled={saving}
             className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
-            style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            style={{ background: "oklch(0 0 0 / 0.02)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
           >
             Cancel
           </button>
@@ -3426,7 +3448,7 @@ function UserSelectableModelsPanel({ swr }: { swr: ReturnType<typeof useSWR<Rout
   const stepList = (data?.user_choice_steps ?? []).map((s) => s.replace(/_/g, " ")).join(", ");
 
   return (
-    <div className="pt-5 mt-1 space-y-3" style={{ borderTop: "1px solid oklch(0 0 0 / 0.08)" }}>
+    <div className="pt-5 mt-1 space-y-3" style={{ borderTop: "1px solid oklch(0 0 0 / 0.11)" }}>
       <div>
         <h4 className="text-sm font-bold" style={{ color: "var(--c-90)" }}>
           Let Pro users choose their own model
@@ -3444,7 +3466,7 @@ function UserSelectableModelsPanel({ swr }: { swr: ReturnType<typeof useSWR<Rout
           the box reflects "some" rather than lying about all-or-nothing. */}
       <label
         className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer"
-        style={{ background: "oklch(0 0 0 / 0.03)", border: "1px solid oklch(0 0 0 / 0.06)" }}
+        style={{ background: "oklch(0 0 0 / 0.03)", border: "1px solid oklch(0 0 0 / 0.09)" }}
       >
         <input
           type="checkbox"
@@ -3617,7 +3639,7 @@ function StepProviderControl({
   return (
     <div
       className="rounded-lg p-3 space-y-3"
-      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.06)" }}
+      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.09)" }}
     >
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--c-50)" }}>
@@ -3625,7 +3647,7 @@ function StepProviderControl({
         </span>
         <div
           className="flex items-center gap-1 p-0.5 rounded-lg"
-          style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}
+          style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.11)" }}
         >
           {(["claude", "gpt", "gemini"] as PromptProvider[]).map((p) => (
             <button
@@ -3790,7 +3812,7 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
               className="rounded-xl p-4 space-y-3"
               style={{
                 background: "var(--bg-card)",
-                border: "1px solid oklch(0 0 0 / 0.07)",
+                border: "1px solid oklch(0 0 0 / 0.10)",
                 boxShadow: "0 1px 2px oklch(0 0 0 / 0.04)",
               }}
             >
@@ -3857,7 +3879,7 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
                   (kieRoutingFor in lib/claude/providers.ts). */}
               {cardProvider ? (
                 <p className="text-[11px] leading-relaxed rounded-lg px-3 py-2"
-                  style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.06)", color: "var(--c-50)" }}>
+                  style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.09)", color: "var(--c-50)" }}>
                   Routing doesn&apos;t apply on {PROVIDER_LABELS[cardProvider]}, which is only reachable through KIE.
                   This step bills{" "}
                   <span className="font-semibold">
@@ -3950,7 +3972,7 @@ function VisionControl({ data, mutate, disabled }: {
 
   return (
     <div className="rounded-lg p-3 space-y-3"
-      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
 
       <div className="flex items-baseline justify-between gap-2 flex-wrap">
         <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--c-50)" }}>
@@ -5554,7 +5576,7 @@ function NicheLimitOverrideModal({
             onClick={onClose}
             disabled={saving}
             className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
-            style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            style={{ background: "oklch(0 0 0 / 0.02)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
           >
             Cancel
           </button>
@@ -5573,7 +5595,7 @@ function Pagination({ page, total, onChange }: { page: number; total: number; on
   const from = (page - 1) * PER_PAGE + 1;
   const to = Math.min(page * PER_PAGE, total);
   return (
-    <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }}>
+    <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }}>
       <p className="text-xs" style={{ color: "oklch(0.50 0 0)" }}>{from}–{to} of {total}</p>
       <div className="flex items-center gap-1">
         <button onClick={() => onChange(page - 1)} disabled={page === 1}
@@ -5606,19 +5628,19 @@ function AdminSkeleton() {
 
         {/* Tabs */}
         <div className="flex items-center gap-1 p-1 rounded-xl"
-          style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+          style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
           {[...Array(6)].map((_, i) => (
             <div key={i} className="flex-1 h-8 rounded-lg animate-pulse" style={SK} />
           ))}
         </div>
 
         {/* Stats cards */}
-        <div className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
+        <div className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
           <div className="h-3 w-10 rounded animate-pulse" style={SK} />
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-[10px]">
             {[...Array(6)].map((_, i) => (
               <div key={i} className="p-6 rounded-2xl space-y-4"
-                style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06)" }}>
+                style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06)" }}>
                 <div className="flex items-center justify-between">
                   <div className="h-3 w-16 rounded animate-pulse" style={SK} />
                   <div className="w-8 h-8 rounded-lg animate-pulse" style={SK} />
@@ -5630,7 +5652,7 @@ function AdminSkeleton() {
         </div>
 
         {/* Activity chart */}
-        <div className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
+        <div className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="space-y-2">
               <div className="h-3 w-40 rounded animate-pulse" style={SK} />
@@ -5644,7 +5666,7 @@ function AdminSkeleton() {
         </div>
 
         {/* Users section */}
-        <div className="rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
+        <div className="rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl animate-pulse" style={SK} />
             <div className="h-5 w-16 rounded animate-pulse" style={SK} />
@@ -5659,11 +5681,11 @@ function AdminSkeleton() {
 function SkeletonRows({ cols, rows = 3 }: { cols: number; rows?: number }) {
   const widths = ["w-36", "w-20", "w-16", "w-24", "w-12", "w-16", "w-10"];
   return (
-    <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid oklch(0 0 0 / 0.07)" }}>
+    <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid oklch(0 0 0 / 0.10)" }}>
       <table className="w-full border-collapse">
         <tbody>
           {[...Array(rows)].map((_, r) => (
-            <tr key={r} style={{ borderBottom: "1px solid oklch(0 0 0 / 0.05)" }}>
+            <tr key={r} style={{ borderBottom: "1px solid oklch(0 0 0 / 0.11)" }}>
               {[...Array(cols)].map((_, c) => (
                 <td key={c} className="py-3 px-4">
                   <div className={`h-4 ${widths[c % widths.length]} rounded animate-pulse`} style={SK} />
@@ -6217,9 +6239,9 @@ export default function AdminPage() {
                 <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
                 <div
                   className="absolute right-0 top-11 z-50 w-56 rounded-2xl py-3 shadow-2xl"
-                  style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.03)" }}
                 >
-                  <div className="px-4 pb-3" style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
+                  <div className="px-4 pb-3" style={{ borderBottom: "1px solid oklch(0 0 0 / 0.025)" }}>
                     <p className="text-xs font-semibold truncate" style={{ color: "var(--c-88)" }}>
                       {userEmail || "Loading…"}
                     </p>
@@ -6321,7 +6343,7 @@ export default function AdminPage() {
         </div>
 
         {/* Stats cards */}
-        <div id="stats" className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "stats" ? undefined : "none" }}>
+        <div id="stats" className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "stats" ? undefined : "none" }}>
           <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "oklch(0.50 0 0)" }}>Stats</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-[10px]">
             <StatCard label="Total Niches"      value={stats?.totalProjects}    icon={FolderOpen}                    />
@@ -6456,7 +6478,7 @@ export default function AdminPage() {
           const slotW = n > 1 ? plotW / (n - 1) : plotW;
 
           return (
-            <div id="activity" className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: showActivity ? undefined : "none" }}>
+            <div id="activity" className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: showActivity ? undefined : "none" }}>
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "oklch(0.50 0 0)" }}>Activity — {periodLabel}</p>
@@ -6475,7 +6497,7 @@ export default function AdminPage() {
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+                <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
                   {(["daily", "weekly", "monthly"] as const).map(v => (
                     <button key={v} onClick={() => { setActivityView(v); setHoveredIdx(null); }}
                       className="px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer capitalize"
@@ -6647,7 +6669,7 @@ export default function AdminPage() {
           const rangeLabel = isToday ? "Today · by hour (UTC)" : usageRange === "7d" ? "Last 7 days" : "Last 30 days";
 
           return (
-            <div id="usage" className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: showActivity ? undefined : "none" }}>
+            <div id="usage" className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: showActivity ? undefined : "none" }}>
               <div className="flex items-end justify-between flex-wrap gap-3">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "oklch(0.50 0 0)" }}>
@@ -6660,7 +6682,7 @@ export default function AdminPage() {
                     </span>
                   </p>
                 </div>
-                <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+                <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
                   {([["today", "Today"], ["7d", "7 days"], ["30d", "1 month"]] as const).map(([v, label]) => (
                     <button key={v} onClick={() => { setUsageRange(v); setUsageHoveredIdx(null); }}
                       className="px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer"
@@ -6755,12 +6777,12 @@ export default function AdminPage() {
         })()}
 
         {/* Users section */}
-        <section id="users" className="rounded-2xl space-y-5 max-w-full min-w-0" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "users" ? undefined : "none" }}>
+        <section id="users" className="rounded-2xl space-y-5 max-w-full min-w-0" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "users" ? undefined : "none" }}>
           {/* Icon and title dropped — the page heading names this view. The
               count chip stays: it is data, not a label. */}
           <div className="flex items-center gap-3">
             <span className="text-xs px-2.5 py-0.5 rounded-full"
-              style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
+              style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.02)", color: "var(--c-42)" }}>
               {users.length}
             </span>
           </div>
@@ -6848,7 +6870,7 @@ export default function AdminPage() {
             </div>
           ) : (
             <div className="rounded-2xl overflow-x-auto w-full max-w-full"
-              style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+              style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
               <table className="w-full border-collapse min-w-[520px]">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -7005,7 +7027,7 @@ export default function AdminPage() {
                               onClick={() => setOpenUserMenu(openUserMenu === u.email ? null : u.email)}
                               disabled={removing === u.email || promotingUser === u.email || demotingUser === u.email || flaggingProdTest === u.email}
                               className="w-7 h-7 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 inline-flex items-center justify-center"
-                              style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)", color: "var(--c-55)" }}
+                              style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.11)", color: "var(--c-55)" }}
                               aria-label="User actions"
                               aria-haspopup="menu"
                               aria-expanded={openUserMenu === u.email}
@@ -7028,7 +7050,7 @@ export default function AdminPage() {
                                   className="absolute right-0 top-full mt-1 z-20 rounded-lg overflow-hidden min-w-[240px] py-1.5"
                                   style={{
                                     background: "var(--bg-card)",
-                                    border: "1px solid oklch(0 0 0 / 0.08)",
+                                    border: "1px solid oklch(0 0 0 / 0.11)",
                                     boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)",
                                   }}
                                 >
@@ -7044,7 +7066,7 @@ export default function AdminPage() {
                                         <Crown size={12} />
                                         Remove admin
                                       </button>
-                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
+                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }} />
                                       <button
                                         type="button"
                                         role="menuitem"
@@ -7080,7 +7102,7 @@ export default function AdminPage() {
                                         <FlaskConical size={12} />
                                         Flag as production test account
                                       </button>
-                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
+                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }} />
                                       <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.55 0 0)" }}>Subscription</div>
                                       <button
                                         type="button"
@@ -7115,7 +7137,7 @@ export default function AdminPage() {
                                         <Sparkles size={12} />
                                         Mark as Demo/free
                                       </button>
-                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
+                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }} />
                                       <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.55 0 0)" }}>Plan</div>
                                       {([
                                         { slug: "starter" as const, label: "Starter", Icon: Rocket, color: "oklch(0.45 0.15 145)" },
@@ -7139,7 +7161,7 @@ export default function AdminPage() {
                                           </button>
                                         );
                                       })}
-                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
+                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }} />
                                       <button
                                         type="button"
                                         role="menuitem"
@@ -7168,10 +7190,10 @@ export default function AdminPage() {
         </section>
 
         {/* Projects section */}
-        <section id="projects" className="rounded-2xl space-y-5 pb-[10px] max-w-full min-w-0" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "projects" ? undefined : "none" }}>
+        <section id="projects" className="rounded-2xl space-y-5 pb-[10px] max-w-full min-w-0" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "projects" ? undefined : "none" }}>
           <div className="flex items-center gap-3">
             <span className="text-xs px-2.5 py-0.5 rounded-full"
-              style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
+              style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.02)", color: "var(--c-42)" }}>
               {projects.length}
             </span>
             {/* Average wall-clock assembly time across all projects
@@ -7205,7 +7227,7 @@ export default function AdminPage() {
               stays constant so the count + Avg processing chip are
               visible regardless of which sub-tab is selected. */}
           <div className="flex items-center gap-1 p-1 rounded-xl w-full"
-            style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+            style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
             {(["general", "cost"] as const).map((id) => (
               <button key={id} onClick={() => { setVideosSubTab(id); setSelectedCostProject(null); setSelectedGeneralProject(null); }}
                 className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer capitalize"
@@ -7324,7 +7346,7 @@ export default function AdminPage() {
               ];
               return (
                 <div className="rounded-2xl w-full max-w-full p-4 space-y-4"
-                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <button
                       onClick={() => setSelectedGeneralProject(null)}
@@ -7354,7 +7376,7 @@ export default function AdminPage() {
                       matches the table's color treatment and the
                       bar mirrors the General-row progress style. */}
                   <div className="rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap"
-                    style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+                    style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
                     <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
                       style={isComplete ? {
                         background: "oklch(0.55 0.15 145 / 0.15)",
@@ -7391,7 +7413,7 @@ export default function AdminPage() {
                       break-words so long topics + UUIDs wrap inside
                       the card instead of forcing horizontal scroll. */}
                   <div className="overflow-x-auto rounded-xl"
-                    style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+                    style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
                     <table className="w-full border-collapse table-fixed">
                       <colgroup>
                         <col className="w-[110px] sm:w-[180px]" />
@@ -7425,7 +7447,7 @@ export default function AdminPage() {
             </div>
           ) : (
             <div className="rounded-2xl overflow-x-auto w-full max-w-full"
-              style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+              style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
               <table className="w-full border-collapse min-w-[640px]">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -7630,7 +7652,7 @@ export default function AdminPage() {
               const cells = costsByProject.get(p.id);
               return (
                 <div className="rounded-2xl w-full max-w-full p-4 space-y-4"
-                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <button
                       onClick={() => setSelectedCostProject(null)}
@@ -7744,7 +7766,7 @@ export default function AdminPage() {
                     // lands on the same layout.
                     return (
                       <div className="overflow-x-auto rounded-xl"
-                        style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+                        style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
                         <table className="w-full border-collapse min-w-[640px]">
                           <thead>
                             <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -7795,7 +7817,7 @@ export default function AdminPage() {
 
             return (
               <div className="rounded-2xl overflow-x-auto w-full max-w-full"
-                style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
                 <table className="w-full border-collapse min-w-[900px]">
                   <thead>
                     <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -7961,7 +7983,7 @@ export default function AdminPage() {
           const slotW = n > 1 ? plotW / (n - 1) : plotW;
 
           return (
-            <section id="revenue" className="rounded-2xl space-y-5" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "revenue" ? undefined : "none" }}>
+            <section id="revenue" className="rounded-2xl space-y-5" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "revenue" ? undefined : "none" }}>
               {(revenue?.unconverted?.count ?? 0) > 0 && (
                 <p className="text-xs px-3 py-2 rounded-lg"
                   style={{ background: "oklch(0.75 0.15 65 / 0.12)", border: "1px solid oklch(0.75 0.15 65 / 0.3)", color: "oklch(0.45 0.12 65)" }}>
@@ -8001,7 +8023,7 @@ export default function AdminPage() {
 
               {/* Monthly revenue chart */}
               <div className="p-4 rounded-2xl space-y-3"
-                style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid oklch(0 0 0 / 0.07)" }}>
+                style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid oklch(0 0 0 / 0.10)" }}>
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-medium uppercase tracking-wider" style={{ color: "oklch(0.50 0 0)" }}>
                     Monthly Revenue — Last 12 Months
@@ -8195,7 +8217,7 @@ export default function AdminPage() {
                 </p>
               ) : (
                 <div className="rounded-2xl overflow-x-auto"
-                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
                   <table className="w-full border-collapse min-w-[560px]">
                     <thead>
                       <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -8248,14 +8270,14 @@ export default function AdminPage() {
 
         {activeTab === "query" && (
           <section id="query" className="rounded-2xl max-w-full min-w-0"
-            style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+            style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
             <QueryPanel />
           </section>
         )}
 
         {activeTab === "agent" && (
           <section id="agent" className="rounded-2xl max-w-full min-w-0"
-            style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+            style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
             <HeclusAgentPanel />
           </section>
         )}
@@ -8270,7 +8292,7 @@ export default function AdminPage() {
             className="rounded-2xl max-w-full min-w-0"
             style={{
               background: "var(--bg-card)",
-              border: "1px solid oklch(0 0 0 / 0.07)",
+              border: "1px solid oklch(0 0 0 / 0.10)",
               padding: "16px",
               scrollMarginTop: "80px",
               boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)",
@@ -8286,7 +8308,7 @@ export default function AdminPage() {
             className="rounded-2xl max-w-full min-w-0"
             style={{
               background: "var(--bg-card)",
-              border: "1px solid oklch(0 0 0 / 0.07)",
+              border: "1px solid oklch(0 0 0 / 0.10)",
               padding: "16px",
               scrollMarginTop: "80px",
               boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)",
@@ -8302,7 +8324,7 @@ export default function AdminPage() {
             className="rounded-2xl max-w-full min-w-0"
             style={{
               background: "var(--bg-card)",
-              border: "1px solid oklch(0 0 0 / 0.07)",
+              border: "1px solid oklch(0 0 0 / 0.10)",
               padding: "16px",
               scrollMarginTop: "80px",
               boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)",
@@ -8373,7 +8395,7 @@ export default function AdminPage() {
               onClick={() => setPromoteTarget(null)}
               disabled={promotingUser !== null}
               className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
-              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+              style={{ background: "oklch(0 0 0 / 0.02)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
             >
               Cancel
             </button>
@@ -8423,7 +8445,7 @@ export default function AdminPage() {
               onClick={() => setDemoteTarget(null)}
               disabled={demotingUser !== null}
               className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
-              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+              style={{ background: "oklch(0 0 0 / 0.02)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
             >
               Cancel
             </button>
@@ -8472,7 +8494,7 @@ export default function AdminPage() {
               onClick={() => setRemoveTarget(null)}
               disabled={removing !== null}
               className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
-              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+              style={{ background: "oklch(0 0 0 / 0.02)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
             >
               Cancel
             </button>

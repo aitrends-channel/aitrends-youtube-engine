@@ -81,7 +81,7 @@ export function MemoryPanel() {
       className="rounded-2xl space-y-5 max-w-full min-w-0"
       style={{
         background: "white",
-        border: "1px solid oklch(0 0 0 / 0.07)",
+        border: "1px solid oklch(0 0 0 / 0.10)",
         padding: "16px",
         scrollMarginTop: "80px",
         boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)",
@@ -173,7 +173,7 @@ export function MemoryPanel() {
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr style={{ color: "var(--c-50)", borderBottom: "1px solid oklch(0 0 0 / 0.08)" }}>
+                    <tr style={{ color: "var(--c-50)", borderBottom: "1px solid oklch(0 0 0 / 0.11)" }}>
                       <th className="text-left py-2 pr-3 font-medium">When</th>
                       <th className="text-left py-2 pr-3 font-medium">Channel</th>
                       <th className="text-left py-2 pr-3 font-medium">Status</th>
@@ -206,7 +206,7 @@ function RowItem({ row, ceiling }: { row: MetricRow; ceiling: number }) {
       <tr
         onClick={() => setExpanded((v) => !v)}
         className="cursor-pointer hover:bg-black/[0.02]"
-        style={{ borderBottom: "1px solid oklch(0 0 0 / 0.04)" }}
+        style={{ borderBottom: "1px solid oklch(0 0 0 / 0.10)" }}
       >
         <td className="py-2 pr-3 tabular-nums" style={{ color: "var(--c-78)" }}>
           {fmtTime(row.assembly_finished_at ?? row.assembly_started_at)}
@@ -242,7 +242,7 @@ function RowItem({ row, ceiling }: { row: MetricRow; ceiling: number }) {
         </td>
       </tr>
       {expanded && (
-        <tr style={{ borderBottom: "1px solid oklch(0 0 0 / 0.04)" }}>
+        <tr style={{ borderBottom: "1px solid oklch(0 0 0 / 0.10)" }}>
           <td colSpan={6} className="py-2 pr-3" style={{ background: "oklch(0 0 0 / 0.02)" }}>
             <div className="space-y-1 px-2">
               {row.assembly_metrics.stages.map((s, i) => (

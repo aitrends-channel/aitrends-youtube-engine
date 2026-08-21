@@ -38,7 +38,7 @@ export function GenAIProCard() {
   if (isLoading) {
     return (
       <div className="rounded-2xl p-5 flex items-center gap-2 text-sm"
-        style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", color: "var(--c-45)" }}>
+        style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", color: "var(--c-45)" }}>
         <Spinner size={14} /> Reading the GenAIPro account…
       </div>
     );

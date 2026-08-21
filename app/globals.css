@@ -294,41 +294,80 @@
   --status-danger: #B0402F;
 }
 
-/* Admin runs the light theme's two surfaces the other way round: a white
-   foundation carrying cream panels, instead of a cream foundation carrying
-   near-white ones. Same pair of brand values and the same ~5% separation
-   between them, just swapped, so nothing about contrast changes.
+/* Admin drops the cream entirely: one white surface, with borders carrying the
+   structure that a fill used to.
 
-   Scoped to the admin shell rather than done in the light block above,
-   because the product's light theme keeps the brand's cream foundation.
-   Cards inside admin read the surface from --bg-card; the hairline and
-   shadow scales are unchanged and work against either value. */
+   It ran the light theme's two surfaces the other way round before, a white
+   foundation under cream panels. That kept the brand's colour but at admin's
+   density, a table and a form and six cards to a screen, the fill behind
+   everything read as tint rather than as structure.
+
+   Scoped to the admin shell, because the product's light theme keeps the cream
+   foundation. Two things have to move with the fill, and both are below: the
+   surfaces that were white to stand out against cream, and the hairline scale,
+   which was mixed from cream and disappears against white. */
 [data-theme="light"].admin-surfaces {
   --background: #FFFFFF;
   --bg-page: #FFFFFF;
   --bg-page-2: #FFFFFF;
   --bg-overlay: #FFFFFFCC;
 
-  /* Chrome stays white with the page, so white is what the screen mostly is;
-     cream is reserved for the panels sitting on it. Header and sidebar are
-     separated by the hairline border they already carry, not by a fill. */
+  /* Chrome stays white with the page. Header and sidebar are separated by the
+     hairline border they already carry, not by a fill. */
   --bg-header: #FFFFFFEB;
   --bg-header-2: #FFFFFFF5;
   --bg-nav: #FFFFFF;
   --sidebar: #FFFFFF;
-  --card: #F1F0EA;
-  --popover: #F1F0EA;
-  --bg-card: #F1F0EA;
-  --bg-card-subtle: #F5F4EF;
-  --bg-panel: #F1F0EA;
 
-  /* Everything that sits ON a cream panel goes white: pills, table headers,
-     fields, controls. Cream on cream would vanish, and white reads as the
-     raised step now that the ground is white rather than cream. */
+  /* Panels are white too, so the whole admin is one surface and the borders do
+     the separating. Cream is the product's foundation and stays that way in the
+     light block above; admin is a dense working screen where a warm fill behind
+     every table and field read as tint rather than as structure.
+
+     The knock-on is that the raised surfaces below can no longer be white to
+     stand out, and the hairlines can no longer be warm greys tuned against
+     cream: at 1.05 contrast on white they vanish. Both are handled below. */
+  --card: #FFFFFF;
+  --popover: #FFFFFF;
+  --bg-card: #FFFFFF;
+  --bg-panel: #FFFFFF;
+  /* The one exception: a nested panel needs SOME fill to sit inside another, and
+     a hairline alone at this density reads as a stray rule. */
+  --bg-card-subtle: #FAFAFA;
+
+  /* Fields and controls stay white and are carried by their border instead. The
+     alternative, tinting them grey, inverts the convention: on a white ground a
+     raised element is not darker than what it sits on. */
   --bg-elevated: #FFFFFF;
   --bg-input: #FFFFFF;
   --bg-control: #FFFFFF;
   --bg-step-idle: #FFFFFF;
+
+  /* Neutral, and a step stronger than the cream scale it replaces, because a
+     border doing structural work has to be seen. --input is the strongest: an
+     empty white field on a white panel is nothing but its outline. */
+  --bd-2: #F5F5F5;
+  --bd-4: #F0F0F1;
+  --bd-5: #EDEDEE;
+  --bd-6: #EAEAEC;
+  --bd-7: #E7E7E9;
+  --bd-8: #E4E4E7;
+  --bd-9: #E0E0E3;
+  --bd-10: #DCDCE0;
+  --bd-card: #E4E4E7;
+  --border: #E4E4E7;
+  --input: #D4D4D8;
+  --sidebar-border: #E4E4E7;
+
+  /* Tracks and fills were mixed from cream and turn muddy against white. */
+  --bg-progress: #EDEDEE;
+  --bg-track: #DCDCE0;
+  --secondary: #F4F4F5;
+  --muted: #F4F4F5;
+  --accent: #F4F4F5;
+  /* A pulse block has to be visible on white, and the cream one was mixed to
+     read on cream. */
+  --skeleton: #EDEDEE;
 }
 
 @layer base {

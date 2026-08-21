@@ -19,7 +19,7 @@ import type { AgentAnswer } from "@/lib/support-agent/agent";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
-const cardStyle = { background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)" } as const;
+const cardStyle = { background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)" } as const;
 
 function KnowledgeRow({ entry, onChanged }: { entry: KnowledgeEntry; onChanged: () => void }) {
   const [open, setOpen] = useState(false);
@@ -62,7 +62,7 @@ function KnowledgeRow({ entry, onChanged }: { entry: KnowledgeEntry; onChanged: 
   }
 
   return (
-    <div className="rounded-xl" style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.07)", opacity: entry.enabled ? 1 : 0.6 }}>
+    <div className="rounded-xl" style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.10)", opacity: entry.enabled ? 1 : 0.6 }}>
       <div className="flex items-center gap-2 px-3 py-2.5">
         <button type="button" onClick={() => setOpen((v) => !v)}
           className="flex items-center gap-1.5 min-w-0 flex-1 text-left cursor-pointer">
@@ -87,7 +87,7 @@ function KnowledgeRow({ entry, onChanged }: { entry: KnowledgeEntry; onChanged: 
       </div>
 
       {open && (
-        <div className="px-3 pb-3 space-y-2" style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }}>
+        <div className="px-3 pb-3 space-y-2" style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }}>
           <input value={title} onChange={(e) => setTitle(e.target.value)} disabled={busy} maxLength={120}
             className="mt-3 w-full px-2.5 py-1.5 rounded-lg text-sm font-medium bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400 outline-none" />
           <textarea value={content} onChange={(e) => setContent(e.target.value)} disabled={busy} rows={4} maxLength={4000}
@@ -220,9 +220,9 @@ function TryIt() {
       </div>
 
       {answer && (
-        <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.07)" }}>
+        <div className="rounded-xl p-3 space-y-2" style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.10)" }}>
           <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: "var(--c-85)" }}>{answer.reply}</p>
-          <div className="flex items-center gap-2 flex-wrap pt-1" style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }}>
+          <div className="flex items-center gap-2 flex-wrap pt-1" style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }}>
             <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full mt-2"
               style={answer.needsHuman
                 ? { background: "oklch(0.6 0.19 25 / 0.1)", color: "oklch(0.45 0.15 25)", border: "1px solid oklch(0.6 0.19 25 / 0.3)" }
