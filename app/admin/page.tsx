@@ -6,7 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
 import type { HeclusCreditsConfig } from "@/app/api/admin/heclus-credits/route";
-import type { BalancesResponse } from "@/app/api/admin/balances/route";
+import type { BalancesResponse, ProviderBalance } from "@/app/api/admin/balances/route";
 import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
@@ -1967,7 +1967,29 @@ function BalancesPanel({ visible }: { visible: boolean }) {
         </p>
       ))}
 
-      {/* The four figures worth knowing before reading any row */}
+      {/* Ours first. Every customer balance below is a claim on these two, so a
+          wallet full of credit against an empty KIE account is a promise nobody
+          can keep. */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <ProviderTile
+          label="Our KIE credits"
+          note="Images, clips and KIE-routed writing"
+          p={data?.providers.kie}
+          format={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          low={100}
+          href="https://kie.ai/billing"
+        />
+        <ProviderTile
+          label="Our ElevenLabs characters"
+          note="Voiceovers and caption alignment"
+          p={data?.providers.elevenlabs}
+          format={(v) => v.toLocaleString()}
+          low={10_000}
+          href="https://elevenlabs.io/app/subscription"
+        />
+      </div>
+
+      {/* Then what customers hold against them */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Tile label="Accounts holding credit" value={n(data?.totals.accounts ?? 0, 0)}
           note={`${n(data?.totals.walletFunded ?? 0, 0)} funded by Heclus`} />
@@ -2079,6 +2101,70 @@ function BalancesPanel({ visible }: { visible: boolean }) {
         whole units with a monthly allowance. Bought, granted and spent are lifetime figures from the
         ledger, so a balance can be read against what fed it.
       </p>
+    </div>
+  );
+}
+
+/**
+ * One of Heclus's own provider balances.
+ *
+ * Deliberately louder than the customer tiles: these are the two numbers that
+ * stop the product working, and they are read here rather than on the API Keys
+ * tab, which answers whether a key exists rather than what is behind it.
+ *
+ * Null is not zero. An unreachable provider says so instead of showing a zero
+ * that reads as "out of credit".
+ */
+function ProviderTile({ label, note, p, format, low, href }: {
+  label: string;
+  note: string;
+  p: ProviderBalance | undefined;
+  format: (v: number) => string;
+  /** Below this the number turns amber. Not a hard limit, a prompt to top up. */
+  low: number;
+  href: string;
+}) {
+  const state = !p ? "loading"
+    : !p.configured ? "nokey"
+    : p.valid === false ? "invalid"
+    : p.balance === null ? "unknown"
+    : p.balance <= 0 ? "empty"
+    : p.balance < low ? "low"
+    : "ok";
+
+  const colour = state === "empty" || state === "invalid" || state === "nokey"
+    ? "oklch(0.55 0.19 25)"
+    : state === "low" ? "oklch(0.58 0.16 65)"
+    : state === "ok" ? "var(--c-90)"
+    : "var(--c-45)";
+
+  const value = state === "loading" ? "…"
+    : state === "nokey" ? "No key"
+    : state === "invalid" ? "Key rejected"
+    : state === "unknown" ? "Unavailable"
+    : format(p!.balance!);
+
+  const detail = state === "nokey" ? "Add one on the Config, API Keys tab or every wallet generation fails."
+    : state === "invalid" ? "The provider rejected this key."
+    : state === "unknown" ? (p?.issue === "scope" ? "The key cannot read the account balance." : "Could not reach the provider just now.")
+    : state === "empty" ? "Out of credit. Wallet work is failing right now."
+    : p?.limit ? `${note} · ${format(p.limit)} in the plan`
+    : note;
+
+  return (
+    <div className="p-4 rounded-xl" style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" }}>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm font-semibold" style={{ color: "var(--c-78)" }}>{label}</p>
+        <a href={href} target="_blank" rel="noopener noreferrer"
+          className="text-[11px] shrink-0 hover:opacity-80 transition-opacity"
+          style={{ color: "oklch(0.62 0.15 220)" }}>
+          Top up
+        </a>
+      </div>
+      <p className="text-3xl font-bold tabular-nums leading-tight mt-1" style={{ color: colour }}>
+        {value}
+      </p>
+      <p className="text-[11px] mt-0.5" style={{ color: "var(--c-42)" }}>{detail}</p>
     </div>
   );
 }
@@ -5872,7 +5958,7 @@ function SkeletonRows({ cols, rows = 3 }: { cols: number; rows?: number }) {
  *  what it contains — the view itself shows that. */
 const TAB_BLURB: Record<string, string> = {
   stats:     "Signups, revenue and production at a glance",
-  balances:  "Every account holding credit, in both wallets",
+  balances:  "What we hold at the providers, and what customers hold against it",
   activity:  "What has been created over time, and by whom",
   users:     "Every account, its plan and its keys",
   projects:  "Every video, its progress and what it cost",

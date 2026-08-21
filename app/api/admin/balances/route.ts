@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { requireAdmin } from "@/lib/admin-server";
 import { isAdminUser } from "@/lib/admin";
+import { getActiveProductKey } from "@/lib/claude/routing";
+import { checkKie, checkElevenLabs } from "@/lib/key-check";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +38,26 @@ export interface BalanceRow {
   lastMovement: string | null;
 }
 
+/**
+ * Heclus's own balance at a provider, which is what wallet-funded work actually
+ * draws down. The customer wallets below are the claim on it; this is the float.
+ */
+export interface ProviderBalance {
+  /** A key is configured on the API Keys tab. */
+  configured: boolean;
+  /** Null when the provider could not be reached, which is different from zero. */
+  valid: boolean | null;
+  /** KIE credits, or ElevenLabs characters remaining this cycle. */
+  balance: number | null;
+  /** Characters in the plan, ElevenLabs only. */
+  limit: number | null;
+  /** Why there is no number, when we know it. */
+  issue: "scope" | "key_id" | null;
+}
+
 export interface BalancesResponse {
+  /** What Heclus holds at the providers wallet work spends. */
+  providers: { kie: ProviderBalance; elevenlabs: ProviderBalance };
   rows: BalanceRow[];
   totals: {
     accounts: number;
@@ -59,7 +80,7 @@ export async function GET() {
 
   const warnings: string[] = [];
 
-  const [accountsRes, clipsRes, ledgerRes, settingsRes, usersRes] = await Promise.all([
+  const [accountsRes, clipsRes, ledgerRes, settingsRes, usersRes, providers] = await Promise.all([
     supabase.from("credit_accounts").select("user_id, credits, reserved, updated_at"),
     supabase.from("genai_credits").select("user_id, grant_credits, paid_credits, reserved_credits"),
     supabase.from("credit_ledger").select("user_id, kind, credits, created_at"),
@@ -67,6 +88,7 @@ export async function GET() {
     // rather than failing the whole query.
     supabase.from("account_settings").select("*"),
     supabase.auth.admin.listUsers({ perPage: 1000 }),
+    heclusProviderBalances(),
   ]);
 
   if (accountsRes.error) warnings.push(`Heclus Credits balances unreadable: ${accountsRes.error.message}`);
@@ -155,5 +177,46 @@ export async function GET() {
     walletFunded: t.walletFunded + (r.fundingMode === "wallet" ? 1 : 0),
   }), { accounts: 0, credits: 0, reserved: 0, purchased: 0, granted: 0, spent: 0, clips: 0, walletFunded: 0 });
 
-  return NextResponse.json({ rows, totals, warnings } satisfies BalancesResponse);
+  return NextResponse.json({ providers, rows, totals, warnings } satisfies BalancesResponse);
+}
+
+/**
+ * What Heclus holds at KIE and ElevenLabs.
+ *
+ * The same live checks the client-facing status card uses, pointed at the
+ * product keys instead of a customer's. Read here rather than left to the API
+ * Keys tab because this is the view where it means something: the customer
+ * wallets are a claim on these two balances, and a wallet full of credit against
+ * an empty KIE account is a promise nobody can keep.
+ *
+ * An unreachable provider reports null rather than zero. The distinction is the
+ * whole point: zero means stop generating, null means we could not ask.
+ */
+async function heclusProviderBalances(): Promise<BalancesResponse["providers"]> {
+  const [kieKey, elKey] = await Promise.all([
+    getActiveProductKey("heclus_kie_api_key"),
+    getActiveProductKey("heclus_elevenlabs_api_key"),
+  ]);
+
+  const [kie, elevenlabs] = await Promise.all([
+    kieKey ? checkKie(kieKey) : null,
+    elKey ? checkElevenLabs(elKey) : null,
+  ]);
+
+  return {
+    kie: {
+      configured: !!kieKey,
+      valid: kie?.valid ?? null,
+      balance: kie?.credits ?? null,
+      limit: null,
+      issue: kie?.balanceIssue ?? null,
+    },
+    elevenlabs: {
+      configured: !!elKey,
+      valid: elevenlabs?.valid ?? null,
+      balance: elevenlabs?.remaining ?? null,
+      limit: elevenlabs?.limit ?? null,
+      issue: elevenlabs?.balanceIssue ?? null,
+    },
+  };
 }
