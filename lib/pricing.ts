@@ -32,16 +32,52 @@ export interface CreditRates {
   perThousandTtsChars: number;
 }
 
-// Anchored on list prices at the time of writing, converted at the same
-// KIE-credit-to-dollar ratio the pack is priced on, and rounded up. Deliberately
-// not exact: they are a floor under Heclus's cost, not a bill.
+/**
+ * What one credit is worth in dollars.
+ *
+ * The single anchor every non-KIE rate below is derived from, and the one number
+ * to correct against a KIE invoice. Inferred rather than invoiced: nano-banana-2
+ * bills 8 KIE credits per image (182 samples in model_cost_and_speed) against a
+ * list price of roughly $0.02, and imagen4-ultra's 12 credits against roughly
+ * $0.06 agrees. Sanity check on any change: multiply by 8 and see whether the
+ * answer is a plausible price for one image.
+ *
+ * Not used for KIE units at all, which are one to one by definition. It exists
+ * so ElevenLabs characters and Anthropic tokens can be expressed in the same
+ * currency as everything else.
+ */
+export const USD_PER_CREDIT = 0.0025;
+
+/** ElevenLabs Creator-plan effective per-character cost, the same anchor the TTS
+ *  cost analysis in app/api/admin/tts-cost-analysis uses. */
+const ELEVENLABS_USD_PER_CHAR = 0.00018;
+
+/**
+ * Anthropic list prices per million tokens for the default model, which is
+ * Opus-class (product_config.default_claude_model, currently claude-opus-4-7).
+ * Cache multipliers are the API's own: a read is a tenth of input, a write is
+ * 1.25x.
+ *
+ * Only heclus_direct steps bill in tokens. A wallet user's Claude work normally
+ * routes heclus_kie and arrives as kie_credits, which needs no rate.
+ */
+const CLAUDE_USD_PER_MILLION_IN = 5;
+const CLAUDE_USD_PER_MILLION_OUT = 25;
+
+const perMillion = (usd: number) => Math.ceil(usd / USD_PER_CREDIT);
+
+// Derived, not typed in. The first version of this file carried hand-written
+// numbers that were internally consistent but anchored on an implied $0.0167 a
+// credit, six times the real figure, which under-charged every non-KIE unit and
+// under-charged voiceover by roughly twenty. Deriving them means the mistake can
+// only be made once, in USD_PER_CREDIT, where it is visible.
 export const DEFAULT_CREDIT_RATES: CreditRates = {
   perKieCredit: 1,
-  perMillionTokensIn: 300,
-  perMillionTokensOut: 1500,
-  perMillionTokensCacheRead: 30,
-  perMillionTokensCacheWrite: 375,
-  perThousandTtsChars: 3,
+  perMillionTokensIn: perMillion(CLAUDE_USD_PER_MILLION_IN),
+  perMillionTokensOut: perMillion(CLAUDE_USD_PER_MILLION_OUT),
+  perMillionTokensCacheRead: perMillion(CLAUDE_USD_PER_MILLION_IN * 0.1),
+  perMillionTokensCacheWrite: perMillion(CLAUDE_USD_PER_MILLION_IN * 1.25),
+  perThousandTtsChars: Math.ceil((ELEVENLABS_USD_PER_CHAR * 1000) / USD_PER_CREDIT),
 };
 
 let cached: { rates: CreditRates; at: number } | null = null;
