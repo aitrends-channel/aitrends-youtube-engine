@@ -56,9 +56,16 @@ export interface CreditRates {
  */
 export const USD_PER_CREDIT = 0.005;
 
-/** ElevenLabs Creator-plan effective per-character cost, the same anchor the TTS
- *  cost analysis in app/api/admin/tts-cost-analysis uses. */
-const ELEVENLABS_USD_PER_CHAR = 0.00018;
+/**
+ * ElevenLabs API price for the model we actually call, eleven_turbo_v2_5, which
+ * sits on their Flash/Turbo tier at $0.05 per 1,000 characters.
+ *
+ * Not the $0.18 this used to carry. That figure is the Creator *plan* overage
+ * rate, borrowed from app/api/admin/tts-cost-analysis, and it is 3.6x the API
+ * price for this model. Switching to v2 Multilingual or v3 doubles it to $0.10,
+ * so this constant moves with TTS_MODEL in lib/kie/tts.ts.
+ */
+const ELEVENLABS_USD_PER_THOUSAND_CHARS = 0.05;
 
 /**
  * Anthropic list prices per million tokens for the default model, which is
@@ -73,17 +80,17 @@ const CLAUDE_USD_PER_MILLION_IN = 5;
 const CLAUDE_USD_PER_MILLION_OUT = 25;
 
 /**
- * Transcription, for caption alignment. Billed by the hour of audio rather than
- * by the character, so it is converted through a speech-rate assumption: about
- * 900 characters a minute, 54,000 an hour, against roughly $0.40 an hour.
+ * Transcription, for caption alignment. Scribe v2 is billed by the hour of audio
+ * rather than by the character, $0.22, so it converts through a speech-rate
+ * assumption: about 900 characters a minute, 54,000 an hour.
  *
  * Worth keeping separate rather than reusing the synthesis rate. Speaking a
- * thousand characters costs $0.18; transcribing a thousand costs well under a
- * cent, and charging the one for the other would bill a customer roughly
- * twenty-five times what the caption pass actually costs. Both arrive as
+ * thousand characters costs $0.05; transcribing a thousand costs about four
+ * tenths of a cent, and charging the one for the other would bill a customer
+ * more than ten times what the caption pass costs. Both arrive as
  * elevenlabs_chars, which is exactly why the step has to disambiguate them.
  */
-const STT_USD_PER_THOUSAND_CHARS = 0.40 / 54;
+const STT_USD_PER_THOUSAND_CHARS = 0.22 / 54;
 
 const perMillion = (usd: number) => Math.ceil(usd / USD_PER_CREDIT);
 
@@ -96,7 +103,7 @@ export const DEFAULT_CREDIT_RATES: CreditRates = {
   perMillionTokensOut: perMillion(CLAUDE_USD_PER_MILLION_OUT),
   perMillionTokensCacheRead: perMillion(CLAUDE_USD_PER_MILLION_IN * 0.1),
   perMillionTokensCacheWrite: perMillion(CLAUDE_USD_PER_MILLION_IN * 1.25),
-  perThousandTtsChars: Math.ceil((ELEVENLABS_USD_PER_CHAR * 1000) / USD_PER_CREDIT),
+  perThousandTtsChars: Math.ceil(ELEVENLABS_USD_PER_THOUSAND_CHARS / USD_PER_CREDIT),
   perThousandSttChars: Math.ceil(STT_USD_PER_THOUSAND_CHARS / USD_PER_CREDIT),
 };
 
