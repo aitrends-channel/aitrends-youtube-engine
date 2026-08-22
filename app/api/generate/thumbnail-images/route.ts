@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { generateImage } from "@/lib/kie/images";
+
 import { withPromptLengthRetry } from "@/lib/kie/promptLength";
 import { deleteObject, r2KeyFromUrl, uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
@@ -9,6 +9,9 @@ import { logProjectCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
+import { requireWalletFunds } from "@/lib/heclus-charge";
+import { resolveImageOperator } from "@/lib/operators/image";
+import { getMediaOperatorForUser } from "@/lib/operators/routing";
 
 export const maxDuration = 800;
 
@@ -28,6 +31,10 @@ export async function POST(req: Request) {
   if (expired) return expired;
   const noRoom = await requireStorageHeadroom(user);
   if (noRoom) return noRoom;
+  // Wallet-funded users pay for this step in credits, so an empty balance is
+  // refused before any provider is called.
+  const broke = await requireWalletFunds(user);
+  if (broke) return broke;
 
   try {
     const { projectId, thumbnails, modelId, aspectRatio = "16:9", resolution, clearFirst = false } = await req.json() as {
@@ -38,6 +45,11 @@ export async function POST(req: Request) {
     if (!projectId || !thumbnails?.length || !modelId) {
       return NextResponse.json({ error: "projectId, thumbnails, and modelId are required" }, { status: 400 });
     }
+
+    // One operator for the whole batch. Resolved from the admin switch, with
+    // BYO clients pinned to KIE and free-lane models exempt; see
+    // lib/operators/routing.ts.
+    const op = resolveImageOperator(modelId, await getMediaOperatorForUser(user.id, "image"));
 
     // Fetch text overlays + the current image_url for every position
     // BEFORE any clearFirst wipe — otherwise the wipe would null out
@@ -96,22 +108,22 @@ export async function POST(req: Request) {
           // Overlay re-appended per attempt so shortening never costs us the
           // literal text the thumbnail is meant to render.
           const overlay = textOverlayByPosition.get(thumb.position);
-          const { url: imageUrl, creditsConsumed } = await withPromptLengthRetry(
+          const { url: imageUrl, units: creditsConsumed } = await withPromptLengthRetry(
             thumb.stylePrompt,
-            (stylePrompt) => generateImage(
-              augmentPromptWithOverlay(stylePrompt, overlay),
-              modelId, aspectRatio, resolution, user.id,
-            ),
+            (stylePrompt) => op.generate({
+              prompt: augmentPromptWithOverlay(stylePrompt, overlay),
+              modelId, aspectRatio, resolution, userId: user.id,
+            }),
           );
           if (creditsConsumed) {
             void logProjectCost({
               projectId,
               userId: user.id,
               step: "thumbnail_image",
-              provider: "kie",
+              provider: op.id === "poyo" ? "poyo" : "kie",
               model: modelId,
               units: creditsConsumed,
-              unitKind: "kie_credits",
+              unitKind: op.unitKind,
             });
           }
           const storagePath = `${userFolderFor(user)}/${projectId}/thumbnails/thumb-${thumb.position}_${Date.now()}.png`;

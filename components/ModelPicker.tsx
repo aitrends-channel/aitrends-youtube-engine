@@ -21,7 +21,13 @@ type ModelTab = "all" | "fastest" | "cheapest" | "free";
 interface CommonProps {
   models: KieModel[] | undefined;
   selectedModelId: string | null;
-  onSelectModel: (id: string) => void;
+  /** The operator is passed alongside the id because it is no longer implied
+   *  by it: KIE and PoYo both offer a model called z-image, and only the pair
+   *  identifies a generation. Optional so the video picker, which has a single
+   *  operator, is unaffected. */
+  onSelectModel: (id: string, operator?: string) => void;
+  /** Disambiguates the highlight when two operators offer the same id. */
+  selectedOperator?: string | null;
   selectedAspectRatio: string;
   onSelectAspectRatio: (r: string) => void;
   disabled?: boolean;
@@ -313,15 +319,21 @@ export function ModelPicker(props: ModelPickerProps) {
       )}
 
       <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-        {list?.map((m) => (
-          <ModelOption
-            key={m.id}
-            model={m}
-            selected={selectedModelId === m.id}
-            disabled={disabled}
-            onSelect={() => onSelectModel(m.id)}
-          />
-        ))}
+        {list?.map((m) => {
+          // Keyed and matched on operator + id, not id alone: the merged
+          // catalog can carry the same model from two providers, which would
+          // otherwise collide React keys and highlight both rows at once.
+          const op = (m as { operator?: string }).operator;
+          return (
+            <ModelOption
+              key={`${op ?? "kie"}:${m.id}`}
+              model={m}
+              selected={selectedModelId === m.id && (!op || !props.selectedOperator || op === props.selectedOperator)}
+              disabled={disabled}
+              onSelect={() => onSelectModel(m.id, op)}
+            />
+          );
+        })}
         {noSearchResults && (
           <p className="text-xs px-1 py-2" style={{ color: "var(--c-40)" }}>
             No {type} models match “{query.trim()}”.

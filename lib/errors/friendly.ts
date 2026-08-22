@@ -144,6 +144,14 @@ export function friendlyError(raw: string | undefined | null): string {
   if (errorType === "request_too_large" || status === 413)
     return "Request too large. Shorten the script or reduce the beats.";
 
+  // ── Heclus Credits ──────────────────────────────────────────────────────
+  // Our own refusal, worded once in lib/heclus-charge.ts and passed through
+  // here unchanged: it already names the wallet and where to top it up, and
+  // rewording it would leave two versions of the same sentence to keep in step.
+  // Matched before the KIE credit rules below, which would otherwise send a
+  // wallet-funded user to kie.ai to top up an account they do not have.
+  if (msg.includes("heclus credits")) return text.trim();
+
   // ── Free-provider (BYO) errors ──────────────────────────────────────────
   // Already user-worded from the API, so pass them through before the KIE
   // mappings below mislabel them (a Google "Quota exceeded…" message is NOT a

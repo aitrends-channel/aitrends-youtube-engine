@@ -22,6 +22,11 @@ export function KieBalanceRow() {
     fetcher,
     { revalidateOnFocus: false, refreshInterval: hasActivity ? 30_000 : 0 }
   );
+  // A wallet-funded account has no KIE account, so this row would report a zero
+  // that means nothing and point at kie.ai/billing, which is the wrong place to
+  // spend money. The Heclus Credits row on /balance is the one that applies, and
+  // StepBalanceCard carries the number into every step.
+  const walletFunded = data?.fundingMode === "wallet";
   const credits = data?.kie?.credits;
   const hasNumber = typeof credits === "number";
   const color = hasNumber
@@ -31,6 +36,30 @@ export function KieBalanceRow() {
         ? "oklch(0.72 0.18 65)"
         : "var(--c-88)"
     : "var(--c-50)";
+
+  if (walletFunded) {
+    const wallet = data?.wallet;
+    const c = wallet?.credits;
+    const walletColor = typeof c === "number"
+      ? c <= 0 ? "oklch(0.7 0.18 25)" : c < 20 ? "oklch(0.72 0.18 65)" : "var(--c-88)"
+      : "var(--c-50)";
+    return (
+      <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--bd-7)" }}>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-50)" }}>
+            Heclus Credits
+          </span>
+          <a href="/balance" className="text-[10px] hover:opacity-80 transition-opacity" style={{ color: "var(--c-45)" }}>
+            Top up
+          </a>
+        </div>
+        <p className="text-sm font-bold" style={{ color: walletColor }}>
+          {typeof c === "number" ? c.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}
+          <span className="text-[10px] font-normal" style={{ color: "var(--c-45)" }}> credits</span>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div

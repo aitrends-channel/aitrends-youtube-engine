@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { finishImageTask } from "@/lib/kie/finishImageTask";
+import { finishImageTask } from "@/lib/operators/finishImage";
 import { KieUpstreamError } from "@/lib/kie/client";
 import { supabase } from "@/lib/supabase/client";
 import { getConcurrencyConfig } from "@/lib/concurrency-config";
@@ -37,6 +37,7 @@ interface BeatRow {
   beat_number: number;
   image_task_id: string;
   image_model_id: string | null;
+  image_operator: string | null;
   project_id: string;
   projects: { user_id: string } | null;
 }
@@ -60,7 +61,7 @@ export async function GET(req: Request) {
   // (same bug class as the webhook/finishImageTask fixes).
   const { data, error } = await supabase
     .from("project_beats")
-    .select("beat_number, image_task_id, image_model_id, project_id, projects(user_id)")
+    .select("beat_number, image_task_id, image_model_id, image_operator, project_id, projects(user_id)")
     .not("image_task_id", "is", null)
     .limit(MAX_PER_RUN);
 
@@ -117,6 +118,7 @@ export async function GET(req: Request) {
           beatNumber: r.beat_number,
           taskId: r.image_task_id,
           modelId: r.image_model_id ?? undefined,
+          operator: r.image_operator,
           userId,
           userEmail,
         });

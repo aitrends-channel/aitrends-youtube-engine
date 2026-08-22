@@ -52,7 +52,7 @@ export function TtsCostLens() {
   return (
     <div
       className="rounded-2xl w-full max-w-full p-4 space-y-3"
-      style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}
+      style={{ background: "white", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}
     >
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { CREDIT_PACK_OPTIONS } from "@/lib/credits";
-import { startTopUp } from "@/lib/credits-checkout";
+import { startTopUp, type TopUpWallet } from "@/lib/credits-checkout";
 
 // The top-up options, shown in place of the balance row rather than in a modal.
 //
@@ -16,18 +16,40 @@ import { startTopUp } from "@/lib/credits-checkout";
 // Each option is a quantity of the same Dodo product, which is why one
 // configured checkout link serves all four.
 
+export interface TopUpOption {
+  units: number;
+  credits: number;
+  priceUsd: number;
+}
+
 export function TopUpOptions({
   checkoutUrl,
   onCancel,
   compact = false,
+  options = CREDIT_PACK_OPTIONS,
+  wallet = "genai",
+  newTab = false,
+  unitNoun = "clips",
 }: {
   checkoutUrl: string;
   onCancel: () => void;
   compact?: boolean;
+  /** Defaults to the video pack's quantities. The Heclus wallet passes its own,
+   *  derived from the configured pack, so neither wallet can show the other's
+   *  prices. */
+  options?: readonly TopUpOption[];
+  wallet?: TopUpWallet;
+  newTab?: boolean;
+  /** What one credit buys, for the line under each amount. Empty hides that
+   *  line, for a wallet where the credits ARE the unit and repeating the number
+   *  under itself says nothing. */
+  unitNoun?: string;
 }) {
-  // Which option is leaving for Dodo. Navigation replaces the page, so this
-  // state is never cleared — it exists to mark the pressed option and to stop a
-  // second click starting a second checkout in the gap before the page changes.
+  // Which option is leaving for Dodo. Same-tab navigation replaces the page, so
+  // the state is never cleared there — it exists to mark the pressed option and
+  // to stop a second click starting a second checkout in the gap before the page
+  // changes. A new-tab checkout clears it on a timer instead, since this page
+  // stays where it is.
   const [leaving, setLeaving] = useState<number | null>(null);
 
   return (
@@ -49,7 +71,7 @@ export function TopUpOptions({
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        {CREDIT_PACK_OPTIONS.map((opt) => {
+        {options.map((opt) => {
           const busy = leaving === opt.units;
           return (
             <button
@@ -58,7 +80,11 @@ export function TopUpOptions({
               disabled={leaving !== null}
               onClick={() => {
                 setLeaving(opt.units);
-                startTopUp(checkoutUrl, opt.units);
+                startTopUp(checkoutUrl, opt.units, wallet, newTab);
+                // A new tab leaves this page mounted, so the pressed state has
+                // to be cleared or the option spins for ever. Same-tab
+                // navigation replaces the page and never reaches this.
+                if (newTab) setTimeout(() => setLeaving(null), 1200);
               }}
               className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-left transition-all hover:opacity-90 disabled:opacity-50"
               style={{
@@ -71,9 +97,11 @@ export function TopUpOptions({
                   style={{ color: busy ? "white" : "var(--c-85)" }}>
                   {opt.credits.toLocaleString()} credits
                 </span>
-                <span className="block text-[10px]" style={{ color: busy ? "oklch(1 0 0 / 0.8)" : "var(--c-45)" }}>
-                  {busy ? "Opening checkout" : `${opt.credits.toLocaleString()} clips`}
-                </span>
+                {(busy || unitNoun) && (
+                  <span className="block text-[10px]" style={{ color: busy ? "oklch(1 0 0 / 0.8)" : "var(--c-45)" }}>
+                    {busy ? "Opening checkout" : `${opt.credits.toLocaleString()} ${unitNoun}`}
+                  </span>
+                )}
               </span>
               <span className="shrink-0 text-sm font-bold tabular-nums"
                 style={{ color: busy ? "white" : "var(--brand-text)" }}>

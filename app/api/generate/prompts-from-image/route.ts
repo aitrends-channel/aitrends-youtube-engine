@@ -14,6 +14,7 @@ import { logAnthropicCost } from "@/lib/costs";
 import type { VisualProfileOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
+import { requireWalletFunds } from "@/lib/heclus-charge";
 
 // Generate a beat's image + video prompts FROM a user-uploaded image
 // (Claude vision). Called after a manual image upload so the beat's
@@ -34,6 +35,10 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
   const expired = requireActiveSubscription(user);
   if (expired) return expired;
+  // Wallet-funded users pay for this step in credits, so an empty balance is
+  // refused before any provider is called.
+  const broke = await requireWalletFunds(user);
+  if (broke) return broke;
 
   try {
     const { projectId, beatNumber, imageUrl } = await req.json().catch(() => ({})) as {

@@ -28,6 +28,12 @@ export function ElevenLabsBalanceRow() {
     fetcher,
     { revalidateOnFocus: false, refreshInterval: hasActivity ? 30_000 : 0 },
   );
+  // Nothing to report for a wallet-funded account: the voiceover runs on
+  // Heclus's ElevenLabs account, so its character count is not the customer's
+  // to read or to top up. The Heclus Credits row above is the balance that
+  // applies, and this row hides rather than showing a dash forever.
+  if (data?.fundingMode === "wallet") return null;
+
   const el = data?.elevenlabs;
   const remaining = el?.remaining;
   const limit = el?.limit;

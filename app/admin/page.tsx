@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
+import type { HeclusCreditsConfig } from "@/app/api/admin/heclus-credits/route";
+import type { BalancesResponse, ProviderBalance } from "@/app/api/admin/balances/route";
 import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
   DollarSign, Sparkles, RotateCcw, Pencil, FileText, AlertCircle, Activity, Server,
-  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem, Menu, Gift, Bot, Lightbulb, Search,
+  Crown, MoreVertical, Trash2, Copy, Gauge, Eye, EyeOff, Mail, KeyRound, CreditCard, Rocket, X, Check, LifeBuoy, FlaskConical, MemoryStick, Star, UserX, Gem, Menu, Gift, Bot, Lightbulb, Search, Wallet,
 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -483,13 +485,14 @@ interface ProductApiKey {
   created_at: string;
 }
 
-const SERVICES = ["youtube_data_api_key", "supadata_api_key", "heclus_kie_api_key", "anthropic_api_key", "genaipro_api_key"] as const;
+const SERVICES = ["youtube_data_api_key", "supadata_api_key", "heclus_kie_api_key", "heclus_elevenlabs_api_key", "anthropic_api_key", "genaipro_api_key"] as const;
 type Service = typeof SERVICES[number];
 
 const SERVICE_LABELS: Record<Service, string> = {
   youtube_data_api_key: "YouTube Data API Key",
   supadata_api_key: "Supadata API Key",
   heclus_kie_api_key: "Heclus KIE API Key",
+  heclus_elevenlabs_api_key: "Heclus ElevenLabs API Key",
   anthropic_api_key: "Anthropic API Key (direct)",
   genaipro_api_key: "GenAIPro API Key",
 };
@@ -563,7 +566,7 @@ function StatCard({
 
   return (
     <div className="p-6 rounded-2xl space-y-4"
-      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06), 0 1px 3px oklch(0 0 0 / 0.04)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06), 0 1px 3px oklch(0 0 0 / 0.04)" }}>
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium uppercase tracking-wider" style={{ color: "var(--c-45)" }}>
           {label}
@@ -739,7 +742,7 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
     : "";
 
   const card = "p-4 rounded-2xl space-y-3";
-  const cardStyle = { background: "oklch(0 0 0 / 0.015)", border: "1px solid oklch(0 0 0 / 0.07)" } as const;
+  const cardStyle = { background: "oklch(0 0 0 / 0.015)", border: "1px solid oklch(0 0 0 / 0.10)" } as const;
   const h = "text-xs font-medium uppercase tracking-wider";
   const hStyle = { color: "oklch(0.5 0 0)" } as const;
   const Row = ({ label, value }: { label: string; value: string }) => (
@@ -751,7 +754,7 @@ function ReportsSection({ stats, users, projects, revenue, activity }: {
 
   return (
     <section id="reports" className="rounded-2xl space-y-5"
-      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
       {/* Icon and title dropped: the page heading above already says Reports.
           The generated-on line stays — it dates the numbers below, which the
           page heading cannot know. */}
@@ -979,7 +982,7 @@ function AddUserForm({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <form onSubmit={handleSubmit} className="p-5 rounded-2xl space-y-3 w-full"
-      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
       <label className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Email address</label>
       <div className="flex flex-col sm:flex-row gap-2">
         <input
@@ -1081,9 +1084,9 @@ function LogsSection() {
 
   return (
     <section id="logs" className="rounded-2xl space-y-4"
-      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
       <div className="flex items-center gap-1 p-1 rounded-xl w-full sm:w-auto sm:inline-flex"
-        style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+        style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
         {subTabs.map(({ id, label, icon: Icon }) => (
           <button key={id} onClick={() => setLogTab(id)}
             className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer"
@@ -1098,7 +1101,7 @@ function LogsSection() {
       </div>
 
       {data?.notice && (
-        <p className="text-xs italic px-3 py-2 rounded-lg" style={{ color: "var(--c-42)", background: "oklch(0 0 0 / 0.03)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+        <p className="text-xs italic px-3 py-2 rounded-lg" style={{ color: "var(--c-42)", background: "oklch(0 0 0 / 0.03)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
           {data.notice}
         </p>
       )}
@@ -1149,7 +1152,7 @@ function ActivityRow({ event }: { event: ActivityEvent }) {
 
   return (
     <div className="flex items-start gap-3 px-3 py-2 rounded-xl"
-      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.05)" }}>
+      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
       <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full shrink-0 mt-0.5"
         style={{ background: bg, color: fg }}>
         {label}
@@ -1218,8 +1221,8 @@ function SetupSection({
   keysLoading: boolean;
   mutateKeys: () => void;
 }) {
-  const [setupTab, setSetupTab] = usePersistentTab<"keys" | "models" | "anthropic" | "concurrency" | "plans" | "quotas">(
-    "config", "keys", ["keys", "models", "anthropic", "concurrency", "plans", "quotas"],
+  const [setupTab, setSetupTab] = usePersistentTab<"keys" | "models" | "anthropic" | "concurrency" | "plans" | "credits" | "operator" | "quotas">(
+    "config", "keys", ["keys", "models", "anthropic", "concurrency", "plans", "credits", "quotas"],
   );
   const [serviceInput, setServiceInput] = useState<Service>("youtube_data_api_key");
   const [keyInput, setKeyInput] = useState("");
@@ -1379,27 +1382,29 @@ function SetupSection({
   };
 
   return (
-    <section id="setup" className="rounded-2xl space-y-5" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+    <section id="setup" className="rounded-2xl space-y-5" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
       <div className="flex items-center gap-3">
         <div>
           <p className="text-xs" style={{ color: "var(--c-42)" }}>Product-wide API keys — first key is default, auto-rotates on quota exceeded</p>
         </div>
         {setupTab === "keys" && (
           <span className="ml-auto text-xs px-2.5 py-0.5 rounded-full"
-            style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
+            style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.02)", color: "var(--c-42)" }}>
             {totalKeys} key{totalKeys !== 1 ? "s" : ""}
           </span>
         )}
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 rounded-xl" style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+      <div className="flex gap-1 p-1 rounded-xl" style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
         {([
           { id: "keys", label: "API Keys" },
           { id: "models", label: "Models" },
           { id: "anthropic", label: "Anthropic" },
           { id: "concurrency", label: "Batched process" },
           { id: "plans", label: "Payment" },
+          { id: "credits", label: "Heclus Credits" },
+          { id: "operator", label: "Media Operator" },
           { id: "quotas", label: "Quotas" },
         ] as const).map((t) => (
           <button
@@ -1424,13 +1429,15 @@ function SetupSection({
       {setupTab === "anthropic" && <AnthropicRoutingPanel />}
       {setupTab === "concurrency" && <ConcurrencyPanel />}
       {setupTab === "plans" && <PlansPanel />}
+      {setupTab === "credits" && <HeclusCreditsPanel />}
+      {setupTab === "operator" && <MediaOperatorPanel />}
       {setupTab === "quotas" && <QuotasPanel />}
 
       {setupTab === "keys" && <>
 
       {/* Add key form */}
       <form onSubmit={handleAdd} className="p-4 rounded-2xl space-y-3"
-        style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.07)" }}>
+        style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.10)" }}>
         <p className="text-xs font-medium" style={{ color: "var(--c-50)" }}>Add API Key</p>
         <div className="flex flex-col sm:flex-row gap-2">
           <select
@@ -1477,10 +1484,10 @@ function SetupSection({
             const row = serviceMap.get(service);
             return (
               <div key={service} className="rounded-2xl overflow-hidden"
-                style={{ border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 8px oklch(0 0 0 / 0.04)" }}>
+                style={{ border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 8px oklch(0 0 0 / 0.04)" }}>
                 {/* Service header */}
                 <div className="flex items-center gap-3 px-4 py-3"
-                  style={{ background: "oklch(0 0 0 / 0.025)", borderBottom: row && row.keys.length > 0 ? "1px solid oklch(0 0 0 / 0.06)" : "none" }}>
+                  style={{ background: "oklch(0 0 0 / 0.025)", borderBottom: row && row.keys.length > 0 ? "1px solid oklch(0 0 0 / 0.09)" : "none" }}>
                   <span className="text-xs font-semibold tracking-wide" style={{ color: "oklch(0.62 0.15 220)" }}>
                     {SERVICE_LABELS[service]}
                   </span>
@@ -1529,7 +1536,7 @@ function SetupSection({
                   const remaining = Math.max(0, max - used);
                   return (
                     <div className="px-4 py-3 space-y-2"
-                      style={{ background: "oklch(0 0 0 / 0.015)", borderBottom: row && row.keys.length > 0 ? "1px solid oklch(0 0 0 / 0.05)" : "none" }}>
+                      style={{ background: "oklch(0 0 0 / 0.015)", borderBottom: row && row.keys.length > 0 ? "1px solid oklch(0 0 0 / 0.11)" : "none" }}>
                       <div className="flex items-center justify-between text-xs">
                         <span style={{ color: "var(--c-42)" }}>Account usage</span>
                         <span style={{ color: "var(--c-42)" }}>
@@ -1576,7 +1583,7 @@ function SetupSection({
                         <div key={i}
                           className="px-4 py-3 space-y-2"
                           style={{
-                            borderBottom: i < row.keys.length - 1 ? "1px solid oklch(0 0 0 / 0.05)" : "none",
+                            borderBottom: i < row.keys.length - 1 ? "1px solid oklch(0 0 0 / 0.11)" : "none",
                             background: isCurrent ? "oklch(0.55 0.15 145 / 0.03)" : "transparent",
                           }}>
                           {/* Key row */}
@@ -1598,7 +1605,7 @@ function SetupSection({
                             )}
                             {!isCurrent && !isExhausted && (
                               <span className="text-xs px-1.5 py-0.5 rounded font-medium shrink-0"
-                                style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-40)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+                                style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-40)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
                                 Standby
                               </span>
                             )}
@@ -1628,7 +1635,7 @@ function SetupSection({
                                   onClick={() => { setEditingKey(null); setEditValue(""); }}
                                   disabled={savingEdit === tag}
                                   className="text-xs px-2 py-1 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 cursor-pointer shrink-0"
-                                  style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-50)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+                                  style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-50)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
                                   Cancel
                                 </button>
                               </>
@@ -1652,7 +1659,7 @@ function SetupSection({
                                     <div
                                       role="menu"
                                       className="absolute right-0 top-full mt-1 z-20 min-w-[140px] rounded-lg overflow-hidden py-1"
-                                      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.08)", boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)" }}>
+                                      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.11)", boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)" }}>
                                       <button
                                         role="menuitem"
                                         onClick={() => { setOpenMenuTag(null); setEditingKey(tag); setEditValue(k); }}
@@ -1920,6 +1927,894 @@ const CONCURRENCY_FIELDS: {
   { key: "thumbnail_batch",        label: "Thumbnail batch",     description: "Thumbnails generated per batch.",      default: 2, min: 1, max: 20, group: "Others" },
 ];
 
+// Everything the Heclus Credits wallet needs configured, in one tab.
+//
+// The pack link used to sit on the Payment tab beside the subscription plumbing,
+// where nothing else about the wallet lived. Grouped here with the pack size, the
+// starter grant and the rates, because those four numbers only make sense read
+// together: what a purchase costs, what it grants, what a signup gets free, and
+// what the work draws down.
+/**
+ * Every account holding credit, in both wallets.
+ *
+ * Side by side rather than summed: Heclus Credits are fractional and bought from
+ * us, video credits are whole clips with a monthly allowance, and a total of the
+ * two would be a number in no unit at all.
+ *
+ * Accounts with nothing in either wallet and no history are left out. This view
+ * answers "who holds credit and what have they done with it", and a page of
+ * zeroes buries the rows that do.
+ */
+function BalancesPanel({ visible }: { visible: boolean }) {
+  const { data, isLoading, mutate } = useSWR<BalancesResponse>(
+    visible ? "/api/admin/balances" : null,
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+  const [query, setQuery] = useState("");
+
+  const n = (v: number, dp = 2) => v.toLocaleString(undefined, { maximumFractionDigits: dp });
+  const rows = (data?.rows ?? []).filter((r) => {
+    const q = query.trim().toLowerCase();
+    if (!q) return true;
+    return (r.email ?? r.userId).toLowerCase().includes(q);
+  });
+
+  return (
+    <div className="space-y-5">
+      {(data?.warnings ?? []).map((w) => (
+        <p key={w} className="text-sm px-3 py-2 rounded-lg"
+          style={{ background: "oklch(0.75 0.15 65 / 0.12)", border: "1px solid oklch(0.75 0.15 65 / 0.3)", color: "oklch(0.45 0.12 65)" }}>
+          {w}
+        </p>
+      ))}
+
+      {/* Ours first. Every customer balance below is a claim on these two, so a
+          wallet full of credit against an empty KIE account is a promise nobody
+          can keep. */}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <ProviderTile
+          label="Our KIE credits"
+          note="Images, clips and KIE-routed writing"
+          p={data?.providers.kie}
+          format={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          low={100}
+          href="https://kie.ai/billing"
+        />
+        <ProviderTile
+          label="Our ElevenLabs characters"
+          note="Voiceovers and caption alignment"
+          p={data?.providers.elevenlabs}
+          format={(v) => v.toLocaleString()}
+          low={10_000}
+          href="https://elevenlabs.io/app/subscription"
+        />
+      </div>
+
+      {/* Then what customers hold against them */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <Tile label="Accounts holding credit" value={n(data?.totals.accounts ?? 0, 0)}
+          note={`${n(data?.totals.walletFunded ?? 0, 0)} funded by Heclus`} />
+        <Tile label="Heclus Credits outstanding" value={n(data?.totals.credits ?? 0)}
+          note={`${n(data?.totals.reserved ?? 0)} held by work in flight`} accent />
+        <Tile label="Bought, all time" value={n(data?.totals.purchased ?? 0)}
+          note={`${n(data?.totals.granted ?? 0)} granted on top`} />
+        <Tile label="Video clips outstanding" value={n(data?.totals.clips ?? 0, 0)}
+          note="allowance plus bought clips" />
+      </div>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Filter by email"
+          className="px-3 py-2 rounded-lg text-sm outline-none w-full sm:w-72"
+          style={{ background: "var(--bg-input)", border: "1px solid var(--input)", color: "var(--c-90)" }}
+        />
+        <button
+          onClick={() => mutate()}
+          className="px-3 py-2 rounded-lg text-sm font-semibold cursor-pointer transition-all hover:opacity-90"
+          style={{ background: "oklch(0.62 0.15 220)", color: "white" }}
+        >
+          Refresh
+        </button>
+      </div>
+
+      {isLoading && !data ? (
+        <p className="text-sm py-6" style={{ color: "var(--c-45)" }}>Loading balances…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm py-6" style={{ color: "var(--c-45)" }}>
+          {data?.rows.length ? "No account matches that filter." : "No account holds credit in either wallet yet."}
+        </p>
+      ) : (
+        <div className="overflow-x-auto rounded-xl" style={{ border: "1px solid var(--input)" }}>
+          <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "oklch(0 0 0 / 0.02)", color: "var(--c-45)" }}>
+                <th className="text-left font-medium py-2 px-3">Account</th>
+                <th className="text-left font-medium py-2 px-3">Funding</th>
+                <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Credits</th>
+                <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Held</th>
+                <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Bought</th>
+                <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Granted</th>
+                <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Spent</th>
+                <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Clips</th>
+                <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Last movement</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                // A wallet-funded account with nothing spendable cannot generate
+                // at all, which is the one row that needs to stand out.
+                const stuck = r.fundingMode === "wallet" && r.credits <= 0;
+                return (
+                  <tr key={r.userId} style={{ borderTop: "1px solid var(--bd-8)" }}>
+                    <td className="py-2 px-3">
+                      <span style={{ color: "var(--c-90)" }}>{r.email ?? r.userId}</span>
+                      {r.isAdmin && (
+                        <span className="ml-2 px-1.5 py-0.5 rounded text-[11px] font-semibold"
+                          style={{ background: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.62 0.15 220)" }}>
+                          admin
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 px-3">
+                      <span className="px-1.5 py-0.5 rounded text-[11px] font-semibold"
+                        style={r.fundingMode === "wallet"
+                          ? { background: "oklch(0.55 0.15 145 / 0.12)", color: "oklch(0.45 0.13 145)" }
+                          : { background: "oklch(0 0 0 / 0.05)", color: "var(--c-50)" }}>
+                        {r.fundingMode === "wallet" ? "Heclus" : "own keys"}
+                      </span>
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums font-semibold"
+                      style={{ color: stuck ? "oklch(0.55 0.19 25)" : "var(--c-90)" }}>
+                      {n(r.credits)}
+                      {stuck && <span className="block text-[11px] font-normal">empty, cannot generate</span>}
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-50)" }}>
+                      {r.reserved > 0 ? n(r.reserved) : "—"}
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-55)" }}>
+                      {r.purchased > 0 ? n(r.purchased) : "—"}
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-55)" }}>
+                      {r.granted > 0 ? n(r.granted) : "—"}
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-55)" }}>
+                      {r.spent > 0 ? n(r.spent) : "—"}
+                    </td>
+                    <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-55)" }}>
+                      {r.clipsGrant + r.clipsPaid > 0 ? n(r.clipsGrant + r.clipsPaid, 0) : "—"}
+                    </td>
+                    <td className="py-2 px-3 text-right whitespace-nowrap" style={{ color: "var(--c-42)" }}>
+                      {r.lastMovement ? new Date(r.lastMovement).toLocaleDateString() : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <p className="text-sm" style={{ color: "var(--c-42)" }}>
+        Credits are the general wallet, fractional and bought from us. Clips are the free video wallet,
+        whole units with a monthly allowance. Bought, granted and spent are lifetime figures from the
+        ledger, so a balance can be read against what fed it.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * One of Heclus's own provider balances.
+ *
+ * Deliberately louder than the customer tiles: these are the two numbers that
+ * stop the product working, and they are read here rather than on the API Keys
+ * tab, which answers whether a key exists rather than what is behind it.
+ *
+ * Null is not zero. An unreachable provider says so instead of showing a zero
+ * that reads as "out of credit".
+ */
+function ProviderTile({ label, note, p, format, low, href }: {
+  label: string;
+  note: string;
+  p: ProviderBalance | undefined;
+  format: (v: number) => string;
+  /** Below this the number turns amber. Not a hard limit, a prompt to top up. */
+  low: number;
+  href: string;
+}) {
+  const state = !p ? "loading"
+    : !p.configured ? "nokey"
+    : p.valid === false ? "invalid"
+    : p.balance === null ? "unknown"
+    : p.balance <= 0 ? "empty"
+    : p.balance < low ? "low"
+    : "ok";
+
+  const colour = state === "empty" || state === "invalid" || state === "nokey"
+    ? "oklch(0.55 0.19 25)"
+    : state === "low" ? "oklch(0.58 0.16 65)"
+    : state === "ok" ? "var(--c-90)"
+    : "var(--c-45)";
+
+  const value = state === "loading" ? "…"
+    : state === "nokey" ? "No key"
+    : state === "invalid" ? "Key rejected"
+    : state === "unknown" ? "Unavailable"
+    : format(p!.balance!);
+
+  const detail = state === "nokey" ? "Add one on the Config, API Keys tab or every wallet generation fails."
+    : state === "invalid" ? "The provider rejected this key."
+    : state === "unknown" ? (p?.issue === "scope" ? "The key cannot read the account balance." : "Could not reach the provider just now.")
+    : state === "empty" ? "Out of credit. Wallet work is failing right now."
+    : p?.limit ? `${note} · ${format(p.limit)} in the plan`
+    : note;
+
+  return (
+    <div className="p-4 rounded-xl" style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" }}>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm font-semibold" style={{ color: "var(--c-78)" }}>{label}</p>
+        <a href={href} target="_blank" rel="noopener noreferrer"
+          className="text-[11px] shrink-0 hover:opacity-80 transition-opacity"
+          style={{ color: "oklch(0.62 0.15 220)" }}>
+          Top up
+        </a>
+      </div>
+      <p className="text-3xl font-bold tabular-nums leading-tight mt-1" style={{ color: colour }}>
+        {value}
+      </p>
+      <p className="text-[11px] mt-0.5" style={{ color: "var(--c-42)" }}>{detail}</p>
+    </div>
+  );
+}
+
+function Tile({ label, value, note, accent }: { label: string; value: string; note: string; accent?: boolean }) {
+  return (
+    <div className="p-3 rounded-xl" style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" }}>
+      <p className="text-sm" style={{ color: "var(--c-45)" }}>{label}</p>
+      <p className="text-xl font-bold tabular-nums leading-tight"
+        style={{ color: accent ? "oklch(0.62 0.15 220)" : "var(--c-90)" }}>
+        {value}
+      </p>
+      <p className="text-[11px]" style={{ color: "var(--c-42)" }}>{note}</p>
+    </div>
+  );
+}
+
+/**
+ * Which provider runs new media work.
+ *
+ * Sibling of the Anthropic routing card, and deliberately shaped like it: a
+ * global default plus per-surface overrides. What it adds is honesty about
+ * reach — a surface that does not read the switch is shown as such rather than
+ * offered as a setting that would store and do nothing.
+ */
+function MediaOperatorPanel() {
+  const { data, mutate, isLoading } = useSWR<{
+    operator: string;
+    per_surface: Record<string, string>;
+    surfaces: string[];
+    implemented: string[];
+    exempt_surfaces: string[];
+    pending: string[];
+    operators: string[];
+    exempt_notes: string[];
+  }>("/api/admin/media-operator", fetcher, { revalidateOnFocus: false });
+
+  const [saving, setSaving] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const cardStyle = { background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" } as const;
+
+  async function patch(section: string, body: Record<string, unknown>) {
+    setSaving(section);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/media-operator", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((json as { error?: string }).error ?? `HTTP ${res.status}`);
+      await mutate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  const pill = (active: boolean) => ({
+    background: active ? "oklch(0.62 0.15 220)" : "oklch(0 0 0 / 0.05)",
+    color: active ? "white" : "var(--c-55)",
+    border: active ? "1px solid transparent" : "1px solid var(--bd-10)",
+  });
+
+  const LABELS: Record<string, string> = {
+    chat: "Writing steps",
+    image: "Images and thumbnails",
+    video: "Video clips",
+    tts: "Voiceover",
+    transcription: "Caption alignment",
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
+        <div>
+          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Media operator</p>
+          <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
+            Who runs new work. Applies to Heclus-funded accounts only: clients on their own keys hold KIE
+            keys, so they stay on KIE whatever this says. Work already in flight finishes with the provider
+            that has it.
+          </p>
+        </div>
+
+        <div className="flex gap-1.5">
+          {(data?.operators ?? []).map((op) => (
+            <button
+              key={op}
+              onClick={() => patch("global", { operator: op })}
+              disabled={saving !== null || isLoading}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              style={pill(data?.operator === op)}
+            >
+              {saving === "global" ? "Saving…" : op.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
+        <div>
+          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Per surface</p>
+          <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
+            Empty inherits the default above. PoYo is cheaper on writing and dearer on images, so a split is
+            often the right answer.
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          {(data?.surfaces ?? []).map((s) => {
+            const live = data?.implemented?.includes(s);
+            const exempt = data?.exempt_surfaces?.includes(s);
+            const current = data?.per_surface?.[s];
+            return (
+              <div key={s} className="flex items-center justify-between gap-3 p-2 rounded-lg"
+                style={{ background: "oklch(0 0 0 / 0.02)" }}>
+                <div className="min-w-0">
+                  <p className="text-sm" style={{ color: "var(--c-90)" }}>{LABELS[s] ?? s}</p>
+                  {exempt && (
+                    <p className="text-xs" style={{ color: "var(--c-42)" }}>
+                      Always ElevenLabs. Does not follow the switch.
+                    </p>
+                  )}
+                  {!exempt && !live && (
+                    <p className="text-xs" style={{ color: "oklch(0.55 0.13 55)" }}>
+                      Not wired to the switch yet. Still runs on KIE.
+                    </p>
+                  )}
+                </div>
+
+                {live && (
+                  <div className="flex gap-1.5 shrink-0">
+                    {(data?.operators ?? []).map((op) => (
+                      <button
+                        key={op}
+                        onClick={() => patch(s, { surface: s, surface_operator: current === op ? null : op })}
+                        disabled={saving !== null}
+                        className="px-2.5 py-1 rounded-md text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                        style={pill(current === op)}
+                      >
+                        {saving === s ? "…" : op}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {error && (
+        <p className="text-sm px-1" style={{ color: "oklch(0.55 0.18 25)" }}>{error}</p>
+      )}
+
+      <div className="p-3 rounded-xl" style={cardStyle}>
+        <p className="text-sm font-semibold mb-1" style={{ color: "var(--c-90)" }}>What never moves</p>
+        <ul className="space-y-0.5">
+          {(data?.exempt_notes ?? []).map((n) => (
+            <li key={n} className="text-sm" style={{ color: "var(--c-50)" }}>{n}</li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function HeclusCreditsPanel() {
+  const { data, mutate, isLoading } = useSWR<HeclusCreditsConfig>(
+    "/api/admin/heclus-credits",
+    fetcher,
+    { revalidateOnFocus: false },
+  );
+
+  const [packLinkTest, setPackLinkTest] = useState("");
+  const [packLinkProd, setPackLinkProd] = useState("");
+  const [packCredits, setPackCredits] = useState("");
+  const [packPrice, setPackPrice] = useState("");
+  const [grant, setGrant] = useState("");
+  const [rates, setRates] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+  const hydrated = useRef(false);
+
+  useEffect(() => {
+    if (!data || hydrated.current || typeof data.activeEnv !== "string") return;
+    hydrated.current = true;
+    setPackLinkTest(data.packLinkTest ?? "");
+    setPackLinkProd(data.packLinkProduction ?? "");
+    setPackCredits(data.packCredits != null ? String(data.packCredits) : "");
+    setPackPrice(data.packPriceUsd != null ? String(data.packPriceUsd) : "");
+    setGrant(data.signupGrantCredits != null ? String(data.signupGrantCredits) : "");
+    setRates(Object.fromEntries(Object.entries(data.rates ?? {}).map(([k, v]) => [k, String(v)])));
+  }, [data]);
+
+  async function save(section: string, patch: Record<string, unknown>) {
+    setSaving(section);
+    try {
+      const res = await fetch("/api/admin/heclus-credits", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? "Failed to save");
+      toast.success("Saved");
+      mutate();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to save");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  // Sections are defined by their border now, not by a fill: the same value as
+  // --input, which is the strongest in the scale, because an outline doing
+  // structural work has to be seen. Nested tiles inside a section stay a step
+  // lighter so the hierarchy still reads.
+  const cardStyle = {
+    background: "oklch(0 0 0 / 0.015)",
+    border: "1px solid var(--input)",
+  } as const;
+  const inputStyle = {
+    background: "var(--bg-input)",
+    border: "1px solid var(--bd-10)",
+    color: "var(--c-90)",
+  } as const;
+  const saveStyle = (enabled: boolean) => ({
+    background: enabled ? "oklch(0.62 0.15 220)" : "oklch(0 0 0 / 0.06)",
+    color: enabled ? "white" : "var(--c-50)",
+    minWidth: 78,
+  });
+
+  const activeEnv = data?.activeEnv ?? "test";
+  const activeLink = activeEnv === "production" ? data?.packLinkProduction : data?.packLinkTest;
+  const sellable = !!activeLink && data?.packCredits != null;
+
+  return (
+    // 80px between sections, set here rather than per card so every section on
+    // the view is spaced the same and a new one inherits it. A migration warning
+    // is wrapped with the section it warns about, so it stays attached to it
+    // rather than floating between two.
+    <div className="space-y-20">
+      <div className="flex items-start gap-2.5">
+        <Wallet size={18} className="shrink-0 mt-0.5" style={{ color: "oklch(0.62 0.15 220)" }} />
+        <div>
+          <h3 className="text-lg font-bold leading-tight" style={{ color: "var(--c-90)" }}>
+            Heclus Credits
+          </h3>
+          <p className="text-sm mt-1" style={{ color: "var(--c-50)" }}>
+            The wallet customers buy from us and spend on work that runs on Heclus&apos;s own provider
+            accounts. This deployment reads the <span style={{ fontWeight: 600 }}>{activeEnv}</span> link.
+          </p>
+        </div>
+      </div>
+
+      {/* Can a customer buy, and can the work run */}
+      <div className="p-3 rounded-xl grid gap-2 sm:grid-cols-2" style={cardStyle}>
+        <StatusLine
+          ok={sellable}
+          label="Top up"
+          detail={sellable
+            ? "Live. The button is enabled on /balance."
+            : !activeLink
+              ? `No ${activeEnv} checkout link, so the button is disabled.`
+              : "Link set but no pack size, so a purchase could not be credited."}
+        />
+        <StatusLine
+          ok={!!data?.keys.kie}
+          label="Heclus KIE key"
+          detail={data?.keys.kie
+            ? "Set. Images, videos and KIE-routed writing steps can run."
+            : "Missing. Add it on the API Keys tab or every wallet generation fails."}
+        />
+        <StatusLine
+          ok={!!data?.keys.elevenlabs}
+          label="Heclus ElevenLabs key"
+          detail={data?.keys.elevenlabs
+            ? "Set. Voiceovers and caption alignment can run."
+            : "Missing. Add it on the API Keys tab or voiceovers fail for wallet users."}
+        />
+        <StatusLine
+          ok={data?.walletAdminOnly === false}
+          neutral={data?.walletAdminOnly !== false}
+          label="Rollout"
+          detail={data?.walletAdminOnly === false
+            ? "Live for customers."
+            : "Admins only. Flip WALLET_FUNDING_ADMIN_ONLY in lib/funding.ts to release it."}
+        />
+        <div className="sm:col-span-2 text-sm pt-1" style={{ color: "var(--c-42)" }}>
+          {data?.wallet.accounts ?? 0} wallet{(data?.wallet.accounts ?? 0) === 1 ? "" : "s"} holding{" "}
+          <span className="font-semibold tabular-nums" style={{ color: "var(--c-90)" }}>
+            {(data?.wallet.creditsOutstanding ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          </span>{" "}
+          credits between them.
+        </div>
+      </div>
+
+      <div className="space-y-2">
+      {data && !data.schema.pack && (
+        <MigrationWarning migration="130_heclus_pack.sql" what="the pack link, size and price" />
+      )}
+
+      {/* Pack */}
+      <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
+        <div>
+          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Top-up pack</p>
+          <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
+            One Dodo product, bought in quantities. Must not be the GenAI video pack: that one grants
+            clips from the other wallet.
+          </p>
+        </div>
+
+        {(["test", "production"] as const).map((env) => (
+          <div key={env}>
+            <label className="text-sm font-medium flex items-center gap-2" style={{ color: "var(--c-55)" }}>
+              Checkout link ({env})
+              {env === activeEnv && (
+                <span className="px-1.5 py-0.5 rounded text-[11px] font-semibold"
+                  style={{ background: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.62 0.15 220)" }}>
+                  in use here
+                </span>
+              )}
+            </label>
+            <input
+              type="text"
+              value={env === "test" ? packLinkTest : packLinkProd}
+              onChange={(e) => (env === "test" ? setPackLinkTest(e.target.value) : setPackLinkProd(e.target.value))}
+              placeholder="https://checkout.dodopayments.com/buy/…"
+              disabled={isLoading || saving !== null}
+              className="w-full mt-1 px-3 py-2 rounded-lg text-sm outline-none transition-all"
+              style={inputStyle}
+            />
+          </div>
+        ))}
+
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>Credits per pack</label>
+            <input
+              type="number" min={1} step="any" value={packCredits}
+              onChange={(e) => setPackCredits(e.target.value)}
+              disabled={isLoading || saving !== null}
+              className="w-32 mt-1 px-3 py-2 rounded-lg text-sm outline-none tabular-nums"
+              style={inputStyle}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>Price USD</label>
+            <input
+              type="number" min={0} step="any" value={packPrice}
+              onChange={(e) => setPackPrice(e.target.value)}
+              disabled={isLoading || saving !== null}
+              className="w-32 mt-1 px-3 py-2 rounded-lg text-sm outline-none tabular-nums"
+              style={inputStyle}
+            />
+          </div>
+          <button
+            onClick={() => save("pack", {
+              packLinkTest: packLinkTest.trim() || null,
+              packLinkProduction: packLinkProd.trim() || null,
+              packCredits: packCredits.trim() || null,
+              packPriceUsd: packPrice.trim() || null,
+            })}
+            disabled={saving !== null || isLoading}
+            className="px-3 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            style={saveStyle(saving === null && !isLoading)}
+          >
+            {saving === "pack" ? "Saving…" : "Save pack"}
+          </button>
+        </div>
+        <p className="text-sm" style={{ color: "var(--c-42)" }}>
+          The price is display only. What lands is the pack size times the quantity Dodo confirms, so a
+          reprice never changes what an old payment granted.
+        </p>
+      </div>
+
+      </div>
+
+      <div className="space-y-2">
+      {data && !data.schema.signupGrant && (
+        <MigrationWarning migration="132_signup_grant.sql" what="the starter grant" />
+      )}
+
+      {/* Starter grant */}
+      <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
+        <div>
+          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Starter grant</p>
+          <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
+            Granted once per account, the first time a balance is read. Existing accounts receive it too.
+            Empty disables it.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>Credits</label>
+            <input
+              type="number" min={1} step="any" value={grant}
+              onChange={(e) => setGrant(e.target.value)}
+              disabled={isLoading || saving !== null}
+              className="w-32 mt-1 px-3 py-2 rounded-lg text-sm outline-none tabular-nums"
+              style={inputStyle}
+            />
+          </div>
+          <button
+            onClick={() => save("grant", { signupGrantCredits: grant.trim() || null })}
+            disabled={saving !== null || isLoading}
+            className="px-3 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+            style={saveStyle(saving === null && !isLoading)}
+          >
+            {saving === "grant" ? "Saving…" : "Save grant"}
+          </button>
+        </div>
+        <p className="text-sm" style={{ color: "var(--c-42)" }}>
+          Changing this does not top up anyone who already received the old amount.
+        </p>
+      </div>
+
+      </div>
+
+      <div className="space-y-2">
+      {data && !data.schema.rates && (
+        <MigrationWarning migration="133_credit_rates.sql" what="the rate overrides" />
+      )}
+
+      {/* Rates. Set apart like the breakdown below it: the three cards above are
+          what to sell, these are what it costs, and reading the two as one list
+          is how a rate gets changed by accident. */}
+      <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
+        <div>
+          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>What the work draws down</p>
+          <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
+            Every provider unit converts through a rate here, KIE included. Empty uses the default.
+          </p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {HECLUS_RATE_FIELDS.map((f) => (
+            <div key={f.key} className="flex items-end justify-between gap-2 p-2 rounded-lg"
+              style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
+              <div className="min-w-0">
+                <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>{f.label}</label>
+                <p className="text-sm" style={{ color: "var(--c-42)" }}>
+                  default {data?.defaultRates?.[f.key] ?? "—"}
+                </p>
+              </div>
+              <input
+                type="number" min={0} step="any"
+                value={rates[f.key] ?? ""}
+                placeholder={String(data?.defaultRates?.[f.key] ?? "")}
+                onChange={(e) => setRates({ ...rates, [f.key]: e.target.value })}
+                disabled={isLoading || saving !== null}
+                className="w-24 px-2 py-1.5 rounded-lg text-sm outline-none tabular-nums text-center"
+                style={inputStyle}
+              />
+            </div>
+          ))}
+        </div>
+        <button
+          onClick={() => save("rates", { rates })}
+          disabled={saving !== null || isLoading}
+          className="px-3 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          style={saveStyle(saving === null && !isLoading)}
+        >
+          {saving === "rates" ? "Saving…" : "Save rates"}
+        </button>
+        <p className="text-sm" style={{ color: "var(--c-42)" }}>
+          Check the result with <span className="font-mono">scripts/wallet-margin.mjs</span>: credits spent
+          should track KIE credits consumed at the rate above.
+        </p>
+      </div>
+
+      </div>
+
+      {data && <BillingBreakdown data={data} />}
+    </div>
+  );
+}
+
+/**
+ * What one video costs, and therefore what the pack and the grant are worth.
+ *
+ * Last on the tab because it is the consequence of everything above it: change a
+ * rate, a pack size or a grant, and this is where you see what you did. Every
+ * figure is metered usage rather than an example, so it moves as the product
+ * does.
+ */
+function BillingBreakdown({ data }: { data: HeclusCreditsConfig }) {
+  const b = data.breakdown;
+  const usd = (credits: number) => `$${(credits * (b?.usdPerCredit ?? 0)).toFixed(2)}`;
+  const n = (v: number, dp = 0) => v.toLocaleString(undefined, { maximumFractionDigits: dp });
+
+  // Set off from the settings above it: this is the consequence of them, not
+  // another field, and the panel's own rhythm would read as one more card.
+  // Inline, so it wins over the parent's space-y.
+  return (
+    <div className="p-3 rounded-xl space-y-3"
+      style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" }}>
+      <div>
+        <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>What a video costs</p>
+        <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
+          {b
+            ? `Median metered usage across ${b.projects} project${b.projects === 1 ? "" : "s"}, priced at the rates above. Not an example: these move as the product does.`
+            : "Needs a few projects of metered history before there is anything worth calling typical."}
+        </p>
+      </div>
+
+      {b && (
+        <>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ color: "var(--c-45)" }}>
+                  <th className="text-left font-medium py-1.5 pr-3">Step</th>
+                  <th className="text-right font-medium py-1.5 px-3 whitespace-nowrap">Per video</th>
+                  <th className="text-right font-medium py-1.5 px-3 whitespace-nowrap">Rate</th>
+                  <th className="text-right font-medium py-1.5 pl-3 whitespace-nowrap">Credits</th>
+                </tr>
+              </thead>
+              <tbody>
+                {b.lines.map((l) => (
+                  <tr key={l.label} style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }}>
+                    <td className="py-1.5 pr-3" style={{ color: "var(--c-90)" }}>{l.label}</td>
+                    <td className="py-1.5 px-3 text-right tabular-nums" style={{ color: "var(--c-55)" }}>
+                      {n(l.quantity, 1)} <span style={{ color: "var(--c-42)" }}>{l.unit}</span>
+                    </td>
+                    <td className="py-1.5 px-3 text-right tabular-nums" style={{ color: "var(--c-42)" }}>
+                      {l.rateLabel}
+                    </td>
+                    <td className="py-1.5 pl-3 text-right tabular-nums font-semibold" style={{ color: "var(--c-90)" }}>
+                      {n(l.credits)}
+                    </td>
+                  </tr>
+                ))}
+                <tr style={{ borderTop: "2px solid oklch(0 0 0 / 0.12)" }}>
+                  <td className="py-2 pr-3 font-semibold" style={{ color: "var(--c-90)" }}>One video</td>
+                  <td className="py-2 px-3" />
+                  <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-42)" }}>
+                    {usd(1)} / credit
+                  </td>
+                  <td className="py-2 pl-3 text-right tabular-nums font-bold" style={{ color: "var(--brand-text)" }}>
+                    {n(b.totalCredits)}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="pb-1 pr-3" style={{ color: "var(--c-45)" }}>Provider cost of that video</td>
+                  <td colSpan={2} />
+                  <td className="pb-1 pl-3 text-right tabular-nums" style={{ color: "var(--c-45)" }}>
+                    {usd(b.totalCredits)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* The two questions the table exists to answer */}
+          <div className="grid gap-2 sm:grid-cols-2">
+            <WorthLine
+              label="One pack buys"
+              value={b.packVideos}
+              detail={data.packCredits
+                ? `${n(data.packCredits)} credits${data.packPriceUsd ? ` for $${data.packPriceUsd}` : ""}`
+                : "No pack size set"}
+              price={data.packPriceUsd && b.packVideos ? `$${(data.packPriceUsd / b.packVideos).toFixed(2)} a video to the customer` : null}
+              cost={b.packVideos ? `${usd(b.totalCredits)} a video to us` : null}
+            />
+            <WorthLine
+              label="The starter grant buys"
+              value={b.grantVideos}
+              detail={data.signupGrantCredits ? `${n(data.signupGrantCredits)} credits per signup` : "No grant set"}
+              price={null}
+              cost={data.signupGrantCredits ? `costs us ${usd(data.signupGrantCredits)} per signup` : null}
+            />
+          </div>
+
+          <p className="text-sm" style={{ color: "var(--c-42)" }}>
+            KIE units are one credit to one credit by design, so images, clips and the writing steps carry no
+            conversion and no margin risk. Only voiceover and captions convert, and both hang off the
+            dollars-per-credit figure above.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function WorthLine({ label, value, detail, price, cost }: {
+  label: string;
+  value: number | null;
+  detail: string;
+  price: string | null;
+  cost: string | null;
+}) {
+  return (
+    <div className="p-2.5 rounded-lg"
+      style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
+      <p className="text-sm" style={{ color: "var(--c-45)" }}>{label}</p>
+      <p className="text-lg font-bold tabular-nums" style={{ color: value ? "var(--c-90)" : "var(--c-45)" }}>
+        {/* Under one video, a percentage is the honest reading: "0.0 videos"
+            looks like a rendering bug and "0.04" says nothing. */}
+        {value === null ? "—"
+          : value < 1 ? `${(value * 100).toFixed(0)}% of a video`
+          : `${value.toFixed(value < 10 ? 1 : 0)} video${value >= 2 ? "s" : ""}`}
+      </p>
+      <p className="text-sm" style={{ color: "var(--c-42)" }}>{detail}</p>
+      {price && <p className="text-sm" style={{ color: "var(--c-42)" }}>{price}</p>}
+      {cost && <p className="text-sm" style={{ color: "var(--c-42)" }}>{cost}</p>}
+    </div>
+  );
+}
+
+
+const HECLUS_RATE_FIELDS = [
+  { key: "perKieCredit", label: "Per KIE credit" },
+  { key: "perPoyoCredit", label: "Per PoYo credit" },
+  { key: "perThousandTtsChars", label: "Per 1k voiceover chars" },
+  { key: "perThousandSttChars", label: "Per 1k caption chars" },
+  { key: "perMillionTokensIn", label: "Per 1M input tokens" },
+  { key: "perMillionTokensOut", label: "Per 1M output tokens" },
+  { key: "perMillionTokensCacheRead", label: "Per 1M cache reads" },
+  { key: "perMillionTokensCacheWrite", label: "Per 1M cache writes" },
+] as const;
+
+function StatusLine({ ok, neutral, label, detail }: { ok: boolean; neutral?: boolean; label: string; detail: string }) {
+  const color = neutral ? "oklch(0.72 0.18 65)" : ok ? "oklch(0.55 0.15 145)" : "oklch(0.62 0.18 25)";
+  return (
+    <div className="flex items-start gap-2">
+      <span className="mt-1.5 w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
+      <div className="min-w-0">
+        <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>{label}</p>
+        <p className="text-sm" style={{ color: "var(--c-50)" }}>{detail}</p>
+      </div>
+    </div>
+  );
+}
+
+function MigrationWarning({ migration, what }: { migration: string; what: string }) {
+  return (
+    <div className="p-3 rounded-xl text-sm leading-relaxed"
+      style={{ background: "oklch(0.72 0.18 65 / 0.1)", border: "1px solid oklch(0.72 0.18 65 / 0.3)", color: "var(--c-70)" }}>
+      <span style={{ fontWeight: 600 }}>Migration not applied.</span>{" "}
+      <span className="font-mono">supabase/migrations/{migration}</span> has not run on this database, so
+      {" "}{what} cannot be saved yet.
+    </div>
+  );
+}
+
 function ConcurrencyPanel() {
   const { data, mutate, isLoading } = useSWR<ConcurrencyConfig>(
     "/api/admin/concurrency",
@@ -2045,7 +2940,7 @@ function ConcurrencyPanel() {
               <div key={f.key} className="p-3 rounded-xl"
                 style={{
                   background: inGroup ? "var(--bg-card)" : "oklch(0 0 0 / 0.02)",
-                  border: "1px solid oklch(0 0 0 / 0.06)",
+                  border: "1px solid oklch(0 0 0 / 0.09)",
                   opacity: fieldDisabled ? 0.5 : 1,
                 }}>
                 <div className="flex items-start gap-3">
@@ -2499,7 +3394,7 @@ function AnthropicRoutingPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-1 p-1 rounded-xl w-full"
-        style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+        style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
         {subTabs.map((t) => (
           <button
             key={t.id}
@@ -2693,7 +3588,7 @@ function RoutingConfirmDialog({
             onClick={onCancel}
             disabled={saving}
             className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
-            style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            style={{ background: "oklch(0 0 0 / 0.02)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
           >
             Cancel
           </button>
@@ -2959,7 +3854,7 @@ function UserSelectableModelsPanel({ swr }: { swr: ReturnType<typeof useSWR<Rout
   const stepList = (data?.user_choice_steps ?? []).map((s) => s.replace(/_/g, " ")).join(", ");
 
   return (
-    <div className="pt-5 mt-1 space-y-3" style={{ borderTop: "1px solid oklch(0 0 0 / 0.08)" }}>
+    <div className="pt-5 mt-1 space-y-3" style={{ borderTop: "1px solid oklch(0 0 0 / 0.11)" }}>
       <div>
         <h4 className="text-sm font-bold" style={{ color: "var(--c-90)" }}>
           Let Pro users choose their own model
@@ -2977,7 +3872,7 @@ function UserSelectableModelsPanel({ swr }: { swr: ReturnType<typeof useSWR<Rout
           the box reflects "some" rather than lying about all-or-nothing. */}
       <label
         className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg cursor-pointer"
-        style={{ background: "oklch(0 0 0 / 0.03)", border: "1px solid oklch(0 0 0 / 0.06)" }}
+        style={{ background: "oklch(0 0 0 / 0.03)", border: "1px solid oklch(0 0 0 / 0.09)" }}
       >
         <input
           type="checkbox"
@@ -3150,7 +4045,7 @@ function StepProviderControl({
   return (
     <div
       className="rounded-lg p-3 space-y-3"
-      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.06)" }}
+      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.09)" }}
     >
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--c-50)" }}>
@@ -3158,7 +4053,7 @@ function StepProviderControl({
         </span>
         <div
           className="flex items-center gap-1 p-0.5 rounded-lg"
-          style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}
+          style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.11)" }}
         >
           {(["claude", "gpt", "gemini"] as PromptProvider[]).map((p) => (
             <button
@@ -3323,7 +4218,7 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
               className="rounded-xl p-4 space-y-3"
               style={{
                 background: "var(--bg-card)",
-                border: "1px solid oklch(0 0 0 / 0.07)",
+                border: "1px solid oklch(0 0 0 / 0.10)",
                 boxShadow: "0 1px 2px oklch(0 0 0 / 0.04)",
               }}
             >
@@ -3390,7 +4285,7 @@ function PerStepRoutingPanel({ swr }: { swr: ReturnType<typeof useSWR<RoutingRes
                   (kieRoutingFor in lib/claude/providers.ts). */}
               {cardProvider ? (
                 <p className="text-[11px] leading-relaxed rounded-lg px-3 py-2"
-                  style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.06)", color: "var(--c-50)" }}>
+                  style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.09)", color: "var(--c-50)" }}>
                   Routing doesn&apos;t apply on {PROVIDER_LABELS[cardProvider]}, which is only reachable through KIE.
                   This step bills{" "}
                   <span className="font-semibold">
@@ -3483,7 +4378,7 @@ function VisionControl({ data, mutate, disabled }: {
 
   return (
     <div className="rounded-lg p-3 space-y-3"
-      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
 
       <div className="flex items-baseline justify-between gap-2 flex-wrap">
         <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--c-50)" }}>
@@ -3637,10 +4532,6 @@ function PlansPanel() {
     customerPortalUrlProduction: string | null;
     creditPackLinkTest: string | null;
     creditPackLinkProduction: string | null;
-    heclusPackLinkTest?: string | null;
-    heclusPackLinkProduction?: string | null;
-    heclusPackCredits?: number | null;
-    heclusPackPriceUsd?: number | null;
   }>("/api/admin/payment-mode", fetcher, { revalidateOnFocus: false });
   const [editingProdTest, setEditingProdTest] = useState(false);
   const [deletingProdTest, setDeletingProdTest] = useState(false);
@@ -3689,8 +4580,12 @@ function PlansPanel() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-2xl p-5 space-y-4 mt-[15px]" style={{ background: "var(--bg-card)", border: "2px solid silver" }}>
+    // Same rhythm as the Heclus Credits tab: 80px between sections, on the
+    // containers rather than per card. Outer gap separates the plans card from
+    // the Dodo variables card, inner gap separates the env header from the plan
+    // list. The modals below are portalled, so the spacing never reaches them.
+    <div className="space-y-20">
+      <div className="rounded-2xl p-5 space-y-20 mt-[15px]" style={{ background: "var(--bg-card)", border: "2px solid silver" }}>
       <div className="rounded-xl p-3 flex items-center justify-between gap-3"
         style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid var(--bd-7)" }}>
         <div className="min-w-0">
@@ -4485,10 +5380,6 @@ interface DodoApiKeysCardProps {
     customerPortalUrlProduction: string | null;
     creditPackLinkTest: string | null;
     creditPackLinkProduction: string | null;
-    heclusPackLinkTest?: string | null;
-    heclusPackLinkProduction?: string | null;
-    heclusPackCredits?: number | null;
-    heclusPackPriceUsd?: number | null;
   } | null;
   // Deployment env (HECLUS_ENV). When "production", the Test tab is
   // hidden so the admin can't edit test credentials on a live
@@ -4614,8 +5505,6 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
   // Heclus Credits' own pack. A separate link on purpose: the GenAI one credits
   // genai_credits, so sharing it would charge for Heclus Credits and grant video
   // clips instead.
-  const [testHeclusPack, setTestHeclusPack] = useState("");
-  const [prodHeclusPack, setProdHeclusPack] = useState("");
   const [saving, setSaving] = useState(false);
 
   const keyValue = activeEnv === "test" ? testKey : prodKey;
@@ -4623,23 +5512,21 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
   const webhookValue = activeEnv === "test" ? testWebhook : prodWebhook;
   const portalValue = activeEnv === "test" ? testPortal : prodPortal;
   const packValue = activeEnv === "test" ? testPack : prodPack;
-  const heclusPackValue = activeEnv === "test" ? testHeclusPack : prodHeclusPack;
   const savedKey = (activeEnv === "test" ? settings?.secretKeyTest : settings?.secretKeyProduction) ?? "";
   const savedUrl = (activeEnv === "test" ? settings?.baseUrlTest : settings?.baseUrlProduction) ?? "";
   const savedWebhook = (activeEnv === "test" ? settings?.webhookSecretTest : settings?.webhookSecretProduction) ?? "";
   const savedPortal = (activeEnv === "test" ? settings?.customerPortalUrlTest : settings?.customerPortalUrlProduction) ?? "";
   const savedPack = (activeEnv === "test" ? settings?.creditPackLinkTest : settings?.creditPackLinkProduction) ?? "";
-  const savedHeclusPack = (activeEnv === "test" ? settings?.heclusPackLinkTest : settings?.heclusPackLinkProduction) ?? "";
   // Dirty when the admin has typed something into any of the inputs
   // for the active env. Empty inputs are a no-op — clearing a saved
   // value isn't supported through this card on purpose.
-  const dirty = !!keyValue.trim() || !!urlValue.trim() || !!webhookValue.trim() || !!portalValue.trim() || !!packValue.trim() || !!heclusPackValue.trim();
+  const dirty = !!keyValue.trim() || !!urlValue.trim() || !!webhookValue.trim() || !!portalValue.trim() || !!packValue.trim();
 
   function clearActiveEnvBuffers() {
     if (activeEnv === "test") {
-      setTestKey(""); setTestUrl(""); setTestWebhook(""); setTestPortal(""); setTestPack(""); setTestHeclusPack("");
+      setTestKey(""); setTestUrl(""); setTestWebhook(""); setTestPortal(""); setTestPack("");
     } else {
-      setProdKey(""); setProdUrl(""); setProdWebhook(""); setProdPortal(""); setProdPack(""); setProdHeclusPack("");
+      setProdKey(""); setProdUrl(""); setProdWebhook(""); setProdPortal(""); setProdPack("");
     }
   }
 
@@ -4658,9 +5545,6 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
       }
       if (portalValue.trim()) {
         patch[activeEnv === "test" ? "customerPortalUrlTest" : "customerPortalUrlProduction"] = portalValue.trim();
-      }
-      if (heclusPackValue.trim()) {
-        patch[activeEnv === "test" ? "heclusPackLinkTest" : "heclusPackLinkProduction"] = heclusPackValue.trim();
       }
       if (packValue.trim()) {
         patch[activeEnv === "test" ? "creditPackLinkTest" : "creditPackLinkProduction"] = packValue.trim();
@@ -4760,15 +5644,6 @@ function DodoApiKeysCard({ settings, runtimeEnv, onSaved }: DodoApiKeysCardProps
           hint={`Checkout link for the 300-credit GenAI video pack, saved against the ${activeEnv} Dodo environment. Its return URL must land on a page carrying the wallet (the account page or the Generate step) — that page confirms the payment and adds the credits. With no link the wallet shows no top-up button.`}
         />
 
-        <DodoVarField
-          label="Heclus Credits Package Link"
-          saved={savedHeclusPack}
-          value={heclusPackValue}
-          onChange={(v) => (activeEnv === "test" ? setTestHeclusPack(v) : setProdHeclusPack(v))}
-          placeholder="https://checkout.dodopayments.com/buy/…"
-          disabled={saving}
-          hint={`Checkout link for the Heclus Credits top-up, saved against the ${activeEnv} Dodo environment. Separate from the GenAI pack above on purpose: that one credits the free video wallet, so sharing a link would charge for Heclus Credits and grant video clips. The Top up button on /balance appears as soon as this is set.`}
-        />
 
         <DodoVarField
           label={`Customer portal URL (${activeEnv})`}
@@ -5111,7 +5986,7 @@ function NicheLimitOverrideModal({
             onClick={onClose}
             disabled={saving}
             className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
-            style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+            style={{ background: "oklch(0 0 0 / 0.02)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
           >
             Cancel
           </button>
@@ -5130,7 +6005,7 @@ function Pagination({ page, total, onChange }: { page: number; total: number; on
   const from = (page - 1) * PER_PAGE + 1;
   const to = Math.min(page * PER_PAGE, total);
   return (
-    <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }}>
+    <div className="flex items-center justify-between px-4 py-3" style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }}>
       <p className="text-xs" style={{ color: "oklch(0.50 0 0)" }}>{from}–{to} of {total}</p>
       <div className="flex items-center gap-1">
         <button onClick={() => onChange(page - 1)} disabled={page === 1}
@@ -5163,19 +6038,19 @@ function AdminSkeleton() {
 
         {/* Tabs */}
         <div className="flex items-center gap-1 p-1 rounded-xl"
-          style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+          style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
           {[...Array(6)].map((_, i) => (
             <div key={i} className="flex-1 h-8 rounded-lg animate-pulse" style={SK} />
           ))}
         </div>
 
         {/* Stats cards */}
-        <div className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
+        <div className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
           <div className="h-3 w-10 rounded animate-pulse" style={SK} />
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-[10px]">
             {[...Array(6)].map((_, i) => (
               <div key={i} className="p-6 rounded-2xl space-y-4"
-                style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06)" }}>
+                style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.06)" }}>
                 <div className="flex items-center justify-between">
                   <div className="h-3 w-16 rounded animate-pulse" style={SK} />
                   <div className="w-8 h-8 rounded-lg animate-pulse" style={SK} />
@@ -5187,7 +6062,7 @@ function AdminSkeleton() {
         </div>
 
         {/* Activity chart */}
-        <div className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
+        <div className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div className="space-y-2">
               <div className="h-3 w-40 rounded animate-pulse" style={SK} />
@@ -5201,7 +6076,7 @@ function AdminSkeleton() {
         </div>
 
         {/* Users section */}
-        <div className="rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
+        <div className="rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl animate-pulse" style={SK} />
             <div className="h-5 w-16 rounded animate-pulse" style={SK} />
@@ -5216,11 +6091,11 @@ function AdminSkeleton() {
 function SkeletonRows({ cols, rows = 3 }: { cols: number; rows?: number }) {
   const widths = ["w-36", "w-20", "w-16", "w-24", "w-12", "w-16", "w-10"];
   return (
-    <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid oklch(0 0 0 / 0.07)" }}>
+    <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid oklch(0 0 0 / 0.10)" }}>
       <table className="w-full border-collapse">
         <tbody>
           {[...Array(rows)].map((_, r) => (
-            <tr key={r} style={{ borderBottom: "1px solid oklch(0 0 0 / 0.05)" }}>
+            <tr key={r} style={{ borderBottom: "1px solid oklch(0 0 0 / 0.11)" }}>
               {[...Array(cols)].map((_, c) => (
                 <td key={c} className="py-3 px-4">
                   <div className={`h-4 ${widths[c % widths.length]} rounded animate-pulse`} style={SK} />
@@ -5238,6 +6113,7 @@ function SkeletonRows({ cols, rows = 3 }: { cols: number; rows?: number }) {
  *  what it contains — the view itself shows that. */
 const TAB_BLURB: Record<string, string> = {
   stats:     "Signups, revenue and production at a glance",
+  balances:  "What we hold at the providers, and what customers hold against it",
   activity:  "What has been created over time, and by whom",
   users:     "Every account, its plan and its keys",
   projects:  "Every video, its progress and what it cost",
@@ -5263,6 +6139,7 @@ const TAB_HEADING: Record<string, string> = {
 
 const ADMIN_NAV = [
   { id: "stats",    label: "Stats",    icon: BarChart3 },
+  { id: "balances", label: "Balance",  icon: Wallet },
   // Activity carries both panels: the niches/videos/users series and the
   // videos-created chart that used to be its own Usage tab. Two tabs of the
   // same question, each holding half the answer.
@@ -5427,11 +6304,11 @@ export default function AdminPage() {
   const [revDateTo, setRevDateTo] = useState("");
   const [revPlanFilter, setRevPlanFilter] = useState("");
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "activity" | "usage" | "users" | "projects" | "freeusage" | "revenue" | "query" | "agent" | "reports" | "logs" | "emails" | "support" | "reviews" | "features" | "memory" | "setup"
+    "stats" | "balances" | "activity" | "usage" | "users" | "projects" | "freeusage" | "revenue" | "query" | "agent" | "reports" | "logs" | "emails" | "support" | "reviews" | "features" | "memory" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "activity", "usage", "users", "projects", "freeusage", "revenue", "query", "agent", "reports", "logs", "emails", "support", "reviews", "features", "memory", "setup"],
+    ["stats", "balances", "activity", "usage", "users", "projects", "freeusage", "revenue", "query", "agent", "reports", "logs", "emails", "support", "reviews", "features", "memory", "setup"],
   );
   // "usage" stays accepted as a stored value: it is what localStorage holds
   // for anyone who last left the admin on the old Usage tab, and mapping it
@@ -5774,9 +6651,9 @@ export default function AdminPage() {
                 <div className="fixed inset-0 z-40" onClick={() => setShowProfileMenu(false)} />
                 <div
                   className="absolute right-0 top-11 z-50 w-56 rounded-2xl py-3 shadow-2xl"
-                  style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.1)" }}
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.03)" }}
                 >
-                  <div className="px-4 pb-3" style={{ borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
+                  <div className="px-4 pb-3" style={{ borderBottom: "1px solid oklch(0 0 0 / 0.025)" }}>
                     <p className="text-xs font-semibold truncate" style={{ color: "var(--c-88)" }}>
                       {userEmail || "Loading…"}
                     </p>
@@ -5878,7 +6755,7 @@ export default function AdminPage() {
         </div>
 
         {/* Stats cards */}
-        <div id="stats" className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "stats" ? undefined : "none" }}>
+        <div id="stats" className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "stats" ? undefined : "none" }}>
           <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: "oklch(0.50 0 0)" }}>Stats</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-[10px]">
             <StatCard label="Total Niches"      value={stats?.totalProjects}    icon={FolderOpen}                    />
@@ -5947,6 +6824,14 @@ export default function AdminPage() {
           </div>
         </div>
 
+        {/* Balance. Its own section rather than a card inside Stats: Stats is
+            the platform at a glance, this is a ledger you read row by row. */}
+        <div id="balances" className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "balances" ? undefined : "none" }}>
+          {/* Fetches only while shown: it reads four tables and the account
+              list, which is not work to do on every other tab. */}
+          <BalancesPanel visible={activeTab === "balances"} />
+        </div>
+
         {/* Activity chart */}
         {(() => {
           const raw = data?.activity ?? [];
@@ -6013,7 +6898,7 @@ export default function AdminPage() {
           const slotW = n > 1 ? plotW / (n - 1) : plotW;
 
           return (
-            <div id="activity" className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: showActivity ? undefined : "none" }}>
+            <div id="activity" className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: showActivity ? undefined : "none" }}>
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "oklch(0.50 0 0)" }}>Activity — {periodLabel}</p>
@@ -6032,7 +6917,7 @@ export default function AdminPage() {
                     </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+                <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
                   {(["daily", "weekly", "monthly"] as const).map(v => (
                     <button key={v} onClick={() => { setActivityView(v); setHoveredIdx(null); }}
                       className="px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer capitalize"
@@ -6204,7 +7089,7 @@ export default function AdminPage() {
           const rangeLabel = isToday ? "Today · by hour (UTC)" : usageRange === "7d" ? "Last 7 days" : "Last 30 days";
 
           return (
-            <div id="usage" className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: showActivity ? undefined : "none" }}>
+            <div id="usage" className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: showActivity ? undefined : "none" }}>
               <div className="flex items-end justify-between flex-wrap gap-3">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wider mb-1" style={{ color: "oklch(0.50 0 0)" }}>
@@ -6217,7 +7102,7 @@ export default function AdminPage() {
                     </span>
                   </p>
                 </div>
-                <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+                <div className="flex items-center gap-1 p-0.5 rounded-lg" style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
                   {([["today", "Today"], ["7d", "7 days"], ["30d", "1 month"]] as const).map(([v, label]) => (
                     <button key={v} onClick={() => { setUsageRange(v); setUsageHoveredIdx(null); }}
                       className="px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer"
@@ -6312,12 +7197,12 @@ export default function AdminPage() {
         })()}
 
         {/* Users section */}
-        <section id="users" className="rounded-2xl space-y-5 max-w-full min-w-0" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "users" ? undefined : "none" }}>
+        <section id="users" className="rounded-2xl space-y-5 max-w-full min-w-0" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "users" ? undefined : "none" }}>
           {/* Icon and title dropped — the page heading names this view. The
               count chip stays: it is data, not a label. */}
           <div className="flex items-center gap-3">
             <span className="text-xs px-2.5 py-0.5 rounded-full"
-              style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
+              style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.02)", color: "var(--c-42)" }}>
               {users.length}
             </span>
           </div>
@@ -6405,7 +7290,7 @@ export default function AdminPage() {
             </div>
           ) : (
             <div className="rounded-2xl overflow-x-auto w-full max-w-full"
-              style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+              style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
               <table className="w-full border-collapse min-w-[520px]">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -6562,7 +7447,7 @@ export default function AdminPage() {
                               onClick={() => setOpenUserMenu(openUserMenu === u.email ? null : u.email)}
                               disabled={removing === u.email || promotingUser === u.email || demotingUser === u.email || flaggingProdTest === u.email}
                               className="w-7 h-7 rounded-lg transition-all hover:opacity-80 disabled:opacity-40 inline-flex items-center justify-center"
-                              style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)", color: "var(--c-55)" }}
+                              style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.11)", color: "var(--c-55)" }}
                               aria-label="User actions"
                               aria-haspopup="menu"
                               aria-expanded={openUserMenu === u.email}
@@ -6585,7 +7470,7 @@ export default function AdminPage() {
                                   className="absolute right-0 top-full mt-1 z-20 rounded-lg overflow-hidden min-w-[240px] py-1.5"
                                   style={{
                                     background: "var(--bg-card)",
-                                    border: "1px solid oklch(0 0 0 / 0.08)",
+                                    border: "1px solid oklch(0 0 0 / 0.11)",
                                     boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)",
                                   }}
                                 >
@@ -6601,7 +7486,7 @@ export default function AdminPage() {
                                         <Crown size={12} />
                                         Remove admin
                                       </button>
-                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
+                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }} />
                                       <button
                                         type="button"
                                         role="menuitem"
@@ -6637,7 +7522,7 @@ export default function AdminPage() {
                                         <FlaskConical size={12} />
                                         Flag as production test account
                                       </button>
-                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
+                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }} />
                                       <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.55 0 0)" }}>Subscription</div>
                                       <button
                                         type="button"
@@ -6672,7 +7557,7 @@ export default function AdminPage() {
                                         <Sparkles size={12} />
                                         Mark as Demo/free
                                       </button>
-                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
+                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }} />
                                       <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.55 0 0)" }}>Plan</div>
                                       {([
                                         { slug: "starter" as const, label: "Starter", Icon: Rocket, color: "oklch(0.45 0.15 145)" },
@@ -6696,7 +7581,7 @@ export default function AdminPage() {
                                           </button>
                                         );
                                       })}
-                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }} />
+                                      <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }} />
                                       <button
                                         type="button"
                                         role="menuitem"
@@ -6725,10 +7610,10 @@ export default function AdminPage() {
         </section>
 
         {/* Projects section */}
-        <section id="projects" className="rounded-2xl space-y-5 pb-[10px] max-w-full min-w-0" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "projects" ? undefined : "none" }}>
+        <section id="projects" className="rounded-2xl space-y-5 pb-[10px] max-w-full min-w-0" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "projects" ? undefined : "none" }}>
           <div className="flex items-center gap-3">
             <span className="text-xs px-2.5 py-0.5 rounded-full"
-              style={{ background: "var(--bg-elevated)", border: "1px solid oklch(1 0 0 / 0.06)", color: "var(--c-42)" }}>
+              style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.02)", color: "var(--c-42)" }}>
               {projects.length}
             </span>
             {/* Average wall-clock assembly time across all projects
@@ -6762,7 +7647,7 @@ export default function AdminPage() {
               stays constant so the count + Avg processing chip are
               visible regardless of which sub-tab is selected. */}
           <div className="flex items-center gap-1 p-1 rounded-xl w-full"
-            style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+            style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
             {(["general", "cost"] as const).map((id) => (
               <button key={id} onClick={() => { setVideosSubTab(id); setSelectedCostProject(null); setSelectedGeneralProject(null); }}
                 className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer capitalize"
@@ -6881,7 +7766,7 @@ export default function AdminPage() {
               ];
               return (
                 <div className="rounded-2xl w-full max-w-full p-4 space-y-4"
-                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <button
                       onClick={() => setSelectedGeneralProject(null)}
@@ -6911,7 +7796,7 @@ export default function AdminPage() {
                       matches the table's color treatment and the
                       bar mirrors the General-row progress style. */}
                   <div className="rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap"
-                    style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+                    style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
                     <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
                       style={isComplete ? {
                         background: "oklch(0.55 0.15 145 / 0.15)",
@@ -6948,7 +7833,7 @@ export default function AdminPage() {
                       break-words so long topics + UUIDs wrap inside
                       the card instead of forcing horizontal scroll. */}
                   <div className="overflow-x-auto rounded-xl"
-                    style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+                    style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
                     <table className="w-full border-collapse table-fixed">
                       <colgroup>
                         <col className="w-[110px] sm:w-[180px]" />
@@ -6982,7 +7867,7 @@ export default function AdminPage() {
             </div>
           ) : (
             <div className="rounded-2xl overflow-x-auto w-full max-w-full"
-              style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+              style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
               <table className="w-full border-collapse min-w-[640px]">
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -7187,7 +8072,7 @@ export default function AdminPage() {
               const cells = costsByProject.get(p.id);
               return (
                 <div className="rounded-2xl w-full max-w-full p-4 space-y-4"
-                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <button
                       onClick={() => setSelectedCostProject(null)}
@@ -7301,7 +8186,7 @@ export default function AdminPage() {
                     // lands on the same layout.
                     return (
                       <div className="overflow-x-auto rounded-xl"
-                        style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+                        style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
                         <table className="w-full border-collapse min-w-[640px]">
                           <thead>
                             <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -7352,7 +8237,7 @@ export default function AdminPage() {
 
             return (
               <div className="rounded-2xl overflow-x-auto w-full max-w-full"
-                style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
                 <table className="w-full border-collapse min-w-[900px]">
                   <thead>
                     <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -7518,7 +8403,7 @@ export default function AdminPage() {
           const slotW = n > 1 ? plotW / (n - 1) : plotW;
 
           return (
-            <section id="revenue" className="rounded-2xl space-y-5" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "revenue" ? undefined : "none" }}>
+            <section id="revenue" className="rounded-2xl space-y-5" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "revenue" ? undefined : "none" }}>
               {(revenue?.unconverted?.count ?? 0) > 0 && (
                 <p className="text-xs px-3 py-2 rounded-lg"
                   style={{ background: "oklch(0.75 0.15 65 / 0.12)", border: "1px solid oklch(0.75 0.15 65 / 0.3)", color: "oklch(0.45 0.12 65)" }}>
@@ -7558,7 +8443,7 @@ export default function AdminPage() {
 
               {/* Monthly revenue chart */}
               <div className="p-4 rounded-2xl space-y-3"
-                style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid oklch(0 0 0 / 0.07)" }}>
+                style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid oklch(0 0 0 / 0.10)" }}>
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-medium uppercase tracking-wider" style={{ color: "oklch(0.50 0 0)" }}>
                     Monthly Revenue — Last 12 Months
@@ -7752,7 +8637,7 @@ export default function AdminPage() {
                 </p>
               ) : (
                 <div className="rounded-2xl overflow-x-auto"
-                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
+                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
                   <table className="w-full border-collapse min-w-[560px]">
                     <thead>
                       <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
@@ -7805,14 +8690,14 @@ export default function AdminPage() {
 
         {activeTab === "query" && (
           <section id="query" className="rounded-2xl max-w-full min-w-0"
-            style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+            style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
             <QueryPanel />
           </section>
         )}
 
         {activeTab === "agent" && (
           <section id="agent" className="rounded-2xl max-w-full min-w-0"
-            style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
+            style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)" }}>
             <HeclusAgentPanel />
           </section>
         )}
@@ -7827,7 +8712,7 @@ export default function AdminPage() {
             className="rounded-2xl max-w-full min-w-0"
             style={{
               background: "var(--bg-card)",
-              border: "1px solid oklch(0 0 0 / 0.07)",
+              border: "1px solid oklch(0 0 0 / 0.10)",
               padding: "16px",
               scrollMarginTop: "80px",
               boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)",
@@ -7843,7 +8728,7 @@ export default function AdminPage() {
             className="rounded-2xl max-w-full min-w-0"
             style={{
               background: "var(--bg-card)",
-              border: "1px solid oklch(0 0 0 / 0.07)",
+              border: "1px solid oklch(0 0 0 / 0.10)",
               padding: "16px",
               scrollMarginTop: "80px",
               boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)",
@@ -7859,7 +8744,7 @@ export default function AdminPage() {
             className="rounded-2xl max-w-full min-w-0"
             style={{
               background: "var(--bg-card)",
-              border: "1px solid oklch(0 0 0 / 0.07)",
+              border: "1px solid oklch(0 0 0 / 0.10)",
               padding: "16px",
               scrollMarginTop: "80px",
               boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)",
@@ -7930,7 +8815,7 @@ export default function AdminPage() {
               onClick={() => setPromoteTarget(null)}
               disabled={promotingUser !== null}
               className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
-              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+              style={{ background: "oklch(0 0 0 / 0.02)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
             >
               Cancel
             </button>
@@ -7980,7 +8865,7 @@ export default function AdminPage() {
               onClick={() => setDemoteTarget(null)}
               disabled={demotingUser !== null}
               className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
-              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+              style={{ background: "oklch(0 0 0 / 0.02)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
             >
               Cancel
             </button>
@@ -8029,7 +8914,7 @@ export default function AdminPage() {
               onClick={() => setRemoveTarget(null)}
               disabled={removing !== null}
               className="flex-1 py-2 rounded-xl text-sm font-medium transition-all hover:opacity-80 disabled:opacity-40"
-              style={{ background: "oklch(1 0 0 / 0.06)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
+              style={{ background: "oklch(0 0 0 / 0.02)", color: "var(--c-60)", border: "1px solid var(--bd-8)" }}
             >
               Cancel
             </button>

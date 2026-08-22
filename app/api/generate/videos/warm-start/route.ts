@@ -21,6 +21,10 @@ import { submitQueued, WARM_START_MAX } from "@/lib/genaipro/pump";
 // Safe to call spuriously: submitQueued claims each beat with a conditional
 // update on the parking status, so the cron and any number of warm starts can
 // race for the same beat and exactly one wins.
+//
+// Deliberately NOT wallet-gated. Everything this submits is a free-lane clip
+// drawing on the video-credit wallet, which the pump reserves against itself. An
+// empty Heclus balance has nothing to do with it.
 export const maxDuration = 60;
 
 export async function POST(req: Request) {
@@ -28,7 +32,6 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
   const expired = requireActiveSubscription(user);
   if (expired) return expired;
-
   const { projectId } = await req.json().catch(() => ({})) as { projectId?: string };
   if (!projectId) {
     return NextResponse.json({ error: "projectId is required" }, { status: 400 });

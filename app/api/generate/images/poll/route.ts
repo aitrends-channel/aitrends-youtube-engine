@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { finishImageTask } from "@/lib/kie/finishImageTask";
-import { KieUpstreamError } from "@/lib/kie/client";
+import { finishImageTask } from "@/lib/operators/finishImage";
+import { asUpstreamError } from "@/lib/operators/upstream";
+import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 
@@ -23,8 +24,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "projectId, beatNumber, and taskId are required" }, { status: 400 });
     }
 
+    // The operator comes off the beat row, never off the request. The client
+    // has no business naming which provider we ask about a task, and a wrong
+    // answer here polls a provider that never issued the id.
+    const { data: beat } = await supabase
+      .from("project_beats")
+      .select("image_operator")
+      .eq("project_id", projectId)
+      .eq("beat_number", beatNumber)
+      .maybeSingle();
+
     const result = await finishImageTask({
       projectId, beatNumber, taskId, modelId,
+      operator: (beat as { image_operator?: string } | null)?.image_operator,
       userId: user.id, userEmail: user.email,
     });
     console.log(`[images/poll] beat=${beatNumber} taskId=${taskId} status=${result.status}`);
@@ -33,16 +45,17 @@ export async function POST(req: Request) {
     if (result.status === "failed") return NextResponse.json({ status: "failed", error: result.error });
     return NextResponse.json({ status: "pending" });
   } catch (err) {
-    if (err instanceof KieUpstreamError) {
-      console.warn(`[images/poll] KIE upstream ${err.upstreamStatus}: ${err.message}`);
+    const upstream = asUpstreamError(err);
+    if (upstream) {
+      console.warn(`[images/poll] upstream ${upstream.upstreamStatus}: ${upstream.message}`);
       const headers: Record<string, string> = {};
-      if (err.upstreamStatus === 429 && err.retryAfter != null) {
-        headers["Retry-After"] = String(err.retryAfter);
+      if (upstream.upstreamStatus === 429 && upstream.retryAfter != null) {
+        headers["Retry-After"] = String(upstream.retryAfter);
       }
       // 429 stays 429 so the client treats this as a transient backoff
       // and keeps polling rather than abandoning the task.
-      const status = err.upstreamStatus === 429 ? 429 : 502;
-      return NextResponse.json({ status: "error", error: err.message, upstreamStatus: err.upstreamStatus }, { status, headers });
+      const status = upstream.upstreamStatus === 429 ? 429 : 502;
+      return NextResponse.json({ status: "error", error: upstream.message, upstreamStatus: upstream.upstreamStatus }, { status, headers });
     }
     const message = err instanceof Error ? err.message : "Failed to poll image task";
     console.error("[images/poll] Error:", message);

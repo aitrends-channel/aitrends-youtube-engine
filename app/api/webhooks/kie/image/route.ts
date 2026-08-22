@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { finishImageTask } from "@/lib/kie/finishImageTask";
+import { finishImageTask } from "@/lib/operators/finishImage";
 import { KieUpstreamError } from "@/lib/kie/client";
 import { supabase } from "@/lib/supabase/client";
 import { verifyKieWebhookSignature, getKieWebhookSecret } from "@/lib/kie/webhook";
@@ -90,7 +90,7 @@ export async function POST(req: Request) {
   // user_id (needed for the storage path).
   const { data: row, error } = await supabase
     .from("project_beats")
-    .select("beat_number, image_task_id, image_model_id, image_url, project_id, projects(user_id)")
+    .select("beat_number, image_task_id, image_model_id, image_operator, image_url, project_id, projects(user_id)")
     .eq("image_task_id", taskId)
     .limit(1)
     .maybeSingle();
@@ -109,6 +109,14 @@ export async function POST(req: Request) {
   // image_task_id lookup above is the real idempotency check; if
   // another path already finished this task it cleared the id and
   // our maybeSingle() returned null (handled above).
+  // Defensive, mirroring the PoYo receiver: a KIE callback for a task stamped
+  // to another operator is either an id collision or a forgery, and finishing
+  // it would poll the wrong provider.
+  if (row.image_operator && row.image_operator !== "kie") {
+    console.warn(`[webhooks/kie/image] task ${taskId} belongs to operator ${row.image_operator}, ignoring`);
+    return NextResponse.json({ ok: true });
+  }
+
   const projectRel = row.projects as unknown as { user_id: string } | null;
   const userId = projectRel?.user_id;
   if (!userId) {
@@ -130,6 +138,7 @@ export async function POST(req: Request) {
       beatNumber: row.beat_number,
       taskId,
       modelId: row.image_model_id ?? undefined,
+      operator: row.image_operator,
       userId,
       userEmail,
     });

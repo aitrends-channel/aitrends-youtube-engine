@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { submitImageTask, checkImageTask } from "@/lib/kie/images";
+import { resolveImageOperator } from "@/lib/operators/image";
 import { withPromptLengthRetry } from "@/lib/kie/promptLength";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
-import { KieUpstreamError } from "@/lib/kie/client";
+import { asUpstreamError, upstreamErrorResponse } from "@/lib/operators/upstream";
+import { getFundingModeById } from "@/lib/funding";
 import { incrementFreeUsage } from "@/lib/freeUsage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
@@ -11,6 +12,9 @@ import { logProjectCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
+import { requireWalletFunds } from "@/lib/heclus-charge";
+import { OPERATOR_POYO, type Operator } from "@/lib/operators";
+import { getMediaOperatorForUser } from "@/lib/operators/routing";
 
 export const maxDuration = 120;
 
@@ -49,17 +53,25 @@ export async function POST(req: Request) {
     R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY ? "set" : "MISSING",
   });
 
+  // Declared before the try so the catch can phrase an out-of-credits for the
+  // right provider. See lib/operators/upstream.ts.
+  let operator: Operator = "kie";
+
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
   const expired = requireActiveSubscription(user);
   if (expired) return expired;
   const noRoom = await requireStorageHeadroom(user);
   if (noRoom) return noRoom;
+  // Wallet-funded users pay for this step in credits, so an empty balance is
+  // refused before any provider is called.
+  const broke = await requireWalletFunds(user);
+  if (broke) return broke;
 
   try {
-    const { projectId, beatNumber, imagePrompt, modelId, aspectRatio = "16:9", resolution } = await req.json() as {
+    const { projectId, beatNumber, imagePrompt, modelId, aspectRatio = "16:9", resolution, operator: requestedOperator } = await req.json() as {
       projectId: string; beatNumber: number; imagePrompt: string; modelId: string;
-      aspectRatio?: string; resolution?: string;
+      aspectRatio?: string; resolution?: string; operator?: string;
     };
 
     if (!projectId || !beatNumber || !modelId) {
@@ -90,12 +102,24 @@ export async function POST(req: Request) {
     //    KIE-side submit + poll, matching what the user perceives
     //    as "how long this model took". Powers the picker's
     //    "Fastest" tab ranking.
+    // Whoever offers this model runs the regeneration. Without this a beat
+    // generated on PoYo would be regenerated against KIE with a model id KIE
+    // has never heard of.
+    const op = resolveImageOperator(modelId, await getMediaOperatorForUser(user.id, "image"));
+    operator = op.id;
+    if (op.id === OPERATOR_POYO && (await getFundingModeById(user.id)) !== "wallet") {
+      return NextResponse.json(
+        { error: "That model runs on Heclus credits. Switch to Heclus Credits funding to use it, or pick a model on your own KIE key." },
+        { status: 403 },
+      );
+    }
+
     const submitT0 = Date.now();
-    const taskId = await withPromptLengthRetry(imagePrompt, (prompt) => submitImageTask(
-      applyConsistency(prompt, consistency.text, consistency.append),
-      modelId, aspectRatio, resolution, user.id,
-    ));
-    console.log(`[images/regenerate] beat=${beatNumber} model=${modelId} taskId=${taskId}`);
+    const taskId = await withPromptLengthRetry(imagePrompt, (prompt) => op.submit({
+      prompt: applyConsistency(prompt, consistency.text, consistency.append),
+      modelId, aspectRatio, resolution, userId: user.id,
+    }));
+    console.log(`[images/regenerate] beat=${beatNumber} operator=${op.id} model=${modelId} taskId=${taskId}`);
 
     // 3. Mark in-flight. A page refresh between submit and complete
     //    would show the spinner (gated on image_status=generating).
@@ -103,7 +127,7 @@ export async function POST(req: Request) {
     //    so an edited prompt survives a failed generation instead of
     //    being silently lost.
     await supabase.from("project_beats")
-      .update({ image_status: "generating", image_task_id: taskId, image_model_id: modelId, image_prompt: imagePrompt })
+      .update({ image_status: "generating", image_task_id: taskId, image_model_id: modelId, image_prompt: imagePrompt, image_operator: op.id })
       .eq("project_id", projectId)
       .eq("beat_number", beatNumber);
 
@@ -119,10 +143,12 @@ export async function POST(req: Request) {
     const MAX_ATTEMPTS = 35; // ~105s; safe margin under maxDuration=120
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       await new Promise((r) => setTimeout(r, POLL_MS));
-      const result = await checkImageTask(taskId, user.id, modelId);
+      const result = await op.check({ taskId, modelId, userId: user.id });
       if (result.status === "done" && result.url) {
         kieUrl = result.url;
-        creditsConsumed = result.creditsConsumed;
+        // Reported where the provider reports it (KIE), catalog price where it
+        // does not (PoYo). See lib/operators/finishImage.ts for why.
+        creditsConsumed = result.units ?? op.estimate(modelId) ?? undefined;
         break;
       }
       if (result.status === "failed") {
@@ -130,10 +156,11 @@ export async function POST(req: Request) {
           .update({ image_status: "failed", image_task_id: null, image_model_id: null })
           .eq("project_id", projectId)
           .eq("beat_number", beatNumber);
-        if (result.creditsConsumed) {
+        const failedUnits = result.units ?? op.estimate(modelId) ?? 0;
+        if (failedUnits > 0) {
           void logProjectCost({
-            projectId, userId: user.id, step: "image_gen", provider: "kie",
-            model: modelId, units: result.creditsConsumed, unitKind: "kie_credits",
+            projectId, userId: user.id, step: "image_gen", provider: op.id === "poyo" ? "poyo" : "kie",
+            model: modelId, units: failedUnits, unitKind: op.unitKind,
             elapsedMs: Date.now() - submitT0,
           });
         }
@@ -148,8 +175,8 @@ export async function POST(req: Request) {
 
     if (creditsConsumed) {
       void logProjectCost({
-        projectId, userId: user.id, step: "image_gen", provider: "kie",
-        model: modelId, units: creditsConsumed, unitKind: "kie_credits",
+        projectId, userId: user.id, step: "image_gen", provider: op.id === "poyo" ? "poyo" : "kie",
+        model: modelId, units: creditsConsumed, unitKind: op.unitKind,
         elapsedMs: Date.now() - submitT0,
       });
     }
@@ -191,31 +218,10 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, url: publicUrl });
   } catch (err) {
-    if (err instanceof KieUpstreamError) {
-      const headers: Record<string, string> = {};
-      if (err.upstreamStatus === 429 && err.retryAfter != null) headers["Retry-After"] = String(err.retryAfter);
-      // See app/api/generate/images/submit/route.ts for the mapping
-      // rationale — 402 for out-of-credit so Vercel doesn't alert.
-      let status: number;
-      let code: string | undefined;
-      if (err.insufficientCredits) {
-        status = 402;
-        code = "insufficient_credits";
-      } else if (err.upstreamStatus === 429) {
-        status = 429;
-      } else {
-        status = 502;
-      }
-      return NextResponse.json(
-        {
-          error: err.insufficientCredits
-            ? "Your KIE account is out of credits. Add credits at kie.ai and try again."
-            : err.message,
-          code,
-          upstreamStatus: err.upstreamStatus,
-        },
-        { status, headers },
-      );
+    const upstream = asUpstreamError(err);
+    if (upstream) {
+      console.warn(`[images/regenerate] ${operator} upstream ${upstream.upstreamStatus}: ${upstream.message}`);
+      return upstreamErrorResponse(upstream, operator);
     }
     const message = err instanceof Error ? err.message : "Regenerate failed";
     console.error("[images/regenerate] error:", message);

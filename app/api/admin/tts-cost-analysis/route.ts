@@ -4,10 +4,15 @@ import { requireAdmin } from "@/lib/admin-server";
 
 export const dynamic = "force-dynamic";
 
-// ElevenLabs Creator-plan effective per-char cost (USD). Pulled from
-// their public pricing page as the comparison anchor. Adjust if you
-// move plans — overage rates differ on Starter / Pro / Scale tiers.
-const ELEVENLABS_USD_PER_CHAR = 0.00018;
+// ElevenLabs API price per character (USD) for the model the product calls,
+// eleven_turbo_v2_5, which is on their Flash/Turbo tier at $0.05 per 1,000
+// characters. API usage is billed in dollars, not against a plan's character
+// allowance.
+//
+// This was 0.00018, the Creator *plan* overage rate, which is 3.6x the API price
+// for this model and made KIE's proxy look cheaper than it is. Moving to v2
+// Multilingual or v3 doubles it to $0.10 per 1,000.
+const ELEVENLABS_USD_PER_CHAR = 0.00005;
 
 // Compares KIE-proxied TTS spend against the equivalent ElevenLabs
 // direct cost on the same per-beat workload, so we can verify the

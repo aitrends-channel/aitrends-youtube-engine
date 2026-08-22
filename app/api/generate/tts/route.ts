@@ -11,6 +11,7 @@ import { incrementFreeUsage } from "@/lib/freeUsage";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
+import { requireWalletFunds } from "@/lib/heclus-charge";
 
 export const maxDuration = 800;
 
@@ -21,7 +22,6 @@ export async function POST(req: Request) {
   if (expired) return expired;
   const noRoom = await requireStorageHeadroom(user);
   if (noRoom) return noRoom;
-
   const { projectId, script, voiceId } = await req.json();
 
   if (!projectId || !script || !voiceId) {
@@ -30,6 +30,13 @@ export async function POST(req: Request) {
 
   // Cloned voices sit on Heclus's shared provider account, so an id alone
   // would otherwise let any user synthesize with someone else's clone.
+  // Paid voices only: a Qwen or ai33 voice costs no credits, so an empty wallet
+  // must not block it.
+  if (!isQwenVoice(voiceId) && !isAi33Voice(voiceId)) {
+    const broke = await requireWalletFunds(user);
+    if (broke) return broke;
+  }
+
   if (!(await canUseVoice(user.id, voiceId))) {
     return Response.json({ error: "That voice isn't available on your account." }, { status: 403 });
   }

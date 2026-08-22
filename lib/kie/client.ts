@@ -1,4 +1,6 @@
-import { getSettings } from "@/lib/settings";
+import { supabase } from "@/lib/supabase/client";
+import { getFundingModeById } from "@/lib/funding";
+import { getActiveProductKey } from "@/lib/claude/routing";
 
 const KIE_BASE_URL = "https://api.kie.ai";
 
@@ -84,11 +86,44 @@ export function sanitizeKieErrorBody(body: string): string {
   return body.replace(/\s+/g, " ").trim().slice(0, 300);
 }
 
+/**
+ * Whose KIE key signs this request.
+ *
+ * The single choke point for every KIE image, video and TTS call, which is why
+ * wallet funding plugs in here rather than into a dozen routes: a wallet user's
+ * work runs on Heclus's rotated key and is metered against their credits, a BYO
+ * user's runs on their own.
+ *
+ * The env var is NOT a fallback for a real user any more. It used to be, via
+ * getSettings, which meant an account with no key of its own quietly spent
+ * Heclus's balance with no ledger row anywhere. Local development still reads
+ * it, because there the shared key IS the developer's key.
+ */
 async function getKieKey(userId?: string): Promise<string> {
   if (userId) {
-    const { kie_api_key } = await getSettings(userId);
-    if (!kie_api_key) throw new Error("KIE API key not configured. Add it in Settings.");
-    return kie_api_key;
+    if (await getFundingModeById(userId) === "wallet") {
+      // product_config first so an admin can rotate without a redeploy, then a
+      // shared env var: the config row lives in whichever database the
+      // deployment reads, so local and staging cannot see what production
+      // admin holds. One variable set alike is how all three spend the same
+      // KIE account.
+      const key = await getActiveProductKey("heclus_kie_api_key")
+        ?? process.env.HECLUS_KIE_API_KEY?.trim()
+        ?? null;
+      if (!key) {
+        throw new Error("Heclus KIE key not configured — set HECLUS_KIE_API_KEY, or add one in Config → API Keys (service: Heclus KIE API Key).");
+      }
+      return key;
+    }
+    const { data } = await supabase
+      .from("account_settings")
+      .select("kie_api_key")
+      .eq("user_id", userId)
+      .maybeSingle();
+    const own = (data as { kie_api_key?: string | null } | null)?.kie_api_key?.trim() || "";
+    if (own) return own;
+    if (process.env.NODE_ENV === "development" && process.env.KIE_API_KEY) return process.env.KIE_API_KEY;
+    throw new Error("KIE API key not configured. Add it in Settings.");
   }
   const key = process.env.KIE_API_KEY ?? "";
   if (!key) throw new Error("KIE API key not configured.");

@@ -15,6 +15,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import { logAnthropicCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
+import { requireWalletFunds } from "@/lib/heclus-charge";
 
 // Anthropic's image `url` source rejects anything that isn't HTTPS with
 // a 400 ("Only HTTPS URLs are supported"). Frame/thumbnail URLs can
@@ -87,6 +88,10 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
   const expired = requireActiveSubscription(user);
   if (expired) return expired;
+  // Wallet-funded users pay for this step in credits, so an empty balance is
+  // refused before any provider is called.
+  const broke = await requireWalletFunds(user);
+  if (broke) return broke;
 
   try {
     const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "visual_analysis");

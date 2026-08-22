@@ -908,8 +908,13 @@ export default function HomePage() {
     // Admins bypass the gate — the platform env-var fallback covers
     // their setup. Paid customers must have entered both keys before
     // we let them burn project resources against shared credentials.
+    //
+    // readyToGenerate rather than bothSet: a wallet-funded account runs on
+    // Heclus's keys and is meant to have none of its own, so gating it on keys
+    // would send a customer who owes us nothing to a setup page with nothing to
+    // fill in.
     if (isAdmin) { action(); return; }
-    if (apiKeysStatus && !apiKeysStatus.bothSet) {
+    if (apiKeysStatus && !apiKeysStatus.readyToGenerate) {
       setShowApiKeysModal(true);
       return;
     }

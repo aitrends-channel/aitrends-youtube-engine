@@ -4,6 +4,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
+import { requireWalletFunds } from "@/lib/heclus-charge";
 import { GENAIPRO_QUEUED_STATUS, GENAIPRO_MODEL_PREFIX } from "@/lib/genaipro/client";
 
 export const maxDuration = 30;
@@ -21,7 +22,6 @@ export async function POST(req: Request) {
   if (expired) return expired;
   const noRoom = await requireStorageHeadroom(user);
   if (noRoom) return noRoom;
-
   try {
     const { projectId, beats, modelId, duration, aspectRatio = "16:9", resolution } = await req.json() as {
       projectId: string; beats: Beat[]; modelId: string; duration?: string | number; aspectRatio?: string; resolution?: string;
@@ -35,6 +35,16 @@ export async function POST(req: Request) {
     // claims or recovers, so they wait for this app's own lane instead of
     // being sent to KIE two minutes later.
     const isGenAIPro = modelId.toLowerCase().startsWith(GENAIPRO_MODEL_PREFIX);
+
+    // The wallet gate applies to the paid lane only. A free clip is paid for by
+    // the separate video-credit wallet, so refusing it because the Heclus
+    // balance is empty would take the free tier away from exactly the people it
+    // is there for. Checked here rather than at the door because it needs the
+    // model, which arrives in the body.
+    if (!isGenAIPro) {
+      const broke = await requireWalletFunds(user);
+      if (broke) return broke;
+    }
 
     // Store job config on the project so the worker can read it.
     // video_resolution is always written — NULL when the client omitted

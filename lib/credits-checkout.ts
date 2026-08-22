@@ -13,12 +13,32 @@
 /** Marks the purchase so the callback routes it to credits, not to a plan. */
 export const PENDING_CREDIT_PURCHASE_KEY = "dodo_pending_purchase";
 
-export function buildTopUpUrl(checkoutUrl: string, origin: string, units = 1): string {
+/**
+ * Which wallet a top-up is buying into.
+ *
+ * Two wallets take money now, and they are not interchangeable: "genai" grants
+ * video clips from genai_credits, "heclus" grants the general Heclus Credits.
+ * The marker travels with the purchase so the return page credits the one that
+ * was actually bought. "credits" is the genai value for backwards compatibility
+ * with links already in flight when this split landed.
+ */
+export type TopUpWallet = "genai" | "heclus";
+
+export function walletParam(wallet: TopUpWallet): string {
+  return wallet === "heclus" ? "heclus" : "credits";
+}
+
+export function buildTopUpUrl(
+  checkoutUrl: string,
+  origin: string,
+  units = 1,
+  wallet: TopUpWallet = "genai",
+): string {
   try {
     const callback = new URL("/payment/callback", origin);
     // Third fallback after the two storages, for a private window that blocks
     // both: Dodo preserves the caller's query params on the way back.
-    callback.searchParams.set("type", "credits");
+    callback.searchParams.set("type", walletParam(wallet));
 
     const url = new URL(checkoutUrl);
     url.searchParams.set("redirect_url", callback.toString());
@@ -34,11 +54,44 @@ export function buildTopUpUrl(checkoutUrl: string, origin: string, units = 1): s
   }
 }
 
-/** Remembers the intent, then leaves for Dodo. */
-export function startTopUp(checkoutUrl: string, units = 1): void {
-  try { localStorage.setItem(PENDING_CREDIT_PURCHASE_KEY, "credits"); } catch {}
-  try { sessionStorage.setItem(PENDING_CREDIT_PURCHASE_KEY, "credits"); } catch {}
-  window.location.href = buildTopUpUrl(checkoutUrl, window.location.origin, units);
+/**
+ * Remembers the intent, then leaves for Dodo.
+ *
+ * `newTab` keeps the app open behind the checkout, which is what the Balance
+ * page wants: a customer who abandons the payment comes back to the page they
+ * were on rather than to a Dodo receipt with no way back. The callback still
+ * works there, because the marker is written to localStorage, which is shared
+ * across tabs, and carried on the return URL besides.
+ */
+export function startTopUp(
+  checkoutUrl: string,
+  units = 1,
+  wallet: TopUpWallet = "genai",
+  newTab = false,
+): void {
+  markPendingTopUp(wallet);
+  const url = buildTopUpUrl(checkoutUrl, window.location.origin, units, wallet);
+  if (newTab) {
+    // Blocked pop-ups fall back to this tab rather than silently doing nothing.
+    const opened = window.open(url, "_blank", "noopener,noreferrer");
+    if (opened) return;
+  }
+  window.location.href = url;
+}
+
+/**
+ * Records which wallet is being bought into, without navigating.
+ *
+ * Split out for the surfaces that hand the customer a link instead of driving
+ * the navigation themselves (the Balance page opens checkout in a new tab). The
+ * query param on the return URL is the primary signal; these two are the
+ * fallbacks for a product whose own return URL drops it. localStorage is what
+ * survives a new-tab checkout, since sessionStorage is per-tab.
+ */
+export function markPendingTopUp(wallet: TopUpWallet): void {
+  const value = walletParam(wallet);
+  try { localStorage.setItem(PENDING_CREDIT_PURCHASE_KEY, value); } catch {}
+  try { sessionStorage.setItem(PENDING_CREDIT_PURCHASE_KEY, value); } catch {}
 }
 
 /**

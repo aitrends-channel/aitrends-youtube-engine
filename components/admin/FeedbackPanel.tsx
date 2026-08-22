@@ -104,7 +104,7 @@ function FeedbackRow({ feedback, onSaved }: { feedback: AdminFeedback; onSaved: 
 
   return (
     <div className="rounded-xl p-4"
-      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.07)" }}>
+      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.10)" }}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-3 min-w-0">
           {editing
@@ -241,7 +241,7 @@ export function FeedbackPanel() {
               { label: "Skipped", value: String(data?.dismissedCount ?? 0) },
             ].map((c) => (
               <div key={c.label} className="rounded-xl p-3 sm:p-4"
-                style={{ background: "oklch(0 0 0 / 0.03)", border: "1px solid oklch(0 0 0 / 0.07)" }}>
+                style={{ background: "oklch(0 0 0 / 0.03)", border: "1px solid oklch(0 0 0 / 0.10)" }}>
                 <p className="text-[10px] sm:text-[11px] uppercase tracking-wide" style={{ color: "oklch(0.5 0 0)" }}>{c.label}</p>
                 <p className="text-lg sm:text-xl font-bold mt-1 text-foreground">{c.value}</p>
               </div>

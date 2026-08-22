@@ -136,7 +136,7 @@ export function DiagnoseButton({ ticketId, emailId, reply, onSent, actions }: {
             type="button"
             onClick={close}
             className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80 cursor-pointer"
-            style={{ background: "oklch(0 0 0 / 0.04)", color: "var(--c-55)", border: "1px solid oklch(0 0 0 / 0.08)" }}
+            style={{ background: "oklch(0 0 0 / 0.04)", color: "var(--c-55)", border: "1px solid oklch(0 0 0 / 0.11)" }}
           >
             Close
           </button>
@@ -154,7 +154,7 @@ export function DiagnoseButton({ ticketId, emailId, reply, onSent, actions }: {
           ...d.checkedAndRuledOut.map((line) => ({ line, kind: "ok" as const })),
         ];
         return (
-          <div className="rounded-xl p-4 space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.08)" }}>
+          <div className="rounded-xl p-4 space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.11)" }}>
 
             {/* What is wrong — the line someone opens this for. */}
             <div className="flex items-start gap-3">
@@ -281,7 +281,7 @@ export function DiagnoseButton({ ticketId, emailId, reply, onSent, actions }: {
               </button>
               {showEvidence && (
                 <pre className="mt-2 text-[10px] leading-relaxed overflow-x-auto rounded-lg px-3 py-2 max-h-[360px] overflow-y-auto"
-                  style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.06)", color: "var(--c-60)" }}>
+                  style={{ background: "oklch(0 0 0 / 0.04)", border: "1px solid oklch(0 0 0 / 0.09)", color: "var(--c-60)" }}>
                   {JSON.stringify(result.gathered, null, 2)}
                 </pre>
               )}

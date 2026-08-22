@@ -18,7 +18,7 @@ export async function POST(req: Request) {
   try {
     const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "ideas");
     const { projectId } = await req.json() as { projectId: string };
-    const modelParams = await resolveDefaultModel("ideas");
+    const modelParams = await resolveDefaultModel("ideas", user.id);
     const model = modelParams.model;
 
     const { data: project, error } = await supabase

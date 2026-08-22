@@ -25,7 +25,7 @@ export function QuotaInput({
   return (
     <div className="p-2.5 rounded-lg" style={{
       background: "white",
-      border: "1px solid oklch(0 0 0 / 0.07)",
+      border: "1px solid oklch(0 0 0 / 0.10)",
       minWidth: 140,
       opacity: locked && !isUnlimited ? 0.55 : 1,
     }}>

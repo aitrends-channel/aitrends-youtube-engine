@@ -180,14 +180,26 @@ export function invalidateDefaultClaudeModelCache(): void {
  *  does: a step switched to GPT or Gemini must not be handed a Claude model id,
  *  because getAnthropicClient will have built a KIE facade for it and the relay
  *  rejects the request. Omitting the step keeps the old Claude-only behaviour,
- *  which is right for callers whose step can't change provider. */
-export async function resolveDefaultModel(step?: WorkflowStep): Promise<ClaudeModelParams> {
+ *  which is right for callers whose step can't change provider.
+ *
+ *  Pass userId wherever it is available. The media operator switch overrides
+ *  the per-step provider, and that decision is per user (BYO accounts stay on
+ *  KIE), so without the id this cannot tell whether the override applies and
+ *  will hand a GPT model id to a PoYo client that only speaks Anthropic's
+ *  Messages API. Omitting it is safe but keeps the step on GPT. */
+export async function resolveDefaultModel(step?: WorkflowStep, userId?: string): Promise<ClaudeModelParams> {
   if (step) {
     try {
       const provider = await getPromptProvider(step);
-      if (isKieProvider(provider)) return { model: await getModelForProvider(provider, step) };
+      if (isKieProvider(provider)) {
+        const overridden = userId
+          ? (await getRoutingForUser(userId, step)) === "heclus_poyo"
+          : false;
+        if (!overridden) return { model: await getModelForProvider(provider, step) };
+      }
     } catch {
-      // Provider unreadable — fall through to Claude rather than fail the step.
+      // Provider or routing unreadable — fall through to Claude rather than
+      // fail the step.
     }
   }
   return modelParamsFor(await getDefaultClaudeModel());
@@ -235,9 +247,27 @@ export async function resolveModelForUser(
   // want — no `thinking` field.
   try {
     const provider = await getPromptProvider(step);
-    if (isKieProvider(provider)) return { model: await getModelForProvider(provider, step) };
+    if (isKieProvider(provider)) {
+      // The media operator switch overrides the per-step provider, and the
+      // model has to follow it. getAnthropicClient makes the same call and
+      // hands back a PoYo client speaking Anthropic's Messages API; returning
+      // a GPT model id here would then send gpt-5-6-sol to /v1/messages, which
+      // PoYo rejects outright:
+      //
+      //   URI '/v1/messages' is not supported by this model.
+      //   Supported URIs: ['/codex/v1/responses', '/v1/responses']
+      //
+      // Falling through gives the Claude default instead. These two overrides
+      // are one decision expressed in two places; change them together, and
+      // if PoYo's GPT path is ever wired (via /v1/responses, per that error)
+      // both revert together too.
+      if ((await getRoutingForUser(userId, step)) !== "heclus_poyo") {
+        return { model: await getModelForProvider(provider, step) };
+      }
+    }
   } catch {
-    // Provider unreadable — fall through to Claude rather than fail the step.
+    // Provider or routing unreadable — fall through to Claude rather than fail
+    // the step.
   }
 
   const config = await getClaudeModelConfig();

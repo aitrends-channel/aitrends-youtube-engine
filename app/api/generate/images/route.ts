@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { generateImage } from "@/lib/kie/images";
+
 import { withPromptLengthRetry } from "@/lib/kie/promptLength";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
@@ -10,6 +10,9 @@ import { logProjectCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
+import { requireWalletFunds, canStartWalletWork, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
+import { resolveImageOperator } from "@/lib/operators/image";
+import { getMediaOperatorForUser } from "@/lib/operators/routing";
 
 export const maxDuration = 60;
 
@@ -29,6 +32,10 @@ export async function POST(req: Request) {
   if (expired) return expired;
   const noRoom = await requireStorageHeadroom(user);
   if (noRoom) return noRoom;
+  // Wallet-funded users pay for this step in credits, so an empty balance is
+  // refused before any provider is called.
+  const broke = await requireWalletFunds(user);
+  if (broke) return broke;
 
   try {
     const { projectId, beats, modelId, aspectRatio = "16:9", resolution, clearFirst = false } = await req.json() as {
@@ -39,6 +46,11 @@ export async function POST(req: Request) {
     if (!projectId || !beats?.length || !modelId) {
       return NextResponse.json({ error: "projectId, beats, and modelId are required" }, { status: 400 });
     }
+
+    // One operator for the whole batch. Resolved from the admin switch, with
+    // BYO clients pinned to KIE and free-lane models exempt; see
+    // lib/operators/routing.ts.
+    const op = resolveImageOperator(modelId, await getMediaOperatorForUser(user.id, "image"));
 
     if (clearFirst) {
       await supabase.from("project_beats").update({ image_url: null, image_status: null }).eq("project_id", projectId);
@@ -59,6 +71,19 @@ export async function POST(req: Request) {
     for (let i = 0; i < beats.length; i += batchSize) {
       const batch = beats.slice(i, i + batchSize);
 
+      // Re-checked per batch, not just at the door. A project is hundreds of
+      // generations, so a wallet that empties on beat 12 would otherwise keep
+      // spending Heclus's balance all the way to the last beat. The remaining
+      // beats are reported as failures with the same message the banner routes
+      // to a top-up, rather than left looking like they never ran.
+      if (!(await canStartWalletWork(user.id))) {
+        for (const remaining of beats.slice(i)) {
+          failures.push({ beatNumber: remaining.beatNumber, error: OUT_OF_CREDITS_MESSAGE });
+          await supabase.from("project_beats").update({ image_status: "failed" }).eq("project_id", projectId).eq("beat_number", remaining.beatNumber);
+        }
+        break;
+      }
+
       const batchResults = await Promise.allSettled(
         batch.map(async (beat) => {
           await supabase.from("project_beats").update({ image_status: "generating" }).eq("project_id", projectId).eq("beat_number", beat.beatNumber);
@@ -69,12 +94,12 @@ export async function POST(req: Request) {
           // the user's actual experience (queue + generation + cdn
           // fetch), not just the raw model inference time.
           const t0 = Date.now();
-          const { url: imageUrl, creditsConsumed } = await withPromptLengthRetry(
+          const { url: imageUrl, units: creditsConsumed } = await withPromptLengthRetry(
             beat.imagePrompt,
-            (prompt) => generateImage(
-              applyConsistency(prompt, consistency.text, consistency.append),
-              modelId, aspectRatio, resolution, user.id,
-            ),
+            (prompt) => op.generate({
+              prompt: applyConsistency(prompt, consistency.text, consistency.append),
+              modelId, aspectRatio, resolution, userId: user.id,
+            }),
           );
           const elapsedMs = Date.now() - t0;
           if (creditsConsumed) {
@@ -82,10 +107,10 @@ export async function POST(req: Request) {
               projectId,
               userId: user.id,
               step: "image_gen",
-              provider: "kie",
+              provider: op.id === "poyo" ? "poyo" : "kie",
               model: modelId,
               units: creditsConsumed,
-              unitKind: "kie_credits",
+              unitKind: op.unitKind,
               elapsedMs,
             });
           }

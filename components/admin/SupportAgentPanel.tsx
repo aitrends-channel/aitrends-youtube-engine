@@ -14,7 +14,7 @@ const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
 function Row({ label, help, children }: { label: string; help: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-4 py-3" style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }}>
+    <div className="flex items-start justify-between gap-4 py-3" style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }}>
       <div className="min-w-0">
         <p className="text-sm font-semibold" style={{ color: "var(--c-85)" }}>{label}</p>
         <p className="text-xs mt-0.5 leading-relaxed" style={{ color: "var(--c-45)" }}>{help}</p>
@@ -61,13 +61,13 @@ export function SupportAgentPanel() {
   }
 
   if (isLoading || !config) {
-    return <div className="rounded-2xl p-5 flex items-center gap-2 text-sm" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)", color: "var(--c-45)" }}><Spinner size={14} /> Loading…</div>;
+    return <div className="rounded-2xl p-5 flex items-center gap-2 text-sm" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", color: "var(--c-45)" }}><Spinner size={14} /> Loading…</div>;
   }
 
   const live = config.auto_reply_enabled && !config.auto_reply_dry_run;
 
   return (
-    <div className="rounded-2xl p-5" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.07)" }}>
+    <div className="rounded-2xl p-5" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)" }}>
       <div className="flex items-start justify-between gap-3 mb-1">
         <div>
           <p className="text-sm font-semibold" style={{ color: "var(--c-85)" }}>Heclus AI Agent</p>

@@ -1,4 +1,4 @@
-import { checkImageTask } from "@/lib/kie/images";
+import { getImageOperator } from "./image";
 import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { logProjectCost } from "@/lib/costs";
@@ -8,11 +8,17 @@ import { logProjectCost } from "@/lib/costs";
 // worker (background), so the side effects on the beat row stay
 // identical regardless of which caller advances the task.
 //
+// Operator-agnostic, which is why it no longer lives under lib/kie. The caller
+// passes the operator stamped on the beat at submit; this never re-resolves it
+// from the model id. Re-resolving would send a task to whichever provider
+// currently prefers that model, and a task id means nothing to a provider that
+// did not issue it.
+//
 // Returns:
 //   { status: "done", url }       — image uploaded and beat row updated
-//   { status: "failed", error }   — KIE reported failure; beat marked failed
+//   { status: "failed", error }   — provider reported failure; beat marked failed
 //   { status: "pending" }         — still in progress; beat row untouched
-// Throws KieUpstreamError on transient KIE 429/5xx — callers decide
+// Throws the provider's upstream error on transient 429/5xx — callers decide
 // whether to retry next tick (cron) or surface to the client (poll).
 
 export interface FinishImageInput {
@@ -22,6 +28,9 @@ export interface FinishImageInput {
   modelId?: string;
   userId: string;
   userEmail?: string | null;
+  /** project_beats.image_operator. Omitted reads as KIE, which is what every
+   *  row predating migration 134 ran on. */
+  operator?: unknown;
 }
 
 export type FinishImageResult =
@@ -30,25 +39,36 @@ export type FinishImageResult =
   | { status: "pending" };
 
 export async function finishImageTask(input: FinishImageInput): Promise<FinishImageResult> {
-  const result = await checkImageTask(input.taskId, input.userId, input.modelId);
+  const op = getImageOperator(input.operator);
+  const result = await op.check({ taskId: input.taskId, modelId: input.modelId, userId: input.userId });
 
-  // Log the credit consumption as soon as KIE has billed us, even
-  // if downstream upload fails — KIE charged regardless and the cost
-  // ledger should reflect actual spend.
-  if ((result.status === "done" || result.status === "failed") && result.creditsConsumed) {
-    void logProjectCost({
-      projectId: input.projectId,
-      userId: input.userId,
-      step: "image_gen",
-      provider: "kie",
-      model: input.modelId ?? null,
-      units: result.creditsConsumed,
-      unitKind: "kie_credits",
-    });
+  // Log consumption as soon as the provider has billed us, even if the
+  // download or upload then fails: we were charged regardless, and the cost
+  // ledger is meant to record spend rather than successes.
+  //
+  // Which number gets logged depends on the provider, and the difference is
+  // not cosmetic. KIE returns what the finished task actually cost, so that is
+  // authoritative. PoYo returns no cost field at all, so the only figure
+  // available is the catalog price, which is an estimate that will silently be
+  // wrong if PoYo reprices. Reported wins where it exists.
+  if (result.status === "done" || result.status === "failed") {
+    const estimated = input.modelId ? op.estimate(input.modelId) : null;
+    const units = result.units ?? estimated ?? 0;
+    if (units > 0) {
+      void logProjectCost({
+        projectId: input.projectId,
+        userId: input.userId,
+        step: "image_gen",
+        provider: op.id === "poyo" ? "poyo" : "kie",
+        model: input.modelId ?? null,
+        units,
+        unitKind: op.unitKind,
+      });
+    }
   }
 
   if (result.status === "done" && result.url) {
-    console.log(`[finishImageTask] beat=${input.beatNumber} task=${input.taskId} KIE done, source=${result.url.slice(0, 80)}`);
+    console.log(`[finishImageTask] beat=${input.beatNumber} task=${input.taskId} done, source=${result.url.slice(0, 80)}`);
     const folder = userFolderFor({ id: input.userId, email: input.userEmail ?? null });
     const storagePath = `${folder}/${input.projectId}/images/beat-${input.beatNumber}_${Date.now()}.png`;
     const publicUrl = await uploadFromUrl(storagePath, result.url, "image/png");

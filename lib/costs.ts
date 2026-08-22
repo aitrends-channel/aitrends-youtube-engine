@@ -1,5 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
-import { isDirectRouting, type AnthropicRouting } from "@/lib/claude/routing";
+import { isDirectRouting, isPoyoRouting, type AnthropicRouting } from "@/lib/claude/routing";
+import { chargeForCostEntry } from "@/lib/heclus-charge";
 
 /**
  * Workflow step that the cost belongs to. Mapped to display columns
@@ -43,6 +44,10 @@ export type CostUnitKind =
   | "claude_tokens_cache_read"
   | "claude_tokens_cache_creation"
   | "kie_credits"
+  // PoYo's own credit. A separate unit from kie_credits even though both
+  // currently price at $0.005, because they are two vendors' currencies and
+  // either can reprice without the other.
+  | "poyo_credits"
   // One clip. Heclus buys these in $6/300 packs, so a row here is $0.02.
   | "genaipro_clips"
   | "elevenlabs_chars"
@@ -52,10 +57,13 @@ export interface CostEntry {
   projectId: string;
   userId: string;
   step: CostStep;
-  provider: "anthropic" | "kie" | "genaipro" | "elevenlabs" | "supadata";
+  provider: "anthropic" | "kie" | "poyo" | "genaipro" | "elevenlabs" | "supadata";
   model?: string | null;
   units: number;
   unitKind: CostUnitKind;
+  /** Which beat the cost belongs to, when it is per-beat work. Recorded on the
+   *  credit ledger row so a charge can be traced to the clip that caused it. */
+  beatNumber?: number | null;
   /** Generation duration in seconds. Used for video_gen kie_credits
    *  rows so the picker can compute units/durationSec as a per-second
    *  cost. Omit (or pass null) for steps where seconds aren't the
@@ -103,6 +111,19 @@ export async function logProjectCost(entry: CostEntry): Promise<void> {
   } catch (e) {
     console.warn(`[costs] insert threw step=${entry.step}:`, e instanceof Error ? e.message : e);
   }
+
+  // Bill it, if this user's work runs on Heclus's keys.
+  //
+  // Hung off the meter rather than off each route on purpose: every provider
+  // unit the product knows about already passes through here, including the
+  // one-click orchestrator and the webhook completions, so there is no path
+  // that can generate on Heclus's account without a ledger row. A BYO user, a
+  // free-lane unit, and an unpriced unit all charge nothing.
+  //
+  // Awaited but never allowed to throw: the meter has already recorded the
+  // work, and a failed debit must not take the generation down with it. The
+  // charge module logs its own failures.
+  await chargeForCostEntry(entry).catch(() => undefined);
 }
 
 /** Map the cost ledger step to the model_cost_and_speed model_type
@@ -378,6 +399,10 @@ export async function refreshModelCostAndSpeed(): Promise<{
  * caller from writing the same four logProjectCost calls everywhere.
  */
 export async function logClaudeUsage(args: {
+  /** Which provider served the call. Defaults to Anthropic; PoYo serves the
+   *  same token-billed shape and must be distinguishable in the ledger, or the
+   *  margin report values PoYo tokens at Anthropic's list price. */
+  provider?: "anthropic" | "poyo";
   projectId: string;
   userId: string;
   step: CostStep;
@@ -395,7 +420,7 @@ export async function logClaudeUsage(args: {
 }): Promise<void> {
   const u = args.usage;
   if (!u) return;
-  const base = { projectId: args.projectId, userId: args.userId, step: args.step, provider: "anthropic" as const, model: args.model };
+  const base = { projectId: args.projectId, userId: args.userId, step: args.step, provider: args.provider ?? ("anthropic" as const), model: args.model };
   await Promise.all([
     logProjectCost({ ...base, units: u.input_tokens                ?? 0, unitKind: "claude_tokens_in" }),
     logProjectCost({ ...base, units: u.output_tokens               ?? 0, unitKind: "claude_tokens_out" }),
@@ -440,6 +465,7 @@ export async function logAnthropicCost(args: {
 }): Promise<void> {
   if (isDirectRouting(args.routing)) {
     await logClaudeUsage({
+      provider: isPoyoRouting(args.routing) ? "poyo" : "anthropic",
       projectId: args.projectId,
       userId: args.userId,
       step: args.step,

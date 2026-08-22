@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
+import { getFundingMode, type FundingMode } from "@/lib/funding";
 
 export const dynamic = "force-dynamic";
 
@@ -12,11 +13,23 @@ export const dynamic = "force-dynamic";
 // signal for the dashboard's pre-niche gate, where the goal is
 // confirming each paid user has brought their own keys before
 // burning project resources against shared / platform credentials.
+//
+// Since wallet funding, "has brought their own keys" is no longer the same
+// question as "can generate": a wallet user is meant to have no keys at all.
+// readyToGenerate is the one to gate on; kieSet and elevenlabsSet stay for the
+// surfaces that genuinely ask about the keys themselves.
 
 export interface ApiKeysStatus {
   kieSet: boolean;
   elevenlabsSet: boolean;
   bothSet: boolean;
+  /** Whose provider account pays. A wallet user has nothing to bring, so every
+   *  surface that nags for keys has to ask this before nagging. */
+  fundingMode: FundingMode;
+  /** True when the account can generate without setting a single key. Named for
+   *  what the caller actually wants to know, so no surface has to reimplement
+   *  "wallet OR both keys" and get it subtly different. */
+  readyToGenerate: boolean;
 }
 
 export async function GET() {
@@ -35,9 +48,13 @@ export async function GET() {
   } | null;
   const kieSet = !!row?.kie_api_key?.trim();
   const elevenlabsSet = !!row?.elevenlabs_api_key?.trim();
+  const fundingMode = await getFundingMode(user);
+  const bothSet = kieSet && elevenlabsSet;
   return NextResponse.json({
     kieSet,
     elevenlabsSet,
-    bothSet: kieSet && elevenlabsSet,
+    bothSet,
+    fundingMode,
+    readyToGenerate: fundingMode === "wallet" || bothSet,
   } satisfies ApiKeysStatus);
 }

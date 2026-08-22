@@ -145,7 +145,7 @@ export function FeatureRequestsPanel() {
             const rowBusy = busy?.id === r.id;
             return (
               <div key={r.id} className="rounded-xl p-3"
-                style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+                style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
                 <div className="flex items-start gap-3 flex-wrap">
                   <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-semibold"
                     style={{ background: style.bg, color: style.fg }}>
@@ -321,7 +321,7 @@ function EditForm({ request, busy, onSave, onCancel }: {
   const [count, setCount] = useState(String(request.asked_count));
 
   return (
-    <div className="mt-3 pt-3 space-y-2" style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }}>
+    <div className="mt-3 pt-3 space-y-2" style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }}>
       <input className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} disabled={busy} />
       <div className="flex gap-2">
         <input className={inputClass} placeholder="Who asked"

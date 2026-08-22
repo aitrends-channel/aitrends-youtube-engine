@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Check, Loader2, Circle, AlertTriangle, Download, Pause, Play, Square, RotateCcw, Film, X, Clock } from "lucide-react";
 import { IMAGE_MODELS } from "@/lib/kie/imageModels";
 import { VIDEO_MODELS } from "@/lib/kie/videoModels";
+import { OneClickControls } from "@/components/one-click/OneClickControls";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json());
 
@@ -364,6 +365,20 @@ export function OneClickProgress({ projectId }: { projectId: string }) {
         <p className="text-sm mt-1.5" style={{ color: "var(--c-50)" }}>
           Feel free to close this tab. We keep working and email you when your video is ready.
         </p>
+
+        {/* Pause and Stop, on the page the run is actually watched from.
+            These already existed but only on the dashboard card, so someone
+            watching a run here had to navigate away to halt it — the one place
+            it is most likely to be wanted. Same component, same endpoints; the
+            status and error it needs are already in this panel's poll. */}
+        <div className="flex justify-center mt-4">
+          <OneClickControls
+            projectId={projectId}
+            status={status}
+            error={p.auto_pilot_error ?? null}
+            onChanged={() => void mutate()}
+          />
+        </div>
       </div>
 
       {/* Overall progress — with the live elapsed timer inline */}

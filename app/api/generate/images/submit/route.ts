@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
-import { submitImageTask } from "@/lib/kie/images";
+
 import { withPromptLengthRetry } from "@/lib/kie/promptLength";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
-import { KieUpstreamError } from "@/lib/kie/client";
+import { resolveImageOperator } from "@/lib/operators/image";
+import { asUpstreamError, upstreamErrorResponse } from "@/lib/operators/upstream";
+import { getFundingModeById } from "@/lib/funding";
 import { incrementFreeUsage } from "@/lib/freeUsage";
 import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
@@ -10,6 +12,10 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import { getAppUrl } from "@/lib/utils";
 import type { User } from "@supabase/supabase-js";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
+import { requireWalletFunds } from "@/lib/heclus-charge";
+import { OPERATOR_POYO, type Operator } from "@/lib/operators";
+import { poyoCallbackUrl } from "@/lib/poyo/webhook";
+import { getMediaOperatorForUser } from "@/lib/operators/routing";
 
 export const maxDuration = 60;
 
@@ -18,18 +24,44 @@ export async function POST(req: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
   const noRoom = await requireStorageHeadroom(user);
   if (noRoom) return noRoom;
+  // Wallet-funded users pay for this step in credits, so an empty balance is
+  // refused before any provider is called.
+  const broke = await requireWalletFunds(user);
+  if (broke) return broke;
 
   let beatNumber: number | undefined;
   let projectId: string | undefined;
+  // Needed in the catch to phrase an out-of-credits correctly, so it is
+  // declared out here rather than inside the try.
+  let operator: Operator = "kie";
 
   try {
     const body = await req.json() as {
       projectId: string; beatNumber: number; imagePrompt: string; modelId: string;
-      aspectRatio?: string; resolution?: string;
+      aspectRatio?: string; resolution?: string; operator?: string;
     };
     projectId = body.projectId;
     beatNumber = body.beatNumber;
     const { imagePrompt, modelId, aspectRatio = "16:9", resolution } = body;
+
+    // The admin switch decides who runs this, not the client and not the model
+    // id: two providers now carry a model called z-image. getMediaOperatorForUser
+    // has already applied the per-surface override and pinned BYO clients to
+    // KIE, and resolveImageOperator exempts the free lanes on top of that.
+    const op = resolveImageOperator(modelId, await getMediaOperatorForUser(user.id, "image"));
+    operator = op.id;
+
+    // Not redundant with the catalog, which now only offers the active
+    // operator's models. resolveImageOperator still falls back to whoever
+    // carries a model the active operator does not, so a BYO client replaying
+    // a stale PoYo model id lands here — and PoYo runs on Heclus's key, so
+    // that would spend Heclus's balance with no ledger row against them.
+    if (op.id === OPERATOR_POYO && (await getFundingModeById(user.id)) !== "wallet") {
+      return NextResponse.json(
+        { error: "That model runs on Heclus credits. Switch to Heclus Credits funding to use it, or pick a model on your own KIE key." },
+        { status: 403 },
+      );
+    }
 
     if (!projectId || !beatNumber || !modelId) {
       return NextResponse.json({ error: "projectId, beatNumber, and modelId are required" }, { status: 400 });
@@ -48,13 +80,20 @@ export async function POST(req: Request) {
     // we don't depend on the cron tick or the browser polling. Cron and
     // page-resume effect remain as backstops in case the webhook is
     // dropped en route.
-    const callBackUrl = `${getAppUrl(req)}/api/webhooks/kie/image`;
+    // Per operator: a task id only means something to the provider that issued
+    // it, so the callback has to land on that provider's verifier too. PoYo's
+    // carries a capability token because PoYo does not sign callbacks, and is
+    // undefined when no token is configured, which leaves the task to the poll
+    // and cron paths rather than registering an unauthenticated callback.
+    const callBackUrl = op.id === OPERATOR_POYO
+      ? poyoCallbackUrl(getAppUrl(req))
+      : `${getAppUrl(req)}/api/webhooks/kie/image`;
 
-    const taskId = await withPromptLengthRetry(imagePrompt, (prompt) => submitImageTask(
-      applyConsistency(prompt, consistency.text, consistency.append),
-      modelId, aspectRatio, resolution, user.id, callBackUrl,
-    ));
-    console.log(`[images/submit] beat=${beatNumber} model=${modelId} taskId=${taskId}`);
+    const taskId = await withPromptLengthRetry(imagePrompt, (prompt) => op.submit({
+      prompt: applyConsistency(prompt, consistency.text, consistency.append),
+      modelId, aspectRatio, resolution, userId: user.id, callbackUrl: callBackUrl,
+    }));
+    console.log(`[images/submit] beat=${beatNumber} operator=${op.id} model=${modelId} taskId=${taskId}`);
 
     // Single atomic UPDATE so the webhook can never fire in a window
     // where image_task_id has been cleared but not yet rewritten. The
@@ -64,7 +103,7 @@ export async function POST(req: Request) {
     // intact on purpose — we want the old frame visible under the
     // spinner until the new one lands.
     await supabase.from("project_beats")
-      .update({ image_status: "generating", image_task_id: taskId, image_model_id: modelId })
+      .update({ image_status: "generating", image_task_id: taskId, image_model_id: modelId, image_operator: op.id })
       .eq("project_id", projectId)
       .eq("beat_number", beatNumber);
 
@@ -85,38 +124,10 @@ export async function POST(req: Request) {
         .eq("beat_number", beatNumber);
     }
 
-    if (err instanceof KieUpstreamError) {
-      console.warn(`[images/submit] KIE upstream ${err.upstreamStatus} on beat ${beatNumber}: ${err.message}`);
-      const headers: Record<string, string> = {};
-      if (err.upstreamStatus === 429 && err.retryAfter != null) {
-        headers["Retry-After"] = String(err.retryAfter);
-      }
-      // Insufficient credits is a customer configuration issue, not a
-      // server failure — surface as 402 so Vercel doesn't page on it
-      // and the client can render "top up your KIE balance" instead of
-      // a generic error. 429 stays 429 for rate-limit retry logic.
-      // Everything else becomes 502 (bad gateway): valid request, KIE
-      // failed.
-      let status: number;
-      let code: string | undefined;
-      if (err.insufficientCredits) {
-        status = 402;
-        code = "insufficient_credits";
-      } else if (err.upstreamStatus === 429) {
-        status = 429;
-      } else {
-        status = 502;
-      }
-      return NextResponse.json(
-        {
-          error: err.insufficientCredits
-            ? "Your KIE account is out of credits. Add credits at kie.ai and try again."
-            : err.message,
-          code,
-          upstreamStatus: err.upstreamStatus,
-        },
-        { status, headers },
-      );
+    const upstream = asUpstreamError(err);
+    if (upstream) {
+      console.warn(`[images/submit] ${operator} upstream ${upstream.upstreamStatus} on beat ${beatNumber}: ${upstream.message}`);
+      return upstreamErrorResponse(upstream, operator);
     }
 
     const message = err instanceof Error ? err.message : "Failed to submit image task";

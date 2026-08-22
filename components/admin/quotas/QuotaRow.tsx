@@ -41,7 +41,7 @@ export function QuotaRow({
 
   return (
     <div className="p-4 rounded-xl"
-      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.06)" }}>
+      style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
       <div className="flex items-start gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-x-2 gap-y-1.5 flex-wrap">
