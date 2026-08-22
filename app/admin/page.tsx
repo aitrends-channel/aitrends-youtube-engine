@@ -1980,6 +1980,7 @@ function BalancesPanel({ visible }: { visible: boolean }) {
           format={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           low={100}
           href="https://kie.ai/billing"
+          claim={data?.totals.credits}
         />
         <ProviderTile
           label="PoYo credits"
@@ -1988,6 +1989,7 @@ function BalancesPanel({ visible }: { visible: boolean }) {
           format={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           low={100}
           href="https://poyo.ai/"
+          claim={data?.totals.credits}
         />
         <ProviderTile
           label="ElevenLabs characters"
@@ -2125,7 +2127,7 @@ function BalancesPanel({ visible }: { visible: boolean }) {
  * Null is not zero. An unreachable provider says so instead of showing a zero
  * that reads as "out of credit".
  */
-function ProviderTile({ label, note, p, format, low, href }: {
+function ProviderTile({ label, note, p, format, low, href, claim }: {
   label: string;
   note: string;
   p: ProviderBalance | undefined;
@@ -2133,6 +2135,11 @@ function ProviderTile({ label, note, p, format, low, href }: {
   /** Below this the number turns amber. Not a hard limit, a prompt to top up. */
   low: number;
   href: string;
+  /** Heclus Credits customers are holding, which is a claim on this float.
+   *  Directly comparable because both perKieCredit and perPoyoCredit are 1, so
+   *  one Heclus credit buys one provider credit at either. Omitted on
+   *  ElevenLabs, whose characters are not the same unit as a credit. */
+  claim?: number;
 }) {
   const state = !p ? "loading"
     : !p.configured ? "nokey"
@@ -2175,6 +2182,29 @@ function ProviderTile({ label, note, p, format, low, href }: {
         {value}
       </p>
       <p className="text-[11px] mt-0.5" style={{ color: "var(--c-42)" }}>{detail}</p>
+      {claim !== undefined && (
+        // The float above is what we hold; this is what customers can spend
+        // against it. Shown in the same card because the comparison is the
+        // point: a claim larger than the float is a promise we cannot keep,
+        // and it is invisible when the two numbers live in separate sections.
+        <div className="mt-2.5 pt-2.5 flex items-baseline justify-between gap-2"
+          style={{ borderTop: "1px solid var(--bd-6)" }}>
+          <span className="text-[11px]" style={{ color: "var(--c-45)" }}>Users total balance</span>
+          <span
+            className="text-sm font-semibold tabular-nums"
+            title={p?.balance != null && claim > p.balance
+              ? "Customers hold more credit than this account can cover."
+              : undefined}
+            style={{
+              color: p?.balance != null && claim > p.balance
+                ? "oklch(0.58 0.16 65)"
+                : "var(--c-78)",
+            }}
+          >
+            {claim.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
