@@ -43,7 +43,7 @@ export type MediaSurface = (typeof MEDIA_SURFACES)[number];
  *
  * Add a surface here in the same commit that makes something read it.
  */
-export const IMPLEMENTED_SURFACES: readonly MediaSurface[] = ["image", "chat"];
+export const IMPLEMENTED_SURFACES: readonly MediaSurface[] = ["image", "chat", "video"];
 
 /**
  * Surfaces the switch will never move, by decision rather than by backlog.

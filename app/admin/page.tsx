@@ -2261,7 +2261,7 @@ function MediaOperatorPanel() {
     },
     video: {
       op: "kie",
-      why: "Recommended: KIE, and currently the only option. PoYo publishes no API identifier strings for its video models, so there is no verified catalog to submit against.",
+      why: "Recommended: KIE. PoYo carries only six of the video models in the picker (the Seedance family, Kling 2.6, Grok Imagine and Hailuo 02); Veo, Sora, Kling 3 and Wan are absent, and anything unmapped stays on KIE automatically. Its image billing is accurate, but its chat billing reports roughly 7x the tokens generated, so treat video pricing as unverified until a clip has been measured against the balance.",
     },
     tts: { op: "elevenlabs", why: "Voiceover stays on ElevenLabs and does not follow the switch." },
     transcription: { op: "elevenlabs", why: "Caption alignment stays on ElevenLabs. PoYo publishes no speech-to-text." },
