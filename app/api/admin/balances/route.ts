@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/admin-server";
 import { isAdminUser } from "@/lib/admin";
 import { getActiveProductKey } from "@/lib/claude/routing";
 import { checkKie, checkElevenLabs } from "@/lib/key-check";
+import { fetchPoyoBalance } from "@/lib/poyo/client";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +58,7 @@ export interface ProviderBalance {
 
 export interface BalancesResponse {
   /** What Heclus holds at the providers wallet work spends. */
-  providers: { kie: ProviderBalance; elevenlabs: ProviderBalance };
+  providers: { kie: ProviderBalance; poyo: ProviderBalance; elevenlabs: ProviderBalance };
   rows: BalanceRow[];
   totals: {
     accounts: number;
@@ -193,17 +194,20 @@ export async function GET() {
  * whole point: zero means stop generating, null means we could not ask.
  */
 async function heclusProviderBalances(): Promise<BalancesResponse["providers"]> {
-  const [kieRow, elRow] = await Promise.all([
+  const [kieRow, poyoRow, elRow] = await Promise.all([
     getActiveProductKey("heclus_kie_api_key"),
+    getActiveProductKey("heclus_poyo_api_key"),
     getActiveProductKey("heclus_elevenlabs_api_key"),
   ]);
   // Same order the resolvers use, so this tile reports the key that would
   // actually be spent rather than only what is in the database.
   const kieKey = kieRow ?? process.env.HECLUS_KIE_API_KEY?.trim() ?? null;
+  const poyoKey = poyoRow ?? process.env.HECLUS_POYO_API_KEY?.trim() ?? null;
   const elKey = elRow ?? process.env.HECLUS_ELEVENLABS_API_KEY?.trim() ?? null;
 
-  const [kie, elevenlabs] = await Promise.all([
+  const [kie, poyo, elevenlabs] = await Promise.all([
     kieKey ? checkKie(kieKey) : null,
+    poyoKey ? fetchPoyoBalance() : null,
     elKey ? checkElevenLabs(elKey) : null,
   ]);
 
@@ -214,6 +218,16 @@ async function heclusProviderBalances(): Promise<BalancesResponse["providers"]> 
       balance: kie?.credits ?? null,
       limit: null,
       issue: kie?.balanceIssue ?? null,
+    },
+    poyo: {
+      configured: !!poyoKey,
+      // The balance read doubles as the key check: PoYo has no separate
+      // validation endpoint, so a number back means the key works and a null
+      // means we could not tell.
+      valid: poyo === null ? null : true,
+      balance: poyo,
+      limit: null,
+      issue: null,
     },
     elevenlabs: {
       configured: !!elKey,
