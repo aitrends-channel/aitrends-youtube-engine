@@ -2206,6 +2206,9 @@ function MediaOperatorPanel() {
 
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Which surface has its reasoning open. One at a time: opening a second
+  // closes the first, which is what a reader comparing two rows expects.
+  const [openWhy, setOpenWhy] = useState<string | null>(null);
 
   const cardStyle = { background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" } as const;
 
@@ -2242,6 +2245,30 @@ function MediaOperatorPanel() {
     transcription: "Caption alignment",
   };
 
+  // What each surface actually covers. Worth spelling out for chat above all:
+  // "Writing steps" is eight workflow steps, two of which are not obviously
+  // writing (visual analysis is a vision call, beats is segmentation), and
+  // thumbnails here means the concepts rather than the images, which belong to
+  // the Images surface instead.
+  // Recommended operator per surface, with the evidence. Published rates are
+  // not the basis: PoYo lists Claude at $4/$20 per Mtok against Anthropic's
+  // $5/$25, which looks like a 20% saving until you measure what it bills.
+  const RECOMMENDED: Record<string, { op: string; why: string }> = {
+    chat: { op: "kie", why: "PoYo costs about 6x more. It counts roughly 7x the tokens actually used." },
+    image: { op: "kie", why: "PoYo bills fairly here, just higher. Roughly 2x KIE on your busiest models." },
+    video: { op: "kie", why: "PoYo is missing Veo, Sora, Kling 3 and Wan. Those stay on KIE." },
+    tts: { op: "elevenlabs", why: "Voiceover always uses ElevenLabs." },
+    transcription: { op: "elevenlabs", why: "Captions always use ElevenLabs." },
+  };
+
+  const COVERS: Record<string, string> = {
+    chat: "Channel analysis, topics, the script, visual analysis of reference images, beat segmentation, image and video prompts, and thumbnail concepts. Every model call that writes or reasons.",
+    image: "Beat images and the thumbnail images themselves. Not thumbnail concepts, which are a writing step.",
+    video: "The video clip generated from each beat image.",
+    tts: "Narration audio for the voiceover.",
+    transcription: "Speech to text used to align captions to the voiceover.",
+  };
+
   return (
     <div className="space-y-3">
       <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
@@ -2273,8 +2300,8 @@ function MediaOperatorPanel() {
         <div>
           <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Per surface</p>
           <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
-            Empty inherits the default above. PoYo is cheaper on writing and dearer on images, so a split is
-            often the right answer.
+            Empty inherits the default above. The recommendation beside each name is based on measured cost
+            rather than published rates. Hover it for the numbers.
           </p>
         </div>
 
@@ -2287,7 +2314,54 @@ function MediaOperatorPanel() {
               <div key={s} className="flex items-center justify-between gap-3 p-2 rounded-lg"
                 style={{ background: "oklch(0 0 0 / 0.02)" }}>
                 <div className="min-w-0">
-                  <p className="text-sm" style={{ color: "var(--c-90)" }}>{LABELS[s] ?? s}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p
+                      className="text-sm cursor-help underline decoration-dotted underline-offset-4"
+                      style={{ color: "var(--c-90)", textDecorationColor: "var(--c-30)" }}
+                      title={COVERS[s] ?? ""}
+                    >
+                      {LABELS[s] ?? s}
+                    </p>
+                    {/* Beside the name rather than out by the buttons: the
+                        recommendation belongs to the surface, not to the
+                        control, and reading it next to what is actually
+                        selected is the comparison that matters.
+                        
+                        Only where a choice exists. On video it would repeat
+                        the line below it, and on voiceover and captions it
+                        would recommend the only provider available, which is
+                        noise dressed as advice. */}
+                    {live && (
+                      <span className="relative inline-block shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setOpenWhy(openWhy === s ? null : s)}
+                          className="text-[11px] px-1.5 py-0.5 rounded cursor-pointer transition-all hover:brightness-95"
+                          style={{
+                            color: "oklch(0.45 0.12 145)",
+                            background: "oklch(0.55 0.15 145 / 0.10)",
+                            border: "1px solid oklch(0.55 0.15 145 / 0.25)",
+                          }}
+                        >
+                          recommended: {RECOMMENDED[s]?.op ?? "—"} {openWhy === s ? "▴" : "▾"}
+                        </button>
+                        {openWhy === s && (
+                          <span
+                            className="absolute left-0 top-full mt-1 z-20 block rounded-lg p-2.5 text-xs leading-relaxed"
+                            style={{
+                              width: 260,
+                              background: "var(--bg-card, white)",
+                              border: "1px solid var(--bd-10)",
+                              boxShadow: "0 8px 24px oklch(0 0 0 / 0.14)",
+                              color: "var(--c-70)",
+                            }}
+                          >
+                            {RECOMMENDED[s]?.why}
+                          </span>
+                        )}
+                      </span>
+                    )}
+                  </div>
                   {exempt && (
                     <p className="text-xs" style={{ color: "var(--c-42)" }}>
                       Always ElevenLabs. Does not follow the switch.
@@ -2300,21 +2374,47 @@ function MediaOperatorPanel() {
                   )}
                 </div>
 
-                {live && (
-                  <div className="flex gap-1.5 shrink-0">
-                    {(data?.operators ?? []).map((op) => (
+                {/* Pills on every surface, so the control reads consistently
+                    down the column. Disabled where the switch cannot move it,
+                    which is the honest state rather than a button that stores
+                    a setting nothing reads. The effective provider is still
+                    highlighted, so a glance down the column says who runs what
+                    rather than only what is changeable. */}
+                <div className="flex gap-1.5 shrink-0 items-center">
+                  {exempt && (
+                    <span
+                      className="px-2.5 py-1 rounded-md text-xs font-medium"
+                      style={{
+                        background: "oklch(0.62 0.15 220 / 0.12)",
+                        color: "var(--c-55)",
+                        border: "1px solid var(--bd-10)",
+                      }}
+                    >
+                      elevenlabs
+                    </span>
+                  )}
+                  {(data?.operators ?? []).map((op) => {
+                    // Video is not wired, so KIE is what actually runs it;
+                    // show that rather than leaving the row unmarked.
+                    const active = live ? current === op : (!exempt && op === "kie");
+                    return (
                       <button
                         key={op}
                         onClick={() => patch(s, { surface: s, surface_operator: current === op ? null : op })}
-                        disabled={saving !== null}
-                        className="px-2.5 py-1 rounded-md text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                        style={pill(current === op)}
+                        disabled={!live || saving !== null}
+                        title={
+                          exempt ? "Always ElevenLabs. Does not follow the switch."
+                            : !live ? "Not wired to the switch yet."
+                            : current === op ? "Click to clear and inherit the default" : `Run this surface on ${op}`
+                        }
+                        className="px-2.5 py-1 rounded-md text-xs font-medium transition-all disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
+                        style={pill(active)}
                       >
-                        {saving === s ? "…" : op}
+                        {live && saving === s ? "…" : op}
                       </button>
-                    ))}
-                  </div>
-                )}
+                    );
+                  })}
+                </div>
               </div>
             );
           })}
