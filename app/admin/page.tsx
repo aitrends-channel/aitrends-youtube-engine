@@ -1969,12 +1969,12 @@ function BalancesPanel({ visible }: { visible: boolean }) {
         </p>
       ))}
 
-      {/* Ours first. Every customer balance below is a claim on these two, so a
-          wallet full of credit against an empty KIE account is a promise nobody
-          can keep. */}
-      <div className="grid gap-3 sm:grid-cols-2">
+      {/* Ours first. Every customer balance below is a claim on these, so a
+          wallet full of credit against an empty provider account is a promise
+          nobody can keep. */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <ProviderTile
-          label="Our KIE credits"
+          label="KIE credits"
           note="Images, clips and KIE-routed writing"
           p={data?.providers.kie}
           format={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
@@ -1982,7 +1982,15 @@ function BalancesPanel({ visible }: { visible: boolean }) {
           href="https://kie.ai/billing"
         />
         <ProviderTile
-          label="Our ElevenLabs characters"
+          label="PoYo credits"
+          note="Whatever the operator switch has moved to PoYo"
+          p={data?.providers.poyo}
+          format={(v) => v.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          low={100}
+          href="https://poyo.ai/"
+        />
+        <ProviderTile
+          label="ElevenLabs characters"
           note="Voiceovers and caption alignment"
           p={data?.providers.elevenlabs}
           format={(v) => v.toLocaleString()}

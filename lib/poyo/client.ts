@@ -115,3 +115,26 @@ export function poyoEnvelopeError(env: PoyoEnvelope<unknown>, fallback: string):
   const msg = env.error?.message ?? fallback;
   return new PoyoUpstreamError(env.code, null, `PoYo ${env.code}: ${msg}`, looksLikeInsufficientCredits(env.code, msg));
 }
+
+/**
+ * Heclus's PoYo balance, or null if it cannot be read.
+ *
+ * Mirrors fetchKieBalance. The endpoint is not in PoYo's docs; it was found by
+ * probing and returns { code, data: { email, credits_amount } }. Null rather
+ * than zero on any failure, because "we could not ask" and "the account is
+ * empty" are different answers and the tile renders them differently.
+ */
+export async function fetchPoyoBalance(): Promise<number | null> {
+  try {
+    const key = await getPoyoKey();
+    const res = await fetch(`${POYO_BASE_URL}/api/user/balance`, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as PoyoEnvelope<{ credits_amount?: number }>;
+    const n = body.data?.credits_amount;
+    return typeof n === "number" ? n : null;
+  } catch {
+    return null;
+  }
+}
