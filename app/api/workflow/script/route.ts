@@ -141,7 +141,7 @@ export async function POST(req: Request) {
       topic: string;
       mode?: "fresh" | "continue";
     };
-    const modelParams = await resolveDefaultModel("script");
+    const modelParams = await resolveDefaultModel("script", user.id);
     const model = modelParams.model;
 
     if (!analysis || !topic) {
@@ -149,11 +149,11 @@ export async function POST(req: Request) {
     }
 
     // Continue mode reads the partial script saved by a prior user-Stop
-    // and feeds it back as an assistant prefill so the model picks up
-    // exactly where it left off. Cheaper than rerunning from scratch
-    // because we only pay for the continuation tokens, not the entire
-    // script. Works on both direct Anthropic and KIE proxy because both
-    // accept role: "assistant" as the final turn.
+    // and feeds it back so the model picks up exactly where it left off.
+    // Cheaper than rerunning from scratch because we only pay for the
+    // continuation tokens, not the entire script. Carried inside the user
+    // turn rather than as an assistant prefill — see the note where the
+    // messages are built for why that changed.
     let existingScript = "";
     if (mode === "continue") {
       const { data: row } = await supabase
@@ -212,6 +212,14 @@ export async function POST(req: Request) {
         // hard-kill us at maxDuration with no chance to save.
         const startedAt = Date.now();
         let deadlineHit = false;
+        // Usage accumulated off the stream events, so a run that never reaches
+        // finalMessage() still produces a cost row. See the capture below.
+        let streamedUsage: {
+          input_tokens?: number | null;
+          output_tokens?: number | null;
+          cache_read_input_tokens?: number | null;
+          cache_creation_input_tokens?: number | null;
+        } | null = null;
 
         function send(data: object) {
           try {
@@ -327,20 +335,34 @@ export async function POST(req: Request) {
           const userPrompt = `${lengthGoal}\n\nSTRUCTURE: roughly ${sectionCount} narrative sections of about ${Math.round(target / sectionCount)} words each, different angles, seamless transitions, do NOT label them in output. The arc still runs hook → development → ending CTA across those sections — preserve the channel's signature opening and ending moves.\n\n${initialPrompt}`;
 
           // Continue-mode prefix nudges the model to splice cleanly
-          // rather than restating context or wrapping up early. The
-          // existing text goes in as the assistant turn — the model
-          // sees it as words it just wrote and continues naturally.
+          // rather than restating context or wrapping up early.
+          //
+          // The draft used to go in as a trailing assistant turn — a prefill,
+          // so the model read it as words it had just written. That is no
+          // longer possible: Anthropic removed assistant prefill across the
+          // current family (Opus 4.6/4.7/4.8/5, Sonnet 4.6/5) and a trailing
+          // assistant message returns a 400. Only the KIE GPT facade still
+          // tolerates it, which is why this never surfaced while the prompt
+          // steps ran on GPT, and why it would break the moment script moves
+          // to Claude — on PoYo or anywhere else.
+          //
+          // The draft now rides inside the user turn in a tagged block. Token
+          // cost is unchanged: it was always sent as input either way.
           const continueDirective = mode === "continue"
-            ? "\n\nThe script below has already been started — pick up exactly where it ends, mid-sentence if needed, with the same voice and pacing. Do not recap, restate, or summarize what's been written. Continue smoothly until the natural end of the piece."
+            ? "\n\nThe script so far is in <script_so_far> below. Pick up exactly where it ends, mid-sentence if needed, with the same voice and pacing. Do not recap, restate or summarize what is already written, and do not repeat any of it — emit only the continuation. Continue smoothly until the natural end of the piece."
             : "";
 
           const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "script");
           await retryClaudeCall("script (Opus)", async () => {
             if (accumulated.length > existingScript.length) return; // already past first attempt with new content emitted; skip retries
             const opusMessages: { role: "user" | "assistant"; content: string }[] = [
-              { role: "user", content: userPrompt + continueDirective },
+              {
+                role: "user",
+                content: mode === "continue"
+                  ? `${userPrompt}${continueDirective}\n\n<script_so_far>\n${existingScript}\n</script_so_far>`
+                  : userPrompt,
+              },
             ];
-            if (mode === "continue") opusMessages.push({ role: "assistant", content: existingScript });
             // Per-request timeout override. The default Anthropic client
             // timeout (180s, see lib/claude/client.ts) is fine for
             // analyze/ideas/thumbnails — sub-minute calls. Script
@@ -363,23 +385,44 @@ export async function POST(req: Request) {
               if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
                 sendText(event.delta.text);
               }
+              // Usage as it arrives, so an aborted run still bills.
+              // message_start carries the input count, message_delta the
+              // running output count. finalMessage() throws on an abort, and
+              // the catch below used to swallow the cost row with it: a run
+              // the user stopped, or one that spiralled, cost real money and
+              // left nothing in project_costs. That is how the 14:02 script
+              // run spent credits with no ledger entry.
+              if (event.type === "message_start" && event.message?.usage) {
+                streamedUsage = { ...streamedUsage, ...event.message.usage };
+              }
+              if (event.type === "message_delta" && event.usage) {
+                streamedUsage = { ...streamedUsage, ...event.usage };
+              }
             }
             // Pull final usage after the stream drains. Async so it
             // can't block the script-emit path; logAnthropicCost is
             // fail-soft on its own and routes to kie_credits when
             // we're going through KIE, claude_tokens otherwise.
+            // Prefer the final message's usage; fall back to what the stream
+            // reported before it ended. Logging is outside the try so an abort
+            // costs us the exact figure, not the row.
+            let usage: typeof streamedUsage = streamedUsage;
             try {
-              const finalMsg = await stream.finalMessage();
-              void logAnthropicCost({
-                projectId,
-                userId: user.id,
-                step: "script",
-                model,
-                routing,
-                usage: finalMsg.usage,
-                kieCreditsConsumed: takeLastCreditsConsumed(),
-              });
-            } catch { /* finalMessage may throw if the stream was aborted */ }
+              usage = (await stream.finalMessage()).usage;
+            } catch {
+              // Aborted (user Stop, spiral, deadline). streamedUsage holds the
+              // last counts the provider sent, which is what we were charged
+              // for up to the abort.
+            }
+            void logAnthropicCost({
+              projectId,
+              userId: user.id,
+              step: "script",
+              model,
+              routing,
+              usage,
+              kieCreditsConsumed: takeLastCreditsConsumed(),
+            });
           });
 
           // If we detected a spiral mid-stream, trim it back to clean
