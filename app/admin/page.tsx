@@ -2206,6 +2206,9 @@ function MediaOperatorPanel() {
 
   const [saving, setSaving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Which surface has its reasoning open. One at a time: opening a second
+  // closes the first, which is what a reader comparing two rows expects.
+  const [openWhy, setOpenWhy] = useState<string | null>(null);
 
   const cardStyle = { background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" } as const;
 
@@ -2253,11 +2256,11 @@ function MediaOperatorPanel() {
   const RECOMMENDED: Record<string, { op: string; why: string }> = {
     chat: {
       op: "kie",
-      why: "Recommended: KIE. PoYo reports roughly 7x the tokens actually generated. Measured against account balance, one 1,500-word generation cost 59.4 credits ($0.30) where Anthropic direct would charge $0.05.",
+      why: "PoYo reports roughly 7x the tokens actually generated. Measured against the account balance, one 1,500-word generation cost 59.4 credits ($0.30) where Anthropic direct charges $0.05 for the same call.",
     },
     image: {
       op: "kie",
-      why: "Recommended: KIE. PoYo's image billing is accurate (a z-image run charged exactly 2.0 credits, matching their catalog) but dearer: 2 credits against KIE's observed 0.8 on z-image, and 6 against 4 on grok-imagine, which are the two models carrying most image spend.",
+      why: "PoYo bills images honestly: a z-image run charged exactly its catalogued 2.0 credits. It is simply dearer, at 2 credits against KIE's observed 0.8 on z-image and 6 against 4 on grok-imagine, the two models carrying most of the spend.",
     },
     video: {
       op: "kie",
@@ -2337,17 +2340,36 @@ function MediaOperatorPanel() {
                         the line below it, and on voiceover and captions it
                         would recommend the only provider available, which is
                         noise dressed as advice. */}
-                    {live && <span
-                      title={RECOMMENDED[s]?.why ?? ""}
-                      className="text-[11px] px-1.5 py-0.5 rounded cursor-help shrink-0"
-                      style={{
-                        color: "oklch(0.45 0.12 145)",
-                        background: "oklch(0.55 0.15 145 / 0.10)",
-                        border: "1px solid oklch(0.55 0.15 145 / 0.25)",
-                      }}
-                    >
-                      recommended: {RECOMMENDED[s]?.op ?? "—"}
-                    </span>}
+                    {live && (
+                      <span className="relative inline-block shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setOpenWhy(openWhy === s ? null : s)}
+                          className="text-[11px] px-1.5 py-0.5 rounded cursor-pointer transition-all hover:brightness-95"
+                          style={{
+                            color: "oklch(0.45 0.12 145)",
+                            background: "oklch(0.55 0.15 145 / 0.10)",
+                            border: "1px solid oklch(0.55 0.15 145 / 0.25)",
+                          }}
+                        >
+                          recommended: {RECOMMENDED[s]?.op ?? "—"} {openWhy === s ? "▴" : "▾"}
+                        </button>
+                        {openWhy === s && (
+                          <span
+                            className="absolute left-0 top-full mt-1 z-20 block rounded-lg p-2.5 text-xs leading-relaxed"
+                            style={{
+                              width: 320,
+                              background: "var(--bg-card, white)",
+                              border: "1px solid var(--bd-10)",
+                              boxShadow: "0 8px 24px oklch(0 0 0 / 0.14)",
+                              color: "var(--c-70)",
+                            }}
+                          >
+                            {RECOMMENDED[s]?.why}
+                          </span>
+                        )}
+                      </span>
+                    )}
                   </div>
                   {exempt && (
                     <p className="text-xs" style={{ color: "var(--c-42)" }}>
