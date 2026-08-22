@@ -2247,6 +2247,26 @@ function MediaOperatorPanel() {
   // writing (visual analysis is a vision call, beats is segmentation), and
   // thumbnails here means the concepts rather than the images, which belong to
   // the Images surface instead.
+  // Recommended operator per surface, with the evidence. Published rates are
+  // not the basis: PoYo lists Claude at $4/$20 per Mtok against Anthropic's
+  // $5/$25, which looks like a 20% saving until you measure what it bills.
+  const RECOMMENDED: Record<string, { op: string; why: string }> = {
+    chat: {
+      op: "kie",
+      why: "Recommended: KIE. PoYo reports roughly 7x the tokens actually generated. Measured against account balance, one 1,500-word generation cost 59.4 credits ($0.30) where Anthropic direct would charge $0.05.",
+    },
+    image: {
+      op: "kie",
+      why: "Recommended: KIE. PoYo's image billing is accurate (a z-image run charged exactly 2.0 credits, matching their catalog) but dearer: 2 credits against KIE's observed 0.8 on z-image, and 6 against 4 on grok-imagine, which are the two models carrying most image spend.",
+    },
+    video: {
+      op: "kie",
+      why: "Recommended: KIE, and currently the only option. PoYo publishes no API identifier strings for its video models, so there is no verified catalog to submit against.",
+    },
+    tts: { op: "elevenlabs", why: "Voiceover stays on ElevenLabs and does not follow the switch." },
+    transcription: { op: "elevenlabs", why: "Caption alignment stays on ElevenLabs. PoYo publishes no speech-to-text." },
+  };
+
   const COVERS: Record<string, string> = {
     chat: "Channel analysis, topics, the script, visual analysis of reference images, beat segmentation, image and video prompts, and thumbnail concepts. Every model call that writes or reasons.",
     image: "Beat images and the thumbnail images themselves. Not thumbnail concepts, which are a writing step.",
@@ -2286,8 +2306,8 @@ function MediaOperatorPanel() {
         <div>
           <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Per surface</p>
           <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
-            Empty inherits the default above. PoYo is cheaper on writing and dearer on images, so a split is
-            often the right answer.
+            Empty inherits the default above. A ringed pill is the recommended operator for that surface,
+            based on measured cost rather than published rates. Hover it for the numbers.
           </p>
         </div>
 
@@ -2328,13 +2348,20 @@ function MediaOperatorPanel() {
                 <div className="flex gap-1.5 shrink-0 items-center">
                   {exempt && (
                     <span
-                      className="px-2.5 py-1 rounded-md text-xs font-medium"
-                      style={{ background: "oklch(0.62 0.15 220 / 0.12)", color: "var(--c-55)", border: "1px solid var(--bd-10)" }}
+                      title={RECOMMENDED[s]?.why ?? ""}
+                      className="px-2.5 py-1 rounded-md text-xs font-medium cursor-help"
+                      style={{
+                        background: "oklch(0.62 0.15 220 / 0.12)",
+                        color: "var(--c-55)",
+                        border: "1px solid var(--bd-10)",
+                        boxShadow: "0 0 0 2px oklch(0.55 0.15 145 / 0.45)",
+                      }}
                     >
                       elevenlabs
                     </span>
                   )}
                   {(data?.operators ?? []).map((op) => {
+                    const recommended = RECOMMENDED[s]?.op;
                     // Video is not wired, so KIE is what actually runs it;
                     // show that rather than leaving the row unmarked.
                     const active = live ? current === op : (!exempt && op === "kie");
@@ -2343,13 +2370,20 @@ function MediaOperatorPanel() {
                         key={op}
                         onClick={() => patch(s, { surface: s, surface_operator: current === op ? null : op })}
                         disabled={!live || saving !== null}
-                        title={
+                        title={[
+                          recommended === op ? RECOMMENDED[s]?.why : "",
                           exempt ? "Always ElevenLabs. Does not follow the switch."
                             : !live ? "Not wired to the switch yet."
-                            : current === op ? "Click to clear and inherit the default" : `Run this surface on ${op}`
-                        }
+                            : current === op ? "Click to clear and inherit the default" : `Run this surface on ${op}`,
+                        ].filter(Boolean).join("\n\n")}
                         className="px-2.5 py-1 rounded-md text-xs font-medium transition-all disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
-                        style={pill(active)}
+                        style={{
+                          ...pill(active),
+                          // Ring marks the recommendation, independent of what
+                          // is currently selected — the two can disagree, and
+                          // that disagreement is the point of showing it.
+                          ...(recommended === op ? { boxShadow: "0 0 0 2px oklch(0.55 0.15 145 / 0.45)" } : {}),
+                        }}
                       >
                         {live && saving === s ? "…" : op}
                       </button>
