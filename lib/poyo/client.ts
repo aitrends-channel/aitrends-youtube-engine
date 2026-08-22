@@ -120,21 +120,58 @@ export function poyoEnvelopeError(env: PoyoEnvelope<unknown>, fallback: string):
  * Heclus's PoYo balance, or null if it cannot be read.
  *
  * Mirrors fetchKieBalance. The endpoint is not in PoYo's docs; it was found by
- * probing and returns { code, data: { email, credits_amount } }. Null rather
- * than zero on any failure, because "we could not ask" and "the account is
- * empty" are different answers and the tile renders them differently.
+ * probing and returns { code, data: { email, credits_amount } }.
+ *
+ * Every failure logs why. The first version returned a bare null and the admin
+ * tile rendered "Could not reach the provider" for a rejected key, a rate
+ * limit, an unparseable body and a genuine network failure alike, which left
+ * nothing to act on. Callers still get null — the distinction that matters to
+ * them is only "no number" — but the log says which.
  */
-export async function fetchPoyoBalance(): Promise<number | null> {
+export interface PoyoBalanceResult {
+  /** false when PoYo rejected the key, null when we could not tell. */
+  valid: boolean | null;
+  balance: number | null;
+}
+
+export async function fetchPoyoBalance(): Promise<PoyoBalanceResult> {
+  let key: string;
   try {
-    const key = await getPoyoKey();
+    key = await getPoyoKey();
+  } catch (e) {
+    console.warn(`[poyo/balance] no key: ${e instanceof Error ? e.message : String(e)}`);
+    return { valid: null, balance: null };
+  }
+
+  try {
     const res = await fetch(`${POYO_BASE_URL}/api/user/balance`, {
       headers: { Authorization: `Bearer ${key}` },
+      // Without this the admin page hangs on a slow provider rather than
+      // rendering the rest of the panel.
+      signal: AbortSignal.timeout(10_000),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const body = sanitizePoyoErrorBody(await res.text().catch(() => ""));
+      console.warn(
+        `[poyo/balance] HTTP ${res.status} using a ${key.length}-char key ending ${key.slice(-4)}: ${body}`,
+      );
+      // A rejected key and an unreachable provider need different answers from
+      // an admin: one is a value to correct, the other is a wait. Collapsing
+      // both to "could not reach" sent someone looking at the network when the
+      // key was wrong.
+      const rejected = res.status === 401 || res.status === 403;
+      return { valid: rejected ? false : null, balance: null };
+    }
     const body = (await res.json()) as PoyoEnvelope<{ credits_amount?: number }>;
     const n = body.data?.credits_amount;
-    return typeof n === "number" ? n : null;
-  } catch {
-    return null;
+    if (typeof n !== "number") {
+      console.warn(`[poyo/balance] no credits_amount in response: ${JSON.stringify(body).slice(0, 200)}`);
+      return { valid: true, balance: null };
+    }
+    return { valid: true, balance: n };
+  } catch (e) {
+    // Timeout, DNS, TLS, or a body that would not parse.
+    console.warn(`[poyo/balance] request failed: ${e instanceof Error ? e.message : String(e)}`);
+    return { valid: null, balance: null };
   }
 }
