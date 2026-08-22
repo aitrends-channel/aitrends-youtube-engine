@@ -6,6 +6,7 @@ import {
   submitFramesToVideo, GenAIProError,
   GENAIPRO_MODEL_PREFIX, GENAIPRO_QUEUED_STATUS,
 } from "@/lib/genaipro/client";
+import { OPERATOR_GENAIPRO } from "@/lib/operators";
 
 // The submit half of the GenAIPro lane, lifted out of the cron route so two
 // callers can share it: the every-two-minutes cron, and the warm start the
@@ -129,7 +130,7 @@ export async function submitQueued(opts?: {
       });
       await supabase
         .from("project_beats")
-        .update({ video_status: "rendering", video_job_id: taskId, video_error: null })
+        .update({ video_status: "rendering", video_job_id: taskId, video_error: null, video_operator: OPERATOR_GENAIPRO })
         .eq("project_id", row.project_id)
         .eq("beat_number", row.beat_number);
       submitted++;
