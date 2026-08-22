@@ -2306,9 +2306,15 @@ function MediaOperatorPanel() {
         <div>
           <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Per surface</p>
           <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
-            Empty inherits the default above. A ringed pill is the recommended operator for that surface,
-            based on measured cost rather than published rates. Hover it for the numbers.
+            Empty inherits the default above. The Recommended column is based on measured cost rather than
+            published rates. Hover a value for the numbers.
           </p>
+        </div>
+
+        <div className="flex items-center justify-end gap-1.5 px-2 pb-0.5">
+          <span className="text-[10px] uppercase tracking-wider text-right hidden sm:inline-block"
+            style={{ color: "var(--c-35)", minWidth: 104 }}>Recommended</span>
+          <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--c-35)", minWidth: 108 }}>Runs on</span>
         </div>
 
         <div className="space-y-1.5">
@@ -2346,22 +2352,33 @@ function MediaOperatorPanel() {
                     highlighted, so a glance down the column says who runs what
                     rather than only what is changeable. */}
                 <div className="flex gap-1.5 shrink-0 items-center">
+                  {/* Its own column rather than a mark on a pill: the
+                      recommendation and the current selection are different
+                      facts and can disagree, which is exactly when an admin
+                      needs to see both at once. */}
+                  <span
+                    title={RECOMMENDED[s]?.why ?? ""}
+                    className="text-xs text-right cursor-help hidden sm:inline-block"
+                    style={{ color: "var(--c-42)", minWidth: 104 }}
+                  >
+                    <span style={{ color: "var(--c-35)" }}>rec. </span>
+                    <span className="font-medium" style={{ color: "oklch(0.5 0.13 145)" }}>
+                      {RECOMMENDED[s]?.op ?? "—"}
+                    </span>
+                  </span>
                   {exempt && (
                     <span
-                      title={RECOMMENDED[s]?.why ?? ""}
-                      className="px-2.5 py-1 rounded-md text-xs font-medium cursor-help"
+                      className="px-2.5 py-1 rounded-md text-xs font-medium"
                       style={{
                         background: "oklch(0.62 0.15 220 / 0.12)",
                         color: "var(--c-55)",
                         border: "1px solid var(--bd-10)",
-                        boxShadow: "0 0 0 2px oklch(0.55 0.15 145 / 0.45)",
                       }}
                     >
                       elevenlabs
                     </span>
                   )}
                   {(data?.operators ?? []).map((op) => {
-                    const recommended = RECOMMENDED[s]?.op;
                     // Video is not wired, so KIE is what actually runs it;
                     // show that rather than leaving the row unmarked.
                     const active = live ? current === op : (!exempt && op === "kie");
@@ -2370,20 +2387,13 @@ function MediaOperatorPanel() {
                         key={op}
                         onClick={() => patch(s, { surface: s, surface_operator: current === op ? null : op })}
                         disabled={!live || saving !== null}
-                        title={[
-                          recommended === op ? RECOMMENDED[s]?.why : "",
+                        title={
                           exempt ? "Always ElevenLabs. Does not follow the switch."
                             : !live ? "Not wired to the switch yet."
-                            : current === op ? "Click to clear and inherit the default" : `Run this surface on ${op}`,
-                        ].filter(Boolean).join("\n\n")}
+                            : current === op ? "Click to clear and inherit the default" : `Run this surface on ${op}`
+                        }
                         className="px-2.5 py-1 rounded-md text-xs font-medium transition-all disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
-                        style={{
-                          ...pill(active),
-                          // Ring marks the recommendation, independent of what
-                          // is currently selected — the two can disagree, and
-                          // that disagreement is the point of showing it.
-                          ...(recommended === op ? { boxShadow: "0 0 0 2px oklch(0.55 0.15 145 / 0.45)" } : {}),
-                        }}
+                        style={pill(active)}
                       >
                         {live && saving === s ? "…" : op}
                       </button>
