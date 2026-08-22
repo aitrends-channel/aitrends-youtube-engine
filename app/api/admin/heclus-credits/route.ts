@@ -341,8 +341,10 @@ async function typicalVideo(
       label: g.label,
       unit: g.unit,
       rate,
+      // KIE still reads per credit rather than per thousand, but the figure is
+      // the configured rate now rather than a peg the label could assert.
       rateLabel: g.unitKind === "kie_credits"
-        ? "1 to 1"
+        ? (rate === 1 ? "1 to 1" : `${rate.toLocaleString()} per credit`)
         : `${creditsForUnits(g.unitKind, 1_000, rates, g.steps[0]).toLocaleString()} per 1k`,
       quantity,
       credits: creditsForUnits(g.unitKind, quantity, rates, g.steps[0]),

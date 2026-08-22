@@ -3,13 +3,26 @@ import type { CostStep, CostUnitKind } from "@/lib/costs";
 
 // What a provider unit costs in Heclus Credits.
 //
-// One Heclus credit is one KIE credit. That choice is what keeps this file
-// small: the cost ledger already records kie_credits per generation, so images,
-// videos and KIE-mediated Claude calls need no conversion at all, and the margin
-// lives entirely in the pack price rather than in a rate table nobody can audit.
+// A Heclus credit is an abstract unit worth USD_PER_CREDIT. It is deliberately
+// not any one provider's credit. Every provider unit converts through a rate
+// below, KIE included, so adding or retiring a media provider is a rate entry
+// rather than a redenomination of every balance in the system.
 //
-// The other two units are not KIE's, so they need a rate:
+// It used to be defined as one KIE credit, which meant images and videos needed
+// no conversion at all. That definition is also what made a second media
+// provider impossible to add without repricing the wallet, so KIE now carries an
+// explicit rate of 1 rather than an implied one. Numerically identical, which is
+// the point: the peg came out and no balance moved.
 //
+// The units, and why each needs the rate it has:
+//
+//   kie credits     – KIE bills in its own credit. Rate 1 by history, not by
+//                     definition; it moves if KIE reprices, or if the pack is
+//                     ever anchored to something other than their list price.
+//   poyo credits    – PoYo bills in its own credit, which also happens to list
+//                     at $0.005. Its own rate regardless, because two vendors
+//                     agreeing on a price today is not a reason to give them
+//                     one number to move.
 //   claude tokens   – a heclus_direct step bills Anthropic per token. Converted
 //                     at a rate per million, separately for input and output,
 //                     because output is several times the price.
@@ -21,8 +34,13 @@ import type { CostStep, CostUnitKind } from "@/lib/costs";
 // the fallback, and a missing column reads as "use them".
 
 export interface CreditRates {
-  /** Credits per KIE credit. One, unless the pack is ever repriced against KIE. */
+  /** Credits per KIE credit. One today, but a rate like any other: KIE is one
+   *  media provider this wallet can pay, no longer the unit it is denominated in. */
   perKieCredit: number;
+  /** Credits per PoYo credit. One today: PoYo lists at $0.005 too (z-image at
+   *  2 credits for $0.010, nano-banana-pro at 8 for $0.040). Separate from
+   *  perKieCredit so one vendor repricing does not move the other. */
+  perPoyoCredit: number;
   perMillionTokensIn: number;
   perMillionTokensOut: number;
   /** Cache reads and cache writes bill differently from fresh input, so they
@@ -39,20 +57,21 @@ export interface CreditRates {
 /**
  * What one credit is worth in dollars.
  *
- * The single anchor every non-KIE rate below is derived from. KIE's published
- * rate: $5 buys 1,000 credits, and their per-model prices agree (Veo 3 Fast at
- * 60 credits is listed at $0.30). Large top-ups carry a 10% bonus, so the
- * effective rate is nearer $0.0045; the list price is used here because
- * over-recovering slightly is the safe direction.
+ * The single anchor every rate below is derived from, KIE's now included. The
+ * figure came from KIE's published rate: $5 buys 1,000 credits, and their
+ * per-model prices agree (Veo 3 Fast at 60 credits is listed at $0.30). Large
+ * top-ups carry a 10% bonus, so the effective rate is nearer $0.0045; the list
+ * price is used here because over-recovering slightly is the safe direction.
+ *
+ * Where the number came from is history rather than a definition. The credit is
+ * worth this many dollars because that is what makes perKieCredit come out at 1
+ * and leaves every existing balance untouched. It does not track KIE from here:
+ * if KIE reprices, perKieCredit moves and this constant does not.
  *
  * This was $0.0025 for one commit, inferred from guessed image list prices, and
  * it made every non-KIE rate half what it should be. Sanity check on any change:
  * multiply by 8 and see whether the answer is a plausible price for one
  * nano-banana image, since that model bills 8 credits.
- *
- * Not used for KIE units at all, which are one to one by definition. It exists
- * so ElevenLabs characters and Anthropic tokens can be expressed in the same
- * currency as everything else.
  */
 export const USD_PER_CREDIT = 0.005;
 
@@ -99,6 +118,7 @@ const perMillion = (usd: number) => Math.ceil(usd / USD_PER_CREDIT);
 // made once now, in USD_PER_CREDIT, where it is visible and sourced.
 export const DEFAULT_CREDIT_RATES: CreditRates = {
   perKieCredit: 1,
+  perPoyoCredit: 1,
   perMillionTokensIn: perMillion(CLAUDE_USD_PER_MILLION_IN),
   perMillionTokensOut: perMillion(CLAUDE_USD_PER_MILLION_OUT),
   perMillionTokensCacheRead: perMillion(CLAUDE_USD_PER_MILLION_IN * 0.1),
@@ -149,11 +169,21 @@ function pickNumbers(raw: Record<string, unknown>): Partial<CreditRates> {
 /**
  * Credits for a metered quantity of one provider unit.
  *
- * Returns 0 for anything Heclus does not charge for, which is the free lanes:
- * genaipro_clips comes out of the separate video wallet, and supadata
- * transcripts are a flat-rate service rather than per-use spend. Returning 0
- * rather than throwing means a new unit kind added upstream is free until
- * somebody prices it, which is the failure everyone would rather have.
+ * Returns 0 for the free lanes, and only for them: genaipro_clips comes out of
+ * the separate video wallet, and supadata transcripts are a flat-rate service
+ * rather than per-use spend. Both are listed explicitly, so a new unit kind
+ * cannot join them by accident.
+ *
+ * Anything else must have a rate. Strict mode already refused to compile an
+ * unhandled unit kind, but it refused with "function lacks ending return
+ * statement" pointing at the signature, which is a poor description of the
+ * actual mistake. The `never` names it at the line that is wrong.
+ *
+ * The throw is for the case types cannot cover: a unit kind read back from the
+ * database rather than written as a literal. No caller does that today, and the
+ * one likely to start is a per-operator cost breakdown grouping on
+ * project_costs.unit_kind. Failing loudly beats NaN credits, which would neither
+ * refuse the work nor bill for it.
  */
 export function creditsForUnits(
   unitKind: CostUnitKind,
@@ -165,6 +195,8 @@ export function creditsForUnits(
   switch (unitKind) {
     case "kie_credits":
       return units * rates.perKieCredit;
+    case "poyo_credits":
+      return units * rates.perPoyoCredit;
     case "claude_tokens_in":
       return (units / 1_000_000) * rates.perMillionTokensIn;
     case "claude_tokens_out":
@@ -180,7 +212,16 @@ export function creditsForUnits(
     case "genaipro_clips":
     case "supadata_transcripts":
       return 0;
+    default:
+      return assertPriced(unitKind);
   }
+}
+
+/** Unreachable while every unit kind is either priced above or listed as free.
+ *  Typed as never so adding a unit kind without doing one of those fails the
+ *  build; throws at runtime so a hand-written unit kind cannot bill NaN. */
+function assertPriced(unitKind: never): never {
+  throw new Error(`No credit rate for unit kind: ${String(unitKind)}`);
 }
 
 /** Credits are stored NUMERIC(14,4), so anything finer is not money. Rounded up:
