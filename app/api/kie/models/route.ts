@@ -1,7 +1,9 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { listTTSVoices } from "@/lib/kie/tts";
-import { listImageModels } from "@/lib/kie/images";
+import { listImageCatalog, type CatalogModel } from "@/lib/operators/image";
+import { getPoyoImageModel } from "@/lib/poyo/imageModels";
+import { getFundingModeById } from "@/lib/funding";
 import { listVideoModels } from "@/lib/kie/videos";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
@@ -10,6 +12,7 @@ import type { User } from "@supabase/supabase-js";
 import type { KieModel } from "@/lib/types";
 import { monthlyGrantFor } from "@/lib/credits";
 import { GENAIPRO_VIDEO_MODEL_ID } from "@/lib/genaipro/client";
+import { getMediaOperatorForUser } from "@/lib/operators/routing";
 
 /** Round a fractional credit value to 2 decimals for display.
  *  KIE returns NUMERIC values (e.g. 9.6 cr per 6s = 1.6 cr/s). */
@@ -22,7 +25,7 @@ function round2(n: number): string {
  *  the unit suffix ("cr/s" for video, "cr" for image) by reading
  *  model.type. Models without ledger history render without the
  *  chip. */
-function withMinCredits(models: KieModel[], mins: Record<string, number>): KieModel[] {
+function withMinCredits<T extends KieModel>(models: T[], mins: Record<string, number>): T[] {
   return models.map((m) => {
     const v = mins[m.id];
     if (v === undefined) return m;
@@ -30,11 +33,28 @@ function withMinCredits(models: KieModel[], mins: Record<string, number>): KieMo
   });
 }
 
+/**
+ * Cost chips for the PoYo entries.
+ *
+ * Has to run after withMinCredits and overwrite it. The ledger figures are
+ * keyed on model id alone, and both operators carry a model called z-image, so
+ * a PoYo row would otherwise display KIE's observed cost for a generation PoYo
+ * prices differently. Exact rather than observed, because PoYo bills a flat
+ * rate per generation and publishes it.
+ */
+function withPoyoCredits(models: CatalogModel[]): CatalogModel[] {
+  return models.map((m) => {
+    if (m.operator !== "poyo") return m;
+    const priced = getPoyoImageModel(m.id);
+    return priced ? { ...m, costPerUnit: round2(priced.credits) } : m;
+  });
+}
+
 /** Decorate models with the observed average wall-clock generation
  *  time (ms) from the ledger. Powers the picker's "Fastest" tab —
  *  the page sorts by avgSpeedMs ascending and hides models without
  *  a value. */
-function withAvgSpeed(models: KieModel[], speeds: Record<string, number>): KieModel[] {
+function withAvgSpeed<T extends KieModel>(models: T[], speeds: Record<string, number>): T[] {
   return models.map((m) => (speeds[m.id] !== undefined ? { ...m, avgSpeedMs: speeds[m.id] } : m));
 }
 
@@ -52,7 +72,7 @@ async function getAdminDefaults(): Promise<{ image: string | null; video: string
 
 /** Move the admin-selected default to index 0 so the generate page's
  *  "first entry as default" auto-pick lands on the admin's choice. */
-function promote(models: KieModel[], defaultId: string | null): KieModel[] {
+function promote<T extends KieModel>(models: T[], defaultId: string | null): T[] {
   if (!defaultId) return models;
   const idx = models.findIndex((m) => m.id === defaultId);
   if (idx <= 0) return models;
@@ -91,12 +111,12 @@ export async function GET(req: Request) {
     }
     if (type === "image") {
       const [models, defaults, mins, speeds] = await Promise.all([
-        listImageModels(),
+        getMediaOperatorForUser(user.id, "image").then(listImageCatalog),
         getAdminDefaults(),
         getMinKieCreditsByModel("image_gen"),
         getAvgElapsedByModel("image_gen"),
       ]);
-      return NextResponse.json(promote(withAvgSpeed(withMinCredits(models, mins), speeds), defaults.image));
+      return NextResponse.json(promote(withPoyoCredits(withAvgSpeed(withMinCredits(models, mins), speeds)), defaults.image));
     }
     if (type === "video") {
       const [models, defaults, mins, speeds] = await Promise.all([
@@ -112,7 +132,7 @@ export async function GET(req: Request) {
     // Return all
     const [tts, images, videos, defaults, imageMins, videoMins, imageSpeeds, videoSpeeds] = await Promise.all([
       listTTSVoices(user.id),
-      listImageModels(),
+      getMediaOperatorForUser(user.id, "image").then(listImageCatalog),
       listVideoModels(),
       getAdminDefaults(),
       getMinKieCreditsByModel("image_gen"),
@@ -122,7 +142,7 @@ export async function GET(req: Request) {
     ]);
     return NextResponse.json({
       tts,
-      images: promote(withAvgSpeed(withMinCredits(images, imageMins), imageSpeeds), defaults.image),
+      images: promote(withPoyoCredits(withAvgSpeed(withMinCredits(images, imageMins), imageSpeeds)), defaults.image),
       videos: promote(withAvgSpeed(withMinCredits(await gateHeclusPaidVideo(videos, user), videoMins), videoSpeeds), defaults.video),
     });
   } catch (err) {

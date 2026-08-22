@@ -432,6 +432,9 @@ export default function GeneratePage({ params }: PageProps) {
   const [playingVoiceId, setPlayingVoiceId] = useState<string | null>(null);
   const [selectedTtsModel, setSelectedTtsModel] = useState<string | null>(null);
   const [selectedImageModel, setSelectedImageModel] = useState<string | null>(null);
+  // Which provider runs the picked image model. Null means "whatever the
+  // catalog resolves it to", which is KIE for every model that predates PoYo.
+  const [selectedImageOperator, setSelectedImageOperator] = useState<string | null>(null);
   const [selectedAspectRatio, setSelectedAspectRatio] = useState("16:9");
   const [selectedResolution, setSelectedResolution] = useState<string | null>(null);
   const [selectedVideoModel, setSelectedVideoModel] = useState<string | null>(null);
@@ -1632,6 +1635,7 @@ export default function GeneratePage({ params }: PageProps) {
               beatNumber: beat.beatNumber,
               imagePrompt: beat.imagePrompt,
               modelId: selectedImageModel,
+              ...(selectedImageOperator ? { operator: selectedImageOperator } : {}),
               aspectRatio: selectedAspectRatio,
               ...(selectedResolution ? { resolution: selectedResolution } : {}),
             }),
@@ -2112,7 +2116,11 @@ export default function GeneratePage({ params }: PageProps) {
                 type="image"
                 models={imageModels}
                 selectedModelId={selectedImageModel}
-                onSelectModel={setSelectedImageModel}
+                selectedOperator={selectedImageOperator}
+                onSelectModel={(id, operator) => {
+                  setSelectedImageModel(id);
+                  setSelectedImageOperator(operator ?? null);
+                }}
                 selectedAspectRatio={selectedAspectRatio}
                 onSelectAspectRatio={setSelectedAspectRatio}
                 selectedResolution={selectedResolution}

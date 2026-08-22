@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { generateImage } from "@/lib/kie/images";
+
 import { withPromptLengthRetry } from "@/lib/kie/promptLength";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
@@ -11,6 +11,8 @@ import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
 import { requireWalletFunds, canStartWalletWork, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
+import { resolveImageOperator } from "@/lib/operators/image";
+import { getMediaOperatorForUser } from "@/lib/operators/routing";
 
 export const maxDuration = 60;
 
@@ -44,6 +46,11 @@ export async function POST(req: Request) {
     if (!projectId || !beats?.length || !modelId) {
       return NextResponse.json({ error: "projectId, beats, and modelId are required" }, { status: 400 });
     }
+
+    // One operator for the whole batch. Resolved from the admin switch, with
+    // BYO clients pinned to KIE and free-lane models exempt; see
+    // lib/operators/routing.ts.
+    const op = resolveImageOperator(modelId, await getMediaOperatorForUser(user.id, "image"));
 
     if (clearFirst) {
       await supabase.from("project_beats").update({ image_url: null, image_status: null }).eq("project_id", projectId);
@@ -87,12 +94,12 @@ export async function POST(req: Request) {
           // the user's actual experience (queue + generation + cdn
           // fetch), not just the raw model inference time.
           const t0 = Date.now();
-          const { url: imageUrl, creditsConsumed } = await withPromptLengthRetry(
+          const { url: imageUrl, units: creditsConsumed } = await withPromptLengthRetry(
             beat.imagePrompt,
-            (prompt) => generateImage(
-              applyConsistency(prompt, consistency.text, consistency.append),
-              modelId, aspectRatio, resolution, user.id,
-            ),
+            (prompt) => op.generate({
+              prompt: applyConsistency(prompt, consistency.text, consistency.append),
+              modelId, aspectRatio, resolution, userId: user.id,
+            }),
           );
           const elapsedMs = Date.now() - t0;
           if (creditsConsumed) {
@@ -100,10 +107,10 @@ export async function POST(req: Request) {
               projectId,
               userId: user.id,
               step: "image_gen",
-              provider: "kie",
+              provider: op.id === "poyo" ? "poyo" : "kie",
               model: modelId,
               units: creditsConsumed,
-              unitKind: "kie_credits",
+              unitKind: op.unitKind,
               elapsedMs,
             });
           }

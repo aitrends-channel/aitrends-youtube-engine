@@ -10,10 +10,11 @@ import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { uploadFromUrl, uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { generateImages, generateVideos, generateThumbnails } from "@/lib/workflow/prompts-core";
-import { submitImageTask, generateImage } from "@/lib/kie/images";
+import { resolveImageOperator } from "@/lib/operators/image";
+import { getMediaOperatorForUser } from "@/lib/operators/routing";
 import { PROMPT_LENGTH_CAPS, capPrompt, isPromptLengthError } from "@/lib/kie/promptLength";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
-import { finishImageTask } from "@/lib/kie/finishImageTask";
+import { finishImageTask } from "@/lib/operators/finishImage";
 import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
 import { friendlyError } from "@/lib/errors/friendly";
 import { isQwenVoice } from "@/lib/replicate/tts";
@@ -31,6 +32,7 @@ import { storageFullNote } from "@/lib/storage-quota";
 import { canStartWalletWork, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { ModelChain, OneClickConfig } from "@/lib/one-click/config";
+import { OPERATOR_KIE } from "@/lib/operators";
 
 // 1Click orchestrator — advances one autopilot project by exactly one
 // step per call, mirroring what each wizard page does but server-side
@@ -220,7 +222,7 @@ async function generateMoreTopics(
   try {
     const { client } = await getAnthropicClient(userId, "ideas");
     const res = await client.messages.create({
-      ...await resolveDefaultModel("ideas"),
+      ...await resolveDefaultModel("ideas", userId),
       max_tokens: 2048,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       tools: [{ name: "save_video_ideas", description: "Save the generated video ideas", input_schema: videoIdeasInputSchema }],
@@ -282,7 +284,7 @@ async function runScriptStep(project: ProjectRow, cfg: OneClickConfig): Promise<
   try {
     const { client: anthropic } = await getAnthropicClient(project.user_id, "script");
     const res = await anthropic.messages.create({
-      ...await resolveDefaultModel("script"),
+      ...await resolveDefaultModel("script", project.user_id),
       max_tokens: 8192,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: buildScriptPrompt(analysis, topic) }],
@@ -493,6 +495,7 @@ interface BeatRow {
   image_url: string | null;
   image_status: string | null;
   image_task_id: string | null;
+  image_operator: string | null;
   image_model_id: string | null;
   video_url: string | null;
   video_status: string | null;
@@ -638,7 +641,7 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
   const imgIdx = attempts["genImageModelIdx"] ?? 0;
   const vidIdx = attempts["genVideoModelIdx"] ?? 0;
 
-  const BEAT_COLS = "beat_number, image_prompt, video_prompt, image_url, image_status, image_task_id, image_model_id, video_url, video_status, video_job_id";
+  const BEAT_COLS = "beat_number, image_prompt, video_prompt, image_url, image_status, image_task_id, image_model_id, image_operator, video_url, video_status, video_job_id";
   const { data: beatData, error: beatErr } = await supabase
     .from("project_beats")
     .select(BEAT_COLS)
@@ -697,9 +700,12 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
         const prompt = capIdx === 0 ? basePrompt : capPrompt(basePrompt, PROMPT_LENGTH_CAPS[capIdx - 1]);
         const sentPrompt = applyConsistency(prompt, consistency.text, consistency.append);
         try {
-          const taskId = await submitImageTask(sentPrompt, imageModel, imgAr, imgRes, project.user_id);
+          const imgOp = resolveImageOperator(imageModel, await getMediaOperatorForUser(project.user_id, "image"));
+          const taskId = await imgOp.submit({
+            prompt: sentPrompt, modelId: imageModel, aspectRatio: imgAr, resolution: imgRes, userId: project.user_id,
+          });
           await supabase.from("project_beats")
-            .update({ image_status: "generating", image_task_id: taskId, image_model_id: imageModel, image_prompt: prompt })
+            .update({ image_status: "generating", image_task_id: taskId, image_model_id: imageModel, image_prompt: prompt, image_operator: imgOp.id })
             .eq("project_id", project.id).eq("beat_number", b.beat_number);
           return true;
         } catch (err) {
@@ -739,6 +745,7 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
       finishImageTask({
         projectId: project.id, beatNumber: b.beat_number, taskId: b.image_task_id!,
         modelId: b.image_model_id ?? imageModel, userId: project.user_id, userEmail: null,
+        operator: b.image_operator,
       }).catch(() => {}), // pending / transient KIE error — the next tick retries
     ));
     // Re-read so allImagesDone (and the UI's counts) reflect anything that
@@ -1042,7 +1049,10 @@ async function runThumbnailsStep(project: ProjectRow, cfg: OneClickConfig): Prom
       for (let attempt = 0; attempt <= 5; attempt++) {
         const prompt = capIdx === 0 ? basePrompt : capPrompt(basePrompt, PROMPT_LENGTH_CAPS[capIdx - 1]);
         try {
-          const { url } = await generateImage(prompt, model, ar, resv, project.user_id);
+          const thumbOp = resolveImageOperator(model, await getMediaOperatorForUser(project.user_id, "image"));
+          const { url } = await thumbOp.generate({
+            prompt, modelId: model, aspectRatio: ar, resolution: resv, userId: project.user_id,
+          });
           const folder = userFolderFor({ id: project.user_id, email: null });
           const publicUrl = await uploadFromUrl(`${folder}/${project.id}/thumbnails/pos-${position}_${attempt}.png`, url, "image/png");
           await supabase.from("project_thumbnails").update({ image_url: publicUrl, image_status: "done" }).eq("project_id", project.id).eq("position", position);
