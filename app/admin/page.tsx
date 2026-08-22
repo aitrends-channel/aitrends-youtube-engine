@@ -6,7 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
 import type { HeclusCreditsConfig } from "@/app/api/admin/heclus-credits/route";
-import type { BalancesResponse, ProviderBalance } from "@/app/api/admin/balances/route";
+import type { BalancesResponse, ProviderBalance, BalanceRow } from "@/app/api/admin/balances/route";
 import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
@@ -1946,6 +1946,11 @@ const CONCURRENCY_FIELDS: {
  * zeroes buries the rows that do.
  */
 function BalancesPanel({ visible }: { visible: boolean }) {
+  // Which row has its action menu open, and which row the allocate modal is
+  // for. One menu at a time; the modal holds the whole row so it can show the
+  // account and its current balance without a second lookup.
+  const [rowMenu, setRowMenu] = useState<string | null>(null);
+  const [allocFor, setAllocFor] = useState<BalanceRow | null>(null);
   const { data, isLoading, mutate } = useSWR<BalancesResponse>(
     visible ? "/api/admin/balances" : null,
     fetcher,
@@ -2051,6 +2056,7 @@ function BalancesPanel({ visible }: { visible: boolean }) {
                 <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Spent</th>
                 <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Clips</th>
                 <th className="text-right font-medium py-2 px-3 whitespace-nowrap">Last movement</th>
+                <th className="py-2 px-3 w-10" aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
@@ -2100,12 +2106,50 @@ function BalancesPanel({ visible }: { visible: boolean }) {
                     <td className="py-2 px-3 text-right whitespace-nowrap" style={{ color: "var(--c-42)" }}>
                       {r.lastMovement ? new Date(r.lastMovement).toLocaleDateString() : "—"}
                     </td>
+                    <td className="py-2 px-1 text-right relative">
+                      <button
+                        type="button"
+                        onClick={() => setRowMenu(rowMenu === r.userId ? null : r.userId)}
+                        className="p-1 rounded-md transition-colors hover:bg-black/5 cursor-pointer"
+                        style={{ color: "var(--c-45)" }}
+                        aria-label={`Actions for ${r.email ?? r.userId}`}
+                      >
+                        <MoreVertical size={14} />
+                      </button>
+                      {rowMenu === r.userId && (
+                        <div
+                          className="absolute right-2 top-full mt-1 z-30 rounded-lg overflow-hidden text-left"
+                          style={{
+                            minWidth: 150,
+                            background: "white",
+                            border: "1px solid oklch(0 0 0 / 0.10)",
+                            boxShadow: "0 8px 24px oklch(0 0 0 / 0.16)",
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => { setRowMenu(null); setAllocFor(r); }}
+                            className="w-full px-3 py-2 text-sm text-left text-zinc-700 hover:bg-zinc-100 cursor-pointer"
+                          >
+                            Allocate credits
+                          </button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
+      )}
+
+      {allocFor && (
+        <AllocateCreditsModal
+          row={allocFor}
+          onClose={() => setAllocFor(null)}
+          onDone={() => void mutate()}
+        />
       )}
 
       <p className="text-sm" style={{ color: "var(--c-42)" }}>
@@ -2127,6 +2171,123 @@ function BalancesPanel({ visible }: { visible: boolean }) {
  * Null is not zero. An unreachable provider says so instead of showing a zero
  * that reads as "out of credit".
  */
+/**
+ * Allocate Heclus Credits to one account.
+ *
+ * Negative amounts are allowed and deliberate: an admin clearing a test
+ * allocation had no way to do it short of writing the table by hand, and
+ * credits_add cannot express it (a negative is accepted and silently ignored).
+ * The endpoint floors the result at zero so a mistyped minus cannot push an
+ * account into debt.
+ */
+function AllocateCreditsModal({ row, onClose, onDone }: {
+  row: BalanceRow;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const parsed = Number(amount);
+  const valid = amount.trim() !== "" && Number.isFinite(parsed) && parsed !== 0;
+  const next = valid ? Math.max(0, row.credits + parsed) : row.credits;
+
+  async function submit() {
+    if (!valid || saving) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/credits/allocate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: row.userId, credits: parsed, note: note.trim() || undefined }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((json as { error?: string }).error ?? `Failed (${res.status})`);
+      toast.success(
+        `${parsed > 0 ? "Allocated" : "Removed"} ${Math.abs(parsed).toLocaleString()} credits. Balance now ${Number((json as { credits?: number }).credits ?? 0).toLocaleString()}.`,
+      );
+      onDone();
+      onClose();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Allocation failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputCls = "w-full px-3 py-2 rounded-lg text-sm outline-none bg-white text-zinc-900 ring-1 ring-zinc-200 focus:ring-zinc-400";
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open && !saving) onClose(); }}>
+      <DialogContent showCloseButton={false} className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Allocate credits</DialogTitle>
+          <DialogDescription>
+            {row.email ?? row.userId} holds {row.credits.toLocaleString()} credits
+            {row.reserved > 0 ? `, with ${row.reserved.toLocaleString()} held by work in flight` : ""}.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-zinc-600">Credits</label>
+            <input
+              autoFocus
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void submit(); }}
+              disabled={saving}
+              placeholder="500, or -500 to remove"
+              className={inputCls}
+              inputMode="decimal"
+            />
+            {valid && (
+              <p className="text-xs text-zinc-500">
+                Balance becomes {next.toLocaleString()}
+                {parsed < 0 && row.credits + parsed < 0 ? " (floored at zero)" : ""}.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-zinc-600">Note</label>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") void submit(); }}
+              disabled={saving}
+              placeholder="Shows on the ledger row"
+              className={inputCls}
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="flex-1 py-2 rounded-xl text-sm font-medium transition-all bg-white text-zinc-700 ring-1 ring-zinc-300 hover:bg-zinc-100 disabled:opacity-40"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={!valid || saving}
+            className="flex-1 py-2 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 flex items-center justify-center gap-2"
+            style={{ background: "oklch(0.62 0.15 220)" }}
+          >
+            {saving && <Spinner size={14} />}
+            {saving ? "Allocating…" : parsed < 0 ? "Remove credits" : "Allocate"}
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ProviderTile({ label, note, p, format, low, href, claim }: {
   label: string;
   note: string;
