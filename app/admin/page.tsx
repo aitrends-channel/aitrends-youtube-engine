@@ -2242,6 +2242,19 @@ function MediaOperatorPanel() {
     transcription: "Caption alignment",
   };
 
+  // What each surface actually covers. Worth spelling out for chat above all:
+  // "Writing steps" is eight workflow steps, two of which are not obviously
+  // writing (visual analysis is a vision call, beats is segmentation), and
+  // thumbnails here means the concepts rather than the images, which belong to
+  // the Images surface instead.
+  const COVERS: Record<string, string> = {
+    chat: "Channel analysis, topics, the script, visual analysis of reference images, beat segmentation, image and video prompts, and thumbnail concepts. Every model call that writes or reasons.",
+    image: "Beat images and the thumbnail images themselves. Not thumbnail concepts, which are a writing step.",
+    video: "The video clip generated from each beat image.",
+    tts: "Narration audio for the voiceover.",
+    transcription: "Speech to text used to align captions to the voiceover.",
+  };
+
   return (
     <div className="space-y-3">
       <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
@@ -2287,7 +2300,13 @@ function MediaOperatorPanel() {
               <div key={s} className="flex items-center justify-between gap-3 p-2 rounded-lg"
                 style={{ background: "oklch(0 0 0 / 0.02)" }}>
                 <div className="min-w-0">
-                  <p className="text-sm" style={{ color: "var(--c-90)" }}>{LABELS[s] ?? s}</p>
+                  <p
+                    className="text-sm cursor-help underline decoration-dotted underline-offset-4"
+                    style={{ color: "var(--c-90)", textDecorationColor: "var(--c-30)" }}
+                    title={COVERS[s] ?? ""}
+                  >
+                    {LABELS[s] ?? s}
+                  </p>
                   {exempt && (
                     <p className="text-xs" style={{ color: "var(--c-42)" }}>
                       Always ElevenLabs. Does not follow the switch.
