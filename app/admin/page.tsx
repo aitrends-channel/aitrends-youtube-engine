@@ -2324,7 +2324,7 @@ function ProviderTile({ label, note, p, format, low, href, claim }: {
 
   // Kept short: three cards to a row leaves little width, and these lines sit
   // under a large number where a wrapped third line reads as clutter.
-  const detail = state === "nokey" ? "No key. Add one on Config, API Keys."
+  const detail = state === "nokey" ? "Add one on Config, API Keys."
     : state === "invalid" ? "The provider rejected this key."
     : state === "unknown" ? (p?.issue === "scope" ? "This key cannot read the balance." : "Could not reach the provider.")
     : state === "empty" ? "Out of credit. Wallet work is failing."
