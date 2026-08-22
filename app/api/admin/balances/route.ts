@@ -222,10 +222,10 @@ async function heclusProviderBalances(): Promise<BalancesResponse["providers"]> 
     poyo: {
       configured: !!poyoKey,
       // The balance read doubles as the key check: PoYo has no separate
-      // validation endpoint, so a number back means the key works and a null
-      // means we could not tell.
-      valid: poyo === null ? null : true,
-      balance: poyo,
+      // validation endpoint, so a number back means the key works, a 401 or
+      // 403 means it does not, and anything else means we could not tell.
+      valid: poyo?.valid ?? null,
+      balance: poyo?.balance ?? null,
       limit: null,
       issue: null,
     },
