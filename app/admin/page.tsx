@@ -2306,15 +2306,9 @@ function MediaOperatorPanel() {
         <div>
           <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Per surface</p>
           <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
-            Empty inherits the default above. The Recommended column is based on measured cost rather than
-            published rates. Hover a value for the numbers.
+            Empty inherits the default above. The recommendation beside each name is based on measured cost
+            rather than published rates. Hover it for the numbers.
           </p>
-        </div>
-
-        <div className="flex items-center justify-end gap-1.5 px-2 pb-0.5">
-          <span className="text-[10px] uppercase tracking-wider text-right hidden sm:inline-block"
-            style={{ color: "var(--c-35)", minWidth: 104 }}>Recommended</span>
-          <span className="text-[10px] uppercase tracking-wider" style={{ color: "var(--c-35)", minWidth: 108 }}>Runs on</span>
         </div>
 
         <div className="space-y-1.5">
@@ -2326,13 +2320,30 @@ function MediaOperatorPanel() {
               <div key={s} className="flex items-center justify-between gap-3 p-2 rounded-lg"
                 style={{ background: "oklch(0 0 0 / 0.02)" }}>
                 <div className="min-w-0">
-                  <p
-                    className="text-sm cursor-help underline decoration-dotted underline-offset-4"
-                    style={{ color: "var(--c-90)", textDecorationColor: "var(--c-30)" }}
-                    title={COVERS[s] ?? ""}
-                  >
-                    {LABELS[s] ?? s}
-                  </p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p
+                      className="text-sm cursor-help underline decoration-dotted underline-offset-4"
+                      style={{ color: "var(--c-90)", textDecorationColor: "var(--c-30)" }}
+                      title={COVERS[s] ?? ""}
+                    >
+                      {LABELS[s] ?? s}
+                    </p>
+                    {/* Beside the name rather than out by the buttons: the
+                        recommendation belongs to the surface, not to the
+                        control, and reading it next to what is actually
+                        selected is the comparison that matters. */}
+                    <span
+                      title={RECOMMENDED[s]?.why ?? ""}
+                      className="text-[11px] px-1.5 py-0.5 rounded cursor-help shrink-0"
+                      style={{
+                        color: "oklch(0.45 0.12 145)",
+                        background: "oklch(0.55 0.15 145 / 0.10)",
+                        border: "1px solid oklch(0.55 0.15 145 / 0.25)",
+                      }}
+                    >
+                      rec. {RECOMMENDED[s]?.op ?? "—"}
+                    </span>
+                  </div>
                   {exempt && (
                     <p className="text-xs" style={{ color: "var(--c-42)" }}>
                       Always ElevenLabs. Does not follow the switch.
@@ -2352,20 +2363,6 @@ function MediaOperatorPanel() {
                     highlighted, so a glance down the column says who runs what
                     rather than only what is changeable. */}
                 <div className="flex gap-1.5 shrink-0 items-center">
-                  {/* Its own column rather than a mark on a pill: the
-                      recommendation and the current selection are different
-                      facts and can disagree, which is exactly when an admin
-                      needs to see both at once. */}
-                  <span
-                    title={RECOMMENDED[s]?.why ?? ""}
-                    className="text-xs text-right cursor-help hidden sm:inline-block"
-                    style={{ color: "var(--c-42)", minWidth: 104 }}
-                  >
-                    <span style={{ color: "var(--c-35)" }}>rec. </span>
-                    <span className="font-medium" style={{ color: "oklch(0.5 0.13 145)" }}>
-                      {RECOMMENDED[s]?.op ?? "—"}
-                    </span>
-                  </span>
                   {exempt && (
                     <span
                       className="px-2.5 py-1 rounded-md text-xs font-medium"
