@@ -2161,10 +2161,12 @@ function ProviderTile({ label, note, p, format, low, href, claim }: {
     : state === "unknown" ? "Unavailable"
     : format(p!.balance!);
 
-  const detail = state === "nokey" ? "Add one on the Config, API Keys tab or every wallet generation fails."
+  // Kept short: three cards to a row leaves little width, and these lines sit
+  // under a large number where a wrapped third line reads as clutter.
+  const detail = state === "nokey" ? "No key. Add one on Config, API Keys."
     : state === "invalid" ? "The provider rejected this key."
-    : state === "unknown" ? (p?.issue === "scope" ? "The key cannot read the account balance." : "Could not reach the provider just now.")
-    : state === "empty" ? "Out of credit. Wallet work is failing right now."
+    : state === "unknown" ? (p?.issue === "scope" ? "This key cannot read the balance." : "Could not reach the provider.")
+    : state === "empty" ? "Out of credit. Wallet work is failing."
     : p?.limit ? `${note} · ${format(p.limit)} in the plan`
     : note;
 
@@ -2181,7 +2183,13 @@ function ProviderTile({ label, note, p, format, low, href, claim }: {
       <p className="text-3xl font-bold tabular-nums leading-tight mt-1" style={{ color: colour }}>
         {value}
       </p>
-      <p className="text-[11px] mt-0.5" style={{ color: "var(--c-42)" }}>{detail}</p>
+      <p
+        className="text-[11px] mt-0.5"
+        style={{ color: "var(--c-42)" }}
+        title={state === "nokey" ? "Without a key here, every wallet-funded generation on this provider fails." : undefined}
+      >
+        {detail}
+      </p>
       {claim !== undefined && (
         // The float above is what we hold; this is what customers can spend
         // against it. Shown in the same card because the comparison is the
