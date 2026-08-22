@@ -2341,7 +2341,7 @@ function MediaOperatorPanel() {
                         border: "1px solid oklch(0.55 0.15 145 / 0.25)",
                       }}
                     >
-                      rec. {RECOMMENDED[s]?.op ?? "—"}
+                      recommended: {RECOMMENDED[s]?.op ?? "—"}
                     </span>
                   </div>
                   {exempt && (
