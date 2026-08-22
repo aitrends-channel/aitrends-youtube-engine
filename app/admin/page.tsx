@@ -2300,21 +2300,43 @@ function MediaOperatorPanel() {
                   )}
                 </div>
 
-                {live && (
-                  <div className="flex gap-1.5 shrink-0">
-                    {(data?.operators ?? []).map((op) => (
+                {/* Pills on every surface, so the control reads consistently
+                    down the column. Disabled where the switch cannot move it,
+                    which is the honest state rather than a button that stores
+                    a setting nothing reads. The effective provider is still
+                    highlighted, so a glance down the column says who runs what
+                    rather than only what is changeable. */}
+                <div className="flex gap-1.5 shrink-0 items-center">
+                  {exempt && (
+                    <span
+                      className="px-2.5 py-1 rounded-md text-xs font-medium"
+                      style={{ background: "oklch(0.62 0.15 220 / 0.12)", color: "var(--c-55)", border: "1px solid var(--bd-10)" }}
+                    >
+                      elevenlabs
+                    </span>
+                  )}
+                  {(data?.operators ?? []).map((op) => {
+                    // Video is not wired, so KIE is what actually runs it;
+                    // show that rather than leaving the row unmarked.
+                    const active = live ? current === op : (!exempt && op === "kie");
+                    return (
                       <button
                         key={op}
                         onClick={() => patch(s, { surface: s, surface_operator: current === op ? null : op })}
-                        disabled={saving !== null}
-                        className="px-2.5 py-1 rounded-md text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                        style={pill(current === op)}
+                        disabled={!live || saving !== null}
+                        title={
+                          exempt ? "Always ElevenLabs. Does not follow the switch."
+                            : !live ? "Not wired to the switch yet."
+                            : current === op ? "Click to clear and inherit the default" : `Run this surface on ${op}`
+                        }
+                        className="px-2.5 py-1 rounded-md text-xs font-medium transition-all disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer"
+                        style={pill(active)}
                       >
-                        {saving === s ? "…" : op}
+                        {live && saving === s ? "…" : op}
                       </button>
-                    ))}
-                  </div>
-                )}
+                    );
+                  })}
+                </div>
               </div>
             );
           })}
