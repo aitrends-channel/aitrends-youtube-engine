@@ -2331,8 +2331,13 @@ function MediaOperatorPanel() {
                     {/* Beside the name rather than out by the buttons: the
                         recommendation belongs to the surface, not to the
                         control, and reading it next to what is actually
-                        selected is the comparison that matters. */}
-                    <span
+                        selected is the comparison that matters.
+                        
+                        Only where a choice exists. On video it would repeat
+                        the line below it, and on voiceover and captions it
+                        would recommend the only provider available, which is
+                        noise dressed as advice. */}
+                    {live && <span
                       title={RECOMMENDED[s]?.why ?? ""}
                       className="text-[11px] px-1.5 py-0.5 rounded cursor-help shrink-0"
                       style={{
@@ -2342,7 +2347,7 @@ function MediaOperatorPanel() {
                       }}
                     >
                       recommended: {RECOMMENDED[s]?.op ?? "—"}
-                    </span>
+                    </span>}
                   </div>
                   {exempt && (
                     <p className="text-xs" style={{ color: "var(--c-42)" }}>
