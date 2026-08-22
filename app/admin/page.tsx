@@ -2254,20 +2254,11 @@ function MediaOperatorPanel() {
   // not the basis: PoYo lists Claude at $4/$20 per Mtok against Anthropic's
   // $5/$25, which looks like a 20% saving until you measure what it bills.
   const RECOMMENDED: Record<string, { op: string; why: string }> = {
-    chat: {
-      op: "kie",
-      why: "PoYo reports roughly 7x the tokens actually generated. Measured against the account balance, one 1,500-word generation cost 59.4 credits ($0.30) where Anthropic direct charges $0.05 for the same call.",
-    },
-    image: {
-      op: "kie",
-      why: "PoYo bills images honestly: a z-image run charged exactly its catalogued 2.0 credits. It is simply dearer, at 2 credits against KIE's observed 0.8 on z-image and 6 against 4 on grok-imagine, the two models carrying most of the spend.",
-    },
-    video: {
-      op: "kie",
-      why: "Recommended: KIE. PoYo carries only six of the video models in the picker (the Seedance family, Kling 2.6, Grok Imagine and Hailuo 02); Veo, Sora, Kling 3 and Wan are absent, and anything unmapped stays on KIE automatically. Its image billing is accurate, but its chat billing reports roughly 7x the tokens generated, so treat video pricing as unverified until a clip has been measured against the balance.",
-    },
-    tts: { op: "elevenlabs", why: "Voiceover stays on ElevenLabs and does not follow the switch." },
-    transcription: { op: "elevenlabs", why: "Caption alignment stays on ElevenLabs. PoYo publishes no speech-to-text." },
+    chat: { op: "kie", why: "PoYo costs about 6x more. It counts roughly 7x the tokens actually used." },
+    image: { op: "kie", why: "PoYo bills fairly here, just higher. Roughly 2x KIE on your busiest models." },
+    video: { op: "kie", why: "PoYo is missing Veo, Sora, Kling 3 and Wan. Those stay on KIE." },
+    tts: { op: "elevenlabs", why: "Voiceover always uses ElevenLabs." },
+    transcription: { op: "elevenlabs", why: "Captions always use ElevenLabs." },
   };
 
   const COVERS: Record<string, string> = {
@@ -2358,7 +2349,7 @@ function MediaOperatorPanel() {
                           <span
                             className="absolute left-0 top-full mt-1 z-20 block rounded-lg p-2.5 text-xs leading-relaxed"
                             style={{
-                              width: 320,
+                              width: 260,
                               background: "var(--bg-card, white)",
                               border: "1px solid var(--bd-10)",
                               boxShadow: "0 8px 24px oklch(0 0 0 / 0.14)",
