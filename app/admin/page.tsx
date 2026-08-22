@@ -1221,7 +1221,7 @@ function SetupSection({
   keysLoading: boolean;
   mutateKeys: () => void;
 }) {
-  const [setupTab, setSetupTab] = usePersistentTab<"keys" | "models" | "anthropic" | "concurrency" | "plans" | "credits" | "quotas">(
+  const [setupTab, setSetupTab] = usePersistentTab<"keys" | "models" | "anthropic" | "concurrency" | "plans" | "credits" | "operator" | "quotas">(
     "config", "keys", ["keys", "models", "anthropic", "concurrency", "plans", "credits", "quotas"],
   );
   const [serviceInput, setServiceInput] = useState<Service>("youtube_data_api_key");
@@ -1404,6 +1404,7 @@ function SetupSection({
           { id: "concurrency", label: "Batched process" },
           { id: "plans", label: "Payment" },
           { id: "credits", label: "Heclus Credits" },
+          { id: "operator", label: "Media Operator" },
           { id: "quotas", label: "Quotas" },
         ] as const).map((t) => (
           <button
@@ -1429,6 +1430,7 @@ function SetupSection({
       {setupTab === "concurrency" && <ConcurrencyPanel />}
       {setupTab === "plans" && <PlansPanel />}
       {setupTab === "credits" && <HeclusCreditsPanel />}
+      {setupTab === "operator" && <MediaOperatorPanel />}
       {setupTab === "quotas" && <QuotasPanel />}
 
       {setupTab === "keys" && <>
@@ -2182,6 +2184,159 @@ function Tile({ label, value, note, accent }: { label: string; value: string; no
   );
 }
 
+/**
+ * Which provider runs new media work.
+ *
+ * Sibling of the Anthropic routing card, and deliberately shaped like it: a
+ * global default plus per-surface overrides. What it adds is honesty about
+ * reach — a surface that does not read the switch is shown as such rather than
+ * offered as a setting that would store and do nothing.
+ */
+function MediaOperatorPanel() {
+  const { data, mutate, isLoading } = useSWR<{
+    operator: string;
+    per_surface: Record<string, string>;
+    surfaces: string[];
+    implemented: string[];
+    exempt_surfaces: string[];
+    pending: string[];
+    operators: string[];
+    exempt_notes: string[];
+  }>("/api/admin/media-operator", fetcher, { revalidateOnFocus: false });
+
+  const [saving, setSaving] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const cardStyle = { background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" } as const;
+
+  async function patch(section: string, body: Record<string, unknown>) {
+    setSaving(section);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/media-operator", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((json as { error?: string }).error ?? `HTTP ${res.status}`);
+      await mutate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Save failed");
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  const pill = (active: boolean) => ({
+    background: active ? "oklch(0.62 0.15 220)" : "oklch(0 0 0 / 0.05)",
+    color: active ? "white" : "var(--c-55)",
+    border: active ? "1px solid transparent" : "1px solid var(--bd-10)",
+  });
+
+  const LABELS: Record<string, string> = {
+    chat: "Writing steps",
+    image: "Images and thumbnails",
+    video: "Video clips",
+    tts: "Voiceover",
+    transcription: "Caption alignment",
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
+        <div>
+          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Media operator</p>
+          <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
+            Who runs new work. Applies to Heclus-funded accounts only: clients on their own keys hold KIE
+            keys, so they stay on KIE whatever this says. Work already in flight finishes with the provider
+            that has it.
+          </p>
+        </div>
+
+        <div className="flex gap-1.5">
+          {(data?.operators ?? []).map((op) => (
+            <button
+              key={op}
+              onClick={() => patch("global", { operator: op })}
+              disabled={saving !== null || isLoading}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              style={pill(data?.operator === op)}
+            >
+              {saving === "global" ? "Saving…" : op.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
+        <div>
+          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Per surface</p>
+          <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
+            Empty inherits the default above. PoYo is cheaper on writing and dearer on images, so a split is
+            often the right answer.
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          {(data?.surfaces ?? []).map((s) => {
+            const live = data?.implemented?.includes(s);
+            const exempt = data?.exempt_surfaces?.includes(s);
+            const current = data?.per_surface?.[s];
+            return (
+              <div key={s} className="flex items-center justify-between gap-3 p-2 rounded-lg"
+                style={{ background: "oklch(0 0 0 / 0.02)" }}>
+                <div className="min-w-0">
+                  <p className="text-sm" style={{ color: "var(--c-90)" }}>{LABELS[s] ?? s}</p>
+                  {exempt && (
+                    <p className="text-xs" style={{ color: "var(--c-42)" }}>
+                      Always ElevenLabs. Does not follow the switch.
+                    </p>
+                  )}
+                  {!exempt && !live && (
+                    <p className="text-xs" style={{ color: "oklch(0.55 0.13 55)" }}>
+                      Not wired to the switch yet. Still runs on KIE.
+                    </p>
+                  )}
+                </div>
+
+                {live && (
+                  <div className="flex gap-1.5 shrink-0">
+                    {(data?.operators ?? []).map((op) => (
+                      <button
+                        key={op}
+                        onClick={() => patch(s, { surface: s, surface_operator: current === op ? null : op })}
+                        disabled={saving !== null}
+                        className="px-2.5 py-1 rounded-md text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                        style={pill(current === op)}
+                      >
+                        {saving === s ? "…" : op}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {error && (
+        <p className="text-sm px-1" style={{ color: "oklch(0.55 0.18 25)" }}>{error}</p>
+      )}
+
+      <div className="p-3 rounded-xl" style={cardStyle}>
+        <p className="text-sm font-semibold mb-1" style={{ color: "var(--c-90)" }}>What never moves</p>
+        <ul className="space-y-0.5">
+          {(data?.exempt_notes ?? []).map((n) => (
+            <li key={n} className="text-sm" style={{ color: "var(--c-50)" }}>{n}</li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function HeclusCreditsPanel() {
   const { data, mutate, isLoading } = useSWR<HeclusCreditsConfig>(
     "/api/admin/heclus-credits",
@@ -2446,8 +2601,7 @@ function HeclusCreditsPanel() {
         <div>
           <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>What the work draws down</p>
           <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
-            One credit is one KIE credit, so images, videos and KIE-routed writing need no rate. These are
-            the two providers billed in their own units. Empty uses the default.
+            Every provider unit converts through a rate here, KIE included. Empty uses the default.
           </p>
         </div>
         <div className="grid gap-2 sm:grid-cols-2">
@@ -2482,7 +2636,7 @@ function HeclusCreditsPanel() {
         </button>
         <p className="text-sm" style={{ color: "var(--c-42)" }}>
           Check the result with <span className="font-mono">scripts/wallet-margin.mjs</span>: credits spent
-          should track KIE credits consumed one to one.
+          should track KIE credits consumed at the rate above.
         </p>
       </div>
 
@@ -2628,6 +2782,7 @@ function WorthLine({ label, value, detail, price, cost }: {
 
 const HECLUS_RATE_FIELDS = [
   { key: "perKieCredit", label: "Per KIE credit" },
+  { key: "perPoyoCredit", label: "Per PoYo credit" },
   { key: "perThousandTtsChars", label: "Per 1k voiceover chars" },
   { key: "perThousandSttChars", label: "Per 1k caption chars" },
   { key: "perMillionTokensIn", label: "Per 1M input tokens" },

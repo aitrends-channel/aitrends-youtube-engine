@@ -13,8 +13,14 @@ import { getFundingModeById } from "@/lib/funding";
  *   heclus_kie    – use Heclus's KIE key (product_config service='heclus_kie_api_key')
  *   heclus_direct – call Anthropic directly with Heclus's Anthropic API key
  *                   (product_config service='anthropic_api_key'), bypassing KIE
+ *   heclus_poyo   – call Claude through PoYo's Anthropic-format Messages API on
+ *                   Heclus's PoYo key. Set by the media operator switch rather
+ *                   than by this card: when an admin moves the chat surface to
+ *                   PoYo, a wallet user's Claude work lands here. Billed per
+ *                   token like the direct paths, at $4/$20 per Mtok against
+ *                   Anthropic's $5/$25.
  */
-export type AnthropicRouting = "client_kie" | "client_direct" | "heclus_kie" | "heclus_direct";
+export type AnthropicRouting = "client_kie" | "client_direct" | "heclus_kie" | "heclus_direct" | "heclus_poyo";
 
 /** Whose money the call spends. Drives two decisions elsewhere: whether a
  *  user's own model pick is honoured (lib/claude/models.ts) and which ledger
@@ -23,10 +29,20 @@ export function isClientPaid(routing: AnthropicRouting): boolean {
   return routing === "client_kie" || routing === "client_direct";
 }
 
-/** True when the call goes straight to api.anthropic.com and is billed in
- *  tokens, rather than through KIE and billed in credits. */
+/** True when the call goes to PoYo rather than KIE or Anthropic. Separate from
+ *  isDirectRouting because the provider on the cost row differs even though the
+ *  billing unit does not. */
+export function isPoyoRouting(routing: AnthropicRouting): boolean {
+  return routing === "heclus_poyo";
+}
+
+/** True when the call is billed per token rather than through KIE in credits.
+ *
+ *  heclus_poyo counts. PoYo prices Claude per token the same way Anthropic
+ *  does, so the ledger records claude_tokens_* rows; the provider label on
+ *  those rows is what distinguishes the two. */
 export function isDirectRouting(routing: AnthropicRouting): boolean {
-  return routing === "client_direct" || routing === "heclus_direct";
+  return routing === "client_direct" || routing === "heclus_direct" || routing === "heclus_poyo";
 }
 
 /**
@@ -104,6 +120,25 @@ export async function getAnthropicRouting(step?: WorkflowStep): Promise<Anthropi
  */
 export async function getRoutingForUser(userId: string, step?: WorkflowStep): Promise<AnthropicRouting> {
   const routing = await getAnthropicRouting(step);
+
+  // The media operator switch outranks this card for wallet users. An admin who
+  // moved the chat surface to PoYo means it for Claude too, and PoYo runs on
+  // Heclus's key so only wallet-funded work can go there. Checked before the
+  // client_kie branches below, which are all about keys the user supplies.
+  //
+  // Imported lazily to keep lib/operators/routing out of this module's import
+  // cycle: it already imports lib/funding, which imports settings, which
+  // reaches back here.
+  try {
+    if (await getFundingModeById(userId) === "wallet") {
+      const { getMediaOperator } = await import("@/lib/operators/routing");
+      if ((await getMediaOperator("chat")) === "poyo") return "heclus_poyo";
+    }
+  } catch {
+    // Unreadable switch or funding mode — fall through to the existing paths,
+    // which is exactly the behaviour before the switch existed.
+  }
+
   if (routing !== "client_kie") return routing;
   // A wallet user has no key of their own to spend, so client_kie is not a
   // routing they can run: it would resolve to a KIE key that does not exist and

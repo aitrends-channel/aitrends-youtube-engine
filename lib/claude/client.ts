@@ -5,6 +5,7 @@ import { getPromptProvider, isKieProvider, kieRoutingFor, supportsProviderChoice
 import { fetchKieBalance } from "@/lib/kie/client";
 import { KieGptClient } from "./kieGptClient";
 import { KieGeminiClient } from "./kieGeminiClient";
+import { makePoyoClaudeClient } from "@/lib/poyo/claude";
 
 const KIE_CLAUDE_BASE_URL = "https://api.kie.ai/claude";
 
@@ -307,7 +308,29 @@ export async function getAnthropicClient(
   // that fiction is asserted; keep it narrow by never widening PROVIDER_STEPS
   // to a step whose call sites use SDK surface the facades don't implement.
   const provider = opts?.forceProvider ?? (step ? await getPromptProvider(step) : "claude");
-  if (step && supportsProviderChoice(step) && isKieProvider(provider)) {
+
+  // The media operator switch outranks the per-step provider choice.
+  //
+  // Those GPT and Gemini choices are reachable only through KIE's relays, so
+  // honouring them while the operator is PoYo would leave most of the workflow
+  // on KIE after an admin had explicitly moved it. Config → Anthropic → Per
+  // step chooses a model; Config → Media Operator chooses a provider, and the
+  // provider is the coarser decision.
+  //
+  // The consequence is deliberate and worth knowing: a step configured for GPT
+  // runs Claude while the switch is on PoYo, because PoYo's Anthropic-format
+  // Messages API is the path this client speaks. Logged rather than silent —
+  // "why is my GPT step answering like Claude" is otherwise unanswerable from
+  // the outside. Restoring GPT under PoYo means a PoyoGptClient facade beside
+  // the KIE one, not removing this.
+  const operatorOverridesProvider = routing === "heclus_poyo" && isKieProvider(provider);
+  if (operatorOverridesProvider) {
+    console.log(
+      `[claude] step=${step ?? "-"} configured for ${provider}, but the media operator is poyo — running Claude via PoYo instead`,
+    );
+  }
+
+  if (!operatorOverridesProvider && step && supportsProviderChoice(step) && isKieProvider(provider)) {
     const kieRouting = kieRoutingFor(routing);
     const creditsRef: { value: number | null } = { value: null };
     const kieKey = await resolveKieKey(kieRouting, userId);
@@ -355,6 +378,22 @@ export async function getAnthropicClient(
     const client = await getHeclusDirectClient();
     return {
       client,
+      routing,
+      takeLastCreditsConsumed: () => null,
+    };
+  }
+
+  // Claude through PoYo, on Heclus's PoYo key. Set by the media operator
+  // switch (lib/operators/routing.ts), not by the Anthropic routing card.
+  //
+  // Must sit above the KIE fallthrough. Without this branch heclus_poyo would
+  // reach resolveKieKey and be signed with a KIE key against PoYo's base URL,
+  // which is the kind of miss a widened union does not fail the build on.
+  //
+  // Billed per token like the direct paths, so no credits to capture.
+  if (routing === "heclus_poyo") {
+    return {
+      client: await makePoyoClaudeClient(),
       routing,
       takeLastCreditsConsumed: () => null,
     };
