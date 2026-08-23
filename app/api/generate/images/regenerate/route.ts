@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveImageOperator } from "@/lib/operators/image";
 import { withPromptLengthRetry } from "@/lib/kie/promptLength";
+import { withRateLimitRetry } from "@/lib/operators/upstream";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { asUpstreamError, upstreamErrorResponse } from "@/lib/operators/upstream";
 import { getFundingModeById } from "@/lib/funding";
@@ -115,10 +116,10 @@ export async function POST(req: Request) {
     }
 
     const submitT0 = Date.now();
-    const taskId = await withPromptLengthRetry(imagePrompt, (prompt) => op.submit({
+    const taskId = await withPromptLengthRetry(imagePrompt, (prompt) => withRateLimitRetry(() => op.submit({
       prompt: applyConsistency(prompt, consistency.text, consistency.append),
       modelId, aspectRatio, resolution, userId: user.id,
-    }));
+    })));
     console.log(`[images/regenerate] beat=${beatNumber} operator=${op.id} model=${modelId} taskId=${taskId}`);
 
     // 3. Mark in-flight. A page refresh between submit and complete

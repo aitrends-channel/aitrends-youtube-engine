@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { withPromptLengthRetry } from "@/lib/kie/promptLength";
+import { withRateLimitRetry } from "@/lib/operators/upstream";
 import { deleteObject, r2KeyFromUrl, uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
@@ -110,10 +111,10 @@ export async function POST(req: Request) {
           const overlay = textOverlayByPosition.get(thumb.position);
           const { url: imageUrl, units: creditsConsumed } = await withPromptLengthRetry(
             thumb.stylePrompt,
-            (stylePrompt) => op.generate({
+            (stylePrompt) => withRateLimitRetry(() => op.generate({
               prompt: augmentPromptWithOverlay(stylePrompt, overlay),
               modelId, aspectRatio, resolution, userId: user.id,
-            }),
+            })),
           );
           if (creditsConsumed) {
             void logProjectCost({

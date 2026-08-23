@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { withPromptLengthRetry } from "@/lib/kie/promptLength";
+import { withRateLimitRetry } from "@/lib/operators/upstream";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { resolveImageOperator } from "@/lib/operators/image";
 import { asUpstreamError, upstreamErrorResponse } from "@/lib/operators/upstream";
@@ -89,10 +90,10 @@ export async function POST(req: Request) {
       ? poyoCallbackUrl(getAppUrl(req))
       : `${getAppUrl(req)}/api/webhooks/kie/image`;
 
-    const taskId = await withPromptLengthRetry(imagePrompt, (prompt) => op.submit({
+    const taskId = await withPromptLengthRetry(imagePrompt, (prompt) => withRateLimitRetry(() => op.submit({
       prompt: applyConsistency(prompt, consistency.text, consistency.append),
       modelId, aspectRatio, resolution, userId: user.id, callbackUrl: callBackUrl,
-    }));
+    })));
     console.log(`[images/submit] beat=${beatNumber} operator=${op.id} model=${modelId} taskId=${taskId}`);
 
     // Single atomic UPDATE so the webhook can never fire in a window

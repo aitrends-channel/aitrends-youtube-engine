@@ -37,6 +37,55 @@ export function asUpstreamError(err: unknown): UpstreamError | null {
   };
 }
 
+/**
+ * Both providers' ways of saying "slow down": a 429 status, or the sentence
+ * KIE puts in a 200 body ("Your call frequency is too high").
+ *
+ * Returns the seconds to wait, or null when the error is something else.
+ * The provider's own Retry-After wins when it sent one, capped so a long
+ * advisory cannot hold a request open past its function timeout.
+ */
+const RATE_LIMITED = /\b429\b|rate limit|too many requests|call frequency/i;
+
+export function rateLimitDelaySeconds(err: unknown, attempt: number): number | null {
+  const upstream = asUpstreamError(err);
+  const limited = upstream
+    ? upstream.upstreamStatus === 429
+    : err instanceof Error && RATE_LIMITED.test(err.message);
+  if (!limited) return null;
+
+  const advised = upstream?.retryAfter;
+  if (advised != null && advised > 0) return Math.min(advised, 20);
+  return Math.min(8, 2 ** attempt);
+}
+
+/**
+ * Retry a provider call while it is being rate limited.
+ *
+ * A 429 is the one upstream failure that is certain to pass on its own, and
+ * without this it failed the beat outright: the user saw "Too many requests"
+ * on work that only needed a second. The 1Click orchestrator has always
+ * retried these; the manual routes did not, which is why the same run
+ * succeeded from 1Click and failed from the Generate button.
+ *
+ * Three retries by default: 1s, 2s, 4s. That fits inside the 120s the image
+ * routes declare even with a full batch in flight, and a limit that outlasts
+ * 7s is one the caller should surface rather than sit on.
+ */
+export async function withRateLimitRetry<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await run();
+    } catch (err) {
+      const wait = attempt < attempts ? rateLimitDelaySeconds(err, attempt) : null;
+      if (wait === null) throw err;
+      // Jitter so a batch that was rate limited together does not retry in
+      // lockstep and trip the same limit again.
+      await new Promise((r) => setTimeout(r, wait * 1000 + Math.random() * 300));
+    }
+  }
+}
+
 export function upstreamErrorResponse(err: UpstreamError, operator: Operator): NextResponse {
   const headers: Record<string, string> = {};
   if (err.upstreamStatus === 429 && err.retryAfter != null) {
