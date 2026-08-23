@@ -5,6 +5,9 @@ import { getMinKieCreditsByModel, getMinCostPerSecByModel } from "@/lib/costs";
 import { spendableCredits } from "@/lib/heclus-charge";
 import { getFundingModeById } from "@/lib/funding";
 import { OPERATOR_POYO } from "@/lib/operators";
+import { IMAGE_MODELS } from "@/lib/kie/imageModels";
+import { VIDEO_MODELS } from "@/lib/kie/videoModels";
+import { listPoyoImageModels } from "@/lib/poyo/imageModels";
 
 // What a run will cost, before it starts.
 //
@@ -45,6 +48,13 @@ export interface RunEstimate {
   sufficient: boolean;
   /** What the estimate was built from, for the message and for debugging. */
   source: "poyo-catalog" | "kie-observed" | "video-observed" | "unknown" | "byo";
+  /** The best model the balance can actually afford for this run, when the
+   *  chosen one is out of reach. Priciest that fits, not cheapest available:
+   *  the point is to lose as little quality as the budget allows. */
+  alternative: { modelId: string; name: string; total: number } | null;
+  /** How many generations the balance covers on the chosen model. Zero is a
+   *  real answer and means only a top-up will do. */
+  affordableCount: number;
 }
 
 export interface RunEstimateInput {
@@ -115,12 +125,42 @@ async function perUnitCredits(
   };
 }
 
+/**
+ * The priciest model whose whole run fits the balance.
+ *
+ * Only computed when the chosen model does not fit, since it costs a catalog
+ * walk and nobody needs it otherwise. Candidates come from the same lists the
+ * picker offers, so a suggestion is always something the user can actually
+ * select.
+ */
+async function bestAffordable(
+  input: RunEstimateInput,
+  balance: number,
+  count: number,
+): Promise<RunEstimate["alternative"]> {
+  const names = new Map<string, string>();
+  if (input.kind === "video") for (const m of VIDEO_MODELS) names.set(m.id, m.name);
+  else if (input.operator === OPERATOR_POYO) for (const m of listPoyoImageModels()) names.set(m.id, m.name);
+  else for (const m of IMAGE_MODELS) names.set(m.id, m.name);
+
+  let best: RunEstimate["alternative"] = null;
+  for (const [modelId, name] of names) {
+    if (modelId === input.modelId) continue;
+    const { perUnit } = await perUnitCredits({ ...input, modelId });
+    if (perUnit === null) continue;
+    const total = roundCredits(perUnit * count);
+    if (total > balance) continue;
+    if (!best || total > best.total) best = { modelId, name, total };
+  }
+  return best;
+}
+
 export async function estimateRun(input: RunEstimateInput): Promise<RunEstimate> {
   // A BYO account spends its own provider key, so there is nothing here to be
   // short of. Answered before any lookup: the estimate would be meaningless
   // and the balance is not the constraint.
   if ((await getFundingModeById(input.userId)) !== "wallet") {
-    return { perUnit: null, total: null, balance: 0, sufficient: true, source: "byo" };
+    return { perUnit: null, total: null, balance: 0, sufficient: true, source: "byo", alternative: null, affordableCount: 0 };
   }
 
   const [{ perUnit, source }, balance] = await Promise.all([
@@ -130,13 +170,16 @@ export async function estimateRun(input: RunEstimateInput): Promise<RunEstimate>
 
   const count = Math.max(1, Math.floor(input.count));
   const total = perUnit === null ? null : roundCredits(perUnit * count);
+  const sufficient = total === null ? true : balance >= total;
 
   return {
     perUnit,
     total,
     balance,
-    sufficient: total === null ? true : balance >= total,
+    sufficient,
     source,
+    alternative: sufficient ? null : await bestAffordable(input, balance, count),
+    affordableCount: perUnit && perUnit > 0 ? Math.floor(balance / perUnit) : 0,
   };
 }
 
@@ -159,6 +202,8 @@ export function shortfallResponse(estimate: RunEstimate): NextResponse | null {
       outOfCredits: true,
       credits: estimate.balance,
       needed: estimate.total,
+      alternative: estimate.alternative,
+      affordableCount: estimate.affordableCount,
     },
     { status: 402 },
   );

@@ -9,6 +9,8 @@ import { isOutOfCreditsMessage } from "@/lib/out-of-credits";
 import { useOutOfCreditsStore } from "@/store/outOfCreditsStore";
 import { startTopUp } from "@/lib/credits-checkout";
 
+const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
 // The empty-wallet refusal, as a modal.
 //
 // It used to be a red line inside whichever step happened to fail, which put
@@ -21,7 +23,7 @@ import { startTopUp } from "@/lib/credits-checkout";
 
 export function OutOfCreditsGate() {
   const router = useRouter();
-  const { open, credits, needed, show, hide } = useOutOfCreditsStore();
+  const { open, credits, needed, alternative, show, hide } = useOutOfCreditsStore();
   const [navigating, setNavigating] = useState(false);
   const [balance, setBalance] = useState<{ credits: number; reserved: number } | null>(null);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
@@ -131,7 +133,7 @@ export function OutOfCreditsGate() {
           <DialogDescription className="text-zinc-400">
             {needed === null
               ? "Top up to keep generating."
-              : `This run needs about ${needed.toLocaleString(undefined, { maximumFractionDigits: 2 })} credits.`}
+              : `Needs about ${fmt(needed)} credits. Top up, or pick a cheaper model.`}
           </DialogDescription>
         </DialogHeader>
         <p className="text-sm leading-relaxed text-zinc-500">
@@ -145,8 +147,13 @@ export function OutOfCreditsGate() {
               : shown.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           </span>
           {" "}credits
-          {held > 0 && `, ${held.toLocaleString(undefined, { maximumFractionDigits: 2 })} held`}
+          {held > 0 && `, ${fmt(held)} held`}
         </p>
+        {alternative && (
+          <p className="-mt-3 text-sm text-zinc-500">
+            Cheaper: <span className="text-zinc-300">{alternative.name}</span>, {fmt(alternative.total)} credits
+          </p>
+        )}
         <DialogFooter className="-mx-6 -mb-6 mt-1 gap-2.5 border-zinc-800 bg-zinc-900/60 px-6 py-4">
           <button
             onClick={hide}

@@ -19,7 +19,14 @@ interface OutOfCreditsState {
    *  rather than after running out. Turns "out of credits" into "not enough
    *  for this run", which are different things to a user with credits left. */
   needed: number | null;
-  show: (opts?: { message?: string | null; credits?: number | null; needed?: number | null }) => void;
+  /** A model the balance can afford for the same run, when there is one. */
+  alternative: { name: string; total: number } | null;
+  show: (opts?: {
+    message?: string | null;
+    credits?: number | null;
+    needed?: number | null;
+    alternative?: { name: string; total: number } | null;
+  }) => void;
   hide: () => void;
 }
 
@@ -28,12 +35,14 @@ export const useOutOfCreditsStore = create<OutOfCreditsState>()((set) => ({
   message: OUT_OF_CREDITS_MESSAGE,
   credits: null,
   needed: null,
+  alternative: null,
   show: (opts) =>
     set({
       open: true,
       message: opts?.message?.trim() || OUT_OF_CREDITS_MESSAGE,
       credits: typeof opts?.credits === "number" ? opts.credits : null,
       needed: typeof opts?.needed === "number" ? opts.needed : null,
+      alternative: opts?.alternative ?? null,
     }),
   hide: () => set({ open: false }),
 }));
@@ -62,8 +71,13 @@ export function blockIfShort(estimate: {
   sufficient: boolean;
   total: number | null;
   balance: number;
+  alternative?: { name: string; total: number } | null;
 }): boolean {
   if (estimate.sufficient || estimate.total === null) return false;
-  useOutOfCreditsStore.getState().show({ credits: estimate.balance, needed: estimate.total });
+  useOutOfCreditsStore.getState().show({
+    credits: estimate.balance,
+    needed: estimate.total,
+    alternative: estimate.alternative ?? null,
+  });
   return true;
 }
