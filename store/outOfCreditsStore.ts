@@ -15,7 +15,11 @@ interface OutOfCreditsState {
   message: string;
   /** Balance at the moment of refusal, when the response reported it. */
   credits: number | null;
-  show: (opts?: { message?: string | null; credits?: number | null }) => void;
+  /** What the run was estimated to cost, when it was refused before starting
+   *  rather than after running out. Turns "out of credits" into "not enough
+   *  for this run", which are different things to a user with credits left. */
+  needed: number | null;
+  show: (opts?: { message?: string | null; credits?: number | null; needed?: number | null }) => void;
   hide: () => void;
 }
 
@@ -23,11 +27,13 @@ export const useOutOfCreditsStore = create<OutOfCreditsState>()((set) => ({
   open: false,
   message: OUT_OF_CREDITS_MESSAGE,
   credits: null,
+  needed: null,
   show: (opts) =>
     set({
       open: true,
       message: opts?.message?.trim() || OUT_OF_CREDITS_MESSAGE,
       credits: typeof opts?.credits === "number" ? opts.credits : null,
+      needed: typeof opts?.needed === "number" ? opts.needed : null,
     }),
   hide: () => set({ open: false }),
 }));
@@ -42,5 +48,22 @@ export const useOutOfCreditsStore = create<OutOfCreditsState>()((set) => ({
 export function reportOutOfCredits(text: string | null | undefined): boolean {
   if (!isOutOfCreditsMessage(text)) return false;
   useOutOfCreditsStore.getState().show({ message: text });
+  return true;
+}
+
+/**
+ * Refuse a run the balance cannot cover, before it starts.
+ *
+ * Returns true when the run was refused, so the caller can stop in the same
+ * expression. A model with no known rate reports sufficient and is allowed
+ * through: an unpriceable run must not be blocked on a made-up number.
+ */
+export function blockIfShort(estimate: {
+  sufficient: boolean;
+  total: number | null;
+  balance: number;
+}): boolean {
+  if (estimate.sufficient || estimate.total === null) return false;
+  useOutOfCreditsStore.getState().show({ credits: estimate.balance, needed: estimate.total });
   return true;
 }

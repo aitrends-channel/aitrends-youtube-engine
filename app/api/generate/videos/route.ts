@@ -5,6 +5,7 @@ import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
 import { requireWalletFunds } from "@/lib/heclus-charge";
+import { estimateRun, shortfallResponse } from "@/lib/credits/estimate";
 import { GENAIPRO_QUEUED_STATUS, GENAIPRO_MODEL_PREFIX } from "@/lib/genaipro/client";
 
 export const maxDuration = 30;
@@ -44,6 +45,19 @@ export async function POST(req: Request) {
     if (!isGenAIPro) {
       const broke = await requireWalletFunds(user);
       if (broke) return broke;
+
+      // Priced, not just non-empty. A clip is the most expensive single unit
+      // the wallet buys, so "at least one credit" was the weakest gate in the
+      // product: a balance of 1 could queue a whole project of clips.
+      const short = shortfallResponse(await estimateRun({
+        userId: user.id,
+        kind: "video",
+        modelId,
+        count: beats.length,
+        durationSec: Number(duration) || null,
+        resolution,
+      }));
+      if (short) return short;
     }
 
     // Store job config on the project so the worker can read it.

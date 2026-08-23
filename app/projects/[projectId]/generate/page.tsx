@@ -22,7 +22,7 @@ import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
 import { friendlyError, isModelTerminalError, isContentBlockMessage } from "@/lib/errors/friendly";
 import { isOutOfCreditsMessage } from "@/lib/out-of-credits";
-import { reportOutOfCredits } from "@/store/outOfCreditsStore";
+import { reportOutOfCredits, blockIfShort } from "@/store/outOfCreditsStore";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
 import { getModelConfig } from "@/lib/kie/imageModels";
 import { poyoImageConfig } from "@/lib/poyo/imageModels";
@@ -1164,6 +1164,31 @@ export default function GeneratePage({ params }: PageProps) {
   // the modal (OutOfCreditsGate) and is dropped from the inline banners below
   // rather than shown twice. The route-level 402 is caught globally; these two
   // are the refusals that arrive per beat inside an otherwise fine response.
+  /**
+   * Refuse a run the wallet cannot cover, before submitting anything.
+   *
+   * The API refuses it too, and that is the check that counts. This one exists
+   * so the user is told once, up front, with a number, rather than watching
+   * three of five beats fail one at a time. A model with no known rate reports
+   * sufficient and is allowed through.
+   */
+  const affordable = useCallback(async (body: Record<string, unknown>): Promise<boolean> => {
+    try {
+      const res = await fetch("/api/credits/estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) return true;
+      const estimate = await res.json() as { sufficient: boolean; total: number | null; balance: number };
+      return !blockIfShort(estimate);
+    } catch {
+      // The estimate is advisory. If it cannot be reached, let the run start
+      // and let the API refuse it.
+      return true;
+    }
+  }, []);
+
   useEffect(() => { reportOutOfCredits(imageRunError); }, [imageRunError]);
   useEffect(() => {
     if (reportOutOfCredits(videoRunError)) return;
@@ -1593,6 +1618,14 @@ export default function GeneratePage({ params }: PageProps) {
 
     if (targetBeats.length === 0) return;
 
+    if (!(await affordable({
+      kind: "image",
+      modelId: selectedImageModel,
+      operator: selectedImageOperator,
+      count: targetBeats.length,
+      resolution: selectedResolution,
+    }))) return;
+
     const shouldClear = opts.mode === "all" && generatedImages > 0;
 
     setGeneratingImages(true);
@@ -1983,6 +2016,14 @@ export default function GeneratePage({ params }: PageProps) {
       if (missingImage.length > 0) {
         toast.error(`Skipped ${missingImage.length} beat${missingImage.length === 1 ? "" : "s"} with no image — generate their images first.`);
       }
+      if (!(await affordable({
+        kind: "video",
+        modelId: selectedVideoModel,
+        count: eligible.length,
+        durationSec: selectedDuration,
+        resolution: selectedVideoResolution,
+      }))) return;
+
       // Instant UI feedback — flip all eligible beats to "queued" before
       // the POST so the badges + fast poll kick in immediately.
       optimisticQueueVideos(new Set(eligible.map((b) => b.beatNumber)));

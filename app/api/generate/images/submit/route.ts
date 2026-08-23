@@ -14,6 +14,7 @@ import { getAppUrl } from "@/lib/utils";
 import type { User } from "@supabase/supabase-js";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
 import { requireWalletFunds } from "@/lib/heclus-charge";
+import { estimateRun, shortfallResponse } from "@/lib/credits/estimate";
 import { OPERATOR_POYO, type Operator } from "@/lib/operators";
 import { poyoCallbackUrl } from "@/lib/poyo/webhook";
 import { getMediaOperatorForUser } from "@/lib/operators/routing";
@@ -67,6 +68,17 @@ export async function POST(req: Request) {
     if (!projectId || !beatNumber || !modelId) {
       return NextResponse.json({ error: "projectId, beatNumber, and modelId are required" }, { status: 400 });
     }
+
+    // The entry gate above only asks for one credit, which is what let a
+    // balance of 10 authorise five images at 8 each. Now that the model and
+    // operator are known, the refusal is priced: one generation on this model
+    // at this resolution. The client checks the whole run before starting, but
+    // this is the check that holds, because a stale tab or a direct call walks
+    // straight past the client.
+    const short = shortfallResponse(await estimateRun({
+      userId: user.id, kind: "image", modelId, operator: op.id, count: 1, resolution,
+    }));
+    if (short) return short;
     if (!imagePrompt) {
       console.error(`[images/submit] Beat ${beatNumber} has no imagePrompt`);
       return NextResponse.json({ error: `Beat ${beatNumber} has no image prompt` }, { status: 400 });

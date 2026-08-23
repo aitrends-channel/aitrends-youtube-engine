@@ -21,7 +21,7 @@ import { startTopUp } from "@/lib/credits-checkout";
 
 export function OutOfCreditsGate() {
   const router = useRouter();
-  const { open, credits, show, hide } = useOutOfCreditsStore();
+  const { open, credits, needed, show, hide } = useOutOfCreditsStore();
   const [navigating, setNavigating] = useState(false);
   const [balance, setBalance] = useState<{ credits: number; reserved: number } | null>(null);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
@@ -59,8 +59,8 @@ export function OutOfCreditsGate() {
         // Clone first: reading the body here must not consume it for the
         // caller that is about to read the same response.
         void res.clone().json().then(
-          (body: { error?: string; outOfCredits?: boolean; credits?: number }) => {
-            if (body?.outOfCredits) show({ message: body.error, credits: body.credits });
+          (body: { error?: string; outOfCredits?: boolean; credits?: number; needed?: number }) => {
+            if (body?.outOfCredits) show({ message: body.error, credits: body.credits, needed: body.needed });
           },
           () => { /* not JSON, so not our refusal */ },
         );
@@ -121,9 +121,17 @@ export function OutOfCreditsGate() {
         className="bg-zinc-950 text-zinc-100 ring-white/10 shadow-2xl p-6 gap-5 sm:max-w-md"
       >
         <DialogHeader className="gap-2">
-          <DialogTitle className="text-zinc-50">Out of credits</DialogTitle>
+          {/* Two different situations, and telling them apart matters: a wallet
+              at zero is not the same as a wallet that cannot cover this
+              particular run, and the second one still has credits to spend on
+              something smaller. */}
+          <DialogTitle className="text-zinc-50">
+            {needed === null ? "Out of credits" : "Not enough for this run"}
+          </DialogTitle>
           <DialogDescription className="text-zinc-400">
-            Top up to keep generating.
+            {needed === null
+              ? "Top up to keep generating."
+              : `This run needs about ${needed.toLocaleString(undefined, { maximumFractionDigits: 2 })} credits.`}
           </DialogDescription>
         </DialogHeader>
         <p className="text-sm leading-relaxed text-zinc-500">
