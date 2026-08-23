@@ -8,6 +8,10 @@ const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promi
 
 const pct = (n: number) => `${n > 0 ? "+" : ""}${(n * 100).toFixed(0)}%`;
 const usd = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
+/** Credits are not dollars, and a $ in front of 18 credits reads as a
+ *  hundredfold error rather than a catalog entry. */
+const amount = (n: number, measure?: string) =>
+  measure === "credits" ? `${n.toLocaleString(undefined, { maximumFractionDigits: 2 })} cr` : usd(n);
 
 // What we bill against what the providers invoiced.
 //
@@ -49,7 +53,8 @@ export function RateDriftCard() {
         <div>
           <p className="text-xs uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Rate drift</p>
           <p className="text-sm" style={{ color: "var(--c-50)" }}>
-            What we bill, against what Anthropic and ElevenLabs actually invoiced. Checked monthly.
+            What we bill, against what Anthropic and ElevenLabs actually invoiced, plus the PoYo catalog against
+            what PoYo actually charged. Checked monthly.
           </p>
         </div>
         <button
@@ -102,9 +107,12 @@ export function RateDriftCard() {
                     return (
                       <tr key={`${f.provider}-${f.model}-${f.kind}`} style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }}>
                         <td className="py-1.5 pr-3">{f.model}</td>
-                        <td className="py-1.5 pr-3" style={{ color: "var(--c-45)" }}>{f.kind.replace("_", " ")}</td>
-                        <td className="py-1.5 text-right tabular-nums">{usd(f.tableUsd)}</td>
-                        <td className="py-1.5 text-right tabular-nums">{usd(f.actualUsd)}</td>
+                        <td className="py-1.5 pr-3" style={{ color: "var(--c-45)" }}>
+                          {f.kind.replace("_", " ")}
+                          <span className="block text-[10px]" style={{ color: "var(--c-35)" }}>{f.unit}</span>
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums">{amount(f.tableUsd, f.measure)}</td>
+                        <td className="py-1.5 text-right tabular-nums">{amount(f.actualUsd, f.measure)}</td>
                         <td
                           className="py-1.5 text-right tabular-nums font-semibold"
                           // Red only when the provider costs more than we bill:
@@ -122,16 +130,20 @@ export function RateDriftCard() {
                 </tbody>
               </table>
               <p className="text-[11px] mt-2" style={{ color: "var(--c-40)" }}>
-                Rates are {report.findings[0]?.unit ?? "per unit"} unless the row says otherwise. ElevenLabs is the
-                blended plan rate, invoice over characters spoken, so it is indicative rather than a per-model price.
+                Volume is tokens for Anthropic, characters for ElevenLabs, and generations behind the median for the
+                PoYo catalog. ElevenLabs is the blended plan rate, invoice over characters spoken, so it is
+                indicative rather than a per-model price. The PoYo rows compare the catalog against what PoYo
+                actually charged: the charge is already correct either way, the catalog is what the wallet reserves
+                against and what the picker prints.
               </p>
             </div>
           )}
 
           {report.drifted.length > 0 && (
             <p className="text-xs" style={{ color: "oklch(0.6 0.22 25)" }}>
-              {report.drifted.length} rate{report.drifted.length === 1 ? "" : "s"} moved by 5% or more. Edit
-              CLAUDE_MODEL_PRICING, or override in credit_rates.claudeModelUsd to take effect without a deploy.
+              {report.drifted.length} rate{report.drifted.length === 1 ? "" : "s"} moved by 5% or more. Token rates
+              live in CLAUDE_MODEL_PRICING, or credit_rates.claudeModelUsd to take effect without a deploy; PoYo
+              catalog prices live in POYO_IMAGE_MODELS.
             </p>
           )}
 

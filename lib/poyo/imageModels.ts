@@ -73,7 +73,9 @@ export const POYO_IMAGE_MODELS: PoyoImageModel[] = [
   m("wan-2.7-image",     "Wan 2.7 Image",      4.2,    true, ["Alibaba"]),
   m("qwen-image-3.0",    "Qwen Image 3.0",     4.8,  false, ["Alibaba"]),
   m("nano-banana",       "Nano Banana",        5,    true, ["Google"]),
-  m("nano-banana-2",     "Nano Banana 2",      5,    true, ["Google"]),
+  // Measured: the median of nine finished tasks read back 8 credits, not the 5
+  // the price list shows.
+  m("nano-banana-2",     "Nano Banana 2",      8,    true, ["Google"]),
   m("nano-banana-2-lite","Nano Banana 2 Lite", 5,    true, ["Google", "Fast"]),
   // Measured: a probe task at the default 1K read back 18 credits, not the 8
   // the price list shows.

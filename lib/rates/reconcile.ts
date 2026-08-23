@@ -1,6 +1,7 @@
 import { getActiveProductKey } from "@/lib/claude/routing";
 import { claudeRateFor } from "@/lib/claude/models";
 import { getCreditRates, USD_PER_CREDIT } from "@/lib/pricing";
+import { getPoyoImageModel } from "@/lib/poyo/imageModels";
 import { supabase } from "@/lib/supabase/client";
 
 // Do the rates we bill at still match what the providers charge?
@@ -36,7 +37,7 @@ const ELEVENLABS_BASE = "https://api.elevenlabs.io";
 const CENTS_PER_USD = 100;
 
 export interface RateFinding {
-  provider: "anthropic" | "elevenlabs";
+  provider: "anthropic" | "elevenlabs" | "poyo";
   /** The model, or "all" for a provider billed as one pool. */
   model: string;
   /** input | output | cache_read | cache_write | characters */
@@ -49,7 +50,11 @@ export interface RateFinding {
   drift: number;
   /** Volume behind the figure, for judging whether the drift is meaningful. */
   units: number;
-  unit: "per 1M tokens" | "per 1k characters";
+  unit: "per 1M tokens" | "per 1k characters" | "credits per image";
+  /** What tableUsd and actualUsd are counted in. The PoYo catalog check
+   *  compares provider credits, not dollars, and formatting those with a
+   *  currency symbol would read as a hundredfold error. */
+  measure?: "usd" | "credits";
 }
 
 export interface RateReconciliation {
@@ -73,6 +78,11 @@ const DRIFT_THRESHOLD = 0.05;
 /** Volume under which a rate is too noisy to conclude anything from. */
 const MIN_TOKENS = 50_000;
 const MIN_CHARS = 5_000;
+const MIN_GENERATIONS = 3;
+
+/** The catalog check reads metered history rather than an invoice, so it can
+ *  look further back than the rate window without costing anything. */
+const CATALOG_DAYS = 90;
 
 async function anthropicAdminKey(): Promise<string | null> {
   return (await getActiveProductKey("anthropic_admin_key"))
@@ -330,6 +340,84 @@ async function reconcileElevenLabs(problems: string[]): Promise<RateFinding[]> {
 }
 
 /**
+ * Does PoYo's catalog still match what PoYo charges?
+ *
+ * A different problem from the token rates, and a smaller one, because the
+ * charge is already correct: PoYo reports credits_amount on a finished task and
+ * finishImageTask settles on that, so a model that quietly doubles in price
+ * bills correctly without anyone editing anything.
+ *
+ * What goes stale is POYO_IMAGE_MODELS, which is what the wallet reserves
+ * against before the task exists and what the picker prints on the model card.
+ * It was already wrong on two models when this was written — nano-banana-pro
+ * listed 8 and billed 18, Grok Imagine 2.0 listed 8 and billed 12 — so the
+ * drift is not hypothetical.
+ *
+ * Median rather than mean: one 4K generation at four times the base rate should
+ * not move a figure that describes the common case.
+ *
+ * One caveat on a zero reading. When PoYo does not report credits_amount the
+ * ledger falls back to the catalog price, so those rows agree with the catalog
+ * by construction and quietly drag a median toward it. A drift of exactly zero
+ * on a model with few samples is therefore weaker evidence than a drift of
+ * sixty percent, which is what nano-banana-2 showed the first time this ran.
+ *
+ * KIE has no equivalent because it has no static catalog. Its estimate() returns
+ * null and the picker prices from observed ledger history, so there is nothing
+ * to drift.
+ */
+async function reconcilePoyoCatalog(from: Date, problems: string[]): Promise<RateFinding[]> {
+  const { data, error } = await supabase
+    .from("project_costs")
+    .select("model, units")
+    .eq("provider", "poyo")
+    .eq("unit_kind", "poyo_credits")
+    .gte("created_at", from.toISOString())
+    .limit(5000);
+
+  if (error) {
+    problems.push(`PoYo catalog: could not read project_costs (${error.message}).`);
+    return [];
+  }
+
+  const byModel = new Map<string, number[]>();
+  for (const row of (data ?? []) as Array<{ model: string | null; units: number | null }>) {
+    const units = Number(row.units ?? 0);
+    if (!row.model || !(units > 0)) continue;
+    const list = byModel.get(row.model) ?? [];
+    list.push(units);
+    byModel.set(row.model, list);
+  }
+
+  const findings: RateFinding[] = [];
+  for (const [model, samples] of byModel) {
+    // Three generations is the fewest a median says anything about. Below that
+    // one unusual run would look like a repricing.
+    if (samples.length < MIN_GENERATIONS) continue;
+    samples.sort((a, b) => a - b);
+    const actual = samples[Math.floor(samples.length / 2)];
+
+    const listed = getPoyoImageModel(model);
+    if (!listed) {
+      problems.push(`PoYo billed for ${model}, which is not in the catalog at all. Median ${actual} credits.`);
+      continue;
+    }
+    findings.push({
+      provider: "poyo",
+      model,
+      kind: "catalog",
+      tableUsd: listed.credits,
+      actualUsd: actual,
+      drift: listed.credits > 0 ? actual / listed.credits - 1 : 0,
+      units: samples.length,
+      unit: "credits per image",
+      measure: "credits",
+    });
+  }
+  return findings;
+}
+
+/**
  * Compare billed rates against invoiced rates for the last `days`.
  *
  * Never throws. Everything that failed is in `problems`, because a report that
@@ -341,12 +429,13 @@ export async function reconcileRates(days = 30): Promise<RateReconciliation> {
   const from = new Date(to.getTime() - days * 86_400_000);
   const problems: string[] = [];
 
-  const [anthropic, elevenlabs] = await Promise.all([
+  const [anthropic, elevenlabs, poyo] = await Promise.all([
     reconcileAnthropic(from, to, problems),
     reconcileElevenLabs(problems),
+    reconcilePoyoCatalog(new Date(to.getTime() - CATALOG_DAYS * 86_400_000), problems),
   ]);
 
-  const findings = [...anthropic, ...elevenlabs].sort((a, b) => Math.abs(b.drift) - Math.abs(a.drift));
+  const findings = [...anthropic, ...elevenlabs, ...poyo].sort((a, b) => Math.abs(b.drift) - Math.abs(a.drift));
   return {
     at: to.toISOString(),
     from: from.toISOString(),
