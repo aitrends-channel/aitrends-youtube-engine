@@ -22,6 +22,7 @@ import EmailsPanel from "./EmailsPanel";
 import FreeUsagePanel from "./FreeUsagePanel";
 import { TtsCostLens } from "@/components/admin/TtsCostLens";
 import { RateDriftCard } from "@/components/admin/RateDriftCard";
+import { JobsPanel } from "@/components/admin/JobsPanel";
 import { SupportPanel } from "@/components/admin/SupportPanel";
 import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
 import { FeatureRequestsPanel } from "@/components/admin/FeatureRequestsPanel";
@@ -6430,6 +6431,7 @@ function AdminSkeleton() {
           </div>
         </div>
 
+
         {/* Activity chart */}
         <div className="p-5 rounded-2xl space-y-4" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07)" }}>
           <div className="flex items-center justify-between flex-wrap gap-3">
@@ -6489,6 +6491,7 @@ const TAB_BLURB: Record<string, string> = {
   freeusage: "Perks Heclus pays for, and who is using them",
   revenue:   "Payments, plans and reconciliation",
   reports:   "Generated reports and exports",
+  jobs:      "Provider work in flight, and what is holding it up",
   logs:      "Errors and events from the running app",
   emails:    "Inbound and outbound support mail",
   support:   "Tickets from customers",
@@ -6515,6 +6518,7 @@ const ADMIN_NAV = [
   { id: "activity", label: "Activity", icon: TrendingUp },
   { id: "users",    label: "Users",    icon: Users },
   { id: "projects", label: "Videos",   icon: Clapperboard },
+  { id: "jobs",     label: "Jobs",     icon: Activity },
   { id: "freeusage", label: "Free Resources Usage", icon: Gift },
   { id: "revenue",  label: "Revenue",  icon: DollarSign },
   { id: "reports",  label: "Reports",  icon: FileText },
@@ -6673,11 +6677,11 @@ export default function AdminPage() {
   const [revDateTo, setRevDateTo] = useState("");
   const [revPlanFilter, setRevPlanFilter] = useState("");
   const [activeTab, setActiveTab] = usePersistentTab<
-    "stats" | "balances" | "activity" | "usage" | "users" | "projects" | "freeusage" | "revenue" | "query" | "agent" | "reports" | "logs" | "emails" | "support" | "reviews" | "features" | "memory" | "setup"
+    "stats" | "balances" | "activity" | "usage" | "users" | "projects" | "jobs" | "freeusage" | "revenue" | "query" | "agent" | "reports" | "logs" | "emails" | "support" | "reviews" | "features" | "memory" | "setup"
   >(
     "main",
     "stats",
-    ["stats", "balances", "activity", "usage", "users", "projects", "freeusage", "revenue", "query", "agent", "reports", "logs", "emails", "support", "reviews", "features", "memory", "setup"],
+    ["stats", "balances", "activity", "usage", "users", "projects", "jobs", "freeusage", "revenue", "query", "agent", "reports", "logs", "emails", "support", "reviews", "features", "memory", "setup"],
   );
   // "usage" stays accepted as a stored value: it is what localStorage holds
   // for anyone who last left the admin on the old Usage tab, and mapping it
@@ -8660,6 +8664,13 @@ export default function AdminPage() {
             );
           })()}
         </section>
+
+        <div id="jobs" className="rounded-2xl space-y-3" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "16px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "jobs" ? undefined : "none" }}>
+          {/* Mounted only while shown: it polls every 20s and reads every beat
+              plus the open reservations, which is not work to do in the
+              background of another tab. */}
+          {activeTab === "jobs" && <JobsPanel />}
+        </div>
 
         {/* Reports section — mounted only while active; everything is
             computed from data other tabs already fetch. */}
