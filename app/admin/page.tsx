@@ -21,6 +21,7 @@ import { isAdminUser } from "@/lib/admin";
 import EmailsPanel from "./EmailsPanel";
 import FreeUsagePanel from "./FreeUsagePanel";
 import { TtsCostLens } from "@/components/admin/TtsCostLens";
+import { RateDriftCard } from "@/components/admin/RateDriftCard";
 import { SupportPanel } from "@/components/admin/SupportPanel";
 import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
 import { FeatureRequestsPanel } from "@/components/admin/FeatureRequestsPanel";
@@ -2950,6 +2951,11 @@ function HeclusCreditsPanel() {
       </div>
 
       {data && <BillingBreakdown data={data} />}
+
+      {/* Below the breakdown for the same reason the breakdown sits below the
+          rates: this is what the rates turned out to be worth, checked against
+          the invoice rather than against the table they came from. */}
+      <RateDriftCard />
     </div>
   );
 }
@@ -3092,10 +3098,14 @@ const HECLUS_RATE_FIELDS = [
   { key: "perPoyoCredit", label: "Per PoYo credit" },
   { key: "perThousandTtsChars", label: "Per 1k voiceover chars" },
   { key: "perThousandSttChars", label: "Per 1k caption chars" },
-  { key: "perMillionTokensIn", label: "Per 1M input tokens" },
-  { key: "perMillionTokensOut", label: "Per 1M output tokens" },
-  { key: "perMillionTokensCacheRead", label: "Per 1M cache reads" },
-  { key: "perMillionTokensCacheWrite", label: "Per 1M cache writes" },
+  // Token rates come from CLAUDE_MODEL_PRICING per model now. These four are
+  // the fallback for an id that matches no Claude model at all, which is what
+  // the labels have to say, or an admin edits them expecting Opus to move.
+  { key: "perMillionTokensIn", label: "Per 1M input tokens (unknown model)" },
+  { key: "perMillionTokensOut", label: "Per 1M output tokens (unknown model)" },
+  { key: "perMillionTokensCacheRead", label: "Per 1M cache reads (unknown model)" },
+  { key: "perMillionTokensCacheWrite", label: "Per 1M cache writes (unknown model)" },
+  { key: "poyoRelayFactor", label: "PoYo relay, share of Anthropic list" },
 ] as const;
 
 function StatusLine({ ok, neutral, label, detail }: { ok: boolean; neutral?: boolean; label: string; detail: string }) {
