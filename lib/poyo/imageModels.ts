@@ -2,11 +2,12 @@ import type { KieModel } from "@/lib/types";
 
 // PoYo's image catalog, and what each generation costs in PoYo credits.
 //
-// The credit figures carry more weight here than they do for KIE. KIE reports
-// creditsConsumed on a finished task, so the ledger records what was actually
-// spent; PoYo's status response has no equivalent field, so a row in
-// project_costs can only be as accurate as this table. Treat a wrong number
-// here as a wrong number in the margin report, not just a wrong label.
+// The credit figures are the estimate, not the charge. PoYo does report what a
+// finished task cost, in credits_amount, and lib/poyo/images.ts settles on that
+// (see the note there); this table is what the reserve and the cost chips use
+// before there is a task to ask about. It is also demonstrably out of step with
+// what PoYo bills — a probe read 18 credits from nano-banana-pro against the 8
+// its price list shows — so treat a row without a measured note as indicative.
 //
 // `verified` is about the id string, not the price. PoYo publishes credit costs
 // against display names but does not publish the identifier to send in the
@@ -21,9 +22,15 @@ import type { KieModel } from "@/lib/types";
 // ones that pass and they appear in the picker.
 //
 // Verified against the live API on 2026-08-22. Four inferred ids came back
-// "Model not found" and are still withheld — PoYo sells these models but not
-// under the name their catalog page displays, so the real strings have to come
-// from the dashboard: kling-o1-image, flux-kontext, flux-2, qwen-image-3.0.
+// "Model not found" and are still withheld. Their real ids are now known, from
+// docs.poyo.ai/api-manual/image-series, but each splits into variants the price
+// list does not price separately, so enabling one means deciding which variant
+// the published figure belongs to:
+//   flux-kontext   → flux-kontext-pro | flux-kontext-max
+//   flux-2         → flux-2-pro | flux-2-flex
+//   qwen-image-3.0 → qwen-image-3 | qwen-image-3-pro
+//   kling-o1-image → kling-o1-image-edit, edit-only: it requires image_urls,
+//                    so there is no text-to-image path to expose at all.
 //
 // flux-schnell is withheld for a different reason. It resolves, but PoYo's
 // error names flux-dev back ("prompt is required for flux-dev"), which reads
@@ -68,13 +75,21 @@ export const POYO_IMAGE_MODELS: PoyoImageModel[] = [
   m("nano-banana",       "Nano Banana",        5,    true, ["Google"]),
   m("nano-banana-2",     "Nano Banana 2",      5,    true, ["Google"]),
   m("nano-banana-2-lite","Nano Banana 2 Lite", 5,    true, ["Google", "Fast"]),
-  m("nano-banana-pro",   "Nano Banana Pro",    8,    true, ["Google", "Pro"]),
+  // Measured: a probe task at the default 1K read back 18 credits, not the 8
+  // the price list shows.
+  m("nano-banana-pro",   "Nano Banana Pro",    18,   true, ["Google", "Pro"]),
   m("seedream-4",        "Seedream 4",         5,    true, ["ByteDance"]),
   m("seedream-4.5",      "Seedream 4.5",       5,    true, ["ByteDance"]),
   m("seedream-5.0-lite", "Seedream 5.0 Lite",  5,    true, ["ByteDance"]),
   m("seedream-5.0-pro",  "Seedream 5.0 Pro",   15,    true, ["ByteDance", "Max Quality"]),
-  m("grok-imagine",      "Grok Imagine",       6,    true, ["xAI"]),
-  m("grok-imagine-image-2.0", "Grok Imagine 2.0", 8,    true, ["xAI"]),
+  m("grok-imagine-image", "Grok Imagine",      6,    true, ["xAI"]),
+  // Measured, not from the price list: a probe task read back 12 credits.
+  m("grok-imagine-image-2.0", "Grok Imagine 2.0", 12,  true, ["xAI"]),
+  // NOT an image model. "grok-imagine" is Grok's video endpoint: a task
+  // submitted against it came back as an .mp4 and charged 30 credits, while
+  // the beat recorded it as an image. Kept, withheld from the picker, so beats
+  // that already stored this id can still be priced and settled.
+  m("grok-imagine",      "Grok Imagine (video, legacy id)", 30, false, ["xAI"]),
 ];
 
 const BY_ID = new Map(POYO_IMAGE_MODELS.map((x) => [x.id, x]));
@@ -104,48 +119,68 @@ export function listPoyoImageModels(): KieModel[] {
     .map((x) => ({ id: x.id, name: x.name, type: "image" as const, tags: x.tags }));
 }
 
-/** What a model with no entry in POYO_MODEL_SIZES is assumed to take. Also the
+/** What a model with no entry in POYO_MODEL_INPUTS is assumed to take. Also the
  *  list every ratio-validating model in the catalog has in common. */
 export const POYO_ASPECT_RATIOS = ["1:1", "4:3", "3:4", "16:9", "9:16"];
 
 /**
- * The sizes each model accepts, spelled the way PoYo spells them.
+ * What each model's `input` accepts: which ratios, and whether it has its own
+ * resolution control.
  *
- * PoYo validates `size` per model, not per account, and rejects anything
- * outside that model's own list rather than falling back — which is how a
- * house default of 16:9 turned into "Invalid size, must be one of:
- * 1024x1024, 1024x1536, 1536x1024, 1:1, 2:3, 3:2" on the GPT models. The
- * lists are undocumented but the validator names them: a submit carrying an
- * impossible size comes back with the whole list before anything generates.
- * scripts/probe-poyo-sizes.mjs re-reads them; these were read 2026-08-23.
+ * PoYo validates `size` per model and rejects anything outside that model's own
+ * list rather than falling back, which is how a house default of 16:9 turned
+ * into "Invalid size, must be one of: 1024x1024, 1024x1536, 1536x1024, 1:1,
+ * 2:3, 3:2" on the GPT models. Ratios are read off the validator itself (a
+ * submit with an impossible size names the whole list; see
+ * scripts/probe-poyo-sizes.mjs) and cross-checked against each model's page
+ * under docs.poyo.ai/api-manual/image-series. Read 2026-08-23.
  *
- * Ratios come first in each row on purpose. poyoSizeFor keeps the first
- * closest match, so a model that offers both "3:2" and "1536x1024" answers a
- * 16:9 request with the ratio, which is the spelling the rest of the app and
- * the beat row already speak.
+ * Ratios are ordered for the picker, not alphabetically: the first entry is
+ * what the UI falls back to when the current choice is unsupported, so the
+ * landscape ratio closest to 16:9 leads every row.
  *
- * A model absent here is one whose validator did not answer. Four take any
- * string at all (nano-banana, nano-banana-pro, both grok-imagine ids — they
- * accepted a garbage size and generated anyway), and nano-banana-2's probe was
- * stopped by content moderation before it reached size validation. All five
- * get POYO_ASPECT_RATIOS, which is safe for the four that validate nothing and
- * a guess for nano-banana-2.
+ * A model absent here takes POYO_ASPECT_RATIOS. That is only the four that
+ * validate nothing at all (nano-banana and both grok ids accepted a garbage
+ * size and generated anyway) plus anything added without checking.
  */
-export const POYO_MODEL_SIZES: Record<string, string[]> = {
-  "z-image":            ["1:1", "4:3", "3:4", "16:9", "9:16"],
-  "gpt-4o-image":       ["1:1", "2:3", "3:2", "1024x1024", "1024x1536", "1536x1024"],
-  "gpt-image-1.5":      ["1:1", "2:3", "3:2", "1024x1024", "1024x1536", "1536x1024"],
-  "gpt-image-2":        ["1:1", "2:3", "3:2", "4:3", "3:4", "4:5", "5:4", "16:9", "9:16", "21:9"],
-  "kling-o3-image":     ["16:9", "1:1", "21:9", "2:3", "3:2", "3:4", "4:3", "9:16"],
-  "flux-dev":           ["1:1", "4:3", "3:4", "16:9", "9:16"],
-  "flux-schnell":       ["1:1", "4:3", "3:4", "16:9", "9:16"],
-  // Pixel dimensions only. 1024x576 is the 16:9 the picker asks for.
-  "wan-2.7-image":      ["512x512", "1024x1024", "768x1024", "1024x768", "576x1024", "1024x576"],
-  "nano-banana-2-lite": ["16:9", "1:1", "1:4", "1:8", "21:9", "2:3", "3:2", "3:4", "4:1", "4:3", "4:5", "5:4", "8:1", "9:16"],
-  "seedream-4":         ["1:1", "3:4", "4:3", "16:9", "9:16", "3:2", "2:3", "21:9"],
-  "seedream-4.5":       ["16:9", "1:1", "21:9", "2:3", "3:2", "3:4", "4:3", "9:16"],
-  "seedream-5.0-lite":  ["16:9", "1:1", "21:9", "2:3", "3:2", "3:4", "4:3", "9:16"],
-  "seedream-5.0-pro":   ["1:1", "3:4", "4:3", "16:9", "9:16", "3:2", "2:3", "21:9"],
+interface PoyoModelInputs {
+  /** Accepted values for the ratio field, as PoYo spells them. */
+  sizes: string[];
+  /** Values for the model's own `resolution` field, when it has one. */
+  resolutions?: string[];
+  /** grok-imagine-image-2.0 calls the ratio field `aspect_ratio`. */
+  sizeKey?: "aspect_ratio";
+  /**
+   * Models whose resolution presets are values of `size` rather than a field of
+   * their own (Seedream 4.5 and 5.0 Lite). Since one field cannot carry both, a
+   * chosen resolution is expressed as the WIDTHxHEIGHT that keeps the ratio,
+   * which those two document as a custom size. The number is the long edge.
+   */
+  sizeResolutions?: Record<string, number>;
+}
+
+export const POYO_MODEL_INPUTS: Record<string, PoyoModelInputs> = {
+  "z-image":            { sizes: ["16:9", "9:16", "1:1", "4:3", "3:4"] },
+  // No 16:9 on either GPT model. 3:2 is the widest they offer.
+  "gpt-4o-image":       { sizes: ["3:2", "2:3", "1:1"] },
+  "gpt-image-1.5":      { sizes: ["3:2", "2:3", "1:1"] },
+  "gpt-image-2":        { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5"], resolutions: ["1K", "2K", "4K"] },
+  "kling-o3-image":     { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4"], resolutions: ["1K", "2K", "4K"] },
+  "flux-dev":           { sizes: ["16:9", "9:16", "1:1", "4:3", "3:4"] },
+  "flux-schnell":       { sizes: ["16:9", "9:16", "1:1", "4:3", "3:4"] },
+  // Pixel dimensions only, and no resolution field: 1024x576 is the 16:9 the
+  // picker asks for.
+  "wan-2.7-image":      { sizes: ["1024x576", "576x1024", "1024x1024", "1024x768", "768x1024", "512x512"] },
+  "nano-banana":        { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5"] },
+  "nano-banana-2":      { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5"], resolutions: ["1K", "2K", "4K"] },
+  "nano-banana-2-lite": { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5"] },
+  "nano-banana-pro":    { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5"], resolutions: ["1K", "2K", "4K"] },
+  "seedream-4":         { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4"], resolutions: ["1K", "2K", "4K"] },
+  "seedream-4.5":       { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4"], sizeResolutions: { "2K": 2048, "4K": 4096 } },
+  "seedream-5.0-lite":  { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4"], sizeResolutions: { "2K": 2048, "3K": 3072 } },
+  "seedream-5.0-pro":   { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4"], resolutions: ["1K", "2K"] },
+  "grok-imagine-image": { sizes: ["16:9", "9:16", "1:1", "3:2", "2:3"] },
+  "grok-imagine-image-2.0": { sizes: ["16:9", "9:16", "1:1", "3:2", "2:3"], resolutions: ["1K", "2K"], sizeKey: "aspect_ratio" },
 };
 
 const RATIO = /^(\d+):(\d+)$/;
@@ -175,7 +210,7 @@ function ratioLabel(size: string): string | null {
 }
 
 export function poyoSizesFor(modelId: string): string[] {
-  return POYO_MODEL_SIZES[modelId] ?? POYO_ASPECT_RATIOS;
+  return POYO_MODEL_INPUTS[modelId]?.sizes ?? POYO_ASPECT_RATIOS;
 }
 
 /**
@@ -204,14 +239,65 @@ export function poyoSizeFor(modelId: string, requested: string): string {
   return best ?? requested;
 }
 
-/** The ratios to offer for a PoYo model, shaped like lib/kie/imageModels.ts's
- *  ModelConfig so the picker can take either. Pixel-only models are shown as
- *  the ratios their dimensions describe; poyoSizeFor converts back on submit. */
+/** The ratios and resolutions to offer for a PoYo model, shaped like
+ *  lib/kie/imageModels.ts's ModelConfig so the picker can take either.
+ *  Pixel-only models are shown as the ratios their dimensions describe;
+ *  poyoImageInput converts back on submit. */
 export function poyoImageConfig(modelId: string): { aspectRatios: string[]; resolutions?: string[] } {
+  const inputs = POYO_MODEL_INPUTS[modelId];
   const labels: string[] = [];
   for (const size of poyoSizesFor(modelId)) {
     const label = ratioLabel(size);
     if (label && !labels.includes(label)) labels.push(label);
   }
-  return { aspectRatios: labels.length ? labels : POYO_ASPECT_RATIOS };
+  // Both kinds of resolution control look the same to the user. Only the
+  // request shape differs, which poyoImageInput handles.
+  const resolutions = inputs?.resolutions
+    ?? (inputs?.sizeResolutions ? Object.keys(inputs.sizeResolutions) : undefined);
+  return { aspectRatios: labels.length ? labels : POYO_ASPECT_RATIOS, resolutions };
+}
+
+/** Round to a multiple of 16. Generators want dimensions on a grid, and the
+ *  few pixels lost are invisible next to a wrong aspect ratio. */
+function grid16(n: number): number {
+  return Math.max(16, Math.round(n / 16) * 16);
+}
+
+/**
+ * The size and resolution fields to send for this model.
+ *
+ * Three shapes, because PoYo does not have one:
+ *   - most models: `size` as a ratio, plus `resolution` when they take one
+ *   - grok-imagine-image-2.0: the same, but the ratio field is `aspect_ratio`
+ *   - Seedream 4.5 / 5.0 Lite: no resolution field, its presets are values of
+ *     `size`, so the two choices are combined into a custom WIDTHxHEIGHT
+ *
+ * An unsupported resolution is dropped rather than corrected. Unlike a ratio,
+ * there is no near-miss worth guessing at, and the model's own default is a
+ * better answer than a value it would reject.
+ */
+export function poyoImageInput(
+  modelId: string,
+  aspectRatio: string,
+  resolution?: string | null,
+): Record<string, string> {
+  const inputs = POYO_MODEL_INPUTS[modelId];
+  const size = poyoSizeFor(modelId, aspectRatio);
+
+  const longEdge = resolution ? inputs?.sizeResolutions?.[resolution] : undefined;
+  if (longEdge) {
+    const ratio = sizeValue(size);
+    // A model in this branch always spells its sizes as ratios, so `ratio` is
+    // only null if the table is edited into an inconsistent state.
+    if (ratio !== null) {
+      const [w, h] = ratio >= 1
+        ? [longEdge, grid16(longEdge / ratio)]
+        : [grid16(longEdge * ratio), longEdge];
+      return { size: `${w}x${h}` };
+    }
+  }
+
+  const out: Record<string, string> = { [inputs?.sizeKey ?? "size"]: size };
+  if (resolution && inputs?.resolutions?.includes(resolution)) out.resolution = resolution;
+  return out;
 }
