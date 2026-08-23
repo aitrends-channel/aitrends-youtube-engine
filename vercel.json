@@ -26,6 +26,10 @@
       "schedule": "0 6 1 * *"
     },
     {
+      "path": "/api/cron/sweep-reservations",
+      "schedule": "17 * * * *"
+    },
+    {
       "path": "/api/cron/refresh-model-cost-and-speed",
       "schedule": "0 3 * * *"
     },

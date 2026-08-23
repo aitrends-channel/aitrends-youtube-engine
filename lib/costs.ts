@@ -64,6 +64,10 @@ export interface CostEntry {
   /** Which beat the cost belongs to, when it is per-beat work. Recorded on the
    *  credit ledger row so a charge can be traced to the clip that caused it. */
   beatNumber?: number | null;
+  /** An open reservation taken before the work started. When present the
+   *  charge settles it rather than reserving again, which is the difference
+   *  between money held in advance and money taken afterwards. */
+  reservationId?: string | null;
   /** Generation duration in seconds. Used for video_gen kie_credits
    *  rows so the picker can compute units/durationSec as a per-second
    *  cost. Omit (or pass null) for steps where seconds aren't the

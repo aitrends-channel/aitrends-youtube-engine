@@ -13,6 +13,7 @@ import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
 import { requireWalletFunds, canStartWalletWork, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 import { estimateRun, shortfallResponse } from "@/lib/credits/estimate";
+import { holdForOne, releaseHold, findOpenHold } from "@/lib/credits/hold";
 import { resolveImageOperator } from "@/lib/operators/image";
 import { getMediaOperatorForUser } from "@/lib/operators/routing";
 
@@ -107,6 +108,15 @@ export async function POST(req: Request) {
           // the user's actual experience (queue + generation + cdn
           // fetch), not just the raw model inference time.
           const t0 = Date.now();
+          // Held before the provider is called, settled with what it reported.
+          // Two of these run at once inside a batch, so the atomic hold is what
+          // stops both spending the same credits.
+          const { hold, refused } = await holdForOne({
+            userId: user.id, kind: "image", modelId, operator: op.id,
+            provider: op.id, resolution, projectId, beatNumber: beat.beatNumber,
+          });
+          if (refused) throw new Error(OUT_OF_CREDITS_MESSAGE);
+
           const { url: imageUrl, units: creditsConsumed } = await withPromptLengthRetry(
             beat.imagePrompt,
             (prompt) => withRateLimitRetry(() => op.generate({
@@ -116,7 +126,7 @@ export async function POST(req: Request) {
           );
           const elapsedMs = Date.now() - t0;
           if (creditsConsumed) {
-            void logProjectCost({
+            await logProjectCost({
               projectId,
               userId: user.id,
               step: "image_gen",
@@ -125,7 +135,12 @@ export async function POST(req: Request) {
               units: creditsConsumed,
               unitKind: op.unitKind,
               elapsedMs,
+              reservationId: hold?.id ?? null,
             });
+          } else {
+            // No reported cost means nothing to settle against, so the hold
+            // goes back rather than sitting open until the sweeper finds it.
+            await releaseHold(hold, "image produced no cost figure");
           }
           const storagePath = `${userFolderFor(user)}/${projectId}/images/beat-${beat.beatNumber}_${Date.now()}.png`;
           const publicUrl = await uploadFromUrl(storagePath, imageUrl, "image/png");
@@ -142,6 +157,10 @@ export async function POST(req: Request) {
           results.push(result.value);
         } else {
           const errMsg = result.reason instanceof Error ? result.reason.message : "Unknown error";
+          // The hold for this beat, if the failure happened after it was taken.
+          // Found rather than tracked: Promise.allSettled has already thrown
+          // away the closure that held it.
+          await releaseHold(await findOpenHold({ userId: user.id, projectId, beatNumber: batch[j].beatNumber }), "image generation failed");
           console.error(`Image gen failed (beat ${batch[j].beatNumber}):`, errMsg);
           failures.push({ beatNumber: batch[j].beatNumber, error: errMsg });
           await supabase.from("project_beats").update({ image_status: "failed" }).eq("project_id", projectId).eq("beat_number", batch[j].beatNumber);
