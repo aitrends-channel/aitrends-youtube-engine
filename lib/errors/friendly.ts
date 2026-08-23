@@ -87,12 +87,35 @@ export function isModelTerminalError(raw: string | undefined | null): boolean {
     || msg.includes("video model rejected");
 }
 
-export function friendlyError(raw: string | undefined | null): string {
+/**
+ * Which provider ran this, for messages that would otherwise blame the wrong
+ * one now that images run on PoYo as often as on KIE.
+ *
+ * The caller passes it when it knows. When it does not, the error text says so
+ * itself: both clients stamp their own name into what they throw ("kie.ai
+ * error 429 on /api/…", "PoYo 400: …"), and that text is what reaches the
+ * client and the beat row alike. Null when neither can tell, which is what
+ * keeps the generic wording honest rather than guessing at KIE.
+ */
+function providerName(msg: string, operator?: string | null): string | null {
+  if (operator === "poyo") return "PoYo";
+  if (operator === "kie") return "KIE";
+  if (operator === "genaipro") return "GenAIPro";
+  if (/\bpoyo\b/.test(msg)) return "PoYo";
+  if (/\bkie\b|kie\.ai/.test(msg)) return "KIE";
+  return null;
+}
+
+export function friendlyError(raw: string | undefined | null, operator?: string | null): string {
   const original = (raw ?? "").trim();
   if (!original) return "Something went wrong. Please try again.";
 
   const { text, errorType, status } = unwrapPayload(original);
   const msg = `${text} ${errorType ?? ""}`.toLowerCase();
+  const provider = providerName(msg, operator);
+  // Sentence-initial form. Unknown provider drops the attribution rather than
+  // saying "the provider did…", which reads like a placeholder nobody replaced.
+  const who = provider ?? "The provider";
 
   // ── Veo filter codes ────────────────────────────────────────────────────
   // The free lane forwards Veo's own code verbatim ("Video generation failed:
@@ -112,6 +135,10 @@ export function friendlyError(raw: string | undefined | null): string {
   }
 
   // ── LLM / API provider failures ─────────────────────────────────────────
+  // Name KIE outright only where the trigger is KIE's own wording ("server
+  // exception", "fail code 500"). Everything keyed on a generic phrase uses
+  // `who`, which resolves per run: telling a PoYo user their KIE job is still
+  // generating names an account the work never touched.
   // These are the shapes the script, topic, prompts and visuals steps hit.
   // 500/529 and rate limits are transient and worth retrying; the rest are
   // configuration problems the user (or we) has to fix.
@@ -170,12 +197,19 @@ export function friendlyError(raw: string | undefined | null): string {
   if ((msg.includes("credit balance") || msg.includes("purchase credits") || msg.includes("too low"))
     && (msg.includes("anthropic") || msg.includes("plans & billing") || msg.includes("plans and billing")))
     return "Out of Anthropic credit. If this step runs on your own Anthropic key, top up at console.anthropic.com or switch back to KIE in Setup.";
+  // Whose account is empty decides what the user can do about it. A KIE
+  // balance can be theirs; PoYo runs on Heclus's key with no per-client path,
+  // so sending that customer to top something up would be advice they cannot
+  // act on.
+  const outOfProviderCredit = provider === "PoYo"
+    ? "PoYo is out of credit. That account is ours, so this needs support rather than a top-up."
+    : "KIE credits exhausted. Top up at kie.ai.";
   if (msg.includes("credits insufficient") || msg.includes("insufficient credits") || (msg.includes("insufficient") && (msg.includes("balance") || msg.includes("credit") || msg.includes("fund"))))
-    return "KIE credits exhausted. Top up at kie.ai.";
+    return outOfProviderCredit;
   if (msg.includes("credits remaining") || msg.includes("credit balance"))
-    return "KIE credits exhausted. Top up at kie.ai.";
+    return outOfProviderCredit;
   if (msg.includes("quota_exceeded") || msg.includes("quota exceeded"))
-    return "KIE rate limit hit. Wait a minute, then retry.";
+    return provider ? `${provider} rate limit hit. Wait a minute, then retry.` : "Rate limit hit. Wait a minute, then retry.";
   if (msg.includes("invalid_api_key") || msg.includes("invalid api key") || msg.includes("unauthorized") || (msg.includes("api key") && msg.includes("invalid")))
     return "API key is invalid. Update it in Settings.";
   if (msg.includes("api key") && (msg.includes("missing") || msg.includes("not set") || msg.includes("required")))
@@ -187,13 +221,16 @@ export function friendlyError(raw: string | undefined | null): string {
   if (msg.includes("internal error") || msg.includes("internal server error"))
     return "The model is temporarily unavailable. Try a different one.";
   if (msg.includes("temporarily paused") || msg.includes("interface is paused") || msg.includes("model is paused") || msg.includes("paused by kie"))
-    return "Model paused on KIE. Try a different one.";
+    return provider ? `This model is paused on ${provider}. Try a different one.` : "This model is paused. Try a different one.";
   if (msg.includes("this field is required"))
-    return "KIE rejected the video request. Try another video model.";
+    return `${who} rejected the video request. Try another video model.`;
+  // Not a failure and no longer something to refresh for: the task is still
+  // running at the provider, and the callback or the poller writes the beat
+  // when it lands, whichever gets there first.
   if (msg.includes("timed out") || msg.includes("timeout"))
-    return "Still generating on KIE. Refresh the page to check status.";
+    return provider ? `Still generating on ${provider}. It will appear here when it is ready.` : "Still generating. It will appear here when it is ready.";
   if (msg.includes("no task id") || msg.includes("no taskid"))
-    return "KIE did not queue the job. Try another model.";
+    return `${who} did not queue the job. Try another model.`;
   // KIE / Veo safety filters flag anything the model interprets as a
   // reference to a real person, brand, copyrighted character, or sensitive
   // content. It's a per-beat problem — the same model with a different prompt
