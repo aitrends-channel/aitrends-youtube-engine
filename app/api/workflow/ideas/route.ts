@@ -6,6 +6,7 @@ import { buildVideoIdeasPrompt } from "@/lib/claude/prompts";
 import { VideoIdeasSchema } from "@/lib/claude/schemas";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
+import { estimateStepFloor, shortfallResponse } from "@/lib/credits/estimate";
 import { logAnthropicCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 
@@ -14,6 +15,13 @@ export const maxDuration = 800;
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+
+  // This step bills the wallet and had no gate at all, not even the one-credit
+  // one the other steps carry: idea generation could run on a balance of zero and be
+  // written off. Priced on what the step has historically cost, since a token
+  // count does not exist before the call.
+  const short = shortfallResponse(await estimateStepFloor({ userId: user.id, step: "topic" }));
+  if (short) return short;
 
   try {
     const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "ideas");
