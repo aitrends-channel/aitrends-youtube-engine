@@ -3540,7 +3540,14 @@ export default function GeneratePage({ params }: PageProps) {
                 </div>
                 {previewBeat.type === "image" ? (
                   (() => {
-                    const resolutions = selectedImageModel ? getModelConfig(selectedImageModel).resolutions ?? [] : [];
+                    // Provider-aware for the same reason as the picker: only
+                    // some PoYo models take a resolution, and the id alone
+                    // does not say whose model it is.
+                    const resolutions = selectedImageModel
+                      ? (selectedImageOperator === OPERATOR_POYO
+                          ? poyoImageConfig(selectedImageModel).resolutions ?? []
+                          : getModelConfig(selectedImageModel).resolutions ?? [])
+                      : [];
                     return (
                       <div className="flex-1 min-w-0">
                         <label className="block text-xs font-semibold mb-1" style={{ color: "oklch(0.35 0 0)" }}>

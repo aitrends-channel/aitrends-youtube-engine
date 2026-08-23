@@ -117,12 +117,12 @@ const poyo: ImageOperator = {
   id: OPERATOR_POYO,
   unitKind: "poyo_credits",
   models: listPoyoImageModels,
-  submit: ({ prompt, modelId, aspectRatio, callbackUrl }) =>
-    submitPoyoImageTask(prompt, modelId, aspectRatio ?? "16:9", callbackUrl),
+  submit: ({ prompt, modelId, aspectRatio, resolution, callbackUrl }) =>
+    submitPoyoImageTask(prompt, modelId, aspectRatio ?? "16:9", resolution, callbackUrl),
   check: ({ taskId }) => checkPoyoImageTask(taskId),
   estimate: (modelId) => poyoCreditsFor(modelId),
   generate: async (req) => {
-    const taskId = await submitPoyoImageTask(req.prompt, req.modelId, req.aspectRatio ?? "16:9");
+    const taskId = await submitPoyoImageTask(req.prompt, req.modelId, req.aspectRatio ?? "16:9", req.resolution);
     const done = await pollToCompletion(poyo, taskId, req.modelId, req.userId);
     // PoYo reports no cost, so the catalog price is the charge. Same reasoning
     // as estimate() above.

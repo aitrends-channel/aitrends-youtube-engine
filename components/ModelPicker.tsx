@@ -227,10 +227,14 @@ export function ModelPicker(props: ModelPickerProps) {
   // trips TS's "in" narrowing when both ModelConfig and VideoModelConfig
   // share an optional `resolutions` field.
   // Provider-aware, because the id alone does not say whose model it is and
-  // the two disagree on ratios: PoYo's gpt-4o-image has no 16:9 at all, while
-  // KIE's models with the same names do.
+  // the two disagree on both lists: PoYo's gpt-4o-image has no 16:9 at all,
+  // and only some PoYo models take a resolution. Read from the selected
+  // model's own operator when the caller did not pass one, so the thumbnail
+  // and 1Click pickers get it right without threading a prop through.
+  const selectedOperator = props.selectedOperator
+    ?? (models?.find((m) => m.id === selectedModelId) as { operator?: string } | undefined)?.operator;
   const imageConfig = type === "image" && selectedModelId
-    ? (props.selectedOperator === OPERATOR_POYO ? poyoImageConfig(selectedModelId) : getModelConfig(selectedModelId))
+    ? (selectedOperator === OPERATOR_POYO ? poyoImageConfig(selectedModelId) : getModelConfig(selectedModelId))
     : null;
   const videoConfig = type === "video" && selectedModelId ? getVideoModelConfig(selectedModelId) : null;
   const config = imageConfig ?? videoConfig;

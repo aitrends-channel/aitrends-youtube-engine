@@ -1,5 +1,5 @@
 import { poyoRequest, poyoEnvelopeError, type PoyoEnvelope } from "./client";
-import { poyoSizeFor } from "./imageModels";
+import { poyoImageInput } from "./imageModels";
 
 // Image submit and poll against PoYo. Deliberately the same shape as
 // lib/kie/images.ts (submit returns a task id, check returns done/failed/
@@ -28,15 +28,17 @@ export async function submitPoyoImageTask(
   prompt: string,
   modelId: string,
   aspectRatio = "16:9",
+  resolution?: string | null,
   callbackUrl?: string,
 ): Promise<string> {
   // PoYo rejects a size it does not know rather than falling back, and the
   // accepted set is per model: the GPT models take no 16:9 at all, wan-2.7
-  // takes pixel dimensions only. Correct to the nearest shape the model does
-  // take rather than send the house default and collect a 400.
-  const size = poyoSizeFor(modelId, aspectRatio);
-
-  const body: Record<string, unknown> = { model: modelId, input: { prompt, size } };
+  // takes pixel dimensions only, and only some models have a resolution field
+  // at all. poyoImageInput is where that per-model shape lives.
+  const body: Record<string, unknown> = {
+    model: modelId,
+    input: { prompt, ...poyoImageInput(modelId, aspectRatio, resolution) },
+  };
   if (callbackUrl) body.callback_url = callbackUrl;
 
   const res = await poyoRequest<PoyoEnvelope<PoyoSubmitData>>("/api/generate/submit", {

@@ -27,7 +27,9 @@ const only = args.includes("--only")
   : null;
 
 // Probed 2026-08-23: these accepted a garbage size and generated anyway, so
-// probing them costs credits and teaches nothing.
+// probing them costs credits and teaches nothing. grok-imagine-image-2.0 is
+// here because it reads the ratio from `aspect_ratio` and ignores `size`
+// entirely; "grok-imagine" is xAI's video endpoint and no longer in the picker.
 const NO_VALIDATION = ["nano-banana", "nano-banana-pro", "grok-imagine", "grok-imagine-image-2.0"];
 const key = args.includes("--key") ? args[args.indexOf("--key") + 1] : process.env.HECLUS_POYO_API_KEY;
 
