@@ -11,6 +11,7 @@ import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { logAnthropicCost } from "@/lib/costs";
+import { estimateStepFloor, shortfallResponse } from "@/lib/credits/estimate";
 import type { VisualProfileOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
@@ -39,6 +40,8 @@ export async function POST(req: Request) {
   // refused before any provider is called.
   const broke = await requireWalletFunds(user);
   if (broke) return broke;
+  const short = shortfallResponse(await estimateStepFloor({ userId: user.id, step: "prompts_image" }));
+  if (short) return short;
 
   try {
     const { projectId, beatNumber, imageUrl } = await req.json().catch(() => ({})) as {

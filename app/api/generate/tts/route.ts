@@ -7,6 +7,7 @@ import { uploadBuffer, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { logProjectCost } from "@/lib/costs";
+import { estimateCharacters, shortfallResponse } from "@/lib/credits/estimate";
 import { incrementFreeUsage } from "@/lib/freeUsage";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
@@ -35,6 +36,11 @@ export async function POST(req: Request) {
   if (!isQwenVoice(voiceId) && !isAi33Voice(voiceId)) {
     const broke = await requireWalletFunds(user);
     if (broke) return broke;
+    // Exactly priceable: the script about to be spoken is right here.
+    const short = shortfallResponse(await estimateCharacters({
+      userId: user.id, characters: String(script).trim().length, model: TTS_MODEL,
+    }));
+    if (short) return short;
   }
 
   if (!(await canUseVoice(user.id, voiceId))) {
