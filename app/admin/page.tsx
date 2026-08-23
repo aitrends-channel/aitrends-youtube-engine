@@ -2012,7 +2012,7 @@ function BalancesPanel({ visible }: { visible: boolean }) {
         <Tile label="Accounts holding credit" value={n(data?.totals.accounts ?? 0, 0)}
           note={`${n(data?.totals.walletFunded ?? 0, 0)} funded by Heclus`} />
         <Tile label="Heclus Credits outstanding" value={n(data?.totals.credits ?? 0)}
-          note={`${n(data?.totals.reserved ?? 0)} held by work in flight`} accent />
+          note={`${n(data?.totals.reserved ?? 0)} held by work in flight`} accent noteStrong />
         <Tile label="Bought, all time" value={n(data?.totals.purchased ?? 0)}
           note={`${n(data?.totals.granted ?? 0)} granted on top`} />
         <Tile label="Video clips outstanding" value={n(data?.totals.clips ?? 0, 0)}
@@ -2089,7 +2089,8 @@ function BalancesPanel({ visible }: { visible: boolean }) {
                       {n(r.credits)}
                       {stuck && <span className="block text-[11px] font-normal">empty, cannot generate</span>}
                     </td>
-                    <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-50)" }}>
+                    <td className="py-2 px-3 text-right tabular-nums text-sm"
+                      style={{ color: r.reserved > 0 ? "oklch(0.62 0.18 45)" : "var(--c-35)", fontWeight: r.reserved > 0 ? 600 : 400 }}>
                       {r.reserved > 0 ? n(r.reserved) : "—"}
                     </td>
                     <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-55)" }}>
@@ -2379,7 +2380,12 @@ function ProviderTile({ label, note, p, format, low, href, claim }: {
   );
 }
 
-function Tile({ label, value, note, accent }: { label: string; value: string; note: string; accent?: boolean }) {
+function Tile({ label, value, note, accent, noteStrong }: {
+  label: string; value: string; note: string; accent?: boolean;
+  /** Render the note as a figure rather than a caption. Held credits are a
+   *  number an admin acts on, and at 11px grey it read as a footnote. */
+  noteStrong?: boolean;
+}) {
   return (
     <div className="p-3 rounded-xl" style={{ background: "oklch(0 0 0 / 0.015)", border: "1px solid var(--input)" }}>
       <p className="text-sm" style={{ color: "var(--c-45)" }}>{label}</p>
@@ -2387,7 +2393,10 @@ function Tile({ label, value, note, accent }: { label: string; value: string; no
         style={{ color: accent ? "oklch(0.62 0.15 220)" : "var(--c-90)" }}>
         {value}
       </p>
-      <p className="text-[11px]" style={{ color: "var(--c-42)" }}>{note}</p>
+      <p className={noteStrong ? "text-sm font-medium tabular-nums mt-0.5" : "text-[11px]"}
+        style={{ color: noteStrong ? "oklch(0.62 0.18 45)" : "var(--c-42)" }}>
+        {note}
+      </p>
     </div>
   );
 }
