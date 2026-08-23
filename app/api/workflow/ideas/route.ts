@@ -7,6 +7,8 @@ import { VideoIdeasSchema } from "@/lib/claude/schemas";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { estimateStepFloor, shortfallResponse } from "@/lib/credits/estimate";
+import { holdForStep, settleTokenHold, releaseHold } from "@/lib/credits/hold";
+import { OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 import { logAnthropicCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 
@@ -22,6 +24,15 @@ export async function POST(req: Request) {
   // count does not exist before the call.
   const short = shortfallResponse(await estimateStepFloor({ userId: user.id, step: "topic" }));
   if (short) return short;
+  // Held atomically, so two of these firing at once cannot both spend the same
+  // credits. Settled below on the tokens the call actually reports.
+  const { hold, refused } = await holdForStep({ userId: user.id, step: "topic", provider: "anthropic" });
+  if (refused) {
+    return NextResponse.json(
+      { error: OUT_OF_CREDITS_MESSAGE, outOfCredits: true },
+      { status: 402 },
+    );
+  }
 
   try {
     const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "ideas");
@@ -74,7 +85,9 @@ export async function POST(req: Request) {
       routing,
       usage: response.usage,
       kieCreditsConsumed: takeLastCreditsConsumed(),
+      alreadyHeld: !!hold,
     });
+    await settleTokenHold({ hold, model, provider: "anthropic", step: "topic", usage: response.usage });
 
     const toolUse = response.content.find((b) => b.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") throw new Error("No ideas returned from Claude");

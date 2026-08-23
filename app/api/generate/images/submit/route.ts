@@ -13,8 +13,9 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import { getAppUrl } from "@/lib/utils";
 import type { User } from "@supabase/supabase-js";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
-import { requireWalletFunds } from "@/lib/heclus-charge";
+import { requireWalletFunds, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 import { estimateRun, shortfallResponse } from "@/lib/credits/estimate";
+import { holdForRun, releaseHold } from "@/lib/credits/hold";
 import { OPERATOR_POYO, type Operator } from "@/lib/operators";
 import { poyoCallbackUrl } from "@/lib/poyo/webhook";
 import { getMediaOperatorForUser } from "@/lib/operators/routing";
@@ -75,10 +76,22 @@ export async function POST(req: Request) {
     // at this resolution. The client checks the whole run before starting, but
     // this is the check that holds, because a stale tab or a direct call walks
     // straight past the client.
-    const short = shortfallResponse(await estimateRun({
+    const estimate = await estimateRun({
       userId: user.id, kind: "image", modelId, operator: op.id, count: 1, resolution,
-    }));
+    });
+    const short = shortfallResponse(estimate);
     if (short) return short;
+
+    // The check above reads the balance and then acts, which two submits can do
+    // at the same instant. The hold is the same question asked atomically: it
+    // fails when the credits are already spoken for. finishImageTask settles it
+    // with what the provider reports, wherever the task finishes.
+    const { hold, refused } = await holdForRun({
+      userId: user.id, provider: op.id, projectId, beatNumber, estimate,
+    });
+    if (refused) return shortfallResponse({ ...estimate, sufficient: false }) ?? NextResponse.json(
+      { error: OUT_OF_CREDITS_MESSAGE, outOfCredits: true, credits: estimate.balance }, { status: 402 },
+    );
     if (!imagePrompt) {
       console.error(`[images/submit] Beat ${beatNumber} has no imagePrompt`);
       return NextResponse.json({ error: `Beat ${beatNumber} has no image prompt` }, { status: 400 });
@@ -102,10 +115,18 @@ export async function POST(req: Request) {
       ? poyoCallbackUrl(getAppUrl(req))
       : `${getAppUrl(req)}/api/webhooks/kie/image`;
 
-    const taskId = await withPromptLengthRetry(imagePrompt, (prompt) => withRateLimitRetry(() => op.submit({
-      prompt: applyConsistency(prompt, consistency.text, consistency.append),
-      modelId, aspectRatio, resolution, userId: user.id, callbackUrl: callBackUrl,
-    })));
+    let taskId: string;
+    try {
+      taskId = await withPromptLengthRetry(imagePrompt, (prompt) => withRateLimitRetry(() => op.submit({
+        prompt: applyConsistency(prompt, consistency.text, consistency.append),
+        modelId, aspectRatio, resolution, userId: user.id, callbackUrl: callBackUrl,
+      })));
+    } catch (err) {
+      // Nothing was produced, so nothing is charged. Without this the hold
+      // sits open until the sweeper finds it, and the balance looks spent.
+      await releaseHold(hold, "image submit failed");
+      throw err;
+    }
     console.log(`[images/submit] beat=${beatNumber} operator=${op.id} model=${modelId} taskId=${taskId}`);
 
     // Single atomic UPDATE so the webhook can never fire in a window

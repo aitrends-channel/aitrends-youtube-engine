@@ -24,7 +24,7 @@ export interface ChargeResult {
   charged: number;
   /** Credits the balance could not cover. Zero on a normal charge. */
   shortfall: number;
-  skipped: "byo" | "unpriced" | null;
+  skipped: "byo" | "unpriced" | "held" | null;
 }
 
 const NOTHING: ChargeResult = { charged: 0, shortfall: 0, skipped: null };
@@ -43,6 +43,9 @@ const NOTHING: ChargeResult = { charged: 0, shortfall: 0, skipped: null };
  */
 export async function chargeForCostEntry(entry: CostEntry): Promise<ChargeResult> {
   if (!entry.userId || !(entry.units > 0)) return NOTHING;
+  // Already answered for by a hold the caller settled. Charging again would
+  // bill the same work twice.
+  if (entry.alreadyHeld) return { ...NOTHING, skipped: "held" };
 
   try {
     if (await getFundingModeById(entry.userId) !== "wallet") {
@@ -61,6 +64,19 @@ export async function chargeForCostEntry(entry: CostEntry): Promise<ChargeResult
     if (credits <= 0) return { ...NOTHING, skipped: "unpriced" };
 
     const note = `${entry.step} · ${entry.units.toLocaleString()} ${entry.unitKind}`;
+
+    // Held before the work started: settle that hold rather than taking a
+    // second one. Settling is capped at what was held, so an estimate that
+    // came in low costs Heclus the difference instead of the customer, which
+    // is the trade the schema deliberately makes.
+    if (entry.reservationId) {
+      const settled = await settleHeclusCredits(entry.reservationId, credits, note);
+      if (settled) return { charged: Math.min(credits, credits), shortfall: 0, skipped: null };
+      // The hold was already settled or released, by a retry or a sweeper.
+      // Fall through and charge normally rather than losing the row.
+      console.warn(`[heclus-charge] hold ${entry.reservationId} could not be settled; charging directly`);
+    }
+
     const charged = await debit({
       userId: entry.userId,
       credits,

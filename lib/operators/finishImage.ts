@@ -2,6 +2,7 @@ import { getImageOperator } from "./image";
 import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
 import { logProjectCost } from "@/lib/costs";
+import { findOpenHold, releaseHold } from "@/lib/credits/hold";
 
 // Shared "poll one in-flight image task and persist the result" path.
 // Used by both the user-driven poll route (foreground) and the cron
@@ -52,10 +53,21 @@ export async function finishImageTask(input: FinishImageInput): Promise<FinishIm
   // available is the catalog price, which is an estimate that will silently be
   // wrong if PoYo reprices. Reported wins where it exists.
   if (result.status === "done" || result.status === "failed") {
+    // The submit took a hold. This is where it is answered for, and the
+    // finisher has to find it: the webhook, the poll and the cron all arrive
+    // here and none of them shares memory with the submit that took it.
+    const hold = await findOpenHold({
+      userId: input.userId,
+      projectId: input.projectId,
+      beatNumber: input.beatNumber,
+    });
+
     const estimated = input.modelId ? op.estimate(input.modelId) : null;
     const units = result.units ?? estimated ?? 0;
     if (units > 0) {
-      void logProjectCost({
+      // Awaited rather than fired off, because the hold is settled inside it
+      // and a released-then-settled race would return credits twice.
+      await logProjectCost({
         projectId: input.projectId,
         userId: input.userId,
         step: "image_gen",
@@ -63,7 +75,12 @@ export async function finishImageTask(input: FinishImageInput): Promise<FinishIm
         model: input.modelId ?? null,
         units,
         unitKind: op.unitKind,
+        reservationId: hold?.id ?? null,
       });
+    } else if (hold) {
+      // Nothing was produced and nothing is charged, so the hold goes back
+      // whole. Leaving it open would hold credit against work that failed.
+      await releaseHold(hold, "image task produced nothing");
     }
   }
 

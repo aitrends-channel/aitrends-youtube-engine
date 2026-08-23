@@ -3,6 +3,7 @@ import { resolveImageOperator } from "@/lib/operators/image";
 import { withPromptLengthRetry } from "@/lib/kie/promptLength";
 import { withRateLimitRetry } from "@/lib/operators/upstream";
 import { estimateRun, shortfallResponse } from "@/lib/credits/estimate";
+import { holdForRun, releaseHold } from "@/lib/credits/hold";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { asUpstreamError, upstreamErrorResponse } from "@/lib/operators/upstream";
 import { getFundingModeById } from "@/lib/funding";
@@ -14,7 +15,7 @@ import { logProjectCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
-import { requireWalletFunds } from "@/lib/heclus-charge";
+import { requireWalletFunds, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 import { OPERATOR_POYO, type Operator } from "@/lib/operators";
 import { getMediaOperatorForUser } from "@/lib/operators/routing";
 
@@ -111,10 +112,23 @@ export async function POST(req: Request) {
 
     // One image, priced on the model actually chosen. The gate at the door
     // only asks for a credit, which on an 18-credit model is not a check.
-    const short = shortfallResponse(await estimateRun({
+    const estimate = await estimateRun({
       userId: user.id, kind: "image", modelId, operator: op.id, count: 1, resolution,
-    }));
+    });
+    const short = shortfallResponse(estimate);
     if (short) return short;
+
+    // Held atomically before the provider is called. finishImageTask settles
+    // it wherever the task lands, finding it by project and beat.
+    const { hold, refused } = await holdForRun({
+      userId: user.id, provider: op.id, projectId, beatNumber, estimate,
+    });
+    if (refused) {
+      return NextResponse.json(
+        { error: OUT_OF_CREDITS_MESSAGE, outOfCredits: true, credits: estimate.balance, needed: estimate.total },
+        { status: 402 },
+      );
+    }
     operator = op.id;
     if (op.id === OPERATOR_POYO && (await getFundingModeById(user.id)) !== "wallet") {
       return NextResponse.json(
@@ -124,10 +138,16 @@ export async function POST(req: Request) {
     }
 
     const submitT0 = Date.now();
-    const taskId = await withPromptLengthRetry(imagePrompt, (prompt) => withRateLimitRetry(() => op.submit({
-      prompt: applyConsistency(prompt, consistency.text, consistency.append),
-      modelId, aspectRatio, resolution, userId: user.id,
-    })));
+    let taskId: string;
+    try {
+      taskId = await withPromptLengthRetry(imagePrompt, (prompt) => withRateLimitRetry(() => op.submit({
+        prompt: applyConsistency(prompt, consistency.text, consistency.append),
+        modelId, aspectRatio, resolution, userId: user.id,
+      })));
+    } catch (err) {
+      await releaseHold(hold, "image regenerate submit failed");
+      throw err;
+    }
     console.log(`[images/regenerate] beat=${beatNumber} operator=${op.id} model=${modelId} taskId=${taskId}`);
 
     // 3. Mark in-flight. A page refresh between submit and complete

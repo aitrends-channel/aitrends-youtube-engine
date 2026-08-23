@@ -8,11 +8,12 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { logProjectCost } from "@/lib/costs";
 import { estimateCharacters, shortfallResponse } from "@/lib/credits/estimate";
+import { holdForCharacters, releaseHold } from "@/lib/credits/hold";
 import { incrementFreeUsage } from "@/lib/freeUsage";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
-import { requireWalletFunds } from "@/lib/heclus-charge";
+import { requireWalletFunds, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 
 export const maxDuration = 800;
 
@@ -60,17 +61,31 @@ export async function POST(req: Request) {
         }
 
         try {
-          const { audio: audioBuffer, charsConsumed } = await generateTTS(
-            script,
-            voiceId,
-            (current, total) => { send({ type: "progress", current, total }); },
-            (msg) => { send({ type: "status", message: msg }); },
-            user.id
-          );
+          // Held before the provider speaks, settled on what it counted.
+          const paidVoice = !isQwenVoice(voiceId) && !isAi33Voice(voiceId);
+          const { hold, refused } = paidVoice
+            ? await holdForCharacters({ userId: user.id, characters: String(script).length, model: TTS_MODEL, projectId })
+            : { hold: null, refused: false };
+          if (refused) throw new Error(OUT_OF_CREDITS_MESSAGE);
+
+          let tts: Awaited<ReturnType<typeof generateTTS>>;
+          try {
+            tts = await generateTTS(
+              script,
+              voiceId,
+              (current, total) => { send({ type: "progress", current, total }); },
+              (msg) => { send({ type: "status", message: msg }); },
+              user.id
+            );
+          } catch (err) {
+            await releaseHold(hold, "voiceover failed");
+            throw err;
+          }
+          const { audio: audioBuffer, charsConsumed } = tts;
           // Only ElevenLabs voices are a real cost-ledger charge; the perk
           // voices count against their per-user monthly cap instead.
-          if (charsConsumed && !isQwenVoice(voiceId) && !isAi33Voice(voiceId)) {
-            void logProjectCost({
+          if (charsConsumed && paidVoice) {
+            await logProjectCost({
               projectId,
               userId: user.id,
               step: "tts",
@@ -78,7 +93,10 @@ export async function POST(req: Request) {
               model: TTS_MODEL,
               units: charsConsumed,
               unitKind: "elevenlabs_chars",
+              reservationId: hold?.id ?? null,
             });
+          } else if (paidVoice && hold) {
+            await releaseHold(hold, "voiceover reported no characters");
           } else if (charsConsumed && isQwenVoice(voiceId)) {
             // Heclus-paid perk — counted against the per-user monthly cap.
             void incrementFreeUsage(user.id, "qwen_tts_chars", charsConsumed);

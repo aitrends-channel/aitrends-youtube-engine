@@ -12,6 +12,8 @@ import { retryClaudeCall } from "@/lib/claude/retry";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { estimateStepFloor, shortfallResponse } from "@/lib/credits/estimate";
+import { holdForStep, settleTokenHold, releaseHold } from "@/lib/credits/hold";
+import { OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 import { logAnthropicCost, logProjectCost } from "@/lib/costs";
 import type { ChannelAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
@@ -26,6 +28,15 @@ export async function POST(req: Request) {
   // count does not exist before the call.
   const short = shortfallResponse(await estimateStepFloor({ userId: user.id, step: "channel_analysis" }));
   if (short) return short;
+  // Held atomically, so two of these firing at once cannot both spend the same
+  // credits. Settled below on the tokens the call actually reports.
+  const { hold, refused } = await holdForStep({ userId: user.id, step: "channel_analysis", provider: "anthropic" });
+  if (refused) {
+    return NextResponse.json(
+      { error: OUT_OF_CREDITS_MESSAGE, outOfCredits: true },
+      { status: 402 },
+    );
+  }
 
   try {
     const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "analyze");
@@ -79,7 +90,9 @@ export async function POST(req: Request) {
         routing,
         usage: analysisResponse.usage,
         kieCreditsConsumed: takeLastCreditsConsumed(),
-      });
+        alreadyHeld: !!hold,
+        });
+        await settleTokenHold({ hold, model, provider: "anthropic", step: "channel_analysis", usage: analysisResponse.usage });
       // Supadata transcripts that fed this call — each one was a
       // billable fetch upstream of analysis. transcripts[].success is
       // true for the ones Supadata actually returned text for.
@@ -149,6 +162,16 @@ export async function POST(req: Request) {
     let videoIdeas: string[] | undefined;
 
     if (topicMode === "generate") {
+      // The second Claude call in this route, and its own hold: the first one
+      // was settled on the analysis tokens, so this would otherwise be the one
+      // step here still charging after the fact.
+      const { hold: ideasHold, refused: ideasRefused } = await holdForStep({
+        userId: user.id, step: "topic", provider: "anthropic", projectId,
+      });
+      if (ideasRefused) {
+        return NextResponse.json({ error: OUT_OF_CREDITS_MESSAGE, outOfCredits: true }, { status: 402 });
+      }
+
       const ideasResponse = await retryClaudeCall("video ideas", () =>
         anthropic.messages.create({
         ...modelParams,
@@ -186,7 +209,9 @@ export async function POST(req: Request) {
         routing,
         usage: ideasResponse.usage,
         kieCreditsConsumed: takeLastCreditsConsumed(),
+        alreadyHeld: !!ideasHold,
       });
+      await settleTokenHold({ hold: ideasHold, model, provider: "anthropic", step: "topic", usage: ideasResponse.usage });
 
       const ideasToolUse = ideasResponse.content.find((b) => b.type === "tool_use");
       let ideasInput: unknown = null;

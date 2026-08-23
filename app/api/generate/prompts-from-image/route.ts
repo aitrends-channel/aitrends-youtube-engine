@@ -12,6 +12,8 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { logAnthropicCost } from "@/lib/costs";
 import { estimateStepFloor, shortfallResponse } from "@/lib/credits/estimate";
+import { holdForStep, settleTokenHold, releaseHold } from "@/lib/credits/hold";
+import { OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 import type { VisualProfileOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
@@ -42,6 +44,15 @@ export async function POST(req: Request) {
   if (broke) return broke;
   const short = shortfallResponse(await estimateStepFloor({ userId: user.id, step: "prompts_image" }));
   if (short) return short;
+  // Held atomically, so two of these firing at once cannot both spend the same
+  // credits. Settled below on the tokens the call actually reports.
+  const { hold, refused } = await holdForStep({ userId: user.id, step: "prompts_image", provider: "anthropic" });
+  if (refused) {
+    return NextResponse.json(
+      { error: OUT_OF_CREDITS_MESSAGE, outOfCredits: true },
+      { status: 402 },
+    );
+  }
 
   try {
     const { projectId, beatNumber, imageUrl } = await req.json().catch(() => ({})) as {
@@ -84,14 +95,27 @@ export async function POST(req: Request) {
 
     // Two attempts (KIE+Opus occasionally emits the JSON as text instead
     // of a tool_use), then a text-mode parse before giving up.
+    const spent = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
     let response!: Anthropic.Messages.Message;
     let toolUse: Anthropic.Messages.ContentBlock | undefined;
     for (let attempt = 0; attempt < 2; attempt++) {
       response = await retryClaudeCall(`prompts-from-image (try ${attempt + 1})`, callModel);
-      void logAnthropicCost({ projectId, userId: user.id, step: "prompts_image", model, routing, usage: response.usage, kieCreditsConsumed: takeLastCreditsConsumed() });
+      void logAnthropicCost({
+        projectId, userId: user.id, step: "prompts_image", model, routing,
+        usage: response.usage, kieCreditsConsumed: takeLastCreditsConsumed(),
+        alreadyHeld: !!hold,
+      });
+      // Accumulated rather than settled here: this loop can run twice, and a
+      // hold settled on the first attempt would leave the second one billed to
+      // nothing. One hold, one settle, both attempts' tokens.
+      spent.input_tokens += response.usage?.input_tokens ?? 0;
+      spent.output_tokens += response.usage?.output_tokens ?? 0;
+      spent.cache_read_input_tokens += response.usage?.cache_read_input_tokens ?? 0;
+      spent.cache_creation_input_tokens += response.usage?.cache_creation_input_tokens ?? 0;
       toolUse = response.content.find((b) => b.type === "tool_use");
       if (toolUse && toolUse.type === "tool_use") break;
     }
+    await settleTokenHold({ hold, model, provider: "anthropic", step: "prompts_image", usage: spent });
 
     let result: { imagePrompt?: unknown; videoPrompt?: unknown };
     if (toolUse && toolUse.type === "tool_use") {

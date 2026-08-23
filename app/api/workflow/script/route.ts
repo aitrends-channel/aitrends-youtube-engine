@@ -10,8 +10,9 @@ import { logAnthropicCost } from "@/lib/costs";
 import type { ChannelAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
-import { requireWalletFunds } from "@/lib/heclus-charge";
+import { requireWalletFunds, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 import { estimateStepFloor, shortfallResponse } from "@/lib/credits/estimate";
+import { holdForStep, settleTokenHold } from "@/lib/credits/hold";
 
 export const maxDuration = 800;
 
@@ -140,6 +141,14 @@ export async function POST(req: Request) {
   // a balance of one. Silent when there is no history to read.
   const short = shortfallResponse(await estimateStepFloor({ userId: user.id, step: "script" }));
   if (short) return short;
+  // Held atomically for the duration of the run, settled on the tokens the
+  // stream reports. A script is one call, so one hold answers for it.
+  const { hold: scriptHold, refused: scriptRefused } = await holdForStep({
+    userId: user.id, step: "script", provider: "anthropic",
+  });
+  if (scriptRefused) {
+    return Response.json({ error: OUT_OF_CREDITS_MESSAGE, outOfCredits: true }, { status: 402 });
+  }
 
   try {
     const { projectId, analysis, topic, mode } = await req.json() as {
@@ -429,7 +438,9 @@ export async function POST(req: Request) {
               routing,
               usage,
               kieCreditsConsumed: takeLastCreditsConsumed(),
+              alreadyHeld: !!scriptHold,
             });
+            await settleTokenHold({ hold: scriptHold, model, provider: "anthropic", step: "script", usage });
           });
 
           // If we detected a spiral mid-stream, trim it back to clean

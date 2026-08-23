@@ -64,6 +64,14 @@ export interface CostEntry {
   /** Which beat the cost belongs to, when it is per-beat work. Recorded on the
    *  credit ledger row so a charge can be traced to the clip that caused it. */
   beatNumber?: number | null;
+  /** An open reservation taken before the work started. When present the
+   *  charge settles it rather than reserving again, which is the difference
+   *  between money held in advance and money taken afterwards. */
+  reservationId?: string | null;
+  /** The caller settled a hold for this work itself. The row is recorded for
+   *  reporting and the charge path leaves it alone, which is how one hold can
+   *  answer for the four rows a single Claude call produces. */
+  alreadyHeld?: boolean;
   /** Generation duration in seconds. Used for video_gen kie_credits
    *  rows so the picker can compute units/durationSec as a per-second
    *  cost. Omit (or pass null) for steps where seconds aren't the
@@ -417,10 +425,19 @@ export async function logClaudeUsage(args: {
     cache_read_input_tokens?: number | null;
     cache_creation_input_tokens?: number | null;
   } | null | undefined;
+  /** The caller settled a hold covering this call. */
+  alreadyHeld?: boolean;
 }): Promise<void> {
   const u = args.usage;
   if (!u) return;
-  const base = { projectId: args.projectId, userId: args.userId, step: args.step, provider: args.provider ?? ("anthropic" as const), model: args.model };
+  const base = {
+    projectId: args.projectId,
+    userId: args.userId,
+    step: args.step,
+    provider: args.provider ?? ("anthropic" as const),
+    model: args.model,
+    alreadyHeld: args.alreadyHeld,
+  };
   await Promise.all([
     logProjectCost({ ...base, units: u.input_tokens                ?? 0, unitKind: "claude_tokens_in" }),
     logProjectCost({ ...base, units: u.output_tokens               ?? 0, unitKind: "claude_tokens_out" }),
@@ -462,6 +479,8 @@ export async function logAnthropicCost(args: {
     cache_creation_input_tokens?: number | null;
   } | null | undefined;
   kieCreditsConsumed: number | null;
+  /** The caller settled a hold covering this call. */
+  alreadyHeld?: boolean;
 }): Promise<void> {
   if (isDirectRouting(args.routing)) {
     await logClaudeUsage({
@@ -471,6 +490,7 @@ export async function logAnthropicCost(args: {
       step: args.step,
       model: args.model,
       usage: args.usage,
+      alreadyHeld: args.alreadyHeld,
     });
     return;
   }

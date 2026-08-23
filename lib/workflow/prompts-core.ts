@@ -39,6 +39,7 @@ import { retryClaudeCall } from "@/lib/claude/retry";
 import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import { logAnthropicCost } from "@/lib/costs";
+import type { StepHold } from "@/lib/credits/hold";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 import { friendlyError } from "@/lib/errors/friendly";
@@ -413,6 +414,10 @@ export async function generateImages(
   send: (data: object) => void,
   model: string,
   promptStyle: "general" | "cinematic" = "general",
+  /** The run's single hold: every Claude call below reports its usage into
+   *  it and the caller settles once, because one settle cannot answer for a
+   *  fan-out of chunks. */
+  stepHold?: StepHold,
 ) {
   console.log(`[image-prompts] start project=${projectId} scriptWords=${script.trim().split(/\s+/).filter(Boolean).length}`);
   const runId = await claimPromptsRun(projectId, userId, "images");
@@ -827,7 +832,9 @@ export async function generateImages(
       routing,
       usage: res.usage,
       kieCreditsConsumed: takeLastCreditsConsumed(),
+      alreadyHeld: !!stepHold?.hold,
     });
+    stepHold?.add(res.usage);
 
     // Truncated: split the span and regenerate each half so the dense
     // section self-heals instead of hard-failing the run (see the
@@ -996,6 +1003,10 @@ export async function generateBeats(
   send: (data: object) => void,
   model: string,
   promptStyle: "general" | "cinematic" = "general",
+  /** The run's single hold: every Claude call below reports its usage into
+   *  it and the caller settles once, because one settle cannot answer for a
+   *  fan-out of chunks. */
+  stepHold?: StepHold,
 ) {
   console.log(`[beats] start project=${projectId} scriptWords=${script.trim().split(/\s+/).filter(Boolean).length}`);
   const runId = await claimPromptsRun(projectId, userId, "beats");
@@ -1203,7 +1214,9 @@ export async function generateBeats(
         routing,
         usage: res.usage,
         kieCreditsConsumed: takeLastCreditsConsumed(),
+      alreadyHeld: !!stepHold?.hold,
       });
+    stepHold?.add(res.usage);
 
       if (res.stop_reason === "max_tokens") {
         const spanWords = text.split(/\s+/).filter(Boolean).length;
@@ -1323,6 +1336,10 @@ export async function fillPrompts(
   send: (data: object) => void,
   model: string,
   promptStyle: "general" | "cinematic" = "general",
+  /** The run's single hold: every Claude call below reports its usage into
+   *  it and the caller settles once, because one settle cannot answer for a
+   *  fan-out of chunks. */
+  stepHold?: StepHold,
 ) {
   const runId = await claimPromptsRun(projectId, userId, "fill");
   // A re-fill after a merge starts from a project that already reads as
@@ -1435,7 +1452,9 @@ export async function fillPrompts(
         routing,
         usage: sheetMsg.usage,
         kieCreditsConsumed: takeLastCreditsConsumed(),
+      alreadyHeld: !!stepHold?.hold,
       });
+    stepHold?.add(sheetMsg.usage);
     } catch (err) {
       console.warn("[fill-prompts] consistency sheet failed — falling back to per-batch:", err instanceof Error ? err.message : err);
     }
@@ -1559,7 +1578,9 @@ export async function fillPrompts(
         routing,
         usage: res.usage,
         kieCreditsConsumed: takeLastCreditsConsumed(),
+      alreadyHeld: !!stepHold?.hold,
       });
+    stepHold?.add(res.usage);
 
       if (res.stop_reason === "max_tokens") {
         if (depth < MAX_SPLIT_DEPTH && batch.length > 1) {
@@ -1786,7 +1807,12 @@ export async function fillPrompts(
 }
 
 // ── Step 2: Video prompts ──────────────────────────────────────────────────
-export async function generateVideos(projectId: string, userId: string, send: (data: object) => void, model: string) {
+export async function generateVideos(projectId: string, userId: string, send: (data: object) => void, model: string,
+  /** The run's single hold: every Claude call below reports its usage into
+   *  it and the caller settles once, because one settle cannot answer for a
+   *  fan-out of chunks. */
+  stepHold?: StepHold,
+) {
   const runId = await claimPromptsRun(projectId, userId, "videos");
   try {
   const { client: anthropic, routing, takeLastCreditsConsumed, checkKieBalance } = await getAnthropicClient(userId, "video_prompts");
@@ -1910,7 +1936,9 @@ export async function generateVideos(projectId: string, userId: string, send: (d
         routing,
         usage: res.usage,
         kieCreditsConsumed: takeLastCreditsConsumed(),
+      alreadyHeld: !!stepHold?.hold,
       });
+    stepHold?.add(res.usage);
       if (tool && tool.type === "tool_use") break;
     }
 
@@ -2092,6 +2120,11 @@ export async function generateThumbnails(
   thumbnailAnalysis: ThumbnailAnalysisOutput | undefined,
   send: (data: object) => void,
   model: string
+,
+  /** The run's single hold: every Claude call below reports its usage into
+   *  it and the caller settles once, because one settle cannot answer for a
+   *  fan-out of chunks. */
+  stepHold?: StepHold,
 ) {
   const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(userId, "thumbnails");
   send({ type: "status", message: "Generating 5 thumbnail concepts..." });
@@ -2125,7 +2158,9 @@ export async function generateThumbnails(
       routing,
       usage: res.usage,
       kieCreditsConsumed: takeLastCreditsConsumed(),
+      alreadyHeld: !!stepHold?.hold,
     });
+    stepHold?.add(res.usage);
     if (tool && tool.type === "tool_use") break;
   }
 
