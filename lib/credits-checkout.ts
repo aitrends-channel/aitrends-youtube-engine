@@ -72,9 +72,20 @@ export function startTopUp(
   markPendingTopUp(wallet);
   const url = buildTopUpUrl(checkoutUrl, window.location.origin, units, wallet);
   if (newTab) {
-    // Blocked pop-ups fall back to this tab rather than silently doing nothing.
-    const opened = window.open(url, "_blank", "noopener,noreferrer");
-    if (opened) return;
+    // A synthetic anchor click, not window.open: under noopener the browser
+    // returns null even when the tab opened fine, so the "pop-up was blocked"
+    // fallback fired on a successful open and dragged the Heclus tab to the
+    // checkout as well. An anchor reports nothing, which is exactly right —
+    // there is no failure case to fall back from. Same approach as
+    // SubscriptionModal.
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return;
   }
   window.location.href = url;
 }
