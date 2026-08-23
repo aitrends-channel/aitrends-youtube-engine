@@ -19,7 +19,7 @@
     },
     {
       "path": "/api/cron/finish-images",
-      "schedule": "*/5 * * * *"
+      "schedule": "*/2 * * * *"
     },
     {
       "path": "/api/cron/refresh-model-cost-and-speed",
