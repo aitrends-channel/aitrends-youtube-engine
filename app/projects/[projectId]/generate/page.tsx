@@ -1714,7 +1714,7 @@ export default function GeneratePage({ params }: PageProps) {
             // Overwrite the banner with the latest error so the user
             // always sees the most recent failure rather than a
             // growing list.
-            setImageRunError(friendlyError(reason));
+            setImageRunError(friendlyError(reason, selectedImageOperator));
           }
         }
         if (i + SUBMIT_BATCH < targetBeats.length) await new Promise((r) => setTimeout(r, 1500));
@@ -1775,7 +1775,7 @@ export default function GeneratePage({ params }: PageProps) {
               if (!firstPollError) firstPollError = reason;
               // Overwrite the banner — only the most recent error
               // ever shows.
-              setImageRunError(friendlyError(reason));
+              setImageRunError(friendlyError(reason, selectedImageOperator));
               toRemove.push(i);
             }
             // status === "error" (a transient route/upstream failure — a
@@ -1809,7 +1809,7 @@ export default function GeneratePage({ params }: PageProps) {
         // while generation actually succeeded on KIE moments later.
         const realError = firstPollError ?? firstSubmitError;
         if (realError) {
-          setImageRunError((prev) => prev ?? friendlyError(realError));
+          setImageRunError((prev) => prev ?? friendlyError(realError, selectedImageOperator));
         } else if (remaining.length > 0) {
           toast.info(`Still generating ${remaining.length} image${remaining.length === 1 ? "" : "s"} — they'll appear here when ready`);
         }
@@ -1825,7 +1825,7 @@ export default function GeneratePage({ params }: PageProps) {
       // aborted-branch above, so we only land here on real failures.
       // Surface the error in the section banner instead of toasting.
       if (!abortSignal.aborted) {
-        setImageRunError(friendlyError(err instanceof Error ? err.message : null));
+        setImageRunError(friendlyError(err instanceof Error ? err.message : null, selectedImageOperator));
       }
     } finally {
       // Reset any beat still "queued" — those never reached a KIE submit
