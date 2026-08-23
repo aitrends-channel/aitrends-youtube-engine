@@ -47,6 +47,8 @@ export async function POST(req: Request) {
   // Held atomically, so two of these firing at once cannot both spend the same
   // credits. Settled below on the tokens the call actually reports.
   const { hold, refused } = await holdForStep({ userId: user.id, step: "prompts_image", provider: "anthropic" });
+  // Released in the finally below if the route never gets as far as settling.
+  let settled_hold = false;
   if (refused) {
     return NextResponse.json(
       { error: OUT_OF_CREDITS_MESSAGE, outOfCredits: true },
@@ -116,6 +118,7 @@ export async function POST(req: Request) {
       if (toolUse && toolUse.type === "tool_use") break;
     }
     await settleTokenHold({ hold, model, provider: "anthropic", step: "prompts_image", usage: spent });
+    settled_hold = true;
 
     let result: { imagePrompt?: unknown; videoPrompt?: unknown };
     if (toolUse && toolUse.type === "tool_use") {
@@ -148,5 +151,7 @@ export async function POST(req: Request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to generate prompts from image";
     return NextResponse.json({ error: message }, { status: 500 });
+  } finally {
+    if (!settled_hold) await releaseHold(hold, "prompts_image did not complete");
   }
 }

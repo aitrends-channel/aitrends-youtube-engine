@@ -12,7 +12,7 @@ import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireWalletFunds, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 import { estimateStepFloor, shortfallResponse } from "@/lib/credits/estimate";
-import { holdForStep, settleTokenHold } from "@/lib/credits/hold";
+import { holdForStep, settleTokenHold, releaseHold } from "@/lib/credits/hold";
 
 export const maxDuration = 800;
 
@@ -146,6 +146,8 @@ export async function POST(req: Request) {
   const { hold: scriptHold, refused: scriptRefused } = await holdForStep({
     userId: user.id, step: "script", provider: "anthropic",
   });
+  // Released in the finally below if the route never gets as far as settling.
+  let settled_scriptHold = false;
   if (scriptRefused) {
     return Response.json({ error: OUT_OF_CREDITS_MESSAGE, outOfCredits: true }, { status: 402 });
   }
@@ -441,6 +443,7 @@ export async function POST(req: Request) {
               alreadyHeld: !!scriptHold,
             });
             await settleTokenHold({ hold: scriptHold, model, provider: "anthropic", step: "script", usage });
+            settled_scriptHold = true;
           });
 
           // If we detected a spiral mid-stream, trim it back to clean
@@ -555,5 +558,7 @@ export async function POST(req: Request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Script generation failed";
     return new Response(message, { status: 500 });
+  } finally {
+    if (!settled_scriptHold) await releaseHold(scriptHold, "script did not complete");
   }
 }

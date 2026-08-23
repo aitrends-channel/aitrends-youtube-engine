@@ -31,6 +31,13 @@ export async function POST(req: Request) {
   // Held atomically, so two of these firing at once cannot both spend the same
   // credits. Settled below on the tokens the call actually reports.
   const { hold, refused } = await holdForStep({ userId: user.id, step: "channel_analysis", provider: "anthropic" });
+  // Released in the finally below if the route never gets as far as settling.
+  let settled_ideasHold = false;
+  // Declared out here so the finally can release it: the hold itself is taken
+  // deep inside the try, once the analysis has produced something to build on.
+  let ideasHold: Awaited<ReturnType<typeof holdForStep>>["hold"] = null;
+  // Released in the finally below if the route never gets as far as settling.
+  let settled_hold = false;
   if (refused) {
     return NextResponse.json(
       { error: OUT_OF_CREDITS_MESSAGE, outOfCredits: true },
@@ -93,6 +100,7 @@ export async function POST(req: Request) {
         alreadyHeld: !!hold,
         });
         await settleTokenHold({ hold, model, provider: "anthropic", step: "channel_analysis", usage: analysisResponse.usage });
+        settled_hold = true;
       // Supadata transcripts that fed this call — each one was a
       // billable fetch upstream of analysis. transcripts[].success is
       // true for the ones Supadata actually returned text for.
@@ -165,9 +173,10 @@ export async function POST(req: Request) {
       // The second Claude call in this route, and its own hold: the first one
       // was settled on the analysis tokens, so this would otherwise be the one
       // step here still charging after the fact.
-      const { hold: ideasHold, refused: ideasRefused } = await holdForStep({
+      const { hold: takenIdeasHold, refused: ideasRefused } = await holdForStep({
         userId: user.id, step: "topic", provider: "anthropic", projectId,
       });
+      ideasHold = takenIdeasHold;
       if (ideasRefused) {
         return NextResponse.json({ error: OUT_OF_CREDITS_MESSAGE, outOfCredits: true }, { status: 402 });
       }
@@ -212,6 +221,7 @@ export async function POST(req: Request) {
         alreadyHeld: !!ideasHold,
       });
       await settleTokenHold({ hold: ideasHold, model, provider: "anthropic", step: "topic", usage: ideasResponse.usage });
+      settled_ideasHold = true;
 
       const ideasToolUse = ideasResponse.content.find((b) => b.type === "tool_use");
       let ideasInput: unknown = null;
@@ -245,5 +255,8 @@ export async function POST(req: Request) {
       userId: user.id,
     });
     return NextResponse.json({ error: message }, { status: 500 });
+  } finally {
+    if (!settled_hold) await releaseHold(hold, "channel_analysis did not complete");
+    if (!settled_ideasHold) await releaseHold(ideasHold, "topic did not complete");
   }
 }
