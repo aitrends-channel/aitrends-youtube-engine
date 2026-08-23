@@ -2658,6 +2658,11 @@ function HeclusCreditsPanel() {
   const [packPrice, setPackPrice] = useState("");
   const [grant, setGrant] = useState("");
   const [rates, setRates] = useState<Record<string, string>>({});
+  /** The per-model token overrides, edited as JSON: there is a row per model and
+   *  the set changes whenever Anthropic ships one, so a fixed set of numeric
+   *  fields would be out of date by the next release. */
+  const [claudeJson, setClaudeJson] = useState("");
+  const [claudeJsonError, setClaudeJsonError] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const hydrated = useRef(false);
 
@@ -2669,7 +2674,11 @@ function HeclusCreditsPanel() {
     setPackCredits(data.packCredits != null ? String(data.packCredits) : "");
     setPackPrice(data.packPriceUsd != null ? String(data.packPriceUsd) : "");
     setGrant(data.signupGrantCredits != null ? String(data.signupGrantCredits) : "");
-    setRates(Object.fromEntries(Object.entries(data.rates ?? {}).map(([k, v]) => [k, String(v)])));
+    const stored = (data.rates ?? {}) as Record<string, unknown>;
+    setRates(Object.fromEntries(
+      Object.entries(stored).filter(([, v]) => typeof v === "number").map(([k, v]) => [k, String(v)]),
+    ));
+    setClaudeJson(stored.claudeModelUsd ? JSON.stringify(stored.claudeModelUsd, null, 2) : "");
   }, [data]);
 
   async function save(section: string, patch: Record<string, unknown>) {
@@ -2934,8 +2943,42 @@ function HeclusCreditsPanel() {
             </div>
           ))}
         </div>
+        <div className="p-2 rounded-lg" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
+          <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>Per-model token prices</label>
+          <p className="text-sm" style={{ color: "var(--c-42)" }}>
+            USD per million tokens, overriding the built-in table. Empty uses it. Only for a price that has moved
+            before the code catches up, or an intro rate worth passing on.
+          </p>
+          <textarea
+            value={claudeJson}
+            onChange={(e) => { setClaudeJson(e.target.value); setClaudeJsonError(null); }}
+            placeholder={'{\n  "claude-sonnet-5": { "in": 2, "out": 10 }\n}'}
+            rows={4}
+            spellCheck={false}
+            disabled={isLoading || saving !== null}
+            className="w-full mt-1.5 px-2 py-1.5 rounded-lg text-sm outline-none font-mono"
+            style={inputStyle}
+          />
+          {claudeJsonError && (
+            <p className="text-sm mt-1" style={{ color: "oklch(0.62 0.18 25)" }}>{claudeJsonError}</p>
+          )}
+        </div>
         <button
-          onClick={() => save("rates", { rates })}
+          onClick={() => {
+            // Parsed here rather than sent as a string: a typo should be caught
+            // while the admin is looking at the field, not turned into a 400
+            // from the save endpoint.
+            let claudeModelUsd: unknown;
+            if (claudeJson.trim()) {
+              try {
+                claudeModelUsd = JSON.parse(claudeJson);
+              } catch {
+                setClaudeJsonError("That is not valid JSON, so nothing was saved.");
+                return;
+              }
+            }
+            save("rates", { rates: { ...rates, ...(claudeModelUsd ? { claudeModelUsd } : {}) } });
+          }}
           disabled={saving !== null || isLoading}
           className="px-3 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
           style={saveStyle(saving === null && !isLoading)}

@@ -93,6 +93,10 @@ export async function GET() {
       const n = Number((stored as Record<string, unknown>)[key]);
       if (Number.isFinite(n) && n >= 0) rates[key] = n;
     }
+    const claude = (stored as Record<string, unknown>).claudeModelUsd;
+    if (claude && typeof claude === "object") {
+      (rates as Record<string, unknown>).claudeModelUsd = claude;
+    }
   }
 
   const effectiveRates = { ...DEFAULT_CREDIT_RATES, ...rates };
@@ -195,6 +199,31 @@ export async function PATCH(req: Request) {
       }
       next[key] = n;
     }
+
+    // The per-model maps are edited as JSON rather than through the numeric
+    // fields, because there is a row per model and the set changes whenever
+    // Anthropic ships one. Validated the same way the loader validates them:
+    // a malformed entry is rejected here rather than silently dropped there.
+    const claude = (body.rates as Record<string, unknown>).claudeModelUsd;
+    if (claude !== undefined && claude !== null && claude !== "") {
+      if (typeof claude !== "object") {
+        return NextResponse.json({ error: "rates.claudeModelUsd must be an object of model to { in, out }" }, { status: 400 });
+      }
+      const parsed: Record<string, { in: number; out: number }> = {};
+      for (const [model, value] of Object.entries(claude as Record<string, unknown>)) {
+        const usdIn = Number((value as { in?: unknown })?.in);
+        const usdOut = Number((value as { out?: unknown })?.out);
+        if (!Number.isFinite(usdIn) || !Number.isFinite(usdOut) || usdIn < 0 || usdOut < 0) {
+          return NextResponse.json(
+            { error: `rates.claudeModelUsd.${model} must be { "in": number, "out": number }, in USD per million tokens` },
+            { status: 400 },
+          );
+        }
+        parsed[model] = { in: usdIn, out: usdOut };
+      }
+      if (Object.keys(parsed).length) (next as Record<string, unknown>).claudeModelUsd = parsed;
+    }
+
     // An empty object stores NULL rather than {}: both mean "use the defaults",
     // and only one of them says so when read back.
     update.credit_rates = Object.keys(next).length ? next : null;
