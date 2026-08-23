@@ -50,7 +50,14 @@ export async function chargeForCostEntry(entry: CostEntry): Promise<ChargeResult
     }
 
     const rates = await getCreditRates();
-    const credits = roundCredits(creditsForUnits(entry.unitKind, entry.units, rates, entry.step));
+    // Model and provider decide the token and synthesis rates, so the whole
+    // entry goes in: Sonnet is not priced as Opus, and a Claude call relayed
+    // through PoYo is not priced as one billed by Anthropic.
+    const credits = roundCredits(creditsForUnits(entry.unitKind, entry.units, rates, {
+      step: entry.step,
+      model: entry.model,
+      provider: entry.provider,
+    }));
     if (credits <= 0) return { ...NOTHING, skipped: "unpriced" };
 
     const note = `${entry.step} · ${entry.units.toLocaleString()} ${entry.unitKind}`;

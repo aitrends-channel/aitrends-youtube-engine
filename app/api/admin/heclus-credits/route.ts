@@ -3,7 +3,7 @@ import { supabase } from "@/lib/supabase/client";
 import { requireAdmin } from "@/lib/admin-server";
 import { getEffectivePaymentMode } from "@/lib/env";
 import { WALLET_FUNDING_ADMIN_ONLY } from "@/lib/funding";
-import { DEFAULT_CREDIT_RATES, USD_PER_CREDIT, invalidateRatesCache, creditsForUnits, type CreditRates } from "@/lib/pricing";
+import { DEFAULT_CREDIT_RATES, USD_PER_CREDIT, invalidateRatesCache, creditsForUnits, type CreditRates, type NumericRateKey } from "@/lib/pricing";
 import type { CostStep, CostUnitKind } from "@/lib/costs";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,9 @@ export const dynamic = "force-dynamic";
 // and this row is written by migrations applied by hand. Missing columns are
 // reported as such rather than making the tab unreadable.
 
-const RATE_KEYS = Object.keys(DEFAULT_CREDIT_RATES) as (keyof CreditRates)[];
+// Numeric keys only: the per-model USD maps in credit_rates are edited as JSON
+// rather than through this editor, and feeding one to Number() would store NaN.
+const RATE_KEYS = Object.keys(DEFAULT_CREDIT_RATES) as NumericRateKey[];
 
 export interface HeclusCreditsConfig {
   packLinkTest: string | null;
@@ -336,7 +338,7 @@ async function typicalVideo(
     }
     if (quantity <= 0 || groupProjects < MIN_PROJECTS) continue;
     projects = Math.max(projects, groupProjects);
-    const rate = creditsForUnits(g.unitKind, 1, rates, g.steps[0]);
+    const rate = creditsForUnits(g.unitKind, 1, rates, { step: g.steps[0] });
     lines.push({
       label: g.label,
       unit: g.unit,
@@ -345,9 +347,9 @@ async function typicalVideo(
       // the configured rate now rather than a peg the label could assert.
       rateLabel: g.unitKind === "kie_credits"
         ? (rate === 1 ? "1 to 1" : `${rate.toLocaleString()} per credit`)
-        : `${creditsForUnits(g.unitKind, 1_000, rates, g.steps[0]).toLocaleString()} per 1k`,
+        : `${creditsForUnits(g.unitKind, 1_000, rates, { step: g.steps[0] }).toLocaleString()} per 1k`,
       quantity,
-      credits: creditsForUnits(g.unitKind, quantity, rates, g.steps[0]),
+      credits: creditsForUnits(g.unitKind, quantity, rates, { step: g.steps[0] }),
     });
   }
   if (lines.length === 0) return null;
