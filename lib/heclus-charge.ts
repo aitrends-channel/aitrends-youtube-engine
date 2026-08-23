@@ -136,9 +136,11 @@ export async function spendableCredits(userId: string): Promise<number> {
 }
 
 /** The message a refusal shows. One string, so every surface refuses in the same
- *  words and friendlyError can route it to the top-up. */
-export const OUT_OF_CREDITS_MESSAGE =
-  "Out of Heclus Credits. Top up on the Balance page to keep generating.";
+ *  words and friendlyError can route it to the top-up. Defined in
+ *  lib/out-of-credits.ts because the modal that now shows it is a client
+ *  component and cannot import this file. */
+import { OUT_OF_CREDITS_MESSAGE } from "./out-of-credits";
+export { OUT_OF_CREDITS_MESSAGE };
 
 /**
  * Whether this user may start work that will be billed to the wallet.
