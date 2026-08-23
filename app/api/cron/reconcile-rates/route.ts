@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withCronRun } from "@/lib/cron/runs";
 import { reconcileRates, saveReconciliation } from "@/lib/rates/reconcile";
 
 // Monthly check that the rates we bill at still match what the providers
@@ -20,24 +21,27 @@ export async function GET(req: Request) {
     }
   }
 
-  const report = await reconcileRates(30);
-  await saveReconciliation(report);
+  return withCronRun("reconcile-rates", async ({ detail }) => {
+    const report = await reconcileRates(30);
+    await saveReconciliation(report);
 
-  // Logged at error level when something moved, so it surfaces in whatever
-  // watches the logs rather than only in a panel someone has to open.
-  for (const f of report.drifted) {
-    console.error(
-      `[rates/reconcile] ${f.provider} ${f.model} ${f.kind}: billing $${f.tableUsd.toFixed(2)} ${f.unit}, `
-      + `invoiced $${f.actualUsd.toFixed(2)} (${(f.drift * 100).toFixed(0)}%) over ${f.units.toLocaleString()} units`,
-    );
-  }
-  for (const p of report.problems) console.warn(`[rates/reconcile] ${p}`);
+    // Logged at error level when something moved, so it surfaces in whatever
+    // watches the logs rather than only in a panel someone has to open.
+    for (const f of report.drifted) {
+      console.error(
+        `[rates/reconcile] ${f.provider} ${f.model} ${f.kind}: billing $${f.tableUsd.toFixed(2)} ${f.unit}, `
+        + `invoiced $${f.actualUsd.toFixed(2)} (${(f.drift * 100).toFixed(0)}%) over ${f.units.toLocaleString()} units`,
+      );
+    }
+    for (const p of report.problems) console.warn(`[rates/reconcile] ${p}`);
 
-  return NextResponse.json({
-    ok: true,
-    checked: report.findings.length,
-    drifted: report.drifted.length,
-    problems: report.problems.length,
-    report,
+    detail(`${report.findings.length} rates checked, ${report.drifted.length} drifted, ${report.problems.length} problems`);
+    return NextResponse.json({
+      ok: true,
+      checked: report.findings.length,
+      drifted: report.drifted.length,
+      problems: report.problems.length,
+      report,
+    });
   });
 }

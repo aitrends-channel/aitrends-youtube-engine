@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/admin-server";
 import { supabase } from "@/lib/supabase/client";
+import { listCronStatus, type CronStatus } from "@/lib/cron/runs";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,7 @@ export async function GET(req: Request) {
   const filter = url.searchParams.get("filter") ?? "flight";
   const limit = Math.min(500, Math.max(1, Number(url.searchParams.get("limit") ?? 200)));
 
-  const [beatsRes, holdsRes] = await Promise.all([
+  const [beatsRes, holdsRes, schedules] = await Promise.all([
     supabase
       .from("project_beats")
       .select(`
@@ -71,6 +72,7 @@ export async function GET(req: Request) {
       .select("user_id, project_id, beat_number, credits, provider, created_at")
       .eq("state", "open")
       .limit(2000),
+    listCronStatus(),
   ]);
 
   if (beatsRes.error) {
@@ -178,6 +180,7 @@ export async function GET(req: Request) {
   }
 
   return NextResponse.json({
+    schedules,
     jobs: page,
     total: jobs.length,
     inFlight: jobs.filter((j) => j.inFlight).length,

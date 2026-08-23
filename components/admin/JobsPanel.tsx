@@ -3,10 +3,12 @@
 import { useState } from "react";
 import useSWR from "swr";
 import type { AdminJob } from "@/app/api/admin/jobs/route";
+import type { CronStatus } from "@/lib/cron/runs";
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(r.status)));
 
 interface JobsResponse {
+  schedules: CronStatus[];
   jobs: AdminJob[];
   total: number;
   inFlight: number;
@@ -99,6 +101,8 @@ export function JobsPanel() {
         <Stat label="Credits held" value={Number((data?.held ?? 0).toFixed(2))} />
       </div>
 
+      <Schedules rows={data?.schedules ?? []} />
+
       <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--input)" }}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -180,4 +184,87 @@ function Stat({ label, value, alarm }: { label: string; value: number; alarm?: b
       </p>
     </div>
   );
+}
+
+/** When each scheduled job last ran, and when it runs next.
+ *
+ * Above the job table because it answers the prior question: a queue that is
+ * not draining is usually a cron that is not firing, and until now the only
+ * way to tell was to read the logs. "Late" means the job has not run within
+ * two of its own intervals, which is the signal that it is not being fired at
+ * all rather than merely slow. */
+function Schedules({ rows }: { rows: CronStatus[] }) {
+  if (rows.length === 0) return null;
+  const late = rows.filter((r) => r.late).length;
+
+  return (
+    <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--input)" }}>
+      <div className="flex items-center justify-between gap-3 px-3 py-2" style={{ background: "oklch(0 0 0 / 0.03)" }}>
+        <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Scheduled jobs</p>
+        <p className="text-sm" style={{ color: late > 0 ? "oklch(0.62 0.18 45)" : "var(--c-45)" }}>
+          {late > 0 ? `${late} late` : "all on schedule"}
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr style={{ color: "var(--c-45)" }}>
+              <th className="text-left font-medium py-2 px-3">Job</th>
+              <th className="text-left font-medium py-2 px-3">Every</th>
+              <th className="text-left font-medium py-2 px-3">Last ran</th>
+              <th className="text-left font-medium py-2 px-3">Next run</th>
+              <th className="text-left font-medium py-2 px-3">Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.name} style={{ borderTop: "1px solid oklch(0 0 0 / 0.06)" }}>
+                <td className="py-2 px-3">
+                  <span style={{ color: "var(--c-70)" }}>{r.name}</span>
+                  <span className="block text-[11px]" style={{ color: "var(--c-40)" }}>{r.purpose}</span>
+                </td>
+                <td className="py-2 px-3 font-mono text-xs" style={{ color: "var(--c-45)" }}>{r.schedule}</td>
+                <td className="py-2 px-3" style={{ color: r.late ? "oklch(0.62 0.18 45)" : "var(--c-55)" }}>
+                  {r.lastFinishedAt || r.lastStartedAt
+                    ? `${age(r.lastFinishedAt ?? r.lastStartedAt)} ago`
+                    : "never"}
+                  {r.late && <span className="ml-1.5 text-[11px] font-semibold">late</span>}
+                </td>
+                <td className="py-2 px-3" style={{ color: "var(--c-55)" }}>
+                  {r.nextRunAt ? `in ${until(r.nextRunAt)}` : "unknown"}
+                </td>
+                <td className="py-2 px-3 text-xs">
+                  <span style={{
+                    color: r.lastStatus === "error" ? "oklch(0.6 0.22 25)"
+                      : r.lastStatus === "running" ? "oklch(0.62 0.18 45)"
+                      : "var(--c-45)",
+                  }}>
+                    {r.lastStatus ?? "—"}
+                    {r.lastMs != null && r.lastStatus !== "running" ? ` · ${(r.lastMs / 1000).toFixed(1)}s` : ""}
+                    {r.failures > 0 ? ` · ${r.failures} failed of ${r.runs}` : ""}
+                  </span>
+                  {r.lastDetail && (
+                    <span className="block" style={{ color: "var(--c-40)" }}>{r.lastDetail.slice(0, 80)}</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/** How long until a moment in the future, in the same shortest-true-form as age. */
+function until(iso: string): string {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (!Number.isFinite(ms)) return "—";
+  if (ms <= 0) return "any moment";
+  const mins = Math.floor(ms / 60_000);
+  if (mins < 1) return "under a minute";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ${mins % 60}m`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
