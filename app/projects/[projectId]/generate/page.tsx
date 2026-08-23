@@ -23,6 +23,8 @@ import type { KieModel, Beat } from "@/lib/types";
 import { friendlyError, isModelTerminalError, isContentBlockMessage } from "@/lib/errors/friendly";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
 import { getModelConfig } from "@/lib/kie/imageModels";
+import { poyoImageConfig } from "@/lib/poyo/imageModels";
+import { OPERATOR_POYO } from "@/lib/operators";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
 import { VideoCreditsPanel } from "@/components/VideoCreditsPanel";
 import { paidModelsOnly, isFreeTierModel } from "@/lib/model-tier";
@@ -1270,7 +1272,11 @@ export default function GeneratePage({ params }: PageProps) {
 
   useEffect(() => {
     if (!selectedImageModel) return;
-    const config = getModelConfig(selectedImageModel);
+    // Whose model it is decides the ratios: PoYo validates size per model and
+    // several of its models do not take 16:9 at all.
+    const config = selectedImageOperator === OPERATOR_POYO
+      ? poyoImageConfig(selectedImageModel)
+      : getModelConfig(selectedImageModel);
     if (!config.aspectRatios.includes(selectedAspectRatio)) {
       setSelectedAspectRatio(config.aspectRatios[0]);
     }
@@ -1279,7 +1285,7 @@ export default function GeneratePage({ params }: PageProps) {
     } else if (!selectedResolution || !config.resolutions.includes(selectedResolution)) {
       setSelectedResolution(config.resolutions[0]);
     }
-  }, [selectedImageModel]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedImageModel, selectedImageOperator]); // eslint-disable-line react-hooks/exhaustive-deps
   // Same persistence pattern as image model — prefer last pick from
   // localStorage when still valid, else first available. Selection
   // never updates the project DB on its own; it only writes when the
