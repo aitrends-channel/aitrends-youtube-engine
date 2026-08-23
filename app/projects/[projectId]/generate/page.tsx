@@ -21,6 +21,8 @@ import { ModelPicker } from "@/components/ModelPicker";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
 import { friendlyError, isModelTerminalError, isContentBlockMessage } from "@/lib/errors/friendly";
+import { isOutOfCreditsMessage } from "@/lib/out-of-credits";
+import { reportOutOfCredits } from "@/store/outOfCreditsStore";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
 import { getModelConfig } from "@/lib/kie/imageModels";
 import { poyoImageConfig } from "@/lib/poyo/imageModels";
@@ -1155,6 +1157,17 @@ export default function GeneratePage({ params }: PageProps) {
   useEffect(() => {
     if (!generatingImages && project?.images_progress) setImagesProgress(project.images_progress);
   }, [project?.images_progress, generatingImages]);
+
+  // An empty Heclus wallet is the one failure the user must act on, so it gets
+  // the modal (OutOfCreditsGate) and is dropped from the inline banners below
+  // rather than shown twice. The route-level 402 is caught globally; these two
+  // are the refusals that arrive per beat inside an otherwise fine response.
+  useEffect(() => { reportOutOfCredits(imageRunError); }, [imageRunError]);
+  useEffect(() => {
+    if (reportOutOfCredits(videoRunError)) return;
+    const refused = beats.find((b) => b.videoStatus === "failed" && isOutOfCreditsMessage(b.videoError));
+    if (refused) reportOutOfCredits(friendlyError(refused.videoError!));
+  }, [beats, videoRunError]);
 
   // Auto-clear the sticky out-of-credits banner once the refreshed
   // balance shows positive credits again. Avoids needing the user to
@@ -2394,7 +2407,7 @@ export default function GeneratePage({ params }: PageProps) {
                         </span>
                       </div>
                     )}
-                    {isPartial && !generatingImages && !showCreditBanner && !userStoppedImages && !imageErrorDismissed && (
+                    {isPartial && !generatingImages && !showCreditBanner && !userStoppedImages && !imageErrorDismissed && !isOutOfCreditsMessage(imageRunError) && (
                       <div ref={imageErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug flex items-start gap-2"
                         style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "var(--accent-red-text)" }}>
                         <div className="flex-1 space-y-1">
@@ -2831,9 +2844,13 @@ export default function GeneratePage({ params }: PageProps) {
                     .filter((b) => b.videoStatus === "failed" && b.videoError)
                     .map((b) => friendlyError(b.videoError!)),
                 ));
-                const errors = videoRunError
+                // The empty-wallet refusal is shown by the modal, so it is
+                // filtered out here rather than repeated in red.
+                const errors = (videoRunError
                   ? [videoRunError, ...distinctBeatErrors.filter((e) => e !== videoRunError)]
-                  : distinctBeatErrors;
+                  : distinctBeatErrors
+                ).filter((e) => !isOutOfCreditsMessage(e));
+                if (errors.length === 0 && isOutOfCreditsMessage(videoRunError)) return null;
                 // Content-policy blocks are fixed by rephrasing the prompt,
                 // not by switching models — so drop the generic "switch
                 // model" advice when every surfaced error is a content block
