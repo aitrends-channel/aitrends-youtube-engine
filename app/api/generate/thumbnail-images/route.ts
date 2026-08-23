@@ -10,8 +10,9 @@ import { logProjectCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
-import { requireWalletFunds } from "@/lib/heclus-charge";
+import { requireWalletFunds, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 import { estimateRun, shortfallResponse } from "@/lib/credits/estimate";
+import { holdForOne, releaseHold } from "@/lib/credits/hold";
 import { resolveImageOperator } from "@/lib/operators/image";
 import { getMediaOperatorForUser } from "@/lib/operators/routing";
 
@@ -115,15 +116,34 @@ export async function POST(req: Request) {
           // Overlay re-appended per attempt so shortening never costs us the
           // literal text the thumbnail is meant to render.
           const overlay = textOverlayByPosition.get(thumb.position);
-          const { url: imageUrl, units: creditsConsumed } = await withPromptLengthRetry(
-            thumb.stylePrompt,
-            (stylePrompt) => withRateLimitRetry(() => op.generate({
-              prompt: augmentPromptWithOverlay(stylePrompt, overlay),
-              modelId, aspectRatio, resolution, userId: user.id,
-            })),
-          );
+
+          // Held before the provider is called. Thumbnails run two at a time
+          // and cost as much as a beat image, so the same atomic hold applies.
+          // beatNumber carries the position: it is what findOpenHold and the
+          // sweeper have to tell two open holds on one project apart.
+          const { hold, refused } = await holdForOne({
+            userId: user.id, kind: "image", modelId, operator: op.id,
+            provider: op.id, resolution, projectId, beatNumber: thumb.position,
+          });
+          if (refused) throw new Error(OUT_OF_CREDITS_MESSAGE);
+
+          let generated: Awaited<ReturnType<typeof op.generate>>;
+          try {
+            generated = await withPromptLengthRetry(
+              thumb.stylePrompt,
+              (stylePrompt) => withRateLimitRetry(() => op.generate({
+                prompt: augmentPromptWithOverlay(stylePrompt, overlay),
+                modelId, aspectRatio, resolution, userId: user.id,
+              })),
+            );
+          } catch (err) {
+            await releaseHold(hold, "thumbnail generation failed");
+            throw err;
+          }
+          const { url: imageUrl, units: creditsConsumed } = generated;
+
           if (creditsConsumed) {
-            void logProjectCost({
+            await logProjectCost({
               projectId,
               userId: user.id,
               step: "thumbnail_image",
@@ -131,7 +151,10 @@ export async function POST(req: Request) {
               model: modelId,
               units: creditsConsumed,
               unitKind: op.unitKind,
+              reservationId: hold?.id ?? null,
             });
+          } else {
+            await releaseHold(hold, "thumbnail produced no cost figure");
           }
           const storagePath = `${userFolderFor(user)}/${projectId}/thumbnails/thumb-${thumb.position}_${Date.now()}.png`;
           const publicUrl = await uploadFromUrl(storagePath, imageUrl, "image/png");

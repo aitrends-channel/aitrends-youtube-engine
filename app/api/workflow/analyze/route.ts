@@ -162,6 +162,16 @@ export async function POST(req: Request) {
     let videoIdeas: string[] | undefined;
 
     if (topicMode === "generate") {
+      // The second Claude call in this route, and its own hold: the first one
+      // was settled on the analysis tokens, so this would otherwise be the one
+      // step here still charging after the fact.
+      const { hold: ideasHold, refused: ideasRefused } = await holdForStep({
+        userId: user.id, step: "topic", provider: "anthropic", projectId,
+      });
+      if (ideasRefused) {
+        return NextResponse.json({ error: OUT_OF_CREDITS_MESSAGE, outOfCredits: true }, { status: 402 });
+      }
+
       const ideasResponse = await retryClaudeCall("video ideas", () =>
         anthropic.messages.create({
         ...modelParams,
@@ -199,7 +209,9 @@ export async function POST(req: Request) {
         routing,
         usage: ideasResponse.usage,
         kieCreditsConsumed: takeLastCreditsConsumed(),
+        alreadyHeld: !!ideasHold,
       });
+      await settleTokenHold({ hold: ideasHold, model, provider: "anthropic", step: "topic", usage: ideasResponse.usage });
 
       const ideasToolUse = ideasResponse.content.find((b) => b.type === "tool_use");
       let ideasInput: unknown = null;
