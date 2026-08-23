@@ -15,6 +15,15 @@ import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
 import { planBulkMerge, findStubs } from "@/lib/text/mergePlan";
 import { MERGE_BEATS_HIDDEN, PROMPTS_THREE_STEP } from "@/lib/feature-flags";
 import { friendlyError } from "@/lib/errors/friendly";
+import { reportOutOfCredits } from "@/store/outOfCreditsStore";
+
+/** A step's error text, with the empty-wallet refusal taken out: that one goes
+ *  to the modal, and leaving it here as well says the same thing twice on the
+ *  same screen. The step still shows as failed. */
+function stepError(raw: string | null | undefined): string {
+  const msg = friendlyError(raw ?? null);
+  return reportOutOfCredits(msg) ? "" : msg;
+}
 import { PREFIX_MAX_CHARS } from "@/lib/prefix-limit";
 import type { Beat } from "@/lib/types";
 
@@ -1938,7 +1947,7 @@ export default function PromptsPage({ params }: PageProps) {
         await mutate();
       } else {
         const msg = err instanceof Error ? err.message : "Failed";
-        setImageStep({ status: "error", message: "", error: friendlyError(msg) });
+        setImageStep({ status: "error", message: "", error: stepError(msg) });
       }
     } finally {
       imageAbortRef.current = null;
@@ -2237,7 +2246,7 @@ export default function PromptsPage({ params }: PageProps) {
         setBeatsStep(IDLE);
         await mutate();
       } else {
-        setBeatsStep({ status: "error", message: "", error: friendlyError(err instanceof Error ? err.message : "Failed") });
+        setBeatsStep({ status: "error", message: "", error: stepError(err instanceof Error ? err.message : "Failed") });
       }
     } finally {
       beatsAbortRef.current = null;
@@ -2286,7 +2295,7 @@ export default function PromptsPage({ params }: PageProps) {
         await mutate();
       } else {
         const msg = err instanceof Error ? err.message : "Failed";
-        setVideoStep({ status: "error", message: "", error: friendlyError(msg) });
+        setVideoStep({ status: "error", message: "", error: stepError(msg) });
       }
     } finally {
       videoAbortRef.current = null;

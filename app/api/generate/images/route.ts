@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { withPromptLengthRetry } from "@/lib/kie/promptLength";
+import { withRateLimitRetry } from "@/lib/operators/upstream";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { supabase } from "@/lib/supabase/client";
@@ -96,10 +97,10 @@ export async function POST(req: Request) {
           const t0 = Date.now();
           const { url: imageUrl, units: creditsConsumed } = await withPromptLengthRetry(
             beat.imagePrompt,
-            (prompt) => op.generate({
+            (prompt) => withRateLimitRetry(() => op.generate({
               prompt: applyConsistency(prompt, consistency.text, consistency.append),
               modelId, aspectRatio, resolution, userId: user.id,
-            }),
+            })),
           );
           const elapsedMs = Date.now() - t0;
           if (creditsConsumed) {

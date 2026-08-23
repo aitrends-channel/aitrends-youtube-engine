@@ -488,6 +488,8 @@ export default function GeneratePage({ params }: PageProps) {
   // shows ONE error — whichever was most recent. Cleared at the
   // start of every new run.
   const [imageRunError, setImageRunError] = useState<string | null>(null);
+  /** Which slice of in-flight beats the reconciliation poller reads next. */
+  const pollCursorRef = useRef(0);
   // Same shape for the video side. Captures any action-level failure
   // (queue rejection, resume failure, single-regen rejection, etc.)
   // so the section banner above the Queue button is the single home
@@ -1196,10 +1198,21 @@ export default function GeneratePage({ params }: PageProps) {
     if (generatingImages) return; // active loop is already polling these
     let cancelled = false;
     const poll = async () => {
-      const targets = beatsRef.current.filter(
+      const inflight = beatsRef.current.filter(
         (b) => b.imageStatus === "generating" && b.imageTaskId && !b.imageUrl
       );
-      if (targets.length === 0) return;
+      if (inflight.length === 0) return;
+      // One provider read per beat per tick, so a 25-beat project was issuing
+      // ~6 reads a second against a KIE account allowed 2 — the polling itself
+      // was producing the "call frequency too high" it then reported. Poll a
+      // window of beats per tick and rotate through the rest; the webhook is
+      // what actually delivers a finished image, and this is the backstop.
+      const WINDOW = 6;
+      const start = (pollCursorRef.current * WINDOW) % Math.max(1, inflight.length);
+      pollCursorRef.current += 1;
+      const targets = inflight.length <= WINDOW
+        ? inflight
+        : [...inflight, ...inflight].slice(start, start + WINDOW);
       await Promise.allSettled(
         targets.map((b) =>
           fetch("/api/generate/images/poll", {
