@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { Search } from "lucide-react";
 import type { KieModel } from "@/lib/types";
 import { getModelConfig } from "@/lib/kie/imageModels";
+import { poyoImageConfig } from "@/lib/poyo/imageModels";
+import { OPERATOR_POYO } from "@/lib/operators";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
 import { FREE_TIER_COMING_SOON } from "@/lib/free-tier-flag";
 import { isFreeTierModel, paidModelsOnly } from "@/lib/model-tier";
@@ -224,7 +226,12 @@ export function ModelPicker(props: ModelPickerProps) {
   // re-narrow off `props.type`. A single unioned `config` variable
   // trips TS's "in" narrowing when both ModelConfig and VideoModelConfig
   // share an optional `resolutions` field.
-  const imageConfig = type === "image" && selectedModelId ? getModelConfig(selectedModelId) : null;
+  // Provider-aware, because the id alone does not say whose model it is and
+  // the two disagree on ratios: PoYo's gpt-4o-image has no 16:9 at all, while
+  // KIE's models with the same names do.
+  const imageConfig = type === "image" && selectedModelId
+    ? (props.selectedOperator === OPERATOR_POYO ? poyoImageConfig(selectedModelId) : getModelConfig(selectedModelId))
+    : null;
   const videoConfig = type === "video" && selectedModelId ? getVideoModelConfig(selectedModelId) : null;
   const config = imageConfig ?? videoConfig;
 

@@ -1,5 +1,5 @@
 import { poyoRequest, poyoEnvelopeError, type PoyoEnvelope } from "./client";
-import { POYO_ASPECT_RATIOS } from "./imageModels";
+import { poyoSizeFor } from "./imageModels";
 
 // Image submit and poll against PoYo. Deliberately the same shape as
 // lib/kie/images.ts (submit returns a task id, check returns done/failed/
@@ -30,10 +30,11 @@ export async function submitPoyoImageTask(
   aspectRatio = "16:9",
   callbackUrl?: string,
 ): Promise<string> {
-  // PoYo rejects a size it does not know rather than falling back, so an
-  // unsupported ratio is corrected here instead of at the provider. 16:9 is the
-  // house default and the one every model in the catalog accepts.
-  const size = POYO_ASPECT_RATIOS.includes(aspectRatio) ? aspectRatio : "16:9";
+  // PoYo rejects a size it does not know rather than falling back, and the
+  // accepted set is per model: the GPT models take no 16:9 at all, wan-2.7
+  // takes pixel dimensions only. Correct to the nearest shape the model does
+  // take rather than send the house default and collect a 400.
+  const size = poyoSizeFor(modelId, aspectRatio);
 
   const body: Record<string, unknown> = { model: modelId, input: { prompt, size } };
   if (callbackUrl) body.callback_url = callbackUrl;
