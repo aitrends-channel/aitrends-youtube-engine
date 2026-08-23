@@ -104,6 +104,8 @@ export async function POST(req: Request) {
   // Held atomically, so two of these firing at once cannot both spend the same
   // credits. Settled below on the tokens the call actually reports.
   const { hold, refused } = await holdForStep({ userId: user.id, step: "visuals", provider: "anthropic" });
+  // Released in the finally below if the route never gets as far as settling.
+  let settled_hold = false;
   if (refused) {
     return NextResponse.json(
       { error: OUT_OF_CREDITS_MESSAGE, outOfCredits: true },
@@ -274,6 +276,7 @@ export async function POST(req: Request) {
         alreadyHeld: !!hold,
       });
       await settleTokenHold({ hold, model, provider: "anthropic", step: "visuals", usage: response.usage });
+      settled_hold = true;
       toolUse = response.content.find((b) => b.type === "tool_use");
       const blockTypes = response.content.map((b) => b.type).join(",");
       console.log(`[visual-analysis] attempt ${attempt + 1} stop=${response.stop_reason} blocks=${blockTypes} tool_use=${!!toolUse}`);
@@ -368,5 +371,7 @@ export async function POST(req: Request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "Visual analysis failed";
     return NextResponse.json({ error: message }, { status: 500 });
+  } finally {
+    if (!settled_hold) await releaseHold(hold, "visuals did not complete");
   }
 }

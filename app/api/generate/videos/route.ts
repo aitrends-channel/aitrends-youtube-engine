@@ -4,8 +4,9 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
-import { requireWalletFunds } from "@/lib/heclus-charge";
+import { requireWalletFunds, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 import { estimateRun, shortfallResponse } from "@/lib/credits/estimate";
+import { holdForRun } from "@/lib/credits/hold";
 import { GENAIPRO_QUEUED_STATUS, GENAIPRO_MODEL_PREFIX } from "@/lib/genaipro/client";
 
 export const maxDuration = 30;
@@ -118,6 +119,27 @@ export async function POST(req: Request) {
       if (existing.video_status === "submitting" || existing.video_status === "rendering") {
         submitted++;
         continue;
+      }
+
+      // Held at queue time, per clip, and settled by the worker when the clip
+      // finishes. A clip is the most expensive thing the wallet buys and it is
+      // rendered minutes later in another process, so the hold is what stops a
+      // queue of them being authorised against a balance that covers one.
+      if (!isGenAIPro) {
+        const { refused } = await holdForRun({
+          userId: user.id,
+          provider: "kie",
+          projectId,
+          beatNumber: beat.beatNumber,
+          estimate: await estimateRun({
+            userId: user.id, kind: "video", modelId, count: 1,
+            durationSec: Number(duration) || null, resolution,
+          }),
+        });
+        if (refused) {
+          failures.push({ beatNumber: beat.beatNumber, error: OUT_OF_CREDITS_MESSAGE });
+          continue;
+        }
       }
 
       const { data, error } = await supabase
