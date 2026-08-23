@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withCronRun } from "@/lib/cron/runs";
 import { supabase } from "@/lib/supabase/client";
 import { releaseHeclusCredits } from "@/lib/heclus-credits";
 
@@ -36,41 +37,44 @@ export async function GET(req: Request) {
     }
   }
 
-  const cutoff = new Date(Date.now() - STALE_HOURS * 3_600_000).toISOString();
-  const { data, error } = await supabase
-    .from("credit_reservations")
-    .select("id, user_id, credits, provider, project_id, beat_number, created_at")
-    .eq("state", "open")
-    .lt("created_at", cutoff)
-    .limit(MAX_PER_RUN);
+  return withCronRun("sweep-reservations", async ({ detail }) => {
+    const cutoff = new Date(Date.now() - STALE_HOURS * 3_600_000).toISOString();
+    const { data, error } = await supabase
+      .from("credit_reservations")
+      .select("id, user_id, credits, provider, project_id, beat_number, created_at")
+      .eq("state", "open")
+      .lt("created_at", cutoff)
+      .limit(MAX_PER_RUN);
 
-  if (error) {
-    console.error("[cron/sweep-reservations] query failed:", error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+    if (error) {
+      console.error("[cron/sweep-reservations] query failed:", error.message);
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
-  const stale = data ?? [];
-  let released = 0;
-  let credits = 0;
+    const stale = data ?? [];
+    let released = 0;
+    let credits = 0;
 
-  for (const row of stale as Array<{
-    id: string; user_id: string; credits: number | string;
-    provider: string | null; project_id: string | null; beat_number: number | null; created_at: string;
-  }>) {
-    const ok = await releaseHeclusCredits(row.id, `swept after ${STALE_HOURS}h with no result`);
-    if (!ok) continue;
-    released++;
-    credits += Number(row.credits);
-    console.error(
-      `[cron/sweep-reservations] released ${row.credits} credits held since ${row.created_at} ` +
-      `for user=${row.user_id} provider=${row.provider ?? "?"} project=${row.project_id ?? "?"} beat=${row.beat_number ?? "?"}. ` +
-      "A hold this old means its task never reported back.",
-    );
-  }
+    for (const row of stale as Array<{
+      id: string; user_id: string; credits: number | string;
+      provider: string | null; project_id: string | null; beat_number: number | null; created_at: string;
+    }>) {
+      const ok = await releaseHeclusCredits(row.id, `swept after ${STALE_HOURS}h with no result`);
+      if (!ok) continue;
+      released++;
+      credits += Number(row.credits);
+      console.error(
+        `[cron/sweep-reservations] released ${row.credits} credits held since ${row.created_at} ` +
+        `for user=${row.user_id} provider=${row.provider ?? "?"} project=${row.project_id ?? "?"} beat=${row.beat_number ?? "?"}. ` +
+        "A hold this old means its task never reported back.",
+      );
+    }
 
-  if (released > 0) {
-    console.error(`[cron/sweep-reservations] ${released} stale holds, ${credits} credits returned`);
-  }
+    if (released > 0) {
+      console.error(`[cron/sweep-reservations] ${released} stale holds, ${credits} credits returned`);
+    }
 
-  return NextResponse.json({ ok: true, found: stale.length, released, credits });
+    detail(`${released} of ${stale.length} stale holds released, ${credits} credits returned`);
+    return NextResponse.json({ ok: true, found: stale.length, released, credits });
+  });
 }

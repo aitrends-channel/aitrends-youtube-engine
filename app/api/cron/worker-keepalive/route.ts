@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withCronRun } from "@/lib/cron/runs";
 import { WORKER_URL } from "@/lib/workerUrl";
 
 // Pings the Render worker's /health endpoint on a schedule so the
@@ -22,17 +23,19 @@ export async function GET(req: Request) {
     }
   }
 
-  const startedAt = Date.now();
-  try {
-    const res = await fetch(`${WORKER_URL}/health`, { cache: "no-store" });
-    const text = await res.text();
-    const elapsed = Date.now() - startedAt;
-    console.log(`[worker-keepalive] ${res.status} in ${elapsed}ms — body=${text.slice(0, 200)}`);
-    return NextResponse.json({ ok: res.ok, status: res.status, elapsedMs: elapsed });
-  } catch (err) {
-    const elapsed = Date.now() - startedAt;
-    const message = err instanceof Error ? err.message : "fetch failed";
-    console.error(`[worker-keepalive] failed after ${elapsed}ms — ${message}`);
-    return NextResponse.json({ ok: false, error: message, elapsedMs: elapsed }, { status: 502 });
-  }
+  return withCronRun("worker-keepalive", async () => {
+    const startedAt = Date.now();
+    try {
+      const res = await fetch(`${WORKER_URL}/health`, { cache: "no-store" });
+      const text = await res.text();
+      const elapsed = Date.now() - startedAt;
+      console.log(`[worker-keepalive] ${res.status} in ${elapsed}ms — body=${text.slice(0, 200)}`);
+      return NextResponse.json({ ok: res.ok, status: res.status, elapsedMs: elapsed });
+    } catch (err) {
+      const elapsed = Date.now() - startedAt;
+      const message = err instanceof Error ? err.message : "fetch failed";
+      console.error(`[worker-keepalive] failed after ${elapsed}ms — ${message}`);
+      return NextResponse.json({ ok: false, error: message, elapsedMs: elapsed }, { status: 502 });
+    }
+  });
 }

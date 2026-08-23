@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
+import { withCronRun } from "@/lib/cron/runs";
 import { supabase } from "@/lib/supabase/client";
 import { uploadFromUrl, userFolderFor } from "@/lib/supabase/storage";
 import { logProjectCost } from "@/lib/costs";
@@ -145,15 +146,18 @@ export async function GET(req: Request) {
     }
   }
 
-  const submit = await submitQueued();
-  const poll = await pollRendering();
-  const releasedStale = await sweepStaleReservations();
+  return withCronRun("genaipro-video", async () => {
 
-  return NextResponse.json({
-    ok: true,
-    rateLimitPerMinute: GENAIPRO_RATE_LIMIT_PER_MINUTE,
-    submit,
-    poll,
-    releasedStale,
+    const submit = await submitQueued();
+    const poll = await pollRendering();
+    const releasedStale = await sweepStaleReservations();
+
+    return NextResponse.json({
+      ok: true,
+      rateLimitPerMinute: GENAIPRO_RATE_LIMIT_PER_MINUTE,
+      submit,
+      poll,
+      releasedStale,
+    });
   });
 }

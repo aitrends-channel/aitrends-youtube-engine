@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withCronRun } from "@/lib/cron/runs";
 import { supabase } from "@/lib/supabase/client";
 import { sendEmail } from "@/lib/email/smtp";
 import { answerSupportQuestion, getSupportAgentConfig } from "@/lib/support-agent/agent";
@@ -64,147 +65,150 @@ export async function GET(req: Request) {
     }
   }
 
-  const config = await getSupportAgentConfig();
-  if (!config.auto_reply_enabled) {
-    return NextResponse.json({ ok: true, skipped: "auto_reply_enabled is off" });
-  }
+  return withCronRun("support-auto-reply", async () => {
 
-  const cutoff = new Date(Date.now() - config.auto_reply_delay_minutes * 60_000).toISOString();
-
-  // Only tickets that have had no response of any kind, are still open, and
-  // have never been auto-replied. responded_at covers the admin having replied;
-  // status covers an admin having picked it up without replying yet.
-  const { data, error } = await supabase
-    .from("support_tickets")
-    .select("id, ticket_number, email, subject, message, status, created_at, responded_at, admin_notes, chat_id")
-    .eq("is_open", true)
-    .is("auto_replied_at", null)
-    .is("responded_at", null)
-    // Nothing is stamped in dry run, so without this the same tickets would be
-    // re-diagnosed every few minutes for as long as they stay open. A row that
-    // already carries a draft has been looked at; clear it to look again.
-    .is("auto_reply_draft", null)
-    .eq("status", "open")
-    .lte("created_at", cutoff)
-    .order("created_at", { ascending: true })
-    .limit(config.auto_reply_max_per_run);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  const tickets = (data ?? []) as TicketRow[];
-  const outcomes: { ticket: number; outcome: string }[] = [];
-
-  for (const t of tickets) {
-    const address = (t.email ?? "").trim().toLowerCase();
-
-    // Loop guards, before any model call.
-    if (!address || !address.includes("@")) {
-      await note(t.id, "No usable email address on the ticket.");
-      outcomes.push({ ticket: t.ticket_number, outcome: "no address" });
-      continue;
-    }
-    if (NO_REPLY_PATTERN.test(address) || OWN_ADDRESSES.includes(address)) {
-      await note(t.id, `Held: ${address} looks like an unattended mailbox, so replying risks a mail loop.`);
-      outcomes.push({ ticket: t.ticket_number, outcome: "machine address" });
-      continue;
-    }
-    // An admin who left a note is working the ticket, whatever the status says.
-    if (t.admin_notes && t.admin_notes.trim()) {
-      await note(t.id, "Held: an admin has already made notes on this ticket.");
-      outcomes.push({ ticket: t.ticket_number, outcome: "admin working it" });
-      continue;
+    const config = await getSupportAgentConfig();
+    if (!config.auto_reply_enabled) {
+      return NextResponse.json({ ok: true, skipped: "auto_reply_enabled is off" });
     }
 
-    let answer;
-    try {
-      ({ answer } = await answerSupportQuestion({
-        email: address,
-        question: t.message,
-        subject: t.subject,
-        channel: "ticket",
-      }));
-    } catch (e) {
-      await note(t.id, `Held: the agent errored — ${e instanceof Error ? e.message : String(e)}`);
-      outcomes.push({ ticket: t.ticket_number, outcome: "agent error" });
-      continue;
-    }
+    const cutoff = new Date(Date.now() - config.auto_reply_delay_minutes * 60_000).toISOString();
 
-    // The agent's own judgement is a hard gate. Billing, missing causes, angry
-    // users and data loss all land here, and none of them should be answered by
-    // a machine at all.
-    if (answer.needsHuman || !answer.resolved) {
-      await supabase.from("support_tickets").update({
-        auto_reply_draft: answer.reply,
-        auto_reply_note: `Left for a person: ${answer.handoffReason || "the agent was not confident it could resolve this"}.`,
-      }).eq("id", t.id);
-      outcomes.push({ ticket: t.ticket_number, outcome: "left for a person" });
-      continue;
-    }
-
-    if (config.auto_reply_dry_run) {
-      await supabase.from("support_tickets").update({
-        auto_reply_draft: answer.reply,
-        auto_reply_note: "Dry run: this is what would have been sent.",
-      }).eq("id", t.id);
-      outcomes.push({ ticket: t.ticket_number, outcome: "dry run, draft saved" });
-      continue;
-    }
-
-    // Claim the ticket BEFORE sending. If the send throws after the mail is
-    // accepted, a stamped ticket means we never send twice; an unstamped one
-    // could be re-sent on the next tick, which is the worse failure.
-    const { error: claimErr } = await supabase
+    // Only tickets that have had no response of any kind, are still open, and
+    // have never been auto-replied. responded_at covers the admin having replied;
+    // status covers an admin having picked it up without replying yet.
+    const { data, error } = await supabase
       .from("support_tickets")
-      .update({ auto_replied_at: new Date().toISOString(), auto_reply_draft: answer.reply })
-      .eq("id", t.id)
-      .is("auto_replied_at", null);
-    if (claimErr) {
-      outcomes.push({ ticket: t.ticket_number, outcome: `claim failed: ${claimErr.message}` });
-      continue;
+      .select("id, ticket_number, email, subject, message, status, created_at, responded_at, admin_notes, chat_id")
+      .eq("is_open", true)
+      .is("auto_replied_at", null)
+      .is("responded_at", null)
+      // Nothing is stamped in dry run, so without this the same tickets would be
+      // re-diagnosed every few minutes for as long as they stay open. A row that
+      // already carries a draft has been looked at; clear it to look again.
+      .is("auto_reply_draft", null)
+      .eq("status", "open")
+      .lte("created_at", cutoff)
+      .order("created_at", { ascending: true })
+      .limit(config.auto_reply_max_per_run);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+    const tickets = (data ?? []) as TicketRow[];
+    const outcomes: { ticket: number; outcome: string }[] = [];
+
+    for (const t of tickets) {
+      const address = (t.email ?? "").trim().toLowerCase();
+
+      // Loop guards, before any model call.
+      if (!address || !address.includes("@")) {
+        await note(t.id, "No usable email address on the ticket.");
+        outcomes.push({ ticket: t.ticket_number, outcome: "no address" });
+        continue;
+      }
+      if (NO_REPLY_PATTERN.test(address) || OWN_ADDRESSES.includes(address)) {
+        await note(t.id, `Held: ${address} looks like an unattended mailbox, so replying risks a mail loop.`);
+        outcomes.push({ ticket: t.ticket_number, outcome: "machine address" });
+        continue;
+      }
+      // An admin who left a note is working the ticket, whatever the status says.
+      if (t.admin_notes && t.admin_notes.trim()) {
+        await note(t.id, "Held: an admin has already made notes on this ticket.");
+        outcomes.push({ ticket: t.ticket_number, outcome: "admin working it" });
+        continue;
+      }
+
+      let answer;
+      try {
+        ({ answer } = await answerSupportQuestion({
+          email: address,
+          question: t.message,
+          subject: t.subject,
+          channel: "ticket",
+        }));
+      } catch (e) {
+        await note(t.id, `Held: the agent errored — ${e instanceof Error ? e.message : String(e)}`);
+        outcomes.push({ ticket: t.ticket_number, outcome: "agent error" });
+        continue;
+      }
+
+      // The agent's own judgement is a hard gate. Billing, missing causes, angry
+      // users and data loss all land here, and none of them should be answered by
+      // a machine at all.
+      if (answer.needsHuman || !answer.resolved) {
+        await supabase.from("support_tickets").update({
+          auto_reply_draft: answer.reply,
+          auto_reply_note: `Left for a person: ${answer.handoffReason || "the agent was not confident it could resolve this"}.`,
+        }).eq("id", t.id);
+        outcomes.push({ ticket: t.ticket_number, outcome: "left for a person" });
+        continue;
+      }
+
+      if (config.auto_reply_dry_run) {
+        await supabase.from("support_tickets").update({
+          auto_reply_draft: answer.reply,
+          auto_reply_note: "Dry run: this is what would have been sent.",
+        }).eq("id", t.id);
+        outcomes.push({ ticket: t.ticket_number, outcome: "dry run, draft saved" });
+        continue;
+      }
+
+      // Claim the ticket BEFORE sending. If the send throws after the mail is
+      // accepted, a stamped ticket means we never send twice; an unstamped one
+      // could be re-sent on the next tick, which is the worse failure.
+      const { error: claimErr } = await supabase
+        .from("support_tickets")
+        .update({ auto_replied_at: new Date().toISOString(), auto_reply_draft: answer.reply })
+        .eq("id", t.id)
+        .is("auto_replied_at", null);
+      if (claimErr) {
+        outcomes.push({ ticket: t.ticket_number, outcome: `claim failed: ${claimErr.message}` });
+        continue;
+      }
+
+      const ref = `HS${String(t.ticket_number).padStart(2, "0")}`;
+      const signed = [
+        answer.reply,
+        "",
+        "If that doesn't sort it, reply to this email and a person will pick it up.",
+        "",
+        "Heclus Support",
+      ].join("\n");
+
+      try {
+        await sendEmail({
+          from: SUPPORT_FROM,
+          to: address,
+          subject: `Re: [${ref}] ${t.subject}`,
+          text: signed,
+        });
+        await supabase.from("support_tickets").update({
+          status: "in_progress",
+          responded_at: new Date().toISOString(),
+          auto_reply_note: "Answered automatically. Reply from the customer will land in the same thread.",
+        }).eq("id", t.id);
+        outcomes.push({ ticket: t.ticket_number, outcome: "sent" });
+      } catch (e) {
+        // Stays stamped: better one lost automated reply than two sent.
+        await note(t.id, `Send failed after claiming — needs a person: ${e instanceof Error ? e.message : String(e)}`);
+        outcomes.push({ ticket: t.ticket_number, outcome: "send failed" });
+      }
     }
 
-    const ref = `HS${String(t.ticket_number).padStart(2, "0")}`;
-    const signed = [
-      answer.reply,
-      "",
-      "If that doesn't sort it, reply to this email and a person will pick it up.",
-      "",
-      "Heclus Support",
-    ].join("\n");
+    // Whatever the ticket sweep did not use is available to the inbox, so a
+    // backlog of one never starves the other but the run still has one ceiling.
+    const emailBudget = Math.max(0, config.auto_reply_max_per_run - tickets.length);
+    const emails = config.auto_reply_emails_enabled && emailBudget > 0
+      ? await sweepInbox(config, cutoff, emailBudget)
+      : [];
 
-    try {
-      await sendEmail({
-        from: SUPPORT_FROM,
-        to: address,
-        subject: `Re: [${ref}] ${t.subject}`,
-        text: signed,
-      });
-      await supabase.from("support_tickets").update({
-        status: "in_progress",
-        responded_at: new Date().toISOString(),
-        auto_reply_note: "Answered automatically. Reply from the customer will land in the same thread.",
-      }).eq("id", t.id);
-      outcomes.push({ ticket: t.ticket_number, outcome: "sent" });
-    } catch (e) {
-      // Stays stamped: better one lost automated reply than two sent.
-      await note(t.id, `Send failed after claiming — needs a person: ${e instanceof Error ? e.message : String(e)}`);
-      outcomes.push({ ticket: t.ticket_number, outcome: "send failed" });
-    }
-  }
-
-  // Whatever the ticket sweep did not use is available to the inbox, so a
-  // backlog of one never starves the other but the run still has one ceiling.
-  const emailBudget = Math.max(0, config.auto_reply_max_per_run - tickets.length);
-  const emails = config.auto_reply_emails_enabled && emailBudget > 0
-    ? await sweepInbox(config, cutoff, emailBudget)
-    : [];
-
-  return NextResponse.json({
-    ok: true,
-    mode: config.auto_reply_dry_run ? "dry-run" : "live",
-    graceMinutes: config.auto_reply_delay_minutes,
-    considered: tickets.length + emails.length,
-    outcomes,
-    emails: config.auto_reply_emails_enabled ? emails : "disabled",
+    return NextResponse.json({
+      ok: true,
+      mode: config.auto_reply_dry_run ? "dry-run" : "live",
+      graceMinutes: config.auto_reply_delay_minutes,
+      considered: tickets.length + emails.length,
+      outcomes,
+      emails: config.auto_reply_emails_enabled ? emails : "disabled",
+    });
   });
 }
 

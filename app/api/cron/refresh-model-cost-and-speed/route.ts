@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withCronRun } from "@/lib/cron/runs";
 import { refreshModelCostAndSpeed } from "@/lib/costs";
 
 // Daily rollup of project_costs into model_cost_and_speed. The model
@@ -18,16 +19,18 @@ export async function GET(req: Request) {
     }
   }
 
-  const startedAt = Date.now();
-  try {
-    const result = await refreshModelCostAndSpeed();
-    const elapsed = Date.now() - startedAt;
-    console.log(`[refresh-model-cost] upserted=${result.upserted} in ${elapsed}ms`);
-    return NextResponse.json({ ok: true, ...result, elapsedMs: elapsed });
-  } catch (err) {
-    const elapsed = Date.now() - startedAt;
-    const message = err instanceof Error ? err.message : "refresh failed";
-    console.error(`[refresh-model-cost] failed after ${elapsed}ms — ${message}`);
-    return NextResponse.json({ ok: false, error: message, elapsedMs: elapsed }, { status: 500 });
-  }
+  return withCronRun("refresh-model-cost-and-speed", async () => {
+    const startedAt = Date.now();
+    try {
+      const result = await refreshModelCostAndSpeed();
+      const elapsed = Date.now() - startedAt;
+      console.log(`[refresh-model-cost] upserted=${result.upserted} in ${elapsed}ms`);
+      return NextResponse.json({ ok: true, ...result, elapsedMs: elapsed });
+    } catch (err) {
+      const elapsed = Date.now() - startedAt;
+      const message = err instanceof Error ? err.message : "refresh failed";
+      console.error(`[refresh-model-cost] failed after ${elapsed}ms — ${message}`);
+      return NextResponse.json({ ok: false, error: message, elapsedMs: elapsed }, { status: 500 });
+    }
+  });
 }

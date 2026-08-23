@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withCronRun } from "@/lib/cron/runs";
 import { supabase } from "@/lib/supabase/client";
 
 // Daily retention sweep for system_logs. Deletes rows older than 7 days
@@ -20,25 +21,27 @@ export async function GET(req: Request) {
     }
   }
 
-  const startedAt = Date.now();
-  const cutoff = new Date(startedAt - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  return withCronRun("cleanup-logs", async () => {
+    const startedAt = Date.now();
+    const cutoff = new Date(startedAt - RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
-  try {
-    const { data, error } = await supabase
-      .from("system_logs")
-      .delete()
-      .lt("created_at", cutoff)
-      .select("id");
-    if (error) throw error;
+    try {
+      const { data, error } = await supabase
+        .from("system_logs")
+        .delete()
+        .lt("created_at", cutoff)
+        .select("id");
+      if (error) throw error;
 
-    const deleted = data?.length ?? 0;
-    const elapsed = Date.now() - startedAt;
-    console.log(`[cleanup-logs] deleted=${deleted} older than ${cutoff} in ${elapsed}ms`);
-    return NextResponse.json({ ok: true, deleted, cutoff, elapsedMs: elapsed });
-  } catch (err) {
-    const elapsed = Date.now() - startedAt;
-    const message = err instanceof Error ? err.message : "cleanup failed";
-    console.error(`[cleanup-logs] failed after ${elapsed}ms — ${message}`);
-    return NextResponse.json({ ok: false, error: message, elapsedMs: elapsed }, { status: 500 });
-  }
+      const deleted = data?.length ?? 0;
+      const elapsed = Date.now() - startedAt;
+      console.log(`[cleanup-logs] deleted=${deleted} older than ${cutoff} in ${elapsed}ms`);
+      return NextResponse.json({ ok: true, deleted, cutoff, elapsedMs: elapsed });
+    } catch (err) {
+      const elapsed = Date.now() - startedAt;
+      const message = err instanceof Error ? err.message : "cleanup failed";
+      console.error(`[cleanup-logs] failed after ${elapsed}ms — ${message}`);
+      return NextResponse.json({ ok: false, error: message, elapsedMs: elapsed }, { status: 500 });
+    }
+  });
 }

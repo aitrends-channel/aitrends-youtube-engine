@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withCronRun } from "@/lib/cron/runs";
 import { supabase } from "@/lib/supabase/client";
 import { listAllObjects, listTopLevelPrefixes } from "@/lib/supabase/storage";
 
@@ -26,78 +27,80 @@ export async function GET(req: Request) {
     }
   }
 
-  const startedAt = Date.now();
-  const byPrefix = new Map<string, { bytes: number; count: number }>();
+  return withCronRun("storage-usage", async () => {
+    const startedAt = Date.now();
+    const byPrefix = new Map<string, { bytes: number; count: number }>();
 
-  try {
-    const prefixes = await listTopLevelPrefixes();
-    const queue = [...prefixes];
+    try {
+      const prefixes = await listTopLevelPrefixes();
+      const queue = [...prefixes];
 
-    const walk = async () => {
-      for (let p = queue.shift(); p !== undefined; p = queue.shift()) {
-        const key = p.toLowerCase();
-        const entry = { bytes: 0, count: 0 };
-        for await (const obj of listAllObjects(`${p}/`)) {
-          entry.bytes += obj.size;
-          entry.count += 1;
+      const walk = async () => {
+        for (let p = queue.shift(); p !== undefined; p = queue.shift()) {
+          const key = p.toLowerCase();
+          const entry = { bytes: 0, count: 0 };
+          for await (const obj of listAllObjects(`${p}/`)) {
+            entry.bytes += obj.size;
+            entry.count += 1;
+          }
+          // Merged rather than set: two folders differing only in case share
+          // one row, since the cap check looks up a lowercased prefix.
+          const existing = byPrefix.get(key);
+          if (existing) {
+            existing.bytes += entry.bytes;
+            existing.count += entry.count;
+          } else {
+            byPrefix.set(key, entry);
+          }
         }
-        // Merged rather than set: two folders differing only in case share
-        // one row, since the cap check looks up a lowercased prefix.
-        const existing = byPrefix.get(key);
-        if (existing) {
-          existing.bytes += entry.bytes;
-          existing.count += entry.count;
-        } else {
-          byPrefix.set(key, entry);
-        }
-      }
+      };
+
+      await Promise.all(Array.from({ length: Math.min(WALK_CONCURRENCY, queue.length) }, walk));
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error("[cron/storage-usage] bucket walk failed:", message);
+      return NextResponse.json({ error: message }, { status: 502 });
+    }
+
+    // Resolve prefixes to user ids so the per-user read and RLS work. Prefixes
+    // that match no account (deleted users) keep a null user_id — their bytes
+    // still count toward the estate total in the admin view.
+    const emailToId = new Map<string, string>();
+    for (let page = 1; ; page++) {
+      const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
+      if (error) break;
+      for (const u of data.users) if (u.email) emailToId.set(u.email.toLowerCase(), u.id);
+      if (data.users.length < 1000) break;
+    }
+
+    const measured_at = new Date().toISOString();
+    const rows = [...byPrefix.entries()].map(([prefix, v]) => ({
+      prefix,
+      user_id: emailToId.get(prefix) ?? null,
+      bytes: v.bytes,
+      object_count: v.count,
+      measured_at,
+    }));
+
+    // bonus_bytes is deliberately absent from the upsert payload so an admin
+    // grant survives every sweep.
+    let written = 0;
+    for (let i = 0; i < rows.length; i += 200) {
+      const chunk = rows.slice(i, i + 200);
+      const { error } = await supabase.from("storage_usage").upsert(chunk, { onConflict: "prefix" });
+      if (error) console.error(`[cron/storage-usage] upsert chunk ${i} failed:`, error.message);
+      else written += chunk.length;
+    }
+
+    const totalBytes = rows.reduce((a, r) => a + r.bytes, 0);
+    const summary = {
+      accounts: rows.length,
+      written,
+      totalGb: +(totalBytes / 1024 ** 3).toFixed(2),
+      objects: rows.reduce((a, r) => a + r.object_count, 0),
+      ms: Date.now() - startedAt,
     };
-
-    await Promise.all(Array.from({ length: Math.min(WALK_CONCURRENCY, queue.length) }, walk));
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    console.error("[cron/storage-usage] bucket walk failed:", message);
-    return NextResponse.json({ error: message }, { status: 502 });
-  }
-
-  // Resolve prefixes to user ids so the per-user read and RLS work. Prefixes
-  // that match no account (deleted users) keep a null user_id — their bytes
-  // still count toward the estate total in the admin view.
-  const emailToId = new Map<string, string>();
-  for (let page = 1; ; page++) {
-    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
-    if (error) break;
-    for (const u of data.users) if (u.email) emailToId.set(u.email.toLowerCase(), u.id);
-    if (data.users.length < 1000) break;
-  }
-
-  const measured_at = new Date().toISOString();
-  const rows = [...byPrefix.entries()].map(([prefix, v]) => ({
-    prefix,
-    user_id: emailToId.get(prefix) ?? null,
-    bytes: v.bytes,
-    object_count: v.count,
-    measured_at,
-  }));
-
-  // bonus_bytes is deliberately absent from the upsert payload so an admin
-  // grant survives every sweep.
-  let written = 0;
-  for (let i = 0; i < rows.length; i += 200) {
-    const chunk = rows.slice(i, i + 200);
-    const { error } = await supabase.from("storage_usage").upsert(chunk, { onConflict: "prefix" });
-    if (error) console.error(`[cron/storage-usage] upsert chunk ${i} failed:`, error.message);
-    else written += chunk.length;
-  }
-
-  const totalBytes = rows.reduce((a, r) => a + r.bytes, 0);
-  const summary = {
-    accounts: rows.length,
-    written,
-    totalGb: +(totalBytes / 1024 ** 3).toFixed(2),
-    objects: rows.reduce((a, r) => a + r.object_count, 0),
-    ms: Date.now() - startedAt,
-  };
-  console.log("[cron/storage-usage]", JSON.stringify(summary));
-  return NextResponse.json({ ok: true, ...summary });
+    console.log("[cron/storage-usage]", JSON.stringify(summary));
+    return NextResponse.json({ ok: true, ...summary });
+  });
 }
