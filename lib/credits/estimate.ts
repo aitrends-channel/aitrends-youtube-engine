@@ -8,6 +8,8 @@ import { OPERATOR_POYO } from "@/lib/operators";
 import { IMAGE_MODELS } from "@/lib/kie/imageModels";
 import { VIDEO_MODELS } from "@/lib/kie/videoModels";
 import { listPoyoImageModels } from "@/lib/poyo/imageModels";
+import { supabase } from "@/lib/supabase/client";
+import type { CostStep, CostUnitKind } from "@/lib/costs";
 
 // What a run will cost, before it starts.
 //
@@ -47,7 +49,7 @@ export interface RunEstimate {
    *  accounts both report true: neither is a reason to block work. */
   sufficient: boolean;
   /** What the estimate was built from, for the message and for debugging. */
-  source: "poyo-catalog" | "kie-observed" | "video-observed" | "unknown" | "byo";
+  source: "poyo-catalog" | "kie-observed" | "video-observed" | "characters" | "step-history" | "unknown" | "byo";
   /** The best model the balance can actually afford for this run, when the
    *  chosen one is out of reach. Priciest that fits, not cheapest available:
    *  the point is to lose as little quality as the budget allows. */
@@ -196,9 +198,15 @@ export function shortfallResponse(estimate: RunEstimate): NextResponse | null {
   if (estimate.sufficient || estimate.total === null) return null;
   const need = estimate.total.toLocaleString(undefined, { maximumFractionDigits: 2 });
   const have = estimate.balance.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  // "Typically" where the figure is history rather than a price, because a
+  // step whose cost is not knowable in advance should not be quoted as if it
+  // were.
+  const cost = estimate.source === "step-history"
+    ? `This step typically costs about ${need}`
+    : `It needs about ${need}`;
   return NextResponse.json(
     {
-      error: `Not enough Heclus Credits for this run. It needs about ${need} and you have ${have}.`,
+      error: `Not enough Heclus Credits for this run. ${cost} and you have ${have}.`,
       outOfCredits: true,
       credits: estimate.balance,
       needed: estimate.total,
@@ -207,4 +215,103 @@ export function shortfallResponse(estimate: RunEstimate): NextResponse | null {
     },
     { status: 402 },
   );
+}
+
+/**
+ * Voiceover, which is the one step that can be priced exactly.
+ *
+ * The characters are already known: they are the script segments about to be
+ * spoken. No catalog, no observation, no multiplier. This is what the charge
+ * will be, give or take the provider rounding.
+ */
+export async function estimateCharacters(opts: {
+  userId: string;
+  characters: number;
+  model: string;
+  step?: CostStep;
+}): Promise<RunEstimate> {
+  if ((await getFundingModeById(opts.userId)) !== "wallet") {
+    return { perUnit: null, total: null, balance: 0, sufficient: true, source: "byo", alternative: null, affordableCount: 0 };
+  }
+  const [rates, balance] = await Promise.all([getCreditRates(), spendableCredits(opts.userId)]);
+  const total = roundCredits(creditsForUnits("elevenlabs_chars", opts.characters, rates, {
+    model: opts.model,
+    step: opts.step ?? "tts",
+    provider: "elevenlabs",
+  }));
+  return {
+    perUnit: total,
+    total,
+    balance,
+    sufficient: balance >= total,
+    source: "characters",
+    alternative: null,
+    affordableCount: 0,
+  };
+}
+
+/**
+ * What this step has historically cost, for the steps whose cost cannot be
+ * known in advance.
+ *
+ * A script's token count is not knowable before the script exists, so there is
+ * no exact figure to check against. What there is, is history: the median of
+ * what this step actually cost across past projects. Refusing a run when the
+ * balance cannot cover the typical case is not precise, and it is far better
+ * than the alternative in place until now, which was to let a 150-credit Opus
+ * call start on a balance of 1.
+ *
+ * Silent when there is no history. A new step with no rows returns null and the
+ * caller falls back to the one-credit gate.
+ */
+export async function estimateStepFloor(opts: {
+  userId: string;
+  step: CostStep;
+  /** How many of this step the run will do. Prompts run in chunks. */
+  count?: number;
+}): Promise<RunEstimate> {
+  if ((await getFundingModeById(opts.userId)) !== "wallet") {
+    return { perUnit: null, total: null, balance: 0, sufficient: true, source: "byo", alternative: null, affordableCount: 0 };
+  }
+
+  const [rates, balance] = await Promise.all([getCreditRates(), spendableCredits(opts.userId)]);
+  const since = new Date(Date.now() - 90 * 86_400_000).toISOString();
+
+  const { data, error } = await supabase
+    .from("project_costs")
+    .select("project_id, unit_kind, units, model, provider")
+    .eq("step", opts.step)
+    .gte("created_at", since)
+    .limit(5000);
+
+  if (error || !data?.length) {
+    return { perUnit: null, total: null, balance, sufficient: true, source: "unknown", alternative: null, affordableCount: 0 };
+  }
+
+  // Per project first, then the median across projects. A median of individual
+  // rows would answer a different question: what one token bucket costs, not
+  // what running the step costs.
+  const perProject = new Map<string, number>();
+  for (const row of data as Array<{ project_id: string; unit_kind: string; units: number | null; model: string | null; provider: string | null }>) {
+    const credits = creditsForUnits(row.unit_kind as CostUnitKind, Number(row.units ?? 0), rates, {
+      step: opts.step, model: row.model, provider: row.provider,
+    });
+    perProject.set(row.project_id, (perProject.get(row.project_id) ?? 0) + credits);
+  }
+  const totals = [...perProject.values()].filter((n) => n > 0).sort((a, b) => a - b);
+  if (totals.length < 3) {
+    return { perUnit: null, total: null, balance, sufficient: true, source: "unknown", alternative: null, affordableCount: 0 };
+  }
+
+  const typical = totals[Math.floor(totals.length / 2)];
+  const total = roundCredits(typical * Math.max(1, opts.count ?? 1));
+  return {
+    perUnit: typical,
+    total,
+    balance,
+    sufficient: balance >= total,
+    source: "step-history",
+    alternative: null,
+    affordableCount: typical > 0 ? Math.floor(balance / typical) : 0,
+  };
 }
