@@ -13,6 +13,7 @@ import { incrementFreeUsage } from "@/lib/freeUsage";
 import type { User } from "@supabase/supabase-js";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
 import { requireWalletFunds, canStartWalletWork, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
+import { estimateCharacters } from "@/lib/credits/estimate";
 
 export const maxDuration = 800;
 
@@ -247,6 +248,25 @@ export async function POST(req: Request) {
           if (toGenerate.length === 0) {
             send({ type: "status", message: "All beats already up to date." });
             send({ type: "done", generated: 0, total: allBeats.length });
+            closed = true;
+            clearInterval(heartbeat);
+            try { controller.close(); } catch { /* already done */ }
+            return;
+          }
+
+          // Voiceover is the one step that can be priced exactly: the
+          // characters about to be spoken are already in hand. Refused before
+          // the first beat rather than part-way through the batch.
+          const characters = toGenerate.reduce((sum, b) => sum + (b.script_segment ?? "").trim().length, 0);
+          const ttsEstimate = await estimateCharacters({ userId: user.id, characters, model: TTS_MODEL });
+          if (!ttsEstimate.sufficient && ttsEstimate.total !== null) {
+            send({
+              type: "error",
+              error: `Not enough Heclus Credits for this voiceover. It needs about ${ttsEstimate.total.toLocaleString(undefined, { maximumFractionDigits: 2 })} and you have ${ttsEstimate.balance.toLocaleString(undefined, { maximumFractionDigits: 2 })}.`,
+              outOfCredits: true,
+              credits: ttsEstimate.balance,
+              needed: ttsEstimate.total,
+            });
             closed = true;
             clearInterval(heartbeat);
             try { controller.close(); } catch { /* already done */ }

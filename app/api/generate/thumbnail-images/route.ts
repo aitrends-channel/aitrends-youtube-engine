@@ -11,6 +11,7 @@ import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
 import { requireWalletFunds } from "@/lib/heclus-charge";
+import { estimateRun, shortfallResponse } from "@/lib/credits/estimate";
 import { resolveImageOperator } from "@/lib/operators/image";
 import { getMediaOperatorForUser } from "@/lib/operators/routing";
 
@@ -51,6 +52,11 @@ export async function POST(req: Request) {
     // BYO clients pinned to KIE and free-lane models exempt; see
     // lib/operators/routing.ts.
     const op = resolveImageOperator(modelId, await getMediaOperatorForUser(user.id, "image"));
+
+    const short = shortfallResponse(await estimateRun({
+      userId: user.id, kind: "image", modelId, operator: op.id, count: thumbnails.length, resolution,
+    }));
+    if (short) return short;
 
     // Fetch text overlays + the current image_url for every position
     // BEFORE any clearFirst wipe — otherwise the wipe would null out

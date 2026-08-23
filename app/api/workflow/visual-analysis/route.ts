@@ -16,6 +16,7 @@ import { logAnthropicCost } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireWalletFunds } from "@/lib/heclus-charge";
+import { estimateStepFloor, shortfallResponse } from "@/lib/credits/estimate";
 
 // Anthropic's image `url` source rejects anything that isn't HTTPS with
 // a 400 ("Only HTTPS URLs are supported"). Frame/thumbnail URLs can
@@ -92,6 +93,12 @@ export async function POST(req: Request) {
   // refused before any provider is called.
   const broke = await requireWalletFunds(user);
   if (broke) return broke;
+  // A token step's cost is not knowable before it runs, so the check is
+  // what this step has historically cost: the median across past projects.
+  // Imprecise, and far better than letting a 150-credit Opus call start on
+  // a balance of one. Silent when there is no history to read.
+  const short = shortfallResponse(await estimateStepFloor({ userId: user.id, step: "visuals" }));
+  if (short) return short;
 
   try {
     const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "visual_analysis");

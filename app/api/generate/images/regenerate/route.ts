@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { resolveImageOperator } from "@/lib/operators/image";
 import { withPromptLengthRetry } from "@/lib/kie/promptLength";
 import { withRateLimitRetry } from "@/lib/operators/upstream";
+import { estimateRun, shortfallResponse } from "@/lib/credits/estimate";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { asUpstreamError, upstreamErrorResponse } from "@/lib/operators/upstream";
 import { getFundingModeById } from "@/lib/funding";
@@ -107,6 +108,13 @@ export async function POST(req: Request) {
     // generated on PoYo would be regenerated against KIE with a model id KIE
     // has never heard of.
     const op = resolveImageOperator(modelId, await getMediaOperatorForUser(user.id, "image"));
+
+    // One image, priced on the model actually chosen. The gate at the door
+    // only asks for a credit, which on an 18-credit model is not a check.
+    const short = shortfallResponse(await estimateRun({
+      userId: user.id, kind: "image", modelId, operator: op.id, count: 1, resolution,
+    }));
+    if (short) return short;
     operator = op.id;
     if (op.id === OPERATOR_POYO && (await getFundingModeById(user.id)) !== "wallet") {
       return NextResponse.json(

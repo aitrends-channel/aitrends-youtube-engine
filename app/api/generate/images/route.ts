@@ -12,6 +12,7 @@ import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
 import { requireWalletFunds, canStartWalletWork, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
+import { estimateRun, shortfallResponse } from "@/lib/credits/estimate";
 import { resolveImageOperator } from "@/lib/operators/image";
 import { getMediaOperatorForUser } from "@/lib/operators/routing";
 
@@ -53,6 +54,15 @@ export async function POST(req: Request) {
     // lib/operators/routing.ts.
     const op = resolveImageOperator(modelId, await getMediaOperatorForUser(user.id, "image"));
 
+    // Price the whole run before touching anything. The gate at the door asks
+    // for one credit, which would let a balance of 10 start five images at 8
+    // each and bill 10 of the 40.
+    const estimate = await estimateRun({
+      userId: user.id, kind: "image", modelId, operator: op.id, count: beats.length, resolution,
+    });
+    const short = shortfallResponse(estimate);
+    if (short) return short;
+
     if (clearFirst) {
       await supabase.from("project_beats").update({ image_url: null, image_status: null }).eq("project_id", projectId);
       await supabase.from("projects").update({ images_progress: 0 }).eq("id", projectId).eq("user_id", user.id);
@@ -77,7 +87,9 @@ export async function POST(req: Request) {
       // spending Heclus's balance all the way to the last beat. The remaining
       // beats are reported as failures with the same message the banner routes
       // to a top-up, rather than left looking like they never ran.
-      if (!(await canStartWalletWork(user.id))) {
+      // Priced per beat rather than "at least one credit", so the run stops on
+      // the batch it can no longer afford instead of part-paying for it.
+      if (!(await canStartWalletWork(user.id, estimate.perUnit ?? 1))) {
         for (const remaining of beats.slice(i)) {
           failures.push({ beatNumber: remaining.beatNumber, error: OUT_OF_CREDITS_MESSAGE });
           await supabase.from("project_beats").update({ image_status: "failed" }).eq("project_id", projectId).eq("beat_number", remaining.beatNumber);
