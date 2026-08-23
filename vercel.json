@@ -22,6 +22,10 @@
       "schedule": "*/2 * * * *"
     },
     {
+      "path": "/api/cron/reconcile-rates",
+      "schedule": "0 6 1 * *"
+    },
+    {
       "path": "/api/cron/refresh-model-cost-and-speed",
       "schedule": "0 3 * * *"
     },
