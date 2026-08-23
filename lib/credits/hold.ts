@@ -1,8 +1,9 @@
 import { reserveHeclusCredits, settleHeclusCredits, releaseHeclusCredits } from "@/lib/heclus-credits";
 import { getFundingModeById } from "@/lib/funding";
 import { supabase } from "@/lib/supabase/client";
-import { roundCredits } from "@/lib/pricing";
-import { estimateRun, type RunEstimate } from "@/lib/credits/estimate";
+import { roundCredits, creditsForUnits, getCreditRates } from "@/lib/pricing";
+import type { CostStep } from "@/lib/costs";
+import { estimateRun, estimateCharacters, estimateStepFloor, type RunEstimate } from "@/lib/credits/estimate";
 
 // Hold the credits before the work, settle on what it actually cost.
 //
@@ -158,4 +159,103 @@ export async function findOpenHold(opts: {
   if (error || !data) return null;
   const row = data as { id: string; credits: number | string };
   return { id: row.id, credits: Number(row.credits) };
+}
+
+/**
+ * A hold for a voiceover, priced from the characters about to be sent.
+ *
+ * The only step where the estimate and the charge are the same measurement, so
+ * the padding matters least here. It is applied anyway: the provider counts
+ * what it synthesised, which is not always what we sent.
+ */
+export async function holdForCharacters(opts: {
+  userId: string;
+  characters: number;
+  model: string;
+  step?: "tts" | "assemble";
+  projectId?: string;
+  beatNumber?: number;
+}): Promise<{ hold: Hold | null; refused: boolean }> {
+  if (!(await needsHold(opts.userId)) || !(opts.characters > 0)) {
+    return { hold: null, refused: false };
+  }
+  const estimate = await estimateCharacters({
+    userId: opts.userId,
+    characters: opts.characters,
+    model: opts.model,
+    step: opts.step,
+  });
+  return holdForRun({
+    userId: opts.userId,
+    provider: "elevenlabs",
+    projectId: opts.projectId,
+    beatNumber: opts.beatNumber,
+    estimate,
+  });
+}
+
+/**
+ * A hold for one Claude call, settled on the tokens it actually used.
+ *
+ * Token steps do not fit the pattern the other holds use. One call produces
+ * four cost rows (input, output, cache read, cache write), and a reservation
+ * settles once, so handing the id to the first row would close the hold and
+ * leave the other three to charge again on top. The call therefore settles the
+ * hold itself, with the total of all four, and the rows are logged for
+ * reporting with `alreadyHeld` so the charge path leaves them alone.
+ *
+ * The estimate behind the hold is the step's median cost, which is the only
+ * figure available before a call whose token count does not exist yet. Padding
+ * matters more here than anywhere else for the same reason.
+ */
+export async function settleTokenHold(opts: {
+  hold: Hold | null;
+  model: string;
+  provider: string;
+  step: CostStep;
+  usage: {
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+    cache_read_input_tokens?: number | null;
+    cache_creation_input_tokens?: number | null;
+  } | null | undefined;
+}): Promise<void> {
+  if (!opts.hold) return;
+  const u = opts.usage;
+  if (!u) {
+    await releaseHold(opts.hold, `${opts.step} reported no usage`);
+    return;
+  }
+
+  const rates = await getCreditRates();
+  const ctx = { step: opts.step, model: opts.model, provider: opts.provider };
+  const total =
+    creditsForUnits("claude_tokens_in", Number(u.input_tokens ?? 0), rates, ctx) +
+    creditsForUnits("claude_tokens_out", Number(u.output_tokens ?? 0), rates, ctx) +
+    creditsForUnits("claude_tokens_cache_read", Number(u.cache_read_input_tokens ?? 0), rates, ctx) +
+    creditsForUnits("claude_tokens_cache_creation", Number(u.cache_creation_input_tokens ?? 0), rates, ctx);
+
+  if (!(total > 0)) {
+    await releaseHold(opts.hold, `${opts.step} used no billable tokens`);
+    return;
+  }
+  await settleHold(opts.hold, roundCredits(total), `${opts.step} · claude tokens`);
+}
+
+/**
+ * Hold a token step's typical cost before the call.
+ *
+ * Returns no hold when there is not enough history to price the step, which is
+ * the same silence estimateStepFloor keeps: a step nobody has run cannot be
+ * held against a number nobody has.
+ */
+export async function holdForStep(opts: {
+  userId: string;
+  step: CostStep;
+  provider: string;
+  projectId?: string;
+}): Promise<{ hold: Hold | null; refused: boolean }> {
+  if (!(await needsHold(opts.userId))) return { hold: null, refused: false };
+  const estimate = await estimateStepFloor({ userId: opts.userId, step: opts.step });
+  return holdForRun({ ...opts, estimate });
 }

@@ -24,7 +24,7 @@ export interface ChargeResult {
   charged: number;
   /** Credits the balance could not cover. Zero on a normal charge. */
   shortfall: number;
-  skipped: "byo" | "unpriced" | null;
+  skipped: "byo" | "unpriced" | "held" | null;
 }
 
 const NOTHING: ChargeResult = { charged: 0, shortfall: 0, skipped: null };
@@ -43,6 +43,9 @@ const NOTHING: ChargeResult = { charged: 0, shortfall: 0, skipped: null };
  */
 export async function chargeForCostEntry(entry: CostEntry): Promise<ChargeResult> {
   if (!entry.userId || !(entry.units > 0)) return NOTHING;
+  // Already answered for by a hold the caller settled. Charging again would
+  // bill the same work twice.
+  if (entry.alreadyHeld) return { ...NOTHING, skipped: "held" };
 
   try {
     if (await getFundingModeById(entry.userId) !== "wallet") {

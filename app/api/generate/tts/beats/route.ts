@@ -14,6 +14,7 @@ import type { User } from "@supabase/supabase-js";
 import { requireStorageHeadroom } from "@/lib/storage-quota";
 import { requireWalletFunds, canStartWalletWork, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 import { estimateCharacters } from "@/lib/credits/estimate";
+import { holdForCharacters, releaseHold } from "@/lib/credits/hold";
 
 export const maxDuration = 800;
 
@@ -355,11 +356,30 @@ export async function POST(req: Request) {
                 .update({ voiceover_status: "generating" })
                 .eq("project_id", projectId)
                 .eq("beat_number", beat.beat_number);
-              const { audio: audioBuf, charsConsumed } = await generateTTS(ttsText, voiceId, undefined, undefined, user.id);
+              // Held before the provider speaks, settled on what it counted.
+              // Beats run five at a time, so the atomic hold is what stops
+              // five of them spending the same credits.
+              const paidVoice = !isQwenVoice(voiceId) && !isAi33Voice(voiceId);
+              const { hold, refused } = paidVoice
+                ? await holdForCharacters({
+                    userId: user.id, characters: ttsText.length, model: TTS_MODEL,
+                    projectId, beatNumber: beat.beat_number,
+                  })
+                : { hold: null, refused: false };
+              if (refused) throw new Error(OUT_OF_CREDITS_MESSAGE);
+
+              let tts: Awaited<ReturnType<typeof generateTTS>>;
+              try {
+                tts = await generateTTS(ttsText, voiceId, undefined, undefined, user.id);
+              } catch (err) {
+                await releaseHold(hold, "voiceover failed");
+                throw err;
+              }
+              const { audio: audioBuf, charsConsumed } = tts;
               // Free Google voices run on the user's own BYO quota — no
               // ElevenLabs spend, so don't record a cost-ledger charge.
-              if (charsConsumed && !isQwenVoice(voiceId) && !isAi33Voice(voiceId)) {
-                void logProjectCost({
+              if (charsConsumed && paidVoice) {
+                await logProjectCost({
                   projectId,
                   userId: user.id,
                   step: "tts",
@@ -367,7 +387,10 @@ export async function POST(req: Request) {
                   model: TTS_MODEL,
                   units: charsConsumed,
                   unitKind: "elevenlabs_chars",
+                  reservationId: hold?.id ?? null,
                 });
+              } else if (paidVoice && hold) {
+                await releaseHold(hold, "voiceover reported no characters");
               } else if (charsConsumed && isQwenVoice(voiceId)) {
                 // Heclus-paid perk — counted against the per-user monthly cap.
                 void incrementFreeUsage(user.id, "qwen_tts_chars", charsConsumed);

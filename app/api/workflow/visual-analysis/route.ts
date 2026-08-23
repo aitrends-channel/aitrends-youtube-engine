@@ -17,6 +17,8 @@ import type { User } from "@supabase/supabase-js";
 import { requireActiveSubscription } from "@/lib/subscription";
 import { requireWalletFunds } from "@/lib/heclus-charge";
 import { estimateStepFloor, shortfallResponse } from "@/lib/credits/estimate";
+import { holdForStep, settleTokenHold, releaseHold } from "@/lib/credits/hold";
+import { OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 
 // Anthropic's image `url` source rejects anything that isn't HTTPS with
 // a 400 ("Only HTTPS URLs are supported"). Frame/thumbnail URLs can
@@ -99,6 +101,15 @@ export async function POST(req: Request) {
   // a balance of one. Silent when there is no history to read.
   const short = shortfallResponse(await estimateStepFloor({ userId: user.id, step: "visuals" }));
   if (short) return short;
+  // Held atomically, so two of these firing at once cannot both spend the same
+  // credits. Settled below on the tokens the call actually reports.
+  const { hold, refused } = await holdForStep({ userId: user.id, step: "visuals", provider: "anthropic" });
+  if (refused) {
+    return NextResponse.json(
+      { error: OUT_OF_CREDITS_MESSAGE, outOfCredits: true },
+      { status: 402 },
+    );
+  }
 
   try {
     const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "visual_analysis");
@@ -260,7 +271,9 @@ export async function POST(req: Request) {
         routing: effectiveRouting,
         usage: response.usage,
         kieCreditsConsumed: takeLastCreditsConsumed(),
+        alreadyHeld: !!hold,
       });
+      await settleTokenHold({ hold, model, provider: "anthropic", step: "visuals", usage: response.usage });
       toolUse = response.content.find((b) => b.type === "tool_use");
       const blockTypes = response.content.map((b) => b.type).join(",");
       console.log(`[visual-analysis] attempt ${attempt + 1} stop=${response.stop_reason} blocks=${blockTypes} tool_use=${!!toolUse}`);
