@@ -259,3 +259,52 @@ export async function holdForStep(opts: {
   const estimate = await estimateStepFloor({ userId: opts.userId, step: opts.step });
   return holdForRun({ ...opts, estimate });
 }
+
+/**
+ * One hold for a run that makes many Claude calls.
+ *
+ * The chunked prompt steps do not fit the one-call shape: a run fans out over
+ * chunks, retries a truncated one, and may sweep the leftovers, so a hold
+ * settled on the first call would close while the rest of the run was still
+ * spending. This accumulates the usage every call reports and settles once,
+ * when the run ends, however it ends.
+ *
+ * `add` is deliberately synchronous and total-only. It is called from inside
+ * parallel chunk work, and anything awaited there would need a lock.
+ */
+export interface StepHold {
+  hold: Hold | null;
+  refused: boolean;
+  add(usage: {
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+    cache_read_input_tokens?: number | null;
+    cache_creation_input_tokens?: number | null;
+  } | null | undefined): void;
+  finish(model: string, provider: string): Promise<void>;
+}
+
+export async function createStepHold(opts: {
+  userId: string;
+  step: CostStep;
+  provider: string;
+  projectId?: string;
+}): Promise<StepHold> {
+  const { hold, refused } = await holdForStep(opts);
+  const total = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+
+  return {
+    hold,
+    refused,
+    add(usage) {
+      if (!usage) return;
+      total.input_tokens += Number(usage.input_tokens ?? 0);
+      total.output_tokens += Number(usage.output_tokens ?? 0);
+      total.cache_read_input_tokens += Number(usage.cache_read_input_tokens ?? 0);
+      total.cache_creation_input_tokens += Number(usage.cache_creation_input_tokens ?? 0);
+    },
+    async finish(model, provider) {
+      await settleTokenHold({ hold, model, provider, step: opts.step, usage: total });
+    },
+  };
+}

@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { requireActiveSubscription } from "@/lib/subscription";
-import { requireWalletFunds } from "@/lib/heclus-charge";
+import { requireWalletFunds, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 import { estimateStepFloor, shortfallResponse } from "@/lib/credits/estimate";
+import { createStepHold, type StepHold } from "@/lib/credits/hold";
+import type { CostStep } from "@/lib/costs";
 import { resolveModelForUser } from "@/lib/claude/models";
 import type { WorkflowStep } from "@/lib/claude/routing";
 import { supabase } from "@/lib/supabase/client";
@@ -16,6 +18,31 @@ import type { User } from "@supabase/supabase-js";
 // 275-beat fill at ~282s mid-batch. A hard kill runs no finally, so the run id
 // was never released and the step sat on "Running…" with no Resume offered.
 export const maxDuration = 800;
+
+
+/**
+ * Run the step under a single hold.
+ *
+ * The step fans out over chunks and may retry or sweep, so one settle has to
+ * answer for every call it makes: prompts-core accumulates the usage into the
+ * hold and this settles it when the run ends, in a finally so an abort or a
+ * throw returns the unspent part rather than leaving it held until the sweeper.
+ */
+async function underHold(
+  userId: string,
+  projectId: string,
+  step: CostStep,
+  model: string,
+  run: (stepHold: StepHold) => Promise<unknown>,
+): Promise<void> {
+  const stepHold = await createStepHold({ userId, step, provider: "anthropic", projectId });
+  if (stepHold.refused) throw new Error(OUT_OF_CREDITS_MESSAGE);
+  try {
+    await run(stepHold);
+  } finally {
+    await stepHold.finish(model, "anthropic");
+  }
+}
 
 export async function POST(req: Request) {
   let user: User;
@@ -97,9 +124,9 @@ export async function POST(req: Request) {
     }
     // promptStyle decides beat DENSITY here, not just prompt wording, so
     // segmentation has to agree with whatever the fill pass will later use.
-    return sseStream(async (send) =>
-      generateBeats(projectId, user.id, body.script!, send, model, await resolvePromptStyle())
-    );
+    return sseStream(async (send) => underHold(user.id, projectId, "prompts_image", model, async (stepHold) =>
+      generateBeats(projectId, user.id, body.script!, send, model, await resolvePromptStyle(), stepHold)
+    ));
   }
 
   if (step === "fill") {
@@ -115,31 +142,33 @@ export async function POST(req: Request) {
     if (!body.visualProfile) {
       return NextResponse.json({ error: "visualProfile is required" }, { status: 400 });
     }
-    return sseStream(async (send) =>
-      fillPrompts(projectId, user.id, body.visualProfile!, send, model, await resolvePromptStyle())
-    );
+    return sseStream(async (send) => underHold(user.id, projectId, "prompts_image", model, async (stepHold) =>
+      fillPrompts(projectId, user.id, body.visualProfile!, send, model, await resolvePromptStyle(), stepHold)
+    ));
   }
 
   if (step === "images") {
     if (!body.script || !body.visualProfile) {
       return NextResponse.json({ error: "script and visualProfile are required" }, { status: 400 });
     }
-    return sseStream(async (send) =>
-      generateImages(projectId, user.id, body.script!, body.visualProfile!, send, model, await resolvePromptStyle())
-    );
+    return sseStream(async (send) => underHold(user.id, projectId, "prompts_image", model, async (stepHold) =>
+      generateImages(projectId, user.id, body.script!, body.visualProfile!, send, model, await resolvePromptStyle(), stepHold)
+    ));
   }
 
   if (step === "videos") {
-    return sseStream((send) => generateVideos(projectId, user.id, send, model));
+    return sseStream((send) => underHold(user.id, projectId, "prompts_video", model, (stepHold) =>
+      generateVideos(projectId, user.id, send, model, stepHold)
+    ));
   }
 
   if (step === "thumbnails") {
     if (!body.script || !body.visualProfile) {
       return NextResponse.json({ error: "script and visualProfile are required" }, { status: 400 });
     }
-    return sseStream((send) =>
-      generateThumbnails(projectId, user.id, body.script!, body.visualProfile!, body.thumbnailAnalysis, send, model)
-    );
+    return sseStream((send) => underHold(user.id, projectId, "thumbnail_concept", model, (stepHold) =>
+      generateThumbnails(projectId, user.id, body.script!, body.visualProfile!, body.thumbnailAnalysis, send, model, stepHold)
+    ));
   }
 
   return NextResponse.json({ error: `Unknown step: ${step}` }, { status: 400 });
