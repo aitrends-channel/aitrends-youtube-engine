@@ -3,6 +3,7 @@ import { claudeRateFor } from "@/lib/claude/models";
 import { getCreditRates, USD_PER_CREDIT } from "@/lib/pricing";
 import { getPoyoImageModel } from "@/lib/poyo/imageModels";
 import { supabase } from "@/lib/supabase/client";
+import { reconcileDrawdown, type DrawdownFinding } from "@/lib/providers/drawdown";
 
 // Do the rates we bill at still match what the providers charge?
 //
@@ -26,6 +27,16 @@ import { supabase } from "@/lib/supabase/client";
 // the characters spoken in the billing period, which on a quota plan is an
 // average rather than a marginal rate. Treated as indicative: it answers "is
 // the rate roughly right", not "what does the next character cost".
+//
+// KIE has no row in any of that, and it is the largest spender. It issues no
+// invoice and publishes no price list a credit count could drift against: it
+// reports creditsConsumed per task and the wallet settles on that figure, so
+// the number is KIE's own and cannot disagree with a KIE list that does not
+// exist. What can still be wrong is whether we saw every charge, which is a
+// different question and is answered by reconcileDrawdown: the fall in the
+// provider's own balance against the credits our ledger recorded. That covers
+// PoYo too, and it is the check that would have caught August's double-bought
+// clips.
 //
 // Warn only. Nothing here writes a rate.
 
@@ -66,6 +77,11 @@ export interface RateReconciliation {
   findings: RateFinding[];
   /** Findings past the noticeable threshold, worth an admin's attention. */
   drifted: RateFinding[];
+  /** The account drawdown against recorded spend, per provider. A different
+   *  question from the rate findings above: those ask whether the price is
+   *  right, this asks whether every charge was recorded at all. KIE has no
+   *  invoice and no price list, so this is the only check it has. */
+  drawdown?: DrawdownFinding[];
   /** What could not be read, and why. Never throws: a provider that is down
    *  must not hide the one that answered. */
   problems: string[];
@@ -429,11 +445,14 @@ export async function reconcileRates(days = 30): Promise<RateReconciliation> {
   const from = new Date(to.getTime() - days * 86_400_000);
   const problems: string[] = [];
 
-  const [anthropic, elevenlabs, poyo] = await Promise.all([
+  const [anthropic, elevenlabs, poyo, drawdown] = await Promise.all([
     reconcileAnthropic(from, to, problems),
     reconcileElevenLabs(problems),
     reconcilePoyoCatalog(new Date(to.getTime() - CATALOG_DAYS * 86_400_000), problems),
+    reconcileDrawdown(days),
   ]);
+
+  problems.push(...drawdown.problems);
 
   const findings = [...anthropic, ...elevenlabs, ...poyo].sort((a, b) => Math.abs(b.drift) - Math.abs(a.drift));
   return {
@@ -442,6 +461,7 @@ export async function reconcileRates(days = 30): Promise<RateReconciliation> {
     to: to.toISOString(),
     findings,
     drifted: findings.filter((f) => Math.abs(f.drift) >= DRIFT_THRESHOLD),
+    drawdown: drawdown.findings,
     problems,
   };
 }

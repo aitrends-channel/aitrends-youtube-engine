@@ -22,6 +22,7 @@ import EmailsPanel from "./EmailsPanel";
 import FreeUsagePanel from "./FreeUsagePanel";
 import { TtsCostLens } from "@/components/admin/TtsCostLens";
 import { RateDriftCard } from "@/components/admin/RateDriftCard";
+import { ProviderDrawdownCard } from "@/components/admin/ProviderDrawdownCard";
 import { JobsPanel } from "@/components/admin/JobsPanel";
 import { SupportPanel } from "@/components/admin/SupportPanel";
 import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
@@ -3027,6 +3028,7 @@ function HeclusCreditsPanel() {
           rates: this is what the rates turned out to be worth, checked against
           the invoice rather than against the table they came from. */}
       <RateDriftCard />
+      <ProviderDrawdownCard />
     </div>
   );
 }

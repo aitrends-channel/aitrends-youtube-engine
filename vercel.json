@@ -52,6 +52,10 @@
     {
       "path": "/api/cron/genaipro-video",
       "schedule": "*/1 * * * *"
+    },
+    {
+      "path": "/api/cron/snapshot-provider-balances",
+      "schedule": "7 * * * *"
     }
   ]
 }
