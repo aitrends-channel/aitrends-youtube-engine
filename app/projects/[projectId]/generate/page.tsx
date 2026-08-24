@@ -20,7 +20,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { ModelPicker } from "@/components/ModelPicker";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
-import { friendlyError, isModelTerminalError, isContentBlockMessage } from "@/lib/errors/friendly";
+import { friendlyError, isModelTerminalError, isContentBlockMessage, isProviderAccountEmpty } from "@/lib/errors/friendly";
 import { isOutOfCreditsMessage } from "@/lib/out-of-credits";
 import { reportOutOfCredits, blockIfShort } from "@/store/outOfCreditsStore";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
@@ -2477,7 +2477,12 @@ export default function GeneratePage({ params }: PageProps) {
                           {/* A content block is fixed by rephrasing, not by
                               switching models, so the advice is dropped when
                               that's the only failure we have. */}
-                          {!isContentBlockMessage(imageRunError) && (
+                          {/* Switching models cannot help when the account every
+                              model on that operator bills to is empty, and a
+                              content block is fixed by rephrasing rather than by
+                              switching. Both drop the advice and keep the
+                              provider's own sentence. */}
+                          {!isContentBlockMessage(imageRunError) && !isProviderAccountEmpty(imageRunError) && (
                             <p>
                               {pendingCount} image{pendingCount === 1 ? "" : "s"} didn't generate on <span style={{ fontWeight: 600 }}>{workingImageName}</span>. Try switching to a different model above, then run again.
                             </p>
@@ -2919,6 +2924,7 @@ export default function GeneratePage({ params }: PageProps) {
                 // model" advice when every surfaced error is a content block
                 // (the per-error message already routes them to Prompt Studio).
                 const allContentBlocks = errors.length > 0 && errors.every(isContentBlockMessage);
+                const anyAccountEmpty = errors.some(isProviderAccountEmpty);
                 const MAX_SHOWN = 3;
                 const shown = errors.slice(0, MAX_SHOWN);
                 const extra = errors.length - shown.length;
@@ -2926,7 +2932,7 @@ export default function GeneratePage({ params }: PageProps) {
                   <div ref={videoErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug flex items-start gap-2"
                     style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "var(--accent-red-text)" }}>
                     <div className="flex-1 space-y-1">
-                      {failedVideos > 0 && !allContentBlocks && (
+                      {failedVideos > 0 && !allContentBlocks && !anyAccountEmpty && (
                         <p>
                           {failedVideos} clip{failedVideos === 1 ? "" : "s"} failed on <span style={{ fontWeight: 600 }}>{workingName}</span>. Try switching to a different model above, then retry.
                         </p>
