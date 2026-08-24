@@ -86,6 +86,8 @@ export async function POST(req: Request) {
     // processBeat).
     let submitted = 0;
     const failures: { beatNumber: number; error: string }[] = [];
+    /** Beats a retry could not re-queue because they are still running. */
+    const alreadyRunning: number[] = [];
 
     // Re-queue EXCEPT when the beat is actively in flight. Re-queueing a
     // beat that's already "submitting"/"rendering" nulls its video_job_id
@@ -117,7 +119,13 @@ export async function POST(req: Request) {
         continue;
       }
       if (existing.video_status === "submitting" || existing.video_status === "rendering") {
+        // Counted as submitted, and reported separately. Re-queueing a beat
+        // that is genuinely in flight would null its job id and let the worker
+        // submit a second one, so skipping is right; saying nothing about it is
+        // not, because a retry that silently does nothing reads as a broken
+        // button and gets pressed again.
         submitted++;
+        alreadyRunning.push(beat.beatNumber);
         continue;
       }
 
@@ -178,7 +186,7 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ submitted, failures, total: beats.length });
+    return NextResponse.json({ submitted, failures, total: beats.length, alreadyRunning });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to submit video jobs";
     console.error("[video-submit]", message);

@@ -721,10 +721,15 @@ export default function GeneratePage({ params }: PageProps) {
           ...(safeVideoResolution ? { resolution: safeVideoResolution } : {}),
         }),
       });
-      const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
+      const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; alreadyRunning?: number[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? `Request failed (HTTP ${res.status})`);
       if (data.failures?.length) {
         setVideoRunError(friendlyError(data.failures[0].error));
+      } else if (data.alreadyRunning?.includes(beat.beatNumber)) {
+        // Not re-queued, and deliberately so: it is still running. Saying
+        // "re-queued" here is what made the button look broken, since nothing
+        // about the beat changed afterwards.
+        toast.info(`Beat ${beat.beatNumber} is still generating. Wait for it to finish or fail before retrying.`);
       } else {
         toast.success(`Beat ${beat.beatNumber} re-queued`);
         setVideosSubmitted(true);
@@ -2048,12 +2053,19 @@ export default function GeneratePage({ params }: PageProps) {
           ...(safeVideoResolution ? { resolution: safeVideoResolution } : {}),
         }),
       });
-      const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
+      const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; alreadyRunning?: number[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? `Request failed (HTTP ${res.status})`);
       setVideosSubmitted(true);
       void warmStartVideos();
       const verb = mode === "failed" ? "re-submitted" : "submitted";
-      if ((data.submitted ?? 0) > 0) toast.success(`${data.submitted ?? 0} video clips ${verb}`);
+      const running = data.alreadyRunning?.length ?? 0;
+      const fresh = (data.submitted ?? 0) - running;
+      if (fresh > 0) toast.success(`${fresh} video clip${fresh === 1 ? "" : "s"} ${verb}`);
+      // Counted as submitted by the route, but nothing about them changed, so
+      // reporting them as re-submitted is what made a retry look like a no-op.
+      if (running > 0) {
+        toast.info(`${running} clip${running === 1 ? " is" : "s are"} still generating and cannot be re-queued yet.`);
+      }
       if (data.failures?.length) {
         setVideoRunError(friendlyError(data.failures[0].error));
       }
