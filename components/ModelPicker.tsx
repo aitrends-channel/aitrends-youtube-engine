@@ -53,6 +53,10 @@ interface CommonProps {
    *  The video panel puts the credit balance here: it belongs to the model
    *  choice (the free model spends it) rather than to the section header. */
   belowTabs?: React.ReactNode;
+  /** Show `belowTabs` only while this tab is selected. The video credit
+   *  balance belongs to the Free tab: it is the wallet the free models spend,
+   *  and beside the paid list it reads as the balance those models draw on. */
+  belowTabsOnly?: ModelTab;
 }
 
 interface ImageModelPickerProps extends CommonProps {
@@ -283,7 +287,9 @@ export function ModelPicker(props: ModelPickerProps) {
       </div>
       )}
 
-      {props.belowTabs && <div className="mb-2">{props.belowTabs}</div>}
+      {props.belowTabs && (!props.belowTabsOnly || tab === props.belowTabsOnly) && (
+        <div className="mb-2">{props.belowTabs}</div>
+      )}
 
       {tab === "free" && !hasFree && !props.hideCategoryTabs ? (
         // Free tier is a teaser for now — the BYO implementations behind

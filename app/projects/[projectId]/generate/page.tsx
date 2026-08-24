@@ -2583,6 +2583,7 @@ export default function GeneratePage({ params }: PageProps) {
                   where Dodo returns after a top-up. */}
               <ModelPicker
                 belowTabs={<VideoCreditsPanel />}
+                belowTabsOnly="free"
                 type="video"
                 models={videoModels}
                 selectedModelId={selectedVideoModel}
