@@ -147,12 +147,15 @@ async function signupGrantCredits(user: User): Promise<number> {
 }
 
 /**
- * Which tier the grant reads. Founder counts as Pro, being the higher-priced
- * plan at $40; the GenAIPro video wallet gives Founder nothing on purpose, so
- * if the same is wanted here it is a value to set rather than a rule to write.
+ * Which tier the grant reads.
+ *
+ * Pro only. Founder is closed to new signups, so it gets no figure of its own;
+ * an existing Founder account falls through to the Starter grant like any
+ * unrecognised plan. Nobody new can arrive on it, so a rule for it would be a
+ * rule about the past.
  */
 function planIsPro(user: User): boolean {
-  return ["pro", "founder"].includes(planSlugOf(user));
+  return planSlugOf(user) === "pro";
 }
 
 /**

@@ -12,11 +12,11 @@
 -- real room to regenerate and try a second idea, at a cost to Heclus of $5 and
 -- $10 against first months of $21 and $39.
 --
--- Two columns rather than one JSON blob: there are three plans, the existing
--- column already holds the starter figure, and the admin editor is a number
--- input per value. Founder reads the Pro column, being the higher tier at $40.
--- The GenAIPro video wallet deliberately gives Founder nothing, so if the same
--- is wanted here it is a value to set, not a rule to write.
+-- Two columns rather than one JSON blob: there are two plans on sale, the
+-- existing column already holds the starter figure, and the admin editor is a
+-- number input per value. Founder is closed to new signups and gets no figure
+-- of its own; an existing Founder account reads the Starter column like any
+-- unrecognised plan.
 
 ALTER TABLE product_config
   ADD COLUMN IF NOT EXISTS heclus_signup_grant_credits_pro NUMERIC;

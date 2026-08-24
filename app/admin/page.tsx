@@ -2891,7 +2891,7 @@ function HeclusCreditsPanel() {
           <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Signup grant</p>
           <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
             Granted once per account, the first time a balance is read. Existing accounts receive it too.
-            Empty disables it. Founder reads the Pro figure; Pro with no figure of its own reads Starter.
+            Empty disables it. Pro with no figure of its own reads Starter, and so does Founder, which is closed to new signups.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
@@ -2906,7 +2906,7 @@ function HeclusCreditsPanel() {
             />
           </div>
           <div>
-            <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>Pro and Founder</label>
+            <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>Pro</label>
             <input
               type="number" min={1} step="any" value={grantPro}
               onChange={(e) => setGrantPro(e.target.value)}
