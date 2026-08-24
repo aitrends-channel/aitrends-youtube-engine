@@ -72,12 +72,12 @@ function gateByOperator(models: KieModel[], operator: string): KieModel[] {
     if (m.id === GENAIPRO_VIDEO_MODEL_ID) return m;
 
     if (operator === OPERATOR_POYO) {
-      return poyoVideoModelFor(m.id) ? m : { ...m, unavailable: "Not available on PoYo" };
+      return poyoVideoModelFor(m.id) ? m : { ...m, unavailable: "Not supported" };
     }
     // The other direction, for the same reason. The catalog is KIE's own list
     // today, so nothing is marked here yet; the first PoYo-only model added to
     // it is greyed out under KIE instead of failing at submit.
-    return isPoyoOnlyVideo(m.id) ? { ...m, unavailable: "Not available on KIE" } : m;
+    return isPoyoOnlyVideo(m.id) ? { ...m, unavailable: "Not supported" } : m;
   });
 }
 
