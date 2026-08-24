@@ -89,7 +89,11 @@ function ModelOption({
     <button
       type="button"
       onClick={onSelect}
-      disabled={disabled}
+      // A model the active provider cannot serve is not a choice. It used to
+      // be selectable and then quietly routed to the other provider, so the
+      // customer picked one thing and got another.
+      disabled={disabled || !!model.unavailable}
+      title={model.unavailable ?? undefined}
       className="w-full text-left p-3 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
       style={selected ? {
         background: "oklch(0.72 0.25 285 / 0.1)",
@@ -102,6 +106,9 @@ function ModelOption({
       }}
     >
       <p className="font-medium text-xs">{model.name}</p>
+      {model.unavailable && (
+        <p className="text-xs mt-0.5" style={{ color: "oklch(0.62 0.18 45)" }}>{model.unavailable}</p>
+      )}
       {model.description && <p className="text-xs mt-0.5 opacity-60">{model.description}</p>}
       {(model.tags?.length || model.costPerUnit) && (
         <div className="flex gap-1 mt-2 flex-wrap">

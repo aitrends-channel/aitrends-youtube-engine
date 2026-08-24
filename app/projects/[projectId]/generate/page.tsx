@@ -1351,14 +1351,19 @@ export default function GeneratePage({ params }: PageProps) {
   // user actually queues a video gen.
   useEffect(() => {
     if (!videoModels?.length || selectedVideoModel) return;
+    // A model the active provider cannot serve is disabled in the picker, so
+    // it must not be the default either: the run would be blocked by a choice
+    // the user never made.
+    const usable = videoModels.filter((m) => !m.unavailable);
+    if (!usable.length) return;
     let preferred: string | null = null;
     if (typeof window !== "undefined") {
       try {
         const saved = window.localStorage.getItem("heclus-preferred-video-model");
-        if (saved && videoModels.some((m) => m.id === saved)) preferred = saved;
+        if (saved && usable.some((m) => m.id === saved)) preferred = saved;
       } catch { /* ignore */ }
     }
-    setSelectedVideoModel(preferred ?? videoModels[0].id);
+    setSelectedVideoModel(preferred ?? usable[0].id);
   }, [videoModels]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {

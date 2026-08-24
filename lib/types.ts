@@ -204,6 +204,10 @@ export interface KieModel {
    *  by /api/kie/models from the project_costs ledger. Absent for
    *  models with no ledger history. */
   avgSpeedMs?: number;
+  /** Why this model cannot be selected right now, or absent when it can.
+   *  Shown on a disabled card: a model that quietly routes somewhere else, or
+   *  fails on submit, is worse than one the picker says it cannot serve. */
+  unavailable?: string;
 }
 
 export interface JobStatus {
