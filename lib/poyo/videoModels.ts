@@ -25,3 +25,18 @@ export const KIE_TO_POYO_VIDEO: Record<string, string> = {
 export function poyoVideoModelFor(kieModelId: string): string | null {
   return KIE_TO_POYO_VIDEO[kieModelId] ?? null;
 }
+
+/**
+ * Models PoYo carries that KIE does not, by their PoYo id.
+ *
+ * Nothing in the picker offers these yet, so today this list changes nothing
+ * on screen. It exists so the gate is symmetric: the first time a PoYo-only
+ * model is added to the catalog, it is greyed out under KIE rather than
+ * offered and failed at submit, which is exactly how the Veo-under-PoYo
+ * problem started.
+ */
+export const POYO_ONLY_VIDEO = ["seedance-2.5", "hailuo-2.3"];
+
+export function isPoyoOnlyVideo(modelId: string): boolean {
+  return POYO_ONLY_VIDEO.includes(modelId);
+}

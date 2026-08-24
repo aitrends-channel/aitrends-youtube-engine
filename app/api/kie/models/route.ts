@@ -14,7 +14,7 @@ import { monthlyGrantFor } from "@/lib/credits";
 import { GENAIPRO_VIDEO_MODEL_ID } from "@/lib/genaipro/client";
 import { getMediaOperatorForUser } from "@/lib/operators/routing";
 import { OPERATOR_POYO } from "@/lib/operators";
-import { poyoVideoModelFor } from "@/lib/poyo/videoModels";
+import { poyoVideoModelFor, isPoyoOnlyVideo } from "@/lib/poyo/videoModels";
 
 /** Round a fractional credit value to 2 decimals for display.
  *  KIE returns NUMERIC values (e.g. 9.6 cr per 6s = 1.6 cr/s). */
@@ -66,12 +66,19 @@ function withPoyoCredits(models: CatalogModel[]): CatalogModel[] {
  * provider.
  */
 function gateByOperator(models: KieModel[], operator: string): KieModel[] {
-  if (operator !== OPERATOR_POYO) return models;
-  return models.map((m) => (
-    m.id === GENAIPRO_VIDEO_MODEL_ID || poyoVideoModelFor(m.id)
-      ? m
-      : { ...m, unavailable: "Not available on PoYo" }
-  ));
+  return models.map((m) => {
+    // The free lane is neither operator's to refuse: it runs on Heclus's own
+    // GenAIPro account whatever the switch says.
+    if (m.id === GENAIPRO_VIDEO_MODEL_ID) return m;
+
+    if (operator === OPERATOR_POYO) {
+      return poyoVideoModelFor(m.id) ? m : { ...m, unavailable: "Not available on PoYo" };
+    }
+    // The other direction, for the same reason. The catalog is KIE's own list
+    // today, so nothing is marked here yet; the first PoYo-only model added to
+    // it is greyed out under KIE instead of failing at submit.
+    return isPoyoOnlyVideo(m.id) ? { ...m, unavailable: "Not available on KIE" } : m;
+  });
 }
 
 /** Decorate models with the observed average wall-clock generation
