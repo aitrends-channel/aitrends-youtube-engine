@@ -77,6 +77,11 @@ export interface CostEntry {
    *  cost. Omit (or pass null) for steps where seconds aren't the
    *  natural unit — e.g. frame-counted Sora, or any non-video step. */
   durationSec?: number | null;
+  /** The resolution the generation was billed at, exactly as the picker labels
+   *  it ("1K", "1080p", "pro"). What makes the rollup able to price a 4K run at
+   *  4K rather than at whatever the cheapest resolution of that model cost.
+   *  Omit only when the model has no resolution knob. */
+  resolution?: string | null;
   /** Wall-clock milliseconds from submit to result-ready. Used by
    *  the model picker's "Fastest" tab to rank models by observed
    *  speed. Set on image_gen kie_credits rows; safe to omit on rows
@@ -111,6 +116,7 @@ export async function logProjectCost(entry: CostEntry): Promise<void> {
         units: entry.units,
         unit_kind: entry.unitKind,
         duration_sec: entry.durationSec ?? null,
+        resolution: entry.resolution ?? null,
         elapsed_ms: entry.elapsedMs ?? null,
       });
     if (error) {
@@ -144,6 +150,55 @@ function stepToModelType(step: CostStep): "image" | "video" | null {
 }
 
 /**
+ * Observed prices, by model and then by resolution.
+ *
+ * The empty-string key is the blended figure across every resolution, which is
+ * the only thing this table held before migration 139 and still the right
+ * answer for a model with no resolution knob. A named key ("1K", "1080p") is a
+ * figure measured at that resolution and nothing else.
+ *
+ * Read it through observedFor rather than indexing it directly, so a model with
+ * no history at the chosen resolution falls back the same way everywhere.
+ */
+export type ObservedByModel = Record<string, Record<string, number>>;
+
+/**
+ * The observed price for one model at one resolution.
+ *
+ * Prefers the measured figure for that exact resolution. Falls back to the
+ * blended figure, which the caller is then expected to scale — see
+ * lib/pricing/resolution.ts. Returns undefined when the model has no history at
+ * all, which means "we do not know" and must not be read as free.
+ */
+export function observedFor(
+  map: ObservedByModel,
+  modelId: string,
+  resolution?: string | null,
+): { value: number; exact: boolean } | undefined {
+  const byResolution = map[modelId];
+  if (!byResolution) return undefined;
+  const label = (resolution ?? "").trim();
+  if (label && typeof byResolution[label] === "number") {
+    return { value: byResolution[label], exact: true };
+  }
+  if (typeof byResolution[""] === "number") return { value: byResolution[""], exact: false };
+  return undefined;
+}
+
+function groupByModel<T extends { model_name: string; resolution: string | null }>(
+  rows: T[],
+  pick: (row: T) => number | null | undefined,
+): ObservedByModel {
+  const out: ObservedByModel = {};
+  for (const row of rows) {
+    const value = pick(row);
+    if (typeof value !== "number" || !(value > 0)) continue;
+    (out[row.model_name] ??= {})[row.resolution ?? ""] = value;
+  }
+  return out;
+}
+
+/**
  * Returns the cheapest observed KIE credits per generation per image
  * model, sourced from the daily-refreshed model_cost_and_speed
  * snapshot. The cron at /api/cron/refresh-model-cost-and-speed
@@ -151,13 +206,13 @@ function stepToModelType(step: CostStep): "image" | "video" | null {
  *
  * Fail-soft: returns {} on any error so the picker still renders.
  */
-export async function getMinKieCreditsByModel(step: CostStep): Promise<Record<string, number>> {
+export async function getMinKieCreditsByModel(step: CostStep): Promise<ObservedByModel> {
   const modelType = stepToModelType(step);
   if (modelType !== "image") return {};
   try {
     const { data, error } = await supabase
       .from("model_cost_and_speed")
-      .select("model_name, cost_per_unit_credits")
+      .select("model_name, resolution, cost_per_unit_credits")
       .eq("model_type", "image")
       .not("cost_per_unit_credits", "is", null);
 
@@ -166,14 +221,12 @@ export async function getMinKieCreditsByModel(step: CostStep): Promise<Record<st
       return {};
     }
 
-    const out: Record<string, number> = {};
-    for (const row of data ?? []) {
-      const r = row as { model_name: string; cost_per_unit_credits: number | null };
-      if (typeof r.cost_per_unit_credits === "number" && r.cost_per_unit_credits > 0) {
-        out[r.model_name] = r.cost_per_unit_credits;
-      }
-    }
-    return out;
+    return groupByModel(
+      (data ?? []) as Array<{
+        model_name: string; resolution: string | null; cost_per_unit_credits: number | null;
+      }>,
+      (r) => r.cost_per_unit_credits,
+    );
   } catch (e) {
     console.warn(`[costs] min-credits threw step=${step}:`, e instanceof Error ? e.message : e);
     return {};
@@ -188,13 +241,13 @@ export async function getMinKieCreditsByModel(step: CostStep): Promise<Record<st
  *
  * Fail-soft: returns {} on any error so the picker still renders.
  */
-export async function getMinCostPerSecByModel(step: CostStep): Promise<Record<string, number>> {
+export async function getMinCostPerSecByModel(step: CostStep): Promise<ObservedByModel> {
   const modelType = stepToModelType(step);
   if (modelType !== "video") return {};
   try {
     const { data, error } = await supabase
       .from("model_cost_and_speed")
-      .select("model_name, cost_per_second_credits")
+      .select("model_name, resolution, cost_per_second_credits")
       .eq("model_type", "video")
       .not("cost_per_second_credits", "is", null);
 
@@ -203,14 +256,12 @@ export async function getMinCostPerSecByModel(step: CostStep): Promise<Record<st
       return {};
     }
 
-    const out: Record<string, number> = {};
-    for (const row of data ?? []) {
-      const r = row as { model_name: string; cost_per_second_credits: number | null };
-      if (typeof r.cost_per_second_credits === "number" && r.cost_per_second_credits > 0) {
-        out[r.model_name] = r.cost_per_second_credits;
-      }
-    }
-    return out;
+    return groupByModel(
+      (data ?? []) as Array<{
+        model_name: string; resolution: string | null; cost_per_second_credits: number | null;
+      }>,
+      (r) => r.cost_per_second_credits,
+    );
   } catch (e) {
     console.warn(`[costs] cost-per-sec threw step=${step}:`, e instanceof Error ? e.message : e);
     return {};
@@ -233,6 +284,10 @@ export async function getAvgElapsedByModel(step: CostStep): Promise<Record<strin
       .from("model_cost_and_speed")
       .select("model_name, speed_ms")
       .eq("model_type", modelType)
+      // The blended row. Speed is ranked per model in the picker, not per
+      // resolution, and without this filter a model with three resolution rows
+      // would resolve to whichever one came back last.
+      .eq("resolution", "")
       .not("speed_ms", "is", null);
 
     if (error) {
@@ -259,6 +314,8 @@ type ModelType = "image" | "video";
 interface ModelAggregate {
   modelName: string;
   modelType: ModelType;
+  /** "" for the blended row, otherwise the resolution it was measured at. */
+  resolution: string;
   costPerUnitCredits: number | null;   // image only
   costPerSecondCredits: number | null; // video only
   speedMs: number | null;
@@ -267,13 +324,29 @@ interface ModelAggregate {
 
 /**
  * Recompute the model_cost_and_speed snapshot from project_costs and
- * upsert one row per (model, type). Invoked daily by the Vercel cron
- * at /api/cron/refresh-model-cost-and-speed.
+ * upsert one row per (model, type, resolution). Invoked daily by the Vercel
+ * cron at /api/cron/refresh-model-cost-and-speed.
  *
  * Aggregation matches the three live readers further up in this file
  * — min credits for image, min credits/sec for video, avg elapsed_ms
  * for speed — so switching the picker to read this table is a no-op
  * in observable behavior, just faster.
+ *
+ * Every observation lands twice: once under its own resolution and once under
+ * "" for the blended row. The blended row is what the picker chips and every
+ * resolution-blind caller read before, and what the estimate falls back to for
+ * a resolution nothing has been run at yet. Keeping both means the new
+ * per-resolution figures can be trusted as soon as they exist without a model
+ * losing its price the day the column was added.
+ *
+ * KIE observations only, deliberately. PoYo bills in its own credit, and this
+ * table has one row per model with no provider axis, so folding PoYo rows in
+ * would take a MIN across two currencies under one model name — and both
+ * operators carry models with the same id (z-image, seedream-4). PoYo images
+ * price from their published catalog instead and never read this table; PoYo
+ * video reads the KIE figure for the same relayed model, which over-estimates
+ * slightly since PoYo relays below KIE list, and over is the safe direction.
+ * Giving PoYo its own rows needs a provider column in the key.
  *
  * usd_per_credit is preserved per row: we read the existing value
  * first and write it back unchanged on upsert. The USD columns are
@@ -286,7 +359,7 @@ export async function refreshModelCostAndSpeed(): Promise<{
 }> {
   const { data, error } = await supabase
     .from("project_costs")
-    .select("step, model, units, duration_sec, elapsed_ms")
+    .select("step, model, units, duration_sec, elapsed_ms, resolution")
     .in("step", ["image_gen", "video_gen"])
     .eq("provider", "kie")
     .eq("unit_kind", "kie_credits")
@@ -306,43 +379,51 @@ export async function refreshModelCostAndSpeed(): Promise<{
       units: number | null;
       duration_sec: number | null;
       elapsed_ms: number | null;
+      resolution: string | null;
     };
     if (!r.model || typeof r.units !== "number" || r.units <= 0) continue;
     const modelType: ModelType = r.step === "video_gen" ? "video" : "image";
-    const key = `${r.model}|${modelType}`;
+    const resolution = (r.resolution ?? "").trim();
 
-    let agg = aggregates.get(key);
-    if (!agg) {
-      agg = {
-        modelName: r.model,
-        modelType,
-        costPerUnitCredits: null,
-        costPerSecondCredits: null,
-        speedMs: null,
-        sampleCount: 0,
-      };
-      aggregates.set(key, agg);
-    }
-    agg.sampleCount += 1;
-
-    if (modelType === "image") {
-      if (agg.costPerUnitCredits === null || r.units < agg.costPerUnitCredits) {
-        agg.costPerUnitCredits = r.units;
+    // Once under its own resolution, once under the blend. A row from before
+    // migration 139 carries no resolution and contributes to the blend only,
+    // which is the whole truth about it.
+    for (const res of resolution ? ["", resolution] : [""]) {
+      const key = `${r.model}|${modelType}|${res}`;
+      let agg = aggregates.get(key);
+      if (!agg) {
+        agg = {
+          modelName: r.model,
+          modelType,
+          resolution: res,
+          costPerUnitCredits: null,
+          costPerSecondCredits: null,
+          speedMs: null,
+          sampleCount: 0,
+        };
+        aggregates.set(key, agg);
       }
-    } else {
-      if (typeof r.duration_sec === "number" && r.duration_sec > 0) {
-        const perSec = r.units / r.duration_sec;
-        if (agg.costPerSecondCredits === null || perSec < agg.costPerSecondCredits) {
-          agg.costPerSecondCredits = perSec;
+      agg.sampleCount += 1;
+
+      if (modelType === "image") {
+        if (agg.costPerUnitCredits === null || r.units < agg.costPerUnitCredits) {
+          agg.costPerUnitCredits = r.units;
+        }
+      } else {
+        if (typeof r.duration_sec === "number" && r.duration_sec > 0) {
+          const perSec = r.units / r.duration_sec;
+          if (agg.costPerSecondCredits === null || perSec < agg.costPerSecondCredits) {
+            agg.costPerSecondCredits = perSec;
+          }
         }
       }
-    }
 
-    if (typeof r.elapsed_ms === "number" && r.elapsed_ms > 0) {
-      const s = speedSums.get(key) ?? { sum: 0, count: 0 };
-      s.sum += r.elapsed_ms;
-      s.count += 1;
-      speedSums.set(key, s);
+      if (typeof r.elapsed_ms === "number" && r.elapsed_ms > 0) {
+        const s = speedSums.get(key) ?? { sum: 0, count: 0 };
+        s.sum += r.elapsed_ms;
+        s.count += 1;
+        speedSums.set(key, s);
+      }
     }
   }
 
@@ -356,14 +437,24 @@ export async function refreshModelCostAndSpeed(): Promise<{
   // and USD columns null until someone sets a rate.
   const { data: existing, error: existingErr } = await supabase
     .from("model_cost_and_speed")
-    .select("model_name, model_type, usd_per_credit");
+    .select("model_name, model_type, resolution, usd_per_credit");
   if (existingErr) {
     throw new Error(`[refresh-model-cost] read existing failed: ${existingErr.message}`);
   }
+  // Keyed without resolution: usd_per_credit converts a vendor credit to
+  // dollars, which is a property of the vendor and the model, not of how many
+  // pixels were asked for. Every resolution row of a model shares it, and the
+  // blended row is where an admin sets it.
   const rateByKey = new Map<string, number | null>();
   for (const row of existing ?? []) {
-    const r = row as { model_name: string; model_type: string; usd_per_credit: number | null };
-    rateByKey.set(`${r.model_name}|${r.model_type}`, r.usd_per_credit ?? null);
+    const r = row as {
+      model_name: string; model_type: string; resolution: string | null; usd_per_credit: number | null;
+    };
+    const key = `${r.model_name}|${r.model_type}`;
+    const blended = (r.resolution ?? "") === "";
+    if (blended || (!rateByKey.get(key) && r.usd_per_credit !== null)) {
+      rateByKey.set(key, r.usd_per_credit ?? null);
+    }
   }
 
   const now = new Date().toISOString();
@@ -375,6 +466,7 @@ export async function refreshModelCostAndSpeed(): Promise<{
     return {
       model_name: agg.modelName,
       model_type: agg.modelType,
+      resolution: agg.resolution,
       cost_per_unit_credits: agg.costPerUnitCredits,
       cost_per_unit_usd: unitUsd,
       cost_per_second_credits: agg.costPerSecondCredits,
@@ -390,7 +482,7 @@ export async function refreshModelCostAndSpeed(): Promise<{
 
   const { error: upsertErr } = await supabase
     .from("model_cost_and_speed")
-    .upsert(payload, { onConflict: "model_name,model_type" });
+    .upsert(payload, { onConflict: "model_name,model_type,resolution" });
   if (upsertErr) {
     throw new Error(`[refresh-model-cost] upsert failed: ${upsertErr.message}`);
   }

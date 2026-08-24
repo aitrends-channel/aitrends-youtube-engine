@@ -156,7 +156,10 @@ export async function POST(req: Request) {
     //    so an edited prompt survives a failed generation instead of
     //    being silently lost.
     await supabase.from("project_beats")
-      .update({ image_status: "generating", image_task_id: taskId, image_model_id: modelId, image_prompt: imagePrompt, image_operator: op.id })
+      .update({
+        image_status: "generating", image_task_id: taskId, image_model_id: modelId,
+        image_prompt: imagePrompt, image_operator: op.id, image_resolution: resolution ?? null,
+      })
       .eq("project_id", projectId)
       .eq("beat_number", beatNumber);
 
@@ -189,7 +192,7 @@ export async function POST(req: Request) {
         if (failedUnits > 0) {
           void logProjectCost({
             projectId, userId: user.id, step: "image_gen", provider: op.id === "poyo" ? "poyo" : "kie",
-            model: modelId, units: failedUnits, unitKind: op.unitKind,
+            model: modelId, units: failedUnits, unitKind: op.unitKind, resolution,
             elapsedMs: Date.now() - submitT0,
           });
         }
@@ -205,7 +208,7 @@ export async function POST(req: Request) {
     if (creditsConsumed) {
       void logProjectCost({
         projectId, userId: user.id, step: "image_gen", provider: op.id === "poyo" ? "poyo" : "kie",
-        model: modelId, units: creditsConsumed, unitKind: op.unitKind,
+        model: modelId, units: creditsConsumed, unitKind: op.unitKind, resolution,
         elapsedMs: Date.now() - submitT0,
       });
     }

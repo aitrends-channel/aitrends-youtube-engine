@@ -134,6 +134,7 @@ export async function POST(req: Request) {
               model: modelId,
               units: creditsConsumed,
               unitKind: op.unitKind,
+              resolution,
               elapsedMs,
               reservationId: hold?.id ?? null,
             });

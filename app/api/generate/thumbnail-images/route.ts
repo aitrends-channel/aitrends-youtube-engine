@@ -151,6 +151,7 @@ export async function POST(req: Request) {
               model: modelId,
               units: creditsConsumed,
               unitKind: op.unitKind,
+              resolution,
               reservationId: hold?.id ?? null,
             });
           } else {

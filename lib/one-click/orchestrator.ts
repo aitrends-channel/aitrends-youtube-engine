@@ -705,7 +705,10 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
             prompt: sentPrompt, modelId: imageModel, aspectRatio: imgAr, resolution: imgRes, userId: project.user_id,
           });
           await supabase.from("project_beats")
-            .update({ image_status: "generating", image_task_id: taskId, image_model_id: imageModel, image_prompt: prompt, image_operator: imgOp.id })
+            .update({
+              image_status: "generating", image_task_id: taskId, image_model_id: imageModel,
+              image_prompt: prompt, image_operator: imgOp.id, image_resolution: imgRes ?? null,
+            })
             .eq("project_id", project.id).eq("beat_number", b.beat_number);
           return true;
         } catch (err) {
