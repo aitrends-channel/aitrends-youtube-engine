@@ -29,6 +29,8 @@ export interface HeclusCreditsConfig {
   packCredits: number | null;
   packPriceUsd: number | null;
   signupGrantCredits: number | null;
+  /** Pro and Founder. Unset means they read the Starter figure. */
+  signupGrantCreditsPro: number | null;
   /** Only the keys an admin has overridden. The rest fall back to the defaults,
    *  which are sent alongside so the form can show what it would use. */
   rates: Partial<CreditRates>;
@@ -37,7 +39,7 @@ export interface HeclusCreditsConfig {
   activeEnv: "test" | "production";
   /** Columns migrations 130, 132 and 133 add. False means the tab can display
    *  but not save that field, and says why. */
-  schema: { pack: boolean; signupGrant: boolean; rates: boolean };
+  schema: { pack: boolean; signupGrant: boolean; signupGrantPro: boolean; rates: boolean };
   /** The keys the wallet spends. Set on the API Keys tab, shown here because a
    *  wallet with no provider key behind it fails every generation. */
   keys: { kie: boolean; elevenlabs: boolean };
@@ -113,12 +115,14 @@ export async function GET() {
     packCredits: num(row.heclus_pack_credits),
     packPriceUsd: num(row.heclus_pack_price_usd),
     signupGrantCredits: num(row.heclus_signup_grant_credits),
+    signupGrantCreditsPro: num(row.heclus_signup_grant_credits_pro),
     rates,
     defaultRates: DEFAULT_CREDIT_RATES,
     activeEnv: getEffectivePaymentMode(),
     schema: {
       pack: "heclus_pack_checkout_url_test" in row,
       signupGrant: "heclus_signup_grant_credits" in row,
+      signupGrantPro: "heclus_signup_grant_credits_pro" in row,
       rates: "credit_rates" in row,
     },
     keys: { kie, elevenlabs },
@@ -134,6 +138,7 @@ export interface HeclusCreditsPatch {
   packCredits?: number | string | null;
   packPriceUsd?: number | string | null;
   signupGrantCredits?: number | string | null;
+  signupGrantCreditsPro?: number | string | null;
   rates?: Partial<Record<keyof CreditRates, number | string | null>>;
 }
 
@@ -174,6 +179,7 @@ export async function PATCH(req: Request) {
     ["packCredits", "heclus_pack_credits"],
     ["packPriceUsd", "heclus_pack_price_usd"],
     ["signupGrantCredits", "heclus_signup_grant_credits"],
+    ["signupGrantCreditsPro", "heclus_signup_grant_credits_pro"],
   ] as const) {
     const raw = body[field];
     if (raw === undefined) continue;
