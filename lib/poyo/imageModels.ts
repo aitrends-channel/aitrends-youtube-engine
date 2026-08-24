@@ -153,6 +153,22 @@ interface PoyoModelInputs {
   /** grok-imagine-image-2.0 calls the ratio field `aspect_ratio`. */
   sizeKey?: "aspect_ratio";
   /**
+   * Longest prompt this model accepts, where it says so.
+   *
+   * z-image takes 1,000 characters and our beat prompts are longer, so a run
+   * of 46 images failed with "prompt must be 1000 characters or less" and not
+   * one call reached generation. The retry that exists for KIE's version of
+   * this error did not fire, because PoYo words it differently.
+   *
+   * Measured 2026-08-24 by submitting a 30,000-character prompt and reading
+   * the rejection. Only measured limits are here: several models accepted that
+   * prompt outright, so their real ceiling is unknown and capping them on a
+   * documented figure would trim prompts for no reason. The docs claim 1,000
+   * for the GPT models and they took 30,000 without complaint, which is either
+   * a stale doc or a silent truncation, and neither is worth guessing at.
+   */
+  promptMax?: number;
+  /**
    * Models whose resolution presets are values of `size` rather than a field of
    * their own (Seedream 4.5 and 5.0 Lite). Since one field cannot carry both, a
    * chosen resolution is expressed as the WIDTHxHEIGHT that keeps the ratio,
@@ -162,7 +178,7 @@ interface PoyoModelInputs {
 }
 
 export const POYO_MODEL_INPUTS: Record<string, PoyoModelInputs> = {
-  "z-image":            { sizes: ["16:9", "9:16", "1:1", "4:3", "3:4"] },
+  "z-image":            { sizes: ["16:9", "9:16", "1:1", "4:3", "3:4"], promptMax: 1000 },
   // No 16:9 on either GPT model. 3:2 is the widest they offer.
   "gpt-4o-image":       { sizes: ["3:2", "2:3", "1:1"] },
   "gpt-image-1.5":      { sizes: ["3:2", "2:3", "1:1"] },
@@ -173,16 +189,16 @@ export const POYO_MODEL_INPUTS: Record<string, PoyoModelInputs> = {
   // Pixel dimensions only, and no resolution field: 1024x576 is the 16:9 the
   // picker asks for.
   "wan-2.7-image":      { sizes: ["1024x576", "576x1024", "1024x1024", "1024x768", "768x1024", "512x512"] },
-  "nano-banana":        { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5"] },
+  "nano-banana":        { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5"], promptMax: 5000 },
   "nano-banana-2":      { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5"], resolutions: ["1K", "2K", "4K"] },
-  "nano-banana-2-lite": { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5"] },
-  "nano-banana-pro":    { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5"], resolutions: ["1K", "2K", "4K"] },
+  "nano-banana-2-lite": { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5"], promptMax: 20_000 },
+  "nano-banana-pro":    { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4", "5:4", "4:5"], resolutions: ["1K", "2K", "4K"], promptMax: 20_000 },
   "seedream-4":         { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4"], resolutions: ["1K", "2K", "4K"] },
   "seedream-4.5":       { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4"], sizeResolutions: { "2K": 2048, "4K": 4096 } },
   "seedream-5.0-lite":  { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4"], sizeResolutions: { "2K": 2048, "3K": 3072 } },
   "seedream-5.0-pro":   { sizes: ["16:9", "9:16", "1:1", "21:9", "3:2", "2:3", "4:3", "3:4"], resolutions: ["1K", "2K"] },
-  "grok-imagine-image": { sizes: ["16:9", "9:16", "1:1", "3:2", "2:3"] },
-  "grok-imagine-image-2.0": { sizes: ["16:9", "9:16", "1:1", "3:2", "2:3"], resolutions: ["1K", "2K"], sizeKey: "aspect_ratio" },
+  "grok-imagine-image": { sizes: ["16:9", "9:16", "1:1", "3:2", "2:3"], promptMax: 5000 },
+  "grok-imagine-image-2.0": { sizes: ["16:9", "9:16", "1:1", "3:2", "2:3"], resolutions: ["1K", "2K"], sizeKey: "aspect_ratio", promptMax: 8000 },
 };
 
 const RATIO = /^(\d+):(\d+)$/;
@@ -302,4 +318,9 @@ export function poyoImageInput(
   const out: Record<string, string> = { [inputs?.sizeKey ?? "size"]: size };
   if (resolution && inputs?.resolutions?.includes(resolution)) out.resolution = resolution;
   return out;
+}
+
+/** The longest prompt this model will take, or null when it has never said. */
+export function poyoPromptMax(modelId: string): number | null {
+  return POYO_MODEL_INPUTS[modelId]?.promptMax ?? null;
 }

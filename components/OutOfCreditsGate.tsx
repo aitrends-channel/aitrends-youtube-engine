@@ -23,7 +23,7 @@ const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 
 
 export function OutOfCreditsGate() {
   const router = useRouter();
-  const { open, credits, needed, alternative, show, hide } = useOutOfCreditsStore();
+  const { open, credits, needed, alternative, modelName, count, show, hide } = useOutOfCreditsStore();
   const [navigating, setNavigating] = useState(false);
   const [balance, setBalance] = useState<{ credits: number; reserved: number } | null>(null);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
@@ -133,7 +133,7 @@ export function OutOfCreditsGate() {
           <DialogDescription className="text-zinc-400">
             {needed === null
               ? "Top up to keep generating."
-              : `Needs about ${fmt(needed)} credits. Top up, or pick a cheaper model.`}
+              : `${modelName ?? "This run"} needs about ${fmt(needed)} credits${count ? ` for ${count}` : ""}.`}
           </DialogDescription>
         </DialogHeader>
         <p className="text-sm leading-relaxed text-zinc-500">
@@ -151,7 +151,8 @@ export function OutOfCreditsGate() {
         </p>
         {alternative && (
           <p className="-mt-3 text-sm text-zinc-500">
-            Cheaper: <span className="text-zinc-300">{alternative.name}</span>, {fmt(alternative.total)} credits
+            Switch to <span className="text-zinc-300">{alternative.name}</span> for {fmt(alternative.total)} credits,
+            or top up.
           </p>
         )}
         <DialogFooter className="-mx-6 -mb-6 mt-1 gap-2.5 border-zinc-800 bg-zinc-900/60 px-6 py-4">

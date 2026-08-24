@@ -1172,7 +1172,10 @@ export default function GeneratePage({ params }: PageProps) {
    * three of five beats fail one at a time. A model with no known rate reports
    * sufficient and is allowed through.
    */
-  const affordable = useCallback(async (body: Record<string, unknown>): Promise<boolean> => {
+  const affordable = useCallback(async (
+    body: Record<string, unknown>,
+    run?: { modelName?: string | null; count?: number | null },
+  ): Promise<boolean> => {
     try {
       const res = await fetch("/api/credits/estimate", {
         method: "POST",
@@ -1181,7 +1184,7 @@ export default function GeneratePage({ params }: PageProps) {
       });
       if (!res.ok) return true;
       const estimate = await res.json() as { sufficient: boolean; total: number | null; balance: number };
-      return !blockIfShort(estimate);
+      return !blockIfShort(estimate, run);
     } catch {
       // The estimate is advisory. If it cannot be reached, let the run start
       // and let the API refuse it.
@@ -1624,6 +1627,9 @@ export default function GeneratePage({ params }: PageProps) {
       operator: selectedImageOperator,
       count: targetBeats.length,
       resolution: selectedResolution,
+    }, {
+      modelName: imageModels?.find((m) => m.id === selectedImageModel)?.name ?? null,
+      count: targetBeats.length,
     }))) return;
 
     const shouldClear = opts.mode === "all" && generatedImages > 0;
@@ -2022,6 +2028,9 @@ export default function GeneratePage({ params }: PageProps) {
         count: eligible.length,
         durationSec: selectedDuration,
         resolution: selectedVideoResolution,
+      }, {
+        modelName: videoModels?.find((m) => m.id === selectedVideoModel)?.name ?? null,
+        count: eligible.length,
       }))) return;
 
       // Instant UI feedback — flip all eligible beats to "queued" before

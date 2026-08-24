@@ -3,8 +3,19 @@
 // shortening, not retrying. 400 sits under every model's limit.
 export const PROMPT_LENGTH_CAPS = [1500, 800, 400];
 
+// Two providers, two wordings for the same deterministic failure. KIE says
+// "The text length cannot exceed the maximum limit"; PoYo says "prompt must be
+// 1000 characters or less" and, on one model, "prompt must be less than or
+// equal to 8000 characters". The retry never fired for PoYo because none of
+// those match a pattern written against KIE.
 export function isPromptLengthError(msg: string): boolean {
-  return /text length|maximum limit|too long|prompt.*exceed/i.test(msg);
+  return /text length|maximum limit|too long|prompt.*exceed/i.test(msg)
+    // "prompt must be 1000 characters or less" and "prompt must be less than
+    // or equal to 8000 characters" are the same sentence with the clause in a
+    // different place, so the gap between "must be" and the number is allowed
+    // to hold one.
+    || /prompt must be[^.]{0,40}\d+\s*characters/i.test(msg)
+    || /\d+\s*characters or less/i.test(msg);
 }
 
 export function capPrompt(prompt: string, max: number): string {

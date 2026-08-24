@@ -1,5 +1,6 @@
 import { poyoRequest, poyoEnvelopeError, type PoyoEnvelope } from "./client";
-import { poyoImageInput } from "./imageModels";
+import { poyoImageInput, poyoPromptMax } from "./imageModels";
+import { capPrompt } from "@/lib/kie/promptLength";
 
 // Image submit and poll against PoYo. Deliberately the same shape as
 // lib/kie/images.ts (submit returns a task id, check returns done/failed/
@@ -35,9 +36,18 @@ export async function submitPoyoImageTask(
   // accepted set is per model: the GPT models take no 16:9 at all, wan-2.7
   // takes pixel dimensions only, and only some models have a resolution field
   // at all. poyoImageInput is where that per-model shape lives.
+  // Trimmed to what the model takes, at a word boundary, rather than sent and
+  // rejected. z-image's 1,000 characters is shorter than a beat prompt, so
+  // every image in a run failed on it and none of them reached generation.
+  const max = poyoPromptMax(modelId);
+  const sent = max ? capPrompt(prompt, max) : prompt;
+  if (sent.length < prompt.length) {
+    console.log(`[poyo/images] prompt trimmed for ${modelId}: ${prompt.length} to ${sent.length} chars`);
+  }
+
   const body: Record<string, unknown> = {
     model: modelId,
-    input: { prompt, ...poyoImageInput(modelId, aspectRatio, resolution) },
+    input: { prompt: sent, ...poyoImageInput(modelId, aspectRatio, resolution) },
   };
   if (callbackUrl) body.callback_url = callbackUrl;
 
