@@ -65,6 +65,16 @@ export async function finishImageTask(input: FinishImageInput): Promise<FinishIm
     const estimated = input.modelId ? op.estimate(input.modelId) : null;
     const units = result.units ?? estimated ?? 0;
     if (units > 0) {
+      // Read here rather than threaded through the five callers. Images submit
+      // on one request and finish on another, so this is the only place that
+      // knows both the price and the beat, and without the resolution the
+      // rollup can only ever learn a blended figure for the model.
+      const { data: beat } = await supabase
+        .from("project_beats")
+        .select("image_resolution")
+        .eq("project_id", input.projectId)
+        .eq("beat_number", input.beatNumber)
+        .maybeSingle();
       // Awaited rather than fired off, because the hold is settled inside it
       // and a released-then-settled race would return credits twice.
       await logProjectCost({
@@ -75,6 +85,7 @@ export async function finishImageTask(input: FinishImageInput): Promise<FinishIm
         model: input.modelId ?? null,
         units,
         unitKind: op.unitKind,
+        resolution: (beat as { image_resolution?: string | null } | null)?.image_resolution ?? null,
         reservationId: hold?.id ?? null,
       });
     } else if (hold) {

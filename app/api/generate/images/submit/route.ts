@@ -137,7 +137,12 @@ export async function POST(req: Request) {
     // intact on purpose — we want the old frame visible under the
     // spinner until the new one lands.
     await supabase.from("project_beats")
-      .update({ image_status: "generating", image_task_id: taskId, image_model_id: modelId, image_operator: op.id })
+      // image_resolution rides along so the finisher, which is a different
+      // request entirely, can record what the charge was for.
+      .update({
+        image_status: "generating", image_task_id: taskId, image_model_id: modelId,
+        image_operator: op.id, image_resolution: resolution ?? null,
+      })
       .eq("project_id", projectId)
       .eq("beat_number", beatNumber);
 

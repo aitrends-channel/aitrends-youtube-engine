@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { getFundingMode } from "@/lib/funding";
+import { planSlugOf } from "@/lib/plans-gating";
 
 // Heclus Credits: the general wallet a user buys from us and spends on work that
 // runs on Heclus's own provider accounts.
@@ -95,39 +96,82 @@ export async function getHeclusBalance(user: User): Promise<HeclusBalance> {
 async function ensureSignupGrant(user: User): Promise<void> {
   try {
     if (await getFundingMode(user) !== "wallet") return;
-    const credits = await signupGrantCredits();
+    const credits = await signupGrantCredits(user);
     if (credits <= 0) return;
     const granted = await addHeclusCredits({
       userId: user.id,
       credits,
       kind: "adjustment",
-      note: `${credits} starter credits`,
+      note: `${credits} signup credits`,
       dodoPaymentId: `signup:${user.id}`,
     });
-    if (granted) console.log(`[heclus-credits] granted ${credits} starter credits to ${user.id}`);
+    if (granted) console.log(`[heclus-credits] granted ${credits} signup credits to ${user.id} (plan ${planSlugOf(user)})`);
   } catch (e) {
     console.warn("[heclus-credits] signup grant failed:", e instanceof Error ? e.message : e);
   }
 }
 
-/** How many starter credits, from config. Falls back to the launch figure when
- *  the column is missing, so an unapplied migration 132 still grants. */
-async function signupGrantCredits(): Promise<number> {
+/**
+ * How many credits this account is granted, from config, by plan.
+ *
+ * Falls back to the code figures when the columns are missing, so an unapplied
+ * migration 132 or 140 still grants rather than granting nothing.
+ *
+ * A stored value of zero is honoured as a deliberate zero. Only an absent
+ * column falls back, which is the difference between "not configured" and
+ * "configured to none".
+ */
+async function signupGrantCredits(user: User): Promise<number> {
+  const pro = planIsPro(user);
+  const fallback = pro ? DEFAULT_SIGNUP_GRANT_PRO : DEFAULT_SIGNUP_GRANT_STARTER;
+  const column = pro ? "heclus_signup_grant_credits_pro" : "heclus_signup_grant_credits";
+
   const { data, error } = await supabase
     .from("product_config")
-    .select("heclus_signup_grant_credits")
+    .select("heclus_signup_grant_credits, heclus_signup_grant_credits_pro")
     .eq("service", "_global")
     .maybeSingle();
-  if (error) return DEFAULT_SIGNUP_GRANT;
-  const raw = (data as { heclus_signup_grant_credits?: unknown } | null)?.heclus_signup_grant_credits;
-  if (raw === undefined) return DEFAULT_SIGNUP_GRANT;
-  const n = Number(raw ?? 0);
+  if (error) return fallback;
+
+  const row = (data ?? {}) as Record<string, unknown>;
+  // Pro reading an unset Pro column drops to the starter figure rather than to
+  // the code default: an admin who lowered the starter grant meant to lower
+  // what a new account gets, and handing Pro more than that would be a
+  // surprise.
+  const raw = column in row && row[column] !== null && row[column] !== undefined
+    ? row[column]
+    : (pro ? row.heclus_signup_grant_credits : undefined);
+  if (raw === undefined || raw === null) return fallback;
+  const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
-/** Provisional, and it lives in product_config so changing it is not a deploy.
- *  See migration 132. */
-const DEFAULT_SIGNUP_GRANT = 100;
+/**
+ * Which tier the grant reads.
+ *
+ * Pro only. Founder is closed to new signups, so it gets no figure of its own;
+ * an existing Founder account falls through to the Starter grant like any
+ * unrecognised plan. Nobody new can arrive on it, so a rule for it would be a
+ * rule about the past.
+ */
+function planIsPro(user: User): boolean {
+  return planSlugOf(user) === "pro";
+}
+
+/**
+ * What one finished video costs on the default models is about 385 credits:
+ * Grok Imagine at 4 credits a frame and 1.6 credits a second, 20 beats, plus
+ * roughly 79 for the writing steps and 66 for the voiceover. These figures are
+ * a finished video with room to regenerate and try a second idea, which is the
+ * only thing that demonstrates the product. The launch figure of 100 bought the
+ * writing steps and about five images, so it spent real money and produced
+ * nothing watchable.
+ *
+ * Both live in product_config, so changing them is not a deploy. See migration
+ * 140.
+ */
+const DEFAULT_SIGNUP_GRANT_STARTER = 1000;
+const DEFAULT_SIGNUP_GRANT_PRO = 2000;
 
 /** Recent movements, newest first, for the Balance panel and admin views. */
 export async function listHeclusLedger(userId: string, limit = 50): Promise<HeclusLedgerRow[]> {

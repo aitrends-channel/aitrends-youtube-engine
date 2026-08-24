@@ -7,7 +7,7 @@ import { getFundingModeById } from "@/lib/funding";
 import { listVideoModels } from "@/lib/kie/videos";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
-import { getMinCostPerSecByModel, getMinKieCreditsByModel, getAvgElapsedByModel } from "@/lib/costs";
+import { getMinCostPerSecByModel, getMinKieCreditsByModel, getAvgElapsedByModel, type ObservedByModel } from "@/lib/costs";
 import type { User } from "@supabase/supabase-js";
 import type { KieModel } from "@/lib/types";
 import { monthlyGrantFor } from "@/lib/credits";
@@ -27,9 +27,12 @@ function round2(n: number): string {
  *  the unit suffix ("cr/s" for video, "cr" for image) by reading
  *  model.type. Models without ledger history render without the
  *  chip. */
-function withMinCredits<T extends KieModel>(models: T[], mins: Record<string, number>): T[] {
+function withMinCredits<T extends KieModel>(models: T[], mins: ObservedByModel): T[] {
   return models.map((m) => {
-    const v = mins[m.id];
+    // The blended figure. The catalog is fetched before the user has picked a
+    // resolution, so the chip is a floor for the model rather than a price for
+    // the run; the estimate the wallet checks does read the per-resolution row.
+    const v = mins[m.id]?.[""];
     if (v === undefined) return m;
     return { ...m, costPerUnit: round2(v) };
   });

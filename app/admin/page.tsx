@@ -22,6 +22,7 @@ import EmailsPanel from "./EmailsPanel";
 import FreeUsagePanel from "./FreeUsagePanel";
 import { TtsCostLens } from "@/components/admin/TtsCostLens";
 import { RateDriftCard } from "@/components/admin/RateDriftCard";
+import { ProviderDrawdownCard } from "@/components/admin/ProviderDrawdownCard";
 import { JobsPanel } from "@/components/admin/JobsPanel";
 import { SupportPanel } from "@/components/admin/SupportPanel";
 import { FeedbackPanel } from "@/components/admin/FeedbackPanel";
@@ -2667,6 +2668,7 @@ function HeclusCreditsPanel() {
   const [packCredits, setPackCredits] = useState("");
   const [packPrice, setPackPrice] = useState("");
   const [grant, setGrant] = useState("");
+  const [grantPro, setGrantPro] = useState("");
   const [rates, setRates] = useState<Record<string, string>>({});
   /** The per-model token overrides, edited as JSON: there is a row per model and
    *  the set changes whenever Anthropic ships one, so a fixed set of numeric
@@ -2684,6 +2686,7 @@ function HeclusCreditsPanel() {
     setPackCredits(data.packCredits != null ? String(data.packCredits) : "");
     setPackPrice(data.packPriceUsd != null ? String(data.packPriceUsd) : "");
     setGrant(data.signupGrantCredits != null ? String(data.signupGrantCredits) : "");
+    setGrantPro(data.signupGrantCreditsPro != null ? String(data.signupGrantCreditsPro) : "");
     const stored = (data.rates ?? {}) as Record<string, unknown>;
     setRates(Object.fromEntries(
       Object.entries(stored).filter(([, v]) => typeof v === "number").map(([k, v]) => [k, String(v)]),
@@ -2877,21 +2880,24 @@ function HeclusCreditsPanel() {
 
       <div className="space-y-2">
       {data && !data.schema.signupGrant && (
-        <MigrationWarning migration="132_signup_grant.sql" what="the starter grant" />
+        <MigrationWarning migration="132_signup_grant.sql" what="the signup grant" />
+      )}
+      {data && data.schema.signupGrant && !data.schema.signupGrantPro && (
+        <MigrationWarning migration="140_signup_grant_by_plan.sql" what="the Pro signup grant" />
       )}
 
       {/* Starter grant */}
       <div className="p-3 rounded-xl space-y-3" style={cardStyle}>
         <div>
-          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Starter grant</p>
+          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>Signup grant</p>
           <p className="text-sm mt-0.5" style={{ color: "var(--c-50)" }}>
             Granted once per account, the first time a balance is read. Existing accounts receive it too.
-            Empty disables it.
+            Empty disables it. Pro with no figure of its own reads Starter, and so does Founder, which is closed to new signups.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <div>
-            <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>Credits</label>
+            <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>Starter</label>
             <input
               type="number" min={1} step="any" value={grant}
               onChange={(e) => setGrant(e.target.value)}
@@ -2900,8 +2906,21 @@ function HeclusCreditsPanel() {
               style={inputStyle}
             />
           </div>
+          <div>
+            <label className="text-sm font-medium" style={{ color: "var(--c-55)" }}>Pro</label>
+            <input
+              type="number" min={1} step="any" value={grantPro}
+              onChange={(e) => setGrantPro(e.target.value)}
+              disabled={isLoading || saving !== null}
+              className="w-32 mt-1 px-3 py-2 rounded-lg text-sm outline-none tabular-nums"
+              style={inputStyle}
+            />
+          </div>
           <button
-            onClick={() => save("grant", { signupGrantCredits: grant.trim() || null })}
+            onClick={() => save("grant", {
+              signupGrantCredits: grant.trim() || null,
+              signupGrantCreditsPro: grantPro.trim() || null,
+            })}
             disabled={saving !== null || isLoading}
             className="px-3 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
             style={saveStyle(saving === null && !isLoading)}
@@ -3009,6 +3028,7 @@ function HeclusCreditsPanel() {
           rates: this is what the rates turned out to be worth, checked against
           the invoice rather than against the table they came from. */}
       <RateDriftCard />
+      <ProviderDrawdownCard />
     </div>
   );
 }
@@ -3101,11 +3121,20 @@ function BillingBreakdown({ data }: { data: HeclusCreditsConfig }) {
               cost={b.packVideos ? `${usd(b.totalCredits)} a video to us` : null}
             />
             <WorthLine
-              label="The starter grant buys"
+              label="The Starter grant buys"
               value={b.grantVideos}
               detail={data.signupGrantCredits ? `${n(data.signupGrantCredits)} credits per signup` : "No grant set"}
               price={null}
               cost={data.signupGrantCredits ? `costs us ${usd(data.signupGrantCredits)} per signup` : null}
+            />
+            <WorthLine
+              label="The Pro grant buys"
+              value={data.signupGrantCreditsPro && b.totalCredits ? data.signupGrantCreditsPro / b.totalCredits : b.grantVideos}
+              detail={data.signupGrantCreditsPro
+                ? `${n(data.signupGrantCreditsPro)} credits per signup`
+                : "Reads the Starter figure"}
+              price={null}
+              cost={data.signupGrantCreditsPro ? `costs us ${usd(data.signupGrantCreditsPro)} per signup` : null}
             />
           </div>
 

@@ -31,6 +31,7 @@ export const CRON_JOBS: CronJobSpec[] = [
   { name: "support-auto-reply", path: "/api/cron/support-auto-reply", schedule: "*/5 * * * *", purpose: "Answers support mail the agent can handle" },
   { name: "worker-keepalive", path: "/api/cron/worker-keepalive", schedule: "*/10 * * * *", purpose: "Keeps the video worker awake" },
   { name: "sweep-reservations", path: "/api/cron/sweep-reservations", schedule: "17 * * * *", purpose: "Returns credits held by work that never finished" },
+  { name: "snapshot-provider-balances", path: "/api/cron/snapshot-provider-balances", schedule: "7 * * * *", purpose: "Records the KIE and PoYo account balances" },
   { name: "storage-usage", path: "/api/cron/storage-usage", schedule: "35 */6 * * *", purpose: "Recomputes per-account storage" },
   { name: "refresh-model-cost-and-speed", path: "/api/cron/refresh-model-cost-and-speed", schedule: "0 3 * * *", purpose: "Refreshes observed model cost and speed" },
   { name: "cleanup-logs", path: "/api/cron/cleanup-logs", schedule: "0 4 * * *", purpose: "Trims the system log" },

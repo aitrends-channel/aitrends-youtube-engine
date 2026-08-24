@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { getCreditRates, creditsForUnits, roundCredits } from "@/lib/pricing";
 import { getPoyoImageModel } from "@/lib/poyo/imageModels";
-import { getMinKieCreditsByModel, getMinCostPerSecByModel } from "@/lib/costs";
+import { getMinKieCreditsByModel, getMinCostPerSecByModel, observedFor } from "@/lib/costs";
+import { relativeResolutionMultiplier } from "@/lib/pricing/resolution";
+import { getVideoModelConfig } from "@/lib/kie/videoModels";
+import { getModelConfig } from "@/lib/kie/imageModels";
+import { poyoImageConfig } from "@/lib/poyo/imageModels";
 import { spendableCredits } from "@/lib/heclus-charge";
 import { getFundingModeById } from "@/lib/funding";
 import { OPERATOR_POYO } from "@/lib/operators";
@@ -33,6 +37,14 @@ import type { CostStep, CostUnitKind } from "@/lib/costs";
 //                  model_cost_and_speed, the same figure the picker prints on
 //                  the model card. KIE publishes no per-model price to us.
 //   Video        – observed credits per second times the clip duration.
+//
+// Each of those is read at the chosen resolution first. Migration 139 put a
+// resolution on the ledger and on the rollup, so a model that has been run at
+// 1080p is priced from 1080p observations. Until a resolution has history the
+// blended figure is scaled by lib/pricing/resolution.ts, which is a table of
+// assumptions and says so. Before this, resolution was scaled on images and
+// ignored entirely on video, and both scaled from a blend that already leaned
+// toward the cheapest resolution the model offers.
 //
 // A model with no figure at all returns null rather than zero. A run that
 // cannot be priced must not be refused on a made-up number, so the caller
@@ -74,20 +86,30 @@ export interface RunEstimateInput {
 }
 
 /**
- * How much a resolution multiplies the base price.
+ * The resolutions a model offers, from the same config the picker renders.
  *
- * GPT Image 2 is the only model that publishes this: 1K is 1x, 2K is 2x, 4K is
- * 4x. The others charge more for more pixels without saying by how much, so the
- * same linear reading is applied to all of them. It is a guess, and it is the
- * guess that fails safely: over-estimating refuses a run slightly early, while
- * under-estimating lets one start that empties the wallet halfway through,
- * which is the failure this whole check exists to prevent.
+ * Needed because the multiplier is relative: the observed price is a minimum
+ * across everything ever run on that model, so it came from the cheapest
+ * resolution the model exposes, and the scale up to the chosen one has to start
+ * there. seedream-4.5 offers 2K and 4K and nothing smaller, so scaling its
+ * base by an absolute 4x for a 4K run charged twice for a step the base already
+ * included.
  */
-function resolutionMultiplier(resolution: string | null | undefined): number {
-  const match = /^(\d+(?:\.\d+)?)K$/i.exec((resolution ?? "").trim());
-  if (!match) return 1;
-  const k = Number(match[1]);
-  return Number.isFinite(k) && k >= 1 ? k : 1;
+function offeredResolutions(input: RunEstimateInput): string[] | undefined {
+  if (input.kind === "video") return getVideoModelConfig(input.modelId).resolutions;
+  if (input.operator === OPERATOR_POYO) return poyoImageConfig(input.modelId).resolutions;
+  return getModelConfig(input.modelId).resolutions;
+}
+
+/**
+ * The scale to apply to a blended observed price for a chosen resolution.
+ *
+ * Only used when nothing has been measured at that resolution yet. It is a
+ * table of assumptions (lib/pricing/resolution.ts) and it is there to stop a 4K
+ * run being priced at 480p rates until the ledger knows better.
+ */
+function scaleFor(input: RunEstimateInput): number {
+  return relativeResolutionMultiplier(input.kind, input.resolution, offeredResolutions(input));
 }
 
 async function perUnitCredits(
@@ -96,33 +118,54 @@ async function perUnitCredits(
   const rates = await getCreditRates();
 
   if (input.kind === "video") {
-    const perSec = (await getMinCostPerSecByModel("video_gen"))[input.modelId];
     const seconds = Number(input.durationSec ?? 0);
-    if (!perSec || !(seconds > 0)) return { perUnit: null, source: "unknown" };
+    // Resolution used to be accepted here and then dropped, so every clip was
+    // priced at the cheapest resolution the model had ever been run at. On
+    // Seedance that is 480p against a 4K option, and since credits_settle caps
+    // a settle at the hold, the shortfall came out of Heclus rather than the
+    // balance.
+    const observed = observedFor(
+      await getMinCostPerSecByModel("video_gen"),
+      input.modelId,
+      input.resolution,
+    );
+    if (!observed || !(seconds > 0)) return { perUnit: null, source: "unknown" };
+    const perSec = observed.exact ? observed.value : observed.value * scaleFor(input);
     return {
+      // KIE credits even when PoYo serves the clip: the figure is measured on
+      // KIE, PoYo relays the same models below KIE list, and over-estimating is
+      // the direction that fails safely.
       perUnit: creditsForUnits("kie_credits", perSec * seconds, rates, { model: input.modelId }),
       source: "video-observed",
     };
   }
 
-  const scale = resolutionMultiplier(input.resolution);
-
   if (input.operator === OPERATOR_POYO) {
     const model = getPoyoImageModel(input.modelId);
     if (!model) return { perUnit: null, source: "unknown" };
+    // A catalog price, not an observation, so there is nothing measured to
+    // prefer. nano-banana-pro's 18 credits was read off a probe at the default
+    // 1K, so the catalog figure is a cheapest-resolution figure like the
+    // observed ones and scales the same way.
     return {
-      perUnit: creditsForUnits("poyo_credits", model.credits * scale, rates, { model: input.modelId, provider: "poyo" }),
+      perUnit: creditsForUnits(
+        "poyo_credits", model.credits * scaleFor(input), rates,
+        { model: input.modelId, provider: "poyo" },
+      ),
       source: "poyo-catalog",
     };
   }
 
-  // The observed figure is the cheapest run of that model, so it already leans
-  // low; the resolution scale is what keeps a 4K run from being priced as a 1K
-  // one on top of that.
-  const observed = (await getMinKieCreditsByModel("image_gen"))[input.modelId];
+  const observed = observedFor(
+    await getMinKieCreditsByModel("image_gen"),
+    input.modelId,
+    input.resolution,
+  );
   if (!observed) return { perUnit: null, source: "unknown" };
+  // Measured at this resolution, or the blend scaled up to it.
+  const units = observed.exact ? observed.value : observed.value * scaleFor(input);
   return {
-    perUnit: creditsForUnits("kie_credits", observed * scale, rates, { model: input.modelId }),
+    perUnit: creditsForUnits("kie_credits", units, rates, { model: input.modelId }),
     source: "kie-observed",
   };
 }
