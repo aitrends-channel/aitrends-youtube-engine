@@ -13,6 +13,8 @@ import type { KieModel } from "@/lib/types";
 import { monthlyGrantFor } from "@/lib/credits";
 import { GENAIPRO_VIDEO_MODEL_ID } from "@/lib/genaipro/client";
 import { getMediaOperatorForUser } from "@/lib/operators/routing";
+import { OPERATOR_POYO } from "@/lib/operators";
+import { poyoVideoModelFor, isPoyoOnlyVideo } from "@/lib/poyo/videoModels";
 
 /** Round a fractional credit value to 2 decimals for display.
  *  KIE returns NUMERIC values (e.g. 9.6 cr per 6s = 1.6 cr/s). */
@@ -47,6 +49,35 @@ function withPoyoCredits(models: CatalogModel[]): CatalogModel[] {
     if (m.operator !== "poyo") return m;
     const priced = getPoyoImageModel(m.id);
     return priced ? { ...m, costPerUnit: round2(priced.credits) } : m;
+  });
+}
+
+/**
+ * Mark the video models the active operator cannot serve.
+ *
+ * PoYo carries Seedance, Kling 2.6, Grok and Hailuo for video and does not
+ * carry Veo, Runway, Kling 3 or Sora: probed directly, all four return "Model
+ * not found". Until now those simply fell back to KIE, which is defensible
+ * plumbing and a poor thing to do silently, since the customer picked a
+ * provider and got another one.
+ *
+ * Marked rather than hidden. A model that vanishes reads as a bug in the
+ * picker; one that is greyed out with a reason reads as a fact about the
+ * provider.
+ */
+function gateByOperator(models: KieModel[], operator: string): KieModel[] {
+  return models.map((m) => {
+    // The free lane is neither operator's to refuse: it runs on Heclus's own
+    // GenAIPro account whatever the switch says.
+    if (m.id === GENAIPRO_VIDEO_MODEL_ID) return m;
+
+    if (operator === OPERATOR_POYO) {
+      return poyoVideoModelFor(m.id) ? m : { ...m, unavailable: "Not supported" };
+    }
+    // The other direction, for the same reason. The catalog is KIE's own list
+    // today, so nothing is marked here yet; the first PoYo-only model added to
+    // it is greyed out under KIE instead of failing at submit.
+    return isPoyoOnlyVideo(m.id) ? { ...m, unavailable: "Not supported" } : m;
   });
 }
 
@@ -125,7 +156,7 @@ export async function GET(req: Request) {
         getMinCostPerSecByModel("video_gen"),
         getAvgElapsedByModel("video_gen"),
       ]);
-      const gated = await gateHeclusPaidVideo(models, user);
+      const gated = gateByOperator(await gateHeclusPaidVideo(models, user), await getMediaOperatorForUser(user.id, "video"));
       return NextResponse.json(promote(withAvgSpeed(withMinCredits(gated, mins), speeds), defaults.video));
     }
 
@@ -143,7 +174,9 @@ export async function GET(req: Request) {
     return NextResponse.json({
       tts,
       images: promote(withPoyoCredits(withAvgSpeed(withMinCredits(images, imageMins), imageSpeeds)), defaults.image),
-      videos: promote(withAvgSpeed(withMinCredits(await gateHeclusPaidVideo(videos, user), videoMins), videoSpeeds), defaults.video),
+      videos: promote(withAvgSpeed(withMinCredits(
+        gateByOperator(await gateHeclusPaidVideo(videos, user), await getMediaOperatorForUser(user.id, "video")),
+        videoMins), videoSpeeds), defaults.video),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch models";

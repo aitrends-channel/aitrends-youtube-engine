@@ -123,6 +123,18 @@ export async function finishImageTask(input: FinishImageInput): Promise<FinishIm
       console.log(`[finishImageTask] beat ${input.beatNumber} task=${input.taskId} db wrote image_url=${(urlData[0].image_url ?? "").slice(0, 80)}`);
     }
 
+    // Only give up the task pointer once the url is actually on the row.
+    // Clearing it after a failed url write is what stranded beats at
+    // "generating" with no image and no task: nothing was left for the cron to
+    // finish, so the spinner ran forever and the credits were already spent.
+    if (urlErr || !urlData || urlData.length === 0) {
+      console.error(
+        `[finishImageTask] beat ${input.beatNumber} task=${input.taskId} keeping task_id: ` +
+        "the url write did not land, so the cron must be able to try again",
+      );
+      return { status: "pending" };
+    }
+
     const { data: clearData } = await supabase
       .from("project_beats")
       .update({ image_task_id: null, image_model_id: null })

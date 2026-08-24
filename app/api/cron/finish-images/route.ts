@@ -53,6 +53,32 @@ export async function GET(req: Request) {
   }
 
   return withCronRun("finish-images", async () => {
+    // Beats the finisher gave up on: "generating" with no task to finish and
+    // no image to show. They were stranded by a url write that failed after
+    // the task pointer had already been cleared, so nothing could ever pick
+    // them up again and the spinner ran until someone reloaded the page and
+    // saw it still spinning. Failing them is honest and lets the user retry;
+    // the credits were spent either way.
+    const { data: stranded } = await supabase
+      .from("project_beats")
+      .select("project_id, beat_number")
+      .eq("image_status", "generating")
+      .is("image_task_id", null)
+      .is("image_url", null)
+      .limit(200);
+    for (const row of (stranded ?? []) as Array<{ project_id: string; beat_number: number }>) {
+      await supabase
+        .from("project_beats")
+        .update({ image_status: "failed" })
+        .eq("project_id", row.project_id)
+        .eq("beat_number", row.beat_number)
+        .eq("image_status", "generating")
+        .is("image_task_id", null);
+    }
+    if (stranded?.length) {
+      console.error(`[cron/finish-images] failed ${stranded.length} stranded beats: generating with no task and no image`);
+    }
+
     const startedAt = Date.now();
 
     // "image_task_id is not null" = the beat has an in-flight KIE task

@@ -73,6 +73,20 @@ const CONTENT_BLOCK_MESSAGES: ReadonlySet<string> = new Set([
 
 /** True for a friendlyError() result the user fixes by rewriting the prompt.
  *  Takes the mapped message, not the raw provider text. */
+/**
+ * Our own provider account is empty, rather than anything about this run.
+ *
+ * Worth telling apart from a normal failure because the advice differs: no
+ * amount of switching models helps when the account every model on that
+ * operator bills to is dry. The user can do nothing, which is what the message
+ * says, so the banner should not also tell them to try something.
+ */
+export function isProviderAccountEmpty(message: string | undefined | null): boolean {
+  const m = (message ?? "").toLowerCase();
+  return m.includes("image provider account is out of credit")
+    || m.includes("provider account is out of credit");
+}
+
 export function isContentBlockMessage(message: string | undefined | null): boolean {
   return CONTENT_BLOCK_MESSAGES.has((message ?? "").trim());
 }

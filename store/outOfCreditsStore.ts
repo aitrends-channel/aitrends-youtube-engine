@@ -21,11 +21,18 @@ interface OutOfCreditsState {
   needed: number | null;
   /** A model the balance can afford for the same run, when there is one. */
   alternative: { name: string; total: number } | null;
+  /** The model the user actually chose, and how many generations were asked
+   *  for. Named in the modal because a suggestion beside no subject reads as a
+   *  statement about the current selection. */
+  modelName: string | null;
+  count: number | null;
   show: (opts?: {
     message?: string | null;
     credits?: number | null;
     needed?: number | null;
     alternative?: { name: string; total: number } | null;
+    modelName?: string | null;
+    count?: number | null;
   }) => void;
   hide: () => void;
 }
@@ -36,6 +43,8 @@ export const useOutOfCreditsStore = create<OutOfCreditsState>()((set) => ({
   credits: null,
   needed: null,
   alternative: null,
+  modelName: null,
+  count: null,
   show: (opts) =>
     set({
       open: true,
@@ -43,6 +52,8 @@ export const useOutOfCreditsStore = create<OutOfCreditsState>()((set) => ({
       credits: typeof opts?.credits === "number" ? opts.credits : null,
       needed: typeof opts?.needed === "number" ? opts.needed : null,
       alternative: opts?.alternative ?? null,
+      modelName: opts?.modelName ?? null,
+      count: typeof opts?.count === "number" ? opts.count : null,
     }),
   hide: () => set({ open: false }),
 }));
@@ -67,17 +78,23 @@ export function reportOutOfCredits(text: string | null | undefined): boolean {
  * expression. A model with no known rate reports sufficient and is allowed
  * through: an unpriceable run must not be blocked on a made-up number.
  */
-export function blockIfShort(estimate: {
-  sufficient: boolean;
-  total: number | null;
-  balance: number;
-  alternative?: { name: string; total: number } | null;
-}): boolean {
+export function blockIfShort(
+  estimate: {
+    sufficient: boolean;
+    total: number | null;
+    balance: number;
+    alternative?: { name: string; total: number } | null;
+  },
+  /** What the user chose, so the modal can say whose 276 credits these are. */
+  run?: { modelName?: string | null; count?: number | null },
+): boolean {
   if (estimate.sufficient || estimate.total === null) return false;
   useOutOfCreditsStore.getState().show({
     credits: estimate.balance,
     needed: estimate.total,
     alternative: estimate.alternative ?? null,
+    modelName: run?.modelName ?? null,
+    count: run?.count ?? null,
   });
   return true;
 }

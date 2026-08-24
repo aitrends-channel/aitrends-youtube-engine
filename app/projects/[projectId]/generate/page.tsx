@@ -20,7 +20,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { ModelPicker } from "@/components/ModelPicker";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
-import { friendlyError, isModelTerminalError, isContentBlockMessage } from "@/lib/errors/friendly";
+import { friendlyError, isModelTerminalError, isContentBlockMessage, isProviderAccountEmpty } from "@/lib/errors/friendly";
 import { isOutOfCreditsMessage } from "@/lib/out-of-credits";
 import { reportOutOfCredits, blockIfShort } from "@/store/outOfCreditsStore";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
@@ -721,10 +721,15 @@ export default function GeneratePage({ params }: PageProps) {
           ...(safeVideoResolution ? { resolution: safeVideoResolution } : {}),
         }),
       });
-      const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
+      const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; alreadyRunning?: number[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? `Request failed (HTTP ${res.status})`);
       if (data.failures?.length) {
         setVideoRunError(friendlyError(data.failures[0].error));
+      } else if (data.alreadyRunning?.includes(beat.beatNumber)) {
+        // Not re-queued, and deliberately so: it is still running. Saying
+        // "re-queued" here is what made the button look broken, since nothing
+        // about the beat changed afterwards.
+        toast.info(`Beat ${beat.beatNumber} is still generating. Wait for it to finish or fail before retrying.`);
       } else {
         toast.success(`Beat ${beat.beatNumber} re-queued`);
         setVideosSubmitted(true);
@@ -1172,7 +1177,10 @@ export default function GeneratePage({ params }: PageProps) {
    * three of five beats fail one at a time. A model with no known rate reports
    * sufficient and is allowed through.
    */
-  const affordable = useCallback(async (body: Record<string, unknown>): Promise<boolean> => {
+  const affordable = useCallback(async (
+    body: Record<string, unknown>,
+    run?: { modelName?: string | null; count?: number | null },
+  ): Promise<boolean> => {
     try {
       const res = await fetch("/api/credits/estimate", {
         method: "POST",
@@ -1181,7 +1189,7 @@ export default function GeneratePage({ params }: PageProps) {
       });
       if (!res.ok) return true;
       const estimate = await res.json() as { sufficient: boolean; total: number | null; balance: number };
-      return !blockIfShort(estimate);
+      return !blockIfShort(estimate, run);
     } catch {
       // The estimate is advisory. If it cannot be reached, let the run start
       // and let the API refuse it.
@@ -1343,14 +1351,19 @@ export default function GeneratePage({ params }: PageProps) {
   // user actually queues a video gen.
   useEffect(() => {
     if (!videoModels?.length || selectedVideoModel) return;
+    // A model the active provider cannot serve is disabled in the picker, so
+    // it must not be the default either: the run would be blocked by a choice
+    // the user never made.
+    const usable = videoModels.filter((m) => !m.unavailable);
+    if (!usable.length) return;
     let preferred: string | null = null;
     if (typeof window !== "undefined") {
       try {
         const saved = window.localStorage.getItem("heclus-preferred-video-model");
-        if (saved && videoModels.some((m) => m.id === saved)) preferred = saved;
+        if (saved && usable.some((m) => m.id === saved)) preferred = saved;
       } catch { /* ignore */ }
     }
-    setSelectedVideoModel(preferred ?? videoModels[0].id);
+    setSelectedVideoModel(preferred ?? usable[0].id);
   }, [videoModels]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -1624,6 +1637,9 @@ export default function GeneratePage({ params }: PageProps) {
       operator: selectedImageOperator,
       count: targetBeats.length,
       resolution: selectedResolution,
+    }, {
+      modelName: imageModels?.find((m) => m.id === selectedImageModel)?.name ?? null,
+      count: targetBeats.length,
     }))) return;
 
     const shouldClear = opts.mode === "all" && generatedImages > 0;
@@ -2022,6 +2038,9 @@ export default function GeneratePage({ params }: PageProps) {
         count: eligible.length,
         durationSec: selectedDuration,
         resolution: selectedVideoResolution,
+      }, {
+        modelName: videoModels?.find((m) => m.id === selectedVideoModel)?.name ?? null,
+        count: eligible.length,
       }))) return;
 
       // Instant UI feedback — flip all eligible beats to "queued" before
@@ -2039,12 +2058,19 @@ export default function GeneratePage({ params }: PageProps) {
           ...(safeVideoResolution ? { resolution: safeVideoResolution } : {}),
         }),
       });
-      const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; error?: string };
+      const data = await res.json().catch(() => ({})) as { submitted?: number; failures?: { beatNumber: number; error: string }[]; alreadyRunning?: number[]; error?: string };
       if (!res.ok) throw new Error(data.error ?? `Request failed (HTTP ${res.status})`);
       setVideosSubmitted(true);
       void warmStartVideos();
       const verb = mode === "failed" ? "re-submitted" : "submitted";
-      if ((data.submitted ?? 0) > 0) toast.success(`${data.submitted ?? 0} video clips ${verb}`);
+      const running = data.alreadyRunning?.length ?? 0;
+      const fresh = (data.submitted ?? 0) - running;
+      if (fresh > 0) toast.success(`${fresh} video clip${fresh === 1 ? "" : "s"} ${verb}`);
+      // Counted as submitted by the route, but nothing about them changed, so
+      // reporting them as re-submitted is what made a retry look like a no-op.
+      if (running > 0) {
+        toast.info(`${running} clip${running === 1 ? " is" : "s are"} still generating and cannot be re-queued yet.`);
+      }
       if (data.failures?.length) {
         setVideoRunError(friendlyError(data.failures[0].error));
       }
@@ -2468,7 +2494,12 @@ export default function GeneratePage({ params }: PageProps) {
                           {/* A content block is fixed by rephrasing, not by
                               switching models, so the advice is dropped when
                               that's the only failure we have. */}
-                          {!isContentBlockMessage(imageRunError) && (
+                          {/* Switching models cannot help when the account every
+                              model on that operator bills to is empty, and a
+                              content block is fixed by rephrasing rather than by
+                              switching. Both drop the advice and keep the
+                              provider's own sentence. */}
+                          {!isContentBlockMessage(imageRunError) && !isProviderAccountEmpty(imageRunError) && (
                             <p>
                               {pendingCount} image{pendingCount === 1 ? "" : "s"} didn't generate on <span style={{ fontWeight: 600 }}>{workingImageName}</span>. Try switching to a different model above, then run again.
                             </p>
@@ -2552,6 +2583,7 @@ export default function GeneratePage({ params }: PageProps) {
                   where Dodo returns after a top-up. */}
               <ModelPicker
                 belowTabs={<VideoCreditsPanel />}
+                belowTabsOnly="free"
                 type="video"
                 models={videoModels}
                 selectedModelId={selectedVideoModel}
@@ -2910,6 +2942,7 @@ export default function GeneratePage({ params }: PageProps) {
                 // model" advice when every surfaced error is a content block
                 // (the per-error message already routes them to Prompt Studio).
                 const allContentBlocks = errors.length > 0 && errors.every(isContentBlockMessage);
+                const anyAccountEmpty = errors.some(isProviderAccountEmpty);
                 const MAX_SHOWN = 3;
                 const shown = errors.slice(0, MAX_SHOWN);
                 const extra = errors.length - shown.length;
@@ -2917,7 +2950,7 @@ export default function GeneratePage({ params }: PageProps) {
                   <div ref={videoErrorBannerRef} className="px-3 py-2 rounded-lg text-xs leading-snug flex items-start gap-2"
                     style={{ background: "oklch(0.6 0.22 25 / 0.08)", border: "1px solid oklch(0.6 0.22 25 / 0.25)", color: "var(--accent-red-text)" }}>
                     <div className="flex-1 space-y-1">
-                      {failedVideos > 0 && !allContentBlocks && (
+                      {failedVideos > 0 && !allContentBlocks && !anyAccountEmpty && (
                         <p>
                           {failedVideos} clip{failedVideos === 1 ? "" : "s"} failed on <span style={{ fontWeight: 600 }}>{workingName}</span>. Try switching to a different model above, then retry.
                         </p>
