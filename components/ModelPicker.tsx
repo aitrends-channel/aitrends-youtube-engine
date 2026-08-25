@@ -247,7 +247,12 @@ export function ModelPicker(props: ModelPickerProps) {
   const imageConfig = type === "image" && selectedModelId
     ? (selectedOperator === OPERATOR_POYO ? poyoImageConfig(selectedModelId) : getModelConfig(selectedModelId))
     : null;
-  const videoConfig = type === "video" && selectedModelId ? getVideoModelConfig(selectedModelId) : null;
+  // Operator-aware for the same reason the image branch above is: PoYo accepts
+  // different resolution sets for the same model ids, so KIE's list under PoYo
+  // offers choices PoYo rejects and hides ones it accepts.
+  const videoConfig = type === "video" && selectedModelId
+    ? getVideoModelConfig(selectedModelId, selectedOperator)
+    : null;
   const config = imageConfig ?? videoConfig;
 
   const tipText = props.tip

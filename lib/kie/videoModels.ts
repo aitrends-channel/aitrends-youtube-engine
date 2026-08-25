@@ -1,5 +1,7 @@
 import type { KieModel } from "@/lib/types";
 import { GENAIPRO_VIDEO_MODEL_ID } from "@/lib/genaipro/client";
+import { OPERATOR_POYO } from "@/lib/operators";
+import { poyoVideoResolutions } from "@/lib/poyo/videoModels";
 
 function m(id: string, name: string, tags: string[]): KieModel {
   return { id, name, type: "video", tags };
@@ -81,6 +83,24 @@ export const VIDEO_MODEL_CONFIGS: Record<string, VideoModelConfig> = {
   "bytedance/seedance-1.5-pro":       { durations: [{ label: "4s", value: "4" }, { label: "8s", value: "8" }, { label: "12s", value: "12" }], aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"], resolutions: ["480p", "720p", "1080p"] },
 };
 
-export function getVideoModelConfig(modelId: string): VideoModelConfig {
-  return VIDEO_MODEL_CONFIGS[modelId] ?? { durations: [sec(5)], aspectRatios: ["16:9"] };
+/**
+ * The input contract for a model, for the operator that will serve it.
+ *
+ * The table above is KIE's. PoYo accepts different resolution sets for the same
+ * model ids, so rendering the KIE list under PoYo offered choices PoYo rejects
+ * and hid ones it accepts. Passing the operator is what keeps the picker honest;
+ * omitting it keeps KIE's list, which is what every existing caller wants.
+ *
+ * Only resolutions are switched. Durations differ too, but the worker clamps a
+ * duration to the nearest value PoYo accepts rather than failing, so offering
+ * KIE's list there costs a second or two of clip and not a failed submit.
+ */
+export function getVideoModelConfig(modelId: string, operator?: string | null): VideoModelConfig {
+  const base = VIDEO_MODEL_CONFIGS[modelId] ?? { durations: [sec(5)], aspectRatios: ["16:9"] };
+  if (operator !== OPERATOR_POYO) return base;
+  const resolutions = poyoVideoResolutions(modelId);
+  // Not carried by PoYo at all. The picker greys the model out in that case, so
+  // whatever is returned here is not rendered; KIE's list is the honest default.
+  if (resolutions === undefined) return base;
+  return { ...base, resolutions: resolutions.length > 0 ? resolutions : undefined };
 }

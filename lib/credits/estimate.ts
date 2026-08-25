@@ -99,7 +99,7 @@ export interface RunEstimateInput {
  * included.
  */
 function offeredResolutions(input: RunEstimateInput): string[] | undefined {
-  if (input.kind === "video") return getVideoModelConfig(input.modelId).resolutions;
+  if (input.kind === "video") return getVideoModelConfig(input.modelId, input.operator).resolutions;
   if (input.operator === OPERATOR_POYO) return poyoImageConfig(input.modelId).resolutions;
   return getModelConfig(input.modelId).resolutions;
 }

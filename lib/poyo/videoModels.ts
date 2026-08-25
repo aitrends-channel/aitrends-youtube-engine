@@ -27,6 +27,39 @@ export function poyoVideoModelFor(kieModelId: string): string | null {
 }
 
 /**
+ * The resolutions PoYo accepts, by its own model id.
+ *
+ * A copy of POYO_VIDEO_LIMITS in video-worker/src/lib/poyoVideoModels.ts, which
+ * owns the clamping at submit. Needed here because PoYo and KIE do not accept
+ * the same sets for the same model, and the picker was rendering KIE's list
+ * whichever operator was serving. Three consequences, all real: Seedance 2 Fast
+ * accepts 1080p and 4k on PoYo and the picker offered only 480p and 720p;
+ * Hailuo 02 accepts 512P and 768P and the picker offered nothing; and Grok
+ * Imagine has no resolution knob on PoYo while the picker offered KIE's two,
+ * so the choice was silently dropped at submit.
+ *
+ * An absent entry means the model has no resolution choice on PoYo, which is
+ * different from an unmapped model. Both read as "offer nothing", which is
+ * correct: PoYo picks its own default.
+ */
+const POYO_VIDEO_RESOLUTIONS: Record<string, string[]> = {
+  "seedance-2": ["480p", "720p", "1080p", "4k"],
+  "seedance-2-fast": ["480p", "720p", "1080p", "4k"],
+  "seedance-1.5-pro": ["480p", "720p", "1080p"],
+  "hailuo-02": ["512P", "768P"],
+  // kling-2.6 and grok-imagine take a duration and nothing else.
+};
+
+/** The resolutions to offer for a KIE model id when PoYo is serving it, or
+ *  undefined when PoYo does not carry the model at all. An empty array means
+ *  PoYo carries it with no resolution choice. */
+export function poyoVideoResolutions(kieModelId: string): string[] | undefined {
+  const poyoId = poyoVideoModelFor(kieModelId);
+  if (!poyoId) return undefined;
+  return POYO_VIDEO_RESOLUTIONS[poyoId] ?? [];
+}
+
+/**
  * Models PoYo carries that KIE does not, by their PoYo id.
  *
  * Nothing in the picker offers these yet, so today this list changes nothing
