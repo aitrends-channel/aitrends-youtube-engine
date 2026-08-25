@@ -420,7 +420,10 @@ interface ModelAggregate {
  * (z-image, seedream-4), so a MIN across them under one name would be
  * meaningless. Before that column existed PoYo had no observed prices at all:
  * its images fell back to a published catalog that goes stale, and its video
- * read KIE's figure for the same relayed model, which runs high.
+ * read KIE's figure for the same relayed model, in an unknown direction. The
+ * first measurement put PoYo's grok-imagine at 5 credits a second against a
+ * KIE range of 1.6 to 5.0 for the same clip length, so the substitution was not
+ * conservative, it was a guess.
  *
  * usd_per_credit is preserved per row: we read the existing value
  * first and write it back unchanged on upsert. The USD columns are

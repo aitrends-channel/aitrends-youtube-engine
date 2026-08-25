@@ -129,9 +129,12 @@ async function perUnitCredits(
     // balance.
     // Which vendor's observations to price from. PoYo bills in its own credit,
     // so reading KIE's figure for a PoYo clip converts the wrong currency
-    // through the wrong rate; it happened to run high, which was safe but not
-    // right. Falls back to KIE when PoYo has served this model too few times to
-    // have a figure of its own.
+    // through the wrong rate, in an unknown direction: the 0.8 relay factor in
+    // lib/pricing.ts is about Claude tokens, not generation credits, and the
+    // first PoYo video measurement matched KIE's most expensive observed tier
+    // rather than undercutting it. Falls back to KIE only when PoYo has not
+    // served this model, and that fallback is a guess rather than a safe
+    // over-estimate.
     const operator = input.operator ?? await getMediaOperatorForUser(input.userId, "video");
     const onPoyo = operator === OPERATOR_POYO;
     const observed = (onPoyo
