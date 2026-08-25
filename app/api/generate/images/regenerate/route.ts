@@ -193,7 +193,7 @@ export async function POST(req: Request) {
           void logProjectCost({
             projectId, userId: user.id, step: "image_gen", provider: op.id === "poyo" ? "poyo" : "kie",
             model: modelId, units: failedUnits, unitKind: op.unitKind, resolution,
-            elapsedMs: Date.now() - submitT0,
+            eventKey: taskId, elapsedMs: Date.now() - submitT0,
           });
         }
         return NextResponse.json({ error: result.error ?? "Image generation failed" }, { status: 502 });
@@ -209,7 +209,7 @@ export async function POST(req: Request) {
       void logProjectCost({
         projectId, userId: user.id, step: "image_gen", provider: op.id === "poyo" ? "poyo" : "kie",
         model: modelId, units: creditsConsumed, unitKind: op.unitKind, resolution,
-        elapsedMs: Date.now() - submitT0,
+        eventKey: taskId, elapsedMs: Date.now() - submitT0,
       });
     }
 

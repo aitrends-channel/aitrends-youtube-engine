@@ -85,6 +85,10 @@ export async function finishImageTask(input: FinishImageInput): Promise<FinishIm
         model: input.modelId ?? null,
         units,
         unitKind: op.unitKind,
+        // The task id, so the webhook, the poll and the cron finishing the same
+        // task cannot each bill for it. This is the exact path that logged 324
+        // rows an hour for a week in June.
+        eventKey: input.taskId,
         resolution: (beat as { image_resolution?: string | null } | null)?.image_resolution ?? null,
         reservationId: hold?.id ?? null,
       });

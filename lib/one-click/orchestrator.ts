@@ -23,7 +23,10 @@ import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
 import { getModelConfig } from "@/lib/kie/imageModels";
 import { getVideoModelConfig } from "@/lib/kie/videoModels";
 import { getConcurrencyConfig } from "@/lib/concurrency-config";
-import { logProjectCost } from "@/lib/costs";
+import { logProjectCost, logAnthropicCost, type CostStep } from "@/lib/costs";
+import type { StepHold } from "@/lib/credits/hold";
+import { holdForStep, holdForRun, holdForCharacters, settleTokenHold, releaseHold, createStepHold } from "@/lib/credits/hold";
+import { estimateStepFloor, estimateRun } from "@/lib/credits/estimate";
 import { incrementFreeUsage } from "@/lib/freeUsage";
 import { redis } from "@/lib/queue/client";
 import { isProTier } from "@/lib/plans-gating";
@@ -219,15 +222,29 @@ async function generateMoreTopics(
   if (!proj?.channel_analysis) return existingIdeas;
   const topVideos = (proj.channel_info as { topVideos?: Array<{ title?: string }> } | null)?.topVideos ?? [];
   const topTitles = topVideos.map((v) => (v.title ?? "").trim()).filter(Boolean);
+  // Held and metered like the script step. This call spent Heclus's Anthropic
+  // key and wrote no cost row at all until 2026-08-25.
+  const { hold: ideasHold, refused: ideasRefused } = await holdForStep({
+    userId, step: "topic", provider: "anthropic", projectId,
+  });
+  if (ideasRefused) return existingIdeas;
+  let ideasSettled = false;
   try {
-    const { client } = await getAnthropicClient(userId, "ideas");
+    const { client, routing } = await getAnthropicClient(userId, "ideas");
+    const ideasModel = await resolveDefaultModel("ideas", userId);
     const res = await client.messages.create({
-      ...await resolveDefaultModel("ideas", userId),
+      ...ideasModel,
       max_tokens: 2048,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       tools: [{ name: "save_video_ideas", description: "Save the generated video ideas", input_schema: videoIdeasInputSchema }],
       tool_choice: { type: "tool", name: "save_video_ideas" },
       messages: [{ role: "user", content: buildVideoIdeasPrompt(proj.channel_analysis as Parameters<typeof buildVideoIdeasPrompt>[0], undefined, topTitles, exclude) }],
+    });
+    await settleTokenHold({ hold: ideasHold, model: ideasModel.model, provider: "anthropic", step: "topic", usage: res.usage });
+    ideasSettled = true;
+    await logAnthropicCost({
+      projectId, userId, step: "topic", model: ideasModel.model,
+      routing, usage: res.usage, kieCreditsConsumed: null, alreadyHeld: !!ideasHold,
     });
     const toolUse = res.content.find((b) => b.type === "tool_use");
     if (!toolUse || toolUse.type !== "tool_use") return existingIdeas;
@@ -248,6 +265,8 @@ async function generateMoreTopics(
   } catch (err) {
     console.warn(`[one-click] generateMoreTopics failed for ${projectId}:`, err instanceof Error ? err.message : err);
     return existingIdeas;
+  } finally {
+    if (!ideasSettled) await releaseHold(ideasHold, "1Click ideas did not complete");
   }
 }
 
@@ -280,22 +299,44 @@ async function runScriptStep(project: ProjectRow, cfg: OneClickConfig): Promise<
     return RESULT.attention("Channel analysis is missing — can't write the script.");
   }
 
+  // Priced and held before the call, like the manual route. Until 2026-08-25
+  // this step called Anthropic and neither held nor metered: the tokens were
+  // spent on Heclus's key and no row reached project_costs or the ledger.
+  const floor = await estimateStepFloor({ userId: project.user_id, step: "script" });
+  if (floor.sufficient === false) return RESULT.attention(OUT_OF_CREDITS_MESSAGE);
+  const { hold, refused } = await holdForStep({
+    userId: project.user_id, step: "script", provider: "anthropic", projectId: project.id,
+  });
+  if (refused) return RESULT.attention(OUT_OF_CREDITS_MESSAGE);
+
   let script = "";
+  let settled = false;
   try {
-    const { client: anthropic } = await getAnthropicClient(project.user_id, "script");
+    const { client: anthropic, routing } = await getAnthropicClient(project.user_id, "script");
+    const model = await resolveDefaultModel("script", project.user_id);
     const res = await anthropic.messages.create({
-      ...await resolveDefaultModel("script", project.user_id),
+      ...model,
       max_tokens: 8192,
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: buildScriptPrompt(analysis, topic) }],
+    });
+    // Settled on the tokens the call reported, then metered as already held so
+    // the four cost rows do not debit a second time.
+    await settleTokenHold({ hold, model: model.model, provider: "anthropic", step: "script", usage: res.usage });
+    settled = true;
+    await logAnthropicCost({
+      projectId: project.id, userId: project.user_id, step: "script",
+      model: model.model, routing, usage: res.usage, kieCreditsConsumed: null, alreadyHeld: !!hold,
     });
     script = res.content
       .map((b) => (b.type === "text" ? b.text : ""))
       .join("")
       .trim();
   } catch (err) {
+    if (!settled) await releaseHold(hold, "1Click script did not complete");
     return RESULT.attention(`Script generation failed. ${friendlyError(err instanceof Error ? err.message : null)}`);
   }
+  if (!settled) await releaseHold(hold, "1Click script produced nothing");
   if (!script) return RESULT.attention("The script came back empty — open the project and retry.");
 
   // Apply the user's script-length setting so the ENTIRE downstream flow
@@ -471,10 +512,16 @@ async function runPromptsStep(project: ProjectRow, cfg: OneClickConfig): Promise
     const genScript = sliceScriptForConfig(script, cfg);
     // Image prompts create the beats and set current_state back to 13
     // while running, then to 14 on completion.
-    await generateImages(project.id, project.user_id, genScript, visualProfile, capture, (await resolveModelForUser(project.user_id, "image_prompts")).model);
+    const imageModel = (await resolveModelForUser(project.user_id, "image_prompts")).model;
+    const imgRefusal = await withStepHold(project.user_id, project.id, "prompts_image", imageModel, (h) =>
+      generateImages(project.id, project.user_id, genScript, visualProfile, capture, imageModel, "general", h));
+    if (imgRefusal) return RESULT.attention(imgRefusal);
     if (sendErr) return RESULT.attention(`Image prompt generation failed: ${sendErr}`);
     // Video prompts fill each beat's video_prompt (doesn't touch state).
-    await generateVideos(project.id, project.user_id, capture, (await resolveModelForUser(project.user_id, "video_prompts")).model);
+    const videoModel = (await resolveModelForUser(project.user_id, "video_prompts")).model;
+    const vidRefusal = await withStepHold(project.user_id, project.id, "prompts_video", videoModel, (h) =>
+      generateVideos(project.id, project.user_id, capture, videoModel, h));
+    if (vidRefusal) return RESULT.attention(vidRefusal);
     if (sendErr) return RESULT.attention(`Video prompt generation failed: ${sendErr}`);
   } catch (err) {
     return RESULT.attention(`Prompt generation failed. ${friendlyError(err instanceof Error ? err.message : null)}`);
@@ -504,6 +551,40 @@ interface BeatRow {
 
 // nth model in a chain (0=primary,1=secondary,2=fallback), skipping
 // empty slots. Returns the last non-empty when idx overruns.
+/**
+ * Hold, run, settle, around one of the prompt generators.
+ *
+ * They already accept the run's hold as a trailing parameter and settle nothing
+ * themselves: every Claude call inside reports its usage into it and the caller
+ * settles once, because one settle cannot answer for a fan-out of chunks. The
+ * manual routes pass one; 1Click called them with the parameter omitted, so its
+ * Claude work charged after the fact with nothing reserved.
+ *
+ * Returns a refusal string when the balance cannot cover the step, so the tick
+ * stops and says so rather than generating on a wallet with nothing in it.
+ */
+async function withStepHold(
+  userId: string,
+  projectId: string,
+  step: CostStep,
+  model: string,
+  run: (hold: StepHold) => Promise<void>,
+): Promise<string | null> {
+  const floor = await estimateStepFloor({ userId, step });
+  if (floor.sufficient === false) return OUT_OF_CREDITS_MESSAGE;
+
+  const stepHold = await createStepHold({ userId, step, provider: "anthropic", projectId });
+  if (stepHold.refused) return OUT_OF_CREDITS_MESSAGE;
+  try {
+    await run(stepHold);
+  } finally {
+    // finish() settles on whatever was reported into it, which is zero when the
+    // step failed before its first call. Settling zero returns the whole hold.
+    await stepHold.finish(model, "anthropic");
+  }
+  return null;
+}
+
 function chainModel(chain: ModelChain, idx: number): string {
   const models = [chain.primary, chain.secondary, chain.fallback].filter((m): m is string => !!m);
   return models[Math.min(idx, models.length - 1)] ?? chain.primary;
@@ -566,14 +647,32 @@ async function ensureVoiceovers(project: ProjectRow, cfg: OneClickConfig): Promi
     // phrase isn't spoken twice; keep raw text if dedupe empties it.
     const segment = dedupeOverlap(rawSegment, segByNumber.get(beatNumber - 1) ?? null);
     const ttsText = segment || rawSegment;
+    // Held on the characters about to be sent, which is the one step where the
+    // estimate and the charge are the same measurement. Perk voices spend a free
+    // quota rather than the wallet, so they take no hold.
+    const billable = !isQwenVoice(voiceId) && !isAi33Voice(voiceId);
+    const { hold: ttsHold, refused: ttsRefused } = billable
+      ? await holdForCharacters({
+          userId: project.user_id, characters: ttsText.length, model: TTS_MODEL,
+          step: "tts", projectId: project.id, beatNumber,
+        })
+      : { hold: null, refused: false };
+    if (ttsRefused) { hardError = OUT_OF_CREDITS_MESSAGE; return; }
+
+    let settledTts = false;
     try {
       await supabase.from("project_beats").update({ voiceover_status: "generating" })
         .eq("project_id", project.id).eq("beat_number", beatNumber);
       const { audio, charsConsumed } = await generateTTS(ttsText, voiceId, undefined, undefined, project.user_id);
       // Same cost accounting as the route: ElevenLabs bills the ledger,
       // perk voices count against their free-usage caps.
-      if (charsConsumed && !isQwenVoice(voiceId) && !isAi33Voice(voiceId)) {
-        void logProjectCost({ projectId: project.id, userId: project.user_id, step: "tts", provider: "elevenlabs", model: TTS_MODEL, units: charsConsumed, unitKind: "elevenlabs_chars" });
+      if (charsConsumed && billable) {
+        settledTts = true;
+        await logProjectCost({
+          projectId: project.id, userId: project.user_id, step: "tts", provider: "elevenlabs",
+          model: TTS_MODEL, units: charsConsumed, unitKind: "elevenlabs_chars",
+          reservationId: ttsHold?.id ?? null,
+        });
       } else if (charsConsumed && isQwenVoice(voiceId)) {
         void incrementFreeUsage(project.user_id, "qwen_tts_chars", charsConsumed);
       } else if (charsConsumed && isAi33Voice(voiceId)) {
@@ -590,6 +689,10 @@ async function ensureVoiceovers(project: ProjectRow, cfg: OneClickConfig): Promi
       hardError = message;
       await supabase.from("project_beats").update({ voiceover_status: "failed", voiceover_error: message })
         .eq("project_id", project.id).eq("beat_number", beatNumber);
+    } finally {
+      // Nothing synthesised means nothing to settle against, so the hold goes
+      // back rather than sitting open until the sweeper finds it hours later.
+      if (!settledTts) await releaseHold(ttsHold, "1Click voiceover produced no cost figure");
     }
   };
 
@@ -701,9 +804,31 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
         const sentPrompt = applyConsistency(prompt, consistency.text, consistency.append);
         try {
           const imgOp = resolveImageOperator(imageModel, await getMediaOperatorForUser(project.user_id, "image"));
-          const taskId = await imgOp.submit({
-            prompt: sentPrompt, modelId: imageModel, aspectRatio: imgAr, resolution: imgRes, userId: project.user_id,
+          // Held before the provider is called, exactly as the submit route
+          // does. finishImageTask finds it by user, project and beat wherever
+          // the task lands, so the hold does not have to be threaded through a
+          // webhook, a poll and a cron. Without it 1Click's frames were charged
+          // after the fact with nothing reserved.
+          const estimate = await estimateRun({
+            userId: project.user_id, kind: "image", modelId: imageModel,
+            operator: imgOp.id, count: 1, resolution: imgRes,
           });
+          const { hold: imgHold, refused: imgRefused } = await holdForRun({
+            userId: project.user_id, provider: imgOp.id, projectId: project.id,
+            beatNumber: b.beat_number as number, estimate,
+          });
+          if (imgRefused) { hardError = OUT_OF_CREDITS_MESSAGE; return false; }
+
+          let taskId: string;
+          try {
+            taskId = await imgOp.submit({
+              prompt: sentPrompt, modelId: imageModel, aspectRatio: imgAr, resolution: imgRes, userId: project.user_id,
+            });
+          } catch (submitErr) {
+            // Nothing was submitted, so nothing will ever settle this.
+            await releaseHold(imgHold, "1Click image submit failed");
+            throw submitErr;
+          }
           await supabase.from("project_beats")
             .update({
               image_status: "generating", image_task_id: taskId, image_model_id: imageModel,
@@ -775,7 +900,10 @@ async function runGenerateStep(project: ProjectRow, cfg: OneClickConfig): Promis
       let sendErr: string | null = null;
       const capture = (d: object) => { const e = d as { type?: string; message?: string }; if (e.type === "error" && e.message) sendErr = e.message; };
       try {
-        await generateVideos(project.id, project.user_id, capture, (await resolveModelForUser(project.user_id, "video_prompts")).model);
+        const vpModel = (await resolveModelForUser(project.user_id, "video_prompts")).model;
+        const vpRefusal = await withStepHold(project.user_id, project.id, "prompts_video", vpModel, (h) =>
+          generateVideos(project.id, project.user_id, capture, vpModel, h));
+        if (vpRefusal) return RESULT.attention(vpRefusal);
         if (sendErr) return RESULT.attention(`Video prompt generation failed: ${sendErr}`);
       } catch (err) {
         return RESULT.attention(`Video prompt generation failed. ${friendlyError(err instanceof Error ? err.message : null)}`);
@@ -1007,9 +1135,12 @@ async function runThumbnailsStep(project: ProjectRow, cfg: OneClickConfig): Prom
     const capture = (d: object) => { const e = d as { type?: string; message?: string }; if (e.type === "error" && e.message) sendErr = e.message; };
     let failure: string | null = null;
     try {
-      await generateThumbnails(project.id, project.user_id, script, visualProfile,
-        (data?.thumbnail_analysis as ThumbnailAnalysisOutput | undefined) ?? undefined, capture, (await resolveModelForUser(project.user_id, "thumbnails")).model);
-      if (sendErr) failure = sendErr;
+      const thumbModel = (await resolveModelForUser(project.user_id, "thumbnails")).model;
+      const refusal = await withStepHold(project.user_id, project.id, "thumbnail_concept", thumbModel, (h) =>
+        generateThumbnails(project.id, project.user_id, script, visualProfile,
+          (data?.thumbnail_analysis as ThumbnailAnalysisOutput | undefined) ?? undefined, capture, thumbModel, h));
+      if (refusal) failure = refusal;
+      else if (sendErr) failure = sendErr;
     } catch (err) {
       failure = err instanceof Error ? err.message : "unknown error";
     }
