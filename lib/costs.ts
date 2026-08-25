@@ -357,17 +357,40 @@ export async function refreshModelCostAndSpeed(): Promise<{
   upserted: number;
   skipped: number;
 }> {
-  const { data, error } = await supabase
-    .from("project_costs")
-    .select("step, model, units, duration_sec, elapsed_ms, resolution")
-    .in("step", ["image_gen", "video_gen"])
-    .eq("provider", "kie")
-    .eq("unit_kind", "kie_credits")
-    .not("model", "is", null);
-
-  if (error) {
-    throw new Error(`[refresh-model-cost] read project_costs failed: ${error.message}`);
+  // Paged, because PostgREST caps a response at 1,000 rows and this query
+  // matches ~97,000. Without the loop the rollup read an arbitrary 1 percent of
+  // the ledger: every video model came out with a null credits-per-second,
+  // because the first page is the oldest rows and duration_sec only exists from
+  // migration 054 onward. The video pre-flight then had no rate to price with
+  // and let every clip through unpriced, which read as "the cron has not run"
+  // and was really "the cron has never seen the data".
+  const PAGE = 1000;
+  const rows: Array<Record<string, unknown>> = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("project_costs")
+      .select("step, model, units, duration_sec, elapsed_ms, resolution")
+      .in("step", ["image_gen", "video_gen"])
+      .eq("provider", "kie")
+      .eq("unit_kind", "kie_credits")
+      .not("model", "is", null)
+      // Ordered so the pages partition the table. Without a stable sort,
+      // Postgres may return a row twice across two pages and miss another.
+      .order("id", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) {
+      throw new Error(`[refresh-model-cost] read project_costs failed: ${error.message}`);
+    }
+    rows.push(...((data ?? []) as Array<Record<string, unknown>>));
+    if (!data || data.length < PAGE) break;
+    // A hard stop, so a ledger that grows unexpectedly cannot turn a daily
+    // rollup into an unbounded read.
+    if (rows.length >= 500_000) {
+      console.warn(`[refresh-model-cost] stopped at ${rows.length} rows; the rollup is now a sample`);
+      break;
+    }
   }
+  const data = rows;
 
   const aggregates = new Map<string, ModelAggregate>();
   const speedSums = new Map<string, { sum: number; count: number }>();

@@ -8,7 +8,10 @@ import { refreshModelCostAndSpeed } from "@/lib/costs";
 // the standard CRON_SECRET bearer check.
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+// The rollup pages the ledger 1,000 rows at a time and the ledger is ~97,000
+// rows, so a run is around 30 seconds today and grows with the table. Raised
+// from 120 to leave room before the read has to be windowed instead.
+export const maxDuration = 300;
 
 export async function GET(req: Request) {
   const cronSecret = process.env.CRON_SECRET;
