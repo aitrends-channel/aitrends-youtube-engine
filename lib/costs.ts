@@ -77,6 +77,19 @@ export interface CostEntry {
    *  cost. Omit (or pass null) for steps where seconds aren't the
    *  natural unit — e.g. frame-counted Sora, or any non-video step. */
   durationSec?: number | null;
+  /**
+   * What makes this charge the same charge on a second attempt.
+   *
+   * A provider task id is the natural one: the same task is the same charge, and
+   * a genuine retry gets a new task id. Passing it turns a re-charge loop into a
+   * no-op instead of a debit. Between 29 June and 6 July one such loop wrote
+   * 97,000 rows at a flat 324 an hour, and only the wallet not existing yet kept
+   * it from costing about $478.
+   *
+   * Omit it for synchronous work, where every call is a real new charge. The
+   * column then defaults to a random value and nothing is suppressed.
+   */
+  eventKey?: string | null;
   /** The resolution the generation was billed at, exactly as the picker labels
    *  it ("1K", "1080p", "pro"). What makes the rollup able to price a 4K run at
    *  4K rather than at whatever the cheapest resolution of that model cost.
@@ -105,22 +118,46 @@ export async function logProjectCost(entry: CostEntry): Promise<void> {
   if (!entry.units || entry.units <= 0) return;
   if (!entry.projectId || !entry.userId) return;
   try {
-    const { error } = await supabase
+    const row: Record<string, unknown> = {
+      project_id: entry.projectId,
+      user_id: entry.userId,
+      step: entry.step,
+      provider: entry.provider,
+      model: entry.model ?? null,
+      units: entry.units,
+      unit_kind: entry.unitKind,
+      duration_sec: entry.durationSec ?? null,
+      resolution: entry.resolution ?? null,
+      elapsed_ms: entry.elapsedMs ?? null,
+    };
+    // One key per event, not per row. The step and unit kind are part of it so
+    // the four token rows of a single Claude call stay distinct under one task.
+    if (entry.eventKey) row.event_key = `${entry.step}:${entry.unitKind}:${entry.eventKey}`;
+
+    let { data, error } = await supabase
       .from("project_costs")
-      .insert({
-        project_id: entry.projectId,
-        user_id: entry.userId,
-        step: entry.step,
-        provider: entry.provider,
-        model: entry.model ?? null,
-        units: entry.units,
-        unit_kind: entry.unitKind,
-        duration_sec: entry.durationSec ?? null,
-        resolution: entry.resolution ?? null,
-        elapsed_ms: entry.elapsedMs ?? null,
-      });
+      .upsert(row, { onConflict: "event_key", ignoreDuplicates: true })
+      .select("id");
+
+    // Migration 143 may not be applied yet. This is the meter, so it must not
+    // stop recording: without the retry every cost row would be lost until the
+    // column existed, while the charge below still went through. Falls back to a
+    // plain insert, which means no idempotency rather than no ledger.
+    if (error && /event_key/i.test(error.message)) {
+      delete row.event_key;
+      const plain = await supabase.from("project_costs").insert(row).select("id");
+      data = plain.data;
+      error = plain.error;
+    }
+
     if (error) {
       console.warn(`[costs] insert failed step=${entry.step} provider=${entry.provider} unit_kind=${entry.unitKind}:`, error.message);
+    } else if (entry.eventKey && row.event_key && (data ?? []).length === 0) {
+      // Already metered. Charging again would debit twice for one piece of
+      // provider work, which is the loop this key exists to stop, so the charge
+      // below is skipped rather than merely logged.
+      console.warn(`[costs] already metered, not charging again: step=${entry.step} key=${entry.eventKey}`);
+      return;
     }
   } catch (e) {
     console.warn(`[costs] insert threw step=${entry.step}:`, e instanceof Error ? e.message : e);
@@ -385,6 +422,11 @@ export async function getAvgElapsedByModel(
 
 type ModelType = "image" | "video";
 
+/** How far back the rollup looks. Matches the rate reconciliation and the token
+ *  floors, so the three do not disagree about what "recent" means. An all-time
+ *  minimum reached back to prices that are no longer charged. */
+const ROLLUP_DAYS = 90;
+
 interface ModelAggregate {
   modelName: string;
   modelType: ModelType;
@@ -434,105 +476,39 @@ export async function refreshModelCostAndSpeed(): Promise<{
   upserted: number;
   skipped: number;
 }> {
-  // Paged, because PostgREST caps a response at 1,000 rows and this query
-  // matches ~97,000. Without the loop the rollup read an arbitrary 1 percent of
-  // the ledger: every video model came out with a null credits-per-second,
-  // because the first page is the oldest rows and duration_sec only exists from
-  // migration 054 onward. The video pre-flight then had no rate to price with
-  // and let every clip through unpriced, which read as "the cron has not run"
-  // and was really "the cron has never seen the data".
-  const PAGE = 1000;
-  const rows: Array<Record<string, unknown>> = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from("project_costs")
-      .select("step, provider, model, units, duration_sec, elapsed_ms, resolution")
-      .in("step", ["image_gen", "video_gen"])
-      .in("provider", ["kie", "poyo"])
-      .in("unit_kind", ["kie_credits", "poyo_credits"])
-      .not("model", "is", null)
-      // Ordered so the pages partition the table. Without a stable sort,
-      // Postgres may return a row twice across two pages and miss another.
-      .order("id", { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) {
-      throw new Error(`[refresh-model-cost] read project_costs failed: ${error.message}`);
-    }
-    rows.push(...((data ?? []) as Array<Record<string, unknown>>));
-    if (!data || data.length < PAGE) break;
-    // A hard stop, so a ledger that grows unexpectedly cannot turn a daily
-    // rollup into an unbounded read.
-    if (rows.length >= 500_000) {
-      console.warn(`[refresh-model-cost] stopped at ${rows.length} rows; the rollup is now a sample`);
-      break;
-    }
+  // One pass in Postgres rather than 102 round trips here. The TypeScript
+  // version paged project_costs 1,000 rows at a time to compute a minimum,
+  // which was 30 seconds at 101,000 rows and grew with the table against a
+  // 300-second ceiling. model_cost_rollup (migration 143) does the same
+  // aggregation in SQL, bounded to a window.
+  //
+  // The window is the other half of the fix. "Cheapest ever observed" reached
+  // back to prices no longer charged, and 90 days is what the rate
+  // reconciliation and the token floors already use.
+  const { data: rolled, error: rollErr } = await supabase
+    .rpc("model_cost_rollup", { p_days: ROLLUP_DAYS });
+  if (rollErr) {
+    throw new Error(`[refresh-model-cost] model_cost_rollup failed: ${rollErr.message}`);
   }
-  const data = rows;
 
   const aggregates = new Map<string, ModelAggregate>();
-  const speedSums = new Map<string, { sum: number; count: number }>();
-
-  for (const row of data ?? []) {
-    const r = row as {
-      step: string;
-      provider: string | null;
-      model: string | null;
-      units: number | null;
-      duration_sec: number | null;
-      elapsed_ms: number | null;
-      resolution: string | null;
-    };
-    if (!r.model || typeof r.units !== "number" || r.units <= 0) continue;
-    const modelType: ModelType = r.step === "video_gen" ? "video" : "image";
-    const resolution = (r.resolution ?? "").trim();
-    const provider = (r.provider ?? "kie").trim() || "kie";
-
-    // Once under its own resolution, once under the blend. A row from before
-    // migration 139 carries no resolution and contributes to the blend only,
-    // which is the whole truth about it.
-    for (const res of resolution ? ["", resolution] : [""]) {
-      const key = `${r.model}|${modelType}|${provider}|${res}`;
-      let agg = aggregates.get(key);
-      if (!agg) {
-        agg = {
-          modelName: r.model,
-          modelType,
-          provider,
-          resolution: res,
-          costPerUnitCredits: null,
-          costPerSecondCredits: null,
-          speedMs: null,
-          sampleCount: 0,
-        };
-        aggregates.set(key, agg);
-      }
-      agg.sampleCount += 1;
-
-      if (modelType === "image") {
-        if (agg.costPerUnitCredits === null || r.units < agg.costPerUnitCredits) {
-          agg.costPerUnitCredits = r.units;
-        }
-      } else {
-        if (typeof r.duration_sec === "number" && r.duration_sec > 0) {
-          const perSec = r.units / r.duration_sec;
-          if (agg.costPerSecondCredits === null || perSec < agg.costPerSecondCredits) {
-            agg.costPerSecondCredits = perSec;
-          }
-        }
-      }
-
-      if (typeof r.elapsed_ms === "number" && r.elapsed_ms > 0) {
-        const s = speedSums.get(key) ?? { sum: 0, count: 0 };
-        s.sum += r.elapsed_ms;
-        s.count += 1;
-        speedSums.set(key, s);
-      }
-    }
-  }
-
-  for (const [key, agg] of aggregates) {
-    const s = speedSums.get(key);
-    if (s && s.count > 0) agg.speedMs = s.sum / s.count;
+  for (const row of (rolled ?? []) as Array<Record<string, unknown>>) {
+    const modelName = String(row.model_name ?? "");
+    const modelType = String(row.model_type ?? "") as ModelType;
+    const provider = String(row.provider ?? "kie");
+    const resolution = String(row.resolution ?? "");
+    if (!modelName || (modelType !== "image" && modelType !== "video")) continue;
+    const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+    aggregates.set(`${modelName}|${modelType}|${provider}|${resolution}`, {
+      modelName,
+      modelType,
+      provider,
+      resolution,
+      costPerUnitCredits: num(row.cost_per_unit_credits),
+      costPerSecondCredits: num(row.cost_per_second_credits),
+      speedMs: num(row.speed_ms),
+      sampleCount: Number(row.sample_count ?? 0),
+    });
   }
 
   // Pull existing usd_per_credit values so the refresh doesn't clobber
