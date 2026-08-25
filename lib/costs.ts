@@ -150,7 +150,7 @@ function stepToModelType(step: CostStep): "image" | "video" | null {
 }
 
 /**
- * Observed prices, by model and then by resolution.
+ * Observed prices for one provider, by model and then by resolution.
  *
  * The empty-string key is the blended figure across every resolution, which is
  * the only thing this table held before migration 139 and still the right
@@ -161,6 +161,25 @@ function stepToModelType(step: CostStep): "image" | "video" | null {
  * no history at the chosen resolution falls back the same way everywhere.
  */
 export type ObservedByModel = Record<string, Record<string, number>>;
+
+/** Which vendor's observations to read. The two credit currencies both price at
+ *  $0.005 today but they are separate units, and both catalogs carry models with
+ *  the same id, so a figure is only meaningful with a provider attached. */
+export type ObservedProvider = "kie" | "poyo";
+
+/**
+ * True when the error is migration 142 not being applied yet.
+ *
+ * Worth telling apart from a real failure. Filtering on a column that does not
+ * exist fails the whole query, and these getters fail soft by returning {},
+ * which the picker renders as "no price" and the estimate reads as "unknown".
+ * So deploying ahead of the migration would quietly unprice every model. On
+ * that one error the KIE read retries without the filter, since every row
+ * predating the column is a KIE row.
+ */
+function isMissingProviderColumn(message: string): boolean {
+  return /column .*provider.* does not exist/i.test(message);
+}
 
 /**
  * The observed price for one model at one resolution.
@@ -206,7 +225,10 @@ function groupByModel<T extends { model_name: string; resolution: string | null 
  *
  * Fail-soft: returns {} on any error so the picker still renders.
  */
-export async function getMinKieCreditsByModel(step: CostStep): Promise<ObservedByModel> {
+export async function getMinKieCreditsByModel(
+  step: CostStep,
+  provider: ObservedProvider = "kie",
+): Promise<ObservedByModel> {
   const modelType = stepToModelType(step);
   if (modelType !== "image") return {};
   try {
@@ -214,8 +236,23 @@ export async function getMinKieCreditsByModel(step: CostStep): Promise<ObservedB
       .from("model_cost_and_speed")
       .select("model_name, resolution, cost_per_unit_credits")
       .eq("model_type", "image")
+      .eq("provider", provider)
       .not("cost_per_unit_credits", "is", null);
 
+    if (error && isMissingProviderColumn(error.message) && provider === "kie") {
+      const legacy = await supabase
+        .from("model_cost_and_speed")
+        .select("model_name, resolution, cost_per_unit_credits")
+        .eq("model_type", "image")
+        .not("cost_per_unit_credits", "is", null);
+      if (legacy.error) return {};
+      return groupByModel(
+        (legacy.data ?? []) as Array<{
+          model_name: string; resolution: string | null; cost_per_unit_credits: number | null;
+        }>,
+        (r) => r.cost_per_unit_credits,
+      );
+    }
     if (error) {
       console.warn(`[costs] min-credits query failed step=${step}:`, error.message);
       return {};
@@ -241,7 +278,10 @@ export async function getMinKieCreditsByModel(step: CostStep): Promise<ObservedB
  *
  * Fail-soft: returns {} on any error so the picker still renders.
  */
-export async function getMinCostPerSecByModel(step: CostStep): Promise<ObservedByModel> {
+export async function getMinCostPerSecByModel(
+  step: CostStep,
+  provider: ObservedProvider = "kie",
+): Promise<ObservedByModel> {
   const modelType = stepToModelType(step);
   if (modelType !== "video") return {};
   try {
@@ -249,8 +289,23 @@ export async function getMinCostPerSecByModel(step: CostStep): Promise<ObservedB
       .from("model_cost_and_speed")
       .select("model_name, resolution, cost_per_second_credits")
       .eq("model_type", "video")
+      .eq("provider", provider)
       .not("cost_per_second_credits", "is", null);
 
+    if (error && isMissingProviderColumn(error.message) && provider === "kie") {
+      const legacy = await supabase
+        .from("model_cost_and_speed")
+        .select("model_name, resolution, cost_per_second_credits")
+        .eq("model_type", "video")
+        .not("cost_per_second_credits", "is", null);
+      if (legacy.error) return {};
+      return groupByModel(
+        (legacy.data ?? []) as Array<{
+          model_name: string; resolution: string | null; cost_per_second_credits: number | null;
+        }>,
+        (r) => r.cost_per_second_credits,
+      );
+    }
     if (error) {
       console.warn(`[costs] cost-per-sec query failed step=${step}:`, error.message);
       return {};
@@ -276,7 +331,10 @@ export async function getMinCostPerSecByModel(step: CostStep): Promise<ObservedB
  *
  * Fail-soft: returns {} on any error so the picker still renders.
  */
-export async function getAvgElapsedByModel(step: CostStep): Promise<Record<string, number>> {
+export async function getAvgElapsedByModel(
+  step: CostStep,
+  provider: ObservedProvider = "kie",
+): Promise<Record<string, number>> {
   const modelType = stepToModelType(step);
   if (modelType === null) return {};
   try {
@@ -284,12 +342,28 @@ export async function getAvgElapsedByModel(step: CostStep): Promise<Record<strin
       .from("model_cost_and_speed")
       .select("model_name, speed_ms")
       .eq("model_type", modelType)
+      .eq("provider", provider)
       // The blended row. Speed is ranked per model in the picker, not per
       // resolution, and without this filter a model with three resolution rows
       // would resolve to whichever one came back last.
       .eq("resolution", "")
       .not("speed_ms", "is", null);
 
+    if (error && isMissingProviderColumn(error.message) && provider === "kie") {
+      const legacy = await supabase
+        .from("model_cost_and_speed")
+        .select("model_name, speed_ms")
+        .eq("model_type", modelType)
+        .eq("resolution", "")
+        .not("speed_ms", "is", null);
+      if (legacy.error) return {};
+      const out: Record<string, number> = {};
+      for (const row of legacy.data ?? []) {
+        const r = row as { model_name: string; speed_ms: number | null };
+        if (typeof r.speed_ms === "number" && r.speed_ms > 0) out[r.model_name] = r.speed_ms;
+      }
+      return out;
+    }
     if (error) {
       console.warn(`[costs] avg-elapsed query failed step=${step}:`, error.message);
       return {};
@@ -314,6 +388,8 @@ type ModelType = "image" | "video";
 interface ModelAggregate {
   modelName: string;
   modelType: ModelType;
+  /** The vendor that billed. Part of the key: both catalogs carry a z-image. */
+  provider: string;
   /** "" for the blended row, otherwise the resolution it was measured at. */
   resolution: string;
   costPerUnitCredits: number | null;   // image only
@@ -339,14 +415,12 @@ interface ModelAggregate {
  * per-resolution figures can be trusted as soon as they exist without a model
  * losing its price the day the column was added.
  *
- * KIE observations only, deliberately. PoYo bills in its own credit, and this
- * table has one row per model with no provider axis, so folding PoYo rows in
- * would take a MIN across two currencies under one model name — and both
- * operators carry models with the same id (z-image, seedream-4). PoYo images
- * price from their published catalog instead and never read this table; PoYo
- * video reads the KIE figure for the same relayed model, which over-estimates
- * slightly since PoYo relays below KIE list, and over is the safe direction.
- * Giving PoYo its own rows needs a provider column in the key.
+ * Both providers, kept apart by the provider column migration 142 added. They
+ * bill in different currencies and both catalogs carry models with the same id
+ * (z-image, seedream-4), so a MIN across them under one name would be
+ * meaningless. Before that column existed PoYo had no observed prices at all:
+ * its images fell back to a published catalog that goes stale, and its video
+ * read KIE's figure for the same relayed model, which runs high.
  *
  * usd_per_credit is preserved per row: we read the existing value
  * first and write it back unchanged on upsert. The USD columns are
@@ -369,10 +443,10 @@ export async function refreshModelCostAndSpeed(): Promise<{
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from("project_costs")
-      .select("step, model, units, duration_sec, elapsed_ms, resolution")
+      .select("step, provider, model, units, duration_sec, elapsed_ms, resolution")
       .in("step", ["image_gen", "video_gen"])
-      .eq("provider", "kie")
-      .eq("unit_kind", "kie_credits")
+      .in("provider", ["kie", "poyo"])
+      .in("unit_kind", ["kie_credits", "poyo_credits"])
       .not("model", "is", null)
       // Ordered so the pages partition the table. Without a stable sort,
       // Postgres may return a row twice across two pages and miss another.
@@ -398,6 +472,7 @@ export async function refreshModelCostAndSpeed(): Promise<{
   for (const row of data ?? []) {
     const r = row as {
       step: string;
+      provider: string | null;
       model: string | null;
       units: number | null;
       duration_sec: number | null;
@@ -407,17 +482,19 @@ export async function refreshModelCostAndSpeed(): Promise<{
     if (!r.model || typeof r.units !== "number" || r.units <= 0) continue;
     const modelType: ModelType = r.step === "video_gen" ? "video" : "image";
     const resolution = (r.resolution ?? "").trim();
+    const provider = (r.provider ?? "kie").trim() || "kie";
 
     // Once under its own resolution, once under the blend. A row from before
     // migration 139 carries no resolution and contributes to the blend only,
     // which is the whole truth about it.
     for (const res of resolution ? ["", resolution] : [""]) {
-      const key = `${r.model}|${modelType}|${res}`;
+      const key = `${r.model}|${modelType}|${provider}|${res}`;
       let agg = aggregates.get(key);
       if (!agg) {
         agg = {
           modelName: r.model,
           modelType,
+          provider,
           resolution: res,
           costPerUnitCredits: null,
           costPerSecondCredits: null,
@@ -460,7 +537,7 @@ export async function refreshModelCostAndSpeed(): Promise<{
   // and USD columns null until someone sets a rate.
   const { data: existing, error: existingErr } = await supabase
     .from("model_cost_and_speed")
-    .select("model_name, model_type, resolution, usd_per_credit");
+    .select("model_name, model_type, provider, resolution, usd_per_credit");
   if (existingErr) {
     throw new Error(`[refresh-model-cost] read existing failed: ${existingErr.message}`);
   }
@@ -471,9 +548,10 @@ export async function refreshModelCostAndSpeed(): Promise<{
   const rateByKey = new Map<string, number | null>();
   for (const row of existing ?? []) {
     const r = row as {
-      model_name: string; model_type: string; resolution: string | null; usd_per_credit: number | null;
+      model_name: string; model_type: string; provider: string | null;
+      resolution: string | null; usd_per_credit: number | null;
     };
-    const key = `${r.model_name}|${r.model_type}`;
+    const key = `${r.model_name}|${r.model_type}|${r.provider ?? "kie"}`;
     const blended = (r.resolution ?? "") === "";
     if (blended || (!rateByKey.get(key) && r.usd_per_credit !== null)) {
       rateByKey.set(key, r.usd_per_credit ?? null);
@@ -482,13 +560,14 @@ export async function refreshModelCostAndSpeed(): Promise<{
 
   const now = new Date().toISOString();
   const payload = Array.from(aggregates.values()).map((agg) => {
-    const key = `${agg.modelName}|${agg.modelType}`;
+    const key = `${agg.modelName}|${agg.modelType}|${agg.provider}`;
     const rate = rateByKey.get(key) ?? null;
     const unitUsd = agg.costPerUnitCredits !== null && rate !== null ? agg.costPerUnitCredits * rate : null;
     const secUsd  = agg.costPerSecondCredits !== null && rate !== null ? agg.costPerSecondCredits * rate : null;
     return {
       model_name: agg.modelName,
       model_type: agg.modelType,
+      provider: agg.provider,
       resolution: agg.resolution,
       cost_per_unit_credits: agg.costPerUnitCredits,
       cost_per_unit_usd: unitUsd,
@@ -505,7 +584,7 @@ export async function refreshModelCostAndSpeed(): Promise<{
 
   const { error: upsertErr } = await supabase
     .from("model_cost_and_speed")
-    .upsert(payload, { onConflict: "model_name,model_type,resolution" });
+    .upsert(payload, { onConflict: "model_name,model_type,provider,resolution" });
   if (upsertErr) {
     throw new Error(`[refresh-model-cost] upsert failed: ${upsertErr.message}`);
   }

@@ -47,9 +47,13 @@ function withMinCredits<T extends KieModel>(models: T[], mins: ObservedByModel):
  * prices differently. Exact rather than observed, because PoYo bills a flat
  * rate per generation and publishes it.
  */
-function withPoyoCredits(models: CatalogModel[]): CatalogModel[] {
+function withPoyoCredits(models: CatalogModel[], observed: ObservedByModel): CatalogModel[] {
   return models.map((m) => {
     if (m.operator !== "poyo") return m;
+    // Measured first, catalog second. The catalog has been wrong on four models
+    // so far, and PoYo now has its own rows in the snapshot.
+    const measured = observed[m.id]?.[""];
+    if (measured !== undefined) return { ...m, costPerUnit: round2(measured) };
     const priced = getPoyoImageModel(m.id);
     return priced ? { ...m, costPerUnit: round2(priced.credits) } : m;
   });
@@ -144,13 +148,14 @@ export async function GET(req: Request) {
       return NextResponse.json(models);
     }
     if (type === "image") {
-      const [models, defaults, mins, speeds] = await Promise.all([
+      const [models, defaults, mins, poyoMins, speeds] = await Promise.all([
         getMediaOperatorForUser(user.id, "image").then(listImageCatalog),
         getAdminDefaults(),
         getMinKieCreditsByModel("image_gen"),
+        getMinKieCreditsByModel("image_gen", "poyo"),
         getAvgElapsedByModel("image_gen"),
       ]);
-      return NextResponse.json(promote(withPoyoCredits(withAvgSpeed(withMinCredits(models, mins), speeds)), defaults.image));
+      return NextResponse.json(promote(withPoyoCredits(withAvgSpeed(withMinCredits(models, mins), speeds), poyoMins), defaults.image));
     }
     if (type === "video") {
       const [models, defaults, mins, speeds] = await Promise.all([
@@ -164,7 +169,7 @@ export async function GET(req: Request) {
     }
 
     // Return all
-    const [tts, images, videos, defaults, imageMins, videoMins, imageSpeeds, videoSpeeds] = await Promise.all([
+    const [tts, images, videos, defaults, imageMins, videoMins, imageSpeeds, videoSpeeds, poyoImageMins] = await Promise.all([
       listTTSVoices(user.id),
       getMediaOperatorForUser(user.id, "image").then(listImageCatalog),
       listVideoModels(),
@@ -173,10 +178,11 @@ export async function GET(req: Request) {
       getMinCostPerSecByModel("video_gen"),
       getAvgElapsedByModel("image_gen"),
       getAvgElapsedByModel("video_gen"),
+      getMinKieCreditsByModel("image_gen", "poyo"),
     ]);
     return NextResponse.json({
       tts,
-      images: promote(withPoyoCredits(withAvgSpeed(withMinCredits(images, imageMins), imageSpeeds)), defaults.image),
+      images: promote(withPoyoCredits(withAvgSpeed(withMinCredits(images, imageMins), imageSpeeds), poyoImageMins), defaults.image),
       videos: promote(withAvgSpeed(withMinCredits(
         gateByOperator(await gateHeclusPaidVideo(videos, user), await getMediaOperatorForUser(user.id, "video")),
         videoMins), videoSpeeds), defaults.video),

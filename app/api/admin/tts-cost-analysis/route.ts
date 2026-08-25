@@ -57,10 +57,11 @@ export async function GET(req: Request) {
       .from("model_cost_and_speed")
       .select("usd_per_credit")
       .eq("model_name", "elevenlabs/text-to-speech-turbo-2-5")
-      // The blended row. Migration 139 put resolution in the key, so a
-      // model_name alone can match more than one row and maybeSingle would
-      // throw on the second.
+      // The blended KIE row. Migrations 139 and 142 put resolution and provider
+      // in the key, so a model_name alone can match several rows and
+      // maybeSingle would throw on the second.
       .eq("resolution", "")
+      .eq("provider", "kie")
       .maybeSingle(),
   ]);
 

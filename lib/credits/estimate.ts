@@ -9,6 +9,7 @@ import { poyoImageConfig } from "@/lib/poyo/imageModels";
 import { spendableCredits } from "@/lib/heclus-charge";
 import { getFundingModeById } from "@/lib/funding";
 import { OPERATOR_POYO } from "@/lib/operators";
+import { getMediaOperatorForUser } from "@/lib/operators/routing";
 import { IMAGE_MODELS } from "@/lib/kie/imageModels";
 import { VIDEO_MODELS } from "@/lib/kie/videoModels";
 import { listPoyoImageModels } from "@/lib/poyo/imageModels";
@@ -61,7 +62,7 @@ export interface RunEstimate {
    *  accounts both report true: neither is a reason to block work. */
   sufficient: boolean;
   /** What the estimate was built from, for the message and for debugging. */
-  source: "poyo-catalog" | "kie-observed" | "video-observed" | "characters" | "step-history" | "unknown" | "byo";
+  source: "poyo-catalog" | "poyo-observed" | "kie-observed" | "video-observed" | "characters" | "step-history" | "unknown" | "byo";
   /** The best model the balance can actually afford for this run, when the
    *  chosen one is out of reach. Priciest that fits, not cheapest available:
    *  the point is to lose as little quality as the budget allows. */
@@ -75,7 +76,9 @@ export interface RunEstimateInput {
   userId: string;
   kind: "image" | "video";
   modelId: string;
-  /** The operator serving this run. Images only; video is KIE or GenAIPro. */
+  /** The operator serving this run. Passed by the image routes; on video it is
+   *  resolved from the user's routing when absent, since PoYo now serves video
+   *  too and its credits are a different currency from KIE's. */
   operator?: string | null;
   /** How many generations the run will submit. */
   count: number;
@@ -124,29 +127,52 @@ async function perUnitCredits(
     // Seedance that is 480p against a 4K option, and since credits_settle caps
     // a settle at the hold, the shortfall came out of Heclus rather than the
     // balance.
-    const observed = observedFor(
-      await getMinCostPerSecByModel("video_gen"),
-      input.modelId,
-      input.resolution,
-    );
+    // Which vendor's observations to price from. PoYo bills in its own credit,
+    // so reading KIE's figure for a PoYo clip converts the wrong currency
+    // through the wrong rate; it happened to run high, which was safe but not
+    // right. Falls back to KIE when PoYo has served this model too few times to
+    // have a figure of its own.
+    const operator = input.operator ?? await getMediaOperatorForUser(input.userId, "video");
+    const onPoyo = operator === OPERATOR_POYO;
+    const observed = (onPoyo
+      ? observedFor(await getMinCostPerSecByModel("video_gen", "poyo"), input.modelId, input.resolution)
+      : undefined)
+      ?? observedFor(await getMinCostPerSecByModel("video_gen", "kie"), input.modelId, input.resolution);
     if (!observed || !(seconds > 0)) return { perUnit: null, source: "unknown" };
     const perSec = observed.exact ? observed.value : observed.value * scaleFor(input);
+    // The unit follows whose figure was actually read. observedFor tells us
+    // whether the PoYo lookup produced it, so the currency and the rate agree.
+    const fromPoyo = onPoyo && !!observedFor(
+      await getMinCostPerSecByModel("video_gen", "poyo"), input.modelId, input.resolution,
+    );
     return {
-      // KIE credits even when PoYo serves the clip: the figure is measured on
-      // KIE, PoYo relays the same models below KIE list, and over-estimating is
-      // the direction that fails safely.
-      perUnit: creditsForUnits("kie_credits", perSec * seconds, rates, { model: input.modelId }),
+      perUnit: fromPoyo
+        ? creditsForUnits("poyo_credits", perSec * seconds, rates, { model: input.modelId, provider: "poyo" })
+        : creditsForUnits("kie_credits", perSec * seconds, rates, { model: input.modelId }),
       source: "video-observed",
     };
   }
 
   if (input.operator === OPERATOR_POYO) {
+    // Measured first, catalog second. The catalog is a copy of a price list and
+    // goes stale silently: it has been wrong on four models so far. PoYo now has
+    // its own rows in the snapshot, so a model it has actually served is priced
+    // from what it charged.
+    const measured = observedFor(
+      await getMinKieCreditsByModel("image_gen", "poyo"), input.modelId, input.resolution,
+    );
+    if (measured) {
+      const units = measured.exact ? measured.value : measured.value * scaleFor(input);
+      return {
+        perUnit: creditsForUnits("poyo_credits", units, rates, { model: input.modelId, provider: "poyo" }),
+        source: "poyo-observed",
+      };
+    }
     const model = getPoyoImageModel(input.modelId);
     if (!model) return { perUnit: null, source: "unknown" };
-    // A catalog price, not an observation, so there is nothing measured to
-    // prefer. nano-banana-pro's 18 credits was read off a probe at the default
-    // 1K, so the catalog figure is a cheapest-resolution figure like the
-    // observed ones and scales the same way.
+    // nano-banana-pro's 18 credits was read off a probe at the default 1K, so
+    // the catalog figure is a cheapest-resolution figure like an observed one
+    // and scales the same way.
     return {
       perUnit: creditsForUnits(
         "poyo_credits", model.credits * scaleFor(input), rates,
