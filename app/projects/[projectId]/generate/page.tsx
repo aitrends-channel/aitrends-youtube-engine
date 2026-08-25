@@ -451,9 +451,14 @@ export default function GeneratePage({ params }: PageProps) {
   // switching models and the resolution-reset effect firing, which
   // would otherwise ship the old model's tier to the new model and
   // KIE would silently default to the cheapest supported value.
+  // The operator comes off the chosen model, which the catalog stamps. PoYo
+  // accepts different resolutions from KIE for the same id, so validating
+  // against KIE's list would send PoYo a value it rejects, or drop one it takes.
+  const selectedVideoOperator = (videoModels ?? [])
+    .find((m) => m.id === selectedVideoModel) as { operator?: string } | undefined;
   const safeVideoResolution = (() => {
     if (!selectedVideoModel || !selectedVideoResolution) return null;
-    const cfg = getVideoModelConfig(selectedVideoModel);
+    const cfg = getVideoModelConfig(selectedVideoModel, selectedVideoOperator?.operator);
     if (!cfg.resolutions?.includes(selectedVideoResolution)) return null;
     return selectedVideoResolution;
   })();
@@ -1397,7 +1402,7 @@ export default function GeneratePage({ params }: PageProps) {
 
   useEffect(() => {
     if (!selectedVideoModel) return;
-    const config = getVideoModelConfig(selectedVideoModel);
+    const config = getVideoModelConfig(selectedVideoModel, selectedVideoOperator?.operator);
     if (config.durations.length === 0) {
       setSelectedDuration(null);
     } else {
@@ -1415,7 +1420,9 @@ export default function GeneratePage({ params }: PageProps) {
     } else if (!selectedVideoResolution || !config.resolutions.includes(selectedVideoResolution)) {
       setSelectedVideoResolution(config.resolutions[0]);
     }
-  }, [selectedVideoModel]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Re-runs on the operator too: the same model offers different resolutions
+    // on PoYo than on KIE, so a switch has to re-pick a valid value.
+  }, [selectedVideoModel, selectedVideoOperator?.operator]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep the video aspect ratio locked to the image aspect ratio — a clip
   // animates the beat's image, so it must ship the same ratio the image
