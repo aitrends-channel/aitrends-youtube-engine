@@ -7,6 +7,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { BalanceCards } from "@/components/balance/BalanceCards";
+import { FundingModeCard } from "@/components/balance/FundingModeCard";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 // Balance on its own route.
@@ -72,6 +73,7 @@ export default function BalancePage() {
             </p>
           </div>
           <BalanceCards />
+          <FundingModeCard />
         </div>
       </main>
     </div>

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { entitlementTier } from "@/lib/plan-tier";
 import { type FreeUsageKind } from "@/lib/freeUsage";
 
 // Free/perk allowances, allocated per plan. Stored on
@@ -242,7 +243,10 @@ export function capFromConfig(
   plan: string | null | undefined,
   isAdmin = false,
 ): number {
-  const slug = isAdmin ? "pro" : (plan ?? "").trim().toLowerCase();
+  // Normalised, or heclus_pro would miss every byPlan key and resolve to 0,
+  // which is the "a plan is never handed spend by omission" rule firing on a
+  // plan that should have been recognised.
+  const slug = isAdmin ? "pro" : entitlementTier(plan);
   const allowance = config[kind].byPlan[slug];
   return typeof allowance === "number" ? allowance : 0;
 }

@@ -1,4 +1,5 @@
 import type { KieModel } from "@/lib/types";
+import { entitlementTier } from "@/lib/plan-tier";
 import { getFreeUsageThisMonth } from "@/lib/freeUsage";
 import { supabase } from "@/lib/supabase/client";
 import { isAdminUser } from "@/lib/admin";
@@ -50,7 +51,9 @@ export { AI33_TTS_CAP_STARTER, AI33_TTS_CAP_PRO };
  *  admin-configured value is what generateAi33TTS actually enforces. */
 export function ai33CapForPlan(plan: string | null | undefined, isAdmin = false): number {
   if (isAdmin) return AI33_TTS_CAP_PRO;
-  const p = (plan ?? "").trim().toLowerCase();
+  // Normalised, so heclus_pro takes the Pro cap. Callers reach this with a raw
+  // app_metadata.plan as often as with a tier.
+  const p = entitlementTier(plan);
   if (p === "founder") return 0;
   if (p === "pro") return AI33_TTS_CAP_PRO;
   // starter, demo, unknown → the entry-level cap.

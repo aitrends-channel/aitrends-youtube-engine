@@ -1,5 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 import { isAdminUser } from "@/lib/admin";
+import { entitlementTier } from "@/lib/plan-tier";
 
 // Shared source of truth for which features are gated behind which
 // plan tiers. UI components (resolution picker on Assemble) and
@@ -23,11 +24,27 @@ export const PRO_RESOLUTIONS = new Set<string>(["1440p", "2160p"]);
 export const PRO_TIER_PLANS = new Set<string>(["pro", "admin"]);
 
 /**
- * Returns the lowercase plan slug stored on app_metadata.plan, or
- * "starter" if it's missing/non-string. Mirrors what the UI does so
- * the gate decisions match between client and server.
+ * The entitlement tier this user is on, from app_metadata.plan.
+ *
+ * Returns the tier rather than the billing plan, so heclus_pro answers "pro"
+ * and every gate below reads correctly without knowing the product exists. The
+ * direction is deliberate: a future call site that forgets to normalise gets
+ * the right entitlement rather than silently stripping one.
+ *
+ * Use billingPlanOf when you need what they actually pay for.
  */
 export function planSlugOf(user: User | null | undefined): string {
+  const raw = billingPlanOf(user);
+  return raw ? entitlementTier(raw) : "starter";
+}
+
+/**
+ * The plan they are billed on, verbatim: "starter", "pro", "heclus_pro".
+ *
+ * For billing surfaces and the admin view only. An entitlement check that uses
+ * this is a bug waiting for the next product to be added.
+ */
+export function billingPlanOf(user: User | null | undefined): string {
   const meta = (user?.app_metadata ?? {}) as { plan?: unknown };
   if (typeof meta.plan === "string" && meta.plan.trim()) {
     return meta.plan.trim().toLowerCase();

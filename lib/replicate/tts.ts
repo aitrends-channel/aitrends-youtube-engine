@@ -1,4 +1,5 @@
 import type { KieModel } from "@/lib/types";
+import { entitlementTier } from "@/lib/plan-tier";
 import { getFreeUsageThisMonth } from "@/lib/freeUsage";
 import { supabase } from "@/lib/supabase/client";
 import { isAdminUser } from "@/lib/admin";
@@ -30,7 +31,9 @@ export const QWEN_TTS_CAP_PRO = Number(process.env.QWEN_TTS_CAP_PRO ?? 100_000);
 
 export function qwenCapForPlan(plan: string | null | undefined, isAdmin = false): number {
   if (isAdmin) return QWEN_TTS_CAP_PRO;
-  const p = (plan ?? "").trim().toLowerCase();
+  // Normalised, so heclus_pro takes the Pro cap. Callers reach this with a raw
+  // app_metadata.plan as often as with a tier.
+  const p = entitlementTier(plan);
   if (p === "founder") return 0;
   if (p === "pro") return QWEN_TTS_CAP_PRO;
   // starter, demo, unknown → the entry-level cap.
