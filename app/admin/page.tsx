@@ -2761,7 +2761,7 @@ function HeclusCreditsPanel() {
           ok={sellable}
           label="Top up"
           detail={sellable
-            ? "Live. The button is enabled on /balance."
+            ? "Live. The button is enabled on /billing."
             : !activeLink
               ? `No ${activeEnv} checkout link, so the button is disabled.`
               : "Link set but no pack size, so a purchase could not be credited."}

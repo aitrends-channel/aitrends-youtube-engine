@@ -23,6 +23,13 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_SUPPORT_CHAT_ENABLED: supportChatEnabled,
   },
+  // /balance was the route until it was renamed to /billing. Kept as a
+  // permanent redirect rather than dropped: the old path is in bookmarks, in
+  // the browser history of anyone who has topped up, and in any link already
+  // sent out.
+  async redirects() {
+    return [{ source: "/balance", destination: "/billing", permanent: true }];
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "**" },

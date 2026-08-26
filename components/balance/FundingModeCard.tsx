@@ -65,7 +65,7 @@ export function FundingModeCard() {
     <div className="p-5 rounded-2xl space-y-4"
       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
       <div>
-        <h2 className="text-xl font-bold text-foreground">How your generations are paid for</h2>
+        <h2 className="text-xl font-bold text-foreground">Billing Mode</h2>
         <p className="text-sm mt-1" style={{ color: "var(--c-45)" }}>
           Switch whenever you like. Your keys and your credits both stay where they are, so changing
           your mind costs nothing.

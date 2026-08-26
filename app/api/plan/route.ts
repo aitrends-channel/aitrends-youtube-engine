@@ -122,7 +122,7 @@ export async function GET() {
   const customerId = (dodo.customer_id as string | undefined) ?? null;
   const manageBillingAvailable = !admin && effectivePaid && !!customerId;
 
-  // The repricing they booked from /balance, so the plan card states it rather
+  // The repricing they booked from /billing, so the plan card states it rather
   // than letting the new price arrive unannounced on a statement.
   const pendingPlanSlug = (dodo.pending_plan as string | undefined) ?? null;
   const pendingPlanRow = pendingPlanSlug ? await getPlanBySlug(pendingPlanSlug) : null;

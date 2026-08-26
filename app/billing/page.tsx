@@ -8,6 +8,7 @@ import { ArrowLeft } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { BalanceCards } from "@/components/balance/BalanceCards";
 import { FundingModeCard } from "@/components/balance/FundingModeCard";
+import { CreditActivity } from "@/components/balance/CreditActivity";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 // Balance on its own route.
@@ -44,7 +45,7 @@ export default function BalancePage() {
           </div>
           <div className="min-w-0">
             <span className="font-bold text-sm tracking-tight text-foreground">Heclus</span>
-            <span className="text-sm tracking-tight ml-1 hidden sm:inline" style={{ color: "var(--c-50)" }}>Balance</span>
+            <span className="text-sm tracking-tight ml-1 hidden sm:inline" style={{ color: "var(--c-50)" }}>Billing</span>
           </div>
         </Link>
         <div className="flex items-center gap-2 shrink-0">
@@ -66,7 +67,7 @@ export default function BalancePage() {
             long line hurts. */}
         <div className="max-w-7xl mx-auto space-y-6">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Balance</h1>
+            <h1 className="text-2xl font-bold text-foreground">Billing</h1>
             <p className="text-sm mt-1" style={{ color: "var(--c-45)" }}>
               What you can spend, and where it went.
               {email ? <span style={{ color: "var(--c-35)" }}> {email}</span> : null}
@@ -74,6 +75,7 @@ export default function BalancePage() {
           </div>
           <BalanceCards />
           <FundingModeCard />
+          <CreditActivity />
         </div>
       </main>
     </div>

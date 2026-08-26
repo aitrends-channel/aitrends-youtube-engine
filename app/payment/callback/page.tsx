@@ -97,7 +97,7 @@ function CallbackContent() {
           try { localStorage.removeItem(PENDING_CREDIT_PURCHASE_KEY); } catch {}
           try { sessionStorage.removeItem(PENDING_CREDIT_PURCHASE_KEY); } catch {}
           setStage("success");
-          setTimeout(() => router.replace("/balance"), 2000);
+          setTimeout(() => router.replace("/billing"), 2000);
         } catch {
           setStage("failed");
           setErrorMsg("Could not reach the credit service. Contact support with your payment ID.");

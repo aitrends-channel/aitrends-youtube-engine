@@ -360,7 +360,7 @@ export default function PlanPage() {
                   </div>
                 )}
 
-                {/* Stated on the plan card, not only on /balance where it was
+                {/* Stated on the plan card, not only on /billing where it was
                     booked, so the price that renews is visible from the page
                     about the plan. */}
                 {planData?.pending_plan && (

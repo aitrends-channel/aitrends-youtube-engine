@@ -954,7 +954,7 @@ export default function SettingsPage() {
                 Your account runs on Heclus&apos;s providers and is billed in Heclus Credits, so you can generate
                 without connecting anything. Add your own keys below only if you would rather spend your own
                 provider balance than your credits.{" "}
-                <a href="/balance" style={{ textDecoration: "underline", fontWeight: 600, color: "var(--brand-text)" }}>
+                <a href="/billing" style={{ textDecoration: "underline", fontWeight: 600, color: "var(--brand-text)" }}>
                   See your balance
                 </a>
               </div>

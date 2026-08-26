@@ -1261,13 +1261,13 @@ export default function HomePage() {
                       <span>Account</span>
                     </Link>
                     <Link
-                      href="/balance"
+                      href="/billing"
                       onClick={() => setShowProfileMenu(false)}
                       className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all hover:opacity-80"
                       style={{ color: "var(--c-60)" }}
                     >
                       <Wallet size={15} />
-                      <span>Balance</span>
+                      <span>Billing</span>
                     </Link>
                     <button
                       onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
