@@ -37,7 +37,8 @@ export interface LedgerPage {
   total: number;
   page: number;
   pageSize: number;
-  /** Every provider that appears in this account's history, for the filter. */
+  /** Providers seen in the account's recent history, for the filter. Sent on the
+   *  first page only; the client keeps the last non-empty list. */
   providers: string[];
 }
 
@@ -94,13 +95,12 @@ export async function GET(req: Request) {
     }
   }
 
-  // Read from the whole history, not the page, or the filter would offer only
-  // what the current page happens to contain.
-  const { data: providerRows } = await supabase
-    .from("credit_ledger")
-    .select("provider")
-    .eq("user_id", user.id)
-    .not("provider", "is", null);
+  // Wider than the page, or the filter would offer only what the page happens to
+  // contain, but bounded: this is a dropdown of about four values and the first
+  // version read every row an account had ever written to build it. Capped at
+  // the most recent rows, on the (user_id, created_at DESC) index, and only on
+  // the first page, since the client holds the list while paging.
+  const providers = page === 0 ? await recentProviders(user.id) : [];
 
   const body: LedgerPage = {
     rows: raw.map((r) => ({
@@ -119,7 +119,20 @@ export async function GET(req: Request) {
     total: count ?? 0,
     page,
     pageSize: PAGE_SIZE,
-    providers: [...new Set(((providerRows ?? []) as { provider: string }[]).map((p) => p.provider))].sort(),
+    providers,
   };
   return NextResponse.json(body);
+}
+
+const PROVIDER_SCAN = 1000;
+
+async function recentProviders(userId: string): Promise<string[]> {
+  const { data } = await supabase
+    .from("credit_ledger")
+    .select("provider")
+    .eq("user_id", userId)
+    .not("provider", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(PROVIDER_SCAN);
+  return [...new Set(((data ?? []) as { provider: string }[]).map((p) => p.provider))].sort();
 }

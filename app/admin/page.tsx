@@ -7,6 +7,8 @@ import Image from "next/image";
 import { toast } from "sonner";
 import type { HeclusCreditsConfig } from "@/app/api/admin/heclus-credits/route";
 import type { BalancesResponse, ProviderBalance, BalanceRow } from "@/app/api/admin/balances/route";
+import type { RenderUsageRow } from "@/app/api/admin/render-usage/[projectId]/route";
+import type { UserUsage } from "@/app/api/admin/user-usage/[email]/route";
 import {
   ArrowLeft, LogOut, BarChart3, Users, UserCheck, FolderOpen,
   CheckCircle2, UserPlus, Settings, TrendingUp, Clapperboard, Film, Clock,
@@ -6658,6 +6660,346 @@ const TAB_HEADING: Record<string, string> = {
   query: "Query for answers",
 };
 
+/**
+ * One video's details, as a right-hand drawer on desktop and a full sheet on
+ * mobile.
+ *
+ * A drawer rather than the card that used to replace the table: an operator
+ * scanning rows opens one, reads it, and goes back to the list, and swapping the
+ * whole view out lost their scroll position, their filter pills and their place
+ * every time.
+ */
+function ProjectDetailDrawer({ project, onClose }: { project: AdminProject; onClose: () => void }) {
+  const p = project;
+  const isComplete = p.isComplete;
+
+  // Fetched only once a row is opened. Most rows never are, and this is a
+  // per-render table that a reassembled project writes to repeatedly.
+  const { data: usage, isLoading: usageLoading } = useSWR<{ rows: RenderUsageRow[]; unavailable: boolean }>(
+    `/api/admin/render-usage/${p.id}`, fetcher, { revalidateOnFocus: false },
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const stats: { label: string; value: React.ReactNode }[] = [
+    { label: "User",          value: p.userEmail ?? "—" },
+    { label: "Project ID",    value: <span className="font-mono">{p.id}</span> },
+    { label: "Channel",       value: p.channelName ?? "—" },
+    { label: "Topic",         value: p.selectedTopic ?? "—" },
+    { label: "Phase",         value: p.phaseLabel },
+    { label: "Progress",      value: `${p.progress}%` },
+    { label: "Assemble time", value: formatAssembleTime(p.assembleSeconds) },
+    { label: "Created",       value: timeAgo(p.createdAt) },
+  ];
+
+  const rows = usage?.rows ?? [];
+  const costed = rows.filter((r) => r.usdCost !== null);
+  const totalUsd = costed.reduce((sum, r) => sum + (r.usdCost ?? 0), 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" style={{ background: "rgba(0,0,0,0.45)" }} onClick={onClose}>
+      <div
+        className="w-full sm:max-w-xl h-full overflow-y-auto p-5 space-y-4 shadow-2xl"
+        style={{ background: "var(--bg-card)", paddingRight: "40px" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Title</p>
+            <p className="text-base font-semibold break-words" style={{ color: "var(--c-90)" }}>
+              {p.selectedTopic ?? p.channelName ?? "—"}
+            </p>
+          </div>
+          <button onClick={onClose} title="Close"
+            className="shrink-0 p-2 rounded-lg transition-all hover:bg-black/5 cursor-pointer">
+            <X size={16} style={{ color: "var(--c-60)" }} />
+          </button>
+        </div>
+
+        <Link
+          href={`/projects/${p.id}/${PHASE_PATHS[p.currentState] ?? "channel"}`}
+          className="inline-flex text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-80 items-center gap-1.5"
+          style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}
+        >
+          Open project →
+        </Link>
+
+        <div className="rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap"
+          style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
+          <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
+            style={isComplete
+              ? { background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.65 0.15 145)", border: "1px solid oklch(0.55 0.15 145 / 0.3)" }
+              : { background: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
+            {p.phaseLabel}
+          </span>
+          <div className="flex-1 h-1.5 rounded-full overflow-hidden min-w-[120px]" style={{ background: "var(--bg-track)" }}>
+            <div className="h-full rounded-full transition-all"
+              style={{
+                width: `${p.progress}%`,
+                background: isComplete ? "oklch(0.55 0.15 145)" : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
+              }} />
+          </div>
+          <span className="text-xs tabular-nums font-medium" style={{ color: "var(--c-60)" }}>{p.progress}%</span>
+        </div>
+
+        <div className="overflow-x-auto rounded-xl"
+          style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
+          <table className="w-full border-collapse table-fixed">
+            <colgroup><col className="w-[120px] sm:w-[160px]" /><col /></colgroup>
+            <tbody>
+              {stats.map((f, i) => (
+                <tr key={f.label} style={{ borderBottom: i === stats.length - 1 ? undefined : "1px solid var(--bd-4)" }}>
+                  <td className="py-2.5 px-3 text-[11px] uppercase tracking-wider font-bold align-top"
+                    style={{ color: "black" }}>{f.label}</td>
+                  <td className="py-2.5 pl-6 pr-3 text-sm break-words text-right" style={{ color: "black" }}>{f.value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* What the render cost us, as opposed to what a vendor charged. One row
+            per assemble, because a reassembled project pays the CPU twice and a
+            single total would hide that. */}
+        <div className="space-y-2" style={{ marginTop: "30px" }}>
+          <div className="flex items-center gap-2">
+            <MemoryStick size={14} style={{ color: "var(--c-45)" }} />
+            <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: "var(--c-55)" }}>
+              Render usage
+            </p>
+            {costed.length > 0 && (
+              <span className="text-xs font-semibold tabular-nums ml-auto" style={{ color: "oklch(0.65 0.15 145)" }}>
+                ${totalUsd.toFixed(4)} total
+              </span>
+            )}
+          </div>
+
+          {usageLoading ? (
+            <p className="text-xs italic" style={{ color: "var(--c-35)" }}>Loading…</p>
+          ) : usage?.unavailable ? (
+            <p className="text-xs italic" style={{ color: "var(--c-35)" }}>
+              Migration 145 has not run on this database, so nothing has been measured yet.
+            </p>
+          ) : rows.length === 0 ? (
+            <p className="text-xs italic" style={{ color: "var(--c-35)" }}>
+              No assemble measured for this project yet.
+            </p>
+          ) : (
+            <div className="rounded-xl overflow-x-auto"
+              style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--bd-7)" }}>
+                    {["When", "Res", "CPU", "Peak mem", "Wall", "Cost"].map((h, i) => (
+                      <th key={h} className={`py-2 px-3 font-medium uppercase tracking-wider ${i > 1 ? "text-right" : "text-left"}`}
+                        style={{ color: "var(--c-40)" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.id} style={{ borderTop: "1px solid var(--bd-4)", opacity: r.succeeded ? 1 : 0.6 }}
+                      title={r.unsampledEncodes > 0
+                        ? `${r.encodes} encodes, ${r.unsampledEncodes} too short to sample, so CPU is a floor`
+                        : `${r.encodes} encodes`}>
+                      <td className="py-2 px-3 whitespace-nowrap" style={{ color: "var(--c-55)" }}>
+                        {timeAgo(r.createdAt)}{r.succeeded ? "" : " · failed"}
+                      </td>
+                      <td className="py-2 px-3" style={{ color: "var(--c-55)" }}>{r.resolution ?? "—"}</td>
+                      <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-70)" }}>
+                        {r.cpuSeconds.toFixed(1)}s
+                      </td>
+                      <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-70)" }}>
+                        {r.peakRssMb === null ? "—" : `${Math.round(r.peakRssMb)} MB`}
+                      </td>
+                      <td className="py-2 px-3 text-right tabular-nums" style={{ color: "var(--c-55)" }}>
+                        {(r.wallMs / 1000).toFixed(0)}s
+                      </td>
+                      <td className="py-2 px-3 text-right tabular-nums font-semibold"
+                        style={{ color: r.usdCost === null ? "var(--c-35)" : "oklch(0.65 0.15 145)" }}>
+                        {r.usdCost === null ? "unpriced" : `$${r.usdCost.toFixed(4)}`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {rows.length > 0 && costed.length === 0 && (
+            <p className="text-[11px]" style={{ color: "var(--c-40)" }}>
+              Usage is measured but not costed. Set render_rates (usd_per_cpu_hour, usd_per_gb_hour)
+              on product_config to price it.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One user's details, in the same drawer treatment as a video row.
+ *
+ * The render numbers carry a share as well as an absolute, because a CPU total
+ * says nothing on its own: 400 seconds is either most of the fleet or a rounding
+ * error, and which one it is decides whether anybody cares.
+ */
+function UserDetailDrawer({ user, onClose }: { user: AdminUser; onClose: () => void }) {
+  const u = user;
+  const { data: usage, isLoading } = useSWR<UserUsage>(
+    `/api/admin/user-usage/${encodeURIComponent(u.email)}`, fetcher, { revalidateOnFocus: false },
+  );
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const stats: { label: string; value: React.ReactNode }[] = [
+    { label: "Email",        value: <span className="font-mono break-all">{u.email}</span> },
+    { label: "Status",       value: u.status },
+    { label: "Plan",         value: u.plan ?? "—" },
+    { label: "Admin",        value: u.isAdmin ? "Yes" : "No" },
+    { label: "Videos",       value: u.projectCount.toLocaleString() },
+    { label: "Niches used",  value: `${u.nichesUsed}${u.effectiveNicheLimit === null ? "" : ` of ${u.effectiveNicheLimit}`}` },
+    { label: "Setup done",   value: u.hasSetup ? "Yes" : "No" },
+    { label: "Anthropic key", value: u.hasAnthropicKey ? (u.anthropicDirect ? "On, direct" : "Saved, off") : "—" },
+    { label: "Paid at",      value: u.paidAt ? timeAgo(u.paidAt) : "—" },
+    { label: "Plan expires", value: u.planExpiresAt ? timeAgo(u.planExpiresAt) : "—" },
+    { label: "Last sign in", value: u.lastSignIn ? timeAgo(u.lastSignIn) : "Never" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" style={{ background: "rgba(0,0,0,0.45)" }} onClick={onClose}>
+      <div
+        className="w-full sm:max-w-xl h-full overflow-y-auto p-5 space-y-4 shadow-2xl"
+        style={{ background: "var(--bg-card)", paddingRight: "40px" }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs uppercase tracking-wider" style={{ color: "var(--c-40)" }}>User</p>
+            <p className="text-base font-semibold break-all" style={{ color: "var(--c-90)" }}>{u.email}</p>
+          </div>
+          <button onClick={onClose} title="Close"
+            className="shrink-0 p-2 rounded-lg transition-all hover:bg-black/5 cursor-pointer">
+            <X size={16} style={{ color: "var(--c-60)" }} />
+          </button>
+        </div>
+
+        <div className="overflow-x-auto rounded-xl"
+          style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
+          <table className="w-full border-collapse table-fixed">
+            <colgroup><col className="w-[120px] sm:w-[160px]" /><col /></colgroup>
+            <tbody>
+              {stats.map((f, i) => (
+                <tr key={f.label} style={{ borderBottom: i === stats.length - 1 ? undefined : "1px solid var(--bd-4)" }}>
+                  <td className="py-2.5 px-3 text-[11px] uppercase tracking-wider font-bold align-top"
+                    style={{ color: "black" }}>{f.label}</td>
+                  <td className="py-2.5 pl-6 pr-3 text-sm break-words text-right" style={{ color: "black" }}>{f.value}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="space-y-2" style={{ marginTop: "30px" }}>
+          <div className="flex items-center gap-2">
+            <MemoryStick size={14} style={{ color: "var(--c-45)" }} />
+            <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: "var(--c-55)" }}>
+              Render usage
+            </p>
+            {usage && usage.renders > 0 && (
+              <span className="text-xs ml-auto tabular-nums" style={{ color: "var(--c-45)" }}>
+                {usage.renders.toLocaleString()} of {usage.totals.renders.toLocaleString()} renders
+              </span>
+            )}
+          </div>
+
+          {isLoading ? (
+            <p className="text-xs italic" style={{ color: "var(--c-35)" }}>Loading…</p>
+          ) : usage?.unavailable ? (
+            <p className="text-xs italic" style={{ color: "var(--c-35)" }}>
+              Migration 145 has not run on this database, so nothing has been measured yet.
+            </p>
+          ) : !usage || usage.renders === 0 ? (
+            <p className="text-xs italic" style={{ color: "var(--c-35)" }}>
+              No assemble measured for this user yet.
+            </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <UsageTile
+                  label="CPU"
+                  value={`${usage.cpuSeconds < 120 ? `${usage.cpuSeconds.toFixed(1)}s` : `${(usage.cpuSeconds / 60).toFixed(1)} min`}`}
+                  share={usage.cpuShare}
+                  sub={`of ${(usage.totals.cpuSeconds / 60).toFixed(1)} min fleet-wide`}
+                />
+                <UsageTile
+                  label="Memory"
+                  value={`${usage.gbHours.toFixed(usage.gbHours < 1 ? 3 : 2)} GB-h`}
+                  share={usage.memShare}
+                  sub={`of ${usage.totals.gbHours.toFixed(2)} GB-h fleet-wide`}
+                />
+              </div>
+
+              <div className="rounded-xl px-4 py-3 flex items-center justify-between gap-3"
+                style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
+                <div className="min-w-0">
+                  <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Render cost</p>
+                  <p className="text-xs" style={{ color: "var(--c-45)" }}>
+                    {usage.usdCost === null
+                      ? "Set render_rates on product_config to price this."
+                      : `Peak memory in a single render: ${Math.round(usage.peakRssMb ?? 0)} MB`}
+                  </p>
+                </div>
+                <p className="text-lg font-bold tabular-nums shrink-0"
+                  style={{ color: usage.usdCost === null ? "var(--c-35)" : "oklch(0.65 0.15 145)" }}>
+                  {usage.usdCost === null ? "unpriced" : `$${usage.usdCost.toFixed(4)}`}
+                </p>
+              </div>
+
+              {/* Memory is GB-hours rather than a peak because peaks do not add
+                  up: summing them describes a machine that never existed. */}
+              <p className="text-[11px]" style={{ color: "var(--c-40)" }}>
+                Memory is occupancy, peak resident set held for the length of the render.
+                CPU is summed across every ffmpeg and is a floor.
+                {usage.partial ? " Shares are computed over the most recent 10,000 renders." : ""}
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One share tile: the absolute, then how much of the fleet it is. */
+function UsageTile({ label, value, share, sub }: {
+  label: string; value: string; share: number | null; sub: string;
+}) {
+  const pctText = share === null ? "—" : `${(share * 100).toFixed(share < 0.01 ? 2 : 1)}%`;
+  return (
+    <div className="rounded-xl px-4 py-3" style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
+      <p className="text-[11px] uppercase tracking-wider" style={{ color: "var(--c-40)" }}>{label}</p>
+      <p className="text-lg font-bold tabular-nums" style={{ color: "var(--c-90)" }}>{value}</p>
+      <div className="mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-track)" }}>
+        <div className="h-full rounded-full"
+          style={{ width: `${Math.min((share ?? 0) * 100, 100)}%`, background: "oklch(0.72 0.25 285)" }} />
+      </div>
+      <p className="text-[11px] mt-1 tabular-nums" style={{ color: "var(--c-45)" }}>
+        <span className="font-semibold" style={{ color: "var(--c-60)" }}>{pctText}</span> {sub}
+      </p>
+    </div>
+  );
+}
+
 const ADMIN_NAV = [
   { id: "stats",    label: "Stats",    icon: BarChart3 },
   { id: "balances", label: "Balance",  icon: Wallet },
@@ -6814,6 +7156,7 @@ export default function AdminPage() {
   // selectedCostProject so each sub-tab's selection survives the
   // other sub-tab's interactions until an explicit clear.
   const [selectedGeneralProject, setSelectedGeneralProject] = useState<AdminProject | null>(null);
+  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [activityView, setActivityView] = usePersistentTab<"daily" | "weekly" | "monthly">(
     "stats.activity", "daily", ["daily", "weekly", "monthly"],
   );
@@ -7719,6 +8062,10 @@ export default function AdminPage() {
         })()}
 
         {/* Users section */}
+        {selectedUser && (
+          <UserDetailDrawer user={selectedUser} onClose={() => setSelectedUser(null)} />
+        )}
+
         <section id="users" className="rounded-2xl space-y-5 max-w-full min-w-0" style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", padding: "10px", scrollMarginTop: "80px", boxShadow: "0 4px 24px oklch(0 0 0 / 0.07), 0 1px 4px oklch(0 0 0 / 0.05)", display: activeTab === "users" ? undefined : "none" }}>
           {/* Icon and title dropped — the page heading names this view. The
               count chip stays: it is data, not a label. */}
@@ -7827,7 +8174,14 @@ export default function AdminPage() {
                 <tbody key={`users-p${usersPage}`}>
                   {pagedUsers.map((u) => (
                     <tr key={u.email}
-                      style={{ borderBottom: "1px solid var(--bd-4)" }}
+                      // Opens the drawer, but only when the click was not aimed
+                      // at something. The row is full of menus, copy buttons and
+                      // links, and hijacking those would break every one of them.
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest("button, a, input, select, [role='menu']")) return;
+                        setSelectedUser(u);
+                      }}
+                      style={{ borderBottom: "1px solid var(--bd-4)", cursor: "pointer" }}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bd-2)"; }}
                       onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                     >
@@ -8192,7 +8546,7 @@ export default function AdminPage() {
               counts (computed over all videos, ignoring the search box).
               Clicking a pill applies that filter; clicking the active
               pill (or Total) clears it. Mirrors the Users tab's strip. */}
-          {!selectedCostProject && !selectedGeneralProject && (
+          {!selectedCostProject && (
             <div className="flex flex-wrap gap-2 text-xs">
               {PROJECT_STATUS_FILTERS.map((f) => {
                 const isActive = projectStatusFilter === f.id;
@@ -8228,7 +8582,7 @@ export default function AdminPage() {
             </div>
           )}
 
-          {!selectedCostProject && !selectedGeneralProject && (
+          {!selectedCostProject && (
             <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
               <div className="relative flex-1 min-w-[220px] max-w-md">
                 <input
@@ -8269,116 +8623,12 @@ export default function AdminPage() {
             </div>
           )}
 
+          {videosSubTab === "general" && selectedGeneralProject && (
+            <ProjectDetailDrawer project={selectedGeneralProject} onClose={() => setSelectedGeneralProject(null)} />
+          )}
+
           {videosSubTab === "general" && (isLoading ? (
             <SkeletonRows cols={8} />
-          ) : selectedGeneralProject ? (
-            (() => {
-              const p = selectedGeneralProject;
-              const isComplete = p.isComplete;
-              type StatField = { label: string; value: React.ReactNode };
-              const stats: StatField[] = [
-                { label: "User",            value: p.userEmail ?? "—" },
-                { label: "Project ID",      value: <span className="font-mono">{p.id}</span> },
-                { label: "Channel",         value: p.channelName ?? "—" },
-                { label: "Topic",           value: p.selectedTopic ?? "—" },
-                { label: "Phase",           value: p.phaseLabel },
-                { label: "Progress",        value: `${p.progress}%` },
-                { label: "Assemble time",   value: formatAssembleTime(p.assembleSeconds) },
-                { label: "Created",         value: timeAgo(p.createdAt) },
-              ];
-              return (
-                <div className="rounded-2xl w-full max-w-full p-4 space-y-4"
-                  style={{ background: "var(--bg-card)", border: "1px solid oklch(0 0 0 / 0.10)", boxShadow: "0 2px 12px oklch(0 0 0 / 0.05)" }}>
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <button
-                      onClick={() => setSelectedGeneralProject(null)}
-                      className="text-xs px-3 py-1.5 rounded-lg font-semibold cursor-pointer transition-opacity hover:opacity-90 inline-flex items-center gap-1.5"
-                      style={{ background: "oklch(0.72 0.25 285)", color: "white", boxShadow: "0 2px 8px oklch(0.72 0.25 285 / 0.35)" }}
-                    >
-                      <ArrowLeft size={12} />
-                      Back to table
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Title</p>
-                      <p className="text-base font-semibold truncate" style={{ color: "var(--c-90)" }}>
-                        {p.selectedTopic ?? p.channelName ?? "—"}
-                      </p>
-                    </div>
-                    <Link
-                      href={`/projects/${p.id}/${PHASE_PATHS[p.currentState] ?? "channel"}`}
-                      className="text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-80 inline-flex items-center gap-1.5"
-                      style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}
-                    >
-                      Open project →
-                    </Link>
-                  </div>
-
-                  {/* Phase + progress strip — the bit a glance-and-go
-                      operator actually wants to see. Phase pill
-                      matches the table's color treatment and the
-                      bar mirrors the General-row progress style. */}
-                  <div className="rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap"
-                    style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
-                    <span className="text-xs px-2.5 py-0.5 rounded-full font-medium"
-                      style={isComplete ? {
-                        background: "oklch(0.55 0.15 145 / 0.15)",
-                        color: "oklch(0.65 0.15 145)",
-                        border: "1px solid oklch(0.55 0.15 145 / 0.3)",
-                      } : {
-                        background: "oklch(0.72 0.25 285 / 0.1)",
-                        color: "oklch(0.72 0.25 285)",
-                        border: "1px solid oklch(0.72 0.25 285 / 0.2)",
-                      }}>
-                      {p.phaseLabel}
-                    </span>
-                    <div className="flex-1 h-1.5 rounded-full overflow-hidden min-w-[140px]"
-                      style={{ background: "var(--bg-track)" }}>
-                      <div className="h-full rounded-full transition-all"
-                        style={{
-                          width: `${p.progress}%`,
-                          background: isComplete
-                            ? "oklch(0.55 0.15 145)"
-                            : "linear-gradient(90deg, oklch(0.72 0.25 285), oklch(0.58 0.28 300))",
-                        }} />
-                    </div>
-                    <span className="text-xs tabular-nums font-medium" style={{ color: "var(--c-60)" }}>
-                      {p.progress}%
-                    </span>
-                  </div>
-
-                  {/* Field table — two columns: label and value.
-                      Label column gets the same silver highlight as
-                      Title on the main table so the eye anchors to
-                      the field names on the left. Label width drops
-                      to 110px on mobile (was 180px which ate half a
-                      360px viewport) and the value column gets
-                      break-words so long topics + UUIDs wrap inside
-                      the card instead of forcing horizontal scroll. */}
-                  <div className="overflow-x-auto rounded-xl"
-                    style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
-                    <table className="w-full border-collapse table-fixed">
-                      <colgroup>
-                        <col className="w-[110px] sm:w-[180px]" />
-                        <col />
-                      </colgroup>
-                      <tbody>
-                        {stats.map((f, i) => (
-                          <tr key={f.label} style={{ borderBottom: i === stats.length - 1 ? undefined : "1px solid var(--bd-4)" }}>
-                            <td className="py-2.5 px-3 text-[11px] uppercase tracking-wider font-bold align-top"
-                              style={{ color: "black", background: "oklch(0.88 0 0)" }}>
-                              {f.label}
-                            </td>
-                            <td className="py-2.5 px-3 text-sm break-words" style={{ color: "black" }}>
-                              {f.value}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })()
           ) : projects.length === 0 ? (
             <div className="text-sm py-4 italic" style={{ color: "var(--c-35)" }}>No projects yet.</div>
           ) : sortedProjects.length === 0 ? (
