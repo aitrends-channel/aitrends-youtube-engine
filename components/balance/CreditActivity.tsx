@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import { ListFilter } from "lucide-react";
@@ -55,6 +55,14 @@ export function CreditActivity() {
   // activity" when there is plenty.
   const reset = <T,>(set: (v: T) => void) => (v: T) => { set(v); setPage(0); };
 
+  // The server sends the provider list on the first page only, so the dropdown
+  // would empty itself the moment you paged. Held here instead.
+  const providersRef = useRef<string[]>([]);
+  useEffect(() => {
+    if (data?.providers?.length) providersRef.current = data.providers;
+  }, [data?.providers]);
+  const providers = data?.providers?.length ? data.providers : providersRef.current;
+
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
   const pageSize = data?.pageSize ?? 25;
@@ -82,7 +90,7 @@ export function CreditActivity() {
         </select>
         <select value={provider} onChange={(e) => reset(setProvider)(e.target.value)} className={selectCls} style={selectStyle}>
           <option value="">All providers</option>
-          {(data?.providers ?? []).map((p) => <option key={p} value={p}>{p}</option>)}
+          {providers.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
         <input type="date" value={from} onChange={(e) => reset(setFrom)(e.target.value)}
           title="From" className={selectCls} style={selectStyle} />
