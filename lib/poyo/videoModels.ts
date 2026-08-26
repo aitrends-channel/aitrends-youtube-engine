@@ -7,10 +7,20 @@
 // them yet; that gap is the "two repositories, one provider" item in the wallet
 // document, and this is one more reason to close it.
 //
-// Probed directly on 2026-08-24: runway, runway-gen4, veo3, veo-3, kling-3,
-// kling-3.0 and sora-2 all return "Model not found". PoYo does not carry them
-// for video, which is why those stay on KIE rather than being a mapping nobody
-// has written yet.
+// The 2026-08-24 probe concluded PoYo carried no Veo, Sora, Runway or Kling 3,
+// and it was wrong. It sent KIE's identifiers, and "Model not found" is equally
+// what a real model under a different name returns. Re-probed 2026-08-26 against
+// the names PoYo advertises: sora-2-official, veo3.1-fast, veo3.1-quality and
+// runway-gen-4.5 all exist.
+//
+// Those four are version substitutions, not equivalences. KIE sells Veo 3 and
+// Runway Gen-4; PoYo carries Veo 3.1 and Gen-4.5. A clip served by PoYo is the
+// newer model under the older model's label in the picker, which is a known and
+// accepted inaccuracy rather than an oversight.
+//
+// Still absent, after roughly sixty spellings: plain Kling 3.0, where only the
+// motion-control variant exists and that is a different product needing a motion
+// reference, and every Wan id. Those keep the picker's gate.
 
 /** KIE model id -> PoYo model id. Only verified pairs belong here. */
 export const KIE_TO_POYO_VIDEO: Record<string, string> = {
@@ -20,6 +30,10 @@ export const KIE_TO_POYO_VIDEO: Record<string, string> = {
   "kling-2.6/image-to-video": "kling-2.6",
   "grok-imagine/image-to-video": "grok-imagine",
   "hailuo/02-image-to-video-pro": "hailuo-02",
+  "sora-2-image-to-video": "sora-2-official",
+  "veo3": "veo3.1-quality",
+  "veo3_fast": "veo3.1-fast",
+  "runway": "runway-gen-4.5",
 };
 
 export function poyoVideoModelFor(kieModelId: string): string | null {
@@ -47,7 +61,11 @@ const POYO_VIDEO_RESOLUTIONS: Record<string, string[]> = {
   "seedance-2-fast": ["480p", "720p", "1080p", "4k"],
   "seedance-1.5-pro": ["480p", "720p", "1080p"],
   "hailuo-02": ["512P", "768P"],
-  // kling-2.6 and grok-imagine take a duration and nothing else.
+  "veo3.1-fast": ["720p", "1080p", "4k"],
+  "veo3.1-quality": ["720p", "1080p", "4k"],
+  // kling-2.6, grok-imagine, sora-2-official and runway-gen-4.5 take a duration
+  // and nothing else. Confirmed rather than assumed: the last two accept a
+  // resolution field and ignore it, which is worse than rejecting it.
 };
 
 /** The resolutions to offer for a KIE model id when PoYo is serving it, or
@@ -68,7 +86,10 @@ export function poyoVideoResolutions(kieModelId: string): string[] | undefined {
  * offered and failed at submit, which is exactly how the Veo-under-PoYo
  * problem started.
  */
-export const POYO_ONLY_VIDEO = ["seedance-2.5", "hailuo-2.3"];
+export const POYO_ONLY_VIDEO = [
+  "seedance-2.5", "seedance-2-mini", "hailuo-2.3", "hailuo-03",
+  "kling-2.5-turbo-pro", "kling-3.0-motion-control", "veo3.1-fast-official",
+];
 
 export function isPoyoOnlyVideo(modelId: string): boolean {
   return POYO_ONLY_VIDEO.includes(modelId);
