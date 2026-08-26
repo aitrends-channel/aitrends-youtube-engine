@@ -24,7 +24,7 @@ export function KieBalanceRow() {
   );
   // A wallet-funded account has no KIE account, so this row would report a zero
   // that means nothing and point at kie.ai/billing, which is the wrong place to
-  // spend money. The Heclus Credits row on /balance is the one that applies, and
+  // spend money. The Heclus Credits row on /billing is the one that applies, and
   // StepBalanceCard carries the number into every step.
   const walletFunded = data?.fundingMode === "wallet";
   const credits = data?.kie?.credits;
@@ -49,7 +49,7 @@ export function KieBalanceRow() {
           <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-50)" }}>
             Heclus Credits
           </span>
-          <a href="/balance" className="text-[10px] hover:opacity-80 transition-opacity" style={{ color: "var(--c-45)" }}>
+          <a href="/billing" className="text-[10px] hover:opacity-80 transition-opacity" style={{ color: "var(--c-45)" }}>
             Top up
           </a>
         </div>

@@ -5,6 +5,7 @@ import { getHeclusBalance, listHeclusLedger } from "@/lib/heclus-credits";
 import { supabase } from "@/lib/supabase/client";
 import { isAdminUser } from "@/lib/admin";
 import { getHeclusPack } from "@/lib/heclus-pack";
+import { getFundingMode } from "@/lib/funding";
 
 export const dynamic = "force-dynamic";
 
@@ -18,11 +19,12 @@ export async function GET() {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
-  const [balance, ledger, lifetime, packInfo] = await Promise.all([
+  const [balance, ledger, lifetime, packInfo, fundingMode] = await Promise.all([
     getHeclusBalance(user),
     listHeclusLedger(user.id, 25),
     lifetimeTotals(user.id),
     getHeclusPack(),
+    getFundingMode(user),
   ]);
 
   // The disabled button reads "no pack is configured yet" either way, which is
@@ -46,6 +48,10 @@ export async function GET() {
       : null,
     checkoutUrl: packInfo.checkoutUrl,
     setupHint,
+    // Nothing draws on this wallet while the account is on its own key, so the
+    // panel has to know the mode to keep the button from selling credits that
+    // would sit unspent.
+    fundingMode,
   });
 }
 

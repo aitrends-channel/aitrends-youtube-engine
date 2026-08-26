@@ -32,6 +32,9 @@ export interface Plan {
   paymentLinkProduction: string | null;
   highlighted: boolean;
   disabled: boolean;
+  /** Retired from the public list. Still resolvable by slug, so the customers
+   *  still on it keep their entitlements. */
+  legacy: boolean;
   isFounder: boolean;
   sortOrder: number;
 }
@@ -49,6 +52,7 @@ interface PlanRow {
   payment_link_production: string | null;
   highlighted: boolean;
   disabled: boolean;
+  legacy: boolean | null;
   is_founder: boolean;
   sort_order: number;
 }
@@ -69,6 +73,7 @@ function rowToPlan(r: PlanRow, mode: PaymentMode): Plan {
     paymentLinkProduction: r.payment_link_production,
     highlighted: r.highlighted,
     disabled: r.disabled,
+    legacy: !!r.legacy,
     isFounder: r.is_founder,
     sortOrder: r.sort_order,
   };
@@ -163,12 +168,40 @@ export async function getPlans(): Promise<Plan[]> {
     supabase
       .from("plans")
       .select("*")
+      // Legacy plans are out of the public list, not out of the table: a
+      // retired product still has to resolve by slug for the customers on it.
+      // `or` rather than eq(false) so a row predating migration 144, where the
+      // column reads null, is still offered.
+      .or("legacy.is.null,legacy.eq.false")
       .order("sort_order", { ascending: true })
       .order("slug", { ascending: true }),
     getPaymentMode(),
   ]);
   if (error) {
     console.warn("[plans] list failed:", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => rowToPlan(r as PlanRow, mode));
+}
+
+/**
+ * Every plan row, legacy included, in the same order as getPlans.
+ *
+ * Admin only. The plans panel pairs a retired product with the one that
+ * replaced it, which needs both rows; getPlans drops the legacy half so the
+ * public upgrade modal can never offer a closed price.
+ */
+export async function getAllPlans(): Promise<Plan[]> {
+  const [{ data, error }, mode] = await Promise.all([
+    supabase
+      .from("plans")
+      .select("*")
+      .order("sort_order", { ascending: true })
+      .order("slug", { ascending: true }),
+    getPaymentMode(),
+  ]);
+  if (error) {
+    console.warn("[plans] admin list failed:", error.message);
     return [];
   }
   return (data ?? []).map((r) => rowToPlan(r as PlanRow, mode));

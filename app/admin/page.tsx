@@ -2761,7 +2761,7 @@ function HeclusCreditsPanel() {
           ok={sellable}
           label="Top up"
           detail={sellable
-            ? "Live. The button is enabled on /balance."
+            ? "Live. The button is enabled on /billing."
             : !activeLink
               ? `No ${activeEnv} checkout link, so the button is disabled.`
               : "Link set but no pack size, so a purchase could not be credited."}
@@ -4883,6 +4883,35 @@ function VisionControl({ data, mutate, disabled }: {
 
 type PaymentMode = "test" | "production";
 
+/**
+ * Reads the Price (cents) field.
+ *
+ * A leading $ means the admin typed dollars, so "$49.99" is 4999 — an
+ * unambiguous signal, and the mistake the bare-cents field invites. Without it
+ * the value is cents as labelled, and a fraction is rejected rather than
+ * guessed: 49.99 could plausibly mean either 4999 or a typo for 49, and
+ * app/api/plan matches this against the settlement amount exactly, so a wrong
+ * guess here silently stops recognising real payments.
+ */
+function parsePriceCents(raw: string): { value: number | null; error?: string } {
+  const cleaned = raw.trim().replace(/[,\s_]/g, "");
+  if (cleaned === "") return { value: null };
+
+  const dollars = cleaned.startsWith("$");
+  const num = Number(dollars ? cleaned.slice(1) : cleaned);
+  if (!Number.isFinite(num) || num < 0) {
+    return { value: null, error: `"${raw.trim()}" is not a price. Enter cents (4999) or dollars ($49.99).` };
+  }
+  if (dollars) return { value: Math.round(num * 100) };
+  if (!Number.isInteger(num)) {
+    return {
+      value: null,
+      error: `Cents must be whole. For $${num.toFixed(2)} enter ${Math.round(num * 100)}, or type it as $${num.toFixed(2)}.`,
+    };
+  }
+  return { value: num };
+}
+
 interface AdminPlanDTO {
   slug: string;
   name: string;
@@ -4897,15 +4926,130 @@ interface AdminPlanDTO {
   paymentLinkProduction: string | null;
   highlighted: boolean;
   disabled: boolean;
+  /** Retired from the public list, still live for the customers on it. */
+  legacy: boolean;
   isFounder: boolean;
   sortOrder: number;
 }
 
+/** One plan's card contents. Shared so a tier group can stack the retired
+ *  product and its replacement without duplicating the row. */
+function PlanCardBody({ p, viewEnv, onEdit, onDelete }: {
+  p: AdminPlanDTO;
+  viewEnv: PaymentMode;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>{p.name}</p>
+          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono"
+            style={{ background: "oklch(0 0 0 / 0.04)", color: "var(--c-50)" }}>{p.slug}</span>
+          {p.isFounder && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+              style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)" }}>founder</span>
+          )}
+          {p.highlighted && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+              style={{ background: "oklch(0.62 0.15 220 / 0.15)", color: "oklch(0.62 0.15 220)" }}>highlighted</span>
+          )}
+          {p.disabled && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+              style={{ background: "oklch(0 0 0 / 0.06)", color: "var(--c-50)" }}>disabled</span>
+          )}
+        </div>
+        <p className="text-xs mt-1" style={{ color: "var(--c-60)" }}>
+          {p.priceDisplay}{p.periodDisplay} · {p.nichesPerMonth === null ? "Unlimited niches" : `${p.nichesPerMonth} niches/mo`} · {p.features.length} feature{p.features.length === 1 ? "" : "s"}
+        </p>
+        {(() => {
+          const previewUrl = viewEnv === "production" ? p.paymentLinkProduction : p.paymentLinkTest;
+          return (
+            <>
+              <p className="text-[11px] mt-1 flex flex-wrap items-center gap-x-2 gap-y-1" style={{ color: "var(--c-50)" }}>
+                <span className={p.paymentLinkTest ? "text-zinc-600" : "text-zinc-400"}>
+                  test: {p.paymentLinkTest ? "✓" : "—"}
+                </span>
+                <span className={p.paymentLinkProduction ? "text-zinc-600" : "text-zinc-400"}>
+                  prod: {p.paymentLinkProduction ? "✓" : "—"}
+                </span>
+                {previewUrl ? (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                    style={viewEnv === "production"
+                      ? { background: "oklch(0.55 0.15 145 / 0.12)", color: "oklch(0.45 0.15 145)" }
+                      : { background: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.45 0.15 220)" }}>
+                    viewing: {viewEnv}
+                  </span>
+                ) : (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700">
+                    {viewEnv} link missing
+                  </span>
+                )}
+              </p>
+              {previewUrl && (
+                <p
+                  className="text-xs font-mono break-all mt-1.5 leading-snug"
+                  style={{ color: "oklch(0.62 0.15 220)" }}
+                  title={`${viewEnv} checkout URL`}
+                >
+                  {previewUrl}
+                </p>
+              )}
+            </>
+          );
+        })()}
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        {(() => {
+          const previewUrl = viewEnv === "production" ? p.paymentLinkProduction : p.paymentLinkTest;
+          return (
+            <button
+              onClick={() => {
+                if (!previewUrl) {
+                  toast.error(`No ${viewEnv} payment link set for this plan.`);
+                  return;
+                }
+                const url = new URL(previewUrl);
+                url.searchParams.set("redirect_url", `${window.location.origin}/payment/callback`);
+                window.open(url.toString(), "_blank", "noopener,noreferrer");
+              }}
+              disabled={!previewUrl}
+              className="p-2 rounded-lg transition-all hover:bg-emerald-500/10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+              title={previewUrl ? `Initiate ${viewEnv} purchase (opens checkout in new tab)` : `No ${viewEnv} payment link configured`}
+            >
+              <CreditCard size={14} style={{ color: "oklch(0.55 0.15 145)" }} />
+            </button>
+          );
+        })()}
+        <button
+          onClick={onEdit}
+          className="p-2 rounded-lg transition-all hover:bg-black/5 cursor-pointer"
+          title="Edit plan"
+        >
+          <Pencil size={14} style={{ color: "var(--c-60)" }} />
+        </button>
+        <button
+          onClick={onDelete}
+          className="p-2 rounded-lg transition-all hover:bg-red-500/10 cursor-pointer"
+          title="Delete plan"
+        >
+          <Trash2 size={14} style={{ color: "oklch(0.6 0.22 25)" }} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
 function PlansPanel() {
+  // Revalidates on focus: plan rows are also changed outside this tab (SQL,
+  // scripts, a second admin), and the panel showing a figure that no longer
+  // matches the DB is worse than a refetch of six rows.
   const { data, mutate, isLoading } = useSWR<{ plans: AdminPlanDTO[]; paymentMode: PaymentMode }>(
     "/api/admin/plans",
     fetcher,
-    { revalidateOnFocus: false },
+    { revalidateOnFocus: true },
   );
 
   const [editing, setEditing] = useState<AdminPlanDTO | null>(null);
@@ -4938,6 +5082,45 @@ function PlansPanel() {
   const plans = data?.plans ?? [];
   const paymentMode: PaymentMode = data?.paymentMode ?? "test";
   const prodTestLink = paymentSettings?.productionTestLink ?? null;
+
+  // A retired product and the one that replaced it are one commercial decision,
+  // so the list shows them together instead of as two unrelated cards. Migration
+  // 144 named every replacement heclus_<old slug>, and that naming is the only
+  // link between the two rows — there is no foreign key to follow.
+  const planRows = useMemo(() => {
+    const bySlug = new Map(plans.map((pl) => [pl.slug, pl]));
+    const grouped = new Set<string>();
+    for (const pl of plans) {
+      if (!pl.slug.startsWith("heclus_")) continue;
+      const prev = bySlug.get(pl.slug.slice("heclus_".length));
+      if (!prev) continue;
+      grouped.add(prev.slug);
+      grouped.add(pl.slug);
+    }
+
+    type Row =
+      | { kind: "single"; key: string; plan: AdminPlanDTO }
+      | { kind: "tier"; key: string; label: string; entries: { tag: "old" | "new"; plan: AdminPlanDTO }[] };
+
+    const rows: Row[] = [];
+    for (const pl of plans) {
+      if (!grouped.has(pl.slug)) {
+        rows.push({ kind: "single", key: pl.slug, plan: pl });
+        continue;
+      }
+      // The group renders at the replacement's position; the row it replaces is
+      // pulled in here rather than emitted again on its own pass.
+      if (!pl.slug.startsWith("heclus_")) continue;
+      const prev = bySlug.get(pl.slug.slice("heclus_".length))!;
+      rows.push({
+        kind: "tier",
+        key: pl.slug,
+        label: pl.name,
+        entries: [{ tag: "old", plan: prev }, { tag: "new", plan: pl }],
+      });
+    }
+    return rows;
+  }, [plans]);
 
   // Default the view tab to whichever env the deployment runs in, so
   // the panel opens to the URLs that are actually live. Admins flip
@@ -5042,107 +5225,45 @@ function PlansPanel() {
         <p className="text-xs text-center py-10" style={{ color: "var(--c-50)" }}>No plans yet. Add one to get started.</p>
       ) : (
         <ul className="space-y-2">
-          {plans.map((p) => (
-            <li key={p.slug}
+          {planRows.map((row) => (
+            <li key={row.key}
               className="rounded-xl p-3"
               style={{ background: "oklch(0 0 0 / 0.02)", border: "1px solid var(--bd-7)" }}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-semibold" style={{ color: "var(--c-90)" }}>{p.name}</p>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded font-mono"
-                      style={{ background: "oklch(0 0 0 / 0.04)", color: "var(--c-50)" }}>{p.slug}</span>
-                    {p.isFounder && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                        style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "oklch(0.72 0.25 285)" }}>founder</span>
-                    )}
-                    {p.highlighted && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                        style={{ background: "oklch(0.62 0.15 220 / 0.15)", color: "oklch(0.62 0.15 220)" }}>highlighted</span>
-                    )}
-                    {p.disabled && (
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                        style={{ background: "oklch(0 0 0 / 0.06)", color: "var(--c-50)" }}>disabled</span>
-                    )}
-                  </div>
-                  <p className="text-xs mt-1" style={{ color: "var(--c-60)" }}>
-                    {p.priceDisplay}{p.periodDisplay} · {p.nichesPerMonth === null ? "Unlimited niches" : `${p.nichesPerMonth} niches/mo`} · {p.features.length} feature{p.features.length === 1 ? "" : "s"}
+              {row.kind === "single" ? (
+                <PlanCardBody
+                  p={row.plan}
+                  viewEnv={viewEnv}
+                  onEdit={() => setEditing(row.plan)}
+                  onDelete={() => setDeletingSlug(row.plan.slug)}
+                />
+              ) : (
+                <>
+                  <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--c-50)" }}>
+                    {row.label}
                   </p>
-                  {(() => {
-                    const previewUrl = viewEnv === "production" ? p.paymentLinkProduction : p.paymentLinkTest;
-                    return (
-                      <>
-                        <p className="text-[11px] mt-1 flex flex-wrap items-center gap-x-2 gap-y-1" style={{ color: "var(--c-50)" }}>
-                          <span className={p.paymentLinkTest ? "text-zinc-600" : "text-zinc-400"}>
-                            test: {p.paymentLinkTest ? "✓" : "—"}
-                          </span>
-                          <span className={p.paymentLinkProduction ? "text-zinc-600" : "text-zinc-400"}>
-                            prod: {p.paymentLinkProduction ? "✓" : "—"}
-                          </span>
-                          {previewUrl ? (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                              style={viewEnv === "production"
-                                ? { background: "oklch(0.55 0.15 145 / 0.12)", color: "oklch(0.45 0.15 145)" }
-                                : { background: "oklch(0.62 0.15 220 / 0.12)", color: "oklch(0.45 0.15 220)" }}>
-                              viewing: {viewEnv}
-                            </span>
-                          ) : (
-                            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-red-100 text-red-700">
-                              {viewEnv} link missing
-                            </span>
-                          )}
-                        </p>
-                        {previewUrl && (
-                          <p
-                            className="text-xs font-mono break-all mt-1.5 leading-snug"
-                            style={{ color: "oklch(0.62 0.15 220)" }}
-                            title={`${viewEnv} checkout URL`}
-                          >
-                            {previewUrl}
-                          </p>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  {(() => {
-                    const previewUrl = viewEnv === "production" ? p.paymentLinkProduction : p.paymentLinkTest;
-                    return (
-                      <button
-                        onClick={() => {
-                          if (!previewUrl) {
-                            toast.error(`No ${viewEnv} payment link set for this plan.`);
-                            return;
-                          }
-                          const url = new URL(previewUrl);
-                          url.searchParams.set("redirect_url", `${window.location.origin}/payment/callback`);
-                          window.open(url.toString(), "_blank", "noopener,noreferrer");
-                        }}
-                        disabled={!previewUrl}
-                        className="p-2 rounded-lg transition-all hover:bg-emerald-500/10 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-                        title={previewUrl ? `Initiate ${viewEnv} purchase (opens checkout in new tab)` : `No ${viewEnv} payment link configured`}
-                      >
-                        <CreditCard size={14} style={{ color: "oklch(0.55 0.15 145)" }} />
-                      </button>
-                    );
-                  })()}
-                  <button
-                    onClick={() => setEditing(p)}
-                    className="p-2 rounded-lg transition-all hover:bg-black/5 cursor-pointer"
-                    title="Edit plan"
-                  >
-                    <Pencil size={14} style={{ color: "var(--c-60)" }} />
-                  </button>
-                  <button
-                    onClick={() => setDeletingSlug(p.slug)}
-                    className="p-2 rounded-lg transition-all hover:bg-red-500/10 cursor-pointer"
-                    title="Delete plan"
-                  >
-                    <Trash2 size={14} style={{ color: "oklch(0.6 0.22 25)" }} />
-                  </button>
-                </div>
-              </div>
+                  <div className="mt-2 space-y-2">
+                    {row.entries.map(({ tag, plan }) => (
+                      <div key={plan.slug} className="rounded-lg p-2.5"
+                        style={{ background: "var(--bg-card)", border: "1px solid var(--bd-7)" }}>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold uppercase"
+                          style={tag === "new"
+                            ? { background: "oklch(0.55 0.15 145 / 0.15)", color: "oklch(0.45 0.15 145)" }
+                            : { background: "oklch(0 0 0 / 0.06)", color: "var(--c-50)" }}>
+                          {tag}
+                        </span>
+                        <div className="mt-1.5">
+                          <PlanCardBody
+                            p={plan}
+                            viewEnv={viewEnv}
+                            onEdit={() => setEditing(plan)}
+                            onDelete={() => setDeletingSlug(plan.slug)}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </li>
           ))}
 
@@ -5376,20 +5497,10 @@ function PlanEditModal({
 
     // price_cents is the guarded chargeable amount (integer or null).
     // Empty input maps to null → price guard skips this plan (helpful
-    // for custom-priced tiers). Any other non-integer input is a bug
-    // in the form, surface it up-front.
-    const priceCentsTrimmed = priceCents.trim();
-    let priceCentsValue: number | null;
-    if (priceCentsTrimmed === "") {
-      priceCentsValue = null;
-    } else {
-      const parsed = Number(priceCentsTrimmed);
-      if (!Number.isInteger(parsed) || parsed < 0) {
-        toast.error("Price (cents) must be a non-negative integer or blank");
-        return;
-      }
-      priceCentsValue = parsed;
-    }
+    // for custom-priced tiers).
+    const parsedCents = parsePriceCents(priceCents);
+    if (parsedCents.error) { toast.error(parsedCents.error); return; }
+    const priceCentsValue = parsedCents.value;
 
     const payload = {
       ...(mode === "create" ? { slug } : {}),
@@ -5483,7 +5594,16 @@ function PlanEditModal({
                 inputMode="numeric"
                 className={inputCls + " tabular-nums"}
               />
-              <p className="text-[10px] text-zinc-500">Charged amount in cents (e.g. 4900 for $49). Guards against underpayment. Blank disables the guard for this plan.</p>
+              {(() => {
+                const preview = parsePriceCents(priceCents);
+                if (preview.error) return <p className="text-[10px] text-red-600">{preview.error}</p>;
+                if (preview.value === null) return <p className="text-[10px] text-zinc-500">Blank disables the underpayment guard for this plan.</p>;
+                return (
+                  <p className="text-[10px] text-zinc-500">
+                    Charges <span className="font-semibold text-zinc-700 tabular-nums">${(preview.value / 100).toFixed(2)}</span> · stored as {preview.value} cents. Guards against underpayment.
+                  </p>
+                );
+              })()}
             </div>
           </div>
 

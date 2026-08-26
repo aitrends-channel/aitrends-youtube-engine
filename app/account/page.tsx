@@ -310,7 +310,7 @@ export default function AccountPage() {
   // to ?section=balance are already out there.
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("section") === "balance") {
-      router.replace("/balance");
+      router.replace("/billing");
     }
   }, [router]);
 

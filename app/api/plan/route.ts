@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { supabase as supabaseService } from "@/lib/supabase/client";
 import { isAdminUser } from "@/lib/admin";
-import { getPlanBySlug, getPlans } from "@/lib/plans";
+import { getPlanBySlug, getAllPlans } from "@/lib/plans";
 
 
 export async function GET() {
@@ -41,7 +41,10 @@ export async function GET() {
       .maybeSingle();
     const cents = Number(rev?.amount_cents ?? 0);
     if (cents > 0) {
-      const allPlans = await getPlans();
+      // getAllPlans: every existing subscriber is on a legacy row, and getPlans
+      // drops those, so matching against it would leave a $21 or $39 payment
+      // resolving to nothing and the customer stuck on the Starter cap.
+      const allPlans = await getAllPlans();
       const matched = allPlans.find((p) => p.priceCents === cents)?.slug ?? null;
       if (matched) {
         effectivePlan = matched;
@@ -119,6 +122,11 @@ export async function GET() {
   const customerId = (dodo.customer_id as string | undefined) ?? null;
   const manageBillingAvailable = !admin && effectivePaid && !!customerId;
 
+  // The repricing they booked from /billing, so the plan card states it rather
+  // than letting the new price arrive unannounced on a statement.
+  const pendingPlanSlug = (dodo.pending_plan as string | undefined) ?? null;
+  const pendingPlanRow = pendingPlanSlug ? await getPlanBySlug(pendingPlanSlug) : null;
+
   return NextResponse.json({
     email: user.email,
     paid: effectivePaid,
@@ -135,5 +143,17 @@ export async function GET() {
     // True when the /plan page should render the "Manage" billing
     // button (paid non-admin with a Dodo customer_id on file).
     manage_billing_available: manageBillingAvailable,
+    // Set once the customer has switched to Heclus Credits and not switched
+    // back. Null the rest of the time, including after the renewal that applies
+    // it, which the webhook clears.
+    pending_plan: pendingPlanRow
+      ? {
+          slug: pendingPlanRow.slug,
+          name: pendingPlanRow.name,
+          priceDisplay: pendingPlanRow.priceDisplay,
+          periodDisplay: pendingPlanRow.periodDisplay,
+          effectiveAt: (dodo.pending_plan_effective_at as string | undefined) ?? null,
+        }
+      : null,
   });
 }

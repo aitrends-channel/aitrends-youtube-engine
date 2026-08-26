@@ -54,6 +54,9 @@ interface HeclusCreditsData {
   /** Admin-only: why the button is disabled, since the customer-facing wording
    *  cannot say whether the link is unset or the migration never ran. */
   setupHint?: string | null;
+  /** Who pays for this account's generations. This wallet is only spent from on
+   *  "wallet". */
+  fundingMode?: "byo" | "wallet";
 }
 
 /**
@@ -92,6 +95,11 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
   // grants nothing.
   const usedPct = purchased > 0 ? Math.min(spent / purchased, 1) : 0;
   const empty = credits === 0;
+  // Selling credits to an account on its own key would take money for something
+  // that cannot be spent, so the button is disabled rather than hidden and says
+  // which switch to flip.
+  const onOwnKeys = data?.fundingMode === "byo";
+  const topUpUrl = onOwnKeys ? null : data?.checkoutUrl ?? null;
   const barColor = empty
     ? "oklch(0.6 0.19 25)"
     : usedPct >= 0.9
@@ -159,7 +167,7 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
               beside it. Disabled until a pack is configured, rather than hidden:
               its absence looked like a missing feature, and a link to a checkout
               that grants nothing is worse than a button that says why. */}
-          {data?.checkoutUrl && options && !picking ? (
+          {topUpUrl && options && !picking ? (
             /* With a priced pack there are quantities to choose from, so the
                button opens the picker below rather than buying one pack blind,
                matching the wallet beside it. */
@@ -171,11 +179,11 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
             >
               Top up
             </button>
-          ) : data?.checkoutUrl && !options ? (
+          ) : topUpUrl && !options ? (
             /* Priced pack size but no price: there is nothing to quote, so the
                link buys one pack directly. */
             <a
-              href={heclusCheckoutHref(data.checkoutUrl)}
+              href={heclusCheckoutHref(topUpUrl)}
               onClick={() => markPendingTopUp("heclus")}
               // New tab, so the wallet stays open behind the checkout: a
               // customer who abandons the payment comes back to the page they
@@ -188,11 +196,15 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
             >
               Top up
             </a>
-          ) : data?.checkoutUrl && picking ? null : (
+          ) : topUpUrl && picking ? null : (
             <button
               type="button"
               disabled
-              title={data?.setupHint ?? "No top-up pack is configured yet, so this cannot charge anything."}
+              title={
+                onOwnKeys
+                  ? "Your billing mode is your own KIE key, so nothing is spent from this wallet. Switch billing mode to top up."
+                  : data?.setupHint ?? "No top-up pack is configured yet, so this cannot charge anything."
+              }
               className="px-4 py-2 rounded-xl text-sm font-semibold shrink-0 opacity-40 cursor-not-allowed"
               style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
             >
@@ -204,9 +216,9 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
             decision at hand, and leaving the button up alongside them would give
             two ways to start the same purchase. Opens in a new tab, so an
             abandoned payment comes back to this page. */}
-        {data?.checkoutUrl && options && picking && (
+        {topUpUrl && options && picking && (
           <TopUpOptions
-            checkoutUrl={data.checkoutUrl}
+            checkoutUrl={topUpUrl}
             onCancel={() => setPicking(false)}
             options={options}
             wallet="heclus"
@@ -238,11 +250,14 @@ function HeclusCreditsCard({ data }: { data: HeclusCreditsData | null }) {
               {credits.toLocaleString(undefined, { maximumFractionDigits: 2 })} of{" "}
               {purchased.toLocaleString(undefined, { maximumFractionDigits: 2 })} purchased credits left
               {data?.partial ? " (recent history only)" : ""}
-              {empty ? ". Top up to keep generating." : ""}
+              {empty && topUpUrl ? ". Top up to keep generating." : ""}
+              {onOwnKeys ? ". Your billing mode spends your own keys, not this balance." : ""}
             </>
-          ) : data?.checkoutUrl
-            ? "Nothing purchased yet. Top up to start spending from this balance."
-            : "Top-ups are not open yet. Nothing is charged, and nothing is spent from this balance."}
+          ) : onOwnKeys
+            ? "Your billing mode spends your own keys, so nothing is drawn from this balance. Switch billing mode above to use it."
+            : data?.checkoutUrl
+              ? "Nothing purchased yet. Top up to start spending from this balance."
+              : "Top-ups are not open yet. Nothing is charged, and nothing is spent from this balance."}
         </p>
 
       </div>
@@ -353,7 +368,10 @@ function WalletCard({ data }: { data: CreditsData | null }) {
         </div>
       </div>
 
-      <div className="p-5 rounded-2xl space-y-3"
+      {/* Grows only when there is no ledger below it. Same rule as the wallet
+          beside this one: the block that stretches is the last one the reader
+          can see, or the column ends short of its neighbour. */}
+      <div className={`p-5 rounded-2xl space-y-3${ledger.length > 0 ? "" : " flex-1"}`}
         style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
         <div className="flex items-end justify-between gap-3 flex-wrap">
           <p className="leading-none">
@@ -416,7 +434,7 @@ function WalletCard({ data }: { data: CreditsData | null }) {
       )}
 
       {ledger.length > 0 && (
-        <div className="rounded-2xl overflow-hidden"
+        <div className="rounded-2xl overflow-hidden flex-1"
           style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
           <p className="text-xs font-semibold px-4 py-2.5" style={{ color: "var(--c-55)", borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
             Recent activity

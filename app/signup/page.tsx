@@ -177,7 +177,11 @@ function SignupForm({ onSuccess }: { onSuccess: (email: string) => void }) {
   );
 }
 
-const VALID_PLANS = ["founder", "starter", "pro"];
+// Every new signup lands on Heclus Credits pricing, so the heclus_ products are
+// the ones a ?plan= link should carry. starter and pro stay valid because links
+// to them are already out there and a grandfathered customer following one
+// should not be dropped; they resolve to the same tiers either way.
+const VALID_PLANS = ["founder", "starter", "pro", "heclus_starter", "heclus_pro"];
 
 export default function SignupPage() {
   const [success, setSuccess] = useState(false);

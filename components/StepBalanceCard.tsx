@@ -65,7 +65,7 @@ export function StepBalanceCard() {
     const wBorder    = low ? "oklch(0.70 0.18 45 / 0.3)"  : "oklch(0.55 0.15 240 / 0.3)";
     return (
       <a
-        href="/balance"
+        href="/billing"
         title={low ? "Out of Heclus Credits — top up to keep generating" : "Heclus Credits available. Click to top up."}
         className="inline-flex items-center rounded-md overflow-hidden text-xs font-medium break-words max-w-full transition-opacity hover:opacity-90"
         style={{ border: `1px solid ${wBorder}` }}

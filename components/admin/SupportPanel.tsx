@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { entitlementTier } from "@/lib/plan-tier";
 import useSWR from "swr";
 import { toast } from "sonner";
 import { ChevronDown, ChevronRight, Inbox, ArrowDownLeft, ArrowUpRight, Mail } from "lucide-react";
@@ -64,7 +65,9 @@ function formatTicketRef(n: number): string {
 }
 
 function isPriorityPlan(plan: string | null): boolean {
-  return plan ? PRIORITY_PLANS.has(plan.toLowerCase()) : false;
+  // Normalised: a ticket carries the billing plan, and heclus_pro is a Pro
+  // customer with the same priority-support SLA.
+  return plan ? PRIORITY_PLANS.has(entitlementTier(plan)) : false;
 }
 
 // Plans whose tickets render with a red "Priority" tag so admins can

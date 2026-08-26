@@ -98,7 +98,7 @@ export function OutOfCreditsGate() {
    * app stays open behind the checkout: someone who abandons the payment
    * returns to the run they were in the middle of.
    *
-   * Falls back to /balance when no pack is configured. A dead button on the
+   * Falls back to /billing when no pack is configured. A dead button on the
    * one screen that exists to unblock the user is worse than a detour to the
    * page that can explain why.
    */
@@ -112,7 +112,7 @@ export function OutOfCreditsGate() {
       hide();
       return;
     }
-    router.push("/balance");
+    router.push("/billing");
   }
 
   return (

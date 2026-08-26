@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { requireAdmin } from "@/lib/admin-server";
-import { getPlans, getPaymentMode } from "@/lib/plans";
+import { getAllPlans, getPaymentMode } from "@/lib/plans";
 
 export const dynamic = "force-dynamic";
 
@@ -52,7 +52,9 @@ function asStringArray(v: unknown): string[] | undefined {
 export async function GET() {
   const guard = await requireAdmin();
   if (!guard.ok) return guard.response;
-  const [plans, paymentMode] = await Promise.all([getPlans(), getPaymentMode()]);
+  // getAllPlans, not getPlans: the panel shows each retired product beside its
+  // replacement, so the legacy rows the public list drops have to survive here.
+  const [plans, paymentMode] = await Promise.all([getAllPlans(), getPaymentMode()]);
   return NextResponse.json({ plans, paymentMode });
 }
 

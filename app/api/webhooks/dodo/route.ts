@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { planSlugForProductId, productIdOnSubscription } from "@/lib/dodo/plan-products";
 import { supabase } from "@/lib/supabase/client";
 import { createHmac } from "crypto";
 import { getPaymentSettings } from "@/lib/plans";
@@ -331,6 +332,34 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, event });
   }
 
+  // Which plan the subscription bills as of this event.
+  //
+  // This is how a scheduled repricing lands. A customer who switched to Heclus
+  // Credits keeps their old slug and old price for the rest of the period, then
+  // Dodo renews them on the new product and reports it here, so app_metadata.plan
+  // becomes heclus_pro on the renewal itself rather than on a date something has
+  // to watch for.
+  //
+  // Null when the product maps to no plan we sell, and the stored slug is then
+  // left alone rather than cleared: an unrecognised product must not silently
+  // drop a paying customer to the Starter cap.
+  const subscriptionSlug =
+    event.startsWith("subscription.")
+      ? await planSlugForProductId(productIdOnSubscription(data))
+      : null;
+
+  // Once the booked change has been applied, the stamp describing it is stale
+  // and would keep telling the customer their plan changes on a date that has
+  // passed.
+  const dodoForSubscription =
+    subscriptionSlug && (mergedDodo as Record<string, unknown>).pending_plan === subscriptionSlug
+      ? Object.fromEntries(
+          Object.entries(mergedDodo).filter(
+            ([k]) => k !== "pending_plan" && k !== "pending_plan_effective_at",
+          ),
+        )
+      : mergedDodo;
+
   // Subscription renewed — same effect as payment.succeeded for our
   // purposes: keep paid, refresh paid_at, extend the period, reset
   // the niches counter. Dodo also fires payment.succeeded on renewal
@@ -342,11 +371,26 @@ export async function POST(request: Request) {
           ...baseMetadata,
           paid: true,
           paid_at: updatedAt,
-          dodo: mergedDodo,
+          dodo: dodoForSubscription,
+          ...(subscriptionSlug ? { plan: subscriptionSlug } : {}),
           ...(currentPeriodEnd ? { plan_expires_at: currentPeriodEnd } : {}),
         },
       });
       await supabase.rpc("reset_niches_used", { uid: existing.id });
+    }
+    return NextResponse.json({ success: true, event });
+  }
+
+  // Plan changed. Fires when a change is applied, including one that was booked
+  // for the billing date. Only the slug moves here: the period, the paid flag
+  // and the niches counter belong to the renewal that carries it, and an
+  // immediate change made from Dodo's dashboard should not silently hand
+  // someone a fresh month of niches.
+  if (event === "subscription.plan_changed") {
+    if (existing && subscriptionSlug) {
+      await supabase.auth.admin.updateUserById(existing.id, {
+        app_metadata: { ...baseMetadata, plan: subscriptionSlug, dodo: dodoForSubscription },
+      });
     }
     return NextResponse.json({ success: true, event });
   }
