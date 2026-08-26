@@ -185,6 +185,29 @@ export async function getPlans(): Promise<Plan[]> {
 }
 
 /**
+ * Every plan row, legacy included, in the same order as getPlans.
+ *
+ * Admin only. The plans panel pairs a retired product with the one that
+ * replaced it, which needs both rows; getPlans drops the legacy half so the
+ * public upgrade modal can never offer a closed price.
+ */
+export async function getAllPlans(): Promise<Plan[]> {
+  const [{ data, error }, mode] = await Promise.all([
+    supabase
+      .from("plans")
+      .select("*")
+      .order("sort_order", { ascending: true })
+      .order("slug", { ascending: true }),
+    getPaymentMode(),
+  ]);
+  if (error) {
+    console.warn("[plans] admin list failed:", error.message);
+    return [];
+  }
+  return (data ?? []).map((r) => rowToPlan(r as PlanRow, mode));
+}
+
+/**
  * Look up one plan by slug. Returns null when the slug doesn't
  * resolve to a row (or on a DB error — fail-soft). Callers that need
  * to distinguish "unknown plan" from "known plan with no cap" should

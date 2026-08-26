@@ -29,6 +29,13 @@ interface PlanData {
   can_cancel_subscription?: boolean;
   subscription_cancelled?: boolean;
   manage_billing_available?: boolean;
+  pending_plan?: {
+    slug: string;
+    name: string;
+    priceDisplay: string;
+    periodDisplay: string;
+    effectiveAt: string | null;
+  } | null;
 }
 
 function formatDate(iso: string) {
@@ -348,6 +355,23 @@ export default function PlanPage() {
                       <p className="text-xs" style={{ color: "var(--c-40)" }}>Billing cycle</p>
                       <p className="text-sm font-medium text-foreground">
                         {plan?.periodDisplay === "/mo" ? "Monthly" : "Annual"}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Stated on the plan card, not only on /balance where it was
+                    booked, so the price that renews is visible from the page
+                    about the plan. */}
+                {planData?.pending_plan && (
+                  <div className="flex items-center gap-3">
+                    <RefreshCw size={14} style={{ color: "oklch(0.62 0.15 220)" }} />
+                    <div>
+                      <p className="text-xs" style={{ color: "var(--c-40)" }}>Renews as</p>
+                      <p className="text-sm font-medium text-foreground">
+                        {planData.pending_plan.name} {planData.pending_plan.priceDisplay}
+                        {planData.pending_plan.periodDisplay}
+                        {planData.pending_plan.effectiveAt ? ` on ${formatDate(planData.pending_plan.effectiveAt)}` : ""}
                       </p>
                     </div>
                   </div>

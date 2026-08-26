@@ -4,6 +4,7 @@ import { useState } from "react";
 import useSWR from "swr";
 import { Key, Wallet } from "lucide-react";
 import type { FundingStatus } from "@/app/api/me/funding/route";
+import { Check } from "lucide-react";
 
 const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promise.reject(r.status)));
 
@@ -14,8 +15,9 @@ const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : Promi
 // because PoYo runs on Heclus's key only. Heclus Credits opens every model and
 // needs nothing connected.
 //
-// Switching does not touch the subscription. The price only changes at the next
-// renewal, and that is said here rather than discovered on a statement.
+// Switching to the wallet books the repricing for the next renewal. Nothing is
+// charged today, the booked date and price are shown back rather than left to be
+// discovered on a statement, and switching back before then cancels it.
 export function FundingModeCard() {
   const { data, isLoading, mutate } = useSWR<FundingStatus>("/api/me/funding", fetcher, {
     revalidateOnFocus: false,
@@ -23,42 +25,54 @@ export function FundingModeCard() {
   const [saving, setSaving] = useState<"byo" | "wallet" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<"byo" | "wallet" | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
+  const [target, setTarget] = useState<string | null>(null);
 
-  async function choose(mode: "byo" | "wallet") {
+  async function choose(mode: "byo" | "wallet", targetPlan?: string) {
     setSaving(mode);
     setError(null);
+    setWarning(null);
     try {
       const res = await fetch("/api/me/funding", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify({ mode, ...(targetPlan ? { targetPlan } : {}) }),
       });
-      const body = await res.json() as { error?: string };
+      const body = await res.json() as { error?: string; warning?: string };
       if (!res.ok) setError(body.error ?? "Could not switch. Try again.");
-      else await mutate();
+      else {
+        setWarning(body.warning ?? null);
+        await mutate();
+        setConfirming(null);
+      }
     } catch {
       setError("Could not switch. Try again.");
     } finally {
       setSaving(null);
-      setConfirming(null);
     }
   }
 
   const mode = data?.mode;
   const repricesAtRenewal = !!data?.heclusPlan;
+  const booked = data?.pendingPlan ? data : null;
+  const asDate = (iso: string | null | undefined) =>
+    iso ? new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) : null;
+  const bookedDate = asDate(booked?.pendingPlanEffectiveAt);
+  const renewsOnLabel = asDate(data?.renewsOn);
+  const chosen = data?.switchOptions.find((o) => o.slug === target) ?? null;
 
   return (
     <div className="p-5 rounded-2xl space-y-4"
       style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
       <div>
-        <h2 className="text-lg font-bold text-foreground">How your generations are paid for</h2>
-        <p className="text-xs mt-1" style={{ color: "var(--c-45)" }}>
+        <h2 className="text-xl font-bold text-foreground">How your generations are paid for</h2>
+        <p className="text-sm mt-1" style={{ color: "var(--c-45)" }}>
           Switch whenever you like. Your keys and your credits both stay where they are, so changing
           your mind costs nothing.
         </p>
       </div>
 
-      {isLoading && <p className="text-xs" style={{ color: "var(--c-45)" }}>Loading…</p>}
+      {isLoading && <p className="text-sm" style={{ color: "var(--c-45)" }}>Loading…</p>}
 
       {data && (
         <div className="grid gap-3 sm:grid-cols-2">
@@ -68,11 +82,7 @@ export function FundingModeCard() {
             selected={mode === "byo"}
             disabled={!data.canUseByo || saving !== null}
             blocked={data.byoBlockedReason}
-            lines={[
-              "Your KIE balance pays for every generation.",
-              "KIE models only. Everything else runs on our account.",
-              "Your subscription and renewals stay exactly as they are.",
-            ]}
+            lines={["Billing done on your own keys"]}
             onSelect={() => choose("byo")}
             busy={saving === "byo"}
           />
@@ -82,46 +92,110 @@ export function FundingModeCard() {
             selected={mode === "wallet"}
             disabled={!data.canUseWallet || saving !== null}
             blocked={data.walletBlockedReason}
-            lines={[
-              "We pay the providers and meter it in credits.",
-              "Every model, nothing to connect.",
-              repricesAtRenewal
-                ? "Your plan moves to Heclus Credits pricing at your next renewal."
-                : "You are already on Heclus Credits pricing.",
-            ]}
-            onSelect={() => (repricesAtRenewal ? setConfirming("wallet") : choose("wallet"))}
+            lines={["Billing done on our keys"]}
+            onSelect={() => {
+              if (!repricesAtRenewal) return choose("wallet");
+              setTarget(data.switchOptions.find((o) => o.isCurrentTier)?.slug ?? data.switchOptions[0]?.slug ?? null);
+              setConfirming("wallet");
+            }}
             busy={saving === "wallet"}
           />
         </div>
       )}
 
-      {/* The one consequence that is not reversible by clicking back, so it is
-          confirmed rather than assumed. */}
-      {confirming === "wallet" && data && (
-        <div className="p-4 rounded-xl space-y-3"
-          style={{ background: "oklch(0.72 0.16 60 / 0.10)", border: "1px solid oklch(0.72 0.16 60 / 0.30)" }}>
-          <p className="text-sm font-semibold text-foreground">Your plan changes at renewal</p>
-          <p className="text-xs" style={{ color: "var(--c-55)" }}>
-            You keep your current plan and price until the end of this billing period. After that your
-            subscription moves to Heclus Credits pricing, and we will email you before it renews.
-            Nothing is charged today.
-          </p>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => choose("wallet")} disabled={saving !== null}
-              className="px-3 py-2 rounded-lg text-sm font-semibold transition-all hover:opacity-90 disabled:opacity-50"
-              style={{ background: "oklch(0.72 0.25 285)", color: "white" }}>
-              {saving === "wallet" ? "Switching…" : "Switch to Heclus Credits"}
-            </button>
-            <button type="button" onClick={() => setConfirming(null)} disabled={saving !== null}
-              className="px-3 py-2 rounded-lg text-sm font-medium transition-all hover:opacity-80 disabled:opacity-50"
-              style={{ color: "var(--c-55)" }}>
-              Keep my current setup
-            </button>
-          </div>
+      {booked && (
+        <div className="p-3 rounded-xl text-sm" style={{ background: "oklch(0.62 0.15 220 / 0.10)", border: "1px solid oklch(0.62 0.15 220 / 0.25)" }}>
+          <span className="font-semibold text-foreground">
+            Renews as {booked.pendingPlanLabel}{bookedDate ? ` on ${bookedDate}` : ""}.
+          </span>{" "}
+          <span style={{ color: "var(--c-55)" }}>Switch back to your own key to cancel.</span>
         </div>
       )}
 
-      {error && <p className="text-xs" style={{ color: "oklch(0.65 0.2 25)" }}>{error}</p>}
+      {warning && <p className="text-sm" style={{ color: "oklch(0.72 0.16 60)" }}>{warning}</p>}
+      {error && !confirming && <p className="text-sm" style={{ color: "oklch(0.65 0.2 25)" }}>{error}</p>}
+
+      {confirming === "wallet" && data && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }}
+          onClick={() => saving === null && setConfirming(null)}>
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-xl font-bold text-zinc-900">Switch to Heclus Credits?</h2>
+            <p className="mt-2 text-sm text-zinc-600">
+              You keep your current plan and price until {renewsOnLabel ?? "your renewal"}. Nothing is charged today.
+            </p>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              {data.switchOptions.map((o) => {
+                const picked = target === o.slug;
+                return (
+                  <button
+                    key={o.slug}
+                    type="button"
+                    onClick={() => setTarget(o.slug)}
+                    disabled={saving !== null}
+                    className={`text-left p-4 rounded-xl border transition-all disabled:opacity-60 ${
+                      picked ? "border-violet-500 bg-violet-50" : "border-zinc-200 hover:border-zinc-300"
+                    }`}
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-base font-bold text-zinc-900">{o.name}</span>
+                      {o.isCurrentTier && (
+                        <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-500">
+                          Your tier
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-lg font-bold text-zinc-900">
+                      {o.priceDisplay}<span className="text-sm font-medium text-zinc-500">{o.periodDisplay}</span>
+                    </p>
+                    <p className="text-xs text-zinc-500">{o.limitDisplay}</p>
+                    <ul className="mt-3 space-y-1.5">
+                      {o.features.map((f) => (
+                        <li key={f} className="flex gap-2 text-xs text-zinc-600">
+                          <Check size={13} className="shrink-0 mt-0.5 text-violet-500" />
+                          <span>{f}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="mt-4 text-sm text-zinc-600">
+              Renews as{" "}
+              <span className="font-semibold text-zinc-900">
+                {chosen?.name} {chosen?.priceDisplay}{chosen?.periodDisplay}
+              </span>{" "}
+              on {renewsOnLabel ?? "your renewal date"}.
+            </p>
+
+            {error && <p className="mt-3 text-sm font-medium" style={{ color: "oklch(0.6 0.22 25)" }}>{error}</p>}
+
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                onClick={() => setConfirming(null)}
+                disabled={saving !== null}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+              >
+                Keep my key
+              </button>
+              <button
+                onClick={() => target && choose("wallet", target)}
+                disabled={saving !== null || !target}
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-white disabled:opacity-60 flex items-center gap-2"
+                style={{ background: "oklch(0.72 0.25 285)" }}
+              >
+                {saving === "wallet" && (
+                  <span className="inline-block w-3.5 h-3.5 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                )}
+                {saving === "wallet" ? "Switching…" : "Switch"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -151,7 +225,7 @@ function Option(props: {
     >
       <div className="flex items-center gap-2">
         <span style={{ color: selected ? "oklch(0.72 0.25 285)" : "var(--c-45)" }}>{icon}</span>
-        <span className="text-sm font-semibold text-foreground">{title}</span>
+        <span className="text-base font-semibold text-foreground">{title}</span>
         {selected && (
           <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full"
             style={{ background: "oklch(0.72 0.25 285 / 0.18)", color: "oklch(0.72 0.25 285)" }}>
@@ -161,15 +235,15 @@ function Option(props: {
       </div>
       <ul className="mt-2 space-y-1">
         {lines.map((l) => (
-          <li key={l} className="text-xs" style={{ color: "var(--c-50)" }}>{l}</li>
+          <li key={l} className="text-sm" style={{ color: "var(--c-50)" }}>{l}</li>
         ))}
       </ul>
       {/* Why it cannot be picked, in place. A greyed option with no reason is
           the thing customers write in about. */}
       {blocked && !selected && (
-        <p className="text-xs mt-2" style={{ color: "oklch(0.72 0.16 60)" }}>{blocked}</p>
+        <p className="text-sm mt-2" style={{ color: "oklch(0.72 0.16 60)" }}>{blocked}</p>
       )}
-      {busy && <p className="text-xs mt-2" style={{ color: "var(--c-45)" }}>Switching…</p>}
+      {busy && <p className="text-sm mt-2" style={{ color: "var(--c-45)" }}>Switching…</p>}
     </button>
   );
 }

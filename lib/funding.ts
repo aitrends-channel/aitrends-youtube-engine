@@ -26,8 +26,14 @@ export type FundingMode = "byo" | "wallet";
  * an accidental early flip of a user's mode cannot start spending Heclus's
  * balance. Flipping this to false is what puts the feature in front of
  * customers.
+ *
+ * Off since 2026-08-26, deliberately and temporarily, to open the wallet to
+ * every account. Two consequences to weigh before leaving it here: customer
+ * generations now run on Heclus's provider keys, and the funding card's promise
+ * that a switch reprices the subscription at renewal has nothing behind it
+ * until /api/dodo/change-plan exists.
  */
-export const WALLET_FUNDING_ADMIN_ONLY = true;
+export const WALLET_FUNDING_ADMIN_ONLY = false;
 
 const cacheMap = new Map<string, { mode: FundingMode; at: number }>();
 const TTL_MS = 60_000;

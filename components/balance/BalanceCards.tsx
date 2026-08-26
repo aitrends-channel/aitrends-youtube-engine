@@ -353,7 +353,10 @@ function WalletCard({ data }: { data: CreditsData | null }) {
         </div>
       </div>
 
-      <div className="p-5 rounded-2xl space-y-3"
+      {/* Grows only when there is no ledger below it. Same rule as the wallet
+          beside this one: the block that stretches is the last one the reader
+          can see, or the column ends short of its neighbour. */}
+      <div className={`p-5 rounded-2xl space-y-3${ledger.length > 0 ? "" : " flex-1"}`}
         style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
         <div className="flex items-end justify-between gap-3 flex-wrap">
           <p className="leading-none">
@@ -416,7 +419,7 @@ function WalletCard({ data }: { data: CreditsData | null }) {
       )}
 
       {ledger.length > 0 && (
-        <div className="rounded-2xl overflow-hidden"
+        <div className="rounded-2xl overflow-hidden flex-1"
           style={{ background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }}>
           <p className="text-xs font-semibold px-4 py-2.5" style={{ color: "var(--c-55)", borderBottom: "1px solid oklch(1 0 0 / 0.07)" }}>
             Recent activity
