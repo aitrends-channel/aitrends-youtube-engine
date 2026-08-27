@@ -585,22 +585,22 @@ RULES (NON-NEGOTIABLE)
 1. One shot MAY span multiple sentences when they describe the same continuous moment. Merging such sentences into a single beat is correct, not lazy.
 2. Prefer FEWER, longer-held shots.
 3. Each distinct fact, statistic, date, location, study, or historical example still gets its OWN dedicated beat.
-4. Punch cuts (under ~10 words) are allowed ONLY for deliberate reveals, jokes, or shocks — use sparingly.
+4. HARD FLOOR: no beat may be shorter than 10 words, including reveals, jokes and shocks. A punch line rides with the line beside it rather than becoming a beat of its own.
 5. Do NOT chop a single dramatic moment into multiple beats.
 6. Do NOT leave any narration uncovered.
 
 DENSITY
 - Target: ~1 beat every 6–10 seconds of narration (≈20–35 words of script per beat).
-- Minimum beat length: ~10 words (unless a deliberate punch cut per Rule 4).
+- Minimum beat length: 10 words, with no exceptions.
 - Maximum beat length: ~35 words — if a passage exceeds this, split at the most natural visual change.
 
 PER-BEAT FIELDS
-- scriptSegment: the exact words from the script for this beat (typically 20–35 words; shorter only for deliberate punch cuts). Must be a verbatim substring of the chunk AND must NOT overlap with adjacent beats — each beat picks up exactly where the previous beat's last word ended. Concatenating every scriptSegment in order, separated by single spaces, must reproduce the chunk verbatim.
+- scriptSegment: the exact words from the script for this beat (typically 20–35 words, never fewer than 10). Must be a verbatim substring of the chunk AND must NOT overlap with adjacent beats — each beat picks up exactly where the previous beat's last word ended. Concatenating every scriptSegment in order, separated by single spaces, must reproduce the chunk verbatim.
 
 VALIDATION (DO THIS BEFORE RETURNING)
 Step 1: Walk the chunk and identify every beat using the SHOT definition above.
 Step 2: Confirm concatenating every scriptSegment in order reproduces the chunk verbatim, with no gaps and no overlaps.
-Step 3: Estimate each beat's duration (word count ÷ 2.5 ≈ seconds). If 3 or more consecutive beats fall under ~5 seconds and none are deliberate punch cuts, MERGE them.
+Step 3: Count the words in every segment. Any segment under 10 words must be joined to the beat before it (or after it, if it is the first) and the array rebuilt.
 Step 4: Confirm no beat exceeds ~35 words.
 
 Number beats sequentially starting from 1, with no gaps. Call the save_beats tool with a "beats" array. Do not write any text outside the tool call.`;
@@ -622,20 +622,22 @@ RULES (NON-NEGOTIABLE)
 5. Storytelling sections typically produce 1+ beats per sentence — often multiple when a sentence contains several visual changes.
 6. Educational sections: each concept, mechanism, or example is its own beat.
 7. Do NOT optimize for fewer beats. Complete coverage is the goal.
+8. HARD FLOOR: no beat may be shorter than 10 words. This overrides every rule above. A sentence shorter than 10 words is NOT a beat of its own — carry it into the neighbouring beat so the combined segment clears 10 words. Short emphatic lines ("Not the death." "Read that again.") belong with the line beside them.
 
 DENSITY
-- Minimum: 1 beat per sentence.
+- Minimum: 10 words per beat, always. Never one beat per short sentence.
 - Preferred: ~1 beat every 3–6 seconds of narration (≈10–15 words of script per beat).
 - This chunk may produce many beats; long-form scripts commonly total 50–150+ across all chunks.
 
 PER-BEAT FIELDS
-- scriptSegment: the exact words from the script for this beat (typically 8–20 words). Must be a verbatim substring of the chunk AND must NOT overlap with adjacent beats — each beat picks up exactly where the previous beat's last word ended. Concatenating every scriptSegment in order, separated by single spaces, must reproduce the chunk verbatim. Do not repeat phrases at beat boundaries.
+- scriptSegment: the exact words from the script for this beat (10–20 words; never fewer than 10). Must be a verbatim substring of the chunk AND must NOT overlap with adjacent beats — each beat picks up exactly where the previous beat's last word ended. Concatenating every scriptSegment in order, separated by single spaces, must reproduce the chunk verbatim. Do not repeat phrases at beat boundaries.
 
 VALIDATION (DO THIS BEFORE RETURNING)
 Step 1: Walk the script chunk and identify every visual beat using the definition above.
 Step 2: Count them.
 Step 3: Confirm your "beats" array has exactly that many entries.
 Step 4: Confirm the segments concatenate back to the chunk verbatim, with no gaps and no overlaps.
+Step 5: Count the words in every segment. Any segment under 10 words must be joined to the beat before it (or after it, if it is the first) and the array rebuilt. Do not return a beat under 10 words.
 
 Number beats sequentially starting from 1, with no gaps. Call the save_beats tool with a "beats" array. Do not write any text outside the tool call.`;
 }

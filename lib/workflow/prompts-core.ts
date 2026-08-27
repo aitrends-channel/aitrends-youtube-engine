@@ -44,6 +44,7 @@ import type { StepHold } from "@/lib/credits/hold";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 import { friendlyError } from "@/lib/errors/friendly";
+import { planBulkMerge, MIN_BEAT_WORDS } from "@/lib/text/mergePlan";
 import { logSystemEvent } from "@/lib/system-logger";
 
 /**
@@ -990,6 +991,19 @@ export async function generateImages(
   );
   if (firstError) throw firstError;
 
+  // Same floor as the three-step flow. This pass writes the prompt at the same
+  // time as the segment, so a merge here also discards the absorbed beat's
+  // prompt — which is the right trade and exactly what the Merge beats button
+  // does. Nothing has been rendered yet, so no image or voiceover is lost.
+  const foldedIn = await enforceBeatFloor(projectId);
+  if (foldedIn > 0) {
+    totalBeatCount -= foldedIn;
+    send({
+      type: "status",
+      message: `Merged ${foldedIn} beat${foldedIn === 1 ? "" : "s"} under ${MIN_BEAT_WORDS} words into their neighbours`,
+    });
+  }
+
   const { error: finalUpdErr } = await supabase
     .from("projects")
     .update({ current_state: 14, prompts_script_hash: scriptHash, prompts_active_run_id: null, prompts_active_step: null, prompts_stop_requested: false })
@@ -1190,12 +1204,17 @@ export async function generateBeats(
     if (chunksToProcess.length === 0 && existingBeats && existingBeats.length > 0) {
       // Already segmented. Unlike the image step this does NOT advance
       // current_state to 14 — prompts still have to be written.
+      //
+      // The floor still runs: this path is reached by re-running the step on a
+      // project segmented before the rule existed, and that is the one moment
+      // it can be applied without the user going to find the Merge button.
+      const foldedExisting = await enforceBeatFloor(projectId);
       await supabase
         .from("projects")
         .update({ prompts_script_hash: scriptHash, prompts_active_run_id: null, prompts_active_step: null, prompts_stop_requested: false })
         .eq("id", projectId)
         .eq("user_id", userId);
-      send({ type: "done", beatCount: existingBeats.length });
+      send({ type: "done", beatCount: existingBeats.length - foldedExisting });
       return;
     }
 
@@ -1429,6 +1448,22 @@ export async function generateBeats(
     );
     if (firstError) throw firstError;
 
+    // The floor, enforced rather than asked for.
+    //
+    // The prompt states it twice and models still hand back "The life." as a
+    // beat of its own, because a short emphatic sentence looks like a unit to
+    // them. Here is the only moment where fixing it is free: the segments exist
+    // and nothing has been built on them yet, so folding one into its
+    // neighbour costs no prompt, no image, no voiceover and no render.
+    const folded = await enforceBeatFloor(projectId);
+    if (folded > 0) {
+      totalBeatCount -= folded;
+      send({
+        type: "status",
+        message: `Merged ${folded} beat${folded === 1 ? "" : "s"} under ${MIN_BEAT_WORDS} words into their neighbours`,
+      });
+    }
+
     // Deliberately does NOT set current_state = 14: the prompts step is not
     // complete until image prompts exist. Only the hash is recorded, so a
     // later script edit still invalidates these beats.
@@ -1446,6 +1481,51 @@ export async function generateBeats(
   } finally {
     await releasePromptsRunIfOwned(projectId, userId, runId);
   }
+}
+
+/**
+ * Fold every beat under MIN_BEAT_WORDS into the beat before it.
+ *
+ * Uses the same planner as the Merge beats button, so a beat the user could
+ * have merged by hand is merged the same way, in the same order, with the same
+ * joining rules. Direction is fixed to "up" rather than asking a model which
+ * side reads better: this runs on every segmentation, and a Claude call per run
+ * to place a three-word fragment is not worth its latency or its cost. The
+ * button still offers Auto for the cases a person cares about.
+ *
+ * Best-effort. A failure here leaves short beats in place, which the user can
+ * still merge themselves, and is never worth failing a completed segmentation
+ * over.
+ */
+async function enforceBeatFloor(projectId: string): Promise<number> {
+  const { data, error } = await supabase
+    .from("project_beats")
+    .select("beat_number, script_segment")
+    .eq("project_id", projectId)
+    .order("beat_number");
+  if (error || !data || data.length < 2) return 0;
+
+  const planBeats = (data as { beat_number: number; script_segment: string | null }[])
+    .map((b) => ({ beatNumber: b.beat_number, scriptSegment: b.script_segment ?? "" }));
+  const plan = planBulkMerge(planBeats, MIN_BEAT_WORDS, "up");
+  if (plan.steps.length === 0) return 0;
+
+  let merged = 0;
+  for (const step of plan.steps) {
+    const { error: mergeErr } = await supabase.rpc("merge_project_beats", {
+      p_project_id: projectId,
+      p_keep: step.keep,
+      p_absorb: step.absorb,
+      p_segment: step.segment,
+    });
+    if (mergeErr) {
+      console.error(`[beats] floor merge ${merged + 1}/${plan.steps.length} failed project=${projectId}:`, mergeErr.message);
+      break;
+    }
+    merged++;
+  }
+  console.log(`[beats] floor: merged ${merged} of ${plan.steps.length} short beats away project=${projectId}`);
+  return merged;
 }
 
 // ── Step 2: Fill prompts onto existing beats ───────────────────────────────
