@@ -68,7 +68,7 @@ const OPUS_MAX_OUTPUT_TOKENS = 32000;
 // accumulated text. At ~80 chars/sec of natural speech that's a
 // checkpoint roughly every 30s, bounding worst-case data loss to a
 // single checkpoint window if Vercel hard-kills us mid-stream.
-const CHECKPOINT_INTERVAL = 3000;
+const CHECKPOINT_INTERVAL = 1200;
 
 // Soft deadline that's ~80s under the route's maxDuration=800s. When
 // elapsed time crosses this, we abort the upstream stream ourselves
