@@ -24,6 +24,7 @@ interface ColumnSummary {
   totals: Record<string, number>;
   breakdown: CostBreakdownEntry[];
   heclusCredits: number;
+  heclusCreditsCharged: number;
 }
 
 interface CostResponse {
@@ -102,7 +103,7 @@ export function StepCostCard({ projectId, column, hideUnitKinds }: {
   }
 
   const inCredits = !!data?.inCredits;
-  const credits = data?.columns?.[column]?.heclusCredits ?? 0;
+  const credits = data?.columns?.[column]?.heclusCreditsCharged ?? 0;
 
   const parts = PROVIDER_ORDER
     .filter((p) => byProvider[p] !== undefined && byProvider[p] > 0)
