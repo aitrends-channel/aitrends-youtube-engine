@@ -131,6 +131,25 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
   const creditsForPhase = (id: PhaseKey): number =>
     Number(stepCosts?.columns?.[PHASE_COST_COLUMN[id]]?.heclusCreditsCharged ?? 0);
 
+  // Hand abandoned holds back while somebody is actually here.
+  //
+  // The hourly cron is the backstop and on its own it is not fast enough to be
+  // believed: a hold taken at 18 past goes stale at 1:18 and is not looked at
+  // until 2:17. A customer working through a project is watching that balance,
+  // and it is the number that decides whether they can start the next step.
+  //
+  // Same windows as the cron, so this releases nothing the cron would not have
+  // released later, and never a hold belonging to a run still in flight. Fired
+  // on mount and every five minutes after, only on the workflow pages, which is
+  // where this nav lives.
+  useEffect(() => {
+    if (!isRealProject) return;
+    const sweep = () => { void fetch("/api/credits/sweep", { method: "POST" }).catch(() => undefined); };
+    sweep();
+    const timer = setInterval(sweep, 5 * 60_000);
+    return () => clearInterval(timer);
+  }, [isRealProject]);
+
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
     supabase.auth.getUser().then(({ data }) => {
@@ -373,18 +392,6 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
               )}
             </button>
 
-            {i < PHASES.length - 1 && (
-              <div className="flex justify-center my-0.5">
-                <div className="w-px h-4 rounded-full transition-all"
-                  style={{
-                    background: isDone
-                      ? "oklch(0.55 0.15 145 / 0.5)"
-                      : isActive
-                      ? "oklch(0.72 0.25 285 / 0.35)"
-                      : "var(--c-22)"
-                  }} />
-              </div>
-            )}
           </div>
         );
       })}
