@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useState, use, useEffect, useRef } from "react";
+import { mutate as globalMutate } from "swr";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, ArrowUpRight, Wand2, SlidersHorizontal } from "lucide-react";
 import { STUDIO_MODE_NAME } from "@/lib/one-click/config";
@@ -790,6 +791,9 @@ export default function ChannelPage({ params }: PageProps) {
       const msg = err instanceof Error ? err.message : "Analysis failed";
       setAnalysisError(msg);
       toast.error(msg);
+      // Refetch the balances the error is about, so the figure in the profile
+      // menu agrees with the message rather than contradicting it.
+      void globalMutate("/api/api-status");
     } finally {
       setIsWorking(false);
     }

@@ -20,7 +20,9 @@ export function KieBalanceRow() {
   const { data, isLoading } = useSWR<ApiStatusResult>(
     "/api/api-status",
     fetcher,
-    { revalidateOnFocus: false, refreshInterval: hasActivity ? 30_000 : 0 }
+    // revalidateOnFocus: this row is read when someone opens the profile menu
+    // to check what they have left, which is exactly when it must not be stale.
+    { revalidateOnFocus: true, refreshInterval: hasActivity ? 30_000 : 0 }
   );
   // A wallet-funded account has no KIE account, so this row would report a zero
   // that means nothing and point at kie.ai/billing, which is the wrong place to

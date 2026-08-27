@@ -26,7 +26,7 @@ export function ElevenLabsBalanceRow() {
   const { data, isLoading } = useSWR<ApiStatusResult>(
     "/api/api-status",
     fetcher,
-    { revalidateOnFocus: false, refreshInterval: hasActivity ? 30_000 : 0 },
+    { revalidateOnFocus: true, refreshInterval: hasActivity ? 30_000 : 0 },
   );
   // Nothing to report for a wallet-funded account: the voiceover runs on
   // Heclus's ElevenLabs account, so its character count is not the customer's
