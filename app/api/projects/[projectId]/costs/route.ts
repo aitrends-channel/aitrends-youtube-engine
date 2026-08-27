@@ -38,11 +38,16 @@ interface CostBreakdownEntry {
 interface ColumnSummary {
   totals: Record<string, number>;
   breakdown: CostBreakdownEntry[];
-  /** What this step cost in Heclus Credits, converted from the same rows with
-   *  the same function that charged them, so the chip cannot disagree with the
-   *  ledger. Provider units are the wrong unit to show someone who never sees a
-   *  provider bill. */
+  /** What the work was worth in credits, converted from the metered units.
+   *  Not what the customer paid: a settle is capped at the hold, so an
+   *  under-estimate is absorbed by Heclus rather than billed on. Kept for the
+   *  admin cost views, which want the real cost of the work. */
   heclusCredits: number;
+  /** What the customer was actually charged, summed from the ledger. This is
+   *  the figure a customer surface must show. The two diverged by 766 credits
+   *  on one prompts run, and displaying the worth made the step look like it
+   *  had spent more than the account held. */
+  heclusCreditsCharged: number;
 }
 
 type ProjectCostsRollup = Record<DisplayColumn, ColumnSummary>;
@@ -50,7 +55,7 @@ type ProjectCostsRollup = Record<DisplayColumn, ColumnSummary>;
 function emptyRollup(): ProjectCostsRollup {
   const out = {} as ProjectCostsRollup;
   for (const col of Object.keys(COLUMN_STEPS) as DisplayColumn[]) {
-    out[col] = { totals: {}, breakdown: [], heclusCredits: 0 };
+    out[col] = { totals: {}, breakdown: [], heclusCredits: 0, heclusCreditsCharged: 0 };
   }
   return out;
 }
@@ -153,6 +158,28 @@ export async function GET(
       rates,
       { model: row.model, provider: row.provider },
     );
+  }
+
+  // Charged, from the ledger, rather than re-derived.
+  //
+  // credit_ledger has no step column; the note is written in one place as
+  // `${step} · …`, so the prefix is the step. Fragile in the way any parse is,
+  // and the alternative was a second number for the same thing, which is what
+  // produced a chip claiming 907 credits on a step that billed 141.
+  const { data: ledger } = await supabase
+    .from("credit_ledger")
+    .select("kind, credits, note")
+    .eq("user_id", user.id)
+    .eq("project_id", projectId)
+    .in("kind", ["spend", "refund"]);
+
+  for (const row of (ledger ?? []) as { kind: string; credits: number | string; note: string | null }[]) {
+    const step = (row.note ?? "").split(" · ")[0]?.trim();
+    const col = step ? stepToColumn[step] : undefined;
+    if (!col) continue;
+    // Signed in the ledger: spend is negative, refund positive. Charged is what
+    // is left after refunds, so the sum is negated once.
+    columns[col].heclusCreditsCharged -= Number(row.credits);
   }
 
   const inCredits =
