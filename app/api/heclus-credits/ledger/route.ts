@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase/client";
+import { hasPaidAccess } from "@/lib/subscription";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,10 @@ export interface LedgerEntry {
 }
 
 export interface LedgerPage {
+  /** False for an account with no paid plan. It has no spend to show and no way
+   *  to acquire any, so the section is not rendered rather than rendered
+   *  permanently empty. */
+  visible: boolean;
   rows: LedgerEntry[];
   total: number;
   page: number;
@@ -45,6 +50,14 @@ export interface LedgerPage {
 export async function GET(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+
+  // Answered before any query runs: a free account has nothing here, and the
+  // page should not pay for three reads to prove it.
+  if (!hasPaidAccess(user)) {
+    return NextResponse.json({
+      visible: false, rows: [], total: 0, page: 0, pageSize: PAGE_SIZE, providers: [],
+    } satisfies LedgerPage);
+  }
 
   const url = new URL(req.url);
   const page = Math.max(0, Number(url.searchParams.get("page") ?? 0) || 0);
@@ -103,6 +116,7 @@ export async function GET(req: Request) {
   const providers = page === 0 ? await recentProviders(user.id) : [];
 
   const body: LedgerPage = {
+    visible: true,
     rows: raw.map((r) => ({
       id: r.id,
       kind: r.kind,
