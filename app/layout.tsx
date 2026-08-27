@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { ActingAsBanner } from "@/components/ActingAsBanner";
 import { ServiceWorkerRegistrar } from "@/components/ServiceWorkerRegistrar";
 import { Providers } from "@/components/Providers";
 import { HelpButton } from "@/components/HelpButton";
@@ -61,6 +62,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="min-h-full bg-background text-foreground antialiased" suppressHydrationWarning>
         <ServiceWorkerRegistrar />
+        <ActingAsBanner />
         <Providers>
           {children}
           <HelpButton />
