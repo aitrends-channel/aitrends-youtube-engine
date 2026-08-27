@@ -2,6 +2,7 @@ import { supabase } from "@/lib/supabase/client";
 import { getQuotaConfig, capFromConfig } from "@/lib/quota-config";
 import { planSlugOf } from "@/lib/plans-gating";
 import { isAdminUser } from "@/lib/admin";
+import { hasPaidAccess } from "@/lib/subscription";
 import type { User } from "@supabase/supabase-js";
 import { FREE_VIDEO_COMING_SOON } from "@/lib/free-tier-flag";
 
@@ -103,6 +104,9 @@ const EMPTY: CreditBalance = { grant: 0, paid: 0, total: 0, reserved: 0, monthly
 export async function monthlyGrantFor(user: User): Promise<number> {
   if (FREE_VIDEO_COMING_SOON) return 0;
   if (VIDEO_CREDITS_ADMIN_ONLY && !isAdminUser(user)) return 0;
+  // Customers only. planSlugOf defaults an unpaid account to "starter", so
+  // without this every signup drew the Starter allowance of clips we pay for.
+  if (!hasPaidAccess(user)) return 0;
   const config = await getQuotaConfig();
   return capFromConfig(config, "genaipro_video_credits", planSlugOf(user), isAdminUser(user));
 }

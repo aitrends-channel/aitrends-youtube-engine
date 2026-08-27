@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { hasPaidAccess } from "@/lib/subscription";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 import { getHeclusBalance, listHeclusLedger } from "@/lib/heclus-credits";
@@ -46,7 +47,7 @@ export async function GET() {
     pack: packInfo.credits !== null && packInfo.priceUsd !== null
       ? { credits: packInfo.credits, priceUsd: packInfo.priceUsd }
       : null,
-    checkoutUrl: packInfo.checkoutUrl,
+    checkoutUrl: hasPaidAccess(user) ? packInfo.checkoutUrl : null,
     setupHint,
     // Nothing draws on this wallet while the account is on its own key, so the
     // panel has to know the mode to keep the button from selling credits that

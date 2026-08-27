@@ -62,7 +62,17 @@ export function FundingModeCard() {
   if (isLoading || !data) {
     return <div className="rounded-2xl" style={{ minHeight: 196, background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }} />;
   }
-  if (data.onHeclusPlan) return null;
+  // Who this card is for: a legacy customer still spending their own KIE
+  // balance, and one who has booked the move off it and might want to undo.
+  //
+  // Everyone else has no choice to make. A credits plan has no bring-your-own
+  // arrangement, and a new signup has no key and nowhere to enter one, so the
+  // card was offering "your own KIE key" with a warning underneath explaining
+  // they cannot pick it. That is a decision presented to someone who has none.
+  const onLegacyPlan = !data.onHeclusPlan;
+  const usingOwnKeys = data.mode === "byo";
+  const hasBookedSwitch = !!data.pendingPlan;
+  if (!onLegacyPlan || !(usingOwnKeys || hasBookedSwitch)) return null;
 
   const mode = data?.mode;
   const repricesAtRenewal = !!data?.heclusPlan;

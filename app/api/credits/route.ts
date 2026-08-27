@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
+import { hasPaidAccess } from "@/lib/subscription";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import { getCreditBalance, listLedger, getCreditsUsed, CREDIT_PACK } from "@/lib/credits";
@@ -77,7 +78,7 @@ export async function GET() {
     setupHint,
     eligible: balance.monthlyGrant > 0 || balance.paid > 0,
     pack: CREDIT_PACK,
-    checkoutUrl,
+    checkoutUrl: hasPaidAccess(user) ? checkoutUrl : null,
     ledger,
   });
 }
