@@ -304,13 +304,15 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
                     Connect free image and voiceover providers and start generating on their free quotas.
                   </p>
                 </div>
-                <Link
-                  href="/setup"
-                  className="text-[11px] font-semibold px-3 py-1.5 rounded-lg shrink-0 transition-opacity hover:opacity-90"
+                <button
+                  type="button"
+                  disabled
+                  title="Available once you subscribe"
+                  className="text-[11px] font-semibold px-3 py-1.5 rounded-lg shrink-0 opacity-40 cursor-not-allowed"
                   style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
                 >
                   Set up free tools →
-                </Link>
+                </button>
               </div>
             </div>
           </div>

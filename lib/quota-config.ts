@@ -51,8 +51,11 @@ export const QUOTA_VALUE_MAX = 50_000_000;
  *  "not included on this plan", so the two aren't confusable. */
 export const QUOTA_UNLIMITED = -1;
 
-/** The live-Dodo checkout verification harness, not a customer tier — it
- *  gets no quota cell and resolves to 0. */
+/** The live-Dodo checkout verification harness. Excluded from the quota editor
+ *  because it has no cell of its own to edit: it sells the Starter tier, so
+ *  entitlementTier maps it and capFromConfig reads Starter's allowances. Editing
+ *  a separate column for it would let the two drift, and a test purchase that
+ *  does not behave like the plan it stands in for verifies nothing. */
 export const QUOTA_EXCLUDED_PLAN_SLUG = "production-test";
 
 /** "total" is a standing allowance rather than a per-period one — it
