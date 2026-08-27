@@ -63,11 +63,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: funded.error, providerUnfunded: true }, { status: 503 });
     }
 
-    // Price the whole run before touching anything. The gate at the door asks
-    // for one credit, which would let a balance of 10 start five images at 8
-    // each and bill 10 of the 40.
+    // Admin-tunable: product_config.batched_processes.image_generation_batch.
+    const batchSize = (await getConcurrencyConfig()).image_generation_batch;
+
+    // Priced for the batch about to be submitted, not the whole run.
+    //
+    // The door used to ask for all of it — 432 credits before a 216-image run
+    // could start — which refused runs that would have worked. Nothing submits
+    // 216 images: the loop below sends a batch, re-checks the wallet, and stops
+    // cleanly when it can no longer cover the next one, marking the rest failed
+    // with the message that offers a top-up. So the question at the door is the
+    // same one the loop asks: can this account afford the batch in front of it.
+    // Still priced per unit rather than "at least one credit", which is what let
+    // a balance of 10 start five images at 8 each.
     const estimate = await estimateRun({
-      userId: user.id, kind: "image", modelId, operator: op.id, count: beats.length, resolution,
+      userId: user.id, kind: "image", modelId, operator: op.id,
+      count: Math.min(beats.length, batchSize), resolution,
     });
     const short = shortfallResponse(estimate);
     if (short) return short;
@@ -85,9 +96,6 @@ export async function POST(req: Request) {
 
     const results: { beatNumber: number; url: string }[] = [];
     const failures: { beatNumber: number; error: string }[] = [];
-    // Admin-tunable: product_config.batched_processes.image_generation_batch.
-    const batchSize = (await getConcurrencyConfig()).image_generation_batch;
-
     for (let i = 0; i < beats.length; i += batchSize) {
       const batch = beats.slice(i, i + batchSize);
 
@@ -96,9 +104,9 @@ export async function POST(req: Request) {
       // spending Heclus's balance all the way to the last beat. The remaining
       // beats are reported as failures with the same message the banner routes
       // to a top-up, rather than left looking like they never ran.
-      // Priced per beat rather than "at least one credit", so the run stops on
+      // Priced for the whole batch rather than one beat, so the run stops on
       // the batch it can no longer afford instead of part-paying for it.
-      if (!(await canStartWalletWork(user.id, estimate.perUnit ?? 1))) {
+      if (!(await canStartWalletWork(user.id, (estimate.perUnit ?? 1) * batch.length))) {
         for (const remaining of beats.slice(i)) {
           failures.push({ beatNumber: remaining.beatNumber, error: OUT_OF_CREDITS_MESSAGE });
           await supabase.from("project_beats").update({ image_status: "failed" }).eq("project_id", projectId).eq("beat_number", remaining.beatNumber);

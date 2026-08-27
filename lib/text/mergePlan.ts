@@ -29,6 +29,14 @@ export interface MergePlan {
   finalCount: number;
 }
 
+/** The shortest a beat is allowed to be, anywhere.
+ *
+ *  A beat becomes one shot and one line of narration, and "The life." is
+ *  neither. The segmentation prompt asks for it and this is the number the
+ *  server enforces it against afterwards, since models keep returning
+ *  three-word beats for short emphatic sentences however the prompt is worded. */
+export const MIN_BEAT_WORDS = 10;
+
 export function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }

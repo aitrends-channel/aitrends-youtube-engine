@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { ChevronUp, ChevronDown, Download, Check } from "lucide-react";
 import { joinSegments } from "@/lib/text/joinSegments";
 import { dedupeOverlap } from "@/lib/text/dedupeOverlap";
-import { planBulkMerge, findStubs } from "@/lib/text/mergePlan";
+import { planBulkMerge, findStubs, MIN_BEAT_WORDS } from "@/lib/text/mergePlan";
 import { MERGE_BEATS_HIDDEN, PROMPTS_THREE_STEP } from "@/lib/feature-flags";
 import { friendlyError } from "@/lib/errors/friendly";
 import { reportOutOfCredits } from "@/store/outOfCreditsStore";
@@ -186,7 +186,11 @@ function EditablePrompt({
 // A beat this short can't carry an image and a clip of its own — the
 // splitter occasionally emits one. Flagged so the user can spot it in a
 // long list and merge it away.
-const SHORT_BEAT_WORDS = 3;
+//
+// The same number the server enforces after segmentation, so the marker and
+// the rule cannot drift apart: anything flagged here is something that got
+// past the floor, not a beat the product considers acceptable.
+const SHORT_BEAT_WORDS = MIN_BEAT_WORDS;
 function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
@@ -212,7 +216,7 @@ function BeatCard({ beat, projectId, onSaved, consistencyPreview, mode, isFirst,
 }) {
   const [expanded, setExpanded] = useState(false);
   const words = wordCount(beat.scriptSegment ?? "");
-  const isShort = words > 0 && words <= SHORT_BEAT_WORDS;
+  const isShort = words > 0 && words < SHORT_BEAT_WORDS;
 
   return (
     <div className="rounded-xl overflow-hidden transition-all"
