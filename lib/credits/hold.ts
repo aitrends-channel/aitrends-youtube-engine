@@ -64,7 +64,49 @@ export async function takeHold(opts: {
     projectId: opts.projectId,
     beatNumber: opts.beatNumber,
   });
+  if (id && opts.projectId && opts.beatNumber !== undefined) {
+    await releaseSupersededBeatHolds(opts.userId, opts.projectId, opts.beatNumber, id);
+  }
   return id ? { id, credits } : null;
+}
+
+/**
+ * Give back any earlier hold on the same beat.
+ *
+ * A beat is generated once at a time, so a second hold on one means the first
+ * submit is not coming back: it failed, it was retried, or its task was
+ * abandoned. The finisher settles by looking the hold up newest-first, which
+ * closes the new one and leaves the old one open for the sweeper to find six
+ * hours later. Until then the credits read as spent and the customer cannot
+ * use them.
+ *
+ * Released after the new hold is taken, never before, so the beat is never
+ * momentarily unfunded.
+ */
+async function releaseSupersededBeatHolds(
+  userId: string,
+  projectId: string,
+  beatNumber: number,
+  keepId: string,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from("credit_reservations")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("project_id", projectId)
+    .eq("beat_number", beatNumber)
+    .eq("state", "open")
+    .neq("id", keepId);
+  if (error || !data?.length) return;
+  for (const row of data as { id: string }[]) {
+    const ok = await releaseHeclusCredits(row.id, "superseded by a newer hold on the same beat");
+    if (ok) {
+      console.warn(
+        `[credits] released a superseded hold on project=${projectId} beat=${beatNumber}. ` +
+        "Its submit never reported back.",
+      );
+    }
+  }
 }
 
 /** Whether this account's work is paid from the wallet at all. */
