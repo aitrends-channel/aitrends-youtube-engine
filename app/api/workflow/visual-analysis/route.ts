@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getAnthropicClient, getHeclusDirectClient, SYSTEM_PROMPT } from "@/lib/claude/client";
 import { getVisionConfig } from "@/lib/claude/vision";
-import { modelParamsFor } from "@/lib/claude/models";
+import { modelParamsFor, maxTokensFor } from "@/lib/claude/models";
 
 export const maxDuration = 800;
 import { visualProfileInputSchema } from "@/lib/claude/anthropicSchemas";
@@ -99,11 +99,25 @@ export async function POST(req: Request) {
   // what this step has historically cost: the median across past projects.
   // Imprecise, and far better than letting a 150-credit Opus call start on
   // a balance of one. Silent when there is no history to read.
+  // Parsed before the hold: the reservation carries the project id into the
+  // ledger row, and a hold taken without one bills the wallet for work no
+  // video can account for.
+  let projectId: string;
+  let videoImageUrls: string[] | undefined;
+  let thumbnailImageUrls: string[] | undefined;
+  try {
+    ({ projectId, videoImageUrls, thumbnailImageUrls } = await req.json() as {
+      projectId: string;
+      videoImageUrls?: string[];
+      thumbnailImageUrls?: string[];
+    });
+  } catch { return NextResponse.json({ error: "Invalid request body" }, { status: 400 }); }
+
   const short = shortfallResponse(await estimateStepFloor({ userId: user.id, step: "visuals" }));
   if (short) return short;
   // Held atomically, so two of these firing at once cannot both spend the same
   // credits. Settled below on the tokens the call actually reports.
-  const { hold, refused } = await holdForStep({ userId: user.id, step: "visuals", provider: "anthropic" });
+  const { hold, refused } = await holdForStep({ userId: user.id, step: "visuals", provider: "anthropic", projectId });
   // Released in the finally below if the route never gets as far as settling.
   let settled_hold = false;
   if (refused) {
@@ -119,11 +133,6 @@ export async function POST(req: Request) {
     // kicks in we flip this to "heclus_direct" so cost rows attribute
     // to the path that actually billed.
     let effectiveRouting = routing;
-    const { projectId, videoImageUrls, thumbnailImageUrls } = await req.json() as {
-      projectId: string;
-      videoImageUrls?: string[];
-      thumbnailImageUrls?: string[];
-    };
     // Model and frame count are admin-set (Config → Anthropic → Per step,
     // Visual analysis card). Going through modelParamsFor also applies the
     // thinking pin, which this route used to skip by passing a bare model id —
@@ -210,7 +219,7 @@ export async function POST(req: Request) {
     const callModel = (client: Anthropic) =>
       client.messages.create({
         ...modelParamsFor(model),
-        max_tokens: 2048,
+        max_tokens: maxTokensFor(model, 2048),
         system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
         tools: [{
           name: "save_visual_analysis",

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAnthropicClient, SYSTEM_PROMPT } from "@/lib/claude/client";
-import { resolveDefaultModel } from "@/lib/claude/models";
+import { resolveDefaultModel, maxTokensFor } from "@/lib/claude/models";
 import { logSystemEvent } from "@/lib/system-logger";
 
 export const maxDuration = 800;
@@ -16,11 +16,23 @@ import { holdForStep, settleTokenHold, releaseHold } from "@/lib/credits/hold";
 import { OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 import { logAnthropicCost, logProjectCost } from "@/lib/costs";
 import type { ChannelAnalysisOutput } from "@/lib/claude/schemas";
+import type { SupadataTranscript } from "@/lib/youtube/supadata";
 import type { User } from "@supabase/supabase-js";
 
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
+
+  // Read before the hold rather than after it. The reservation is what carries
+  // the project id into the ledger row, so a hold taken before the body is
+  // parsed produces a charge attached to nobody's video: the balance drops by
+  // the right amount and the video's own Used chip never sees it.
+  let body: { projectId?: string; transcripts?: unknown; topicMode?: unknown; topicHint?: unknown };
+  try { body = await req.json(); }
+  catch { return NextResponse.json({ error: "Invalid request body" }, { status: 400 }); }
+  const { projectId, transcripts, topicMode, topicHint } = body as {
+    projectId: string; transcripts: SupadataTranscript[]; topicMode: string; topicHint: string;
+  };
 
   // This step bills the wallet and had no gate at all, not even the one-credit
   // one the other steps carry: channel analysis could run on a balance of zero and be
@@ -30,7 +42,7 @@ export async function POST(req: Request) {
   if (short) return short;
   // Held atomically, so two of these firing at once cannot both spend the same
   // credits. Settled below on the tokens the call actually reports.
-  const { hold, refused } = await holdForStep({ userId: user.id, step: "channel_analysis", provider: "anthropic" });
+  const { hold, refused } = await holdForStep({ userId: user.id, step: "channel_analysis", provider: "anthropic", projectId });
   // Released in the finally below if the route never gets as far as settling.
   let settled_ideasHold = false;
   // Declared out here so the finally can release it: the hold itself is taken
@@ -47,7 +59,6 @@ export async function POST(req: Request) {
 
   try {
     const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "analyze");
-    const { projectId, transcripts, topicMode, topicHint } = await req.json();
     const modelParams = await resolveDefaultModel("analyze", user.id);
     const model = modelParams.model;
 
@@ -184,7 +195,7 @@ export async function POST(req: Request) {
       const ideasResponse = await retryClaudeCall("video ideas", () =>
         anthropic.messages.create({
         ...modelParams,
-        max_tokens: 2048,
+        max_tokens: maxTokensFor(modelParams.model, 2048),
         system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
         tools: [{
           name: "save_video_ideas",

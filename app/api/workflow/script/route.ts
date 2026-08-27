@@ -140,12 +140,28 @@ export async function POST(req: Request) {
   // what this step has historically cost: the median across past projects.
   // Imprecise, and far better than letting a 150-credit Opus call start on
   // a balance of one. Silent when there is no history to read.
+  // Parsed before the hold: the reservation carries the project id into the
+  // ledger row, and a hold taken without one bills the wallet for work no
+  // video can account for.
+  let projectId: string;
+  let analysis: ChannelAnalysisOutput;
+  let topic: string;
+  let mode: "fresh" | "continue" | undefined;
+  try {
+    ({ projectId, analysis, topic, mode } = await req.json() as {
+      projectId: string;
+      analysis: ChannelAnalysisOutput;
+      topic: string;
+      mode?: "fresh" | "continue";
+    });
+  } catch { return Response.json({ error: "Invalid request body" }, { status: 400 }); }
+
   const short = shortfallResponse(await estimateStepFloor({ userId: user.id, step: "script" }));
   if (short) return short;
   // Held atomically for the duration of the run, settled on the tokens the
   // stream reports. A script is one call, so one hold answers for it.
   const { hold: scriptHold, refused: scriptRefused } = await holdForStep({
-    userId: user.id, step: "script", provider: "anthropic",
+    userId: user.id, step: "script", provider: "anthropic", projectId,
   });
   // Released in the finally below if the route never gets as far as settling.
   let settled_scriptHold = false;
@@ -164,12 +180,6 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { projectId, analysis, topic, mode } = await req.json() as {
-      projectId: string;
-      analysis: ChannelAnalysisOutput;
-      topic: string;
-      mode?: "fresh" | "continue";
-    };
     const modelParams = await resolveDefaultModel("script", user.id);
     const model = modelParams.model;
 
