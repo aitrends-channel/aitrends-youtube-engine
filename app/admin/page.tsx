@@ -2428,7 +2428,7 @@ function MediaOperatorPanel() {
     setSavingModel(true);
     try {
       const res = await fetch("/api/admin/anthropic-routing", {
-        method: "PATCH",
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ model }),
       });
