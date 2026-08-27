@@ -148,6 +148,16 @@ export async function POST(req: Request) {
   });
   // Released in the finally below if the route never gets as far as settling.
   let settled_scriptHold = false;
+  // Once the streaming Response is returned, the hold belongs to the stream.
+  //
+  // The finally runs the moment this function returns, which for a streamed
+  // response is before the model has produced a single token. It was therefore
+  // releasing every hold instantly — created and released in the same second —
+  // and the settle a minute later found nothing to settle. Meanwhile the cost
+  // row was tagged alreadyHeld, so chargeForCostEntry skipped it too. Net
+  // effect: every script a wallet customer generated ran free on our Anthropic
+  // spend.
+  let streamOwnsHold = false;
   if (scriptRefused) {
     return Response.json({ error: OUT_OF_CREDITS_MESSAGE, outOfCredits: true }, { status: 402 });
   }
@@ -548,10 +558,15 @@ export async function POST(req: Request) {
           send({ error: message });
         }
 
+        if (!settled_scriptHold) {
+          await releaseHold(scriptHold, "script did not complete");
+          settled_scriptHold = true;
+        }
         controller.close();
       },
     });
 
+    streamOwnsHold = true;
     return new Response(readable, {
       headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
     });
@@ -559,6 +574,10 @@ export async function POST(req: Request) {
     const message = err instanceof Error ? err.message : "Script generation failed";
     return new Response(message, { status: 500 });
   } finally {
-    if (!settled_scriptHold) await releaseHold(scriptHold, "script did not complete");
+    // Only the paths that never reached the stream. The stream releases its own
+    // hold when it ends without settling.
+    if (!streamOwnsHold && !settled_scriptHold) {
+      await releaseHold(scriptHold, "script did not start");
+    }
   }
 }

@@ -13,7 +13,7 @@
 // column existed, telling those apart meant matching on video_model_id, which
 // works only because the free models happen to be named after the provider.
 
-export const OPERATORS = ["kie", "genaipro", "poyo"] as const;
+export const OPERATORS = ["kie", "genaipro", "poyo", "anthropic"] as const;
 export type Operator = (typeof OPERATORS)[number];
 
 /** The paid media lane: images and video through KIE. */
@@ -26,6 +26,11 @@ export const OPERATOR_GENAIPRO: Operator = "genaipro";
 /** The second paid media lane. Images today; PoYo serves video too, but video
  *  submission lives in video-worker and has no operator plumbing yet. */
 export const OPERATOR_POYO: Operator = "poyo";
+
+/** Anthropic on Heclus's own key, for the chat surface only. Not a media lane:
+ *  it has no images and no video, so the per-surface allowlist keeps it off
+ *  those rows rather than offering a button that could only fail. */
+export const OPERATOR_ANTHROPIC: Operator = "anthropic";
 
 /** What a beat is assumed to have run on when nothing says otherwise: the column
  *  default, and what every row predating migration 134 gets. Correct for images,

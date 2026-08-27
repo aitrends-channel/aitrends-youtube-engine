@@ -2422,6 +2422,8 @@ function MediaOperatorPanel() {
     exempt_surfaces: string[];
     pending: string[];
     operators: string[];
+    /** Per surface, because anthropic serves chat and nothing else. */
+    operators_for_surface?: Record<string, string[]>;
     exempt_notes: string[];
   }>("/api/admin/media-operator", fetcher, { revalidateOnFocus: false });
 
@@ -2475,7 +2477,7 @@ function MediaOperatorPanel() {
   // not the basis: PoYo lists Claude at $4/$20 per Mtok against Anthropic's
   // $5/$25, which looks like a 20% saving until you measure what it bills.
   const RECOMMENDED: Record<string, { op: string; why: string }> = {
-    chat: { op: "kie", why: "PoYo costs about 6x more. It counts roughly 7x the tokens actually used." },
+    chat: { op: "anthropic", why: "Anthropic direct on our own key. PoYo counts roughly 7x the tokens actually used and costs about 6x more, and it shares a balance with images and video, so one empty PoYo wallet stops every writing step at once." },
     image: { op: "kie", why: "PoYo bills fairly here, just higher. Roughly 2x KIE on your busiest models." },
     video: { op: "kie", why: "PoYo is missing Veo, Sora, Kling 3 and Wan. Those stay on KIE." },
     tts: { op: "elevenlabs", why: "Voiceover always uses ElevenLabs." },
@@ -2614,7 +2616,7 @@ function MediaOperatorPanel() {
                       elevenlabs
                     </span>
                   )}
-                  {(data?.operators ?? []).map((op) => {
+                  {(data?.operators_for_surface?.[s] ?? data?.operators ?? []).map((op) => {
                     // Video is not wired, so KIE is what actually runs it;
                     // show that rather than leaving the row unmarked.
                     const active = live ? current === op : (!exempt && op === "kie");
