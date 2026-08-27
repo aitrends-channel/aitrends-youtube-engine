@@ -758,6 +758,13 @@ export async function generateImages(
           let lastKeepalive = Date.now();
           for await (const ev of stream) {
             armIdle();
+            // The provider may ignore max_tokens, so the reader enforces it.
+            if (outputCapExceeded(ev, OUTPUT_CAP)) {
+              ac.abort(new Error(
+                `output passed the ${OUTPUT_CAP}-token ceiling this request asked for; aborting rather than paying for an unbounded completion`,
+              ));
+              break;
+            }
             if (ev.type === "content_block_delta" && ev.delta.type === "input_json_delta") {
               toolJsonAccum += ev.delta.partial_json;
               const completeBeats = countCompleteBeatsInPartialJson(toolJsonAccum);
@@ -1013,6 +1020,42 @@ export async function generateImages(
  *
  * Thrown as a non-retryable fault so the run stops at the first one.
  */
+
+/**
+ * Cache blocks, unless the provider ignores them.
+ *
+ * Probed against PoYo on 2026-08-27 with our exact block shape: it reports
+ * cache_creation_input_tokens of 810 and cache_read_input_tokens of 0, and every
+ * production call on that project shows the same, reads always zero. So on PoYo
+ * a cache_control block is billed at the 1.25x write rate on every single call
+ * and never once read back. Sending it there is strictly more expensive than
+ * not sending it.
+ */
+export function cacheIf(usable: boolean): { cache_control: { type: "ephemeral" } } | Record<string, never> {
+  return usable ? { cache_control: { type: "ephemeral" as const } } : {};
+}
+
+/**
+ * Stop a stream that has run past the ceiling we asked for.
+ *
+ * PoYo does not honour max_tokens. Asked for 32 with a prompt that wants 400
+ * numbers, it returned 312 and stop_reason end_turn; in production it returned
+ * 22,596 against a ceiling of 12,288. Since the request cannot bound the cost,
+ * the reader has to: this aborts once the reported output passes the cap, so a
+ * provider that ignores the limit can overrun by one delta rather than by 10k
+ * tokens.
+ */
+/** The ceiling the reader enforces. Above the largest max_tokens any pass asks
+ *  for (12,288) so a legitimate completion is never truncated, and well under
+ *  the 22,596 an ignored ceiling produced. */
+export const OUTPUT_CAP = 14_000;
+
+export function outputCapExceeded(ev: { type: string; usage?: { output_tokens?: number | null } | null }, cap: number): boolean {
+  if (ev.type !== "message_delta") return false;
+  const out = Number(ev.usage?.output_tokens ?? 0);
+  return out > cap;
+}
+
 export class UpstreamDroppedPromptError extends Error {
   readonly noRetry = true;
   constructor(label: string, inputTokens: number) {
@@ -1201,6 +1244,13 @@ export async function generateBeats(
             let lastCancelCheck = Date.now();
             for await (const ev of stream) {
               armIdle();
+              // The provider may ignore max_tokens, so the reader enforces it.
+              if (outputCapExceeded(ev, OUTPUT_CAP)) {
+                ac.abort(new Error(
+                  `output passed the ${OUTPUT_CAP}-token ceiling this request asked for; aborting rather than paying for an unbounded completion`,
+                ));
+                break;
+              }
               // Honour a Stop mid-stream instead of at the next chunk boundary.
               if (Date.now() - lastCancelCheck > CANCEL_POLL_MS) {
                 lastCancelCheck = Date.now();
@@ -1550,6 +1600,13 @@ export async function fillPrompts(
             let lastCancelCheck = Date.now();
             for await (const ev of stream) {
               armIdle();
+              // The provider may ignore max_tokens, so the reader enforces it.
+              if (outputCapExceeded(ev, OUTPUT_CAP)) {
+                ac.abort(new Error(
+                  `output passed the ${OUTPUT_CAP}-token ceiling this request asked for; aborting rather than paying for an unbounded completion`,
+                ));
+                break;
+              }
               if (Date.now() - lastCancelCheck > CANCEL_POLL_MS) {
                 lastCancelCheck = Date.now();
                 if (await isRunCancelled(projectId, runId)) {
