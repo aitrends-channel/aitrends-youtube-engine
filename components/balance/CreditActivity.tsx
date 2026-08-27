@@ -63,6 +63,10 @@ export function CreditActivity() {
   }, [data?.providers]);
   const providers = data?.providers?.length ? data.providers : providersRef.current;
 
+  // Nothing to show and no way to acquire any, so the section is absent rather
+  // than an empty table telling a free account it has no history.
+  if (data && !data.visible) return null;
+
   const rows = data?.rows ?? [];
   const total = data?.total ?? 0;
   const pageSize = data?.pageSize ?? 25;
