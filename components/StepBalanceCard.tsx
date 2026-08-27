@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import useSWR from "swr";
-import { Plus } from "lucide-react";
+import { Plus, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
 import { TopUpOptions } from "@/components/TopUpOptions";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
 import { useKieActivityStore } from "@/store/kieActivityStore";
@@ -26,13 +27,42 @@ export function StepBalanceCard() {
   // and ElevenLabs /user hits.
   const hasActivity = useKieActivityStore((s) => s.hasActivity);
   const [picking, setPicking] = useState(false);
-  const { data } = useSWR<ApiStatusResult>(
+  const [reclaiming, setReclaiming] = useState(false);
+  const { data, mutate } = useSWR<ApiStatusResult>(
     "/api/api-status",
     fetcher,
     // revalidateOnFocus: coming back to the tab is the moment the number is
     // read, and a stale one there is worse than one extra request.
     { refreshInterval: hasActivity ? 30_000 : 0, revalidateOnFocus: true },
   );
+
+  // Hand back credits held by runs that never reported anything.
+  //
+  // The same sweep the cron runs and the workflow pages fire on a timer, so it
+  // obeys the same windows: a hold from a generation still in flight is not
+  // touched. The button exists because "held" is the one number on this chip a
+  // user cannot act on, and being told to wait for a cron is not an answer when
+  // it is blocking their next step.
+  async function reclaim() {
+    setReclaiming(true);
+    try {
+      const res = await fetch("/api/credits/sweep", { method: "POST" });
+      const out = await res.json() as { released?: number; credits?: number };
+      if (out.released && out.credits) {
+        toast.success(`${out.credits.toLocaleString(undefined, { maximumFractionDigits: 2 })} credits returned to your balance`);
+        await mutate();
+      } else {
+        // Not a failure. The holds are simply still young enough to belong to
+        // work that might yet finish, and saying so is more useful than a
+        // silent no-op.
+        toast.info("Nothing to reclaim yet. Credits held by a run that is still going are released once it is clear the run has stopped.");
+      }
+    } catch {
+      toast.error("Could not reclaim held credits. Try again shortly.");
+    } finally {
+      setReclaiming(false);
+    }
+  }
 
   // A wallet-funded account has no KIE or ElevenLabs key, so those two numbers
   // are zero for the wrong reason. What it can spend is credits, and the chip
@@ -107,6 +137,28 @@ export function StepBalanceCard() {
           )}
         </span>
       </a>
+      {/* Only when there is something to reclaim. A permanent button for a
+          number that is usually zero would read as a chore the product expects
+          of you. */}
+      {wallet.reserved > 0 && (
+        <button
+          type="button"
+          onClick={reclaim}
+          disabled={reclaiming}
+          title={`${wallet.reserved.toLocaleString(undefined, { maximumFractionDigits: 2 })} credits are held by runs in progress. Click to return any held by a run that never finished.`}
+          className="inline-flex items-center justify-center rounded-md p-1.5 shrink-0 transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          style={{
+            background: "oklch(0.55 0.15 240 / 0.12)",
+            color: "oklch(0.55 0.15 240)",
+            border: "1px solid oklch(0.55 0.15 240 / 0.3)",
+          }}
+        >
+          {reclaiming
+            ? <span className="w-[11px] h-[11px] border-2 border-current border-t-transparent rounded-full animate-spin" />
+            : <RotateCcw size={11} />}
+          <span className="sr-only">Reclaim held credits</span>
+        </button>
+      )}
       {/* The chip itself has always linked to /billing and nothing said so.
           Findable by someone who has run out and hunting for the fix, invisible
           to everyone else. */}
