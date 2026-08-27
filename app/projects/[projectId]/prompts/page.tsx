@@ -2975,8 +2975,13 @@ export default function PromptsPage({ params }: PageProps) {
           <div className="mx-5 sm:px-8">
           <button
             onClick={() => { setNavigating(true); router.push(`/projects/${projectId}/voiceover`); }}
-            disabled={anyRunning || navigating}
-            className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
+            disabled={anyRunning || navigating || !imageStepCompleteOnServer}
+            title={
+              imageStepCompleteOnServer
+                ? undefined
+                : "Finish the beats and image prompts first. Every beat needs a prompt before the voiceover step can use them."
+            }
+            className="w-full py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition-all"
             style={{ background: "oklch(0.72 0.25 285)", color: "var(--bg-page-2)" }}
           >
             {navigating ? (
@@ -2984,7 +2989,7 @@ export default function PromptsPage({ params }: PageProps) {
                 <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 Loading…
               </span>
-            ) : "Continue →"}
+            ) : imageStepCompleteOnServer ? "Continue →" : "Finish the prompts to continue"}
           </button>
           </div>
         </div>
