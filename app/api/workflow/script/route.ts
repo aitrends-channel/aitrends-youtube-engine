@@ -13,6 +13,7 @@ import { requireActiveSubscription } from "@/lib/subscription";
 import { requireWalletFunds, OUT_OF_CREDITS_MESSAGE } from "@/lib/heclus-charge";
 import { estimateStepFloor, shortfallResponse } from "@/lib/credits/estimate";
 import { holdForStep, settleTokenHold, releaseHold } from "@/lib/credits/hold";
+import { assertPromptReached } from "@/lib/workflow/prompts-core";
 
 export const maxDuration = 800;
 
@@ -442,6 +443,7 @@ export async function POST(req: Request) {
               // last counts the provider sent, which is what we were charged
               // for up to the abort.
             }
+            assertPromptReached("script", usage);
             void logAnthropicCost({
               projectId,
               userId: user.id,

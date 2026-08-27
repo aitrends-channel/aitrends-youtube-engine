@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertProviderFunded } from "@/lib/providers/preflight";
 
 import { withPromptLengthRetry } from "@/lib/kie/promptLength";
 import { withRateLimitRetry } from "@/lib/operators/upstream";
@@ -54,6 +55,13 @@ export async function POST(req: Request) {
     // BYO clients pinned to KIE and free-lane models exempt; see
     // lib/operators/routing.ts.
     const op = resolveImageOperator(modelId, await getMediaOperatorForUser(user.id, "image"));
+    // Refused before the hold and the submit. PoYo near zero is the state that
+    // produced calls billing 20k output tokens from no prompt, so the floor is
+    // above zero rather than at it.
+    const funded = await assertProviderFunded(op.id);
+    if (!funded.ok) {
+      return NextResponse.json({ error: funded.error, providerUnfunded: true }, { status: 503 });
+    }
 
     // Price the whole run before touching anything. The gate at the door asks
     // for one credit, which would let a balance of 10 start five images at 8
