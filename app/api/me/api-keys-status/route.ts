@@ -3,6 +3,8 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
 import { getFundingMode, type FundingMode } from "@/lib/funding";
+import { billingPlanOf } from "@/lib/plans-gating";
+import { isHeclusCreditsPlan } from "@/lib/plan-tier";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +32,10 @@ export interface ApiKeysStatus {
    *  what the caller actually wants to know, so no surface has to reimplement
    *  "wallet OR both keys" and get it subtly different. */
   readyToGenerate: boolean;
+  /** On one of the Heclus Credits products, where provider keys are not part of
+   *  the deal at all. Distinct from fundingMode, which a customer can flip: this
+   *  is what they bought. */
+  onHeclusCreditsPlan: boolean;
 }
 
 export async function GET() {
@@ -56,5 +62,6 @@ export async function GET() {
     bothSet,
     fundingMode,
     readyToGenerate: fundingMode === "wallet" || bothSet,
+    onHeclusCreditsPlan: isHeclusCreditsPlan(billingPlanOf(user)),
   } satisfies ApiKeysStatus);
 }

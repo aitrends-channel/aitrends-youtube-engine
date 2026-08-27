@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { Settings, LogOut, BarChart3, KeyRound } from "lucide-react";
+import { Settings, LogOut, BarChart3, KeyRound, Wallet } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { isAdminEmail } from "@/lib/admin";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -159,6 +159,15 @@ export function DashboardHeader({ rightExtra }: DashboardHeaderProps) {
                 >
                   <KeyRound size={15} />
                   <span>Account</span>
+                </Link>
+                <Link
+                  href="/billing"
+                  onClick={() => setShowProfileMenu(false)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all hover:opacity-80"
+                  style={{ color: "var(--c-60)" }}
+                >
+                  <Wallet size={15} />
+                  <span>Billing</span>
                 </Link>
                 <button
                   onClick={() => { setShowProfileMenu(false); handleSignOut(); }}

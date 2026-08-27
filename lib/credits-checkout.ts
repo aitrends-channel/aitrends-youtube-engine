@@ -70,7 +70,12 @@ export function startTopUp(
   newTab = false,
 ): void {
   markPendingTopUp(wallet);
-  const url = buildTopUpUrl(checkoutUrl, window.location.origin, units, wallet);
+  const direct = buildTopUpUrl(checkoutUrl, window.location.origin, units, wallet);
+  const start = new URL("/payment/start", window.location.origin);
+  start.searchParams.set("wallet", wallet);
+  start.searchParams.set("qty", String(Math.max(1, Math.floor(units))));
+  start.searchParams.set("fb", direct);
+  const url = start.toString();
   if (newTab) {
     // A synthetic anchor click, not window.open: under noopener the browser
     // returns null even when the tab opened fine, so the "pop-up was blocked"

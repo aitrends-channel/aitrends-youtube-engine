@@ -56,7 +56,7 @@ export function TopUpOptions({
     <div className="space-y-2">
       <div className="flex items-center justify-between gap-2">
         <p className={`font-semibold ${compact ? "text-[11px]" : "text-xs"}`} style={{ color: "var(--c-70)" }}>
-          Choose a top-up
+          Choose a top-up plan
         </p>
         <button
           type="button"
@@ -70,7 +70,7 @@ export function TopUpOptions({
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2">
         {options.map((opt) => {
           const busy = leaving === opt.units;
           return (
@@ -86,10 +86,24 @@ export function TopUpOptions({
                 // navigation replaces the page and never reaches this.
                 if (newTab) setTimeout(() => setLeaving(null), 1200);
               }}
-              className="flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl text-left transition-all hover:opacity-90 disabled:opacity-50"
+              className="flex items-center justify-between gap-2 px-4 py-4 rounded-xl text-left transition-all disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
               style={{
+                margin: "10px",
                 background: busy ? "oklch(0.72 0.25 285)" : "oklch(1 0 0 / 0.06)",
                 border: `1px solid ${busy ? "oklch(0.72 0.25 285)" : "oklch(1 0 0 / 0.1)"}`,
+              }}
+              onMouseEnter={(e) => {
+                if (leaving !== null) return;
+                const el = e.currentTarget;
+                el.style.background = "oklch(0.72 0.25 285 / 0.14)";
+                el.style.borderColor = "oklch(0.72 0.25 285 / 0.55)";
+                el.style.transform = "translateY(-1px)";
+              }}
+              onMouseLeave={(e) => {
+                const el = e.currentTarget;
+                el.style.background = busy ? "oklch(0.72 0.25 285)" : "oklch(1 0 0 / 0.06)";
+                el.style.borderColor = busy ? "oklch(0.72 0.25 285)" : "oklch(1 0 0 / 0.1)";
+                el.style.transform = "";
               }}
             >
               <span className="min-w-0">

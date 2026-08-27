@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
 import { getPaymentSettings, getPlanBySlug } from "@/lib/plans";
+import { planSlugForProductId, productIdOnSubscription } from "@/lib/dodo/plan-products";
+import { productIdsOnPayment } from "@/lib/dodo/pack-products";
 import { shouldWelcome, sendWelcomeEmail } from "@/lib/email/welcome";
 
 export async function POST(request: Request) {
@@ -9,7 +11,7 @@ export async function POST(request: Request) {
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
 
   const body = await request.json().catch(() => ({}));
-  const { payment_id, subscription_id, plan } = body as {
+  const { payment_id, subscription_id, plan: claimedPlan } = body as {
     payment_id?: string;
     subscription_id?: string;
     plan?: string;
@@ -39,7 +41,7 @@ export async function POST(request: Request) {
   //   3. legacy DODO_SECRET_KEY / DODO_BASE_URL fallback so a one-
   //      key bootstrap setup keeps working
   const settings = await getPaymentSettings();
-  const env: "test" | "production" = plan === "production-test" ? "production" : settings.mode;
+  const env: "test" | "production" = claimedPlan === "production-test" ? "production" : settings.mode;
 
   // Track which source (DB row / env-specific var / legacy var)
   // each value resolved from so the diagnostic log below can answer
@@ -87,7 +89,7 @@ export async function POST(request: Request) {
   // wrong-env mismatch can be diagnosed in one log line. Key prefix
   // only — never the full secret.
   console.log(
-    `[dodo-verify] plan=${plan} env=${env} ` +
+    `[dodo-verify] claimed=${claimedPlan} env=${env} ` +
     `base=${dodoBase} base_src=${basePick.source} ` +
     `key=${secretKey.slice(0, 8)}… key_src=${keyPick.source} ` +
     `${idLabel} path=${usePath}`,
@@ -121,8 +123,41 @@ export async function POST(request: Request) {
   // plan/product configuration. Safe to keep on — Dodo doesn't return
   // card numbers in this payload.
   console.log(
-    `DODO RESPONSE: plan=${plan} payment_id=${payment_id} body=${JSON.stringify(result)}`,
+    `DODO RESPONSE: claimed=${claimedPlan} payment_id=${payment_id} body=${JSON.stringify(result)}`,
   );
+
+  // Which plan was actually paid for.
+  //
+  // The slug arrived in the request body, from the browser, and everything below
+  // grants entitlements from it. The price guard that used to catch a mismatch
+  // is disabled (FX-converted charges tripped it), so nothing was checking that
+  // the plan someone claimed is the plan they bought: a $29.99 Starter checkout
+  // posted back as heclus_pro would have been granted Pro.
+  //
+  // Dodo names the product on the record we just fetched, and the plan rows
+  // carry the checkout links those products come from, so the sale itself can
+  // answer it. Preferred over the claim whenever it resolves.
+  //
+  // Falls back to the claim when the product maps to no plan we sell, which is
+  // the case for a product configured outside the plans table. Failing closed
+  // there would strand a paying customer over a config gap, so the mismatch is
+  // logged loudly instead.
+  const verifiedPlan = await planSlugForProductId(
+    productIdOnSubscription(result as Record<string, unknown>)
+    ?? productIdsOnPayment(result as Record<string, unknown>)[0],
+  );
+  if (verifiedPlan && claimedPlan && verifiedPlan !== claimedPlan) {
+    console.warn(
+      `[dodo-verify] plan mismatch: claimed=${claimedPlan} paid_for=${verifiedPlan} ` +
+      `user=${user.email} ${payment_id ? `payment=${payment_id}` : `subscription=${subscription_id}`}`,
+    );
+  }
+  const plan = verifiedPlan ?? claimedPlan;
+  if (!verifiedPlan) {
+    console.warn(
+      `[dodo-verify] could not resolve a plan from the product, trusting the claim: ${claimedPlan}`,
+    );
+  }
 
   // Price guard temporarily disabled: FX-converted charges (Dodo
   // returns total_amount in the buyer's local currency) were tripping

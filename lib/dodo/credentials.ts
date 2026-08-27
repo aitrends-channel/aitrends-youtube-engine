@@ -17,11 +17,15 @@ export interface DodoCredentials {
  * callers are left as they are rather than refactored under a live billing
  * change; they resolve identically.
  */
-export async function resolveDodoCredentials(): Promise<
-  { ok: true; creds: DodoCredentials } | { ok: false; error: string }
-> {
+export async function resolveDodoCredentials(
+  /** Forces an env rather than using the deployment's. Only production-test
+   *  needs this: it is a live-Dodo harness and must charge against production
+   *  even from staging, or it verifies the test account and proves nothing
+   *  about the one that takes money. */
+  override?: PaymentMode,
+): Promise<{ ok: true; creds: DodoCredentials } | { ok: false; error: string }> {
   const settings = await getPaymentSettings();
-  const env = settings.mode;
+  const env = override ?? settings.mode;
 
   const secretKey =
     (env === "production" ? settings.secretKeyProduction : settings.secretKeyTest) ??

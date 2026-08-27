@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import useSWR from "swr";
+import { Plus } from "lucide-react";
+import { TopUpOptions } from "@/components/TopUpOptions";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
 import { useKieActivityStore } from "@/store/kieActivityStore";
 
@@ -22,6 +25,7 @@ export function StepBalanceCard() {
   // doing KIE work so idle-project viewing costs zero /chat/credit
   // and ElevenLabs /user hits.
   const hasActivity = useKieActivityStore((s) => s.hasActivity);
+  const [picking, setPicking] = useState(false);
   const { data } = useSWR<ApiStatusResult>(
     "/api/api-status",
     fetcher,
@@ -33,6 +37,12 @@ export function StepBalanceCard() {
   // becomes a link to top them up: this card is on every step, which is exactly
   // where somebody notices they are running low.
   const wallet = data?.fundingMode === "wallet" ? data?.wallet : undefined;
+  if (!data) {
+    return (
+      <span className="inline-block h-[26px] w-40 rounded-md animate-pulse align-middle"
+        style={{ background: "oklch(1 0 0 / 0.06)", border: "1px solid oklch(1 0 0 / 0.08)" }} />
+    );
+  }
 
   const kie = data?.kie?.credits;
   const el  = data?.elevenlabs?.remaining;
@@ -59,11 +69,23 @@ export function StepBalanceCard() {
   if (wallet) {
     const credits = wallet.credits;
     const low = credits <= 0;
+    const checkoutUrl = data.walletCheckoutUrl ?? null;
+    // The same quantities the /billing picker offers, derived from the same
+    // configured pack, so the two surfaces cannot show different prices.
+    const pack = data.walletPack ?? null;
+    const options = pack
+      ? [1, 2, 3, 4].map((units) => ({
+          units,
+          credits: pack.credits * units,
+          priceUsd: pack.priceUsd * units,
+        }))
+      : null;
     const wLabelBg   = low ? "oklch(0.70 0.18 45)"        : "oklch(0.55 0.15 240)";
     const wBodyBg    = low ? "oklch(0.70 0.18 45 / 0.12)" : "oklch(0.55 0.15 240 / 0.12)";
     const wBodyColor = low ? "oklch(0.60 0.18 45)"        : "oklch(0.55 0.15 240)";
     const wBorder    = low ? "oklch(0.70 0.18 45 / 0.3)"  : "oklch(0.55 0.15 240 / 0.3)";
     return (
+      <div className="inline-flex items-center gap-1.5 max-w-full">
       <a
         href="/billing"
         title={low ? "Out of Heclus Credits — top up to keep generating" : "Heclus Credits available. Click to top up."}
@@ -72,10 +94,10 @@ export function StepBalanceCard() {
       >
         <span className="uppercase tracking-wider px-2 py-1"
           style={{ fontSize: "10px", background: wLabelBg, color: "oklch(1 0 0)" }}>
-          Credits
+          Balance
         </span>
         <span className="tabular-nums px-2.5 py-1" style={{ background: wBodyBg, color: wBodyColor }}>
-          {credits.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+          {credits.toLocaleString(undefined, { maximumFractionDigits: 2 })} credits
           {wallet.reserved > 0 && (
             <span style={{ opacity: 0.75 }}>
               {" "}· {wallet.reserved.toLocaleString(undefined, { maximumFractionDigits: 2 })} held
@@ -83,6 +105,53 @@ export function StepBalanceCard() {
           )}
         </span>
       </a>
+      {/* The chip itself has always linked to /billing and nothing said so.
+          Findable by someone who has run out and hunting for the fix, invisible
+          to everyone else. */}
+      {/* Starts the purchase here rather than sending them to /billing to find
+          the same button. New tab, so an abandoned checkout comes back to the
+          step they were working on rather than to a Dodo receipt with no way
+          back. Disabled, not hidden, when no pack is configured: its absence
+          reads as a missing feature. */}
+      <div className="relative inline-flex shrink-0">
+        <button
+          type="button"
+          onClick={() => setPicking((v) => !v)}
+          disabled={!checkoutUrl || !options}
+          title={checkoutUrl ? "Add Heclus Credits" : "No top-up pack is configured yet."}
+          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold shrink-0 transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          style={{
+            background: low ? "oklch(0.70 0.18 45 / 0.12)" : "oklch(0.72 0.25 285 / 0.12)",
+            color: low ? "oklch(0.60 0.18 45)" : "oklch(0.72 0.25 285)",
+            border: `1px solid ${low ? "oklch(0.70 0.18 45 / 0.3)" : "oklch(0.72 0.25 285 / 0.3)"}`,
+          }}
+        >
+          <Plus size={11} />
+          Top up
+        </button>
+        {/* The amounts, before the money. Buying one pack blind was the wrong
+            default: the /billing card asks first, and a step chip that skipped
+            the question would charge a different amount from the same label.
+            TopUpOptions is the same component that card uses, so the prices
+            cannot drift between the two. */}
+        {picking && checkoutUrl && options && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setPicking(false)} />
+            <div className="absolute right-0 top-full mt-2 z-50 w-[26rem] max-w-[92vw] rounded-2xl p-7"
+              style={{ background: "var(--bg-card)", border: "1px solid oklch(1 0 0 / 0.55)", boxShadow: "0 12px 32px oklch(0 0 0 / 0.4)" }}>
+              <TopUpOptions
+                checkoutUrl={checkoutUrl}
+                onCancel={() => setPicking(false)}
+                options={options}
+                wallet="heclus"
+                newTab
+                unitNoun=""
+              />
+            </div>
+          </>
+        )}
+      </div>
+      </div>
     );
   }
 
