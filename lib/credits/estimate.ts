@@ -360,9 +360,14 @@ export async function estimateStepFloor(opts: {
     return { perUnit: null, total: null, balance, sufficient: true, source: "unknown", alternative: null, affordableCount: 0 };
   }
 
-  // Per project first, then the median across projects. A median of individual
-  // rows would answer a different question: what one token bucket costs, not
-  // what running the step costs.
+  // Per project first, then the 75th percentile across projects. A median of
+  // individual rows would answer a different question: what one token bucket
+  // costs, not what running the step costs.
+  //
+  // p75 rather than the median because the two errors are not symmetric.
+  // Holding too much reserves credits for the length of one run and releases
+  // the remainder; holding too little is permanent, since credits_settle caps
+  // the settle at the hold and Heclus absorbs the rest.
   const perProject = new Map<string, number>();
   for (const row of data as Array<{ project_id: string; unit_kind: string; units: number | null; model: string | null; provider: string | null }>) {
     const credits = creditsForUnits(row.unit_kind as CostUnitKind, Number(row.units ?? 0), rates, {
@@ -375,7 +380,7 @@ export async function estimateStepFloor(opts: {
     return { perUnit: null, total: null, balance, sufficient: true, source: "unknown", alternative: null, affordableCount: 0 };
   }
 
-  const typical = totals[Math.floor(totals.length / 2)];
+  const typical = totals[Math.min(totals.length - 1, Math.floor(totals.length * 0.75))];
   const total = roundCredits(typical * Math.max(1, opts.count ?? 1));
   return {
     perUnit: typical,
