@@ -805,6 +805,11 @@ export async function generateImages(
             if (extracted) console.log(`[image-prompts] chunk ${chunkIndex + 1} fallback recovered ${(extracted.beats as unknown[])?.length ?? 0} beats`);
           }
 
+          // Before the empty-response retry below: a response the provider wrote
+          // without our prompt is a fault, not an empty result, and retrying it
+          // bills full output every time.
+          assertPromptReached(`image prompts chunk ${chunkIndex + 1}`, message.usage);
+
           // Only retry genuinely EMPTY responses. A truncated (max_tokens)
           // response has content and is handled by assertComplete outside.
           if (message.stop_reason !== "max_tokens") {
@@ -996,6 +1001,39 @@ export async function generateImages(
 // resume, same persist gates for monotonic beat numbers, same recursive split
 // when a dense chunk truncates. What it drops is the consistency sheet and
 // the visual profile — neither affects where a beat starts and ends.
+
+/**
+ * A response the provider produced without our prompt.
+ *
+ * input_tokens of 1 cannot include the system block, the cached script or the
+ * beats, so whatever came back was written from nothing. It is not an empty
+ * result to retry: on 2026-08-27 nine consecutive retries of exactly this
+ * billed 17,670 to 22,596 output tokens each, about 80% of that project's
+ * entire Claude cost, for text that could never parse as the tool call.
+ *
+ * Thrown as a non-retryable fault so the run stops at the first one.
+ */
+export class UpstreamDroppedPromptError extends Error {
+  readonly noRetry = true;
+  constructor(label: string, inputTokens: number) {
+    super(
+      `${label}: the provider reported ${inputTokens} input token(s), so it did not receive the prompt. ` +
+      `Stopping rather than retrying, because each attempt bills full output.`,
+    );
+    this.name = "UpstreamDroppedPromptError";
+  }
+}
+
+/** Below this, the request cannot have carried a real prompt. */
+const MIN_PLAUSIBLE_INPUT_TOKENS = 50;
+
+export function assertPromptReached(label: string, usage: { input_tokens?: number | null } | null | undefined): void {
+  const input = Number(usage?.input_tokens ?? 0);
+  if (input > 0 && input < MIN_PLAUSIBLE_INPUT_TOKENS) {
+    throw new UpstreamDroppedPromptError(label, input);
+  }
+}
+
 export async function generateBeats(
   projectId: string,
   userId: string,
@@ -1186,6 +1224,7 @@ export async function generateBeats(
           }
           if (cancelled) throw cancelledError();
           const message = await stream.finalMessage();
+          assertPromptReached("beats", message.usage);
           const toolBlock = message.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
           let extracted = (toolBlock?.input as Record<string, unknown> | undefined) ?? null;
           if (!extracted) {
@@ -1542,6 +1581,7 @@ export async function fillPrompts(
           }
           if (cancelled) throw cancelledError();
           const message = await stream.finalMessage();
+          assertPromptReached("video prompts", message.usage);
 
           let extracted: Record<string, unknown> | null = null;
           const toolBlock = message.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");

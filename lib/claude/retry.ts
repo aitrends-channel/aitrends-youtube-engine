@@ -25,7 +25,12 @@ export async function retryClaudeCall<T>(
         (err as { message?: string })?.message ??
         (err as { error?: { message?: string } })?.error?.message ??
         String(err);
-      const isTransient = !status || (status >= 500 && status < 600) || status === 429;
+      // Opt-out for faults a retry cannot fix and would pay for again. A
+      // thrown Error carries no status, so `!status` below treats every one of
+      // them as transient, which is right for a network blip and wrong for a
+      // provider that answered without our prompt.
+      const noRetry = (err as { noRetry?: boolean })?.noRetry === true;
+      const isTransient = !noRetry && (!status || (status >= 500 && status < 600) || status === 429);
       if (!isTransient || i === attempts - 1) {
         console.error(`[claude-retry] ${label} giving up after ${i + 1} attempt(s) (status=${status ?? "network"}): ${msg}`);
         throw err;
