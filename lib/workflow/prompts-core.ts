@@ -1071,11 +1071,27 @@ export class UpstreamDroppedPromptError extends Error {
 /** Below this, the request cannot have carried a real prompt. */
 const MIN_PLAUSIBLE_INPUT_TOKENS = 50;
 
-export function assertPromptReached(label: string, usage: { input_tokens?: number | null } | null | undefined): void {
+export function assertPromptReached(
+  label: string,
+  usage: {
+    input_tokens?: number | null;
+    cache_read_input_tokens?: number | null;
+    cache_creation_input_tokens?: number | null;
+  } | null | undefined,
+): void {
   if (usage?.input_tokens === undefined || usage?.input_tokens === null) return;
-  const input = Number(usage.input_tokens);
-  if (Number.isFinite(input) && input < MIN_PLAUSIBLE_INPUT_TOKENS) {
-    throw new UpstreamDroppedPromptError(label, input);
+  // Cached tokens are still tokens the model read. input_tokens alone is the
+  // UNCACHED remainder, so on a cache hit it is legitimately tiny: the first
+  // chunk writes the cache and every chunk after it reports a handful. Counting
+  // only that threw on healthy calls the moment the writing steps moved to
+  // Anthropic, where caching actually works, and left a run half written with
+  // no done event.
+  const total =
+    Number(usage.input_tokens) +
+    Number(usage.cache_read_input_tokens ?? 0) +
+    Number(usage.cache_creation_input_tokens ?? 0);
+  if (Number.isFinite(total) && total < MIN_PLAUSIBLE_INPUT_TOKENS) {
+    throw new UpstreamDroppedPromptError(label, total);
   }
 }
 
