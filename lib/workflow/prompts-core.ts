@@ -5,7 +5,7 @@
 import { createHash, randomUUID } from "crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { getAnthropicClient, SYSTEM_PROMPT } from "@/lib/claude/client";
-import { modelParamsFor } from "@/lib/claude/models";
+import { modelParamsFor, maxTokensFor } from "@/lib/claude/models";
 import { KIE_MIN_USABLE_CREDITS, looksLikeInsufficientCredits } from "@/lib/kie/client";
 import {
   buildBeatsCached,
@@ -37,13 +37,14 @@ import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { isPoyoRouting } from "@/lib/claude/routing";
-import { extractToolInputFromText } from "@/lib/claude/textFallback";
+import { extractToolInputFromText, unwrapNestedToolInput } from "@/lib/claude/textFallback";
 import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import { logAnthropicCost } from "@/lib/costs";
 import type { StepHold } from "@/lib/credits/hold";
 import type { VisualProfileOutput, ThumbnailAnalysisOutput } from "@/lib/claude/schemas";
 import type { User } from "@supabase/supabase-js";
 import { friendlyError } from "@/lib/errors/friendly";
+import { logSystemEvent } from "@/lib/system-logger";
 
 /**
  * Whether a failed batch means the KIE wallet is actually empty.
@@ -600,8 +601,15 @@ export async function generateImages(
     send({ type: "status", message: "Building character & style consistency sheet…" });
     const sheetMsg = await retryClaudeCall("consistency sheet", () =>
       anthropic.messages.create({
-        model,
-        max_tokens: 2000,
+        // Was sending a bare model id while every other call in this file
+        // spreads the model params, so the thinking pin never reached it.
+        //
+        // The budget was also measured too tight: the same prompt on Sonnet 5
+        // ends at ~1800 output tokens, so 2000 truncated the sheet mid-sentence
+        // about as often as it fitted, and nothing here checks stop_reason
+        // before using the text. A ceiling costs nothing unspent.
+        ...modelParamsFor(model),
+        max_tokens: maxTokensFor(model, 4000),
         system: [{ type: "text", text: SYSTEM_PROMPT }],
         messages: [{ role: "user", content: buildConsistencySheetPrompt(script, visualProfile) }],
       }),
@@ -871,7 +879,7 @@ export async function generateImages(
     if (!input) throw new Error(`No image prompts returned for chunk ${chunkIndex + 1}. Try again — any beats saved so far are preserved.`);
     if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Chunk ${chunkIndex + 1} returned no beats. Try again — any beats saved so far are preserved.`);
 
-    const parsed = ImagePromptsSchema.safeParse(input);
+    const parsed = ImagePromptsSchema.safeParse(unwrapNestedToolInput(input, "beats"));
     if (!parsed.success) {
       const rawBeats = (input.beats as Array<Record<string, unknown>>) ?? [];
       const blankFields = rawBeats.map((b, i) => {
@@ -1337,9 +1345,32 @@ export async function generateBeats(
         assertComplete(res.stop_reason, label);
       }
 
-      const parsed = BeatsSchema.safeParse(input);
+      const parsed = BeatsSchema.safeParse(unwrapNestedToolInput(input, "beats"));
       if (!parsed.success) {
+        // Recorded, not just printed. This failure is only ever seen as a
+        // sentence in the UI, and the sentence cannot say which field was
+        // wrong; without a row here the answer lives in a dev terminal that
+        // nobody is watching on staging or production.
+        const issues = parsed.error.issues
+          .slice(0, 5)
+          .map((i) => `${i.path.join(".") || "(root)"} ${i.message}`)
+          .join("; ");
         console.error(`[beats] ${label} schema validation failed`, { zodIssues: parsed.error.issues });
+        void logSystemEvent({
+          source: "prompts",
+          level: "error",
+          message: `beats ${label} failed validation: ${issues}`,
+          userId,
+          projectId,
+          metadata: {
+            model,
+            issues: parsed.error.issues.slice(0, 5),
+            stopReason: res.stop_reason,
+            // Enough of what came back to tell a wrong shape from a wrong
+            // value, and short enough not to store a script in the log.
+            sample: JSON.stringify(input ?? null).slice(0, 800),
+          },
+        });
         throw new Error(`Chunk ${chunkIndex + 1} returned unusable beats. Try again — any beats saved so far are preserved.`);
       }
       return parsed.data.beats;
@@ -1539,8 +1570,8 @@ export async function fillPrompts(
       const narration = allBeats.map((b) => b.scriptSegment).join(" ");
       const sheetMsg = await retryClaudeCall("consistency sheet", () =>
         anthropic.messages.create({
-          model,
-          max_tokens: 2000,
+          ...modelParamsFor(model),
+          max_tokens: maxTokensFor(model, 4000),
           system: [{ type: "text", text: SYSTEM_PROMPT }],
           messages: [{ role: "user", content: buildConsistencySheetPrompt(narration, visualProfile) }],
         }),
@@ -1710,7 +1741,7 @@ export async function fillPrompts(
         assertComplete(res.stop_reason, label);
       }
 
-      const parsed = FillPromptsSchema.safeParse(input);
+      const parsed = FillPromptsSchema.safeParse(unwrapNestedToolInput(input, "beats"));
       if (!parsed.success) {
         const rawBeats = ((input?.beats as Array<Record<string, unknown>>) ?? []);
         const blankFields = rawBeats.map((b, i) => {
@@ -2078,7 +2109,7 @@ export async function generateVideos(projectId: string, userId: string, send: (d
     if (!input) throw new Error(`No video prompts for batch ${i + 1} after retry. Try again — any prompts saved so far are preserved.`);
     if (!Array.isArray(input.beats) || input.beats.length === 0) throw new Error(`Empty video prompts for batch ${i + 1}. Try again — any prompts saved so far are preserved.`);
 
-    const parsed = VideoPromptsSchema.safeParse(input);
+    const parsed = VideoPromptsSchema.safeParse(unwrapNestedToolInput(input, "beats"));
     if (!parsed.success) {
       const rawBeats = (input.beats as Array<Record<string, unknown>>) ?? [];
       const blank = rawBeats

@@ -122,6 +122,32 @@ export function modelParamsFor(id: string): ClaudeModelParams {
   return opt?.thinking === "pin-off" ? { model: id, thinking: { type: "disabled" } } : { model: id };
 }
 
+/** Enough room for an answer on a model that cannot stop thinking.
+ *
+ *  Sized against the largest of the tight steps rather than the smallest, since
+ *  the cost of being generous is nothing: max_tokens is a ceiling, and a step
+ *  that finishes in 900 tokens is billed for 900. */
+export const ALWAYS_THINKING_FLOOR = 8192;
+
+/**
+ * The budget to actually send, given the model.
+ *
+ * For most models this is the number the call site asked for. For a model whose
+ * thinking cannot be turned off, max_tokens is a ceiling on the thinking AND
+ * the answer, so a budget tuned on a non-thinking model gets spent reasoning
+ * and the turn ends at max_tokens with no tool call in it. The caller sees an
+ * empty or truncated result and no error, which is the least diagnosable
+ * failure this code has.
+ *
+ * Raised rather than rejected: an admin who picks Fable 5 for a step should get
+ * a working step, not a 400 telling them the budget is 2048.
+ */
+export function maxTokensFor(id: string, requested: number): number {
+  const opt = CLAUDE_MODELS.find((m) => m.id === id);
+  if (opt?.thinking !== "always") return requested;
+  return Math.max(requested, ALWAYS_THINKING_FLOOR);
+}
+
 export type ClaudeModelConfig = {
   /** The model every step runs on unless a user pick overrides it. */
   default: string;

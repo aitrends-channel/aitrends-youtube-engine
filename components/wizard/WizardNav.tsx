@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, Fragment } from "react";
+import useSWR from "swr";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -12,6 +13,7 @@ import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIconThemeStore } from "@/store/iconThemeStore";
 import { type PhaseKey } from "@/lib/iconThemes";
+import { isHeclusCreditsPlan } from "@/lib/plan-tier";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { KieBalanceRow } from "@/components/KieBalanceRow";
 import { ElevenLabsBalanceRow } from "@/components/ElevenLabsBalanceRow";
@@ -28,6 +30,29 @@ const PHASES: { id: PhaseKey; label: string; sublabel: string; path: string; sta
   { id: "assemble",   label: "Assemble",   sublabel: "Final Video",         path: "assemble",   states: [15], navigableFrom: 14 },
   { id: "thumbnails", label: "Thumbnails", sublabel: "Concepts & Images",   path: "thumbnails", states: [13], navigableFrom: 9 },
 ];
+
+// What each step has cost, keyed the way /api/projects/[id]/costs reports it.
+// Named separately from the phase ids because the two vocabularies differ:
+// the nav says "channel" and "thumbnails", the cost rollup says
+// "channel_analysis" and "thumbnail".
+const PHASE_COST_COLUMN: Record<PhaseKey, string> = {
+  channel:    "channel_analysis",
+  topic:      "topic",
+  script:     "script",
+  visuals:    "visuals",
+  prompts:    "prompts",
+  voiceover:  "voiceover",
+  generate:   "generate",
+  assemble:   "assemble",
+  thumbnails: "thumbnail",
+};
+
+interface StepCosts {
+  columns: Record<string, { heclusCreditsCharged?: number }>;
+  inCredits?: boolean;
+}
+
+const costsFetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<StepCosts>);
 
 const PHASE_ICONS: Record<PhaseKey, LucideIcon> = {
   channel:    Tv,
@@ -82,6 +107,29 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
   const [isPaid, setIsPaid] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+
+  // What this video has charged, per step, beside each step. The number was
+  // only ever on the page you were standing on, so answering "where did the
+  // credits go" meant walking all nine steps and remembering each one.
+  // Skipped for wizard placeholder ids like "new-fork", which are not projects
+  // and would send the costs route a non-uuid.
+  const isRealProject = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(projectId);
+  const { data: stepCosts } = useSWR<StepCosts>(
+    isRealProject ? `/api/projects/${projectId}/costs` : null,
+    costsFetcher,
+    { refreshInterval: 15_000, revalidateOnFocus: false },
+  );
+  // Only the accounts the number means something to.
+  //
+  // A customer on one of the old products pays no Heclus credits at all, so a
+  // credit figure beside each step is a number from a currency they do not
+  // hold. Admins see it regardless, including while acting as someone else,
+  // because checking what a video cost is most of the reason to be in there.
+  // inCredits is still required for customers: a Heclus plan whose work is
+  // funded from their own keys has no credit charges to show.
+  const showStepCredits = isAdmin || (!!stepCosts?.inCredits && isHeclusCreditsPlan(userPlan));
+  const creditsForPhase = (id: PhaseKey): number =>
+    Number(stepCosts?.columns?.[PHASE_COST_COLUMN[id]]?.heclusCreditsCharged ?? 0);
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -238,6 +286,7 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
         const href = `/projects/${projectId}/${phase.path}`;
         const isPending = pendingHref === href;
         const Icon = PHASE_ICONS[phase.id];
+        const stepCredits = creditsForPhase(phase.id);
 
         return (
           <div key={phase.id}>
@@ -311,6 +360,17 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                   {phase.sublabel}
                 </p>
               </div>
+
+              {showStepCredits && stepCredits > 0 && (
+                <span
+                  className="ml-auto shrink-0 tabular-nums text-[11px] font-medium"
+                  style={{ color: isActive ? "oklch(0.72 0.15 145)" : "oklch(0.62 0.12 145 / 0.75)" }}
+                  title={`${phase.label} has charged ${stepCredits.toLocaleString(undefined, { maximumFractionDigits: 4 })} Heclus Credits on this video`}
+                >
+                  {stepCredits.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  <span style={{ marginLeft: "3px", opacity: 0.6 }}>cr</span>
+                </span>
+              )}
             </button>
 
             {i < PHASES.length - 1 && (

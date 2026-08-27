@@ -1,5 +1,5 @@
 import { getAnthropicClient, SYSTEM_PROMPT } from "@/lib/claude/client";
-import { resolveModelForUser } from "@/lib/claude/models";
+import { resolveModelForUser, maxTokensFor } from "@/lib/claude/models";
 import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import type { MergeDirection, PlanBeat } from "./mergePlan";
@@ -68,7 +68,7 @@ export async function decideMergeSides(
     const model = await resolveModelForUser(userId, "script");
     const call = () => client.messages.create({
       ...model,
-      max_tokens: 2048,
+      max_tokens: maxTokensFor(model.model, 2048),
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       tools: [{ name: "save_merge_sides", description: "Save which neighbour each stub beat joins", input_schema: decisionsSchema }],
       tool_choice: { type: "tool", name: "save_merge_sides" },

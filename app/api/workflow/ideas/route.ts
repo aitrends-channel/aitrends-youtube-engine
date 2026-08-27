@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAnthropicClient, SYSTEM_PROMPT } from "@/lib/claude/client";
-import { resolveDefaultModel } from "@/lib/claude/models";
+import { resolveDefaultModel, maxTokensFor } from "@/lib/claude/models";
 import { videoIdeasInputSchema } from "@/lib/claude/anthropicSchemas";
 import { buildVideoIdeasPrompt } from "@/lib/claude/prompts";
 import { VideoIdeasSchema } from "@/lib/claude/schemas";
@@ -22,11 +22,18 @@ export async function POST(req: Request) {
   // one the other steps carry: idea generation could run on a balance of zero and be
   // written off. Priced on what the step has historically cost, since a token
   // count does not exist before the call.
+  // Parsed before the hold: the reservation carries the project id into the
+  // ledger row, and a hold taken without one bills the wallet for work no
+  // video can account for.
+  let projectId: string;
+  try { ({ projectId } = await req.json() as { projectId: string }); }
+  catch { return NextResponse.json({ error: "Invalid request body" }, { status: 400 }); }
+
   const short = shortfallResponse(await estimateStepFloor({ userId: user.id, step: "topic" }));
   if (short) return short;
   // Held atomically, so two of these firing at once cannot both spend the same
   // credits. Settled below on the tokens the call actually reports.
-  const { hold, refused } = await holdForStep({ userId: user.id, step: "topic", provider: "anthropic" });
+  const { hold, refused } = await holdForStep({ userId: user.id, step: "topic", provider: "anthropic", projectId });
   // Released in the finally below if the route never gets as far as settling.
   let settled_hold = false;
   if (refused) {
@@ -38,7 +45,6 @@ export async function POST(req: Request) {
 
   try {
     const { client: anthropic, routing, takeLastCreditsConsumed } = await getAnthropicClient(user.id, "ideas");
-    const { projectId } = await req.json() as { projectId: string };
     const modelParams = await resolveDefaultModel("ideas", user.id);
     const model = modelParams.model;
 
@@ -68,7 +74,7 @@ export async function POST(req: Request) {
 
     const response = await anthropic.messages.create({
       ...modelParams,
-      max_tokens: 2048,
+      max_tokens: maxTokensFor(modelParams.model, 2048),
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       tools: [{
         name: "save_video_ideas",

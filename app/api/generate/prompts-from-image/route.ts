@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import type Anthropic from "@anthropic-ai/sdk";
 import { getAnthropicClient, SYSTEM_PROMPT } from "@/lib/claude/client";
 import { getVisionConfig } from "@/lib/claude/vision";
-import { modelParamsFor } from "@/lib/claude/models";
+import { modelParamsFor, maxTokensFor } from "@/lib/claude/models";
 import { buildPromptsFromImagePrompt } from "@/lib/claude/prompts";
 import { retryClaudeCall } from "@/lib/claude/retry";
 import { extractToolInputFromText } from "@/lib/claude/textFallback";
@@ -42,11 +42,22 @@ export async function POST(req: Request) {
   // refused before any provider is called.
   const broke = await requireWalletFunds(user);
   if (broke) return broke;
+  // Parsed before the hold: the reservation carries the project id into the
+  // ledger row, and a hold taken without one bills the wallet for work no
+  // video can account for. It also means a malformed request is turned away
+  // before any credits are held rather than after.
+  const { projectId, beatNumber, imageUrl } = await req.json().catch(() => ({})) as {
+    projectId?: string; beatNumber?: number; imageUrl?: string;
+  };
+  if (!projectId || typeof beatNumber !== "number" || !imageUrl) {
+    return NextResponse.json({ error: "projectId, beatNumber and imageUrl are required" }, { status: 400 });
+  }
+
   const short = shortfallResponse(await estimateStepFloor({ userId: user.id, step: "prompts_image" }));
   if (short) return short;
   // Held atomically, so two of these firing at once cannot both spend the same
   // credits. Settled below on the tokens the call actually reports.
-  const { hold, refused } = await holdForStep({ userId: user.id, step: "prompts_image", provider: "anthropic" });
+  const { hold, refused } = await holdForStep({ userId: user.id, step: "prompts_image", provider: "anthropic", projectId });
   // Released in the finally below if the route never gets as far as settling.
   let settled_hold = false;
   if (refused) {
@@ -57,13 +68,6 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { projectId, beatNumber, imageUrl } = await req.json().catch(() => ({})) as {
-      projectId?: string; beatNumber?: number; imageUrl?: string;
-    };
-    if (!projectId || typeof beatNumber !== "number" || !imageUrl) {
-      return NextResponse.json({ error: "projectId, beatNumber and imageUrl are required" }, { status: 400 });
-    }
-
     const { data: project } = await supabase
       .from("projects")
       .select("id, visual_profile")
@@ -82,7 +86,7 @@ export async function POST(req: Request) {
     const callModel = () =>
       anthropic.messages.create({
         ...modelParamsFor(model),
-        max_tokens: 1500,
+        max_tokens: maxTokensFor(model, 1500),
         system: [{ type: "text", text: SYSTEM_PROMPT }],
         tools: [{ name: "save_prompts", description: "Save the image and video prompts derived from the attached image", input_schema: saveSchema }],
         tool_choice: { type: "tool", name: "save_prompts" },

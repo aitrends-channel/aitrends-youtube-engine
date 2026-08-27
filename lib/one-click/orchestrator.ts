@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { supabase } from "@/lib/supabase/client";
 import { getAnthropicClient, SYSTEM_PROMPT } from "@/lib/claude/client";
 import { getVisionConfig } from "@/lib/claude/vision";
-import { modelParamsFor, resolveDefaultModel, resolveModelForUser } from "@/lib/claude/models";
+import { modelParamsFor, resolveDefaultModel, resolveModelForUser, maxTokensFor } from "@/lib/claude/models";
 import { buildScriptPrompt, buildVisualAnalysisPrompt, buildVideoIdeasPrompt } from "@/lib/claude/prompts";
 import { visualProfileInputSchema, videoIdeasInputSchema } from "@/lib/claude/anthropicSchemas";
 import { VisualProfileSchema, VideoIdeasSchema } from "@/lib/claude/schemas";
@@ -234,7 +234,7 @@ async function generateMoreTopics(
     const ideasModel = await resolveDefaultModel("ideas", userId);
     const res = await client.messages.create({
       ...ideasModel,
-      max_tokens: 2048,
+      max_tokens: maxTokensFor(ideasModel.model, 2048),
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       tools: [{ name: "save_video_ideas", description: "Save the generated video ideas", input_schema: videoIdeasInputSchema }],
       tool_choice: { type: "tool", name: "save_video_ideas" },
@@ -419,7 +419,7 @@ async function runVisualsStep(project: ProjectRow): Promise<AdvanceResult> {
     const { client } = await getAnthropicClient(project.user_id, "visual_analysis");
     const callModel = () => client.messages.create({
       ...modelParamsFor(visionCfg.model),
-      max_tokens: 2048,
+      max_tokens: maxTokensFor(visionCfg.model, 2048),
       system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       tools: [{ name: "save_visual_analysis", description: "Save the extracted visual style profile", input_schema: schema }],
       tool_choice: { type: "tool", name: "save_visual_analysis" },
