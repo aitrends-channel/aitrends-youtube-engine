@@ -1193,8 +1193,13 @@ export default function GeneratePage({ params }: PageProps) {
         body: JSON.stringify(body),
       });
       if (!res.ok) return true;
-      const estimate = await res.json() as { sufficient: boolean; total: number | null; balance: number };
-      return !blockIfShort(estimate, run);
+      const estimate = await res.json() as {
+        sufficient: boolean; total: number | null; balance: number; gateCount?: number;
+      };
+      // The modal names what was priced. For a batched run that is the batch
+      // the server would submit first, not the whole list, so the number and
+      // the count in the sentence describe the same thing.
+      return !blockIfShort(estimate, { ...run, count: estimate.gateCount ?? run?.count ?? null });
     } catch {
       // The estimate is advisory. If it cannot be reached, let the run start
       // and let the API refuse it.
@@ -1644,6 +1649,11 @@ export default function GeneratePage({ params }: PageProps) {
       operator: selectedImageOperator,
       count: targetBeats.length,
       resolution: selectedResolution,
+      // Images go out a batch at a time and the run stops itself when the
+      // wallet empties, so what decides whether it may start is the first
+      // batch. Warning on the full run turned away runs that would have made
+      // real progress.
+      batched: true,
     }, {
       modelName: imageModels?.find((m) => m.id === selectedImageModel)?.name ?? null,
       count: targetBeats.length,
