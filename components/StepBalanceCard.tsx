@@ -29,7 +29,9 @@ export function StepBalanceCard() {
   const { data } = useSWR<ApiStatusResult>(
     "/api/api-status",
     fetcher,
-    { refreshInterval: hasActivity ? 30_000 : 0, revalidateOnFocus: false },
+    // revalidateOnFocus: coming back to the tab is the moment the number is
+    // read, and a stale one there is worse than one extra request.
+    { refreshInterval: hasActivity ? 30_000 : 0, revalidateOnFocus: true },
   );
 
   // A wallet-funded account has no KIE or ElevenLabs key, so those two numbers
