@@ -1357,7 +1357,7 @@ export default function HomePage() {
                 color: "var(--c-65)",
               }}
             >
-              <span>This dashboard is a <strong style={{ color: "var(--accent-purple-text)" }}>demo</strong> — subscribe to populate it with your real data.</span>
+              <span>This dashboard is a <strong style={{ color: "var(--accent-purple-text)" }}>demo</strong>. Subscribe to populate it with your real data.</span>
               <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
                 {!hasStartedDemo && (
                   <button
