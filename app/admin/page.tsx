@@ -6801,13 +6801,39 @@ function ProjectDetailDrawer({ project, onClose }: { project: AdminProject; onCl
           </button>
         </div>
 
-        <Link
-          href={`/projects/${p.id}/${PHASE_PATHS[p.currentState] ?? "channel"}`}
-          className="inline-flex text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-80 items-center gap-1.5"
-          style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}
-        >
-          Open project →
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          <Link
+            href={`/projects/${p.id}/${PHASE_PATHS[p.currentState] ?? "channel"}`}
+            className="inline-flex text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-80 items-center gap-1.5"
+            style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "oklch(0.72 0.25 285)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}
+          >
+            Open project →
+          </Link>
+          {p.userEmail && (
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const res = await fetch("/api/admin/act-as", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ email: p.userEmail }),
+                  });
+                  const json = await res.json().catch(() => ({}));
+                  if (!res.ok) throw new Error(json.error ?? "Could not switch");
+                  window.location.href = `/projects/${p.id}/${PHASE_PATHS[p.currentState] ?? "channel"}`;
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Could not switch");
+                }
+              }}
+              title={`Work inside ${p.userEmail}'s account. Their credits, their data.`}
+              className="inline-flex text-xs px-3 py-1.5 rounded-lg font-medium transition-opacity hover:opacity-80 items-center gap-1.5 cursor-pointer"
+              style={{ background: "oklch(0.72 0.18 65 / 0.12)", color: "oklch(0.55 0.16 65)", border: "1px solid oklch(0.72 0.18 65 / 0.35)" }}
+            >
+              Open as {p.userEmail} →
+            </button>
+          )}
+        </div>
 
         <div className="rounded-xl px-4 py-3 flex items-center gap-3 flex-wrap"
           style={{ background: "var(--bg-elevated)", border: "1px solid oklch(0 0 0 / 0.09)" }}>
