@@ -6,6 +6,7 @@ import { getRequiredUser } from "@/lib/supabase/auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { checkElevenLabs, checkKie, type ElevenLabsCheck, type KieCheck } from "@/lib/key-check";
 import type { User } from "@supabase/supabase-js";
+import { getHeclusPack } from "@/lib/heclus-pack";
 import { getFundingMode, type FundingMode } from "@/lib/funding";
 import { getHeclusBalance } from "@/lib/heclus-credits";
 
@@ -39,6 +40,14 @@ export interface ApiStatusResult {
    * are the two above.
    */
   wallet?: { credits: number; reserved: number };
+  /** The top-up checkout for the Heclus pack, so the step chip can start a
+   *  purchase in place rather than sending them to /billing to find the same
+   *  button. Same payload for the same reason as `wallet`. Null when no pack is
+   *  configured, which is the case a disabled button reads. */
+  walletCheckoutUrl?: string | null;
+  /** The configured pack, so the step chip can offer the same quantities the
+   *  /billing picker does. Null when the pack is not configured. */
+  walletPack?: { credits: number; priceUsd: number } | null;
 }
 
 export async function GET() {
@@ -69,8 +78,16 @@ export async function GET() {
     tokens30d: await claudeTokens30d(user.id),
   };
   const fundingMode = await getFundingMode(user);
-  const wallet = fundingMode === "wallet" ? await getHeclusBalance(user) : undefined;
-  return NextResponse.json({ kie, elevenlabs, anthropic, fundingMode, wallet } satisfies ApiStatusResult);
+  const [wallet, pack] = fundingMode === "wallet"
+    ? await Promise.all([getHeclusBalance(user), getHeclusPack()])
+    : [undefined, undefined];
+  return NextResponse.json({
+    kie, elevenlabs, anthropic, fundingMode, wallet,
+    walletCheckoutUrl: pack?.checkoutUrl ?? null,
+    walletPack: pack && pack.credits !== null && pack.priceUsd !== null
+      ? { credits: pack.credits, priceUsd: pack.priceUsd }
+      : null,
+  } satisfies ApiStatusResult);
 }
 
 // Anthropic gives clients no readable balance, so the card's usage figure

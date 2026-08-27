@@ -27,6 +27,7 @@
 const BILLING_TO_TIER: Record<string, string> = {
   heclus_starter: "starter",
   heclus_pro: "pro",
+  "production-test": "starter",
 };
 
 /**

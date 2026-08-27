@@ -7293,7 +7293,7 @@ export default function AdminPage() {
 
   // Switch a non-admin user's paid plan tier (Starter / Pro / Founder).
   // Setting a tier marks them an active subscriber on that plan.
-  async function handleSetPlan(email: string, plan: "starter" | "pro" | "founder") {
+  async function handleSetPlan(email: string, plan: string) {
     setSettingPlan(email);
     try {
       const res = await fetch(`/api/admin/users/${encodeURIComponent(email)}/plan`, {
@@ -7303,8 +7303,7 @@ export default function AdminPage() {
       });
       const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok) throw new Error(json.error ?? "Failed to update plan");
-      const label = plan.charAt(0).toUpperCase() + plan.slice(1);
-      toast.success(`${email} set to ${label}`);
+      toast.success(`${email} set to ${plan}`);
       mutate();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to update plan");
@@ -8333,23 +8332,31 @@ export default function AdminPage() {
                                 : <MoreVertical size={14} />}
                             </button>
                             {openUserMenu === u.email && (
-                              <>
-                                {/* Click-outside catcher. Sits behind
-                                    the menu so a click anywhere else on
-                                    the page closes the popover. */}
-                                <div
-                                  className="fixed inset-0 z-10"
-                                  onClick={() => setOpenUserMenu(null)}
-                                />
+                              <div
+                                className="fixed inset-0 z-50 flex justify-end"
+                                style={{ background: "rgba(0,0,0,0.45)" }}
+                                onClick={(e) => { e.stopPropagation(); setOpenUserMenu(null); }}
+                              >
                                 <div
                                   role="menu"
-                                  className="absolute right-0 top-full mt-1 z-20 rounded-lg overflow-hidden min-w-[240px] py-1.5"
-                                  style={{
-                                    background: "var(--bg-card)",
-                                    border: "1px solid oklch(0 0 0 / 0.11)",
-                                    boxShadow: "0 8px 24px oklch(0 0 0 / 0.12)",
-                                  }}
+                                  className="w-full sm:max-w-sm h-full overflow-y-auto py-3 shadow-2xl"
+                                  style={{ background: "var(--bg-card)", paddingLeft: "20px", paddingRight: "40px" }}
+                                  onClick={(e) => e.stopPropagation()}
                                 >
+                                  {/* The drawer is detached from the row that
+                                      opened it, so it has to say whose account
+                                      these actions apply to. */}
+                                  <div className="flex items-start justify-between gap-3 pb-3 mb-2"
+                                    style={{ borderBottom: "1px solid oklch(0 0 0 / 0.09)" }}>
+                                    <div className="min-w-0">
+                                      <p className="text-[10px] uppercase tracking-wider" style={{ color: "oklch(0.55 0 0)" }}>Actions</p>
+                                      <p className="text-sm font-semibold break-all" style={{ color: "oklch(0.25 0 0)" }}>{u.email}</p>
+                                    </div>
+                                    <button type="button" onClick={() => setOpenUserMenu(null)} title="Close"
+                                      className="shrink-0 p-1.5 rounded-lg transition-all hover:bg-black/5 cursor-pointer">
+                                      <X size={14} style={{ color: "oklch(0.45 0 0)" }} />
+                                    </button>
+                                  </div>
                                   {u.isAdmin ? (
                                     <>
                                       <button
@@ -8436,10 +8443,12 @@ export default function AdminPage() {
                                       <div style={{ borderTop: "1px solid oklch(0 0 0 / 0.09)" }} />
                                       <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide" style={{ color: "oklch(0.55 0 0)" }}>Plan</div>
                                       {([
-                                        { slug: "starter" as const, label: "Starter", Icon: Rocket, color: "oklch(0.45 0.15 145)" },
-                                        { slug: "pro" as const,     label: "Pro",     Icon: Star,   color: "oklch(0.45 0.15 220)" },
-                                        { slug: "founder" as const, label: "Founder", Icon: Gem,    color: "oklch(0.5 0.18 300)" },
-                                      ]).map(({ slug, label, Icon, color }) => {
+                                        { slug: "heclus_starter" as const, label: "Starter", tag: "Heclus Credit", Icon: Rocket, color: "oklch(0.45 0.15 145)" },
+                                        { slug: "heclus_pro" as const,     label: "Pro",     tag: "Heclus Credit", Icon: Star,   color: "oklch(0.45 0.15 220)" },
+                                        { slug: "starter" as const,        label: "Starter", tag: null,            Icon: Rocket, color: "oklch(0.5 0 0)" },
+                                        { slug: "pro" as const,            label: "Pro",     tag: null,            Icon: Star,   color: "oklch(0.5 0 0)" },
+                                        { slug: "founder" as const,        label: "Founder", tag: null,            Icon: Gem,    color: "oklch(0.5 0.18 300)" },
+                                      ]).map(({ slug, label, tag, Icon, color }) => {
                                         const current = (u.plan ?? "").toLowerCase().trim() === slug;
                                         return (
                                           <button
@@ -8452,7 +8461,13 @@ export default function AdminPage() {
                                             style={{ color }}
                                           >
                                             <Icon size={12} />
-                                            <span className="flex-1">Set plan: {label}</span>
+                                            <span className="flex-1" title={slug}>Set plan: {label}</span>
+                                            {tag && (
+                                              <span className="text-[9px] px-1.5 py-0.5 rounded-full font-semibold shrink-0"
+                                                style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "oklch(0.45 0.2 285)" }}>
+                                                {tag}
+                                              </span>
+                                            )}
                                             {current && <Check size={12} />}
                                           </button>
                                         );
@@ -8471,7 +8486,7 @@ export default function AdminPage() {
                                     </>
                                   )}
                                 </div>
-                              </>
+                              </div>
                             )}
                           </div>
                         )}

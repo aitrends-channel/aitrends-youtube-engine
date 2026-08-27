@@ -23,11 +23,16 @@ interface CostBreakdownEntry {
 interface ColumnSummary {
   totals: Record<string, number>;
   breakdown: CostBreakdownEntry[];
+  heclusCredits: number;
 }
 
 interface CostResponse {
   projectId: string;
   columns: Record<DisplayColumn, ColumnSummary>;
+  /** True when the account spends Heclus Credits. Provider units are then the
+   *  wrong unit: they never see a KIE or Anthropic bill, and "kie: 1.7" is a
+   *  number from someone else's invoice. */
+  inCredits?: boolean;
 }
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<CostResponse>);
@@ -89,6 +94,16 @@ export function StepCostCard({ projectId, column, hideUnitKinds }: {
     byProvider[provider] = (byProvider[provider] ?? 0) + units;
   }
 
+  if (isRealProject && !data) {
+    return (
+      <span className="inline-block h-[26px] w-32 rounded-md animate-pulse align-middle"
+        style={{ background: "oklch(1 0 0 / 0.06)", border: "1px solid oklch(1 0 0 / 0.08)" }} />
+    );
+  }
+
+  const inCredits = !!data?.inCredits;
+  const credits = data?.columns?.[column]?.heclusCredits ?? 0;
+
   const parts = PROVIDER_ORDER
     .filter((p) => byProvider[p] !== undefined && byProvider[p] > 0)
     .map((p) => ({ key: p, value: formatProvider(p, byProvider[p]) }));
@@ -119,12 +134,16 @@ export function StepCostCard({ projectId, column, hideUnitKinds }: {
           color: "oklch(0.7 0.15 145)",
         }}
       >
-        {parts.length === 0 ? "—" : parts.map((p, i) => (
-          <span key={p.key}>
-            {i > 0 && ", "}
-            {p.key}<span style={{ marginRight: "3px" }}>:</span>{p.value}
-          </span>
-        ))}
+        {inCredits
+          ? (credits > 0
+            ? `${credits.toLocaleString(undefined, { maximumFractionDigits: 2 })} credits`
+            : "—")
+          : parts.length === 0 ? "—" : parts.map((p, i) => (
+            <span key={p.key}>
+              {i > 0 && ", "}
+              {p.key}<span style={{ marginRight: "3px" }}>:</span>{p.value}
+            </span>
+          ))}
       </span>
     </span>
   );

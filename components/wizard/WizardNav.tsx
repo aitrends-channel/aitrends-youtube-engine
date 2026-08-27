@@ -6,7 +6,7 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   Tv, Lightbulb, ScrollText, ImageIcon, Wand2, Mic, Clapperboard, Film,
-  Check, CheckCircle2, LayoutTemplate, ArrowLeft, X, Settings, LogOut, DollarSign, KeyRound,
+  Check, CheckCircle2, LayoutTemplate, ArrowLeft, X, Settings, LogOut, DollarSign, KeyRound, Wallet,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -442,6 +442,14 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                     <span>Account</span>
                   </button>
                   <button
+                    onClick={() => { setShowProfileMenu(false); navigate("/billing"); }}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
+                    style={{ color: "var(--c-60)" }}
+                  >
+                    <Wallet size={13} />
+                    <span>Billing</span>
+                  </button>
+                  <button
                     onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
                     style={{ color: "#f87171" }}
@@ -551,6 +559,14 @@ export function WizardNav({ projectId, currentState, highestState, channelName, 
                       >
                         <KeyRound size={13} />
                         <span>Account</span>
+                      </button>
+                      <button
+                        onClick={() => { setShowProfileMenu(false); router.push("/billing"); }}
+                        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
+                        style={{ color: "var(--c-60)" }}
+                      >
+                        <Wallet size={13} />
+                        <span>Billing</span>
                       </button>
                       <button
                         onClick={() => { setShowProfileMenu(false); handleSignOut(); }}

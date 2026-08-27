@@ -52,6 +52,18 @@ export function FundingModeCard() {
     }
   }
 
+  // A Heclus Credits plan does not include a bring-your-own arrangement, and
+  // /setup hides the key fields for those accounts, so offering the choice here
+  // would point at a switch they have no way to satisfy: byo needs a KIE key on
+  // file, and there is nowhere left to put one.
+  //
+  // Held back rather than rendered and then removed. Deciding before the plan is
+  // known means picking a wrong answer and correcting it, which is the flash.
+  if (isLoading || !data) {
+    return <div className="rounded-2xl" style={{ minHeight: 196, background: "oklch(1 0 0 / 0.08)", border: "1px solid oklch(1 0 0 / 0.07)" }} />;
+  }
+  if (data.onHeclusPlan) return null;
+
   const mode = data?.mode;
   const repricesAtRenewal = !!data?.heclusPlan;
   const booked = data?.pendingPlan ? data : null;
@@ -72,10 +84,7 @@ export function FundingModeCard() {
         </p>
       </div>
 
-      {isLoading && <p className="text-sm" style={{ color: "var(--c-45)" }}>Loading…</p>}
-
-      {data && (
-        <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2">
           <Option
             icon={<Key size={16} />}
             title="Your own KIE key"
@@ -100,8 +109,7 @@ export function FundingModeCard() {
             }}
             busy={saving === "wallet"}
           />
-        </div>
-      )}
+      </div>
 
       {booked && (
         <div className="p-3 rounded-xl text-sm" style={{ background: "oklch(0.62 0.15 220 / 0.10)", border: "1px solid oklch(0.62 0.15 220 / 0.25)" }}>

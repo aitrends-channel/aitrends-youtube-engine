@@ -451,6 +451,15 @@ export default function AccountPage() {
                     </p>
                   </div>
                   <div className="px-2 pt-2">
+                    <Link
+                      href="/billing"
+                      onClick={() => setShowProfileMenu(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80"
+                      style={{ color: "var(--c-60)" }}
+                    >
+                      <Wallet size={13} />
+                      <span>Billing</span>
+                    </Link>
                     <button
                       onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"

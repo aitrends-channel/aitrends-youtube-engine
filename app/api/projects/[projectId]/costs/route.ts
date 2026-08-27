@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import type { User } from "@supabase/supabase-js";
+import { creditsForUnits, getCreditRates } from "@/lib/pricing";
+import type { CostUnitKind } from "@/lib/costs";
+import { getFundingMode } from "@/lib/funding";
+import { billingPlanOf } from "@/lib/plans-gating";
+import { isHeclusCreditsPlan } from "@/lib/plan-tier";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +38,11 @@ interface CostBreakdownEntry {
 interface ColumnSummary {
   totals: Record<string, number>;
   breakdown: CostBreakdownEntry[];
+  /** What this step cost in Heclus Credits, converted from the same rows with
+   *  the same function that charged them, so the chip cannot disagree with the
+   *  ledger. Provider units are the wrong unit to show someone who never sees a
+   *  provider bill. */
+  heclusCredits: number;
 }
 
 type ProjectCostsRollup = Record<DisplayColumn, ColumnSummary>;
@@ -40,7 +50,7 @@ type ProjectCostsRollup = Record<DisplayColumn, ColumnSummary>;
 function emptyRollup(): ProjectCostsRollup {
   const out = {} as ProjectCostsRollup;
   for (const col of Object.keys(COLUMN_STEPS) as DisplayColumn[]) {
-    out[col] = { totals: {}, breakdown: [] };
+    out[col] = { totals: {}, breakdown: [], heclusCredits: 0 };
   }
   return out;
 }
@@ -111,6 +121,7 @@ export async function GET(
     for (const s of COLUMN_STEPS[col]) stepToColumn[s] = col;
   }
 
+  const rates = await getCreditRates();
   const columns = emptyRollup();
   for (const row of (data ?? []) as Array<{
     step: string;
@@ -136,7 +147,16 @@ export async function GET(
         units: Number(row.units),
       });
     }
+    summary.heclusCredits += creditsForUnits(
+      row.unit_kind as CostUnitKind,
+      Number(row.units),
+      rates,
+      { model: row.model, provider: row.provider },
+    );
   }
 
-  return NextResponse.json({ projectId, columns });
+  const inCredits =
+    isHeclusCreditsPlan(billingPlanOf(user)) || (await getFundingMode(user)) === "wallet";
+
+  return NextResponse.json({ projectId, columns, inCredits });
 }

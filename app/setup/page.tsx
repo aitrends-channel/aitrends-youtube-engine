@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound, CreditCard, Gift, Brain, Wand2, Pilcrow } from "lucide-react";
+import { Settings, Eye, EyeOff, ArrowLeft, Save, CheckCircle2, LogOut, UserPlus, BookOpen, KeyRound, CreditCard, Gift, Brain, Wand2, Pilcrow, Wallet } from "lucide-react";
 import { OneClickConfigPanel } from "@/components/one-click/OneClickConfigPanel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
@@ -579,12 +579,28 @@ export default function SettingsPage() {
   // Whose providers pay. Drives the framing only: the key fields stay usable
   // either way, since a wallet user may prefer to bring their own.
   const [walletFunded, setWalletFunded] = useState(false);
+  // On a Heclus Credits product, provider keys are not part of what was bought,
+  // so the Paid cards are hidden rather than shown with a disclaimer. Gated on
+  // the plan and not on fundingMode: the mode is a switch the customer can flip,
+  // and hiding the fields whenever it reads "wallet" would take away the only
+  // place to add the key that switching back to their own requires.
+  const [onCreditsPlan, setOnCreditsPlan] = useState(false);
+  const [planKnown, setPlanKnown] = useState(false);
   useEffect(() => {
     fetch("/api/me/api-keys-status")
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) setWalletFunded(d.fundingMode === "wallet"); })
-      .catch(() => {});
+      .then((d) => {
+        if (!d) return;
+        setWalletFunded(d.fundingMode === "wallet");
+        setOnCreditsPlan(!!d.onHeclusCreditsPlan);
+      })
+      .catch(() => {})
+      .finally(() => setPlanKnown(true));
   }, []);
+  // Their tab is gone, so anyone parked on it has to be moved off.
+  useEffect(() => {
+    if (onCreditsPlan) setTab("free");
+  }, [onCreditsPlan]);
   // Top-level split: API keys (the existing paid/free cards), the
   // full-page 1Click preference editor, and the account-level
   // Character Consistency default. Deep-linkable via
@@ -841,6 +857,15 @@ export default function SettingsPage() {
                       <KeyRound size={13} />
                       <span>Account</span>
                     </Link>
+                    <Link
+                      href="/billing"
+                      onClick={() => setShowProfileMenu(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80"
+                      style={{ color: "var(--c-60)" }}
+                    >
+                      <Wallet size={13} />
+                      <span>Billing</span>
+                    </Link>
                     <button
                       onClick={() => { setShowProfileMenu(false); handleSignOut(); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs transition-all hover:opacity-80 cursor-pointer"
@@ -875,7 +900,11 @@ export default function SettingsPage() {
                 color: mainTab === id ? "white" : "var(--c-45)",
               }}
             >
-              {id === "oneclick" ? (
+              {id === "keys" && !planKnown ? (
+                <span className="inline-block h-3 w-20 rounded animate-pulse align-middle"
+                  style={{ background: "currentColor", opacity: 0.25 }} />
+              ) : id === "keys" && onCreditsPlan ? "Free resources"
+                : id === "oneclick" ? (
                 // Wand2 — matches the 1Click workflow shell/controls.
                 <span className="inline-flex items-center gap-1.5"><Wand2 size={12} /> {label}</span>
               ) : id === "consistency" ? (
@@ -903,7 +932,7 @@ export default function SettingsPage() {
             two-option switcher stretched full-width read like a primary
             nav rather than a filter on the cards below. */}
         <div className="inline-flex items-center gap-1 rounded-lg p-0.5 mb-8 w-fit"
-          style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)" }}>
+          style={{ background: "var(--bg-progress)", border: "1px solid var(--bd-card)", display: !planKnown || onCreditsPlan ? "none" : undefined }}>
           {([
             { key: "paid" as const, label: "Paid", icon: <CreditCard size={13} /> },
             { key: "free" as const, label: "Free", icon: <Gift size={13} /> },
@@ -936,13 +965,24 @@ export default function SettingsPage() {
                 style={{ background: "oklch(0.72 0.25 285 / 0.12)", border: "1px solid oklch(0.72 0.25 285 / 0.25)" }}>
                 <Settings size={18} style={{ color: "var(--brand-text)" }} />
               </div>
-              <h1 className="text-2xl font-bold text-foreground">API Keys</h1>
+              <h1 className="text-2xl font-bold text-foreground">
+                {!planKnown ? (
+                  <span className="inline-block h-7 w-44 rounded-lg animate-pulse align-middle"
+                    style={{ background: "oklch(1 0 0 / 0.08)" }} />
+                ) : onCreditsPlan ? "Free resources" : "API Keys"}
+              </h1>
             </div>
-            <p className="text-sm leading-relaxed" style={{ color: "var(--c-50)" }}>
-              One card per service, with its keys right there. Saved securely and
-              live immediately.
-            </p>
-            {walletFunded && (
+            {!planKnown ? (
+              <span className="block h-4 w-2/3 max-w-lg rounded animate-pulse"
+                style={{ background: "oklch(1 0 0 / 0.06)" }} />
+            ) : (
+              <p className="text-sm leading-relaxed" style={{ color: "var(--c-50)" }}>
+                {onCreditsPlan
+                  ? "Optional extras that run on your own free provider quotas. Everything else on your plan is already covered by your Heclus Credits."
+                  : "One card per service, with its keys right there. Saved securely and live immediately."}
+              </p>
+            )}
+            {walletFunded && !onCreditsPlan && (
               /* A wallet-funded account does not need any of this, and a page
                  headed "API Keys" reads as a required step. Say so at the top
                  rather than leaving them to work it out card by card: the keys
@@ -963,7 +1003,7 @@ export default function SettingsPage() {
 
           {tab === "free" && FREE_TTS_COMING_SOON ? (
             <FreeComingSoonCard />
-          ) : loading ? (
+          ) : loading || !planKnown ? (
             <div className="flex items-center gap-2 py-6" style={{ color: "var(--c-40)" }}>
               <Spinner size={16} />
               <span className="text-sm">Loading settings…</span>
@@ -1191,7 +1231,7 @@ export default function SettingsPage() {
                   boxShadow: "0 0 24px oklch(0.72 0.25 285 / 0.25)",
                 }}>
                 {saving ? <Spinner size={15} /> : <Save size={15} />}
-                {saving ? "Saving…" : "Save API Keys"}
+                {saving ? "Saving…" : onCreditsPlan ? "Save" : "Save API Keys"}
               </button>
             </form>
           )}

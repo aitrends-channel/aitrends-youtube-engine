@@ -20,6 +20,8 @@ interface PlanDTO {
   sortOrder: number;
 }
 
+import { isProductionEnvClient } from "@/lib/env";
+
 const PRODUCTION_TEST_SLUG = "production-test";
 
 interface Props {
@@ -112,13 +114,18 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
   const visiblePlans = useMemo(() => {
     if (!plans) return [];
     return plans
-      // production-test is the live-Dodo verification harness — only
-      // accounts flagged with app_metadata.is_production_test see it,
-      // AND only when the user has no current access (unpaid or fully
-      // expired). Once someone is paid — even if they've cancelled and
-      // are riding out the paid period — the "Try end-to-end" card is
-      // noise.
-      .filter((p) => p.slug !== PRODUCTION_TEST_SLUG || (isProductionTest && !hasCurrentAccess && !hideProductionTest))
+      // production-test is the live-Dodo verification harness.
+      //
+      // On production it stays behind app_metadata.is_production_test, so a
+      // customer never sees a $1 card next to the real plans. Off production
+      // it is offered to everyone: staging exists to be bought on, and a
+      // harness only the person who set a flag on themselves can reach is one
+      // nobody uses.
+      //
+      // Either way, only when the account has no current access. Once someone
+      // is paid, even riding out a cancelled period, the card is noise.
+      .filter((p) => p.slug !== PRODUCTION_TEST_SLUG
+        || ((isProductionTest || !isProductionEnvClient()) && !hasCurrentAccess && !hideProductionTest))
       .filter((p) => !p.isFounder || founderAvailable);
   }, [plans, founderAvailable, isProductionTest, hasCurrentAccess, hideProductionTest]);
 
@@ -158,9 +165,24 @@ export function SubscriptionModal({ email, onClose, defaultPlan, hideTryDemo, hi
     try { localStorage.setItem("dodo_pending_plan", selectedPlan); } catch {}
     const callbackUrl = new URL("/payment/callback", window.location.origin);
     callbackUrl.searchParams.set("plan", selectedPlan);
-    const url = new URL(base);
-    url.searchParams.set("redirect_url", callbackUrl.toString());
-    if (email) url.searchParams.set("customer[email]", email);
+    const direct = new URL(base);
+    direct.searchParams.set("redirect_url", callbackUrl.toString());
+    if (email) direct.searchParams.set("customer[email]", email);
+
+    // Via /payment/start, which swaps the plain link for a checkout session
+    // attached to the Dodo customer this account already has. A first-time
+    // signup has no record to attach and gains nothing, but someone who bought
+    // credits first, cancelled and came back, or is moving Starter to Pro is
+    // asked for their address again today for no reason. It also keeps their
+    // payments under one customer in Dodo rather than a new one per purchase,
+    // which is what the plan switch looks a subscription up by.
+    //
+    // The plain link rides along as the fallback, so a failure lands them on
+    // exactly the checkout they get today.
+    const url = new URL("/payment/start", window.location.origin);
+    url.searchParams.set("plan", selectedPlan);
+    url.searchParams.set("fb", direct.toString());
+
     // Open Dodo checkout in a new tab via a synthetic anchor click.
     // window.open with "noopener" returns null even on success in most
     // browsers, so relying on its return value for a same-tab fallback

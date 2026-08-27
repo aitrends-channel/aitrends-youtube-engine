@@ -5,12 +5,18 @@ import { requireAdmin } from "@/lib/admin-server";
 
 export const dynamic = "force-dynamic";
 
-// Admin action: switch a NON-admin user's paid plan tier. Body:
-// { plan: "starter" | "pro" | "founder" }. Setting a tier makes the
-// user an active subscriber on that plan (mirrors the "paid" branch of
-// ./subscription): paid=true + a future plan_expires_at, with plan set
-// to the chosen slug. Use ./subscription to expire or clear a user.
-const ALLOWED_PLANS = new Set(["starter", "pro", "founder"]);
+// Admin action: switch a NON-admin user's paid plan tier. Setting a tier makes
+// the user an active subscriber on that plan (mirrors the "paid" branch of
+// ./subscription): paid=true + a future plan_expires_at, with plan set to the
+// chosen slug. Use ./subscription to expire or clear a user.
+//
+// The legacy slugs stay accepted even though the admin menu no longer offers
+// them. They are what every existing subscriber is on, and an admin correcting
+// a mistake on one of those accounts must be able to put back what was there.
+const ALLOWED_PLANS = new Set([
+  "heclus_starter", "heclus_pro", "founder",
+  "starter", "pro",
+]);
 
 export async function POST(
   req: Request,
@@ -26,7 +32,7 @@ export async function POST(
   const plan = typeof body.plan === "string" ? body.plan.toLowerCase().trim() : "";
   if (!ALLOWED_PLANS.has(plan)) {
     return NextResponse.json(
-      { error: "plan must be 'starter', 'pro', or 'founder'" },
+      { error: `plan must be one of: ${[...ALLOWED_PLANS].join(", ")}` },
       { status: 400 }
     );
   }
