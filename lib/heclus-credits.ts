@@ -1,6 +1,7 @@
 import { supabase } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 import { getFundingMode } from "@/lib/funding";
+import { hasPaidAccess } from "@/lib/subscription";
 import { planSlugOf } from "@/lib/plans-gating";
 
 // Heclus Credits: the general wallet a user buys from us and spends on work that
@@ -95,6 +96,11 @@ export async function getHeclusBalance(user: User): Promise<HeclusBalance> {
  */
 async function ensureSignupGrant(user: User): Promise<void> {
   try {
+    // Customers only. The grant is real provider spend and the plans sell it as
+    // an allowance, so handing it to an account that has bought nothing gives
+    // the product away and puts a balance in front of someone with no way to
+    // use it up honestly.
+    if (!hasPaidAccess(user)) return;
     if (await getFundingMode(user) !== "wallet") return;
     const credits = await signupGrantCredits(user);
     if (credits <= 0) return;

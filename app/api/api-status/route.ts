@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
+import { hasPaidAccess } from "@/lib/subscription";
 import { getSettings } from "@/lib/settings";
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
@@ -83,7 +84,10 @@ export async function GET() {
     : [undefined, undefined];
   return NextResponse.json({
     kie, elevenlabs, anthropic, fundingMode, wallet,
-    walletCheckoutUrl: pack?.checkoutUrl ?? null,
+    // Withheld from an account with no paid plan: there is nothing to top up
+    // into, and selling credits to someone who has not subscribed takes money
+    // for an allowance their plan does not include.
+    walletCheckoutUrl: hasPaidAccess(user) ? (pack?.checkoutUrl ?? null) : null,
     walletPack: pack && pack.credits !== null && pack.priceUsd !== null
       ? { credits: pack.credits, priceUsd: pack.priceUsd }
       : null,

@@ -14,6 +14,24 @@ import { isAdminUser } from "@/lib/admin";
 // — they're governed by their own caps, so this gate ignores them. A
 // failed first payment attempt (dodo.event set, but no paid_at) also
 // doesn't count as "ever subscribed".
+/**
+ * Whether this account currently has a paid plan.
+ *
+ * The predicate for anything we pay for: allowances, grants and the top-up
+ * button. Free and demo accounts are not customers, and handing them credits
+ * spends real provider money on someone who has bought nothing.
+ *
+ * Cancelled-but-in-grace counts as paid, matching has_current_access on
+ * /api/usage: they paid for the period they are still inside.
+ */
+export function hasPaidAccess(user: User): boolean {
+  if (isAdminUser(user)) return true;
+  const meta = (user.app_metadata ?? {}) as Record<string, unknown>;
+  if (meta.paid !== true) return false;
+  const expiresAt = typeof meta.plan_expires_at === "string" ? Date.parse(meta.plan_expires_at) : NaN;
+  return !(Number.isFinite(expiresAt) && expiresAt <= Date.now());
+}
+
 export function subscriptionExpired(user: User): boolean {
   if (isAdminUser(user)) return false;
   const meta = (user.app_metadata ?? {}) as Record<string, unknown>;
