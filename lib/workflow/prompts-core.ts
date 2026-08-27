@@ -1072,8 +1072,9 @@ export class UpstreamDroppedPromptError extends Error {
 const MIN_PLAUSIBLE_INPUT_TOKENS = 50;
 
 export function assertPromptReached(label: string, usage: { input_tokens?: number | null } | null | undefined): void {
-  const input = Number(usage?.input_tokens ?? 0);
-  if (input > 0 && input < MIN_PLAUSIBLE_INPUT_TOKENS) {
+  if (usage?.input_tokens === undefined || usage?.input_tokens === null) return;
+  const input = Number(usage.input_tokens);
+  if (Number.isFinite(input) && input < MIN_PLAUSIBLE_INPUT_TOKENS) {
     throw new UpstreamDroppedPromptError(label, input);
   }
 }

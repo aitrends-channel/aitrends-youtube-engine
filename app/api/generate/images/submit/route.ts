@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { assertProviderFunded } from "@/lib/providers/preflight";
 
 import { withPromptLengthRetry } from "@/lib/kie/promptLength";
 import { withRateLimitRetry } from "@/lib/operators/upstream";
@@ -52,6 +53,13 @@ export async function POST(req: Request) {
     // has already applied the per-surface override and pinned BYO clients to
     // KIE, and resolveImageOperator exempts the free lanes on top of that.
     const op = resolveImageOperator(modelId, await getMediaOperatorForUser(user.id, "image"));
+    // Refused before the hold and the submit. PoYo near zero is the state that
+    // produced calls billing 20k output tokens from no prompt, so the floor is
+    // above zero rather than at it.
+    const funded = await assertProviderFunded(op.id);
+    if (!funded.ok) {
+      return NextResponse.json({ error: funded.error, providerUnfunded: true }, { status: 503 });
+    }
     operator = op.id;
 
     // Not redundant with the catalog, which now only offers the active
