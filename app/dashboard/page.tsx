@@ -293,16 +293,24 @@ function DemoDashboardContent({ onSubscribe, demoProgress, demoNicheCreated }: {
         )}
 
         <div style={{ marginTop: "40px" }}>
-          <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Your API Key Status</h3>
+          <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "10px" }}>Start for free</h3>
           <div className="grid grid-cols-1 gap-4">
             <div className="rounded-xl px-5 py-4" style={cardStyle}>
-              <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start justify-between gap-3 flex-wrap">
                 <div className="min-w-0">
-                  <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>KIE</p>
-                  <p className="text-[10px] font-medium mt-0.5" style={{ color: "#f0a855" }}>Pending setup</p>
-                  <p className="text-[10px] mt-0.5" style={{ color: "var(--c-38)" }}>Script generation, TTS, images & video</p>
+                  <p className="text-sm font-bold leading-tight" style={{ color: "var(--c-88)" }}>Free tools</p>
+                  <p className="text-[10px] font-medium mt-0.5" style={{ color: "oklch(0.65 0.15 145)" }}>No card needed</p>
+                  <p className="text-[10px] mt-0.5" style={{ color: "var(--c-38)" }}>
+                    Connect free image and voiceover providers and start generating on their free quotas.
+                  </p>
                 </div>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0" style={{ background: "#94a3b822", color: "#94a3b8" }}>Not set</span>
+                <Link
+                  href="/setup"
+                  className="text-[11px] font-semibold px-3 py-1.5 rounded-lg shrink-0 transition-opacity hover:opacity-90"
+                  style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+                >
+                  Set up free tools →
+                </Link>
               </div>
             </div>
           </div>
@@ -832,6 +840,20 @@ export default function HomePage() {
     fetcher,
     { revalidateOnFocus: true },
   );
+
+  // Whether this account has any business being asked for provider keys.
+  //
+  // Only a BYO-funded account does. Everyone signing up now lands on Heclus
+  // Credits, where generations run on our providers and there is nothing to
+  // connect, so "KIE — Pending setup" was telling new customers they had an
+  // unfinished task that does not exist. Legacy customers on their own key
+  // still see it, since for them it is the thing that makes the product work.
+  //
+  // Hidden until the answer is known: showing it and taking it away is worse
+  // than a section that appears a beat late.
+  const needsOwnKeys =
+    apiKeysStatus?.fundingMode === "byo" && !apiKeysStatus.onHeclusCreditsPlan;
+
 
   const nicheLimit = usage?.niche_limit ?? null;
   const nichesUsed = usage?.niches_used ?? 0;
@@ -1857,6 +1879,8 @@ export default function HomePage() {
                 // following the chart. Three cards across on desktop: the tab
                 // gives the section the full width, so a 2-col grid left the
                 // third card stranded on its own row.
+                if (!needsOwnKeys) return null;
+
                 return (
                   <div>
                     <h3 className="text-sm font-semibold" style={{ color: "var(--c-60)", marginTop: "10px", marginBottom: "14px" }}>Your API Key Status</h3>
