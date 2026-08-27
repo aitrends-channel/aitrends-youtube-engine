@@ -60,3 +60,38 @@ function matchingBrace(s: string, openIdx: number): number {
   }
   return -1;
 }
+
+// A second quirk, and a different one: the tool call arrives properly formed,
+// but the model has put the entire payload into the first property as a JSON
+// string. Sonnet 5 does this on the beats tool, returning
+//
+//   { "beats": "{\"beats\": [ {\"beatNumber\": 1, ... } ]}" }
+//
+// rather than the array the schema asks for. The work is all there and correct;
+// only the wrapping is wrong, so throwing the turn away costs a chunk of script
+// and the tokens that produced it for nothing.
+//
+// Unwraps one layer, and only when it yields the array the caller wanted.
+// Anything else is returned untouched, so a genuinely malformed response still
+// fails validation rather than being coerced into something plausible.
+export function unwrapNestedToolInput(
+  input: Record<string, unknown> | null,
+  key: string,
+): Record<string, unknown> | null {
+  if (!input) return input;
+  const value = input[key];
+  if (typeof value !== "string") return input;
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return input;
+
+  let parsed: unknown;
+  try { parsed = JSON.parse(trimmed); }
+  catch { return input; }
+
+  if (Array.isArray(parsed)) return { ...input, [key]: parsed };
+  if (parsed && typeof parsed === "object") {
+    const inner = (parsed as Record<string, unknown>)[key];
+    if (Array.isArray(inner)) return { ...input, ...(parsed as Record<string, unknown>) };
+  }
+  return input;
+}
