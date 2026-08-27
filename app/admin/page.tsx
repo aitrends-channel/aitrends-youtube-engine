@@ -2563,8 +2563,8 @@ function MediaOperatorPanel() {
             const exempt = data?.exempt_surfaces?.includes(s);
             const current = data?.per_surface?.[s];
             return (
-              <div key={s} className="flex items-center justify-between gap-3 p-2 rounded-lg"
-                style={{ background: "oklch(0 0 0 / 0.02)" }}>
+              <div key={s} className="rounded-lg" style={{ background: "oklch(0 0 0 / 0.02)" }}>
+              <div className="flex items-center justify-between gap-3 p-2">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p
@@ -2633,20 +2633,6 @@ function MediaOperatorPanel() {
                     highlighted, so a glance down the column says who runs what
                     rather than only what is changeable. */}
                 <div className="flex gap-1.5 shrink-0 items-center">
-                  {s === "chat" && current === "anthropic" && anthropicCfg && (
-                    <select
-                      value={anthropicCfg.model}
-                      onChange={(e) => setClaudeModel(e.target.value)}
-                      disabled={savingModel || saving !== null}
-                      title="Which Claude model the writing steps run on"
-                      className="px-2 py-1 rounded-md text-xs font-medium cursor-pointer disabled:opacity-50"
-                      style={{ background: "transparent", border: "1px solid var(--bd-10)", color: "var(--c-70)" }}
-                    >
-                      {anthropicCfg.models.map((m) => (
-                        <option key={m.id} value={m.id}>{m.label}</option>
-                      ))}
-                    </select>
-                  )}
                   {exempt && (
                     <span
                       className="px-2.5 py-1 rounded-md text-xs font-medium"
@@ -2681,6 +2667,56 @@ function MediaOperatorPanel() {
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Under the row, not beside it. Which Claude model runs the
+                  writing steps is a real choice, and the notes are what decides
+                  it: a dropdown of eight labels hides that Fable always thinks
+                  and Haiku follows tool_choice loosely. Only rendered while
+                  anthropic is actually the provider, since it changes nothing
+                  for the others. */}
+              {s === "chat" && current === "anthropic" && anthropicCfg && (
+                <div className="px-2 pb-2 space-y-1.5">
+                  <p className="text-xs font-semibold pt-1" style={{ color: "var(--c-55)" }}>
+                    Model for the writing steps
+                  </p>
+                  <div className="grid gap-1.5 sm:grid-cols-2">
+                    {anthropicCfg.models.map((m) => {
+                      const chosen = anthropicCfg.model === m.id;
+                      return (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => !chosen && setClaudeModel(m.id)}
+                          disabled={savingModel || chosen}
+                          title={m.note}
+                          className="text-left px-3 py-2 rounded-lg transition-all disabled:cursor-default cursor-pointer hover:brightness-95"
+                          style={{
+                            background: chosen ? "oklch(0.62 0.15 220 / 0.12)" : "var(--bg-card, white)",
+                            border: `1px solid ${chosen ? "oklch(0.62 0.15 220 / 0.45)" : "var(--bd-10)"}`,
+                          }}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="text-xs font-semibold" style={{ color: "var(--c-90)" }}>{m.label}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full"
+                              style={{ background: "oklch(0 0 0 / 0.05)", color: "var(--c-50)" }}>
+                              {m.tier}
+                            </span>
+                            {chosen && (
+                              <span className="ml-auto text-[10px] font-semibold" style={{ color: "oklch(0.45 0.15 220)" }}>
+                                {savingModel ? "saving…" : "in use"}
+                              </span>
+                            )}
+                          </span>
+                          <span className="block text-[11px] mt-0.5 leading-snug" style={{ color: "var(--c-50)" }}>
+                            {m.note}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
               </div>
             );
           })}
