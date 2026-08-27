@@ -2414,6 +2414,35 @@ function Tile({ label, value, note, accent, noteStrong }: {
  * offered as a setting that would store and do nothing.
  */
 function MediaOperatorPanel() {
+  // Same setting the Anthropic card owns (product_config.default_claude_model),
+  // surfaced here because picking the provider and picking its model is one
+  // decision. Read through the endpoint that already validates the id rather
+  // than a second list that could drift from CLAUDE_MODELS.
+  const { data: anthropicCfg, mutate: mutateAnthropic } = useSWR<{
+    model: string;
+    models: { id: string; label: string; tier: string; note: string }[];
+  }>("/api/admin/anthropic-routing", fetcher, { revalidateOnFocus: false });
+  const [savingModel, setSavingModel] = useState(false);
+
+  async function setClaudeModel(model: string) {
+    setSavingModel(true);
+    try {
+      const res = await fetch("/api/admin/anthropic-routing", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Could not change the model");
+      toast.success(`Writing steps now run on ${anthropicCfg?.models.find((m) => m.id === model)?.label ?? model}`);
+      await mutateAnthropic();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not change the model");
+    } finally {
+      setSavingModel(false);
+    }
+  }
+
   const { data, mutate, isLoading } = useSWR<{
     operator: string;
     per_surface: Record<string, string>;
@@ -2604,6 +2633,20 @@ function MediaOperatorPanel() {
                     highlighted, so a glance down the column says who runs what
                     rather than only what is changeable. */}
                 <div className="flex gap-1.5 shrink-0 items-center">
+                  {s === "chat" && current === "anthropic" && anthropicCfg && (
+                    <select
+                      value={anthropicCfg.model}
+                      onChange={(e) => setClaudeModel(e.target.value)}
+                      disabled={savingModel || saving !== null}
+                      title="Which Claude model the writing steps run on"
+                      className="px-2 py-1 rounded-md text-xs font-medium cursor-pointer disabled:opacity-50"
+                      style={{ background: "transparent", border: "1px solid var(--bd-10)", color: "var(--c-70)" }}
+                    >
+                      {anthropicCfg.models.map((m) => (
+                        <option key={m.id} value={m.id}>{m.label}</option>
+                      ))}
+                    </select>
+                  )}
                   {exempt && (
                     <span
                       className="px-2.5 py-1 rounded-md text-xs font-medium"
