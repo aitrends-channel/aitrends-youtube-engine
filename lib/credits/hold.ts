@@ -123,6 +123,13 @@ export async function holdForOne(opts: {
 
 export async function settleHold(hold: Hold | null, actual: number, note: string): Promise<void> {
   if (!hold) return;
+  if (actual > hold.credits) {
+    console.error(
+      `[credits] hold shortfall on ${note}: work cost ${actual.toFixed(2)} credits, hold was ` +
+      `${hold.credits.toFixed(2)}, so Heclus absorbed ${(actual - hold.credits).toFixed(2)}. ` +
+      `The estimate for this step is low.`,
+    );
+  }
   await settleHeclusCredits(hold.id, actual, note);
 }
 

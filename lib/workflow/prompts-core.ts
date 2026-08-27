@@ -36,6 +36,7 @@ import {
 import { supabase } from "@/lib/supabase/client";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { retryClaudeCall } from "@/lib/claude/retry";
+import { isPoyoRouting } from "@/lib/claude/routing";
 import { extractToolInputFromText } from "@/lib/claude/textFallback";
 import { getConcurrencyConfig } from "@/lib/concurrency-config";
 import { logAnthropicCost } from "@/lib/costs";
@@ -732,13 +733,13 @@ export async function generateImages(
         const stream = anthropic.messages.stream({
           ...modelParamsFor(model),
           max_tokens: 12288,
-          system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+          system: [{ type: "text", text: SYSTEM_PROMPT, ...cacheIf(!isPoyoRouting(routing)) }],
           tools: [{ name: "save_image_prompts", description: "Save image prompts for every visual beat in the chunk", input_schema: imagePromptsInputSchema }],
           tool_choice: { type: "tool", name: "save_image_prompts" },
           messages: [{
             role: "user",
             content: [
-              { type: "text", text: cachedUserBlock, cache_control: { type: "ephemeral" } },
+              { type: "text", text: cachedUserBlock, ...cacheIf(!isPoyoRouting(routing)) },
               { type: "text", text: buildImagePromptsDynamic(text) },
             ],
           }],
@@ -1225,13 +1226,13 @@ export async function generateBeats(
           const stream = anthropic.messages.stream({
             ...modelParamsFor(model),
             max_tokens: 8192,
-            system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+            system: [{ type: "text", text: SYSTEM_PROMPT, ...cacheIf(!isPoyoRouting(routing)) }],
             tools: [{ name: "save_beats", description: "Save the script split into visual beats", input_schema: beatsInputSchema }],
             tool_choice: { type: "tool", name: "save_beats" },
             messages: [{
               role: "user",
               content: [
-                { type: "text", text: cachedUserBlock, cache_control: { type: "ephemeral" } },
+                { type: "text", text: cachedUserBlock, ...cacheIf(!isPoyoRouting(routing)) },
                 { type: "text", text: buildBeatsDynamic(text) },
               ],
             }],
@@ -1580,13 +1581,13 @@ export async function fillPrompts(
           const stream = anthropic.messages.stream({
             ...modelParamsFor(model),
             max_tokens: 8192,
-            system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+            system: [{ type: "text", text: SYSTEM_PROMPT, ...cacheIf(!isPoyoRouting(routing)) }],
             tools: [{ name: "save_fill_prompts", description: "Save an image prompt for each beat you were given", input_schema: fillPromptsInputSchema }],
             tool_choice: { type: "tool", name: "save_fill_prompts" },
             messages: [{
               role: "user",
               content: [
-                { type: "text", text: cachedUserBlock, cache_control: { type: "ephemeral" } },
+                { type: "text", text: cachedUserBlock, ...cacheIf(!isPoyoRouting(routing)) },
                 { type: "text", text: buildFillPromptsDynamic(batch) },
               ],
             }],
@@ -2010,13 +2011,13 @@ export async function generateVideos(projectId: string, userId: string, send: (d
         anthropic.messages.create({
           ...modelParamsFor(model),
           max_tokens: 8192,
-          system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+          system: [{ type: "text", text: SYSTEM_PROMPT, ...cacheIf(!isPoyoRouting(routing)) }],
           tools: [{ name: "save_video_prompts", description: "Save video prompts for all beats", input_schema: videoPromptsInputSchema }],
           tool_choice: { type: "tool", name: "save_video_prompts" },
           messages: [{
             role: "user",
             content: [
-              { type: "text", text: cachedUserBlock, cache_control: { type: "ephemeral" } },
+              { type: "text", text: cachedUserBlock, ...cacheIf(!isPoyoRouting(routing)) },
               { type: "text", text: buildVideoPromptsDynamic(chunks[i]) },
             ],
           }],
@@ -2238,7 +2239,7 @@ export async function generateThumbnails(
       anthropic.messages.create({
         ...modelParamsFor(model),
         max_tokens: 8192,
-        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        system: [{ type: "text", text: SYSTEM_PROMPT, ...cacheIf(!isPoyoRouting(routing)) }],
         tools: [{ name: "save_thumbnails", description: "Save 5 thumbnail concepts", input_schema: thumbnailsInputSchema }],
         tool_choice: { type: "tool", name: "save_thumbnails" },
         messages: [{ role: "user", content: buildThumbnailsPrompt(script, visualProfile, thumbnailAnalysis) }],
