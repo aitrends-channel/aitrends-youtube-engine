@@ -82,18 +82,30 @@ export function StepCostCard({ projectId, column, hideUnitKinds }: {
     },
   );
 
-  const totals = data?.columns?.[column]?.totals ?? {};
   const hidden = new Set(hideUnitKinds ?? []);
+  const allColumns = Object.values(data?.columns ?? {}) as ColumnSummary[];
 
-  // Roll the raw unit_kinds up to provider keys.
-  const byProvider: Record<string, number> = {};
-  for (const [unitKind, units] of Object.entries(totals)) {
-    if (hidden.has(unitKind)) continue;
-    if (typeof units !== "number" || units <= 0) continue;
-    const provider = PROVIDER_OF[unitKind];
-    if (!provider) continue;
-    byProvider[provider] = (byProvider[provider] ?? 0) + units;
-  }
+  // The chip is the running total for the video, not this step alone. Someone
+  // on the Prompts step wants to know what the video has cost so far, and
+  // reading that meant adding up seven chips across seven pages. The per-step
+  // figures are unchanged underneath: the API still reports every column
+  // separately, and this step's own share is on the hover.
+  const rollUp = (summaries: ColumnSummary[]): Record<string, number> => {
+    const out: Record<string, number> = {};
+    for (const summary of summaries) {
+      for (const [unitKind, units] of Object.entries(summary?.totals ?? {})) {
+        if (hidden.has(unitKind)) continue;
+        if (typeof units !== "number" || units <= 0) continue;
+        const provider = PROVIDER_OF[unitKind];
+        if (!provider) continue;
+        out[provider] = (out[provider] ?? 0) + units;
+      }
+    }
+    return out;
+  };
+
+  const byProvider = rollUp(allColumns);
+  const thisStep = data?.columns?.[column];
 
   if (isRealProject && !data) {
     return (
@@ -103,7 +115,15 @@ export function StepCostCard({ projectId, column, hideUnitKinds }: {
   }
 
   const inCredits = !!data?.inCredits;
-  const credits = data?.columns?.[column]?.heclusCreditsCharged ?? 0;
+  // Charged, and for the whole video. The per-step number is still metered and
+  // still returned; it is on the hover rather than in the chip.
+  const credits = allColumns.reduce((sum, c) => sum + (c?.heclusCreditsCharged ?? 0), 0);
+  const stepCredits = thisStep?.heclusCreditsCharged ?? 0;
+  const stepByProvider = rollUp(thisStep ? [thisStep] : []);
+  const stepParts = PROVIDER_ORDER
+    .filter((key) => (stepByProvider[key] ?? 0) > 0)
+    .map((key) => `${key} ${formatProvider(key, stepByProvider[key])}`)
+    .join(", ");
 
   const parts = PROVIDER_ORDER
     .filter((p) => byProvider[p] !== undefined && byProvider[p] > 0)
@@ -117,6 +137,11 @@ export function StepCostCard({ projectId, column, hideUnitKinds }: {
     <span
       className="inline-flex items-center rounded-md overflow-hidden text-xs font-medium break-words max-w-full"
       style={{ border: "1px solid oklch(0.55 0.15 145 / 0.3)" }}
+      title={
+        inCredits
+          ? `Total for this video. This step: ${stepCredits.toLocaleString(undefined, { maximumFractionDigits: 2 })} credits`
+          : `Total for this video. This step: ${stepParts || "nothing yet"}`
+      }
     >
       <span
         className="uppercase tracking-wider px-2 py-1"
