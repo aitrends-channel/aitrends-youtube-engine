@@ -139,6 +139,10 @@ export default function ScriptPage({ params }: PageProps) {
   const deviation = Math.abs(wordCount - targetWordCount) / targetWordCount;
   const wordCountOk = deviation <= 0.05;
 
+  // True once this viewer has typed. Until then the textarea is a view of the
+  // row, not a draft, so it can keep following a run happening elsewhere.
+  const editedRef = useRef(false);
+
   // Load saved script/topic from DB — but never overwrite an active stream
   useEffect(() => {
     if (streamingRef.current) return;
@@ -149,6 +153,19 @@ export default function ScriptPage({ params }: PageProps) {
       setSelectedTopic(project.selected_topic);
     }
   }, [project]);
+
+  // Follow a run happening somewhere else: another tab, or an admin acting as
+  // this account. The route checkpoints the partial script onto the row every
+  // 3,000 characters and useProject polls faster while a run is in flight, so
+  // mirroring the row is enough to watch it being written. Guarded on not
+  // having typed here, so it can never eat an edit.
+  useEffect(() => {
+    if (streamingRef.current || editedRef.current) return;
+    const fromDb = project?.script;
+    if (typeof fromDb === "string" && fromDb && fromDb !== script) {
+      setScript(fromDb);
+    }
+  }, [project?.script, project?.script_active_run_id]);
 
   useEffect(() => {
     // Never surface a raw provider payload — friendlyError maps upstream
@@ -208,6 +225,7 @@ export default function ScriptPage({ params }: PageProps) {
     // a failed regen lets SWR re-hydrate the old text the next time
     // isStreaming flips back to false, and the user sees stale content
     // instead of being returned to the Generate button.
+    editedRef.current = false;
     setScript("");
     try {
       await fetch(`/api/projects/${projectId}`, {
@@ -285,6 +303,7 @@ export default function ScriptPage({ params }: PageProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ script: null, word_count: 0, script_active_run_id: null }),
       });
+      editedRef.current = false;
       setScript("");
       mutate();
     } finally {
@@ -526,7 +545,7 @@ export default function ScriptPage({ params }: PageProps) {
                   <textarea
                     ref={textareaRef}
                     value={script}
-                    onChange={(e) => setScript(e.target.value)}
+                    onChange={(e) => { editedRef.current = true; setScript(e.target.value); }}
                     onBlur={saveScript}
                     readOnly={isStreaming}
                     className="w-full min-h-[560px] bg-transparent text-foreground/90 text-sm leading-8 resize-none outline-none font-sans"
