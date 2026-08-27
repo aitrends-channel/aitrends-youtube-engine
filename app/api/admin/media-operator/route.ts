@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase/client";
 import { requireAdmin } from "@/lib/admin-server";
 import {
   MEDIA_SURFACES, IMPLEMENTED_SURFACES, EXEMPT_SURFACES, SWITCHABLE_OPERATORS,
+  OPERATORS_FOR_SURFACE,
   isImplementedSurface, isExemptSurface,
   getMediaOperator, getMediaOperatorPerSurface, type MediaSurface,
 } from "@/lib/operators/routing";
@@ -43,6 +44,10 @@ export async function GET() {
     exempt_surfaces: EXEMPT_SURFACES,
     pending: MEDIA_SURFACES.filter((s) => !isImplementedSurface(s) && !isExemptSurface(s)),
     operators: SWITCHABLE_OPERATORS,
+    // Per surface, because Anthropic serves chat and nothing else. The panel
+    // renders from this rather than the union, so no row offers a button that
+    // could only fail.
+    operators_for_surface: OPERATORS_FOR_SURFACE,
     // What the switch deliberately does not move, so the panel can say so
     // rather than leaving an admin to infer it from behaviour.
     exempt_notes: [
@@ -67,8 +72,14 @@ export async function PATCH(req: Request) {
 
   // Global default.
   if (body.operator !== undefined) {
-    if (!isOperator(body.operator)) {
-      return NextResponse.json({ error: "operator must be one of: " + SWITCHABLE_OPERATORS.join(", ") }, { status: 400 });
+    if (!isOperator(body.operator) || body.operator === "anthropic") {
+      // anthropic is chat-only, and the global default is inherited by image
+      // and video. Allowing it here would set two surfaces to a provider with
+      // no catalog for them.
+      return NextResponse.json(
+        { error: "operator must be one of: " + SWITCHABLE_OPERATORS.filter((o) => o !== "anthropic").join(", ") },
+        { status: 400 },
+      );
     }
     const { error } = await supabase
       .from("product_config")
@@ -107,6 +118,13 @@ export async function PATCH(req: Request) {
     if (body.surface_operator === null || body.surface_operator === "") {
       delete next[body.surface];
     } else if (isOperator(body.surface_operator)) {
+      const allowed = OPERATORS_FOR_SURFACE[body.surface] ?? [];
+      if (!(allowed as readonly string[]).includes(body.surface_operator)) {
+        return NextResponse.json(
+          { error: `${body.surface_operator} does not serve the ${body.surface} surface. Allowed: ${allowed.join(", ") || "none"}.` },
+          { status: 409 },
+        );
+      }
       next[body.surface] = body.surface_operator;
     } else {
       return NextResponse.json({ error: "surface_operator must be an operator or null" }, { status: 400 });

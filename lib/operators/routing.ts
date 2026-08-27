@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
-import { type Operator, OPERATOR_KIE, OPERATOR_POYO } from "./index";
+import { type Operator, OPERATOR_KIE, OPERATOR_POYO, OPERATOR_ANTHROPIC } from "./index";
 import { isGenAIProModel } from "@/lib/genaipro/status";
 import { getFundingModeById } from "@/lib/funding";
 
@@ -16,7 +16,23 @@ import { getFundingModeById } from "@/lib/funding";
 
 /** Operators an admin can switch between. GenAIPro is deliberately absent: it
  *  is a free lane on its own wallet, not a general-purpose media provider. */
-export const SWITCHABLE_OPERATORS = [OPERATOR_KIE, OPERATOR_POYO] as const;
+export const SWITCHABLE_OPERATORS = [OPERATOR_KIE, OPERATOR_POYO, OPERATOR_ANTHROPIC] as const;
+
+/**
+ * Which operators a given surface can actually run on.
+ *
+ * Anthropic serves chat and nothing else: it has no image or video catalog, so
+ * a row offering it there would be a button that can only fail. The reverse
+ * holds too, which is why this is a map rather than one global list, and why
+ * the admin API validates against the surface rather than the union.
+ */
+export const OPERATORS_FOR_SURFACE: Record<MediaSurface, readonly Operator[]> = {
+  chat: [OPERATOR_KIE, OPERATOR_POYO, OPERATOR_ANTHROPIC],
+  image: [OPERATOR_KIE, OPERATOR_POYO],
+  video: [OPERATOR_KIE, OPERATOR_POYO],
+  tts: [],
+  transcription: [],
+};
 
 /**
  * The provider-integration boundaries, which is the granularity a switch can

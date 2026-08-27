@@ -132,7 +132,9 @@ export async function getRoutingForUser(userId: string, step?: WorkflowStep): Pr
   try {
     if (await getFundingModeById(userId) === "wallet") {
       const { getMediaOperator } = await import("@/lib/operators/routing");
-      if ((await getMediaOperator("chat")) === "poyo") return "heclus_poyo";
+      const chatOperator = await getMediaOperator("chat");
+      if (chatOperator === "poyo") return "heclus_poyo";
+      if (chatOperator === "anthropic") return "heclus_direct";
     }
   } catch {
     // Unreadable switch or funding mode — fall through to the existing paths,
