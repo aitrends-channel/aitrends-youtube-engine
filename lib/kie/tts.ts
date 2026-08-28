@@ -4,6 +4,8 @@ import { getActiveProductKey } from "@/lib/claude/routing";
 import { isQwenVoice, generateQwenTTS } from "@/lib/replicate/tts";
 import { isAi33Voice, generateAi33TTS } from "@/lib/ai33/tts";
 import type { KieModel } from "@/lib/types";
+import { TTS_MODEL } from "@/lib/tts-models";
+export { TTS_MODEL, TTS_MODELS, isSelectableTtsModel, ttsModelOr } from "@/lib/tts-models";
 
 // Direct ElevenLabs TTS. Used to go through KIE's proxy (commit b5b38ac)
 // for a bigger voice catalog at lower cost on long chunks, but per-beat
@@ -14,7 +16,6 @@ import type { KieModel } from "@/lib/types";
 // touches KIE.
 
 const EL_BASE = "https://api.elevenlabs.io";
-export const TTS_MODEL = "eleven_turbo_v2_5";
 const MAX_CHARS = 5000;
 const CHUNK_RETRY_ATTEMPTS = 3;
 
@@ -167,10 +168,11 @@ async function generateChunk(
   voiceId: string,
   apiKey: string,
   onStatus?: (msg: string) => void,
+  modelId: string = TTS_MODEL,
 ): Promise<{ audio: ArrayBuffer; charsConsumed: number }> {
   onStatus?.("Generating audio…");
   const tStart = Date.now();
-  console.log(`[TTS] EL direct | model: ${TTS_MODEL} | voice: ${voiceId} | chars: ${text.length}`);
+  console.log(`[TTS] EL direct | model: ${modelId} | voice: ${voiceId} | chars: ${text.length}`);
 
   const res = await fetch(`${EL_BASE}/v1/text-to-speech/${voiceId}`, {
     method: "POST",
@@ -181,7 +183,7 @@ async function generateChunk(
     },
     body: JSON.stringify({
       text,
-      model_id: TTS_MODEL,
+      model_id: modelId,
       voice_settings: { stability: 0.5, similarity_boost: 0.75 },
     }),
   });
@@ -223,11 +225,12 @@ async function generateChunkWithRetry(
   voiceId: string,
   apiKey: string,
   onStatus?: (msg: string) => void,
+  modelId: string = TTS_MODEL,
 ): Promise<{ audio: ArrayBuffer; charsConsumed: number }> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < CHUNK_RETRY_ATTEMPTS; attempt++) {
     try {
-      return await generateChunk(text, voiceId, apiKey, onStatus);
+      return await generateChunk(text, voiceId, apiKey, onStatus, modelId);
     } catch (err) {
       lastErr = err;
       const msg = err instanceof Error ? err.message : String(err);
@@ -369,6 +372,9 @@ export async function generateTTS(
   onProgress?: (current: number, total: number) => void,
   onStatus?: (msg: string) => void,
   userId?: string,
+  /** Which ElevenLabs model to synthesise on. Ignored by the Qwen and AI33
+   *  paths below, which are different providers entirely. */
+  modelId: string = TTS_MODEL,
 ): Promise<{ audio: ArrayBuffer; charsConsumed: number }> {
   // Google TTS was removed. Projects saved before then still carry
   // "google/" ids, so fail with something the user can act on.
@@ -405,7 +411,7 @@ export async function generateTTS(
 
   if (chunks.length === 1) {
     onProgress?.(0, 1);
-    const result = await generateChunkWithRetry(chunks[0], voiceId, apiKey, onStatus);
+    const result = await generateChunkWithRetry(chunks[0], voiceId, apiKey, onStatus, modelId);
     onProgress?.(1, 1);
     return result;
   }
@@ -415,7 +421,7 @@ export async function generateTTS(
   for (let i = 0; i < chunks.length; i++) {
     onProgress?.(i, chunks.length);
     onStatus?.(`Chunk ${i + 1} of ${chunks.length}…`);
-    const result = await generateChunkWithRetry(chunks[i], voiceId, apiKey, onStatus);
+    const result = await generateChunkWithRetry(chunks[i], voiceId, apiKey, onStatus, modelId);
     buffers.push(result.audio);
     totalChars += result.charsConsumed;
   }

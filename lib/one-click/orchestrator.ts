@@ -15,7 +15,7 @@ import { getMediaOperatorForUser } from "@/lib/operators/routing";
 import { PROMPT_LENGTH_CAPS, capPrompt, isPromptLengthError } from "@/lib/kie/promptLength";
 import { resolveConsistency, applyConsistency } from "@/lib/character-consistency";
 import { finishImageTask } from "@/lib/operators/finishImage";
-import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
+import { generateTTS, ttsModelOr } from "@/lib/kie/tts";
 import { friendlyError } from "@/lib/errors/friendly";
 import { isQwenVoice } from "@/lib/replicate/tts";
 import { isAi33Voice } from "@/lib/ai33/tts";
@@ -608,6 +608,9 @@ function hashSegment(text: string): string {
 // runGenerateStep while work remains, or null once all beats are voiced.
 async function ensureVoiceovers(project: ProjectRow, cfg: OneClickConfig): Promise<AdvanceResult | null> {
   const voiceId = cfg.tts?.voiceId?.trim();
+  // The project's own model, so a one-click run speaks on whatever the
+  // voiceover step was set to rather than always on the default.
+  const ttsModel = ttsModelOr((project as { tts_model?: unknown }).tts_model);
   if (!voiceId) return RESULT.attention("No voiceover voice is configured for 1Click — set one in your 1Click preferences, then resume.");
 
   const { data: beatData, error } = await supabase
@@ -653,7 +656,7 @@ async function ensureVoiceovers(project: ProjectRow, cfg: OneClickConfig): Promi
     const billable = !isQwenVoice(voiceId) && !isAi33Voice(voiceId);
     const { hold: ttsHold, refused: ttsRefused } = billable
       ? await holdForCharacters({
-          userId: project.user_id, characters: ttsText.length, model: TTS_MODEL,
+          userId: project.user_id, characters: ttsText.length, model: ttsModel,
           step: "tts", projectId: project.id, beatNumber,
         })
       : { hold: null, refused: false };
@@ -663,14 +666,14 @@ async function ensureVoiceovers(project: ProjectRow, cfg: OneClickConfig): Promi
     try {
       await supabase.from("project_beats").update({ voiceover_status: "generating" })
         .eq("project_id", project.id).eq("beat_number", beatNumber);
-      const { audio, charsConsumed } = await generateTTS(ttsText, voiceId, undefined, undefined, project.user_id);
+      const { audio, charsConsumed } = await generateTTS(ttsText, voiceId, undefined, undefined, project.user_id, ttsModel);
       // Same cost accounting as the route: ElevenLabs bills the ledger,
       // perk voices count against their free-usage caps.
       if (charsConsumed && billable) {
         settledTts = true;
         await logProjectCost({
           projectId: project.id, userId: project.user_id, step: "tts", provider: "elevenlabs",
-          model: TTS_MODEL, units: charsConsumed, unitKind: "elevenlabs_chars",
+          model: ttsModel, units: charsConsumed, unitKind: "elevenlabs_chars",
           reservationId: ttsHold?.id ?? null,
         });
       } else if (charsConsumed && isQwenVoice(voiceId)) {

@@ -1,5 +1,5 @@
 import { createHash } from "crypto";
-import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
+import { generateTTS, ttsModelOr } from "@/lib/kie/tts";
 import { isQwenVoice } from "@/lib/replicate/tts";
 import { isAi33Voice } from "@/lib/ai33/tts";
 import { canUseVoice } from "@/lib/cloned-voices";
@@ -24,7 +24,11 @@ export async function POST(req: Request) {
   if (expired) return expired;
   const noRoom = await requireStorageHeadroom(user);
   if (noRoom) return noRoom;
-  const { projectId, script, voiceId } = await req.json();
+  const { projectId, script, voiceId, ttsModel: ttsModelRaw } = await req.json();
+  // Validated rather than trusted: an unknown id would be sent to ElevenLabs
+  // and priced against a rate table that has never heard of it. Falls back to
+  // the default, which is what every voiceover ran on before this was a choice.
+  const ttsModel = ttsModelOr(ttsModelRaw);
 
   if (!projectId || !script || !voiceId) {
     return Response.json({ error: "projectId, script, and voiceId are required" }, { status: 400 });
@@ -39,7 +43,7 @@ export async function POST(req: Request) {
     if (broke) return broke;
     // Exactly priceable: the script about to be spoken is right here.
     const short = shortfallResponse(await estimateCharacters({
-      userId: user.id, characters: String(script).trim().length, model: TTS_MODEL,
+      userId: user.id, characters: String(script).trim().length, model: ttsModel,
     }));
     if (short) return short;
   }
@@ -64,7 +68,7 @@ export async function POST(req: Request) {
           // Held before the provider speaks, settled on what it counted.
           const paidVoice = !isQwenVoice(voiceId) && !isAi33Voice(voiceId);
           const { hold, refused } = paidVoice
-            ? await holdForCharacters({ userId: user.id, characters: String(script).length, model: TTS_MODEL, projectId })
+            ? await holdForCharacters({ userId: user.id, characters: String(script).length, model: ttsModel, projectId })
             : { hold: null, refused: false };
           if (refused) throw new Error(OUT_OF_CREDITS_MESSAGE);
 
@@ -75,7 +79,8 @@ export async function POST(req: Request) {
               voiceId,
               (current, total) => { send({ type: "progress", current, total }); },
               (msg) => { send({ type: "status", message: msg }); },
-              user.id
+              user.id,
+              ttsModel,
             );
           } catch (err) {
             await releaseHold(hold, "voiceover failed");
@@ -90,7 +95,7 @@ export async function POST(req: Request) {
               userId: user.id,
               step: "tts",
               provider: "elevenlabs",
-              model: TTS_MODEL,
+              model: ttsModel,
               units: charsConsumed,
               unitKind: "elevenlabs_chars",
               reservationId: hold?.id ?? null,
