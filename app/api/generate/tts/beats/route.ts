@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "crypto";
-import { generateTTS, TTS_MODEL } from "@/lib/kie/tts";
+import { generateTTS, ttsModelOr } from "@/lib/kie/tts";
 import { isQwenVoice } from "@/lib/replicate/tts";
 import { isAi33Voice } from "@/lib/ai33/tts";
 import { canUseVoice } from "@/lib/cloned-voices";
@@ -99,6 +99,9 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({})) as {
     projectId?: string;
     voiceId?: string;
+    /** Which ElevenLabs model to speak on. Unknown or absent means the
+     *  default, so a stale tab cannot pick a model that no longer exists. */
+    ttsModel?: string;
     beatNumbers?: number[];
     /** Per-beat regen path: skip the voiceover_active_run_id claim and
      *  the stop-flag polling so this request runs independently of any
@@ -115,6 +118,9 @@ export async function POST(req: Request) {
   }
   const projectId = body.projectId;
   const voiceId = body.voiceId;
+  // Validated rather than trusted: an unknown id would reach ElevenLabs and be
+  // priced against a rate table that has never heard of it.
+  const ttsModel = ttsModelOr(body.ttsModel);
 
   // Wallet-funded users pay for a paid voice in credits, so an empty balance is
   // refused before any provider is called. A free-lane voice is exempt: it costs
@@ -259,7 +265,7 @@ export async function POST(req: Request) {
           // characters about to be spoken are already in hand. Refused before
           // the first beat rather than part-way through the batch.
           const characters = toGenerate.reduce((sum, b) => sum + (b.script_segment ?? "").trim().length, 0);
-          const ttsEstimate = await estimateCharacters({ userId: user.id, characters, model: TTS_MODEL });
+          const ttsEstimate = await estimateCharacters({ userId: user.id, characters, model: ttsModel });
           if (!ttsEstimate.sufficient && ttsEstimate.total !== null) {
             send({
               type: "error",
@@ -362,7 +368,7 @@ export async function POST(req: Request) {
               const paidVoice = !isQwenVoice(voiceId) && !isAi33Voice(voiceId);
               const { hold, refused } = paidVoice
                 ? await holdForCharacters({
-                    userId: user.id, characters: ttsText.length, model: TTS_MODEL,
+                    userId: user.id, characters: ttsText.length, model: ttsModel,
                     projectId, beatNumber: beat.beat_number,
                   })
                 : { hold: null, refused: false };
@@ -370,7 +376,7 @@ export async function POST(req: Request) {
 
               let tts: Awaited<ReturnType<typeof generateTTS>>;
               try {
-                tts = await generateTTS(ttsText, voiceId, undefined, undefined, user.id);
+                tts = await generateTTS(ttsText, voiceId, undefined, undefined, user.id, ttsModel);
               } catch (err) {
                 await releaseHold(hold, "voiceover failed");
                 throw err;
@@ -384,7 +390,7 @@ export async function POST(req: Request) {
                   userId: user.id,
                   step: "tts",
                   provider: "elevenlabs",
-                  model: TTS_MODEL,
+                  model: ttsModel,
                   units: charsConsumed,
                   unitKind: "elevenlabs_chars",
                   reservationId: hold?.id ?? null,

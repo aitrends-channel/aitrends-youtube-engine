@@ -12,6 +12,7 @@ import { StepCostCard } from "@/components/StepCostCard";
 import { CostTipsModal } from "@/components/CostTipsModal";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
+import { TTS_MODEL, TTS_MODELS } from "@/lib/tts-models";
 import { toast } from "sonner";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
@@ -160,6 +161,7 @@ export default function VoiceoverPage({ params }: PageProps) {
 
   const beats: Beat[] = useMemo(() => (project?.beats ?? []) as Beat[], [project]);
   const projectVoiceId = (project?.tts_voice_id as string | null | undefined) ?? null;
+  const projectTtsModel = (project?.tts_model as string | null | undefined) ?? null;
 
   // Main scroll container for the per-beat content. Used by the
   // floating jump-to buttons below so users can hop to the first or
@@ -175,6 +177,11 @@ export default function VoiceoverPage({ params }: PageProps) {
   // the voice that was actually used to generate any existing beats),
   // else first model of the active gender tab.
   const [selectedVoice, setSelectedVoice] = useState<string | null>(null);
+  // Which ElevenLabs model speaks. Hydrated from the project below, and only
+  // ever applies to ElevenLabs voices: the free Qwen and ai33 voices are
+  // different providers and ignore it entirely.
+  const [ttsModel, setTtsModel] = useState<string>(TTS_MODEL);
+  const ttsModelHydrated = useRef(false);
   const [voiceTab, setVoiceTab] = useState<"female" | "male" | "custom" | "free">("female");
   // Which paid tab to restore when coming back from Free.
   const [lastPaidTab, setLastPaidTab] = useState<"female" | "male" | "custom">("female");
@@ -246,6 +253,26 @@ export default function VoiceoverPage({ params }: PageProps) {
   // explicit user pick. Only the very first resolution honors
   // projectVoiceId / auto-pick; after that the picker owns the state.
   const voiceResolvedRef = useRef(false);
+
+  // Same sticky rule as the voice: hydrate once from the project, then the
+  // picker owns it, so a later SWR refresh cannot undo a fresh choice.
+  useEffect(() => {
+    if (ttsModelHydrated.current || project === undefined) return;
+    ttsModelHydrated.current = true;
+    if (projectTtsModel && TTS_MODELS.some((m) => m.id === projectTtsModel)) setTtsModel(projectTtsModel);
+  }, [project, projectTtsModel]);
+
+  // Saved as soon as it is chosen rather than on Generate, so a refresh keeps
+  // it and a per-beat regen later speaks on the same model as its neighbours.
+  const chooseTtsModel = useCallback((id: string) => {
+    setTtsModel(id);
+    void fetch(`/api/projects/${projectId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tts_model: id }),
+    }).catch(() => { /* the generate call carries it regardless */ });
+  }, [projectId]);
+
   useEffect(() => {
     if (voiceResolvedRef.current) return;
     // Wait for the project to load so we know whether tts_voice_id
@@ -674,6 +701,7 @@ export default function VoiceoverPage({ params }: PageProps) {
         body: JSON.stringify({
           projectId,
           voiceId: selectedVoice,
+          ttsModel,
           ...(opts.beatNumbers ? { beatNumbers: opts.beatNumbers } : {}),
         }),
         signal: ctrl.signal,
@@ -913,6 +941,7 @@ export default function VoiceoverPage({ params }: PageProps) {
         body: JSON.stringify({
           projectId,
           voiceId: selectedVoice,
+          ttsModel,
           beatNumbers: [beatNumber],
           // Run independently of the bulk-run state.
           skipRunClaim: true,
@@ -1503,6 +1532,42 @@ export default function VoiceoverPage({ params }: PageProps) {
                 <p className="text-[10px] font-semibold" style={{ color: "var(--c-40)" }}>
                   ElevenLabs
                 </p>
+                {/* Which model speaks, not which voice. The same voice on
+                    Multilingual v2 and on Turbo is recognisably the same person
+                    reading differently, and one of them bills at twice the
+                    rate — so the price sits on the button rather than in a
+                    tooltip nobody opens. Only shown for ElevenLabs voices; the
+                    free tab is a different provider that ignores this. */}
+                <div className="flex gap-1 flex-wrap">
+                  {TTS_MODELS.map((m) => {
+                    const on = ttsModel === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => chooseTtsModel(m.id)}
+                        disabled={effectivelyGenerating}
+                        title={m.note}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40"
+                        style={on ? {
+                          background: "oklch(0.72 0.25 285 / 0.15)",
+                          border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                          color: "var(--accent-purple-text)",
+                        } : {
+                          background: "var(--bg-input)",
+                          border: "1px solid var(--bd-card)",
+                          color: "var(--c-50)",
+                        }}
+                      >
+                        <span className="flex flex-col items-center leading-tight">
+                          <span>{m.label}</span>
+                          <span className="text-[9px] font-normal" style={{ opacity: 0.7 }}>
+                            ${m.perKChars.toFixed(2)}/1k chars
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
                 <div className="flex gap-1 flex-wrap">
                   {([...(["female", "male"] as const), ...(hasCustomVoices ? (["custom"] as const) : [])]).map((tab) => (
                     <button
