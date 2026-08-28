@@ -2369,7 +2369,7 @@ export default function GeneratePage({ params }: PageProps) {
                     onClick={() => exportMedia("images")}
                     disabled={exporting === "images"}
                     title={`Download all ${generatedImages} generated image${generatedImages === 1 ? "" : "s"} as a zip`}
-                    aria-label={`Export {generatedImages} image${generatedImages === 1 ? "" : "s"} as a zip`}
+                    aria-label={`Export ${generatedImages} image${generatedImages === 1 ? "" : "s"} as a zip`}
                     className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:opacity-80 disabled:opacity-50"
                     style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
                   >
@@ -2764,7 +2764,7 @@ export default function GeneratePage({ params }: PageProps) {
                     onClick={() => exportMedia("videos")}
                     disabled={exporting === "videos"}
                     title={`Download all ${generatedVideos} generated clip${generatedVideos === 1 ? "" : "s"} as a zip`}
-                    aria-label={`Export {generatedVideos} clip${generatedVideos === 1 ? "" : "s"} as a zip`}
+                    aria-label={`Export ${generatedVideos} clip${generatedVideos === 1 ? "" : "s"} as a zip`}
                     className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:opacity-80 disabled:opacity-50"
                     style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
                   >
