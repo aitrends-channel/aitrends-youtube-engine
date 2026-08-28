@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 import { NextResponse } from "next/server";
 import { getRequiredUser } from "@/lib/supabase/auth";
 import { supabase } from "@/lib/supabase/client";
-import { getCreditBalance, listLedger, getCreditsUsed, CREDIT_PACK } from "@/lib/credits";
+import { getCreditBalance, listLedger, getCreditsUsed, CREDIT_PACK, VIDEO_CREDITS_TOPUP_OPEN } from "@/lib/credits";
 import { getPaymentSettings } from "@/lib/plans";
 import { pickPackLink } from "@/lib/credits-checkout";
 import { isAdminUser } from "@/lib/admin";
@@ -63,11 +63,17 @@ export async function GET() {
     getCreditsUsed(user.id),
   ]);
 
+  // Withholding the link is how the Top up button disappears: every surface
+  // that renders it does so only when this is non-null, so closing it here
+  // closes all of them at once rather than in four components.
+  const purchasable = VIDEO_CREDITS_TOPUP_OPEN ? checkoutUrl : null;
+
   // A missing checkout link is a configuration gap, not a customer-facing
   // state: they get no button, which is correct, but an admin looking at the
   // same screen has no way to tell whether it is broken or unconfigured. Say so,
-  // to admins only.
-  const setupHint = !checkoutUrl && isAdminUser(user)
+  // to admins only. Not while top-ups are closed, though: then the absent
+  // button is the intent, not a gap.
+  const setupHint = VIDEO_CREDITS_TOPUP_OPEN && !checkoutUrl && isAdminUser(user)
     ? "No top-up link configured. Add the credit-pack checkout link in Admin → Payment → Dodo Variables."
     : null;
 
@@ -77,7 +83,7 @@ export async function GET() {
     setupHint,
     eligible: balance.monthlyGrant > 0 || balance.paid > 0,
     pack: CREDIT_PACK,
-    checkoutUrl,
+    checkoutUrl: purchasable,
     ledger,
   });
 }

@@ -62,6 +62,20 @@ export const CREDIT_PACK_OPTIONS = [1, 2, 3, 4].map((units) => ({
 export const VIDEO_CREDITS_ADMIN_ONLY = true;
 
 /**
+ * Whether anyone may buy more free-video credits.
+ *
+ * Separate from the lane itself, because the two questions are different: a
+ * customer already holding credits should be able to spend them, and should not
+ * be able to buy more of something that has not been released. One account
+ * bought three packs before the lane was meant to be reachable at all.
+ *
+ * Closed for everyone, admins included. An admin who needs to test the purchase
+ * flow can flip this for the duration rather than leaving the door open, which
+ * is what let the first purchase through.
+ */
+export const VIDEO_CREDITS_TOPUP_OPEN = false;
+
+/**
  * Accounts the free video lane stays open to while it is otherwise coming soon.
  *
  * The lane reached customers before it was meant to, and one of them bought
