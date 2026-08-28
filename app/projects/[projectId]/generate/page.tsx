@@ -9,7 +9,7 @@ import { WizardNav } from "@/components/wizard/WizardNav";
 // import { FreeResourcesButton } from "@/components/wizard/FreeResourcesButton";
 import { useKieActivityStore } from "@/store/kieActivityStore";
 import { useProject } from "@/hooks/useProject";
-import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp, Eye, X, Upload, Info } from "lucide-react";
+import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp, Eye, X, Upload, Info, Download } from "lucide-react";
 import { ImageSparkle } from "@/components/icons/ImageSparkle";
 import { StepCostCard } from "@/components/StepCostCard";
 import { CostTipsModal } from "@/components/CostTipsModal";
@@ -253,17 +253,23 @@ function VoiceOption({ model, selected, onSelect, isPlaying, onPlayToggle }: {
   );
 }
 
-function SectionHeader({ icon, title, subtitle }: { icon: React.ReactNode; title: string; subtitle: string }) {
+function SectionHeader({ icon, title, subtitle, action }: {
+  icon: React.ReactNode; title: string; subtitle: string;
+  /** Rendered at the far right of the header row. For actions that belong to
+   *  the panel as a whole rather than to the run being set up below it. */
+  action?: React.ReactNode;
+}) {
   return (
     <div className="flex items-center gap-3 mb-4">
-      <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base"
+      <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0"
         style={{ background: "oklch(0.72 0.25 285 / 0.1)", color: "var(--brand-text)", border: "1px solid oklch(0.72 0.25 285 / 0.2)" }}>
         {icon}
       </div>
-      <div>
+      <div className="min-w-0">
         <p className="font-semibold text-sm">{title}</p>
         <p className="text-xs" style={{ color: "var(--c-45)" }}>{subtitle}</p>
       </div>
+      {action && <div className="ml-auto shrink-0">{action}</div>}
     </div>
   );
 }
@@ -2127,7 +2133,28 @@ export default function GeneratePage({ params }: PageProps) {
           <div className={`rounded-2xl overflow-hidden flex flex-col ${effectiveView === "double" ? "lg:grid lg:grid-rows-subgrid lg:row-span-3" : ""}`}
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
-              <SectionHeader icon={<ImageIcon size={18} />} title="AI Images" subtitle={`${totalBeats} images from script beats`} />
+              <SectionHeader
+                icon={<ImageIcon size={18} />}
+                title="AI Images"
+                subtitle={`${totalBeats} images from script beats`}
+                // In the header rather than the action column: taking the
+                // images away is not part of setting up the next run, and down
+                // there it sat among the buttons that spend credits.
+                action={generatedImages > 0 ? (
+                  <button
+                    onClick={() => exportMedia("images")}
+                    disabled={exporting === "images"}
+                    title={`Download all ${generatedImages} generated image${generatedImages === 1 ? "" : "s"} as a zip`}
+                    aria-label={`Export ${generatedImages} image${generatedImages === 1 ? "" : "s"} as a zip`}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:opacity-80 disabled:opacity-50"
+                    style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+                  >
+                    {exporting === "images"
+                      ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      : <Download size={14} />}
+                  </button>
+                ) : null}
+              />
               <ModelPicker
                 type="image"
                 models={imageModels}
@@ -2444,19 +2471,6 @@ export default function GeneratePage({ params }: PageProps) {
                         ? `Regenerate All (${totalBeats})`
                         : `Generate ${totalBeats} Images`}
                     </button>
-                    {/* Only once there is something to take away. A download
-                        button on an empty gallery is a dead control. */}
-                    {generatedImages > 0 && (
-                      <button
-                        onClick={() => exportMedia("images")}
-                        disabled={exporting === "images"}
-                        title={`Download all ${generatedImages} generated image${generatedImages === 1 ? "" : "s"} as a zip`}
-                        className="w-full py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-1.5"
-                        style={{ background: "transparent", border: "1px solid var(--bd-8)", color: "var(--c-70)" }}
-                      >
-                        {exporting === "images" ? "Preparing…" : `Export ${generatedImages} image${generatedImages === 1 ? "" : "s"}`}
-                      </button>
-                    )}
                     {/* Secondary "Regenerate All" affordance when some images
                         succeeded but others failed — gives users a way to
                         explicitly start over if they don't trust the
@@ -2484,7 +2498,25 @@ export default function GeneratePage({ params }: PageProps) {
           <div className={`rounded-2xl overflow-hidden flex flex-col ${effectiveView === "double" ? "lg:grid lg:grid-rows-subgrid lg:row-span-3" : ""}`}
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
             <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
-              <SectionHeader icon={<Video size={18} />} title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
+              <SectionHeader
+                icon={<Video size={18} />}
+                title="AI Video Clips"
+                subtitle={`${videoBeats} clips · 3–5s each`}
+                action={generatedVideos > 0 ? (
+                  <button
+                    onClick={() => exportMedia("videos")}
+                    disabled={exporting === "videos"}
+                    title={`Download all ${generatedVideos} generated clip${generatedVideos === 1 ? "" : "s"} as a zip`}
+                    aria-label={`Export ${generatedVideos} clip${generatedVideos === 1 ? "" : "s"} as a zip`}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center transition-all hover:opacity-80 disabled:opacity-50"
+                    style={{ background: "transparent", color: "var(--c-55)", border: "1px solid var(--bd-8)" }}
+                  >
+                    {exporting === "videos"
+                      ? <span className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      : <Download size={14} />}
+                  </button>
+                ) : null}
+              />
               {/* Renders nothing for a plan with no allowance and no bought
                   credit, so Founder never sees it. Passed into the picker so it
                   sits under the category tabs: the balance belongs to the model
@@ -2880,17 +2912,6 @@ export default function GeneratePage({ params }: PageProps) {
                   </div>
                 );
               })()}
-              {generatedVideos > 0 && (
-                <button
-                  onClick={() => exportMedia("videos")}
-                  disabled={exporting === "videos"}
-                  title={`Download all ${generatedVideos} generated clip${generatedVideos === 1 ? "" : "s"} as a zip`}
-                  className="w-full py-2 mb-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-1.5"
-                  style={{ background: "transparent", border: "1px solid var(--bd-8)", color: "var(--c-70)" }}
-                >
-                  {exporting === "videos" ? "Preparing…" : `Export ${generatedVideos} clip${generatedVideos === 1 ? "" : "s"}`}
-                </button>
-              )}
               {/* Primary action morphs by state:
                   - queuing-in-flight: spinner
                   - paused beats exist: Resume (green)
