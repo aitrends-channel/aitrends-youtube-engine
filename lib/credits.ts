@@ -59,7 +59,31 @@ export const CREDIT_PACK_OPTIONS = [1, 2, 3, 4].map((units) => ({
  * modal, and the top-up button. A zero allowance with no bought credit is what
  * every one of those already treats as "no wallet".
  */
-export const VIDEO_CREDITS_ADMIN_ONLY = false;
+export const VIDEO_CREDITS_ADMIN_ONLY = true;
+
+/**
+ * Accounts the free video lane stays open to while it is otherwise coming soon.
+ *
+ * The lane reached customers before it was meant to, and one of them bought
+ * credits against it. Switching it off wholesale would take away something
+ * already paid for, and hiding a wallet is not the same as refunding it — so
+ * the switch is admins plus this list rather than admins alone.
+ *
+ * An allowance rather than only their bought credits, because the picker drops
+ * the free model when the allowance is zero: without this they would keep a
+ * balance they could no longer see a model to spend.
+ *
+ * Lowercased on both sides. An email that does not match here silently loses
+ * access, which is the failure worth being careful about.
+ */
+export const VIDEO_CREDITS_ALLOWED_EMAILS = [
+  "davidstamu80@gmail.com",
+];
+
+function videoCreditsAllowed(user: User): boolean {
+  const email = (user.email ?? "").trim().toLowerCase();
+  return !!email && VIDEO_CREDITS_ALLOWED_EMAILS.includes(email);
+}
 
 /**
  * Grant one pack per confirmed payment regardless of quantity bought.
@@ -102,7 +126,7 @@ const EMPTY: CreditBalance = { grant: 0, paid: 0, total: 0, reserved: 0, monthly
  *  allocated, which is how Founder is excluded. */
 export async function monthlyGrantFor(user: User): Promise<number> {
   if (FREE_VIDEO_COMING_SOON) return 0;
-  if (VIDEO_CREDITS_ADMIN_ONLY && !isAdminUser(user)) return 0;
+  if (VIDEO_CREDITS_ADMIN_ONLY && !isAdminUser(user) && !videoCreditsAllowed(user)) return 0;
   const config = await getQuotaConfig();
   return capFromConfig(config, "genaipro_video_credits", planSlugOf(user), isAdminUser(user));
 }
