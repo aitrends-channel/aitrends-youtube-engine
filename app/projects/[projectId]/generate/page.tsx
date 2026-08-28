@@ -22,7 +22,7 @@ import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
 import { friendlyError, isModelTerminalError, isContentBlockMessage, isProviderAccountEmpty } from "@/lib/errors/friendly";
 import { isOutOfCreditsMessage } from "@/lib/out-of-credits";
-import { reportOutOfCredits, blockIfShort } from "@/store/outOfCreditsStore";
+import { reportOutOfCredits, blockIfShort, confirmSwitch } from "@/store/outOfCreditsStore";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
 import { getModelConfig } from "@/lib/kie/imageModels";
 import { poyoImageConfig } from "@/lib/poyo/imageModels";
@@ -1185,25 +1185,74 @@ export default function GeneratePage({ params }: PageProps) {
   const affordable = useCallback(async (
     body: Record<string, unknown>,
     run?: { modelName?: string | null; count?: number | null },
-  ): Promise<boolean> => {
-    try {
-      const res = await fetch("/api/credits/estimate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) return true;
-      const estimate = await res.json() as {
-        sufficient: boolean; total: number | null; balance: number; gateCount?: number;
+    /** Applied when the user takes the modal's offer to switch models. Returns
+     *  the name to show for it, since the caller owns the model list. */
+    onSwitch?: (modelId: string) => string | null,
+  ): Promise<number | null> => {
+    const asked = typeof run?.count === "number" ? run.count : null;
+    let payload = body;
+    let label = run?.modelName ?? null;
+
+    // Loops because switching models is a re-price, not an answer: the modal
+    // closes, the new model is selected, and it reopens with that model's
+    // figures for the user to decide again. Everything else ends the loop.
+    let justSwitched = false;
+    for (;;) {
+      let estimate: {
+        sufficient: boolean; runSufficient?: boolean; total: number | null; balance: number;
+        gateCount?: number; affordableCount?: number | null; runCount?: number; runTotal?: number | null;
+        alternative?: { modelId: string; name: string; total: number } | null;
       };
-      // The modal names what was priced. For a batched run that is the batch
-      // the server would submit first, not the whole list, so the number and
-      // the count in the sentence describe the same thing.
-      return !blockIfShort(estimate, { ...run, count: estimate.gateCount ?? run?.count ?? null });
-    } catch {
-      // The estimate is advisory. If it cannot be reached, let the run start
-      // and let the API refuse it.
-      return true;
+      try {
+        const res = await fetch("/api/credits/estimate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) return asked;
+        estimate = await res.json();
+      } catch {
+        // The estimate is advisory. If it cannot be reached, let the run start
+        // and let the API refuse it.
+        return asked;
+      }
+
+      // Pressing Switch asked a question about price, not to spend money. So
+      // when the new model does cover the whole run, the modal stays up saying
+      // so and the run starts on Generate rather than on its own.
+      const fullRun = estimate.runCount ?? asked ?? 0;
+      const fullTotal = estimate.runTotal ?? estimate.total;
+      if (justSwitched && fullTotal !== null && fullTotal <= estimate.balance && fullRun > 0) {
+        const confirmed = await confirmSwitch({
+          modelName: label ?? "This model",
+          count: fullRun,
+          total: fullTotal,
+          balance: estimate.balance,
+        });
+        return typeof confirmed === "number" ? confirmed : null;
+      }
+
+      // Three outcomes, not two. The run may be refused outright, allowed but
+      // unable to finish, or fine. The middle one is what a batched image run
+      // usually is: it starts, gets through what the wallet covers and stops
+      // itself, and saying so beforehand is the difference between a plan and a
+      // pile of failures at the end.
+      const partial =
+        estimate.sufficient &&
+        estimate.runSufficient === false &&
+        (estimate.affordableCount ?? 0) >= 1;
+      const decision = await blockIfShort(
+        estimate,
+        { modelName: label, count: estimate.runCount ?? asked },
+        { informational: partial },
+      );
+      if (decision !== "switch") return decision;
+
+      const alt = estimate.alternative;
+      if (!alt || !onSwitch) return null;
+      label = onSwitch(alt.modelId) ?? alt.name;
+      payload = { ...payload, modelId: alt.modelId };
+      justSwitched = true;
     }
   }, []);
 
@@ -1643,21 +1692,33 @@ export default function GeneratePage({ params }: PageProps) {
 
     if (targetBeats.length === 0) return;
 
-    if (!(await affordable({
+    // Only whether it may start, never how many. The number that comes back
+    // here counts the first BATCH, because that is what an image run is gated
+    // on, and slicing the beat list by it would cut a 200-image run down to
+    // three. The server walks the whole list and stops itself the moment the
+    // wallet cannot cover the next batch.
+    // Held locally as well as in state: setState does not land before the
+    // submits below, so a switch would otherwise generate on the model the
+    // user just moved away from.
+    let runImageModel = selectedImageModel;
+    if ((await affordable({
       kind: "image",
       modelId: selectedImageModel,
       operator: selectedImageOperator,
       count: targetBeats.length,
       resolution: selectedResolution,
-      // Images go out a batch at a time and the run stops itself when the
-      // wallet empties, so what decides whether it may start is the first
-      // batch. Warning on the full run turned away runs that would have made
-      // real progress.
       batched: true,
     }, {
       modelName: imageModels?.find((m) => m.id === selectedImageModel)?.name ?? null,
       count: targetBeats.length,
-    }))) return;
+    }, (modelId) => {
+      // Selecting it for real, not just for this run: the picker should show
+      // what is about to be generated, and the next run should start from the
+      // model the user just agreed to.
+      runImageModel = modelId;
+      setSelectedImageModel(modelId);
+      return imageModels?.find((m) => m.id === modelId)?.name ?? null;
+    })) === null) return;
 
     const shouldClear = opts.mode === "all" && generatedImages > 0;
 
@@ -1732,7 +1793,7 @@ export default function GeneratePage({ params }: PageProps) {
               projectId,
               beatNumber: beat.beatNumber,
               imagePrompt: beat.imagePrompt,
-              modelId: selectedImageModel,
+              modelId: runImageModel,
               ...(selectedImageOperator ? { operator: selectedImageOperator } : {}),
               aspectRatio: selectedAspectRatio,
               ...(selectedResolution ? { resolution: selectedResolution } : {}),
@@ -1821,7 +1882,7 @@ export default function GeneratePage({ params }: PageProps) {
             const res = await fetch("/api/generate/images/poll", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ projectId, beatNumber, taskId, modelId: selectedImageModel }),
+              body: JSON.stringify({ projectId, beatNumber, taskId, modelId: runImageModel }),
             });
             const data = await res.json().catch(() => ({})) as { status?: string; error?: string };
             const status = !res.ok ? "error" : (data.status ?? "pending");
@@ -2036,7 +2097,7 @@ export default function GeneratePage({ params }: PageProps) {
       // image can't be generated. Split those out and tell the user to
       // make the images first instead of silently dropping them.
       const missingImage = targets.filter((b) => !b.imageUrl);
-      const eligible = targets.filter((b) => b.imageUrl);
+      let eligible = targets.filter((b) => b.imageUrl);
       if (eligible.length === 0) {
         if (missingImage.length > 0) {
           const nums = missingImage.map((b) => b.beatNumber).join(", ");
@@ -2049,7 +2110,15 @@ export default function GeneratePage({ params }: PageProps) {
       if (missingImage.length > 0) {
         toast.error(`Skipped ${missingImage.length} beat${missingImage.length === 1 ? "" : "s"} with no image — generate their images first.`);
       }
-      if (!(await affordable({
+      // Clips are not batched: every one takes a hold at queue time, so the
+      // queue has to be sized to the wallet before it is sent. When the balance
+      // covers 14 of 19 the modal offers those 14 and this is where the list is
+      // cut, rather than queueing 19 and letting 5 come back as failures.
+      // Held locally as well as in state: setState does not land before the
+      // POST below, so submitting `selectedVideoModel` after a switch would
+      // queue the model the user just moved away from.
+      let runVideoModel = selectedVideoModel;
+      const allowedClips = await affordable({
         kind: "video",
         modelId: selectedVideoModel,
         count: eligible.length,
@@ -2058,7 +2127,13 @@ export default function GeneratePage({ params }: PageProps) {
       }, {
         modelName: videoModels?.find((m) => m.id === selectedVideoModel)?.name ?? null,
         count: eligible.length,
-      }))) return;
+      }, (modelId) => {
+        runVideoModel = modelId;
+        setSelectedVideoModel(modelId);
+        return videoModels?.find((m) => m.id === modelId)?.name ?? null;
+      });
+      if (allowedClips === null) return;
+      if (allowedClips < eligible.length) eligible = eligible.slice(0, allowedClips);
 
       // Instant UI feedback — flip all eligible beats to "queued" before
       // the POST so the badges + fast poll kick in immediately.
@@ -2069,7 +2144,7 @@ export default function GeneratePage({ params }: PageProps) {
         body: JSON.stringify({
           projectId,
           beats: eligible.map((b) => ({ beatNumber: b.beatNumber, videoPrompt: b.videoPrompt, imageUrl: b.imageUrl })),
-          modelId: selectedVideoModel,
+          modelId: runVideoModel,
           aspectRatio: selectedVideoAspectRatio,
           ...(selectedDuration !== null ? { duration: selectedDuration } : {}),
           ...(safeVideoResolution ? { resolution: safeVideoResolution } : {}),

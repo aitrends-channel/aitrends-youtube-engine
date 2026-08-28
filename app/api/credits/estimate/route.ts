@@ -35,34 +35,42 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "count must be 1 or more" }, { status: 400 });
   }
 
-  // What the run is actually gated on.
-  //
-  // An image run does not submit 216 images, it submits a batch at a time and
-  // re-checks the wallet before each one, stopping cleanly when the credits run
-  // out and reporting the rest. Pricing the whole run at the door therefore
-  // refuses runs that would have worked: 432 credits demanded before the first
-  // batch of three, worth about 6, could even start. `batched` asks for the
-  // figure that decides whether the run may begin.
-  const gateCount = body.batched === true
-    ? Math.min(count, Math.max(1, (await getConcurrencyConfig()).image_generation_batch))
-    : count;
-
+  // Always priced for the whole run, so the sentence the user reads and the
+  // alternative model offered to them are both about the thing they asked for.
   const estimate = await estimateRun({
     userId: user.id,
     kind,
     modelId,
     operator: typeof body.operator === "string" ? body.operator : null,
-    count: gateCount,
+    count,
     durationSec: Number.isFinite(Number(body.durationSec)) ? Number(body.durationSec) : null,
     resolution: typeof body.resolution === "string" ? body.resolution : null,
   });
 
-  // runCount/runTotal describe the whole run, so a caller can still say what
-  // finishing it would cost without that number being what blocks the start.
+  // What the run is gated on, which is a different question from what it costs.
+  //
+  // An image run does not submit 216 images. It submits a batch at a time and
+  // re-checks the wallet before each one, stopping cleanly when the credits run
+  // out and reporting the rest. Refusing it on the full total turned away runs
+  // that would have worked: 432 credits demanded before the first batch of
+  // three, worth about six, could start. So `batched` separates the two —
+  // `sufficient` says whether it may begin, `runSufficient` whether it can
+  // finish, and a caller that cares about the difference can tell the user how
+  // far they will get instead of blocking or staying silent.
+  const batchSize = body.batched === true
+    ? Math.max(1, (await getConcurrencyConfig()).image_generation_batch)
+    : null;
+  const gateCount = batchSize ? Math.min(count, batchSize) : count;
+  const gateTotal = estimate.perUnit === null ? null : estimate.perUnit * gateCount;
+  const gateSufficient = gateTotal === null ? true : gateTotal <= estimate.balance;
+
   return NextResponse.json({
     ...estimate,
+    sufficient: gateSufficient,
+    runSufficient: estimate.sufficient,
     gateCount,
+    gateTotal,
     runCount: count,
-    runTotal: estimate.perUnit === null || estimate.perUnit === undefined ? null : estimate.perUnit * count,
+    runTotal: estimate.total,
   });
 }

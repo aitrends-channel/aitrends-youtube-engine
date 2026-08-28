@@ -23,7 +23,7 @@ const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 
 
 export function OutOfCreditsGate() {
   const router = useRouter();
-  const { open, credits, needed, alternative, modelName, count, show, hide } = useOutOfCreditsStore();
+  const { open, kind, credits, needed, alternative, modelName, count, affordable, show, hide, choose } = useOutOfCreditsStore();
   const [navigating, setNavigating] = useState(false);
   const [balance, setBalance] = useState<{ credits: number; reserved: number } | null>(null);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
@@ -115,6 +115,16 @@ export function OutOfCreditsGate() {
     router.push("/billing");
   }
 
+  // Whether the balance covers some but not all of it. Needs a count to divide
+  // by, and at least one whole generation to offer.
+  const partial =
+    kind === "short" &&
+    needed !== null && typeof count === "number" && count > 1 &&
+    typeof affordable === "number" && affordable >= 1 && affordable < count;
+  // After a switch the balance covers the whole run, so the modal is a
+  // confirmation rather than a refusal.
+  const ready = kind === "ready" && typeof count === "number";
+
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next && !navigating) hide(); }}>
       <DialogContent
@@ -127,13 +137,28 @@ export function OutOfCreditsGate() {
               at zero is not the same as a wallet that cannot cover this
               particular run, and the second one still has credits to spend on
               something smaller. */}
+          {/* Three situations, not two. A wallet at zero, a wallet that cannot
+              cover this run at all, and a wallet that covers part of it. The
+              third is the common one on a long project and it is the only one
+              where the useful sentence is a number of beats rather than a
+              number of credits. */}
           <DialogTitle className="text-zinc-50">
-            {needed === null ? "Out of credits" : "Not enough for this run"}
+            {ready
+              ? `Switched to ${modelName}`
+              : needed === null
+                ? "Out of credits"
+                : partial
+                  ? `Enough for ${affordable} of ${count}`
+                  : "Not enough for this run"}
           </DialogTitle>
           <DialogDescription className="text-zinc-400">
-            {needed === null
-              ? "Top up to keep generating."
-              : `${modelName ?? "This run"} needs about ${fmt(needed)} credits${count ? ` for ${count}` : ""}.`}
+            {ready
+              ? `${modelName} runs all ${count} for about ${fmt(needed ?? 0)} credits, which your balance covers.`
+              : needed === null
+                ? "Top up to keep generating."
+                : partial
+                  ? `${modelName ?? "This run"} costs about ${fmt(needed / (count as number))} credits each, so your balance covers ${affordable} of the ${count}. Generate those now, or top up for the rest.`
+                  : `${modelName ?? "This run"} needs about ${fmt(needed)} credits${count ? ` for ${count}` : ""}.`}
           </DialogDescription>
         </DialogHeader>
         <p className="text-sm leading-relaxed text-zinc-500">
@@ -151,11 +176,10 @@ export function OutOfCreditsGate() {
         </p>
         {alternative && (
           <p className="-mt-3 text-sm text-zinc-500">
-            Switch to <span className="text-zinc-300">{alternative.name}</span> for {fmt(alternative.total)} credits,
-            or top up.
+            <span className="text-zinc-300">{alternative.name}</span> would run all {count ?? "of them"} for {fmt(alternative.total)} credits.
           </p>
         )}
-        <DialogFooter className="-mx-6 -mb-6 mt-1 gap-2.5 border-zinc-800 bg-zinc-900/60 px-6 py-4">
+        <DialogFooter className="-mx-6 -mb-6 mt-1 flex-wrap gap-2.5 border-zinc-800 bg-zinc-900/60 px-6 py-4">
           <button
             onClick={hide}
             disabled={navigating}
@@ -163,10 +187,39 @@ export function OutOfCreditsGate() {
           >
             Not now
           </button>
+          {/* Switching is the option that costs nothing and finishes the run, so
+              it sits with the other actions rather than being described in a
+              sentence the user has to go and act on somewhere else. Re-prices
+              rather than starting anything: the modal comes back with the new
+              model's figures and the user decides again. */}
+          {!ready && alternative && (
+            <button
+              onClick={() => choose("switch")}
+              disabled={navigating}
+              className="h-10 px-5 rounded-lg text-sm font-semibold text-zinc-100 ring-1 ring-white/15 transition-colors hover:bg-white/5 disabled:opacity-40"
+            >
+              Switch to {alternative.name}
+            </button>
+          )}
+          {/* The action the user came for, when there is one. Placed before Top
+              up because getting 14 of 19 done now is usually what they want,
+              and paying is the fallback rather than the ask. */}
+          {(partial || ready) && (
+            <button
+              onClick={() => choose(affordable)}
+              disabled={navigating}
+              className={ready
+                ? "h-10 px-5 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+                : "h-10 px-5 rounded-lg text-sm font-semibold text-zinc-100 ring-1 ring-white/15 transition-colors hover:bg-white/5 disabled:opacity-40"}
+              style={ready ? { background: "oklch(0.72 0.25 285)" } : undefined}
+            >
+              Generate {affordable}
+            </button>
+          )}
           <button
             onClick={topUp}
             disabled={navigating}
-            className="h-10 px-5 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+            className={`h-10 px-5 rounded-lg text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-60 ${ready ? "hidden" : ""}`}
             style={{ background: "oklch(0.72 0.25 285)" }}
           >
             {navigating ? (
