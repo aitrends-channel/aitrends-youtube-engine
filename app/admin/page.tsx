@@ -2421,20 +2421,44 @@ function MediaOperatorPanel() {
   const { data: anthropicCfg, mutate: mutateAnthropic } = useSWR<{
     model: string;
     models: { id: string; label: string; tier: string; note: string }[];
+    claude_model_per_step?: Record<string, string>;
+    prompt_model_steps?: string[];
   }>("/api/admin/anthropic-routing", fetcher, { revalidateOnFocus: false });
   const [savingModel, setSavingModel] = useState(false);
+  // Which group the model grid is setting. The prompts run is far the biggest
+  // consumer of Claude tokens here, so it is worth pricing on its own; the rest
+  // of the writing steps are low-volume and want the best model.
+  const [modelTab, setModelTab] = useState<"prompts" | "others">("prompts");
+
+  const promptSteps = anthropicCfg?.prompt_model_steps ?? [];
+  // What the selected group runs on today. The prompts group is pinned only
+  // when every one of its steps is, so a half-applied write shows as the
+  // default rather than as a pin that is not really in force.
+  const pinnedPromptModel = (() => {
+    const perStep = anthropicCfg?.claude_model_per_step ?? {};
+    const pins = promptSteps.map((step) => perStep[step]).filter(Boolean);
+    return pins.length === promptSteps.length && new Set(pins).size === 1 ? pins[0] : null;
+  })();
+  const activeModel = modelTab === "prompts"
+    ? (pinnedPromptModel ?? anthropicCfg?.model)
+    : anthropicCfg?.model;
 
   async function setClaudeModel(model: string) {
     setSavingModel(true);
+    const forPrompts = modelTab === "prompts";
     try {
       const res = await fetch("/api/admin/anthropic-routing", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model }),
+        // Steps present means pin those; absent means move the engine default.
+        body: JSON.stringify(forPrompts ? { model, steps: promptSteps } : { model }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "Could not change the model");
-      toast.success(`Writing steps now run on ${anthropicCfg?.models.find((m) => m.id === model)?.label ?? model}`);
+      const label = anthropicCfg?.models.find((m) => m.id === model)?.label ?? model;
+      toast.success(forPrompts
+        ? `Beats and prompts now run on ${label}`
+        : `The other writing steps now run on ${label}`);
       await mutateAnthropic();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not change the model");
@@ -2677,12 +2701,44 @@ function MediaOperatorPanel() {
                   for the others. */}
               {s === "chat" && current === "anthropic" && anthropicCfg && (
                 <div className="px-2 pb-2 space-y-1.5">
-                  <p className="text-xs font-semibold pt-1" style={{ color: "var(--c-55)" }}>
-                    Model for the writing steps
-                  </p>
+                  <div className="flex items-center gap-2 pt-1 flex-wrap">
+                    <p className="text-xs font-semibold" style={{ color: "var(--c-55)" }}>
+                      Model for
+                    </p>
+                    {/* Two groups, because the prompts run is the only step
+                        whose volume makes a cheaper model worth the trade. */}
+                    {([
+                      { id: "prompts" as const, label: "Prompts", hint: "Beats, image prompts and video prompts" },
+                      { id: "others" as const, label: "Others", hint: "Analysis, ideas, script, visuals, thumbnails" },
+                    ]).map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setModelTab(t.id)}
+                        title={t.hint}
+                        className="px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer"
+                        style={modelTab === t.id ? {
+                          background: "oklch(0.62 0.15 220 / 0.14)",
+                          border: "1px solid oklch(0.62 0.15 220 / 0.45)",
+                          color: "oklch(0.35 0.13 220)",
+                        } : {
+                          background: "var(--bg-card, white)",
+                          border: "1px solid var(--bd-10)",
+                          color: "var(--c-55)",
+                        }}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                    {modelTab === "prompts" && !pinnedPromptModel && (
+                      <span className="text-[11px]" style={{ color: "var(--c-45)" }}>
+                        following the others
+                      </span>
+                    )}
+                  </div>
                   <div className="grid gap-1.5 sm:grid-cols-2">
                     {anthropicCfg.models.map((m) => {
-                      const chosen = anthropicCfg.model === m.id;
+                      const chosen = activeModel === m.id;
                       return (
                         <button
                           key={m.id}

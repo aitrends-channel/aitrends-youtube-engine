@@ -1,6 +1,6 @@
 import { supabase } from "@/lib/supabase/client";
 import { getSettings } from "@/lib/settings";
-import { getRoutingForUser, isClientPaid, type WorkflowStep } from "@/lib/claude/routing";
+import { getRoutingForUser, isClientPaid, isWorkflowStep, type WorkflowStep } from "@/lib/claude/routing";
 import { getModelForProvider, getPromptProvider, isKieProvider } from "@/lib/claude/providers";
 import { PRO_TIER_PLANS, planSlugOf } from "@/lib/plans-gating";
 import { isAdminUser } from "@/lib/admin";
@@ -153,12 +153,23 @@ export type ClaudeModelConfig = {
   default: string;
   /** Model ids a Pro user may choose. Empty = the feature is off. */
   userSelectable: string[];
+  /** Steps that run on something other than the default. Absent means the
+   *  default, which is what every step did before this existed. */
+  perStep: Partial<Record<WorkflowStep, string>>;
 };
+
+/** The steps the prompts run is made of.
+ *
+ *  Grouped because they are one job to the person configuring them: the prompts
+ *  step splits the script into beats and writes an image and a video prompt for
+ *  each. It is also the highest-volume Claude work in the product by a wide
+ *  margin, which is why it is the one worth pricing separately from the rest. */
+export const PROMPT_MODEL_STEPS: WorkflowStep[] = ["beats", "image_prompts", "video_prompts"];
 
 const CACHE_TTL_MS = 15_000;
 let cached: { at: number; value: ClaudeModelConfig } | null = null;
 
-const CONFIG_FALLBACK: ClaudeModelConfig = { default: CLAUDE_MODEL_FALLBACK, userSelectable: [] };
+const CONFIG_FALLBACK: ClaudeModelConfig = { default: CLAUDE_MODEL_FALLBACK, userSelectable: [], perStep: {} };
 
 /** Cached so a per-step model lookup doesn't hammer Supabase on every
  *  workflow call. Falls back to the shipped model on any error — a
@@ -178,12 +189,38 @@ export async function getClaudeModelConfig(): Promise<ClaudeModelConfig> {
       user_selectable_claude_models?: unknown;
     } | null;
 
+    // Asked for separately on purpose. Postgres fails a select naming an
+    // unknown column, and this function answers the catch with a hardcoded
+    // fallback — so folding claude_model_per_step into the select above would
+    // mean that between deploying and running the migration, every step
+    // silently ignored the admin's chosen default and ran on opus-4-7.
+    let rawPerStep: unknown = null;
+    {
+      const { data: stepRow } = await supabase
+        .from("product_config")
+        .select("claude_model_per_step")
+        .eq("service", "_global")
+        .maybeSingle();
+      rawPerStep = (stepRow as Record<string, unknown> | null)?.claude_model_per_step ?? null;
+    }
+
     const raw = row?.user_selectable_claude_models;
+    // Same filtering as the allowlist, and for the same reason: a step pinned
+    // to a model that has since been retired from the catalog falls back to the
+    // default rather than sending an id nothing recognises.
+    const perStep: Partial<Record<WorkflowStep, string>> = {};
+    if (rawPerStep && typeof rawPerStep === "object") {
+      for (const [k, v] of Object.entries(rawPerStep as Record<string, unknown>)) {
+        if (isWorkflowStep(k) && isSelectableClaudeModel(v)) perStep[k] = v;
+      }
+    }
+
     const value: ClaudeModelConfig = {
       default: isSelectableClaudeModel(row?.default_claude_model) ? row.default_claude_model : CLAUDE_MODEL_FALLBACK,
       // Filtered against the catalog on read, so an id retired from the
       // code can't linger in the DB and be offered to users.
       userSelectable: Array.isArray(raw) ? raw.filter(isSelectableClaudeModel) : [],
+      perStep,
     };
     cached = { at: now, value };
     return value;
@@ -194,6 +231,12 @@ export async function getClaudeModelConfig(): Promise<ClaudeModelConfig> {
 
 export async function getDefaultClaudeModel(): Promise<string> {
   return (await getClaudeModelConfig()).default;
+}
+
+/** The Claude model a step runs on: its own override, or the default. */
+export async function claudeModelForStep(step?: WorkflowStep): Promise<string> {
+  const cfg = await getClaudeModelConfig();
+  return (step && cfg.perStep[step]) || cfg.default;
 }
 
 export function invalidateDefaultClaudeModelCache(): void {
@@ -228,7 +271,7 @@ export async function resolveDefaultModel(step?: WorkflowStep, userId?: string):
       // fail the step.
     }
   }
-  return modelParamsFor(await getDefaultClaudeModel());
+  return modelParamsFor(await claudeModelForStep(step));
 }
 
 /** Pro-tier check from a userId, so the one-click orchestrator (which only
@@ -297,7 +340,9 @@ export async function resolveModelForUser(
   }
 
   const config = await getClaudeModelConfig();
-  const fallback = modelParamsFor(config.default);
+  // The step's own model, not the global default: an admin who moved the
+  // prompts steps onto Sonnet meant it for the users who fall through here too.
+  const fallback = modelParamsFor(config.perStep[step] || config.default);
 
   if (!USER_CHOICE_STEPS.has(step) || config.userSelectable.length === 0) return fallback;
 
