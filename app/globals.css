@@ -660,3 +660,19 @@ body {
 .seek-slider::-moz-range-track {
   background: transparent;
 }
+
+/* The image-movement preview on the assemble step.
+ *
+ * The same 15% travel the assembler applies, so what the customer watches here
+ * is the move they will get. Only an approximation of the render — the browser
+ * scales differently from ffmpeg — but the extent and the direction are exact,
+ * and those are what the choice is about. */
+@keyframes ken-burns-in {
+  from { transform: scale(1); }
+  to   { transform: scale(1.15); }
+}
+
+@keyframes ken-burns-out {
+  from { transform: scale(1.15); }
+  to   { transform: scale(1); }
+}

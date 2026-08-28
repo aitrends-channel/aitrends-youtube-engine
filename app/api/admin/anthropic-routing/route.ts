@@ -5,6 +5,7 @@ import { WORKFLOW_STEPS, isWorkflowStep, type AnthropicRouting, type WorkflowSte
 import {
   CLAUDE_MODELS,
   CLAUDE_MODEL_FALLBACK,
+  PROMPT_MODEL_STEPS,
   USER_CHOICE_STEPS,
   claudeRateFor,
   getClaudeModelConfig,
@@ -96,6 +97,10 @@ export async function GET() {
     model_fallback: CLAUDE_MODEL_FALLBACK,
     user_selectable_models: modelConfig.userSelectable,
     user_choice_steps: [...USER_CHOICE_STEPS],
+    // Claude models pinned to particular steps, and which steps the Prompts
+    // tab covers. Absent step means it runs on `model` above.
+    claude_model_per_step: modelConfig.perStep,
+    prompt_model_steps: PROMPT_MODEL_STEPS,
     provider_per_step: providerConfig.perStep,
     // Per-step model overrides. Absent key means the step uses the provider
     // default below, which is what every step did before this existed.
@@ -312,6 +317,31 @@ export async function PUT(req: Request) {
         { error: `Unknown model: ${body.model}. Valid: ${CLAUDE_MODELS.map((m) => m.id).join(", ")}` },
         { status: 400 },
       );
+    }
+
+    // `steps` narrows the change to those steps rather than the whole engine.
+    // Sent by the Prompts tab, which pins the three prompt steps and leaves
+    // everything else on the default.
+    const steps = Array.isArray(body.steps) ? body.steps.filter(isWorkflowStep) : null;
+
+    if (steps && steps.length > 0) {
+      const cfg = await getClaudeModelConfig();
+      // Merged, not replaced: a later tab must not silently unpin the steps an
+      // earlier one set.
+      const next: Record<string, string> = { ...cfg.perStep };
+      for (const step of steps) next[step] = body.model as string;
+      // Pinning a group to the default is how it is unpinned. Keeping the row
+      // would leave the step frozen if the default later moved.
+      if (body.model === cfg.default) for (const step of steps) delete next[step];
+
+      const { error } = await supabase
+        .from("product_config")
+        .update({ claude_model_per_step: next })
+        .eq("service", "_global");
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+      invalidateDefaultClaudeModelCache();
+      return NextResponse.json({ ok: true, model: body.model, steps });
     }
 
     const { error } = await supabase

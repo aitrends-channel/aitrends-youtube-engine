@@ -71,6 +71,12 @@ const CAPTION_LANGUAGES = [
   { code: "Arabic", label: "Arabic" },
 ] as const;
 
+const IMAGE_MOTIONS = [
+  { id: "none",     label: "None",     hint: "Hold the frame" },
+  { id: "zoom-in",  label: "Zoom in",  hint: "Push slowly in" },
+  { id: "zoom-out", label: "Zoom out", hint: "Pull slowly out" },
+];
+
 const CAPTION_STYLES = [
   { id: "classic", label: "Classic", hint: "White, black outline" },
   { id: "bold",    label: "Bold",    hint: "Yellow, bold" },
@@ -90,6 +96,13 @@ export default function AssemblePage({ params }: PageProps) {
   const ttsUrl: string | null = project?.tts_url ?? null;
   const ttsCleanedUrl: string | null = project?.tts_cleaned_url ?? null;
   const generatedVideos = beats.filter((b) => b.videoUrl).length;
+  // Beats the assembler will render from a still image, because they have a
+  // picture and no clip. These are the only ones image movement applies to.
+  const stillBeats = beats.filter((b) => !b.videoUrl && b.imageUrl).length;
+  // One of their own frames to demonstrate on. A generic stock image would show
+  // the movement but not what it does to their composition, which is the part
+  // worth judging.
+  const stillPreviewUrl = beats.find((b) => !b.videoUrl && b.imageUrl)?.imageUrl ?? null;
   const videoBeats = beats.filter((b) => b.videoPrompt).length;
 
   // Bump current_state to 15 the first time the user lands here so the
@@ -148,12 +161,14 @@ export default function AssemblePage({ params }: PageProps) {
       captions_style?:    string  | null;
       captions_size?:     string  | null;
       captions_position?: string  | null;
+      image_motion?:      string  | null;
     };
     if (typeof cap.captions_enabled  === "boolean") setCaptionsEnabled(cap.captions_enabled);
     if (typeof cap.captions_language === "string" && cap.captions_language) setCaptionsLanguage(cap.captions_language);
     if (typeof cap.captions_style    === "string" && cap.captions_style)    setCaptionsStyle(cap.captions_style);
     if (typeof cap.captions_size     === "string" && cap.captions_size)     setCaptionsSize(cap.captions_size);
     if (typeof cap.captions_position === "string" && cap.captions_position) setCaptionsPosition(cap.captions_position);
+    if (typeof cap.image_motion      === "string" && cap.image_motion)      setImageMotion(cap.image_motion);
   }, [project]);
 
   // "Use this always": per-user saved bg-music + logo defaults, tracked
@@ -342,6 +357,10 @@ export default function AssemblePage({ params }: PageProps) {
   const [captionsStyle, setCaptionsStyle] = useState("classic");
   const [captionsSize, setCaptionsSize] = useState("medium");
   const [captionsPosition, setCaptionsPosition] = useState("bottom");
+  // Movement for beats that are a still image. Only reaches those beats: one
+  // that has a generated clip is untouched, so a project with clips everywhere
+  // sees no difference whatever this is set to.
+  const [imageMotion, setImageMotion] = useState("none");
 
   // Live-persist trim + captions to the project row whenever they
   // change. The /api/generate/assemble call already writes them on
@@ -365,11 +384,12 @@ export default function AssemblePage({ params }: PageProps) {
           captions_style: captionsStyle,
           captions_size: captionsSize,
           captions_position: captionsPosition,
+          image_motion: imageMotion,
         }),
       }).catch(() => { /* non-blocking — Assemble click is the safety net */ });
     }, 500);
     return () => clearTimeout(t);
-  }, [trimSilence, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, projectId]);
+  }, [trimSilence, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, imageMotion, projectId]);
   const [assembling, setAssembling] = useState(false);
   // Monotonic high-water mark for the rendered stage index. We hold
   // the latest matched stage so a transient unmatched status line
@@ -682,6 +702,7 @@ export default function AssemblePage({ params }: PageProps) {
           captionsSize,
           captionsPosition,
           trimSilenceEnabled: trimSilence,
+          imageMotion,
           backgroundMusicUrl: bgmUploadedUrl,
           backgroundMusicVolume: bgmVolume,
           resolution: selectedResolution,
@@ -827,6 +848,7 @@ export default function AssemblePage({ params }: PageProps) {
           captionsSize,
           captionsPosition,
           trimSilenceEnabled: trimSilence,
+          imageMotion,
           backgroundMusicUrl: bgmUrl,
           backgroundMusicVolume: bgmVolume,
           resolution: selectedResolution,
@@ -1444,6 +1466,57 @@ export default function AssemblePage({ params }: PageProps) {
                 </div>
               )}
             </div>
+
+            {/* Still-image movement.
+                Hidden when every beat already has a clip: the setting would do
+                nothing there, and an option that changes nothing is worse than
+                no option. */}
+            {stillBeats > 0 && (
+            <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+              <div className="mb-4">
+                <p className="text-sm font-semibold">Image movement</p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                  {stillBeats} {stillBeats === 1 ? "beat is a still image" : "beats are still images"}. A slow push stops them sitting dead on screen.
+                </p>
+              </div>
+              {/* Watch it before choosing it. The same 15% travel the
+                  assembler applies, over four seconds, which is about what a
+                  beat runs for. Looped, so it can be compared against the other
+                  options without clicking twice. */}
+              {stillPreviewUrl && (
+                <div className="mb-3 rounded-xl overflow-hidden" style={{ border: "1px solid var(--bd-card)", background: "black" }}>
+                  <div className="relative w-full overflow-hidden" style={{ aspectRatio: aspectRatio === "9:16" ? "9 / 16" : aspectRatio === "1:1" ? "1 / 1" : "16 / 9", maxHeight: 180 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={stillPreviewUrl}
+                      alt=""
+                      className="absolute inset-0 w-full h-full object-contain"
+                      style={imageMotion === "none" ? undefined : {
+                        animation: `${imageMotion === "zoom-in" ? "ken-burns-in" : "ken-burns-out"} 4s linear infinite`,
+                        willChange: "transform",
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+              <div className="grid grid-cols-3 gap-1.5">
+                {IMAGE_MOTIONS.map((m) => (
+                  <button key={m.id} onClick={() => setImageMotion(m.id)} disabled={assembling}
+                    className="py-2 px-3 rounded-xl text-left transition-all disabled:opacity-40"
+                    style={imageMotion === m.id ? {
+                      background: "oklch(0.72 0.25 285 / 0.15)",
+                      border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                    } : {
+                      background: "var(--bg-input)",
+                      border: "1px solid var(--bd-card)",
+                    }}>
+                    <p className="text-xs font-medium" style={{ color: imageMotion === m.id ? "var(--accent-purple-text)" : "var(--c-60)" }}>{m.label}</p>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>{m.hint}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+            )}
 
             {/* Captions */}
             <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
