@@ -34,6 +34,10 @@ export const KIE_TO_POYO_VIDEO: Record<string, string> = {
   "veo3": "veo3.1-quality",
   "veo3_fast": "veo3.1-fast",
   "runway": "runway-gen-4.5",
+  // Same id on both sides: these entered the catalog as PoYo models rather
+  // than as KIE ones with a PoYo equivalent.
+  "seedance-2-mini": "seedance-2-mini",
+  "omni-flash": "omni-flash",
 };
 
 export function poyoVideoModelFor(kieModelId: string): string | null {
@@ -89,6 +93,7 @@ export function poyoVideoResolutions(kieModelId: string): string[] | undefined {
 export const POYO_ONLY_VIDEO = [
   "seedance-2.5", "seedance-2-mini", "hailuo-2.3", "hailuo-03",
   "kling-2.5-turbo-pro", "kling-3.0-motion-control", "veo3.1-fast-official",
+  "omni-flash",
 ];
 
 export function isPoyoOnlyVideo(modelId: string): boolean {

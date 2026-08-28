@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase/client";
+import { USD_PER_CREDIT } from "@/lib/credit-unit";
 import { claudeRateFor } from "@/lib/claude/models";
 import type { CostStep, CostUnitKind } from "@/lib/costs";
 
@@ -121,7 +122,7 @@ export interface TokenUsd {
  * multiply by 8 and see whether the answer is a plausible price for one
  * nano-banana image, since that model bills 8 credits.
  */
-export const USD_PER_CREDIT = 0.005;
+export { USD_PER_CREDIT } from "@/lib/credit-unit";
 
 /**
  * ElevenLabs API price per 1,000 characters, by model.

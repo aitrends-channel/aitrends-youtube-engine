@@ -199,6 +199,17 @@ export interface KieModel {
   tags?: string[];
   previewUrl?: string;
   costPerUnit?: string;
+  /** What costPerUnit counts. Absent means the historical per-second figure the
+   *  chip has always shown for video, or per generation for images. */
+  costUnit?: "clip" | "sec";
+  /** The provider that will actually serve this model, when it differs from the
+   *  operator the admin selected. Set rather than hidden: the customer chose a
+   *  model, and which provider runs it changes the price and the result. */
+  servedBy?: string;
+  /** The figure is the cheapest the model offers rather than what this run will
+   *  cost, so the chip says "from". Set only for published rates, never for
+   *  measured ones. */
+  costIsFloor?: boolean;
   /** Observed average wall-clock generation time in milliseconds.
    *  Powers the picker's "Fastest" tab — lower is faster. Injected
    *  by /api/kie/models from the project_costs ledger. Absent for

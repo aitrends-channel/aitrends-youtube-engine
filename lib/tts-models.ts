@@ -5,6 +5,8 @@
 // product keys the moment it is imported. A client component pulling the
 // catalog out of there would drag all of that into the browser bundle.
 
+import { USD_PER_CREDIT } from "@/lib/credit-unit";
+
 /** What a voiceover runs on when nobody has chosen otherwise. Unchanged from
  *  when this was the only option, so an existing project sounds the same. */
 export const TTS_MODEL = "eleven_turbo_v2_5";
@@ -22,6 +24,15 @@ export const TTS_MODELS: { id: string; label: string; note: string; perKChars: n
   { id: "eleven_multilingual_v2",label: "Multilingual v2",note: "Steadier across accents and non-English. Twice the price.", perKChars: 0.10 },
   { id: "eleven_v3",             label: "v3",             note: "Most expressive, and the least predictable. Twice the price.", perKChars: 0.10 },
 ];
+
+/** What a model costs the wallet per 1,000 characters.
+ *
+ *  Derived from the USD rate rather than written down beside it, and using the
+ *  same conversion lib/pricing.ts bills with, so the number on the button and
+ *  the number on the ledger cannot drift apart. */
+export function ttsCreditsPerKChars(perKChars: number): number {
+  return perKChars / USD_PER_CREDIT;
+}
 
 export function isSelectableTtsModel(id: unknown): id is string {
   return typeof id === "string" && TTS_MODELS.some((m) => m.id === id);

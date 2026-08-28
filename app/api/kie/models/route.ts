@@ -15,6 +15,7 @@ import { GENAIPRO_VIDEO_MODEL_ID } from "@/lib/genaipro/client";
 import { getMediaOperatorForUser } from "@/lib/operators/routing";
 import { OPERATOR_POYO } from "@/lib/operators";
 import { poyoVideoModelFor, isPoyoOnlyVideo } from "@/lib/poyo/videoModels";
+import { publishedVideoRate } from "@/lib/video-rates";
 
 /** Round a fractional credit value to 2 decimals for display.
  *  KIE returns NUMERIC values (e.g. 9.6 cr per 6s = 1.6 cr/s). */
@@ -60,6 +61,29 @@ function withPoyoCredits(models: CatalogModel[], observed: ObservedByModel): Cat
 }
 
 /**
+ * Fill the chip for video models with no history, from the provider's own
+ * published rate.
+ *
+ * Runs after withMinCredits and never overwrites it: a figure we measured beats
+ * a figure someone advertised, and the measured one is what the model really
+ * costs us. This only reaches the models nobody has generated with, where the
+ * alternative is an empty space that reads as a broken chip.
+ *
+ * Marked as a floor rather than a price. Both providers charge by resolution
+ * and duration, and their ranges are wide enough that a single number would
+ * mislead — so the client renders "from N" and the exact figure still comes
+ * from the estimator once a resolution and duration are chosen.
+ */
+function withPublishedRates<T extends KieModel>(models: T[], operator: string | null): T[] {
+  return models.map((m) => {
+    if (m.costPerUnit !== undefined) return m;
+    const rate = publishedVideoRate(m.id, (m as { operator?: string }).operator ?? operator);
+    if (!rate) return m;
+    return { ...m, costPerUnit: round2(rate.from), costUnit: rate.unit, costIsFloor: true };
+  });
+}
+
+/**
  * Mark the video models the active operator cannot serve.
  *
  * PoYo carries Seedance, Kling 2.6, Grok and Hailuo for video and does not
@@ -79,11 +103,18 @@ function gateByOperator(models: KieModel[], operator: string): KieModel[] {
     if (m.id === GENAIPRO_VIDEO_MODEL_ID) return m;
 
     if (operator === OPERATOR_POYO) {
-      return poyoVideoModelFor(m.id) ? m : { ...m, unavailable: "Not supported" };
+      // Selectable, not refused. The worker already falls back per model —
+      // a KIE id PoYo does not carry stays on KIE rather than failing — so
+      // greying these out withheld five working models to protect against a
+      // problem the submit path had already solved.
+      //
+      // What was worth objecting to was the silence: picking a provider and
+      // getting another without being told. So they are offered with the
+      // provider named on the card instead.
+      return poyoVideoModelFor(m.id) ? m : { ...m, servedBy: "kie" };
     }
-    // The other direction, for the same reason. The catalog is KIE's own list
-    // today, so nothing is marked here yet; the first PoYo-only model added to
-    // it is greyed out under KIE instead of failing at submit.
+    // The other direction is a real refusal. A PoYo-only model has no KIE
+    // counterpart to fall back to, so offering it would fail at submit.
     return isPoyoOnlyVideo(m.id) ? { ...m, unavailable: "Not supported" } : m;
   });
 }
@@ -164,8 +195,12 @@ export async function GET(req: Request) {
         getMinCostPerSecByModel("video_gen"),
         getAvgElapsedByModel("video_gen"),
       ]);
-      const gated = gateByOperator(await gateHeclusPaidVideo(models, user), await getMediaOperatorForUser(user.id, "video"));
-      return NextResponse.json(promote(withAvgSpeed(withMinCredits(gated, mins), speeds), defaults.video));
+      const videoOperator = await getMediaOperatorForUser(user.id, "video");
+      const gated = gateByOperator(await gateHeclusPaidVideo(models, user), videoOperator);
+      return NextResponse.json(promote(
+        withPublishedRates(withAvgSpeed(withMinCredits(gated, mins), speeds), videoOperator),
+        defaults.video,
+      ));
     }
 
     // Return all
