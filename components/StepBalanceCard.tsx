@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import useSWR from "swr";
 import { Plus, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import { TopUpOptions } from "@/components/TopUpOptions";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
 import { useKieActivityStore } from "@/store/kieActivityStore";
+import { useBalanceStore } from "@/store/balanceStore";
 
 const fetcher = (url: string) => fetch(url).then((r) => r.json() as Promise<ApiStatusResult>);
 
@@ -33,8 +34,40 @@ export function StepBalanceCard() {
     fetcher,
     // revalidateOnFocus: coming back to the tab is the moment the number is
     // read, and a stale one there is worse than one extra request.
-    { refreshInterval: hasActivity ? 30_000 : 0, revalidateOnFocus: true },
+    { refreshInterval: hasActivity ? 10_000 : 0, revalidateOnFocus: true },
   );
+
+  // The exact signal: a step finished something that may have been charged.
+  // Read once for the charge itself, then again shortly after, because an
+  // image is settled in the request that returns it but a clip is settled by
+  // the worker a moment later.
+  const balanceVersion = useBalanceStore((s) => s.version);
+  useEffect(() => {
+    if (balanceVersion === 0) return;
+    void mutate();
+    const t = setTimeout(() => { void mutate(); }, 3000);
+    return () => clearTimeout(t);
+  }, [balanceVersion, mutate]);
+
+  // The blunt signal, kept as a backstop for anything that completes without
+  // announcing itself.
+  //
+  // Polling stops when the last step releases its key, so whatever the balance
+  // was at the previous tick is what stayed on screen — up to a poll interval
+  // stale, and then frozen until the tab was switched or the page refreshed.
+  // The transition is the signal: read it once as the work stops, then again a
+  // few seconds later, because the charge is settled by a webhook or a worker
+  // that may land just after the run reports itself finished.
+  const wasActive = useRef(hasActivity);
+  useEffect(() => {
+    if (wasActive.current && !hasActivity) {
+      void mutate();
+      const t = setTimeout(() => { void mutate(); }, 4000);
+      wasActive.current = hasActivity;
+      return () => clearTimeout(t);
+    }
+    wasActive.current = hasActivity;
+  }, [hasActivity, mutate]);
 
   // Hand back credits held by runs that never reported anything.
   //

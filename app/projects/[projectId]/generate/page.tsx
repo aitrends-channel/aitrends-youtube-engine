@@ -24,6 +24,7 @@ import type { KieModel, Beat } from "@/lib/types";
 import { friendlyError, isModelTerminalError, isContentBlockMessage, isProviderAccountEmpty } from "@/lib/errors/friendly";
 import { isOutOfCreditsMessage } from "@/lib/out-of-credits";
 import { reportOutOfCredits, blockIfShort, confirmSwitch } from "@/store/outOfCreditsStore";
+import { refreshBalance } from "@/store/balanceStore";
 import type { ApiStatusResult } from "@/app/api/api-status/route";
 import { getModelConfig } from "@/lib/kie/imageModels";
 import { poyoImageConfig } from "@/lib/poyo/imageModels";
@@ -1534,6 +1535,13 @@ export default function GeneratePage({ params }: PageProps) {
   // in an active DB state (queued/submitting/rendering). Balance
   // components subscribe to the store and pause their /api/api-status
   // polling — which hits KIE and ElevenLabs — while the store is empty.
+  // Every completed image or clip is a charge. Watching the counts catches all
+  // of them in one place, including the ones that land by webhook while the
+  // submit loop has already moved on.
+  useEffect(() => {
+    if (generatedImages + generatedVideos > 0) refreshBalance();
+  }, [generatedImages, generatedVideos]);
+
   const markActive = useKieActivityStore((s) => s.markActive);
   const markIdle = useKieActivityStore((s) => s.markIdle);
   useEffect(() => {

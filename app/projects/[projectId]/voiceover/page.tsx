@@ -12,6 +12,7 @@ import { StepCostCard } from "@/components/StepCostCard";
 import { CostTipsModal } from "@/components/CostTipsModal";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
+import { refreshBalance } from "@/store/balanceStore";
 import { TTS_MODEL, TTS_MODELS, ttsCreditsPerKChars } from "@/lib/tts-models";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -626,6 +627,11 @@ export default function VoiceoverPage({ params }: PageProps) {
 
   const totalBeats = beats.length;
   const doneCount = beats.filter((b) => effectiveStatus(b) === "done").length;
+  // Each voiced beat is charged on the characters it spoke, so the balance is
+  // stale the moment this moves.
+  useEffect(() => {
+    if (doneCount > 0) refreshBalance();
+  }, [doneCount]);
   const failedCount = beats.filter((b) => effectiveStatus(b) === "failed").length;
   // "Queued" here means a row left in voiceover_status="queued" from a
   // previous run that was cancelled/orphaned — selectStaleBeats picks
