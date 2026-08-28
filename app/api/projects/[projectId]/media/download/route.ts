@@ -31,7 +31,7 @@ export async function GET(req: Request, { params }: { params: { projectId: strin
   // stops one account exporting another's work.
   const { data: project, error: projErr } = await supabase
     .from("projects")
-    .select("id, channel_name, topic")
+    .select("id, channel_name")
     .eq("id", projectId)
     .eq("user_id", user.id)
     .maybeSingle();
