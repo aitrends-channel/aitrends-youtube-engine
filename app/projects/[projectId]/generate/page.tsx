@@ -1981,6 +1981,26 @@ export default function GeneratePage({ params }: PageProps) {
     }
   }
 
+  // Every generated image, or every clip, as one zip.
+  //
+  // The browser cannot assemble this itself: R2 serves the files without CORS
+  // headers, so the page cannot even read its own images. The route streams
+  // them back through our origin and builds the archive on the way past.
+  //
+  // Opened as a normal navigation rather than fetched into a blob. A project
+  // can be hundreds of megabytes, and a blob would hold all of it in the tab's
+  // memory before writing a single byte to disk; this way the browser streams
+  // it straight to the downloads folder and shows its own progress.
+  const [exporting, setExporting] = useState<"images" | "videos" | null>(null);
+  function exportMedia(kind: "images" | "videos") {
+    setExporting(kind);
+    window.location.href = `/api/projects/${projectId}/media/download?kind=${kind}`;
+    // Nothing to await: the download detaches from the page. Cleared on a
+    // timer so the button does not sit disabled if the archive takes a while
+    // to start, and re-enables in time for a second export.
+    setTimeout(() => setExporting(null), 4000);
+  }
+
   async function exportDocx() {
     try {
       const res = await fetch("/api/export/docx", {
@@ -2424,6 +2444,19 @@ export default function GeneratePage({ params }: PageProps) {
                         ? `Regenerate All (${totalBeats})`
                         : `Generate ${totalBeats} Images`}
                     </button>
+                    {/* Only once there is something to take away. A download
+                        button on an empty gallery is a dead control. */}
+                    {generatedImages > 0 && (
+                      <button
+                        onClick={() => exportMedia("images")}
+                        disabled={exporting === "images"}
+                        title={`Download all ${generatedImages} generated image${generatedImages === 1 ? "" : "s"} as a zip`}
+                        className="w-full py-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                        style={{ background: "transparent", border: "1px solid var(--bd-8)", color: "var(--c-70)" }}
+                      >
+                        {exporting === "images" ? "Preparing…" : `Export ${generatedImages} image${generatedImages === 1 ? "" : "s"}`}
+                      </button>
+                    )}
                     {/* Secondary "Regenerate All" affordance when some images
                         succeeded but others failed — gives users a way to
                         explicitly start over if they don't trust the
@@ -2847,6 +2880,17 @@ export default function GeneratePage({ params }: PageProps) {
                   </div>
                 );
               })()}
+              {generatedVideos > 0 && (
+                <button
+                  onClick={() => exportMedia("videos")}
+                  disabled={exporting === "videos"}
+                  title={`Download all ${generatedVideos} generated clip${generatedVideos === 1 ? "" : "s"} as a zip`}
+                  className="w-full py-2 mb-2 rounded-xl text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  style={{ background: "transparent", border: "1px solid var(--bd-8)", color: "var(--c-70)" }}
+                >
+                  {exporting === "videos" ? "Preparing…" : `Export ${generatedVideos} clip${generatedVideos === 1 ? "" : "s"}`}
+                </button>
+              )}
               {/* Primary action morphs by state:
                   - queuing-in-flight: spinner
                   - paused beats exist: Resume (green)
