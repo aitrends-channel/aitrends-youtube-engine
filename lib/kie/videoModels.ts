@@ -21,6 +21,13 @@ export const VIDEO_MODELS: KieModel[] = [
   m("bytedance/seedance-2-fast",        "Seedance 2 Fast",  ["Image-to-Video", "ByteDance", "Fast"]),
   m("bytedance/seedance-1.5-pro",       "Seedance 1.5 Pro", ["Image-to-Video", "ByteDance"]),
   m("runway",                           "Runway",           ["Image-to-Video"]),
+  // Found by probing PoYo's own marketplace slugs on 2026-08-28, after ninety
+  // spellings of Wan came back "Model not found". Both are callable on PoYo and
+  // greyed under KIE: KIE lists Omni Flash on its price sheet, but the endpoint
+  // and parameters it wants there are unverified, and offering a model that
+  // fails at submit is what the operator gate exists to prevent.
+  m("seedance-2-mini",                  "Seedance 2 Mini",  ["Image-to-Video", "ByteDance", "Fast"]),
+  m("omni-flash",                       "Omni Flash",       ["Image-to-Video", "Google"]),
   // Not a KIE model. It runs on Heclus's own GenAIPro account against the
   // credit wallet, submitted by /api/cron/genaipro-video rather than by the
   // video-worker. It lives in this list because this list is what the picker
@@ -60,6 +67,12 @@ export const VIDEO_MODEL_CONFIGS: Record<string, VideoModelConfig> = {
   // enum — the three modes map to 720p / 1080p / 4K under the hood.
   "kling-3.0/video":                  { durations: [3, 5, 8, 10, 12, 15].map(secStr), aspectRatios: ["16:9", "9:16", "1:1"], resolutions: ["std", "pro", "4K"], resolutionKey: "mode" },
   "kling-2.6/image-to-video":         { durations: [5, 10].map(secStr),               aspectRatios: [] },
+  // PoYo answers "duration must be between 4 and 15" for the mini, so the
+  // picker offers the ends and the middle rather than fifteen buttons.
+  "seedance-2-mini":                  { durations: [4, 6, 8, 12, 15].map(secStr),     aspectRatios: ["16:9", "9:16", "1:1"], resolutions: ["480p", "720p"] },
+  // Durations and resolutions from KIE's price sheet, which prices this model
+  // per clip at 4s, 6s, 8s and 10s across 360p to 4k.
+  "omni-flash":                       { durations: [4, 6, 8, 10].map(secStr),         aspectRatios: ["16:9", "9:16"], resolutions: ["720p", "1080p"] },
   "wan/2-7-image-to-video":           { durations: [3, 5, 8, 10, 15].map(sec),        aspectRatios: [], resolutions: ["720p", "1080p"] },
   "wan/2-6-flash-image-to-video":     { durations: [5, 10, 15].map(secStr),           aspectRatios: [], resolutions: ["720p", "1080p"] },
   "hailuo/02-image-to-video-pro":     { durations: [],                                aspectRatios: [] },

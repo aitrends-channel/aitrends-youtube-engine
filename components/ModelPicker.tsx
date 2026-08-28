@@ -94,6 +94,7 @@ function ModelOption({
   onSelect,
   footer,
   liveCredits,
+  liveSeconds,
 }: {
   model: KieModel;
   selected: boolean;
@@ -105,6 +106,9 @@ function ModelOption({
    *  chosen. Only the selected card gets one, because it is the only card
    *  the chosen resolution and duration apply to. */
   liveCredits?: number | null;
+  /** The clip length that figure is for, so the chip can show its own
+   *  arithmetic rather than appearing to triple on selection. */
+  liveSeconds?: number | null;
 }) {
   // A card, not a button, because the selected one holds its own aspect ratio
   // and resolution controls and a button cannot contain buttons. The body is
@@ -120,7 +124,7 @@ function ModelOption({
     <span
       className="px-1.5 py-0.5 rounded text-xs"
       title={model.type === "video"
-        ? "What one clip costs at the chosen duration and resolution"
+        ? "What this clip costs at the chosen duration and resolution. The figure on unselected cards is a rate per second."
         : "What one image costs at the chosen resolution"}
       // Green, the colour credits are spoken about in everywhere else: the Used
       // chip on every step and the per-step figures in the sidebar. Purple is
@@ -128,12 +132,57 @@ function ModelOption({
       // that had been chosen.
       style={{ background: "oklch(0.55 0.15 145 / 0.14)", color: "oklch(0.7 0.15 145)" }}
     >
-      {liveCredits.toLocaleString(undefined, { maximumFractionDigits: 2 })} cr{model.type === "video" ? "/clip" : ""}
+      {liveCredits.toLocaleString(undefined, { maximumFractionDigits: 2 })} cr
+      {/* The unselected card quotes a rate per second and this one quotes the
+          whole clip, so without both the same model appears to jump from 24 to
+          72 on selection. Showing the rate beside the total makes it one number
+          times another rather than a contradiction. */}
+      {model.type === "video" && liveSeconds ? (
+        <span style={{ opacity: 0.75 }}>
+          {" "}for {liveSeconds}s ({(liveCredits / liveSeconds).toLocaleString(undefined, { maximumFractionDigits: 2 })}/s)
+        </span>
+      ) : model.type === "video" ? "/clip" : null}
     </span>
   ) : model.costPerUnit ? (
-    <span className="px-1.5 py-0.5 rounded text-xs"
-      style={{ background: "oklch(0.55 0.15 145 / 0.1)", color: "oklch(0.66 0.13 145)" }}>
-      {model.costPerUnit} cr{model.type === "video" ? "/s" : ""}
+    <span
+      className="px-1.5 py-0.5 rounded text-xs"
+      // A model with no history has no live estimate, so selecting it left the
+      // floor unchanged while the duration pills moved underneath. Where the
+      // published rate is per second, the same arithmetic the measured models
+      // do applies here too.
+      // A published floor and a measured figure are different claims, and the
+      // chip has to say which it is: "from 60 cr/clip" is the cheapest this
+      // model offers, "1.6 cr/s" is what it has actually billed us.
+      title={model.costIsFloor
+        ? "The cheapest this model offers, from the provider's price list. Select it to see what your settings cost."
+        : undefined}
+      style={{ background: "oklch(0.55 0.15 145 / 0.1)", color: "oklch(0.66 0.13 145)" }}
+    >
+      {model.costIsFloor ? "from " : ""}
+      {model.type === "video" && model.costUnit !== "clip" && liveSeconds && Number(model.costPerUnit) > 0 ? (
+        <>
+          {(Number(model.costPerUnit) * liveSeconds).toLocaleString(undefined, { maximumFractionDigits: 2 })} cr
+          <span style={{ opacity: 0.75 }}> for {liveSeconds}s ({model.costPerUnit}/s)</span>
+        </>
+      ) : (
+        <>
+          {model.costPerUnit} cr
+          {model.type === "video" ? (model.costUnit === "clip" ? "/clip" : "/s") : ""}
+        </>
+      )}
+    </span>
+  ) : null;
+
+  // Which provider will really run this, when it is not the configured one.
+  // Pinned to the corner rather than mixed into the tags: it is a footnote
+  // about plumbing, and in the tag flow it competed with what the model is.
+  const servedByTag = model.servedBy ? (
+    <span
+      className="absolute bottom-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wide"
+      title={`The configured provider does not carry this model, so it runs on ${model.servedBy.toUpperCase()}.`}
+      style={{ background: "oklch(0.72 0.16 70 / 0.14)", color: "oklch(0.55 0.14 70)" }}
+    >
+      V{model.servedBy.charAt(0).toUpperCase()}
     </span>
   ) : null;
 
@@ -156,7 +205,7 @@ function ModelOption({
   // selection, so there is nothing left to click it for.
   if (footer) {
     return (
-      <div className="rounded-xl transition-all p-3 space-y-1.5" style={frame}>
+      <div className={`relative rounded-xl transition-all p-3 space-y-1.5 ${model.servedBy ? "pb-7" : ""}`} style={frame}>
         {/* Price rides on the model row, top right. It is a property of the
             selection rather than another setting to make, and the eye finds it
             in the same place on every card. */}
@@ -170,12 +219,13 @@ function ModelOption({
         {model.unavailable && (
           <p className="text-xs" style={{ color: "oklch(0.62 0.18 45)" }}>{model.unavailable}</p>
         )}
+        {servedByTag}
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl transition-all" style={frame}>
+    <div className="relative rounded-xl transition-all" style={frame}>
     <button
       type="button"
       onClick={onSelect}
@@ -184,7 +234,7 @@ function ModelOption({
       // customer picked one thing and got another.
       disabled={disabled || !!model.unavailable}
       title={model.unavailable ?? undefined}
-      className="w-full text-left p-3 rounded-xl transition-all disabled:cursor-not-allowed"
+      className={`w-full text-left p-3 rounded-xl transition-all disabled:cursor-not-allowed ${model.servedBy ? "pb-7" : ""}`}
     >
       <p className="font-medium text-xs">{model.name}</p>
       {model.unavailable && (
@@ -199,10 +249,12 @@ function ModelOption({
               {tag}
             </span>
           ))}
+
           {price}
         </div>
       )}
     </button>
+    {servedByTag}
     </div>
   );
 }
@@ -543,6 +595,7 @@ export function ModelPicker(props: ModelPickerProps) {
                   ? props.unitCredits
                   : null
               }
+              liveSeconds={props.type === "video" ? Number(props.selectedDuration) || null : null}
               footer={
                 selectedModelId === m.id && (!op || !props.selectedOperator || op === props.selectedOperator)
                   ? variantControls
