@@ -9,6 +9,10 @@ import { requireStorageHeadroom } from "@/lib/storage-quota";
 
 export const dynamic = "force-dynamic";
 
+/** The movements the worker knows how to render, and what the column's check
+ *  constraint allows. */
+const IMAGE_MOTIONS = ["none", "zoom-in", "zoom-out"];
+
 export async function POST(req: Request) {
   let user: User;
   try { user = await getRequiredUser(); } catch (e) { return e as Response; }
@@ -28,6 +32,9 @@ export async function POST(req: Request) {
     captionsStyle?: string;
     captionsSize?: string;
     captionsPosition?: string;
+    // Movement for beats that are a still image rather than a generated clip.
+    // Nothing else in the assembly is affected: a beat with a video keeps it.
+    imageMotion?: string;
     // Opt-in flag set by the "Trim silences" button on the assemble
     // page. The worker only runs the per-beat silence trim when this
     // is true; a normal Assemble / Reassemble leaves audio untouched.
@@ -104,6 +111,10 @@ export async function POST(req: Request) {
       captions_style:       typeof options.captionsStyle       === "string"  ? options.captionsStyle       : "classic",
       captions_size:        typeof options.captionsSize        === "string"  ? options.captionsSize        : "medium",
       captions_position:    typeof options.captionsPosition    === "string"  ? options.captionsPosition    : "bottom",
+      // Validated here rather than trusted: the column has a check constraint,
+      // and a bad value would fail the whole queue update rather than this one
+      // field.
+      image_motion: IMAGE_MOTIONS.includes(options.imageMotion as string) ? options.imageMotion : "none",
     })
     .eq("id", projectId);
 
