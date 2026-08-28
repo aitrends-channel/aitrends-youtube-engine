@@ -14,6 +14,7 @@ import { ImageSparkle } from "@/components/icons/ImageSparkle";
 import { StepCostCard } from "@/components/StepCostCard";
 import { CostTipsModal } from "@/components/CostTipsModal";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
+import { SelectionSummary } from "@/components/SelectionSummary";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
@@ -1256,6 +1257,34 @@ export default function GeneratePage({ params }: PageProps) {
     }
   }, []);
 
+  // What one generation costs on the model in front of you, at the options in
+  // front of you.
+  //
+  // The catalog badge on each card is a list price per unit and does not move
+  // when the resolution or the duration does, which is exactly when it stops
+  // being the number the user is about to be charged: an 8 cr/s clip is 48
+  // credits at six seconds. Priced by the server for the same reason the run
+  // is, so the badge and the bill cannot disagree.
+  const unitFetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : null));
+  const { data: imageUnit } = useSWR<{ perUnit: number | null } | null>(
+    selectedImageModel
+      ? `/api/credits/estimate/unit?kind=image&modelId=${encodeURIComponent(selectedImageModel)}` +
+        `&operator=${encodeURIComponent(selectedImageOperator ?? "")}` +
+        `&resolution=${encodeURIComponent(selectedResolution ?? "")}`
+      : null,
+    unitFetcher,
+    { revalidateOnFocus: false, dedupingInterval: 30_000 },
+  );
+  const { data: videoUnit } = useSWR<{ perUnit: number | null } | null>(
+    selectedVideoModel
+      ? `/api/credits/estimate/unit?kind=video&modelId=${encodeURIComponent(selectedVideoModel)}` +
+        `&durationSec=${selectedDuration ?? ""}` +
+        `&resolution=${encodeURIComponent(selectedVideoResolution ?? "")}`
+      : null,
+    unitFetcher,
+    { revalidateOnFocus: false, dedupingInterval: 30_000 },
+  );
+
   useEffect(() => { reportOutOfCredits(imageRunError); }, [imageRunError]);
   useEffect(() => {
     if (reportOutOfCredits(videoRunError)) return;
@@ -2301,10 +2330,12 @@ export default function GeneratePage({ params }: PageProps) {
           {(effectiveView === "double" || singleStep === "image") && (
           <div className={`rounded-2xl overflow-hidden flex flex-col ${effectiveView === "double" ? "lg:grid lg:grid-rows-subgrid lg:row-span-3" : ""}`}
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-            <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
+            <div className="p-5 h-[400px] flex flex-col" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon={<ImageIcon size={18} />} title="AI Images" subtitle={`${totalBeats} images from script beats`} />
               <ModelPicker
                 type="image"
+                fillHeight
+                unitCredits={imageUnit?.perUnit ?? null}
                 models={imageModels}
                 selectedModelId={selectedImageModel}
                 selectedOperator={selectedImageOperator}
@@ -2347,7 +2378,17 @@ export default function GeneratePage({ params }: PageProps) {
 
             {/* Image gallery */}
             {(beats.some((b) => b.imageUrl || b.imageStatus) || regenBeats.size > 0) && (
-              <div className="px-5 pt-4">
+              <div className="px-5">
+                {/* Directly above the bar it describes: what the next images
+                    will be generated with, beside how many there are. */}
+                <div className="mb-[15px]">
+                  <SelectionSummary
+                    modelName={imageModels?.find((m) => m.id === selectedImageModel)?.name ?? null}
+                    resolution={selectedResolution}
+                    aspectRatio={selectedAspectRatio}
+                    unitCredits={imageUnit?.perUnit ?? null}
+                  />
+                </div>
                 <ProgressBar value={clearingImages ? 0 : generatedImages} total={totalBeats} />
                 <div className="relative mt-3 mb-10">
                 <div ref={imgGrid.setRef} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>
@@ -2666,7 +2707,7 @@ export default function GeneratePage({ params }: PageProps) {
           {(effectiveView === "double" || singleStep === "video") && (
           <div className={`rounded-2xl overflow-hidden flex flex-col ${effectiveView === "double" ? "lg:grid lg:grid-rows-subgrid lg:row-span-3" : ""}`}
             style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-            <div className="p-5 min-h-[500px]" style={{ borderBottom: "1px solid var(--bd-6)" }}>
+            <div className="p-5 h-[400px] flex flex-col" style={{ borderBottom: "1px solid var(--bd-6)" }}>
               <SectionHeader icon={<Video size={18} />} title="AI Video Clips" subtitle={`${videoBeats} clips · 3–5s each`} />
               {/* Renders nothing for a plan with no allowance and no bought
                   credit, so Founder never sees it. Passed into the picker so it
@@ -2677,6 +2718,8 @@ export default function GeneratePage({ params }: PageProps) {
                 belowTabs={<VideoCreditsPanel />}
                 belowTabsOnly="free"
                 type="video"
+                fillHeight
+                unitCredits={videoUnit?.perUnit ?? null}
                 models={videoModels}
                 selectedModelId={selectedVideoModel}
                 onSelectModel={setSelectedVideoModel}
@@ -2740,7 +2783,17 @@ export default function GeneratePage({ params }: PageProps) {
               </div>
             )}
             {beats.some((b) => b.videoPrompt) && (
-              <div className="px-5 pt-4">
+              <div className="px-5">
+                <div className="mb-[15px]">
+                  <SelectionSummary
+                    modelName={videoModels?.find((m) => m.id === selectedVideoModel)?.name ?? null}
+                    resolution={selectedVideoResolution}
+                    aspectRatio={selectedVideoAspectRatio}
+                    durationSec={selectedDuration}
+                    unitCredits={videoUnit?.perUnit ?? null}
+                    perClip
+                  />
+                </div>
                 <ProgressBar value={generatedVideos} total={videoBeats} />
                 <div className="relative mt-3 mb-10">
                 <div ref={vidGrid.setRef} className={`grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:overflow-y-auto scroll-visible pr-1 ${effectiveView === "single" ? "sm:max-h-[70vh]" : "max-h-[440px] sm:max-h-72"}`}>

@@ -21,6 +21,11 @@ import { isFreeTierModel, paidModelsOnly } from "@/lib/model-tier";
 type ModelTab = "all" | "fastest" | "cheapest" | "free";
 
 interface CommonProps {
+  /** Credits for one generation on the selected model at the options chosen
+   *  right now. Priced by the server, since the rates and the per-resolution
+   *  scaling live there and a second implementation in the browser would drift
+   *  from the number the user is actually charged. */
+  unitCredits?: number | null;
   models: KieModel[] | undefined;
   selectedModelId: string | null;
   /** The operator is passed alongside the id because it is no longer implied
@@ -53,6 +58,13 @@ interface CommonProps {
    *  The video panel puts the credit balance here: it belongs to the model
    *  choice (the free model spends it) rather than to the section header. */
   belowTabs?: React.ReactNode;
+  /** Let the model list grow into the space the panel reserves instead of
+   *  stopping at a fixed height. The generate step's panels have a 500px floor
+   *  so the image and video columns stay row-aligned, which left dead space
+   *  under the last model. Off by default: the pickers that are not in a
+   *  height-constrained parent need the fixed cap, or the list would render
+   *  every model with no scroll at all. */
+  fillHeight?: boolean;
   /** Show `belowTabs` only while this tab is selected. The video credit
    *  balance belongs to the Free tab: it is the wallet the free models spend,
    *  and beside the paid list it reads as the balance those models draw on. */
@@ -81,6 +93,7 @@ function ModelOption({
   disabled,
   onSelect,
   footer,
+  liveCredits,
 }: {
   model: KieModel;
   selected: boolean;
@@ -88,8 +101,81 @@ function ModelOption({
   onSelect: () => void;
   /** Optional content rendered inside the card, below the tags. */
   footer?: React.ReactNode;
+  /** Credits for one generation on THIS model at the options currently
+   *  chosen. Only the selected card gets one, because it is the only card
+   *  the chosen resolution and duration apply to. */
+  liveCredits?: number | null;
 }) {
+  // A card, not a button, because the selected one holds its own aspect ratio
+  // and resolution controls and a button cannot contain buttons. The body is
+  // still the button; the options sit beside it inside the same frame.
+  // The price badge, wherever it is rendered.
+  //
+  // Two different numbers, and only one of them is the answer. The catalog
+  // figure is a list price per unit, the same whatever the user picks. Once a
+  // model is selected we know the resolution and the duration, so we price THAT
+  // instead: an 8 cr/s clip is 48 credits at six seconds, and 8 is not what the
+  // user is about to be charged.
+  const price = liveCredits != null ? (
+    <span
+      className="px-1.5 py-0.5 rounded text-xs"
+      title={model.type === "video"
+        ? "What one clip costs at the chosen duration and resolution"
+        : "What one image costs at the chosen resolution"}
+      // Green, the colour credits are spoken about in everywhere else: the Used
+      // chip on every step and the per-step figures in the sidebar. Purple is
+      // the selection colour here, and a price wearing it read as another thing
+      // that had been chosen.
+      style={{ background: "oklch(0.55 0.15 145 / 0.14)", color: "oklch(0.7 0.15 145)" }}
+    >
+      {liveCredits.toLocaleString(undefined, { maximumFractionDigits: 2 })} cr{model.type === "video" ? "/clip" : ""}
+    </span>
+  ) : model.costPerUnit ? (
+    <span className="px-1.5 py-0.5 rounded text-xs"
+      style={{ background: "oklch(0.55 0.15 145 / 0.1)", color: "oklch(0.66 0.13 145)" }}>
+      {model.costPerUnit} cr{model.type === "video" ? "/s" : ""}
+    </span>
+  ) : null;
+
+  const frame = {
+    ...(selected ? {
+      background: "oklch(0.72 0.25 285 / 0.1)",
+      border: "1px solid oklch(0.72 0.25 285 / 0.3)",
+      color: "var(--c-90)",
+    } : {
+      background: "var(--bg-input)",
+      border: "1px solid var(--bd-7)",
+      color: "var(--c-60)",
+    }),
+    opacity: disabled || model.unavailable ? 0.4 : 1,
+  };
+
+  // Selected: a labelled row per setting, so the model, what it will produce
+  // and what it costs read as one list rather than a name with controls
+  // hanging off it. Not a button — it holds buttons, and it is already the
+  // selection, so there is nothing left to click it for.
+  if (footer) {
+    return (
+      <div className="rounded-xl transition-all p-3 space-y-1.5" style={frame}>
+        {/* Price rides on the model row, top right. It is a property of the
+            selection rather than another setting to make, and the eye finds it
+            in the same place on every card. */}
+        <div className="flex items-start justify-between gap-2">
+          <CardRow label="Model">
+            <span className="text-xs font-medium">{model.name}</span>
+          </CardRow>
+          {price}
+        </div>
+        {footer}
+        {model.unavailable && (
+          <p className="text-xs" style={{ color: "oklch(0.62 0.18 45)" }}>{model.unavailable}</p>
+        )}
+      </div>
+    );
+  }
+
   return (
+    <div className="rounded-xl transition-all" style={frame}>
     <button
       type="button"
       onClick={onSelect}
@@ -98,23 +184,14 @@ function ModelOption({
       // customer picked one thing and got another.
       disabled={disabled || !!model.unavailable}
       title={model.unavailable ?? undefined}
-      className="w-full text-left p-3 rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-      style={selected ? {
-        background: "oklch(0.72 0.25 285 / 0.1)",
-        border: "1px solid oklch(0.72 0.25 285 / 0.3)",
-        color: "var(--c-90)",
-      } : {
-        background: "var(--bg-input)",
-        border: "1px solid var(--bd-7)",
-        color: "var(--c-60)",
-      }}
+      className="w-full text-left p-3 rounded-xl transition-all disabled:cursor-not-allowed"
     >
       <p className="font-medium text-xs">{model.name}</p>
       {model.unavailable && (
         <p className="text-xs mt-0.5" style={{ color: "oklch(0.62 0.18 45)" }}>{model.unavailable}</p>
       )}
       {model.description && <p className="text-xs mt-0.5 opacity-60">{model.description}</p>}
-      {(model.tags?.length || model.costPerUnit) && (
+      {(model.tags?.length || price) && (
         <div className="flex gap-1 mt-2 flex-wrap">
           {model.tags?.map((tag) => (
             <span key={tag} className="px-1.5 py-0.5 rounded text-xs"
@@ -122,16 +199,24 @@ function ModelOption({
               {tag}
             </span>
           ))}
-          {model.costPerUnit && (
-            <span className="px-1.5 py-0.5 rounded text-xs"
-              style={{ background: "oklch(0.72 0.25 285 / 0.12)", color: "var(--brand-text)" }}>
-              {model.costPerUnit} cr{model.type === "video" ? "/s" : ""}
-            </span>
-          )}
+          {price}
         </div>
       )}
-      {footer}
     </button>
+    </div>
+  );
+}
+
+/** One `Label   value` line inside a selected model card. The label is fixed
+ *  width so every row's values start at the same place. */
+function CardRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-[10px] uppercase tracking-wider shrink-0 w-[74px]" style={{ color: "var(--c-40)" }}>
+        {label}
+      </span>
+      <div className="flex flex-wrap items-center gap-1 min-w-0">{children}</div>
+    </div>
   );
 }
 
@@ -140,18 +225,25 @@ function VariantPill<T>({
   selected,
   disabled,
   onClick,
+  compact,
 }: {
   label: string;
   selected: boolean;
   disabled?: boolean;
   onClick: () => void;
+  /** Tighter padding and type. Used for aspect ratios, where five or six
+   *  three-character labels have to fit one row of the card's right column
+   *  and wrapping them reads as two settings rather than one. */
+  compact?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+      className={`rounded-md font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+        compact ? "px-1.5 py-0.5 text-[11px] leading-tight" : "px-2.5 py-1 rounded-lg text-xs"
+      }`}
       style={selected ? {
         background: "oklch(0.72 0.25 285 / 0.15)",
         border: "1px solid oklch(0.72 0.25 285 / 0.4)",
@@ -260,8 +352,94 @@ export function ModelPicker(props: ModelPickerProps) {
       ? "Tip: if a model keeps failing, pick another above and re-run — successful images stay."
       : "Tip: if a model keeps failing, pick another above and re-queue — existing clips stay.");
 
+  // The options live on the model they belong to.
+  //
+  // They used to sit under the whole list, which read as settings for the
+  // section rather than for the thing selected, and put the resolution that
+  // changes the price a scroll away from the price. Built here, where the
+  // configs are, and rendered inside the selected card.
+  const variantControls = !selectedModelId ? null : (
+    <>
+      {props.type === "image" && imageConfig?.resolutions && imageConfig.resolutions.length > 0 && (
+        <CardRow label="Resolution">
+          {imageConfig.resolutions.map((res) => (
+            <VariantPill
+              key={res}
+              label={res}
+              compact
+              selected={props.selectedResolution === res}
+              disabled={disabled}
+              onClick={() => props.onSelectResolution(res === props.selectedResolution ? null : res)}
+            />
+          ))}
+        </CardRow>
+      )}
+
+      {/* The provider's field name for the video resolution knob varies (kling
+          uses "mode", runway "quality", most "resolution") but the picker
+          treats them uniformly; submit code reads resolutionKey off the
+          config to send under the right one. */}
+      {props.type === "video" && videoConfig?.resolutions && videoConfig.resolutions.length > 0 && (
+        <CardRow label="Resolution">
+          {videoConfig.resolutions.map((res) => (
+            <VariantPill
+              key={res}
+              label={res}
+              compact
+              selected={props.selectedResolution === res}
+              disabled={disabled}
+              // Set-only, not toggle. Video models expect exactly one
+              // resolution: clicking the selected pill used to unset it and
+              // fall back to the provider default, which surfaced as "I picked
+              // 4K but got 720p".
+              onClick={() => props.onSelectResolution(res)}
+            />
+          ))}
+        </CardRow>
+      )}
+
+      {/* Aspect ratio. Locked on the video panel, where the clip inherits the
+          source image's ratio and there is nothing to choose. */}
+      {props.hideAspectRatio ? null : props.lockAspectRatio ? (
+        <CardRow label="Aspect ratio">
+          <span className="text-xs" style={{ color: "var(--c-55)" }}>
+            {props.selectedAspectRatio || "not set"}, matching the image
+          </span>
+        </CardRow>
+      ) : config && config.aspectRatios.length > 0 ? (
+        <CardRow label="Aspect ratio">
+          {config.aspectRatios.map((r) => (
+            <VariantPill
+              key={r}
+              label={r}
+              compact
+              selected={props.selectedAspectRatio === r}
+              disabled={disabled}
+              onClick={() => props.onSelectAspectRatio(r)}
+            />
+          ))}
+        </CardRow>
+      ) : null}
+
+      {props.type === "video" && videoConfig && videoConfig.durations.length > 0 && (
+        <CardRow label="Duration">
+          {videoConfig.durations.map((d) => (
+            <VariantPill
+              key={String(d.value)}
+              label={d.label}
+              compact
+              selected={props.selectedDuration === d.value}
+              disabled={disabled}
+              onClick={() => props.onSelectDuration(d.value)}
+            />
+          ))}
+        </CardRow>
+      )}
+    </>
+  );
+
   return (
-    <div>
+    <div className={props.fillHeight ? "flex flex-col h-full min-h-0" : undefined}>
       <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
         Select Model
       </p>
@@ -315,7 +493,7 @@ export function ModelPicker(props: ModelPickerProps) {
           </p>
         </div>
       ) : (
-      <>
+      <div className={props.fillHeight ? "flex flex-col flex-1 min-h-0" : "contents"}>
       {/* The Free tab holds a handful of models at most, so a search field
           there is furniture rather than help. */}
       {tab !== "free" && (
@@ -347,7 +525,7 @@ export function ModelPicker(props: ModelPickerProps) {
         </p>
       )}
 
-      <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
+      <div className={`space-y-2 overflow-y-auto pr-1 ${props.fillHeight ? "flex-1 min-h-[8rem]" : "max-h-52"}`}>
         {list?.map((m) => {
           // Keyed and matched on operator + id, not id alone: the merged
           // catalog can carry the same model from two providers, which would
@@ -360,6 +538,16 @@ export function ModelPicker(props: ModelPickerProps) {
               selected={selectedModelId === m.id && (!op || !props.selectedOperator || op === props.selectedOperator)}
               disabled={disabled}
               onSelect={() => onSelectModel(m.id, op)}
+              liveCredits={
+                selectedModelId === m.id && (!op || !props.selectedOperator || op === props.selectedOperator)
+                  ? props.unitCredits
+                  : null
+              }
+              footer={
+                selectedModelId === m.id && (!op || !props.selectedOperator || op === props.selectedOperator)
+                  ? variantControls
+                  : null
+              }
             />
           );
         })}
@@ -388,125 +576,13 @@ export function ModelPicker(props: ModelPickerProps) {
         {!models && <p className="text-xs" style={{ color: "var(--c-40)" }}>Loading models...</p>}
       </div>
 
-      {/* Image aspect-ratio + resolution selectors were moved out of this
-          non-free branch to below the tab ternary, so the Free tab shows
-          them too (config-driven per selected model). */}
+      {/* Aspect ratio, resolution and duration used to live here, under the
+          whole list. They now render inside the selected model's card, where
+          the thing they configure is. */}
 
-      {/* Video variant knobs — resolution/mode/quality on the left,
-          duration on the right, in a single flex row so the two short
-          pill lists sit side-by-side instead of stacking. When only
-          one of the two is available, it takes the full row width.
-          The KIE field name for the resolution knob varies (kling uses
-          "mode", runway uses "quality", most use "resolution") but the
-          picker treats them uniformly; submit code reads resolutionKey
-          off the config to send under the right field. */}
-      {props.type === "video" && videoConfig
-        && ((videoConfig.resolutions && videoConfig.resolutions.length > 0) || videoConfig.durations.length > 0) && (
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-3">
-          {videoConfig.resolutions && videoConfig.resolutions.length > 0 && (
-            <div className="flex-1 min-w-[140px]">
-              <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
-                Resolution
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {videoConfig.resolutions.map((res) => (
-                  <VariantPill
-                    key={res}
-                    label={res}
-                    selected={props.selectedResolution === res}
-                    disabled={disabled}
-                    // Set-only, not toggle. Video models expect exactly
-                    // one resolution — clicking the already-selected pill
-                    // used to unset it and silently fall back to KIE's
-                    // model default (e.g. Runway's 720p, Kling 3.0's
-                    // "std"), which surfaced as "I picked 4K but got
-                    // 720p" bugs. Duration pills already work this way.
-                    onClick={() => props.onSelectResolution(res)}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-          {videoConfig.durations.length > 0 && (
-            <div className="flex-1 min-w-[140px]">
-              <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>
-                Duration
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {videoConfig.durations.map((d) => (
-                  <VariantPill
-                    key={String(d.value)}
-                    label={d.label}
-                    selected={props.selectedDuration === d.value}
-                    disabled={disabled}
-                    onClick={() => props.onSelectDuration(d.value)}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-      </>
+      </div>
       )}
 
-      {/* Aspect ratio + resolution — OUTSIDE the tab ternary so the Free tab
-          gets them too. Config-driven per selected model; a model with no
-          resolution tiers keeps that block hidden. */}
-      {props.hideAspectRatio ? null : props.lockAspectRatio ? (
-        <>
-          <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
-            Aspect Ratio{" "}
-            <span className="normal-case font-normal" style={{ color: "var(--c-35)" }}>· matches the image</span>
-          </p>
-          <span
-            className="inline-flex px-2.5 py-1 rounded-lg text-xs font-medium"
-            style={{
-              background: "oklch(0.72 0.25 285 / 0.15)",
-              border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-              color: "var(--accent-purple-text)",
-            }}
-          >
-            {props.selectedAspectRatio || "—"}
-          </span>
-        </>
-      ) : config && config.aspectRatios.length > 0 && (
-        <>
-          <p className="text-xs font-semibold uppercase tracking-wider mt-4 mb-2" style={{ color: "var(--c-40)" }}>
-            Aspect Ratio
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {config.aspectRatios.map((r) => (
-              <VariantPill
-                key={r}
-                label={r}
-                selected={props.selectedAspectRatio === r}
-                disabled={disabled}
-                onClick={() => props.onSelectAspectRatio(r)}
-              />
-            ))}
-          </div>
-        </>
-      )}
-
-      {props.type === "image" && imageConfig?.resolutions && imageConfig.resolutions.length > 0 && (
-        <>
-          <p className="text-xs font-semibold uppercase tracking-wider mt-3 mb-2" style={{ color: "var(--c-40)" }}>
-            Resolution
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {imageConfig.resolutions.map((res) => (
-              <VariantPill
-                key={res}
-                label={res}
-                selected={props.selectedResolution === res}
-                disabled={disabled}
-                onClick={() => props.onSelectResolution(res === props.selectedResolution ? null : res)}
-              />
-            ))}
-          </div>
-        </>
-      )}
     </div>
   );
 }
