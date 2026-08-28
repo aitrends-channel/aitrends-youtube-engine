@@ -12,7 +12,7 @@ import { StepCostCard } from "@/components/StepCostCard";
 import { CostTipsModal } from "@/components/CostTipsModal";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
-import { TTS_MODEL, TTS_MODELS } from "@/lib/tts-models";
+import { TTS_MODEL, TTS_MODELS, ttsCreditsPerKChars } from "@/lib/tts-models";
 import { toast } from "sonner";
 import useSWR from "swr";
 import type { KieModel, Beat } from "@/lib/types";
@@ -1546,7 +1546,7 @@ export default function VoiceoverPage({ params }: PageProps) {
                         key={m.id}
                         onClick={() => chooseTtsModel(m.id)}
                         disabled={effectivelyGenerating}
-                        title={m.note}
+                        title={`${m.note} — ${ttsCreditsPerKChars(m.perKChars)} credits per 1,000 characters ($${m.perKChars.toFixed(2)} at list)`}
                         className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40"
                         style={on ? {
                           background: "oklch(0.72 0.25 285 / 0.15)",
@@ -1560,8 +1560,12 @@ export default function VoiceoverPage({ params }: PageProps) {
                       >
                         <span className="flex flex-col items-center leading-tight">
                           <span>{m.label}</span>
-                          <span className="text-[9px] font-normal" style={{ opacity: 0.7 }}>
-                            ${m.perKChars.toFixed(2)}/1k chars
+                          {/* Credits, because that is what the wallet spends
+                              and what every other price in the product is
+                              quoted in. The dollar figure is the provider's
+                              list rate and lives on the hover. */}
+                          <span className="text-[9px] font-normal" style={{ opacity: 0.75 }}>
+                            {ttsCreditsPerKChars(m.perKChars)} cr / 1k chars
                           </span>
                         </span>
                       </button>
