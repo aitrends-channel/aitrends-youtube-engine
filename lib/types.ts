@@ -127,6 +127,9 @@ export interface Beat {
    *  "generating" per-beat as each submit goes out). */
   imageStatus?: "pending" | "queued" | "generating" | "done" | "failed";
   videoStatus?: "pending" | "queued" | "submitting" | "rendering" | "done" | "failed" | "paused";
+  /** This beat's own assembly effect, overriding the project's. Absent means it
+   *  follows the project, which is every beat until somebody picks one. */
+  imageMotion?: string | null;
   imageTaskId?: string;
   imageModelId?: string;
   videoJobId?: string;

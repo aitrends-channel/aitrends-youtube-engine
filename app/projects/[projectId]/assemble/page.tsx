@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { WizardNav } from "@/components/wizard/WizardNav";
 import { StepCostCard } from "@/components/StepCostCard";
@@ -8,6 +8,7 @@ import { CostTipsModal } from "@/components/CostTipsModal";
 import { StepBalanceCard } from "@/components/StepBalanceCard";
 import { useProject } from "@/hooks/useProject";
 import { toast } from "sonner";
+import { Volume2, VolumeX, Play, Pause, ChevronDown, ChevronRight } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import type { Beat } from "@/lib/types";
 import { FullVoiceoverPreview } from "@/components/voiceover/FullVoiceoverPreview";
@@ -85,6 +86,46 @@ const IMAGE_MOTIONS = [
   { id: "drift",     label: "Drift",     hint: "Push in while sliding" },
 ];
 
+/** What a single beat can be set to in the timeline. The first entry clears the
+ *  override and returns that beat to the project's setting. */
+/** Pixels per second of narration, at each zoom step.
+ *
+ *  Forty is the default: a four-second beat is 160px, wide enough to recognise
+ *  the thumbnail inside it and narrow enough that a ten-minute video is a
+ *  scroll rather than a marathon. Eight fits roughly ten minutes on a laptop
+ *  screen; 120 is close enough to inspect a one-second beat. */
+const ZOOM_STEPS = [8, 14, 22, 40, 70, 120];
+
+/** Words a narrator gets through in a second. Used only to estimate a beat's
+ *  length before its voiceover exists — the real figure replaces it the moment
+ *  the audio is generated. Two and a half is the rate the beats prompt is
+ *  written against. */
+const WORDS_PER_SECOND = 2.5;
+
+/** How long a beat runs: measured if the voiceover exists, estimated from its
+ *  narration if not, and a plain guess if it has neither.
+ *
+ *  Without this the whole strip collapsed. Width is duration, and a project
+ *  with no voiceover has no durations, so every block fell to the minimum and
+ *  the timeline became a row of slivers with a 0s ruler. */
+function beatSeconds(b: Beat): { seconds: number; estimated: boolean } {
+  if (b.voiceoverDurationMs) return { seconds: b.voiceoverDurationMs / 1000, estimated: false };
+  const words = (b.scriptSegment ?? "").trim().split(/\s+/).filter(Boolean).length;
+  if (words > 0) return { seconds: Math.max(1, words / WORDS_PER_SECOND), estimated: true };
+  return { seconds: 3, estimated: true };
+}
+const DEFAULT_ZOOM = 3;
+
+const BEAT_MOTIONS: { id: string; label: string }[] = [
+  { id: "",          label: "Follow project" },
+  { id: "none",      label: "None" },
+  { id: "zoom-in",   label: "Zoom in" },
+  { id: "zoom-out",  label: "Zoom out" },
+  { id: "pan-right", label: "Pan right" },
+  { id: "pan-left",  label: "Pan left" },
+  { id: "drift",     label: "Drift" },
+];
+
 /** How far each strength travels, as a share of the frame. Mirrors
  *  MOTION_TRAVEL in the worker: if these drift apart the preview lies. */
 const MOTION_STRENGTHS = [
@@ -131,10 +172,7 @@ export default function AssemblePage({ params }: PageProps) {
   // Beats the assembler will render from a still image, because they have a
   // picture and no clip. These are the only ones image movement applies to.
   const stillBeats = beats.filter((b) => !b.videoUrl && b.imageUrl).length;
-  // One of their own frames to demonstrate on. A generic stock image would show
-  // the movement but not what it does to their composition, which is the part
-  // worth judging.
-  const stillPreviewUrl = beats.find((b) => !b.videoUrl && b.imageUrl)?.imageUrl ?? null;
+
   const videoBeats = beats.filter((b) => b.videoPrompt).length;
 
   // Bump current_state to 15 the first time the user lands here so the
@@ -300,6 +338,9 @@ export default function AssemblePage({ params }: PageProps) {
   const [bgmFile, setBgmFile] = useState<File | null>(null);
   const [bgmUploadedUrl, setBgmUploadedUrl] = useState<string | null>(null);
   const [bgmVolume, setBgmVolume] = useState<number>(0.15);
+  // The level to come back to. Muting writes 0, which is what the worker reads,
+  // so without this unmuting would guess rather than restore.
+  const bgmLevelBeforeMute = useRef<number>(0.15);
   // Inline preview playback for the uploaded/selected background music.
   const bgmAudioRef = useRef<HTMLAudioElement | null>(null);
   const [bgmPlaying, setBgmPlaying] = useState(false);
@@ -393,6 +434,17 @@ export default function AssemblePage({ params }: PageProps) {
   const [captionsStyle, setCaptionsStyle] = useState("classic");
   const [captionsSize, setCaptionsSize] = useState("medium");
   const [captionsPosition, setCaptionsPosition] = useState("bottom");
+  // Collapsed by default. Captions carry five settings and most assemblies do
+  // not touch them, so open they push the timeline off the screen.
+  const [captionsOpen, setCaptionsOpen] = useState(false);
+  // Open by default, unlike captions. This is where the preview lives, and the
+  // timeline below drives it: collapsing it by default would mean selecting a
+  // beat and watching nothing happen.
+  const [effectsOpen, setEffectsOpen] = useState(true);
+  // Closed: decoration, and most assemblies add neither.
+  const [brandingOpen, setBrandingOpen] = useState(false);
+  // Closed: readouts plus one setting, all of it in the summary line.
+  const [outputOpen, setOutputOpen] = useState(false);
   // Movement for beats that are a still image. Only reaches those beats: one
   // that has a generated clip is untouched, so a project with clips everywhere
   // sees no difference whatever this is set to.
@@ -407,14 +459,189 @@ export default function AssemblePage({ params }: PageProps) {
   // with one of them: the whole point of the option is that beats differ, and a
   // single looping move says the opposite.
   const [randomPreviewStep, setRandomPreviewStep] = useState(0);
+  // Which beat the inspector is showing, by number. Null is nothing selected,
+  // which is how the panel stays out of the way until it is wanted.
+  const [timelineBeat, setTimelineBeat] = useState<number | null>(null);
+  // How wide a second is. Stepped rather than continuous: a slider over pixels
+  // per second invites fiddling, and six steps cover ten minutes to one beat.
+  const timelineTotal = beats.reduce((sum, b) => sum + beatSeconds(b).seconds, 0);
+  // True while any beat is still guessing, so the panel can say so rather than
+  // presenting an estimate as a measurement.
+  const timelineEstimated = beats.some((b) => beatSeconds(b).estimated);
+  const [pxPerSecond, setPxPerSecond] = useState(ZOOM_STEPS[DEFAULT_ZOOM]);
+  // The step nearest the current scale, so the slider and the buttons still
+  // work after Fit has put us somewhere between two of them.
+  const zoomStep = ZOOM_STEPS.reduce(
+    (best, v, i) => Math.abs(v - pxPerSecond) < Math.abs(ZOOM_STEPS[best] - pxPerSecond) ? i : best, 0,
+  );
+  const timelineViewportRef = useRef<HTMLDivElement | null>(null);
+
+  // Squeeze the whole video into the width available, the way CapCut's fit
+  // does. Not a zoom step: the right scale depends on the window and on how
+  // long this particular video is, so it is computed rather than chosen.
+  const fitTimeline = useCallback(() => {
+    const width = timelineViewportRef.current?.clientWidth ?? 0;
+    if (!width || !timelineTotal) return;
+    // Sixteen px of slack so the last beat is not flush against the edge.
+    setPxPerSecond(Math.max(2, (width - 16) / timelineTotal));
+  }, [timelineTotal]);
+
+  // Playing the edit before rendering it.
+  //
+  // There is no assembled video to scrub yet, so this plays what actually
+  // exists: each beat's voiceover in order. That is enough to hear the rhythm
+  // the timeline is showing — where a beat runs long, where two short ones
+  // stack up — which is the question the strip is there to answer.
+  //
+  // The playhead advances by each beat's SHARE of its own audio rather than by
+  // wall-clock seconds, so it crosses a block exactly as that block's narration
+  // plays even when the estimated width and the real audio differ.
+  const [playing, setPlaying] = useState(false);
+  const [playhead, setPlayhead] = useState(0); // seconds along the timeline
+  // Which beat is sounding, so the effects preview can show it. That panel is
+  // the only frame-sized surface on this step, so during playback it doubles as
+  // the viewer rather than sitting there showing an unrelated beat.
+  const [playingBeat, setPlayingBeat] = useState<number | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // The bed runs underneath as one continuous element rather than restarting
+  // per beat, which is what the assembler does with it: narration is cut into
+  // beats, music is not. Its own ref, separate from the music card's inline
+  // preview player, so the two cannot pause each other.
+  const timelineBgmRef = useRef<HTMLAudioElement | null>(null);
+  const playIndexRef = useRef(0);
+  const rafRef = useRef<number | null>(null);
+
+  const playable = beats.filter((b) => !!b.voiceoverUrl);
+  const bgmPreviewUrl = bgmObjectUrl ?? bgmUploadedUrl;
+  // Preview only. The worker has no narration level — the voiceover is the
+  // reference everything else is mixed against — so this changes what you hear
+  // here and nothing about the render. Labelled as such rather than left to be
+  // discovered.
+  const [narrationPreviewVolume, setNarrationPreviewVolume] = useState(1);
   useEffect(() => {
-    if (imageMotion !== "random") return;
+    if (audioRef.current) audioRef.current.volume = Math.max(0, Math.min(1, narrationPreviewVolume));
+  }, [narrationPreviewVolume]);
+
+  useEffect(() => {
+    if (timelineBgmRef.current) timelineBgmRef.current.volume = Math.max(0, Math.min(1, bgmVolume));
+  }, [bgmVolume]);
+
+  const stopPlayback = useCallback(() => {
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+    audioRef.current?.pause();
+    audioRef.current = null;
+    timelineBgmRef.current?.pause();
+    timelineBgmRef.current = null;
+    setPlaying(false);
+    setPlayingBeat(null);
+  }, []);
+
+  // Stop when the page goes away, or the audio keeps playing over a step the
+  // user has already left.
+  useEffect(() => stopPlayback, [stopPlayback]);
+
+  const playFrom = useCallback((index: number) => {
+    const beat = playable[index];
+    if (!beat?.voiceoverUrl) { stopPlayback(); setPlayhead(0); setPlayingBeat(null); return; }
+    playIndexRef.current = index;
+    setPlayingBeat(beat.beatNumber);
+
+    // Where this block starts, measured the same way its width is, so the
+    // playhead and the strip agree.
+    const offset = playable.slice(0, index).reduce((sum, b) => sum + beatSeconds(b).seconds, 0);
+    const span = beatSeconds(beat).seconds;
+
+    const audio = new Audio(beat.voiceoverUrl);
+    audioRef.current = audio;
+    audio.onended = () => playFrom(index + 1);
+    audio.onerror = () => playFrom(index + 1);
+    audio.volume = Math.max(0, Math.min(1, narrationPreviewVolume));
+    void audio.play().catch(() => stopPlayback());
+
+    const tick = () => {
+      const d = audio.duration;
+      const share = d && Number.isFinite(d) ? Math.min(1, audio.currentTime / d) : 0;
+      setPlayhead(offset + share * span);
+      rafRef.current = requestAnimationFrame(tick);
+    };
+    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(tick);
+  }, [playable, stopPlayback, narrationPreviewVolume]);
+
+  const togglePlay = useCallback(() => {
+    if (playing) { stopPlayback(); return; }
+    if (playable.length === 0) { toast.info("No voiceover to play yet."); return; }
+    setPlaying(true);
+    setPlayhead(0);
+
+    // Muted means volume zero, which is exactly what the worker is told, so
+    // there is nothing to start.
+    if (bgmPreviewUrl && bgmVolume > 0) {
+      const bed = new Audio(bgmPreviewUrl);
+      bed.loop = true;              // shorter than the video is the normal case
+      bed.volume = Math.max(0, Math.min(1, bgmVolume));
+      timelineBgmRef.current = bed;
+      void bed.play().catch(() => { /* the narration still plays without it */ });
+    }
+
+    playFrom(0);
+  }, [playing, playable.length, playFrom, stopPlayback, bgmPreviewUrl, bgmVolume]);
+
+  // Set or clear one beat's effect. Optimistic: the select is the only feedback
+  // and waiting a round trip to show a choice feels broken.
+  const setBeatMotion = useCallback(async (beatNumber: number, motion: string) => {
+    const value = motion === "" ? null : motion;
+    await mutate((cur: unknown) => {
+      const c = cur as { beats?: Beat[] } | undefined;
+      if (!c?.beats) return cur;
+      return { ...c, beats: c.beats.map((b) => b.beatNumber === beatNumber ? { ...b, imageMotion: value } : b) };
+    }, { revalidate: false });
+    try {
+      const res = await fetch(`/api/projects/${projectId}/beats/motion`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ beatNumber, motion: value }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Could not set the effect");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not set the effect");
+      await mutate();
+    }
+  }, [projectId, mutate]);
+
+  // What the preview demonstrates on.
+  //
+  // Selecting a beat in the timeline points the preview at that beat, so the
+  // two panels are about the same shot rather than two different ones. With
+  // nothing selected it falls back to the first still, which is the frame
+  // someone judging the project-wide setting would want.
+  //
+  // One of their own frames either way: a stock image would show the movement
+  // but not what it does to their composition, which is the part worth judging.
+  const previewBeat = (playingBeat !== null
+    ? beats.find((b) => b.beatNumber === playingBeat && b.imageUrl)
+    : null)
+    ?? (timelineBeat !== null
+      ? beats.find((b) => b.beatNumber === timelineBeat && b.imageUrl && !b.videoUrl)
+      : null)
+    ?? beats.find((b) => !b.videoUrl && b.imageUrl) ?? null;
+  const stillPreviewUrl = previewBeat?.imageUrl ?? null;
+
+  // The effect that beat will actually get: its own if it has one, otherwise
+  // the project's. Watching the project setting animate on a beat that
+  // overrides it would be a lie about what will be rendered.
+  const previewMotion = previewBeat?.imageMotion ?? imageMotion;
+
+  useEffect(() => {
+    if (previewMotion !== "random") return;
     const t = setInterval(() => setRandomPreviewStep((n) => n + 1), 4000);
     return () => clearInterval(t);
-  }, [imageMotion]);
-  const previewAnimation = imageMotion === "random"
+  }, [previewMotion]);
+
+  const previewAnimation = previewMotion === "random"
     ? MOTION_ANIMATION[RANDOM_POOL[randomPreviewStep % RANDOM_POOL.length]]
-    : MOTION_ANIMATION[imageMotion];
+    : MOTION_ANIMATION[previewMotion];
 
   // Live-persist trim + captions to the project row whenever they
   // change. The /api/generate/assemble call already writes them on
@@ -980,269 +1207,217 @@ export default function AssemblePage({ params }: PageProps) {
         <div className="px-5 sm:px-8 lg:px-[60px] py-4 sm:py-8 pb-24">
           <div className="w-full space-y-6">
 
-            {/* Status cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
-              <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover</p>
-                <p className="mt-2 text-sm font-medium"
-                  style={{ color: !hasVoiceover ? "var(--c-45)" : trimSilence ? "oklch(0.7 0.15 145)" : "var(--brand-text)" }}>
-                  {!hasVoiceover ? "Missing" : trimSilence ? "Trimmed ✓" : "Original"}
-                </p>
-              </div>
-              <div className="p-4 rounded-2xl" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Video Clips</p>
-                <p className="mt-2 text-sm font-medium"
-                  style={{ color: generatedVideos > 0 ? "var(--brand-text)" : "var(--c-45)" }}>
-                  {generatedVideos} / {videoBeats}
-                </p>
-                {generatedVideos < videoBeats && (
-                  <p className="text-xs mt-1" style={{ color: "var(--c-40)" }}>
-                    {videoBeats - generatedVideos} will use still images
-                  </p>
-                )}
-              </div>
-              <div className="p-4 rounded-2xl space-y-2" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Output</p>
-                <p className="text-sm font-medium" style={{ color: "var(--c-65)" }}>{dimsFor(aspectRatio, selectedResolution).label}</p>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {RESOLUTION_PRESETS.map((p) => {
-                    const isProOnly = PRO_RESOLUTIONS.has(p);
-                    const locked = isProOnly && !canUsePro;
-                    const active = selectedResolution === p;
-                    return (
-                      <button
-                        key={p}
-                        onClick={() => {
-                          if (locked) {
-                            // Pop the SubscriptionModal so the user
-                            // can upgrade in-place rather than just
-                            // being told "no" by a toast.
-                            setShowUpgradeModal(true);
-                            return;
-                          }
-                          setSelectedResolution(p);
-                        }}
-                        disabled={assembling}
-                        title={locked
-                          ? `Pro plan unlocks ${p} (${dimsFor(aspectRatio, p).label}) — click to upgrade`
-                          : `Render at ${dimsFor(aspectRatio, p).label}`}
-                        className="w-full py-1 rounded-md text-[10px] font-semibold transition-all disabled:opacity-40 inline-flex items-center justify-center gap-1"
-                        style={active ? {
-                          background: "oklch(0.72 0.25 285 / 0.18)",
-                          border: "1px solid oklch(0.72 0.25 285 / 0.45)",
-                          color: "var(--accent-purple-text)",
-                        } : {
-                          background: "var(--bg-input)",
-                          border: "1px solid var(--bd-card)",
-                          color: "var(--c-50)",
-                        }}
-                      >
-                        {p}
-                        {isProOnly && (
-                          <span
-                            className="text-[8px] px-1 py-px rounded leading-none uppercase font-bold tracking-wide"
-                            style={{
-                              background: "oklch(0.72 0.25 285)",
-                              color: "white",
-                            }}
-                          >
-                            Pro
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Aspect ratio */}
+            {/* Voiceover, clips, resolution and aspect ratio in one panel.
+                Three of the four are readouts and the fourth is picked once,
+                so the summary line carries them and the controls stay out of
+                the way of the steps that get touched every time. */}
             <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--c-40)" }}>
-                Output Aspect Ratio{" "}
-                <span className="normal-case font-normal" style={{ color: "var(--c-35)" }}>· matches your generated images</span>
-              </p>
-              {/* Read-only: the output must match the ratio the images (and
-                  therefore the clips) were generated at — changing it here
-                  would letterbox/crop every beat. Locked to the project's
-                  generation aspect ratio. */}
-              <span className="inline-flex px-4 py-2 rounded-xl text-xs font-medium"
-                style={{ background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "var(--accent-purple-text)" }}>
-                {aspectRatio}
-              </span>
-            </div>
-
-            {/* Background music — compact single-bar picker. Pre-pick
-                shows label + Choose file. Post-pick collapses every
-                control (filename, size, upload status, volume slider,
-                remove ×) into one horizontal row to keep the assemble
-                page dense. The chip + play-with-preview toggle still
-                renders inside each preview card. */}
-            <div className="flex items-center gap-3 rounded-2xl px-4 py-2.5 flex-wrap"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-              <span aria-hidden="true" className="text-base shrink-0" style={{ color: "var(--brand-text)" }}>♫</span>
-              {!bgmFile && !bgmUploadedUrl ? (
-                <>
-                  <p className="text-sm font-semibold flex-1">Background music</p>
-                  <button
-                    onClick={() => bgmInputRef.current?.click()}
-                    disabled={assembling}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-all shrink-0"
-                    style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
-                  >
-                    Choose file
-                  </button>
-                </>
-              ) : (
-                <>
-                  {/* Play/pause preview — appears once a track is
-                      selected/uploaded so the user can hear it before
-                      assembling. Uses the local blob when available,
-                      else the saved R2 URL. */}
-                  {(() => {
-                    const bgmPreviewSrc = bgmObjectUrl ?? bgmUploadedUrl;
-                    if (!bgmPreviewSrc) return null;
-                    return (
-                      <>
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={outputOpen}
+                onClick={() => setOutputOpen((v) => !v)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOutputOpen((v) => !v); }
+                }}
+                className={`flex items-center justify-between gap-3 cursor-pointer select-none ${outputOpen ? "mb-4" : ""}`}
+              >
+                <div>
+                  <p className="text-sm font-semibold">Output</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                    {[
+                      `${dimsFor(aspectRatio, selectedResolution).label} · ${aspectRatio}`,
+                      `${generatedVideos}/${videoBeats} clips`,
+                      !hasVoiceover ? "no voiceover" : trimSilence ? "trimmed voiceover" : "original voiceover",
+                    ].join(" · ")}
+                  </p>
+                </div>
+                <span className="shrink-0" style={{ color: "var(--c-45)" }}>
+                  {outputOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </span>
+              </div>
+              {outputOpen && (
+              <div className="space-y-3">
+                {/* Which take gets assembled. It lives here because the
+                    card above already reports which one is selected, and the
+                    previews are what makes that choice: hearing the two is
+                    the only way to tell them apart. Clicking a card selects
+                    it; the play button inside stops propagation so listening
+                    does not also switch the selection. */}
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover Source</p>
+                    {(trimmedLoading || originalLoading) && (
+                      <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "var(--brand-text)" }}>
+                        <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        Loading previews…
+                      </span>
+                    )}
+                    {!beats.some((b) => !!b.voiceoverUrl) && (
+                      <span className="text-[11px]" style={{ color: "var(--c-40)" }}>none generated yet</span>
+                    )}
+                  </div>
+                  {beats.some((b) => !!b.voiceoverUrl) && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                      <FullVoiceoverPreview
+                        projectId={projectId}
+                        beats={beats}
+                        trimSilence={true}
+                        title="Trimmed voiceover"
+                        selected={trimSilence}
+                        onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(true)}
+                        onLoadingChange={setTrimmedLoading}
+                      />
+                      <FullVoiceoverPreview
+                        projectId={projectId}
+                        beats={beats}
+                        trimSilence={false}
+                        title="Original voiceover"
+                        selected={!trimSilence}
+                        onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(false)}
+                        onLoadingChange={setOriginalLoading}
+                      />
+                    </div>
+                  )}
+                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover</p>
+                  <p className="mt-2 text-sm font-medium"
+                    style={{ color: !hasVoiceover ? "var(--c-45)" : trimSilence ? "oklch(0.7 0.15 145)" : "var(--brand-text)" }}>
+                    {!hasVoiceover ? "Missing" : trimSilence ? "Trimmed ✓" : "Original"}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Video Clips</p>
+                  <p className="mt-2 text-sm font-medium"
+                    style={{ color: generatedVideos > 0 ? "var(--brand-text)" : "var(--c-45)" }}>
+                    {generatedVideos} / {videoBeats}
+                  </p>
+                  {generatedVideos < videoBeats && (
+                    <p className="text-xs mt-1" style={{ color: "var(--c-40)" }}>
+                      {videoBeats - generatedVideos} will use still images
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Output</p>
+                  <p className="text-sm font-medium" style={{ color: "var(--c-65)" }}>{dimsFor(aspectRatio, selectedResolution).label}</p>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {RESOLUTION_PRESETS.map((p) => {
+                      const isProOnly = PRO_RESOLUTIONS.has(p);
+                      const locked = isProOnly && !canUsePro;
+                      const active = selectedResolution === p;
+                      return (
                         <button
-                          type="button"
+                          key={p}
                           onClick={() => {
-                            const a = bgmAudioRef.current;
-                            if (!a) return;
-                            if (a.paused) {
-                              a.volume = Math.max(0, Math.min(1, bgmVolume));
-                              a.play().catch(() => {});
-                            } else {
-                              a.pause();
+                            if (locked) {
+                              // Pop the SubscriptionModal so the user
+                              // can upgrade in-place rather than just
+                              // being told "no" by a toast.
+                              setShowUpgradeModal(true);
+                              return;
                             }
+                            setSelectedResolution(p);
                           }}
-                          title={bgmPlaying ? "Pause preview" : "Play preview"}
-                          aria-label={bgmPlaying ? "Pause background music" : "Play background music"}
-                          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-transform hover:scale-105"
-                          style={{ background: "oklch(0.72 0.25 285)", color: "#fff" }}
+                          disabled={assembling}
+                          title={locked
+                            ? `Pro plan unlocks ${p} (${dimsFor(aspectRatio, p).label}) — click to upgrade`
+                            : `Render at ${dimsFor(aspectRatio, p).label}`}
+                          className="w-full py-1 rounded-md text-[10px] font-semibold transition-all disabled:opacity-40 inline-flex items-center justify-center gap-1"
+                          style={active ? {
+                            background: "oklch(0.72 0.25 285 / 0.18)",
+                            border: "1px solid oklch(0.72 0.25 285 / 0.45)",
+                            color: "var(--accent-purple-text)",
+                          } : {
+                            background: "var(--bg-input)",
+                            border: "1px solid var(--bd-card)",
+                            color: "var(--c-50)",
+                          }}
                         >
-                          {bgmPlaying ? (
-                            <span className="flex gap-[2px]">
-                              <span className="block w-[3px] h-3 rounded-sm" style={{ background: "currentColor" }} />
-                              <span className="block w-[3px] h-3 rounded-sm" style={{ background: "currentColor" }} />
-                            </span>
-                          ) : (
+                          {p}
+                          {isProOnly && (
                             <span
-                              className="block w-0 h-0 ml-[2px]"
-                              style={{ borderLeft: "8px solid currentColor", borderTop: "5px solid transparent", borderBottom: "5px solid transparent" }}
-                            />
+                              className="text-[8px] px-1 py-px rounded leading-none uppercase font-bold tracking-wide"
+                              style={{
+                                background: "oklch(0.72 0.25 285)",
+                                color: "white",
+                              }}
+                            >
+                              Pro
+                            </span>
                           )}
                         </button>
-                        <audio
-                          ref={bgmAudioRef}
-                          src={bgmPreviewSrc}
-                          preload="none"
-                          onPlay={() => setBgmPlaying(true)}
-                          onPause={() => setBgmPlaying(false)}
-                          onEnded={() => setBgmPlaying(false)}
-                        />
-                      </>
-                    );
-                  })()}
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
-                      Background music
-                    </p>
-                    <p className="text-xs font-medium truncate" style={{ color: "var(--c-80)" }} title={bgmFile?.name ?? bgmUploadedUrl ?? ""}>
-                      {bgmFile ? bgmFile.name : (bgmUploadedUrl?.split("/").pop() ?? "Saved track")}
-                    </p>
-                    <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
-                      {bgmFile
-                        ? `${(bgmFile.size / (1024 * 1024)).toFixed(1)} MB${bgmUploadedUrl ? " · Uploaded" : bgmUploading ? " · Uploading…" : " · Not uploaded yet"}`
-                        : "Saved from a previous run"}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setBgmDisclaimerOpen(true)}
-                      className="text-[10px] underline underline-offset-2 hover:opacity-80"
-                      style={{ color: "oklch(0.7 0.22 25)" }}
-                    >
-                      Disclaimer
-                    </button>
+                      );
+                    })}
                   </div>
-                  <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
-                    <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>Vol</span>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.01}
-                      value={bgmVolume}
-                      onChange={(e) => setBgmVolume(parseFloat(e.target.value))}
-                      disabled={assembling}
-                      aria-label="Background music volume"
-                      className="flex-1 sm:flex-none sm:w-32"
-                    />
-                    <span className="text-[11px] font-mono tabular-nums w-9 text-right" style={{ color: "var(--c-60)" }}>
-                      {Math.round(bgmVolume * 100)}%
-                    </span>
-                    <button
-                      onClick={clearBgm}
-                      disabled={assembling || bgmUploading}
-                      title="Remove background music"
-                      className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-40 shrink-0"
-                      style={{ background: "transparent", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-end gap-2 w-full">
-                    <span className="text-xs" style={{ color: "var(--c-55)" }}>Use this always</span>
-                    <button
-                      type="button"
-                      onClick={toggleUseAlwaysBgm}
-                      aria-pressed={useAlwaysBgm}
-                      title="Reuse this background music on future videos"
-                      className="relative w-9 h-5 rounded-full transition-all shrink-0 cursor-pointer"
-                      style={{ background: useAlwaysBgm ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
-                    >
-                      <span className="absolute top-0.5 w-4 h-4 rounded-full transition-all"
-                        style={{ background: "oklch(0.95 0 0)", left: useAlwaysBgm ? "calc(100% - 1.125rem)" : "0.125rem" }} />
-                    </button>
-                  </div>
-                </>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: "var(--c-40)" }}>
+                  Output Aspect Ratio{" "}
+                  <span className="normal-case font-normal" style={{ color: "var(--c-35)" }}>· matches your generated images</span>
+                </p>
+                {/* Read-only: the output must match the ratio the images (and
+                    therefore the clips) were generated at — changing it here
+                    would letterbox/crop every beat. Locked to the project's
+                    generation aspect ratio. */}
+                <span className="inline-flex px-4 py-2 rounded-xl text-xs font-medium"
+                  style={{ background: "oklch(0.72 0.25 285 / 0.15)", border: "1px solid oklch(0.72 0.25 285 / 0.4)", color: "var(--accent-purple-text)" }}>
+                  {aspectRatio}
+                </span>
+              </div>
+              </div>
               )}
-              <input
-                ref={bgmInputRef}
-                type="file"
-                accept="audio/*"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0] ?? null;
-                  if (!f) return;
-                  setBgmFile(f);
-                  // New file → invalidate any previously-uploaded URL
-                  // and immediately upload + persist so a refresh
-                  // doesn't lose the selection. Fire-and-forget
-                  // since the user may continue tweaking other
-                  // settings while the upload runs in the background.
-                  setBgmUploadedUrl(null);
-                  void uploadAndPersist(f, "bgm");
-                }}
-              />
             </div>
 
-            {/* Channel logo — single-bar picker matching the bgm
-                section. Pre-pick shows label + Choose file. Once a
-                file is selected, the bar expands with an aspect-
-                ratio drag surface where the user positions the logo,
-                a width slider, and the × clear. Position and size
-                are stored as 0–1 fractions of video dimensions so
-                they're resolution-agnostic. */}
-            <div className="rounded-2xl px-4 py-2.5 space-y-3"
-              style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-              <div className="flex items-center gap-3 flex-wrap">
-                <span aria-hidden="true" className="text-base shrink-0" style={{ color: "var(--brand-text)" }}>◈</span>
-                {!logoFile && !logoUploadedUrl ? (
+            {/* Music and logo together.
+                Two uploads that decorate the video rather than change what it
+                says, both used on a minority of assemblies, and each was its
+                own full-width card. One section, closed by default, gives the
+                steps that matter the room instead. */}
+            <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={brandingOpen}
+                onClick={() => setBrandingOpen((v) => !v)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setBrandingOpen((v) => !v); }
+                }}
+                className={`flex items-center justify-between gap-3 cursor-pointer select-none ${brandingOpen ? "mb-4" : ""}`}
+              >
+                <div>
+                  <p className="text-sm font-semibold">Music & logo</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                    {[
+                      bgmPreviewUrl ? (bgmVolume > 0 ? `Music at ${Math.round(bgmVolume * 100)}%` : "Music muted") : null,
+                      logoUploadedUrl || logoFile ? "Logo added" : null,
+                    ].filter(Boolean).join(" · ") || "None added"}
+                  </p>
+                </div>
+                <span className="shrink-0" style={{ color: "var(--c-45)" }}>
+                  {brandingOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </span>
+              </div>
+              {brandingOpen && (
+              <div className="space-y-4">
+              {/* Background music — compact single-bar picker. Pre-pick
+                  shows label + Choose file. Post-pick collapses every
+                  control (filename, size, upload status, volume slider,
+                  remove ×) into one horizontal row to keep the assemble
+                  page dense. The chip + play-with-preview toggle still
+                  renders inside each preview card. */}
+              <div className="flex items-center gap-3 rounded-2xl px-4 py-2.5 flex-wrap"
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+                <span aria-hidden="true" className="text-base shrink-0" style={{ color: "var(--brand-text)" }}>♫</span>
+                {!bgmFile && !bgmUploadedUrl ? (
                   <>
-                    <p className="text-sm font-semibold flex-1">Channel logo</p>
+                    <p className="text-sm font-semibold flex-1">Background music</p>
                     <button
-                      onClick={() => logoInputRef.current?.click()}
+                      onClick={() => bgmInputRef.current?.click()}
                       disabled={assembling}
                       className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-all shrink-0"
                       style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
@@ -1252,39 +1427,96 @@ export default function AssemblePage({ params }: PageProps) {
                   </>
                 ) : (
                   <>
+                    {/* Play/pause preview — appears once a track is
+                        selected/uploaded so the user can hear it before
+                        assembling. Uses the local blob when available,
+                        else the saved R2 URL. */}
+                    {(() => {
+                      const bgmPreviewSrc = bgmObjectUrl ?? bgmUploadedUrl;
+                      if (!bgmPreviewSrc) return null;
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const a = bgmAudioRef.current;
+                              if (!a) return;
+                              if (a.paused) {
+                                a.volume = Math.max(0, Math.min(1, bgmVolume));
+                                a.play().catch(() => {});
+                              } else {
+                                a.pause();
+                              }
+                            }}
+                            title={bgmPlaying ? "Pause preview" : "Play preview"}
+                            aria-label={bgmPlaying ? "Pause background music" : "Play background music"}
+                            className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-transform hover:scale-105"
+                            style={{ background: "oklch(0.72 0.25 285)", color: "#fff" }}
+                          >
+                            {bgmPlaying ? (
+                              <span className="flex gap-[2px]">
+                                <span className="block w-[3px] h-3 rounded-sm" style={{ background: "currentColor" }} />
+                                <span className="block w-[3px] h-3 rounded-sm" style={{ background: "currentColor" }} />
+                              </span>
+                            ) : (
+                              <span
+                                className="block w-0 h-0 ml-[2px]"
+                                style={{ borderLeft: "8px solid currentColor", borderTop: "5px solid transparent", borderBottom: "5px solid transparent" }}
+                              />
+                            )}
+                          </button>
+                          <audio
+                            ref={bgmAudioRef}
+                            src={bgmPreviewSrc}
+                            preload="none"
+                            onPlay={() => setBgmPlaying(true)}
+                            onPause={() => setBgmPlaying(false)}
+                            onEnded={() => setBgmPlaying(false)}
+                          />
+                        </>
+                      );
+                    })()}
                     <div className="min-w-0 flex-1">
                       <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
-                        Channel logo
+                        Background music
                       </p>
-                      <p className="text-xs font-medium truncate" style={{ color: "var(--c-80)" }} title={logoFile?.name ?? logoUploadedUrl ?? ""}>
-                        {logoFile ? logoFile.name : (logoUploadedUrl?.split("/").pop() ?? "Saved logo")}
+                      <p className="text-xs font-medium truncate" style={{ color: "var(--c-80)" }} title={bgmFile?.name ?? bgmUploadedUrl ?? ""}>
+                        {bgmFile ? bgmFile.name : (bgmUploadedUrl?.split("/").pop() ?? "Saved track")}
                       </p>
                       <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
-                        {logoFile
-                          ? `${(logoFile.size / 1024).toFixed(0)} KB${logoUploadedUrl ? " · Uploaded" : logoUploading ? " · Uploading…" : " · Not uploaded yet"}`
+                        {bgmFile
+                          ? `${(bgmFile.size / (1024 * 1024)).toFixed(1)} MB${bgmUploadedUrl ? " · Uploaded" : bgmUploading ? " · Uploading…" : " · Not uploaded yet"}`
                           : "Saved from a previous run"}
                       </p>
+                      <button
+                        type="button"
+                        onClick={() => setBgmDisclaimerOpen(true)}
+                        className="text-[10px] underline underline-offset-2 hover:opacity-80"
+                        style={{ color: "oklch(0.7 0.22 25)" }}
+                      >
+                        Disclaimer
+                      </button>
                     </div>
                     <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
-                      <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>Size</span>
+                      <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>Vol</span>
                       <input
                         type="range"
-                        min={0.03}
-                        max={0.4}
+                        min={0}
+                        max={1}
                         step={0.01}
-                        value={logoSize}
-                        onChange={(e) => setLogoSize(parseFloat(e.target.value))}
+                        value={bgmVolume}
+                        onChange={(e) => setBgmVolume(parseFloat(e.target.value))}
                         disabled={assembling}
-                        aria-label="Logo size"
+                        aria-label="Background music volume"
                         className="flex-1 sm:flex-none sm:w-32"
                       />
                       <span className="text-[11px] font-mono tabular-nums w-9 text-right" style={{ color: "var(--c-60)" }}>
-                        {Math.round(logoSize * 100)}%
+                        {Math.round(bgmVolume * 100)}%
                       </span>
                       <button
-                        onClick={clearLogo}
-                        disabled={assembling || logoUploading}
-                        title="Remove channel logo"
+                        onClick={clearBgm}
+                        disabled={assembling || bgmUploading}
+                        title="Remove background music"
                         className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-40 shrink-0"
                         style={{ background: "transparent", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
                       >
@@ -1295,234 +1527,419 @@ export default function AssemblePage({ params }: PageProps) {
                       <span className="text-xs" style={{ color: "var(--c-55)" }}>Use this always</span>
                       <button
                         type="button"
-                        onClick={toggleUseAlwaysLogo}
-                        aria-pressed={useAlwaysLogo}
-                        title="Reuse this logo on future videos"
+                        onClick={toggleUseAlwaysBgm}
+                        aria-pressed={useAlwaysBgm}
+                        title="Reuse this background music on future videos"
                         className="relative w-9 h-5 rounded-full transition-all shrink-0 cursor-pointer"
-                        style={{ background: useAlwaysLogo ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
+                        style={{ background: useAlwaysBgm ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
                       >
                         <span className="absolute top-0.5 w-4 h-4 rounded-full transition-all"
-                          style={{ background: "oklch(0.95 0 0)", left: useAlwaysLogo ? "calc(100% - 1.125rem)" : "0.125rem" }} />
+                          style={{ background: "oklch(0.95 0 0)", left: useAlwaysBgm ? "calc(100% - 1.125rem)" : "0.125rem" }} />
                       </button>
                     </div>
                   </>
                 )}
                 <input
-                  ref={logoInputRef}
+                  ref={bgmInputRef}
                   type="file"
-                  accept="image/*"
+                  accept="audio/*"
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0] ?? null;
                     if (!f) return;
-                    setLogoFile(f);
-                    setLogoUploadedUrl(null);
-                    // Immediately upload + persist (same reasoning as bgm above).
-                    void uploadAndPersist(f, "logo");
+                    setBgmFile(f);
+                    // New file → invalidate any previously-uploaded URL
+                    // and immediately upload + persist so a refresh
+                    // doesn't lose the selection. Fire-and-forget
+                    // since the user may continue tweaking other
+                    // settings while the upload runs in the background.
+                    setBgmUploadedUrl(null);
+                    void uploadAndPersist(f, "bgm");
                   }}
                 />
               </div>
-              {(logoObjectUrl || logoUploadedUrl) && (() => {
-                // Draggable preview surface. The surface holds the
-                // current aspect ratio (16:9 / 9:16 / 1:1). Logo is
-                // an absolutely positioned img the user drags around.
-                // Position is stored as 0–1 fractions of the surface
-                // dimensions, mirroring how the worker interprets
-                // logoX / logoY against the actual video.
-                // Source: blob URL for a freshly-picked File, otherwise
-                // the persisted R2 URL hydrated from the project row.
-                const logoSrc = logoObjectUrl ?? logoUploadedUrl!;
-                const aspect = aspectRatio.replace(":", " / ");
-                function onDragLogo(e: React.PointerEvent<HTMLImageElement>) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const surface = (e.currentTarget.parentElement?.parentElement as HTMLElement | null);
-                  if (!surface) return;
-                  const img = e.currentTarget;
-                  img.setPointerCapture(e.pointerId);
-                  const startBox = surface.getBoundingClientRect();
-                  const offsetX = e.clientX - img.getBoundingClientRect().left;
-                  const offsetY = e.clientY - img.getBoundingClientRect().top;
-                  function move(ev: PointerEvent) {
-                    const localX = ev.clientX - startBox.left - offsetX;
-                    const localY = ev.clientY - startBox.top - offsetY;
-                    // Clamp so the logo can't be dragged outside the
-                    // visible video area. We don't know the rendered
-                    // logo width yet (it depends on size %), but the
-                    // worker also clamps via overlay's auto, so a
-                    // simple [0, 1 - logoSize] keeps it sensible.
-                    const maxX = 1 - logoSize;
-                    const surfaceAspect = startBox.height / startBox.width;
-                    // Approx maxY using the logo's render height ≈
-                    // logoSize * surface width / image natural ratio.
-                    const approxLogoHpct = (img.offsetHeight / startBox.height);
-                    const maxY = Math.max(0, 1 - approxLogoHpct);
-                    const nextX = Math.max(0, Math.min(maxX, localX / startBox.width));
-                    const nextY = Math.max(0, Math.min(maxY, localY / startBox.height));
-                    setLogoX(nextX);
-                    setLogoY(nextY);
-                    void surfaceAspect;
+
+              {/* Channel logo — single-bar picker matching the bgm
+                  section. Pre-pick shows label + Choose file. Once a
+                  file is selected, the bar expands with an aspect-
+                  ratio drag surface where the user positions the logo,
+                  a width slider, and the × clear. Position and size
+                  are stored as 0–1 fractions of video dimensions so
+                  they're resolution-agnostic. */}
+              <div className="rounded-2xl px-4 py-2.5 space-y-3"
+                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span aria-hidden="true" className="text-base shrink-0" style={{ color: "var(--brand-text)" }}>◈</span>
+                  {!logoFile && !logoUploadedUrl ? (
+                    <>
+                      <p className="text-sm font-semibold flex-1">Channel logo</p>
+                      <button
+                        onClick={() => logoInputRef.current?.click()}
+                        disabled={assembling}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-40 transition-all shrink-0"
+                        style={{ background: "oklch(0.72 0.25 285 / 0.15)", color: "var(--accent-purple-text)", border: "1px solid oklch(0.72 0.25 285 / 0.3)" }}
+                      >
+                        Choose file
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
+                          Channel logo
+                        </p>
+                        <p className="text-xs font-medium truncate" style={{ color: "var(--c-80)" }} title={logoFile?.name ?? logoUploadedUrl ?? ""}>
+                          {logoFile ? logoFile.name : (logoUploadedUrl?.split("/").pop() ?? "Saved logo")}
+                        </p>
+                        <p className="text-[10px]" style={{ color: "var(--c-40)" }}>
+                          {logoFile
+                            ? `${(logoFile.size / 1024).toFixed(0)} KB${logoUploadedUrl ? " · Uploaded" : logoUploading ? " · Uploading…" : " · Not uploaded yet"}`
+                            : "Saved from a previous run"}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 w-full sm:w-auto sm:shrink-0">
+                        <span className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>Size</span>
+                        <input
+                          type="range"
+                          min={0.03}
+                          max={0.4}
+                          step={0.01}
+                          value={logoSize}
+                          onChange={(e) => setLogoSize(parseFloat(e.target.value))}
+                          disabled={assembling}
+                          aria-label="Logo size"
+                          className="flex-1 sm:flex-none sm:w-32"
+                        />
+                        <span className="text-[11px] font-mono tabular-nums w-9 text-right" style={{ color: "var(--c-60)" }}>
+                          {Math.round(logoSize * 100)}%
+                        </span>
+                        <button
+                          onClick={clearLogo}
+                          disabled={assembling || logoUploading}
+                          title="Remove channel logo"
+                          className="w-7 h-7 rounded-lg flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-40 shrink-0"
+                          style={{ background: "transparent", border: "1px solid oklch(0.6 0.22 25 / 0.4)", color: "oklch(0.7 0.22 25)" }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                      <div className="flex items-center justify-end gap-2 w-full">
+                        <span className="text-xs" style={{ color: "var(--c-55)" }}>Use this always</span>
+                        <button
+                          type="button"
+                          onClick={toggleUseAlwaysLogo}
+                          aria-pressed={useAlwaysLogo}
+                          title="Reuse this logo on future videos"
+                          className="relative w-9 h-5 rounded-full transition-all shrink-0 cursor-pointer"
+                          style={{ background: useAlwaysLogo ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
+                        >
+                          <span className="absolute top-0.5 w-4 h-4 rounded-full transition-all"
+                            style={{ background: "oklch(0.95 0 0)", left: useAlwaysLogo ? "calc(100% - 1.125rem)" : "0.125rem" }} />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0] ?? null;
+                      if (!f) return;
+                      setLogoFile(f);
+                      setLogoUploadedUrl(null);
+                      // Immediately upload + persist (same reasoning as bgm above).
+                      void uploadAndPersist(f, "logo");
+                    }}
+                  />
+                </div>
+                {(logoObjectUrl || logoUploadedUrl) && (() => {
+                  // Draggable preview surface. The surface holds the
+                  // current aspect ratio (16:9 / 9:16 / 1:1). Logo is
+                  // an absolutely positioned img the user drags around.
+                  // Position is stored as 0–1 fractions of the surface
+                  // dimensions, mirroring how the worker interprets
+                  // logoX / logoY against the actual video.
+                  // Source: blob URL for a freshly-picked File, otherwise
+                  // the persisted R2 URL hydrated from the project row.
+                  const logoSrc = logoObjectUrl ?? logoUploadedUrl!;
+                  const aspect = aspectRatio.replace(":", " / ");
+                  function onDragLogo(e: React.PointerEvent<HTMLImageElement>) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const surface = (e.currentTarget.parentElement?.parentElement as HTMLElement | null);
+                    if (!surface) return;
+                    const img = e.currentTarget;
+                    img.setPointerCapture(e.pointerId);
+                    const startBox = surface.getBoundingClientRect();
+                    const offsetX = e.clientX - img.getBoundingClientRect().left;
+                    const offsetY = e.clientY - img.getBoundingClientRect().top;
+                    function move(ev: PointerEvent) {
+                      const localX = ev.clientX - startBox.left - offsetX;
+                      const localY = ev.clientY - startBox.top - offsetY;
+                      // Clamp so the logo can't be dragged outside the
+                      // visible video area. We don't know the rendered
+                      // logo width yet (it depends on size %), but the
+                      // worker also clamps via overlay's auto, so a
+                      // simple [0, 1 - logoSize] keeps it sensible.
+                      const maxX = 1 - logoSize;
+                      const surfaceAspect = startBox.height / startBox.width;
+                      // Approx maxY using the logo's render height ≈
+                      // logoSize * surface width / image natural ratio.
+                      const approxLogoHpct = (img.offsetHeight / startBox.height);
+                      const maxY = Math.max(0, 1 - approxLogoHpct);
+                      const nextX = Math.max(0, Math.min(maxX, localX / startBox.width));
+                      const nextY = Math.max(0, Math.min(maxY, localY / startBox.height));
+                      setLogoX(nextX);
+                      setLogoY(nextY);
+                      void surfaceAspect;
+                    }
+                    function up(ev: PointerEvent) {
+                      img.releasePointerCapture(ev.pointerId);
+                      window.removeEventListener("pointermove", move);
+                      window.removeEventListener("pointerup", up);
+                    }
+                    window.addEventListener("pointermove", move);
+                    window.addEventListener("pointerup", up);
                   }
-                  function up(ev: PointerEvent) {
-                    img.releasePointerCapture(ev.pointerId);
-                    window.removeEventListener("pointermove", move);
-                    window.removeEventListener("pointerup", up);
+                  // Resize via dragging the bottom-right handle. Stops
+                  // pointer propagation so the move handler on the img
+                  // doesn't also fire. New width = pointer x − logo
+                  // left edge, expressed as fraction of surface width.
+                  // Clamped to the same 0.03–0.40 range as the slider.
+                  function onResizeLogo(e: React.PointerEvent<HTMLSpanElement>) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const handle = e.currentTarget;
+                    const surface = handle.parentElement?.parentElement as HTMLElement | null;
+                    if (!surface) return;
+                    handle.setPointerCapture(e.pointerId);
+                    const startBox = surface.getBoundingClientRect();
+                    // Capture current logo left edge in px so we measure
+                    // from there regardless of where the pointer lands.
+                    const logoLeftPx = startBox.left + logoX * startBox.width;
+                    function move(ev: PointerEvent) {
+                      const newWidthPx = Math.max(0, ev.clientX - logoLeftPx);
+                      const newSize = Math.max(0.03, Math.min(0.4, newWidthPx / startBox.width));
+                      // Don't push past the right edge: if the new size
+                      // would overflow given the current x, clamp size.
+                      const maxSize = Math.max(0.03, 1 - logoX);
+                      setLogoSize(Math.min(newSize, maxSize));
+                    }
+                    function up(ev: PointerEvent) {
+                      handle.releasePointerCapture(ev.pointerId);
+                      window.removeEventListener("pointermove", move);
+                      window.removeEventListener("pointerup", up);
+                    }
+                    window.addEventListener("pointermove", move);
+                    window.addEventListener("pointerup", up);
                   }
-                  window.addEventListener("pointermove", move);
-                  window.addEventListener("pointerup", up);
-                }
-                // Resize via dragging the bottom-right handle. Stops
-                // pointer propagation so the move handler on the img
-                // doesn't also fire. New width = pointer x − logo
-                // left edge, expressed as fraction of surface width.
-                // Clamped to the same 0.03–0.40 range as the slider.
-                function onResizeLogo(e: React.PointerEvent<HTMLSpanElement>) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  const handle = e.currentTarget;
-                  const surface = handle.parentElement?.parentElement as HTMLElement | null;
-                  if (!surface) return;
-                  handle.setPointerCapture(e.pointerId);
-                  const startBox = surface.getBoundingClientRect();
-                  // Capture current logo left edge in px so we measure
-                  // from there regardless of where the pointer lands.
-                  const logoLeftPx = startBox.left + logoX * startBox.width;
-                  function move(ev: PointerEvent) {
-                    const newWidthPx = Math.max(0, ev.clientX - logoLeftPx);
-                    const newSize = Math.max(0.03, Math.min(0.4, newWidthPx / startBox.width));
-                    // Don't push past the right edge: if the new size
-                    // would overflow given the current x, clamp size.
-                    const maxSize = Math.max(0.03, 1 - logoX);
-                    setLogoSize(Math.min(newSize, maxSize));
-                  }
-                  function up(ev: PointerEvent) {
-                    handle.releasePointerCapture(ev.pointerId);
-                    window.removeEventListener("pointermove", move);
-                    window.removeEventListener("pointerup", up);
-                  }
-                  window.addEventListener("pointermove", move);
-                  window.addEventListener("pointerup", up);
-                }
-                return (
-                  <div className="space-y-1.5">
-                    <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
-                      Drag to position · drag corner to resize
-                    </p>
-                    <div
-                      className="relative w-full rounded-lg overflow-hidden select-none"
-                      style={{
-                        aspectRatio: aspect,
-                        maxWidth: "320px",
-                        background: "linear-gradient(135deg, oklch(0.16 0 0), oklch(0.22 0 0))",
-                        border: "1px solid var(--bd-card)",
-                      }}
-                    >
+                  return (
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
+                        Drag to position · drag corner to resize
+                      </p>
                       <div
-                        className="absolute group"
+                        className="relative w-full rounded-lg overflow-hidden select-none"
                         style={{
-                          left: `${logoX * 100}%`,
-                          top: `${logoY * 100}%`,
-                          width: `${logoSize * 100}%`,
+                          aspectRatio: aspect,
+                          maxWidth: "320px",
+                          background: "linear-gradient(135deg, oklch(0.16 0 0), oklch(0.22 0 0))",
+                          border: "1px solid var(--bd-card)",
                         }}
                       >
-                        <img
-                          src={logoSrc}
-                          alt={logoFile?.name ?? "Channel logo"}
-                          draggable={false}
-                          onPointerDown={assembling ? undefined : onDragLogo}
-                          className="touch-none block w-full h-auto"
+                        <div
+                          className="absolute group"
                           style={{
-                            cursor: assembling ? "default" : "grab",
-                            opacity: 0.95,
-                            filter: "drop-shadow(0 2px 8px oklch(0 0 0 / 0.5))",
+                            left: `${logoX * 100}%`,
+                            top: `${logoY * 100}%`,
+                            width: `${logoSize * 100}%`,
                           }}
-                        />
-                        {/* Bottom-right resize handle. Visible at all
-                            times so it's discoverable; sized small so
-                            it doesn't obscure tiny logos. */}
-                        {!assembling && (
-                          <span
-                            onPointerDown={onResizeLogo}
-                            aria-label="Resize logo"
-                            title="Drag to resize"
-                            className="absolute touch-none flex items-center justify-center"
+                        >
+                          <img
+                            src={logoSrc}
+                            alt={logoFile?.name ?? "Channel logo"}
+                            draggable={false}
+                            onPointerDown={assembling ? undefined : onDragLogo}
+                            className="touch-none block w-full h-auto"
                             style={{
-                              right: "-6px",
-                              bottom: "-6px",
-                              width: "14px",
-                              height: "14px",
-                              borderRadius: "9999px",
-                              background: "oklch(0.72 0.25 285)",
-                              border: "2px solid #ffffff",
-                              cursor: "nwse-resize",
-                              boxShadow: "0 0 0 1px oklch(0.4 0.15 285)",
+                              cursor: assembling ? "default" : "grab",
+                              opacity: 0.95,
+                              filter: "drop-shadow(0 2px 8px oklch(0 0 0 / 0.5))",
                             }}
                           />
-                        )}
+                          {/* Bottom-right resize handle. Visible at all
+                              times so it's discoverable; sized small so
+                              it doesn't obscure tiny logos. */}
+                          {!assembling && (
+                            <span
+                              onPointerDown={onResizeLogo}
+                              aria-label="Resize logo"
+                              title="Drag to resize"
+                              className="absolute touch-none flex items-center justify-center"
+                              style={{
+                                right: "-6px",
+                                bottom: "-6px",
+                                width: "14px",
+                                height: "14px",
+                                borderRadius: "9999px",
+                                background: "oklch(0.72 0.25 285)",
+                                border: "2px solid #ffffff",
+                                cursor: "nwse-resize",
+                                boxShadow: "0 0 0 1px oklch(0.4 0.15 285)",
+                              }}
+                            />
+                          )}
+                        </div>
                       </div>
+                      <p className="text-[10px] font-mono tabular-nums" style={{ color: "var(--c-40)" }}>
+                        x: {Math.round(logoX * 100)}% · y: {Math.round(logoY * 100)}% · size: {Math.round(logoSize * 100)}%
+                      </p>
                     </div>
-                    <p className="text-[10px] font-mono tabular-nums" style={{ color: "var(--c-40)" }}>
-                      x: {Math.round(logoX * 100)}% · y: {Math.round(logoY * 100)}% · size: {Math.round(logoSize * 100)}%
-                    </p>
-                  </div>
-                );
-              })()}
+                  );
+                })()}
+              </div>
+
+              </div>
+              )}
             </div>
 
-            {/* Voiceover source — the two preview cards double as the
-                selector. Clicking a card sets trimSilence; the active
-                card gets a theme-color background tint. The play button
-                inside each card stops propagation so audio toggling
-                doesn't trip the selection. */}
-            <div className="space-y-3">
-              {(() => {
-                // Project data is undefined while SWR is still fetching —
-                // we don't know yet if voiceovers exist, so pessimistically
-                // show the loader. Once project loads, swap to the
-                // voiceover-aware condition so the loader hides cleanly
-                // when there's nothing to preview.
-                const projectLoaded = !!project;
-                const hasAnyVoiceover = beats.some((b) => !!b.voiceoverUrl);
-                const showLoading = !projectLoaded || (hasAnyVoiceover && (trimmedLoading || originalLoading));
-                return (
-                  <div className="flex items-center gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Voiceover Source</p>
-                    {showLoading && (
-                      <span className="flex items-center gap-1.5 text-[11px]" style={{ color: "var(--brand-text)" }}>
-                        <span className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        Loading previews…
-                      </span>
-                    )}
+            {/* Captions */}
+            <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
+              {/* The whole row opens the section, so the target is the row
+                  rather than the words. The switch only appears once it is
+                  open: collapsed, the summary already says on or off, and a
+                  switch sitting on a clickable row is a thing to hit by
+                  accident while trying to expand it. */}
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={captionsOpen}
+                onClick={() => setCaptionsOpen((v) => !v)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setCaptionsOpen((v) => !v); }
+                }}
+                className={`flex items-center justify-between gap-3 cursor-pointer select-none ${captionsOpen ? "mb-4" : ""}`}
+              >
+                <div className="flex items-center gap-2">
+                  <div>
+                    <p className="text-sm font-semibold">Captions</p>
+                    <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                      {captionsEnabled
+                        ? `On · ${captionsStyle}, ${captionsSize}, ${captionsPosition}`
+                        : "Off · burned into the video when on"}
+                    </p>
                   </div>
-                );
-              })()}
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                {captionsOpen && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setCaptionsEnabled((v) => !v); }}
+                    disabled={assembling}
+                    aria-label={captionsEnabled ? "Turn captions off" : "Turn captions on"}
+                    className="relative w-11 h-6 rounded-full transition-all disabled:opacity-40 shrink-0"
+                    style={{ background: captionsEnabled ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}
+                  >
+                    <span className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
+                      style={{ background: "oklch(0.95 0 0)", left: captionsEnabled ? "calc(100% - 1.375rem)" : "0.125rem" }} />
+                  </button>
+                )}
+                {/* The arrow lives at the far edge, where the eye goes to find
+                    out whether a row opens. Left of the title it competed with
+                    the heading; here it reads as the affordance for the row. */}
+                <span style={{ color: "var(--c-45)" }}>
+                  {captionsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </span>
+                </div>
+              </div>
 
-              {beats.some((b) => !!b.voiceoverUrl) && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                  <FullVoiceoverPreview
-                    projectId={projectId}
-                    beats={beats}
-                    trimSilence={true}
-                    title="Trimmed voiceover"
-                    selected={trimSilence}
-                    onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(true)}
-                    onLoadingChange={setTrimmedLoading}
-                    bgmUrl={bgmObjectUrl ?? bgmUploadedUrl}
-                    bgmName={bgmFile?.name ?? bgmUploadedUrl?.split("/").pop() ?? undefined}
-                    bgmVolume={bgmVolume}
-                  />
-                  <FullVoiceoverPreview
-                    projectId={projectId}
-                    beats={beats}
-                    trimSilence={false}
-                    title="Original voiceover"
-                    selected={!trimSilence}
-                    onSelect={assembling || !hasVoiceover ? undefined : () => setTrimSilence(false)}
-                    onLoadingChange={setOriginalLoading}
-                    bgmUrl={bgmObjectUrl ?? bgmUploadedUrl}
-                    bgmName={bgmFile?.name ?? bgmUploadedUrl?.split("/").pop() ?? undefined}
-                    bgmVolume={bgmVolume}
-                  />
+              {captionsOpen && captionsEnabled && (
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Style</p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {CAPTION_STYLES.map((s) => (
+                        <button key={s.id} onClick={() => setCaptionsStyle(s.id)} disabled={assembling}
+                          className="py-2 px-3 rounded-xl text-left transition-all disabled:opacity-40"
+                          style={captionsStyle === s.id ? {
+                            background: "oklch(0.72 0.25 285 / 0.15)",
+                            border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                          } : {
+                            background: "var(--bg-input)",
+                            border: "1px solid var(--bd-card)",
+                          }}>
+                          <p className="text-xs font-medium" style={{ color: captionsStyle === s.id ? "var(--accent-purple-text)" : "var(--c-60)" }}>{s.label}</p>
+                          <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>{s.hint}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Size</p>
+                      <div className="flex gap-1.5">
+                        {CAPTION_SIZES.map((s) => (
+                          <button key={s.id} onClick={() => setCaptionsSize(s.id)} disabled={assembling}
+                            className="flex-1 py-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
+                            style={captionsSize === s.id ? {
+                              background: "oklch(0.72 0.25 285 / 0.15)",
+                              border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                              color: "var(--accent-purple-text)",
+                            } : {
+                              background: "var(--bg-input)",
+                              border: "1px solid var(--bd-card)",
+                              color: "var(--c-50)",
+                            }}>
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex-1">
+                      <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Position</p>
+                      <div className="flex gap-1.5">
+                        {CAPTION_POSITIONS.map((p) => (
+                          <button key={p.id} onClick={() => setCaptionsPosition(p.id)} disabled={assembling}
+                            className="flex-1 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
+                            style={captionsPosition === p.id ? {
+                              background: "oklch(0.72 0.25 285 / 0.15)",
+                              border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                              color: "var(--accent-purple-text)",
+                            } : {
+                              background: "var(--bg-input)",
+                              border: "1px solid var(--bd-card)",
+                              color: "var(--c-50)",
+                            }}>
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Language</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {CAPTION_LANGUAGES.map((lang) => (
+                        <button key={lang.code} onClick={() => setCaptionsLanguage(lang.code)} disabled={assembling}
+                          className="px-3 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
+                          style={captionsLanguage === lang.code ? {
+                            background: "oklch(0.72 0.25 285 / 0.15)",
+                            border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                            color: "var(--accent-purple-text)",
+                          } : {
+                            background: "var(--bg-input)",
+                            border: "1px solid var(--bd-card)",
+                            color: "var(--c-50)",
+                          }}>
+                          {lang.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1533,12 +1950,32 @@ export default function AssemblePage({ params }: PageProps) {
                 no option. */}
             {stillBeats > 0 && (
             <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-              <div className="mb-4">
-                <p className="text-sm font-semibold">Image Effects</p>
-                <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                  {stillBeats} {stillBeats === 1 ? "beat is a still image" : "beats are still images"}. A slow push stops them sitting dead on screen.
-                </p>
+              {/* Same row-as-toggle as captions, and the summary carries the
+                  current setting so it is readable while closed. */}
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={effectsOpen}
+                onClick={() => setEffectsOpen((v) => !v)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEffectsOpen((v) => !v); }
+                }}
+                className={`flex items-center justify-between gap-3 cursor-pointer select-none ${effectsOpen ? "mb-4" : ""}`}
+              >
+                <div>
+                  <p className="text-sm font-semibold">Image Effects</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                    {imageMotion === "none"
+                      ? `${stillBeats} ${stillBeats === 1 ? "still beat" : "still beats"} · no movement`
+                      : `${IMAGE_MOTIONS.find((m) => m.id === imageMotion)?.label ?? imageMotion} · ${MOTION_STRENGTHS.find((x) => x.id === imageMotionStrength)?.label.toLowerCase()} · ${imageMotionSeconds === 0 ? "whole beat" : `${imageMotionSeconds.toFixed(1)}s`}`}
+                  </p>
+                </div>
+                <span className="shrink-0" style={{ color: "var(--c-45)" }}>
+                  {effectsOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </span>
               </div>
+              {effectsOpen && (
+              <>
               {/* Side by side. Full width, the preview was mostly black bars
                   around a small frame and the three options were stretched
                   across a row they did not need. The preview is the size of the
@@ -1659,113 +2096,325 @@ export default function AssemblePage({ params }: PageProps) {
                   </p>
                 </div>
               )}
+              </>
+              )}
             </div>
             )}
 
-            {/* Captions */}
+            {/* Timeline.
+                Laid out the way an editor lays one out: left to right, each
+                beat as wide as it is long, so the shape of the video is the
+                shape on screen. The grid on the generate step gives every beat
+                an equal square, which hides the two things that decide whether
+                an effect suits a beat — how long it runs, and what its
+                neighbours do.
+
+                Not draggable, and no playhead. A strip you can drag promises
+                retiming, reordering and playback, none of which exist yet.
+                Selecting a beat and setting its effect is what this does, so
+                that is all it offers. */}
+            {beats.length > 0 && (
             <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-              <div className="flex items-center justify-between mb-4">
+              <div className="mb-3 flex items-baseline justify-between">
                 <div>
-                  <p className="text-sm font-semibold">Captions</p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>Burned into the video — always visible</p>
+                  <p className="text-sm font-semibold">Timeline</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
+                    {beats.length} beats · {timelineTotal ? `${Math.floor(timelineTotal / 60)}:${String(Math.round(timelineTotal % 60)).padStart(2, "0")}` : "—"}
+                    {timelineEstimated && " · lengths estimated until the voiceover is generated"}
+                  </p>
                 </div>
-                <button onClick={() => setCaptionsEnabled((v) => !v)} disabled={assembling}
-                  className="relative w-11 h-6 rounded-full transition-all disabled:opacity-40 shrink-0"
-                  style={{ background: captionsEnabled ? "oklch(0.72 0.25 285)" : "var(--c-22)", border: "1px solid var(--bd-10)" }}>
-                  <span className="absolute top-0.5 w-5 h-5 rounded-full transition-all"
-                    style={{ background: "oklch(0.95 0 0)", left: captionsEnabled ? "calc(100% - 1.375rem)" : "0.125rem" }} />
-                </button>
+                {/* Zoom, the way an editor does it: out to see the shape of
+                    the whole video, in to work on one beat. */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={togglePlay}
+                    disabled={playable.length === 0}
+                    title={playable.length === 0 ? "No voiceover generated yet" : playing ? "Pause" : "Play the narration"}
+                    aria-label={playing ? "Pause" : "Play"}
+                    className="w-7 h-7 rounded-full flex items-center justify-center transition-opacity hover:opacity-85 disabled:opacity-30"
+                    style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+                  >
+                    {playing ? <Pause size={12} /> : <Play size={12} className="ml-[1px]" />}
+                  </button>
+                  <span className="text-xs" style={{ color: "var(--c-38)" }}>Click a beat to set its effect</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setPxPerSecond(ZOOM_STEPS[Math.max(0, zoomStep - 1)])}
+                      disabled={zoomStep === 0}
+                      aria-label="Zoom out"
+                      className="w-6 h-6 rounded-md text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-30"
+                      style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
+                    >
+                      −
+                    </button>
+                    <input
+                      type="range"
+                      min={0}
+                      max={ZOOM_STEPS.length - 1}
+                      step={1}
+                      value={zoomStep}
+                      onChange={(e) => setPxPerSecond(ZOOM_STEPS[Number(e.target.value)])}
+                      aria-label="Timeline zoom"
+                      className="w-20 accent-[oklch(0.72_0.25_285)]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPxPerSecond(ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, zoomStep + 1)])}
+                      disabled={zoomStep === ZOOM_STEPS.length - 1}
+                      aria-label="Zoom in"
+                      className="w-6 h-6 rounded-md text-xs font-semibold transition-opacity hover:opacity-80 disabled:opacity-30"
+                      style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={fitTimeline}
+                      title="Compress the whole video into the width available"
+                      className="h-6 px-2 rounded-md text-[11px] font-medium transition-opacity hover:opacity-80"
+                      style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
+                    >
+                      Fit
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              {captionsEnabled && (
-                <div className="space-y-4">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Style</p>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {CAPTION_STYLES.map((s) => (
-                        <button key={s.id} onClick={() => setCaptionsStyle(s.id)} disabled={assembling}
-                          className="py-2 px-3 rounded-xl text-left transition-all disabled:opacity-40"
-                          style={captionsStyle === s.id ? {
-                            background: "oklch(0.72 0.25 285 / 0.15)",
-                            border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                          } : {
-                            background: "var(--bg-input)",
-                            border: "1px solid var(--bd-card)",
-                          }}>
-                          <p className="text-xs font-medium" style={{ color: captionsStyle === s.id ? "var(--accent-purple-text)" : "var(--c-60)" }}>{s.label}</p>
-                          <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>{s.hint}</p>
-                        </button>
-                      ))}
-                    </div>
+              <div ref={timelineViewportRef} className="overflow-x-auto pb-1">
+                <div style={{ width: Math.max(320, timelineTotal * pxPerSecond) }}>
+                  {/* Ruler. Every five seconds, which keeps a ten-minute video
+                      readable without a mark per second. */}
+                  <div className="relative h-4 mb-1">
+                    {(() => {
+                      // Marks no closer than 60px, or zooming out turns the
+                      // ruler into a smear of overlapping numbers.
+                      const every = Math.max(1, Math.ceil(60 / pxPerSecond / 5) * 5);
+                      return Array.from({ length: Math.floor(timelineTotal / every) + 1 }, (_, i) => i * every).map((t) => (
+                        <span key={t} className="absolute top-0 text-[9px] tabular-nums"
+                          style={{ left: t * pxPerSecond, color: "var(--c-32)" }}>
+                          {t}s
+                        </span>
+                      ));
+                    })()}
                   </div>
 
-                  <div className="flex gap-4">
-                    <div className="flex-1">
-                      <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Size</p>
-                      <div className="flex gap-1.5">
-                        {CAPTION_SIZES.map((s) => (
-                          <button key={s.id} onClick={() => setCaptionsSize(s.id)} disabled={assembling}
-                            className="flex-1 py-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
-                            style={captionsSize === s.id ? {
-                              background: "oklch(0.72 0.25 285 / 0.15)",
-                              border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                              color: "var(--accent-purple-text)",
-                            } : {
-                              background: "var(--bg-input)",
-                              border: "1px solid var(--bd-card)",
-                              color: "var(--c-50)",
-                            }}>
-                            {s.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                  {/* The beats themselves, with the playhead over them. */}
+                  <div className="relative">
+                  {playing && (
+                    <div className="absolute top-0 bottom-0 w-[2px] z-20 pointer-events-none"
+                      style={{ left: playhead * pxPerSecond, background: "oklch(0.95 0 0)", boxShadow: "0 0 6px oklch(0.95 0 0 / 0.6)" }} />
+                  )}
+                  <div className="flex gap-[1px] items-stretch">
+                    {beats.map((b) => {
+                      const { seconds } = beatSeconds(b);
+                      const isClip = !!b.videoUrl;
+                      const selected = timelineBeat === b.beatNumber;
+                      return (
+                        <button
+                          key={b.beatNumber}
+                          type="button"
+                          onClick={() => setTimelineBeat(selected ? null : b.beatNumber)}
+                          title={`Beat ${b.beatNumber} · ${seconds.toFixed(1)}s${beatSeconds(b).estimated ? " (estimated)" : ""}`}
+                          className="relative h-16 shrink-0 rounded-md overflow-hidden transition-all hover:brightness-110 cursor-pointer"
+                          style={{
+                            // A floor, or a half-second beat is a sliver nobody
+                            // can hit with a mouse.
+                            // The floor keeps a short beat clickable, but it
+                            // has to give way when the whole video is being
+                            // squeezed to fit, or the sum of the floors would
+                            // be wider than the space we are fitting into.
+                            width: Math.max(pxPerSecond < 12 ? 4 : 20, seconds * pxPerSecond),
+                            background: "var(--bg-progress)",
+                            border: `1px solid ${selected ? "oklch(0.72 0.25 285)" : "var(--bd-6)"}`,
+                            boxShadow: selected ? "0 0 0 2px oklch(0.72 0.25 285 / 0.25)" : "none",
+                          }}
+                        >
+                          {b.imageUrl ? (
+                            // Tiled, not stretched. The block's width is the
+                            // beat's duration, so a six-second beat is 240px
+                            // wide and a single cover-fitted thumbnail became a
+                            // thin horizontal slice of the image. Repeating the
+                            // frame at its own aspect ratio is what a filmstrip
+                            // in any editor actually shows, and it keeps the
+                            // picture recognisable at every duration.
+                            <span
+                              className="absolute inset-0"
+                              style={{
+                                // Behind the head frame: the same picture,
+                                // heavily dimmed, so the tail of a long beat
+                                // still belongs to it.
+                                backgroundColor: "var(--bg-progress)",
+                                backgroundImage: `url(${b.imageUrl})`,
+                                backgroundSize: "auto 100%",
+                                backgroundRepeat: "no-repeat",
+                                backgroundPosition: "left center",
+                              }}
+                            />
+                          ) : (
+                            <span className="absolute inset-0 flex items-center justify-center text-[9px]"
+                              style={{ color: "var(--c-30)" }}>
+                              {b.beatNumber}
+                            </span>
+                          )}
 
-                    <div className="flex-1">
-                      <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Position</p>
-                      <div className="flex gap-1.5">
-                        {CAPTION_POSITIONS.map((p) => (
-                          <button key={p.id} onClick={() => setCaptionsPosition(p.id)} disabled={assembling}
-                            className="flex-1 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
-                            style={captionsPosition === p.id ? {
-                              background: "oklch(0.72 0.25 285 / 0.15)",
-                              border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                              color: "var(--accent-purple-text)",
-                            } : {
-                              background: "var(--bg-input)",
-                              border: "1px solid var(--bd-card)",
-                              color: "var(--c-50)",
-                            }}>
-                            {p.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                          {/* A clip is tinted rather than labelled: at 20px wide
+                              there is no room for a word. */}
+                          {isClip && <span className="absolute inset-0" style={{ background: "oklch(0.55 0.15 240 / 0.32)" }} />}
+
+                          {/* A scrim, so the number stays legible over a bright
+                              image without dimming the whole thumbnail. */}
+                          {b.imageUrl && (
+                            <span className="absolute inset-x-0 top-0 h-5 pointer-events-none"
+                              style={{ background: "linear-gradient(oklch(0 0 0 / 0.55), transparent)" }} />
+                          )}
+                          {b.imageUrl && (
+                            <span className="absolute top-[3px] left-[4px] text-[9px] font-semibold tabular-nums leading-none"
+                              style={{ color: "oklch(1 0 0 / 0.85)" }}>
+                              {b.beatNumber}
+                            </span>
+                          )}
+
+                          {/* Its own effect, if it has one. A bar rather than a
+                              label: the narrowest block here is 20px. */}
+                          {b.imageMotion && !isClip && (
+                            <span className="absolute bottom-0 left-0 right-0 h-[3px]"
+                              style={{ background: "oklch(0.72 0.25 285)" }} />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                   </div>
 
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: "var(--c-40)" }}>Language</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {CAPTION_LANGUAGES.map((lang) => (
-                        <button key={lang.code} onClick={() => setCaptionsLanguage(lang.code)} disabled={assembling}
-                          className="px-3 py-1.5 rounded-xl text-xs font-medium transition-all disabled:opacity-40"
-                          style={captionsLanguage === lang.code ? {
-                            background: "oklch(0.72 0.25 285 / 0.15)",
-                            border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                            color: "var(--accent-purple-text)",
-                          } : {
-                            background: "var(--bg-input)",
-                            border: "1px solid var(--bd-card)",
-                            color: "var(--c-50)",
-                          }}>
-                          {lang.label}
-                        </button>
-                      ))}
+                  {/* The audio, stacked below the video the way an editor
+                      stacks it. Two tracks because there are two things making
+                      sound, and each says whether it is in the render. */}
+                  <div className="mt-[3px] space-y-[3px]">
+                    <div className="h-5 rounded-md flex items-center gap-2 px-2"
+                      style={{ background: "oklch(0.55 0.15 145 / 0.18)", border: "1px solid oklch(0.55 0.15 145 / 0.35)" }}>
+                      {/* Not mutable, and it should not pretend to be. Every
+                          beat's length comes from its narration, so a silent
+                          voiceover is not a quieter video, it is a video with
+                          no timing at all. */}
+                      <span title="The narration sets every beat's length, so the video cannot be built without it"
+                        className="shrink-0 cursor-help flex items-center" style={{ color: "oklch(0.62 0.13 145)" }}>
+                        <Volume2 size={11} />
+                      </span>
+                      <span className="text-[9px] font-medium leading-none" style={{ color: "oklch(0.62 0.13 145)" }}>
+                        Narration{trimSilence ? " · silences trimmed" : ""}
+                      </span>
+                      {/* Preview only, and the tooltip says so. The worker has
+                          no narration level: the voiceover is the reference the
+                          rest is mixed against. */}
+                      <input
+                        type="range"
+                        min={0} max={1} step={0.05}
+                        value={narrationPreviewVolume}
+                        onChange={(e) => setNarrationPreviewVolume(Number(e.target.value))}
+                        title="Narration level while previewing here. Does not change the render."
+                        aria-label="Narration preview volume"
+                        className="ml-auto w-16 h-1 accent-[oklch(0.62_0.13_145)]"
+                      />
+                    </div>
+
+                    <div className="h-5 rounded-md flex items-center gap-2 px-2"
+                      style={{
+                        background: bgmPreviewUrl && bgmVolume > 0 ? "oklch(0.62 0.15 60 / 0.16)" : "var(--bg-track)",
+                        border: `1px solid ${bgmPreviewUrl && bgmVolume > 0 ? "oklch(0.62 0.15 60 / 0.35)" : "var(--bd-6)"}`,
+                        opacity: bgmPreviewUrl ? 1 : 0.5,
+                      }}>
+                      <button
+                        type="button"
+                        disabled={!bgmPreviewUrl || assembling}
+                        onClick={() => {
+                          if (bgmVolume > 0) {
+                            bgmLevelBeforeMute.current = bgmVolume;
+                            setBgmVolume(0);
+                          } else {
+                            setBgmVolume(bgmLevelBeforeMute.current || 0.15);
+                          }
+                        }}
+                        title={!bgmPreviewUrl ? "No music added" : bgmVolume > 0 ? "Mute the music" : "Unmute the music"}
+                        className="shrink-0 flex items-center disabled:cursor-not-allowed transition-opacity hover:opacity-80"
+                        style={{ color: bgmPreviewUrl && bgmVolume > 0 ? "oklch(0.66 0.14 60)" : "var(--c-38)" }}
+                      >
+                        {bgmPreviewUrl && bgmVolume > 0 ? <Volume2 size={11} /> : <VolumeX size={11} />}
+                      </button>
+                      <span className="text-[9px] font-medium leading-none"
+                        style={{ color: bgmPreviewUrl && bgmVolume > 0 ? "oklch(0.66 0.14 60)" : "var(--c-38)" }}>
+                        {!bgmPreviewUrl
+                          ? "Music · none added"
+                          : bgmVolume > 0
+                            ? `Music · ${Math.round(bgmVolume * 100)}%`
+                            : "Music · muted"}
+                      </span>
+                      {/* This one is real: the same value the worker mixes the
+                          bed at, so what you hear is what gets rendered. */}
+                      <input
+                        type="range"
+                        min={0} max={0.6} step={0.01}
+                        value={bgmVolume}
+                        disabled={!bgmPreviewUrl || assembling}
+                        onChange={(e) => setBgmVolume(Number(e.target.value))}
+                        title="Music level in the finished video"
+                        aria-label="Music volume"
+                        className="ml-auto w-16 h-1 accent-[oklch(0.66_0.14_60)] disabled:opacity-30"
+                      />
                     </div>
                   </div>
                 </div>
-              )}
+              </div>
+
+              {/* The inspector, in the CapCut sense: what you selected, and what
+                  you can do to it. Below the strip so it does not move the
+                  strip when it opens. */}
+              {timelineBeat !== null && (() => {
+                const b = beats.find((x) => x.beatNumber === timelineBeat);
+                if (!b) return null;
+                const { seconds, estimated } = beatSeconds(b);
+                return (
+                  <div className="mt-3 flex items-center gap-3 rounded-xl p-2.5" style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
+                    <div className="w-16 h-9 shrink-0 rounded overflow-hidden" style={{ background: "var(--bg-progress)" }}>
+                      {b.imageUrl && (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img src={b.imageUrl} alt="" className="w-full h-full object-cover" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium" style={{ color: "var(--c-70)" }}>
+                        Beat {b.beatNumber}
+                        <span className="font-normal" style={{ color: "var(--c-40)" }}>
+                          {` · ${seconds.toFixed(1)}s${estimated ? " estimated" : ""}`}
+                        </span>
+                      </p>
+                      <p className="text-xs truncate mt-0.5" style={{ color: "var(--c-38)" }}>
+                        {b.videoUrl ? "Generated clip — nothing to move" : (b.scriptSegment ?? "")}
+                      </p>
+                    </div>
+                    {!b.videoUrl && (
+                      <select
+                        value={b.imageMotion ?? ""}
+                        disabled={assembling}
+                        onChange={(e) => setBeatMotion(b.beatNumber, e.target.value)}
+                        className="shrink-0 rounded-lg px-2 py-1.5 text-xs disabled:opacity-40"
+                        style={{
+                          background: "var(--bg-panel)",
+                          border: `1px solid ${b.imageMotion ? "oklch(0.72 0.25 285 / 0.4)" : "var(--bd-card)"}`,
+                          color: b.imageMotion ? "var(--accent-purple-text)" : "var(--c-60)",
+                        }}
+                      >
+                        {BEAT_MOTIONS.map((m) => (
+                          <option key={m.id} value={m.id}>{m.label}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
+            )}
 
             {/* Assembly controls */}
             <div className="rounded-2xl p-5 space-y-4" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
