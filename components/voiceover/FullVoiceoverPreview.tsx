@@ -290,7 +290,7 @@ export function FullVoiceoverPreview({
       onKeyDown={selectable ? (e) => {
         if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect?.(); }
       } : undefined}
-      className={`rounded-2xl p-4 sm:p-5 space-y-3 transition-all ${selectable ? "cursor-pointer" : ""}`}
+      className={`rounded-2xl px-4 py-3 space-y-2 transition-all ${selectable ? "cursor-pointer" : ""}`}
       style={{
         background: selected ? "oklch(0.72 0.25 285 / 0.12)" : "#ffffff",
         border: `1px solid ${selected ? "oklch(0.72 0.25 285 / 0.5)" : "oklch(0.85 0 0)"}`,
@@ -298,17 +298,17 @@ export function FullVoiceoverPreview({
     >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "oklch(0.35 0 0)" }}>
+          <p className="text-xs font-semibold uppercase tracking-wider truncate" style={{ color: "oklch(0.35 0 0)" }}>
             {title}
           </p>
           {subtitle && (
-            <p className="text-[11px] mt-0.5" style={{ color: "oklch(0.45 0 0)" }}>
+            <p className="text-[11px] mt-0.5 truncate" style={{ color: "oklch(0.45 0 0)" }}>
               {subtitle}
             </p>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[11px] font-mono tabular-nums" style={{ color: "oklch(0.45 0 0)" }}>
+          <span className={`text-[11px] font-mono tabular-nums ${isLoading || error ? "" : "hidden sm:inline"}`} style={{ color: "oklch(0.45 0 0)" }}>
             {isLoading ? (building ? "Building preview…" : "Loading audio…") : error ? "Failed" : `${orderedCount} beats joined`}
           </span>
           {/* Export the built MP3 — one button per card so the user can
@@ -328,13 +328,13 @@ export function FullVoiceoverPreview({
           </button>
         </div>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2.5">
         <button
           onClick={(e) => { e.stopPropagation(); toggle(); }}
           disabled={!canPlay}
           aria-label={isLoading ? "Loading preview" : playing ? "Pause" : "Play"}
           aria-busy={isLoading}
-          className="w-9 h-9 rounded-full flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+          className="w-8 h-8 rounded-full flex items-center justify-center transition-opacity hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
           style={{ background: "oklch(0.72 0.25 285)", color: "#ffffff" }}
         >
           {isLoading ? (
@@ -390,7 +390,7 @@ export function FullVoiceoverPreview({
             }}
           />
           )}
-          <div className="flex justify-between mt-1 text-[11px] font-mono tabular-nums" style={{ color: "oklch(0.45 0 0)" }}>
+          <div className="flex justify-between mt-0.5 text-[11px] font-mono tabular-nums" style={{ color: "oklch(0.45 0 0)" }}>
             <span>{fmt(elapsedSec)}</span>
             <span>{isLoading ? "—:——" : fmt(totalSec)}</span>
           </div>

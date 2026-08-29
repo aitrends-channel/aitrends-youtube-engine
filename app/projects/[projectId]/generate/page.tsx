@@ -420,6 +420,19 @@ function ProgressBar({ value, total }: { value: number; total: number }) {
   );
 }
 
+/** What a single beat can be set to. The first entry clears the override and
+ *  returns the beat to the project's setting, which is where every beat starts.
+ *  `short` is what fits in an 18px badge on a tile. */
+const BEAT_MOTIONS: { id: string | null; label: string; short: string }[] = [
+  { id: null,        label: "Follow project", short: "FX" },
+  { id: "none",      label: "None",           short: "\u2014" },
+  { id: "zoom-in",   label: "Zoom in",        short: "IN" },
+  { id: "zoom-out",  label: "Zoom out",       short: "OUT" },
+  { id: "pan-right", label: "Pan right",      short: "R" },
+  { id: "pan-left",  label: "Pan left",       short: "L" },
+  { id: "drift",     label: "Drift",          short: "DR" },
+];
+
 export default function GeneratePage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
@@ -1542,6 +1555,32 @@ export default function GeneratePage({ params }: PageProps) {
     if (generatedImages + generatedVideos > 0) refreshBalance();
   }, [generatedImages, generatedVideos]);
 
+  // Which tile has its effect picker open, by beat number. One at a time: two
+  // open menus over a grid of images is noise.
+  const [motionMenuBeat, setMotionMenuBeat] = useState<number | null>(null);
+
+  // Set or clear one beat's effect. Optimistic, because the tile badge is the
+  // only feedback and waiting a round trip for a dropdown feels broken.
+  const setBeatMotion = useCallback(async (beatNumber: number, motion: string | null) => {
+    setMotionMenuBeat(null);
+    await mutate((cur: unknown) => {
+      const c = cur as { beats?: Beat[] } | undefined;
+      if (!c?.beats) return cur;
+      return { ...c, beats: c.beats.map((b) => b.beatNumber === beatNumber ? { ...b, imageMotion: motion } : b) };
+    }, { revalidate: false });
+    try {
+      const res = await fetch(`/api/projects/${projectId}/beats/motion`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ beatNumber, motion }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Could not set the effect");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not set the effect");
+      await mutate();
+    }
+  }, [projectId, mutate]);
+
   const markActive = useKieActivityStore((s) => s.markActive);
   const markIdle = useKieActivityStore((s) => s.markIdle);
   useEffect(() => {
@@ -1879,6 +1918,13 @@ export default function GeneratePage({ params }: PageProps) {
         for (const r of batchResults) {
           if (r.status === "fulfilled") pending.push(r.value);
           else {
+            // Stop aborts whatever is in flight, and an aborted fetch rejects
+            // exactly like a dropped connection: "Failed to fetch". Reporting
+            // that is wrong twice — it was not a failure, and it was not the
+            // network, it was the button the user just pressed. The check
+            // below only covered a stop that beat every submit; this covers a
+            // stop landing mid-batch, which is the common one.
+            if (abortSignal.aborted) continue;
             const reason = r.reason instanceof Error ? r.reason.message : "Unknown error";
             if (!firstSubmitError) firstSubmitError = reason;
             // Overwrite the banner with the latest error so the user
@@ -2479,6 +2525,46 @@ export default function GeneratePage({ params }: PageProps) {
                         >
                           {b.beatNumber}
                         </span>
+                        {/* This beat's own effect, overriding the project's.
+                            Only on a still: a beat with a clip has nothing to
+                            move. Shown permanently once set, so an override is
+                            visible while scanning the grid rather than hidden
+                            behind a hover. */}
+                        {b.imageUrl && !b.videoUrl && !clearingImages && (
+                          <div className="absolute top-1.5 right-1.5 z-20" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => setMotionMenuBeat(motionMenuBeat === b.beatNumber ? null : b.beatNumber)}
+                              title={b.imageMotion
+                                ? `This beat: ${BEAT_MOTIONS.find((m) => m.id === b.imageMotion)?.label ?? b.imageMotion}`
+                                : "Effect for this beat — currently follows the project"}
+                              className={`h-[18px] px-1.5 rounded-full flex items-center justify-center text-[9px] font-semibold transition-opacity ${b.imageMotion ? "" : "opacity-0 group-hover:opacity-100"}`}
+                              style={b.imageMotion ? {
+                                background: "oklch(0.72 0.25 285 / 0.9)", color: "white",
+                              } : {
+                                background: "oklch(0 0 0 / 0.6)", color: "white", border: "1px solid oklch(1 0 0 / 0.15)",
+                              }}
+                            >
+                              {b.imageMotion ? (BEAT_MOTIONS.find((m) => m.id === b.imageMotion)?.short ?? "FX") : "FX"}
+                            </button>
+                            {motionMenuBeat === b.beatNumber && (
+                              <div className="absolute right-0 mt-1 rounded-lg overflow-hidden z-30 min-w-[132px]"
+                                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", boxShadow: "0 8px 24px oklch(0 0 0 / 0.45)" }}>
+                                {BEAT_MOTIONS.map((m) => (
+                                  <button
+                                    key={m.id ?? "inherit"}
+                                    type="button"
+                                    onClick={() => setBeatMotion(b.beatNumber, m.id)}
+                                    className="w-full text-left px-2.5 py-1.5 text-[11px] transition-colors hover:bg-white/5"
+                                    style={{ color: (b.imageMotion ?? null) === m.id ? "var(--accent-purple-text)" : "var(--c-60)" }}
+                                  >
+                                    {m.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                         {/* Touch-only "view prompt" — desktop uses hover. */}
                         <button
                           type="button"
