@@ -1390,7 +1390,7 @@ export default function AssemblePage({ params }: PageProps) {
                 className={`flex items-center justify-between gap-3 cursor-pointer select-none ${brandingOpen ? "mb-4" : ""}`}
               >
                 <div>
-                  <p className="text-sm font-semibold">Music & logo</p>
+                  <p className="text-sm font-semibold">Background music & logo</p>
                   <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
                     {[
                       bgmPreviewUrl ? (bgmVolume > 0 ? `Music at ${Math.round(bgmVolume * 100)}%` : "Music muted") : null,
