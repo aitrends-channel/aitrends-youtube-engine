@@ -94,6 +94,13 @@ const IMAGE_MOTIONS = [
  *  the thumbnail inside it and narrow enough that a ten-minute video is a
  *  scroll rather than a marathon. Eight fits roughly ten minutes on a laptop
  *  screen; 120 is close enough to inspect a one-second beat. */
+function fmtClock(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const sec = Math.floor(seconds % 60);
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
 const ZOOM_STEPS = [8, 14, 22, 40, 70, 120];
 
 /** Words a narrator gets through in a second. Used only to estimate a beat's
@@ -462,6 +469,27 @@ export default function AssemblePage({ params }: PageProps) {
   // Which beat the inspector is showing, by number. Null is nothing selected,
   // which is how the panel stays out of the way until it is wanted.
   const [timelineBeat, setTimelineBeat] = useState<number | null>(null);
+  // The music's own length, so the track can show where it starts over. The
+  // worker loops it to cover the narration; the timeline said nothing about
+  // that, which made a two-minute track under a nine-minute video look like
+  // eight minutes of silence.
+  const [bgmDuration, setBgmDuration] = useState<number | null>(null);
+  // Phone only: the controls fold under the preview. Open from sm up, where
+  // the class does the work and this value is ignored.
+  const [mobileEffectsOpen, setMobileEffectsOpen] = useState(false);
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    const apply = () => setNarrow(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+  // A phone shows about 300px of timeline. At the desktop default that is
+  // seven seconds of video, so it opens zoomed out instead.
+  useEffect(() => {
+    if (narrow) setPxPerSecond(ZOOM_STEPS[1]);
+  }, [narrow]);
   // How wide a second is. Stepped rather than continuous: a slider over pixels
   // per second invites fiddling, and six steps cover ten minutes to one beat.
   const timelineTotal = beats.reduce((sum, b) => sum + beatSeconds(b).seconds, 0);
@@ -590,6 +618,19 @@ export default function AssemblePage({ params }: PageProps) {
 
   // Set or clear one beat's effect. Optimistic: the select is the only feedback
   // and waiting a round trip to show a choice feels broken.
+  useEffect(() => {
+    if (!bgmPreviewUrl) { setBgmDuration(null); return; }
+    const probe = new Audio();
+    probe.preload = "metadata";
+    const done = () => {
+      const d = probe.duration;
+      setBgmDuration(Number.isFinite(d) && d > 0 ? d : null);
+    };
+    probe.addEventListener("loadedmetadata", done);
+    probe.src = bgmPreviewUrl;
+    return () => probe.removeEventListener("loadedmetadata", done);
+  }, [bgmPreviewUrl]);
+
   const setBeatMotion = useCallback(async (beatNumber: number, motion: string) => {
     const value = motion === "" ? null : motion;
     await mutate((cur: unknown) => {
@@ -620,18 +661,28 @@ export default function AssemblePage({ params }: PageProps) {
   // One of their own frames either way: a stock image would show the movement
   // but not what it does to their composition, which is the part worth judging.
   const previewBeat = (playingBeat !== null
-    ? beats.find((b) => b.beatNumber === playingBeat && b.imageUrl)
+    ? beats.find((b) => b.beatNumber === playingBeat && (b.imageUrl || b.videoUrl))
     : null)
     ?? (timelineBeat !== null
-      ? beats.find((b) => b.beatNumber === timelineBeat && b.imageUrl && !b.videoUrl)
+      ? beats.find((b) => b.beatNumber === timelineBeat && (b.imageUrl || b.videoUrl))
       : null)
     ?? beats.find((b) => !b.videoUrl && b.imageUrl) ?? null;
+  // A beat that generated a clip previews as that clip: it is what gets
+  // assembled, and a still of its first frame says nothing about the motion
+  // that was paid for.
+  const previewClipUrl = previewBeat?.videoUrl ?? null;
   const stillPreviewUrl = previewBeat?.imageUrl ?? null;
+  const previewSrc = previewClipUrl ?? stillPreviewUrl;
 
   // The effect that beat will actually get: its own if it has one, otherwise
   // the project's. Watching the project setting animate on a beat that
   // overrides it would be a lie about what will be rendered.
-  const previewMotion = previewBeat?.imageMotion ?? imageMotion;
+  //
+  // A clip is the exception in the other direction: the project setting never
+  // reaches one, so with no override of its own it shows still.
+  const previewMotion = previewBeat?.videoUrl
+    ? (previewBeat.imageMotion ?? "none")
+    : (previewBeat?.imageMotion ?? imageMotion);
 
   useEffect(() => {
     if (previewMotion !== "random") return;
@@ -1944,11 +1995,11 @@ export default function AssemblePage({ params }: PageProps) {
               )}
             </div>
 
-            {/* Still-image movement.
-                Hidden when every beat already has a clip: the setting would do
-                nothing there, and an option that changes nothing is worse than
-                no option. */}
-            {stillBeats > 0 && (
+            {/* Movement, and the preview the timeline plays through.
+                The project-wide setting reaches stills only, so with every beat
+                already a clip there is nothing for it to change and only the
+                preview is worth showing. */}
+            {(stillBeats > 0 || beats.some((b) => b.videoUrl)) && (
             <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               {/* Same row-as-toggle as captions, and the summary carries the
                   current setting so it is readable while closed. */}
@@ -1965,7 +2016,9 @@ export default function AssemblePage({ params }: PageProps) {
                 <div>
                   <p className="text-sm font-semibold">Preview & Effects</p>
                   <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
-                    {imageMotion === "none"
+                    {stillBeats === 0
+                      ? "Clips only · effects set per beat"
+                      : imageMotion === "none"
                       ? `${stillBeats} ${stillBeats === 1 ? "still beat" : "still beats"} · no movement`
                       : `${IMAGE_MOTIONS.find((m) => m.id === imageMotion)?.label ?? imageMotion} · ${MOTION_STRENGTHS.find((x) => x.id === imageMotionStrength)?.label.toLowerCase()} · ${imageMotionSeconds === 0 ? "whole beat" : `${imageMotionSeconds.toFixed(1)}s`}`}
                   </p>
@@ -1981,16 +2034,18 @@ export default function AssemblePage({ params }: PageProps) {
                   across a row they did not need. The preview is the size of the
                   thing being judged, and the options sit beside it where they
                   can be read as a list. */}
-              <div className="flex flex-col sm:flex-row gap-4 items-start">
-                {stillPreviewUrl && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+                {previewSrc && (
+                <div>
                   <div
-                    /* 320 is big enough to judge a 15% move on; at 208 the
-                       travel was about thirty pixels, which is a nudge rather
-                       than something you can decide from. On a phone there is
-                       no room for it beside the options, so the preview takes
-                       the width and the options sit under it. */
-                    className={`rounded-xl overflow-hidden w-full sm:shrink-0 ${
-                      aspectRatio === "9:16" ? "max-w-[220px] sm:w-[168px]" : "sm:w-[320px]"
+                    /* Half the section, however wide that is — a 15% move on
+                       a 320px preview was about thirty pixels of travel, which
+                       is a nudge rather than something to decide from. A 9:16
+                       project is capped, since a full half of a wide screen
+                       would make a preview taller than its own panel. Below sm
+                       the grid is one column and this simply sits on top. */
+                    className={`rounded-xl overflow-hidden w-full ${
+                      aspectRatio === "9:16" ? "max-w-[240px]" : ""
                     }`}
                     style={{
                       border: "1px solid var(--bd-card)",
@@ -2004,9 +2059,32 @@ export default function AssemblePage({ params }: PageProps) {
                       {/* The same 15% travel the assembler applies, over four
                           seconds, which is about what a beat runs for. Looped,
                           so two options can be compared without clicking twice. */}
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      {previewClipUrl ? (
+                        <video
+                          src={previewClipUrl}
+                          autoPlay
+                          muted
+                          // Looped because that is what the assembler does: a
+                          // clip shorter than its narration is repeated to fill
+                          // the beat, not frozen on its last frame.
+                          loop
+                          playsInline
+                          className="absolute inset-0 w-full h-full object-cover"
+                          // Re-keyed on the beat so moving along the timeline
+                          // restarts the clip rather than resuming whatever
+                          // point the previous one had reached.
+                          key={`clip-${previewBeat?.beatNumber}-${previewMotion}`}
+                          style={previewAnimation ? {
+                            animation: previewAnimation,
+                            willChange: "transform",
+                            ["--kb-max" as string]: String(1 + (MOTION_STRENGTHS.find((x) => x.id === imageMotionStrength)?.travel ?? 0.15)),
+                            ["--kb-pan" as string]: `${((MOTION_STRENGTHS.find((x) => x.id === imageMotionStrength)?.travel ?? 0.15) * 40).toFixed(0)}%`,
+                          } : undefined}
+                        />
+                      ) : (
+                      /* eslint-disable-next-line @next/next/no-img-element */
                       <img
-                        src={stillPreviewUrl}
+                        src={stillPreviewUrl ?? undefined}
                         alt=""
                         className="absolute inset-0 w-full h-full object-cover"
                         // Re-keyed on each step so React restarts the
@@ -2023,11 +2101,68 @@ export default function AssemblePage({ params }: PageProps) {
                           ["--kb-pan" as string]: `${((MOTION_STRENGTHS.find((x) => x.id === imageMotionStrength)?.travel ?? 0.15) * 40).toFixed(0)}%`,
                         } : undefined}
                       />
+                      )}
                     </div>
                   </div>
+                  {/* The transport, under the picture it drives. It used to
+                      live in the timeline header, which put the play button a
+                      long way from the thing it plays. */}
+                  <div className="mt-2 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={togglePlay}
+                      disabled={playable.length === 0}
+                      title={playable.length === 0 ? "No voiceover generated yet" : playing ? "Pause" : "Play the narration"}
+                      aria-label={playing ? "Pause" : "Play"}
+                      className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 transition-opacity hover:opacity-85 disabled:opacity-30"
+                      style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
+                    >
+                      {playing ? <Pause size={13} /> : <Play size={13} className="ml-[1px]" />}
+                    </button>
+                    <span className="text-xs font-mono tabular-nums" style={{ color: "var(--c-50)" }}>
+                      {fmtClock(playhead)} / {fmtClock(timelineTotal)}
+                    </span>
+                    {previewBeat && (
+                      <span className="text-xs truncate ml-auto" style={{ color: "var(--c-38)" }}>
+                        Beat {previewBeat.beatNumber}
+                        {previewClipUrl ? " · clip" : ""}
+                      </span>
+                    )}
+                  </div>
+                </div>
                 )}
 
-                <div className="w-full sm:flex-1 min-w-0 grid grid-cols-2 gap-1.5">
+                <div className="min-w-0">
+                  {/* On a phone the preview and this column stack, which puts
+                      the picture above a screen of controls. Folded away by
+                      default there, and always open from sm up, where they sit
+                      side by side and there is nothing to gain by hiding it. */}
+                  <button
+                    type="button"
+                    onClick={() => setMobileEffectsOpen((v) => !v)}
+                    aria-expanded={mobileEffectsOpen}
+                    className="sm:hidden w-full flex items-center justify-between gap-3 py-1.5"
+                  >
+                    <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
+                      Effect, strength & duration
+                    </span>
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs truncate" style={{ color: "var(--c-45)" }}>
+                        {IMAGE_MOTIONS.find((m) => m.id === imageMotion)?.label ?? imageMotion}
+                      </span>
+                      <span style={{ color: "var(--c-45)" }}>
+                        {mobileEffectsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                      </span>
+                    </span>
+                  </button>
+                  <div className={mobileEffectsOpen ? "" : "hidden sm:block"}>
+                {stillBeats === 0 ? (
+                  <p className="text-xs" style={{ color: "var(--c-45)" }}>
+                    Every beat is a generated clip. Effects on a clip are set one
+                    at a time, on the timeline below.
+                  </p>
+                ) : (
+                <div className="min-w-0 grid grid-cols-1 gap-1.5">
                   {IMAGE_MOTIONS.map((m) => (
                     <button key={m.id} onClick={() => setImageMotion(m.id)} disabled={assembling}
                       className="w-full py-2 px-3 rounded-xl text-left transition-all disabled:opacity-40 flex items-baseline gap-2"
@@ -2043,62 +2178,65 @@ export default function AssemblePage({ params }: PageProps) {
                     </button>
                   ))}
                 </div>
+                )}
+                {/* How long each move takes, as distinct from how long the beat
+                    runs. Left-most is the whole beat, the old behaviour and the
+                    honest default; anything shorter means the move arrives and
+                    the frame holds, which is how a camera move actually behaves. */}
+                {stillBeats > 0 && imageMotion !== "none" && (
+                  <div className="mt-4">
+                    <div className="flex items-baseline justify-between mb-1.5">
+                      <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
+                        Strength
+                      </p>
+                      <p className="text-xs" style={{ color: "var(--c-55)" }}>
+                        {MOTION_STRENGTHS.find((x) => x.id === imageMotionStrength)?.hint}
+                      </p>
+                    </div>
+                    <div className="flex gap-1.5 mb-4">
+                      {MOTION_STRENGTHS.map((x) => (
+                        <button key={x.id} onClick={() => setImageMotionStrength(x.id)} disabled={assembling}
+                          className="flex-1 py-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
+                          style={imageMotionStrength === x.id ? {
+                            background: "oklch(0.72 0.25 285 / 0.15)",
+                            border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                            color: "var(--accent-purple-text)",
+                          } : {
+                            background: "var(--bg-input)",
+                            border: "1px solid var(--bd-card)",
+                            color: "var(--c-60)",
+                          }}>
+                          {x.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex items-baseline justify-between mb-1.5">
+                      <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
+                        Move duration
+                      </p>
+                      <p className="text-xs" style={{ color: "var(--c-55)" }}>
+                        {imageMotionSeconds === 0 ? "the whole beat" : `${imageMotionSeconds.toFixed(1)}s, then holds`}
+                      </p>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={6}
+                      step={0.5}
+                      value={imageMotionSeconds}
+                      disabled={assembling}
+                      onChange={(e) => setImageMotionSeconds(Number(e.target.value))}
+                      className="w-full accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
+                    />
+                    <p className="text-xs mt-1" style={{ color: "var(--c-38)" }}>
+                      Capped at the length of each beat, so a short beat still moves for all of it.
+                    </p>
+                  </div>
+                )}
+                  </div>
+                </div>
               </div>
 
-              {/* How long each move takes, as distinct from how long the beat
-                  runs. Left-most is the whole beat, the old behaviour and the
-                  honest default; anything shorter means the move arrives and
-                  the frame holds, which is how a camera move actually behaves. */}
-              {imageMotion !== "none" && (
-                <div className="mt-4">
-                  <div className="flex items-baseline justify-between mb-1.5">
-                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
-                      Strength
-                    </p>
-                    <p className="text-xs" style={{ color: "var(--c-55)" }}>
-                      {MOTION_STRENGTHS.find((x) => x.id === imageMotionStrength)?.hint}
-                    </p>
-                  </div>
-                  <div className="flex gap-1.5 mb-4">
-                    {MOTION_STRENGTHS.map((x) => (
-                      <button key={x.id} onClick={() => setImageMotionStrength(x.id)} disabled={assembling}
-                        className="flex-1 py-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
-                        style={imageMotionStrength === x.id ? {
-                          background: "oklch(0.72 0.25 285 / 0.15)",
-                          border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                          color: "var(--accent-purple-text)",
-                        } : {
-                          background: "var(--bg-input)",
-                          border: "1px solid var(--bd-card)",
-                          color: "var(--c-60)",
-                        }}>
-                        {x.label}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex items-baseline justify-between mb-1.5">
-                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
-                      Move duration
-                    </p>
-                    <p className="text-xs" style={{ color: "var(--c-55)" }}>
-                      {imageMotionSeconds === 0 ? "the whole beat" : `${imageMotionSeconds.toFixed(1)}s, then holds`}
-                    </p>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={6}
-                    step={0.5}
-                    value={imageMotionSeconds}
-                    disabled={assembling}
-                    onChange={(e) => setImageMotionSeconds(Number(e.target.value))}
-                    className="w-full accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
-                  />
-                  <p className="text-xs mt-1" style={{ color: "var(--c-38)" }}>
-                    Capped at the length of each beat, so a short beat still moves for all of it.
-                  </p>
-                </div>
-              )}
               </>
               )}
             </div>
@@ -2129,17 +2267,6 @@ export default function AssemblePage({ params }: PageProps) {
                 {/* Zoom, the way an editor does it: out to see the shape of
                     the whole video, in to work on one beat. */}
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={togglePlay}
-                    disabled={playable.length === 0}
-                    title={playable.length === 0 ? "No voiceover generated yet" : playing ? "Pause" : "Play the narration"}
-                    aria-label={playing ? "Pause" : "Play"}
-                    className="w-7 h-7 rounded-full flex items-center justify-center transition-opacity hover:opacity-85 disabled:opacity-30"
-                    style={{ background: "oklch(0.72 0.25 285)", color: "white" }}
-                  >
-                    {playing ? <Pause size={12} /> : <Play size={12} className="ml-[1px]" />}
-                  </button>
                   <span className="text-xs hidden sm:inline" style={{ color: "var(--c-38)" }}>Click a beat to set its effect</span>
                   <div className="flex items-center gap-1">
                     <button
@@ -2220,7 +2347,7 @@ export default function AssemblePage({ params }: PageProps) {
                           type="button"
                           onClick={() => setTimelineBeat(selected ? null : b.beatNumber)}
                           title={`Beat ${b.beatNumber} · ${seconds.toFixed(1)}s${beatSeconds(b).estimated ? " (estimated)" : ""}`}
-                          className="relative h-16 shrink-0 rounded-md overflow-hidden transition-all hover:brightness-110 cursor-pointer"
+                          className="relative h-10 sm:h-16 shrink-0 rounded-md overflow-hidden transition-all hover:brightness-110 cursor-pointer"
                           style={{
                             // A floor, or a half-second beat is a sliver nobody
                             // can hit with a mouse.
@@ -2228,13 +2355,30 @@ export default function AssemblePage({ params }: PageProps) {
                             // has to give way when the whole video is being
                             // squeezed to fit, or the sum of the floors would
                             // be wider than the space we are fitting into.
-                            width: Math.max(pxPerSecond < 12 ? 4 : 20, seconds * pxPerSecond),
+                            width: Math.max(pxPerSecond < 12 ? 4 : narrow ? 12 : 20, seconds * pxPerSecond),
                             background: "var(--bg-progress)",
                             border: `1px solid ${selected ? "oklch(0.72 0.25 285)" : "var(--bd-6)"}`,
                             boxShadow: selected ? "0 0 0 2px oklch(0.72 0.25 285 / 0.25)" : "none",
                           }}
                         >
-                          {b.imageUrl ? (
+                          {isClip && b.videoUrl ? (
+                            // The clip itself, because the clip is what gets
+                            // assembled. Its first frame stands in for it, laid
+                            // out like the still head frame below rather than
+                            // stretched across the block.
+                            //
+                            // preload="metadata" plus a #t fragment: enough of
+                            // the file to paint one frame, not the whole clip
+                            // times nineteen every time this page opens.
+                            <video
+                              src={`${b.videoUrl}#t=0.1`}
+                              muted
+                              playsInline
+                              preload="metadata"
+                              tabIndex={-1}
+                              className="absolute left-0 top-0 h-full w-auto max-w-none pointer-events-none"
+                            />
+                          ) : b.imageUrl ? (
                             // Tiled, not stretched. The block's width is the
                             // beat's duration, so a six-second beat is 240px
                             // wide and a single cover-fitted thumbnail became a
@@ -2263,16 +2407,18 @@ export default function AssemblePage({ params }: PageProps) {
                           )}
 
                           {/* A clip is tinted rather than labelled: at 20px wide
-                              there is no room for a word. */}
-                          {isClip && <span className="absolute inset-0" style={{ background: "oklch(0.55 0.15 240 / 0.32)" }} />}
+                              there is no room for a word. Lighter than it was,
+                              now that the tint sits over the clip's own frame
+                              and not over the still that stood in for it. */}
+                          {isClip && <span className="absolute inset-0" style={{ background: "oklch(0.55 0.15 240 / 0.16)" }} />}
 
                           {/* A scrim, so the number stays legible over a bright
                               image without dimming the whole thumbnail. */}
-                          {b.imageUrl && (
+                          {(b.imageUrl || b.videoUrl) && (
                             <span className="absolute inset-x-0 top-0 h-5 pointer-events-none"
                               style={{ background: "linear-gradient(oklch(0 0 0 / 0.55), transparent)" }} />
                           )}
-                          {b.imageUrl && (
+                          {(b.imageUrl || b.videoUrl) && (
                             <span className="absolute top-[3px] left-[4px] text-[9px] font-semibold tabular-nums leading-none"
                               style={{ color: "oklch(1 0 0 / 0.85)" }}>
                               {b.beatNumber}
@@ -2281,7 +2427,7 @@ export default function AssemblePage({ params }: PageProps) {
 
                           {/* Its own effect, if it has one. A bar rather than a
                               label: the narrowest block here is 20px. */}
-                          {b.imageMotion && !isClip && (
+                          {b.imageMotion && (
                             <span className="absolute bottom-0 left-0 right-0 h-[3px]"
                               style={{ background: "oklch(0.72 0.25 285)" }} />
                           )}
@@ -2295,8 +2441,15 @@ export default function AssemblePage({ params }: PageProps) {
                       stacks it. Two tracks because there are two things making
                       sound, and each says whether it is in the render. */}
                   <div className="mt-[3px] space-y-[3px]">
-                    <div className="h-5 rounded-md flex items-center gap-2 px-2"
+                    <div className="relative h-5 rounded-md flex items-center"
                       style={{ background: "oklch(0.55 0.15 145 / 0.18)", border: "1px solid oklch(0.55 0.15 145 / 0.35)" }}>
+                      {/* Sticky, not scrolled away: the mute and the level are
+                          the controls for the whole track, and a track is as
+                          wide as the video. Opaque, since the strip runs under
+                          it. The gradient is the row's own tint composited over
+                          the panel, so the block does not read as a hole. */}
+                      <div className="sticky left-0 z-10 h-full flex items-center gap-2 px-2 rounded-md"
+                        style={{ background: "linear-gradient(oklch(0.55 0.15 145 / 0.18), oklch(0.55 0.15 145 / 0.18)), var(--bg-panel)" }}>
                       {/* Not mutable, and it should not pretend to be. Every
                           beat's length comes from its narration, so a silent
                           voiceover is not a quieter video, it is a video with
@@ -2305,12 +2458,16 @@ export default function AssemblePage({ params }: PageProps) {
                         className="shrink-0 cursor-help flex items-center" style={{ color: "oklch(0.62 0.13 145)" }}>
                         <Volume2 size={11} />
                       </span>
-                      <span className="text-[9px] font-medium leading-none" style={{ color: "oklch(0.62 0.13 145)" }}>
+                      <span className="text-[9px] font-medium leading-none whitespace-nowrap" style={{ color: "oklch(0.62 0.13 145)" }}>
                         Narration{trimSilence ? " · silences trimmed" : ""}
                       </span>
+                      </div>
                       {/* Preview only, and the tooltip says so. The worker has
                           no narration level: the voiceover is the reference the
-                          rest is mixed against. */}
+                          rest is mixed against. Pinned to the right edge, where
+                          a fader belongs and where a phone can still reach it. */}
+                      <div className="sticky right-0 z-10 ml-auto h-full flex items-center px-2 rounded-md"
+                        style={{ background: "linear-gradient(oklch(0.55 0.15 145 / 0.18), oklch(0.55 0.15 145 / 0.18)), var(--bg-panel)" }}>
                       <input
                         type="range"
                         min={0} max={1} step={0.05}
@@ -2318,16 +2475,33 @@ export default function AssemblePage({ params }: PageProps) {
                         onChange={(e) => setNarrationPreviewVolume(Number(e.target.value))}
                         title="Narration level while previewing here. Does not change the render."
                         aria-label="Narration preview volume"
-                        className="ml-auto w-16 h-1 accent-[oklch(0.62_0.13_145)]"
+                        className="w-16 h-1 accent-[oklch(0.62_0.13_145)]"
                       />
+                      </div>
                     </div>
 
-                    <div className="h-5 rounded-md flex items-center gap-2 px-2"
+                    <div className="relative h-5 rounded-md flex items-center"
                       style={{
                         background: bgmPreviewUrl && bgmVolume > 0 ? "oklch(0.62 0.15 60 / 0.16)" : "var(--bg-track)",
                         border: `1px solid ${bgmPreviewUrl && bgmVolume > 0 ? "oklch(0.62 0.15 60 / 0.35)" : "var(--bd-6)"}`,
                         opacity: bgmPreviewUrl ? 1 : 0.5,
                       }}>
+                      {/* Where the track starts over. The worker loops the
+                          music to cover the narration, so the row runs the
+                          whole length either way; these say it is the same
+                          piece coming round again rather than one long one. */}
+                      {bgmPreviewUrl && bgmDuration && bgmVolume > 0 &&
+                        Array.from({ length: Math.min(200, Math.floor(timelineTotal / bgmDuration)) }, (_, i) => (
+                          <span
+                            key={i}
+                            className="absolute top-0 bottom-0 w-px pointer-events-none"
+                            style={{ left: (i + 1) * bgmDuration * pxPerSecond, background: "oklch(0.66 0.14 60 / 0.5)" }}
+                          />
+                        ))}
+                      <div className="sticky left-0 z-10 h-full flex items-center gap-2 px-2 rounded-md"
+                        style={{ background: bgmPreviewUrl && bgmVolume > 0
+                          ? "linear-gradient(oklch(0.62 0.15 60 / 0.16), oklch(0.62 0.15 60 / 0.16)), var(--bg-panel)"
+                          : "var(--bg-panel)" }}>
                       <button
                         type="button"
                         disabled={!bgmPreviewUrl || assembling}
@@ -2345,16 +2519,24 @@ export default function AssemblePage({ params }: PageProps) {
                       >
                         {bgmPreviewUrl && bgmVolume > 0 ? <Volume2 size={11} /> : <VolumeX size={11} />}
                       </button>
-                      <span className="text-[9px] font-medium leading-none"
+                      <span className="text-[9px] font-medium leading-none whitespace-nowrap"
                         style={{ color: bgmPreviewUrl && bgmVolume > 0 ? "oklch(0.66 0.14 60)" : "var(--c-38)" }}>
                         {!bgmPreviewUrl
                           ? "Music · none added"
                           : bgmVolume > 0
-                            ? `Music · ${Math.round(bgmVolume * 100)}%`
+                            ? `Music · ${Math.round(bgmVolume * 100)}%${
+                                bgmDuration && timelineTotal > bgmDuration
+                                  ? ` · loops ×${Math.ceil(timelineTotal / bgmDuration)}`
+                                  : ""}`
                             : "Music · muted"}
                       </span>
+                      </div>
                       {/* This one is real: the same value the worker mixes the
                           bed at, so what you hear is what gets rendered. */}
+                      <div className="sticky right-0 z-10 ml-auto h-full flex items-center px-2 rounded-md"
+                        style={{ background: bgmPreviewUrl && bgmVolume > 0
+                          ? "linear-gradient(oklch(0.62 0.15 60 / 0.16), oklch(0.62 0.15 60 / 0.16)), var(--bg-panel)"
+                          : "var(--bg-panel)" }}>
                       <input
                         type="range"
                         min={0} max={0.6} step={0.01}
@@ -2363,8 +2545,9 @@ export default function AssemblePage({ params }: PageProps) {
                         onChange={(e) => setBgmVolume(Number(e.target.value))}
                         title="Music level in the finished video"
                         aria-label="Music volume"
-                        className="ml-auto w-16 h-1 accent-[oklch(0.66_0.14_60)] disabled:opacity-30"
+                        className="w-16 h-1 accent-[oklch(0.66_0.14_60)] disabled:opacity-30"
                       />
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2380,10 +2563,13 @@ export default function AssemblePage({ params }: PageProps) {
                 return (
                   <div className="mt-3 flex items-center gap-3 rounded-xl p-2.5" style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)" }}>
                     <div className="w-16 h-9 shrink-0 rounded overflow-hidden" style={{ background: "var(--bg-progress)" }}>
-                      {b.imageUrl && (
+                      {b.videoUrl ? (
+                        <video src={`${b.videoUrl}#t=0.1`} muted playsInline preload="metadata"
+                          className="w-full h-full object-cover pointer-events-none" />
+                      ) : b.imageUrl ? (
                         /* eslint-disable-next-line @next/next/no-img-element */
                         <img src={b.imageUrl} alt="" className="w-full h-full object-cover" />
-                      )}
+                      ) : null}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-medium" style={{ color: "var(--c-70)" }}>
@@ -2393,10 +2579,14 @@ export default function AssemblePage({ params }: PageProps) {
                         </span>
                       </p>
                       <p className="text-xs truncate mt-0.5" style={{ color: "var(--c-38)" }}>
-                        {b.videoUrl ? "Generated clip — nothing to move" : (b.scriptSegment ?? "")}
+                        {b.videoUrl
+                          ? (b.imageMotion
+                              ? "Generated clip · the move runs on top of its own motion"
+                              : "Generated clip · add a move only if it came back too static")
+                          : (b.scriptSegment ?? "")}
                       </p>
                     </div>
-                    {!b.videoUrl && (
+                    {(
                       <select
                         value={b.imageMotion ?? ""}
                         disabled={assembling}
@@ -2409,7 +2599,9 @@ export default function AssemblePage({ params }: PageProps) {
                         }}
                       >
                         {BEAT_MOTIONS.map((m) => (
-                          <option key={m.id} value={m.id}>{m.label}</option>
+                          <option key={m.id} value={m.id}>
+                            {m.id === "" && b.videoUrl ? "No effect" : m.label}
+                          </option>
                         ))}
                       </select>
                     )}
