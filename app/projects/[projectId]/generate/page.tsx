@@ -1879,6 +1879,13 @@ export default function GeneratePage({ params }: PageProps) {
         for (const r of batchResults) {
           if (r.status === "fulfilled") pending.push(r.value);
           else {
+            // Stop aborts whatever is in flight, and an aborted fetch rejects
+            // exactly like a dropped connection: "Failed to fetch". Reporting
+            // that is wrong twice — it was not a failure, and it was not the
+            // network, it was the button the user just pressed. The check
+            // below only covered a stop that beat every submit; this covers a
+            // stop landing mid-batch, which is the common one.
+            if (abortSignal.aborted) continue;
             const reason = r.reason instanceof Error ? r.reason.message : "Unknown error";
             if (!firstSubmitError) firstSubmitError = reason;
             // Overwrite the banner with the latest error so the user
