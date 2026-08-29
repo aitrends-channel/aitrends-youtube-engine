@@ -2526,18 +2526,21 @@ export default function GeneratePage({ params }: PageProps) {
                           {b.beatNumber}
                         </span>
                         {/* This beat's own effect, overriding the project's.
-                            Only on a still: a beat with a clip has nothing to
-                            move. Shown permanently once set, so an override is
-                            visible while scanning the grid rather than hidden
-                            behind a hover. */}
-                        {b.imageUrl && !b.videoUrl && !clearingImages && (
+                            On a clip it is the only way to get one at all: the
+                            project setting reaches stills only, since a clip is
+                            already moving. Shown permanently once set, so an
+                            override is visible while scanning the grid rather
+                            than hidden behind a hover. */}
+                        {b.imageUrl && !clearingImages && (
                           <div className="absolute top-1.5 right-1.5 z-20" onClick={(e) => e.stopPropagation()}>
                             <button
                               type="button"
                               onClick={() => setMotionMenuBeat(motionMenuBeat === b.beatNumber ? null : b.beatNumber)}
                               title={b.imageMotion
                                 ? `This beat: ${BEAT_MOTIONS.find((m) => m.id === b.imageMotion)?.label ?? b.imageMotion}`
-                                : "Effect for this beat — currently follows the project"}
+                                : b.videoUrl
+                                  ? "Effect for this beat — a clip gets none unless you set one here"
+                                  : "Effect for this beat — currently follows the project"}
                               className={`h-[18px] px-1.5 rounded-full flex items-center justify-center text-[9px] font-semibold transition-opacity ${b.imageMotion ? "" : "opacity-0 group-hover:opacity-100"}`}
                               style={b.imageMotion ? {
                                 background: "oklch(0.72 0.25 285 / 0.9)", color: "white",
@@ -2558,7 +2561,7 @@ export default function GeneratePage({ params }: PageProps) {
                                     className="w-full text-left px-2.5 py-1.5 text-[11px] transition-colors hover:bg-white/5"
                                     style={{ color: (b.imageMotion ?? null) === m.id ? "var(--accent-purple-text)" : "var(--c-60)" }}
                                   >
-                                    {m.label}
+                                    {m.id === null && b.videoUrl ? "No effect" : m.label}
                                   </button>
                                 ))}
                               </div>
