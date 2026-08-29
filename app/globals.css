@@ -669,10 +669,28 @@ body {
  * and those are what the choice is about. */
 @keyframes ken-burns-in {
   from { transform: scale(1); }
-  to   { transform: scale(1.15); }
+  to   { transform: scale(var(--kb-max, 1.15)); }
 }
 
 @keyframes ken-burns-out {
-  from { transform: scale(1.15); }
+  from { transform: scale(var(--kb-max, 1.15)); }
   to   { transform: scale(1); }
+}
+
+/* Panning holds the zoom and slides the frame; drifting does both at once.
+ * The percentages match the filter's reach: at 1.15 the window can travel
+ * about 13% of the frame, so a pan is a drift rather than a sweep. */
+@keyframes ken-burns-pan-right {
+  from { transform: scale(var(--kb-max, 1.15)) translateX(var(--kb-pan, 6%)); }
+  to   { transform: scale(var(--kb-max, 1.15)) translateX(calc(var(--kb-pan, 6%) * -1)); }
+}
+
+@keyframes ken-burns-pan-left {
+  from { transform: scale(var(--kb-max, 1.15)) translateX(calc(var(--kb-pan, 6%) * -1)); }
+  to   { transform: scale(var(--kb-max, 1.15)) translateX(var(--kb-pan, 6%)); }
+}
+
+@keyframes ken-burns-drift {
+  from { transform: scale(1) translateX(var(--kb-pan, 5%)); }
+  to   { transform: scale(var(--kb-max, 1.15)) translateX(calc(var(--kb-pan, 5%) * -1)); }
 }

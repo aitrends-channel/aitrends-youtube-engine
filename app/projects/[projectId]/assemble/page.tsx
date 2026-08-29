@@ -72,10 +72,42 @@ const CAPTION_LANGUAGES = [
 ] as const;
 
 const IMAGE_MOTIONS = [
+  // None first, because it is what every existing project already does and
+  // what the setting defaults to. Auto next: a hundred beats all pushing the
+  // same way reads as a filter rather than as camera work.
   { id: "none",     label: "None",     hint: "Hold the frame" },
+  { id: "auto",     label: "Auto",     hint: "Alternate in and out" },
+  { id: "random",   label: "Random",   hint: "A different effect per image" },
   { id: "zoom-in",  label: "Zoom in",  hint: "Push slowly in" },
   { id: "zoom-out", label: "Zoom out", hint: "Pull slowly out" },
+  { id: "pan-right", label: "Pan right", hint: "Slide across, zoom held" },
+  { id: "pan-left",  label: "Pan left",  hint: "Slide back, zoom held" },
+  { id: "drift",     label: "Drift",     hint: "Push in while sliding" },
 ];
+
+/** How far each strength travels, as a share of the frame. Mirrors
+ *  MOTION_TRAVEL in the worker: if these drift apart the preview lies. */
+const MOTION_STRENGTHS = [
+  { id: "gentle", label: "Gentle", hint: "8% of the frame", travel: 0.08 },
+  { id: "normal", label: "Normal", hint: "15% of the frame", travel: 0.15 },
+  { id: "strong", label: "Strong", hint: "25% of the frame", travel: 0.25 },
+];
+
+/** The preview animation for each, matching what the assembler renders. */
+const MOTION_ANIMATION: Record<string, string> = {
+  "zoom-in": "ken-burns-in 4s linear infinite",
+  "zoom-out": "ken-burns-out 4s linear infinite",
+  "pan-right": "ken-burns-pan-right 4s linear infinite",
+  "pan-left": "ken-burns-pan-left 4s linear infinite",
+  drift: "ken-burns-drift 4s linear infinite",
+  // Auto varies between beats, which one frame cannot show. Playing a move out
+  // and back is the closest honest picture of "these will differ".
+  auto: "ken-burns-in 4s linear infinite alternate",
+};
+
+/** What Random draws from, mirroring RANDOM_POOL in the worker. The preview
+ *  walks it so "a different effect per image" is shown rather than described. */
+const RANDOM_POOL = ["zoom-in", "zoom-out", "pan-right", "pan-left", "drift"];
 
 const CAPTION_STYLES = [
   { id: "classic", label: "Classic", hint: "White, black outline" },
@@ -162,6 +194,8 @@ export default function AssemblePage({ params }: PageProps) {
       captions_size?:     string  | null;
       captions_position?: string  | null;
       image_motion?:      string  | null;
+      image_motion_seconds?: number | null;
+      image_motion_strength?: string | null;
     };
     if (typeof cap.captions_enabled  === "boolean") setCaptionsEnabled(cap.captions_enabled);
     if (typeof cap.captions_language === "string" && cap.captions_language) setCaptionsLanguage(cap.captions_language);
@@ -169,6 +203,8 @@ export default function AssemblePage({ params }: PageProps) {
     if (typeof cap.captions_size     === "string" && cap.captions_size)     setCaptionsSize(cap.captions_size);
     if (typeof cap.captions_position === "string" && cap.captions_position) setCaptionsPosition(cap.captions_position);
     if (typeof cap.image_motion      === "string" && cap.image_motion)      setImageMotion(cap.image_motion);
+    if (typeof cap.image_motion_seconds === "number")                       setImageMotionSeconds(cap.image_motion_seconds);
+    if (typeof cap.image_motion_strength === "string" && cap.image_motion_strength) setImageMotionStrength(cap.image_motion_strength);
   }, [project]);
 
   // "Use this always": per-user saved bg-music + logo defaults, tracked
@@ -361,6 +397,24 @@ export default function AssemblePage({ params }: PageProps) {
   // that has a generated clip is untouched, so a project with clips everywhere
   // sees no difference whatever this is set to.
   const [imageMotion, setImageMotion] = useState("none");
+  // Seconds each move takes. 0 is the slider's left-most position and means the
+  // whole beat, which is what every render did before this was a choice.
+  const [imageMotionSeconds, setImageMotionSeconds] = useState(0);
+  // How far a move travels, as a share of the frame. The default 15% is
+  // deliberately gentle under narration; "strong" is a camera move you notice.
+  const [imageMotionStrength, setImageMotionStrength] = useState("normal");
+  // Random shows a different effect every few seconds rather than standing in
+  // with one of them: the whole point of the option is that beats differ, and a
+  // single looping move says the opposite.
+  const [randomPreviewStep, setRandomPreviewStep] = useState(0);
+  useEffect(() => {
+    if (imageMotion !== "random") return;
+    const t = setInterval(() => setRandomPreviewStep((n) => n + 1), 4000);
+    return () => clearInterval(t);
+  }, [imageMotion]);
+  const previewAnimation = imageMotion === "random"
+    ? MOTION_ANIMATION[RANDOM_POOL[randomPreviewStep % RANDOM_POOL.length]]
+    : MOTION_ANIMATION[imageMotion];
 
   // Live-persist trim + captions to the project row whenever they
   // change. The /api/generate/assemble call already writes them on
@@ -385,11 +439,13 @@ export default function AssemblePage({ params }: PageProps) {
           captions_size: captionsSize,
           captions_position: captionsPosition,
           image_motion: imageMotion,
+          image_motion_seconds: imageMotionSeconds || null,
+          image_motion_strength: imageMotionStrength,
         }),
       }).catch(() => { /* non-blocking — Assemble click is the safety net */ });
     }, 500);
     return () => clearTimeout(t);
-  }, [trimSilence, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, imageMotion, projectId]);
+  }, [trimSilence, captionsEnabled, captionsLanguage, captionsStyle, captionsSize, captionsPosition, imageMotion, imageMotionSeconds, imageMotionStrength, projectId]);
   const [assembling, setAssembling] = useState(false);
   // Monotonic high-water mark for the rendered stage index. We hold
   // the latest matched stage so a transient unmatched status line
@@ -703,6 +759,8 @@ export default function AssemblePage({ params }: PageProps) {
           captionsPosition,
           trimSilenceEnabled: trimSilence,
           imageMotion,
+          imageMotionSeconds: imageMotionSeconds || null,
+          imageMotionStrength,
           backgroundMusicUrl: bgmUploadedUrl,
           backgroundMusicVolume: bgmVolume,
           resolution: selectedResolution,
@@ -849,6 +907,8 @@ export default function AssemblePage({ params }: PageProps) {
           captionsPosition,
           trimSilenceEnabled: trimSilence,
           imageMotion,
+          imageMotionSeconds: imageMotionSeconds || null,
+          imageMotionStrength,
           backgroundMusicUrl: bgmUrl,
           backgroundMusicVolume: bgmVolume,
           resolution: selectedResolution,
@@ -1474,47 +1534,131 @@ export default function AssemblePage({ params }: PageProps) {
             {stillBeats > 0 && (
             <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
               <div className="mb-4">
-                <p className="text-sm font-semibold">Image movement</p>
+                <p className="text-sm font-semibold">Image Effects</p>
                 <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
                   {stillBeats} {stillBeats === 1 ? "beat is a still image" : "beats are still images"}. A slow push stops them sitting dead on screen.
                 </p>
               </div>
-              {/* Watch it before choosing it. The same 15% travel the
-                  assembler applies, over four seconds, which is about what a
-                  beat runs for. Looped, so it can be compared against the other
-                  options without clicking twice. */}
-              {stillPreviewUrl && (
-                <div className="mb-3 rounded-xl overflow-hidden" style={{ border: "1px solid var(--bd-card)", background: "black" }}>
-                  <div className="relative w-full overflow-hidden" style={{ aspectRatio: aspectRatio === "9:16" ? "9 / 16" : aspectRatio === "1:1" ? "1 / 1" : "16 / 9", maxHeight: 180 }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={stillPreviewUrl}
-                      alt=""
-                      className="absolute inset-0 w-full h-full object-contain"
-                      style={imageMotion === "none" ? undefined : {
-                        animation: `${imageMotion === "zoom-in" ? "ken-burns-in" : "ken-burns-out"} 4s linear infinite`,
-                        willChange: "transform",
-                      }}
-                    />
+              {/* Side by side. Full width, the preview was mostly black bars
+                  around a small frame and the three options were stretched
+                  across a row they did not need. The preview is the size of the
+                  thing being judged, and the options sit beside it where they
+                  can be read as a list. */}
+              <div className="flex gap-4 items-start">
+                {stillPreviewUrl && (
+                  <div
+                    className="shrink-0 rounded-xl overflow-hidden"
+                    style={{
+                      border: "1px solid var(--bd-card)",
+                      background: "black",
+                      // Big enough to judge a 15% move on. At 208 the travel
+                      // was about thirty pixels, which is a nudge rather than
+                      // something you can decide from.
+                      width: aspectRatio === "9:16" ? 168 : 320,
+                    }}
+                  >
+                    <div
+                      className="relative w-full overflow-hidden"
+                      style={{ aspectRatio: aspectRatio === "9:16" ? "9 / 16" : aspectRatio === "1:1" ? "1 / 1" : "16 / 9" }}
+                    >
+                      {/* The same 15% travel the assembler applies, over four
+                          seconds, which is about what a beat runs for. Looped,
+                          so two options can be compared without clicking twice. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={stillPreviewUrl}
+                        alt=""
+                        className="absolute inset-0 w-full h-full object-cover"
+                        // Re-keyed on each step so React restarts the
+                        // animation rather than swapping the name mid-cycle,
+                        // which would jump the frame.
+                        key={imageMotion === "random" ? `r${randomPreviewStep}` : imageMotion}
+                        style={previewAnimation ? {
+                          animation: previewAnimation,
+                          willChange: "transform",
+                          // The keyframes read these, so one set covers every
+                          // strength and the preview travels exactly as far as
+                          // the render will.
+                          ["--kb-max" as string]: String(1 + (MOTION_STRENGTHS.find((x) => x.id === imageMotionStrength)?.travel ?? 0.15)),
+                          ["--kb-pan" as string]: `${((MOTION_STRENGTHS.find((x) => x.id === imageMotionStrength)?.travel ?? 0.15) * 40).toFixed(0)}%`,
+                        } : undefined}
+                      />
+                    </div>
                   </div>
+                )}
+
+                <div className="flex-1 min-w-0 grid grid-cols-2 gap-1.5">
+                  {IMAGE_MOTIONS.map((m) => (
+                    <button key={m.id} onClick={() => setImageMotion(m.id)} disabled={assembling}
+                      className="w-full py-2 px-3 rounded-xl text-left transition-all disabled:opacity-40 flex items-baseline gap-2"
+                      style={imageMotion === m.id ? {
+                        background: "oklch(0.72 0.25 285 / 0.15)",
+                        border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                      } : {
+                        background: "var(--bg-input)",
+                        border: "1px solid var(--bd-card)",
+                      }}>
+                      <span className="text-xs font-medium shrink-0" style={{ color: imageMotion === m.id ? "var(--accent-purple-text)" : "var(--c-70)" }}>{m.label}</span>
+                      <span className="text-xs truncate" style={{ color: "var(--c-45)" }}>{m.hint}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* How long each move takes, as distinct from how long the beat
+                  runs. Left-most is the whole beat, the old behaviour and the
+                  honest default; anything shorter means the move arrives and
+                  the frame holds, which is how a camera move actually behaves. */}
+              {imageMotion !== "none" && (
+                <div className="mt-4">
+                  <div className="flex items-baseline justify-between mb-1.5">
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
+                      Strength
+                    </p>
+                    <p className="text-xs" style={{ color: "var(--c-55)" }}>
+                      {MOTION_STRENGTHS.find((x) => x.id === imageMotionStrength)?.hint}
+                    </p>
+                  </div>
+                  <div className="flex gap-1.5 mb-4">
+                    {MOTION_STRENGTHS.map((x) => (
+                      <button key={x.id} onClick={() => setImageMotionStrength(x.id)} disabled={assembling}
+                        className="flex-1 py-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
+                        style={imageMotionStrength === x.id ? {
+                          background: "oklch(0.72 0.25 285 / 0.15)",
+                          border: "1px solid oklch(0.72 0.25 285 / 0.4)",
+                          color: "var(--accent-purple-text)",
+                        } : {
+                          background: "var(--bg-input)",
+                          border: "1px solid var(--bd-card)",
+                          color: "var(--c-60)",
+                        }}>
+                        {x.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-baseline justify-between mb-1.5">
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>
+                      Move duration
+                    </p>
+                    <p className="text-xs" style={{ color: "var(--c-55)" }}>
+                      {imageMotionSeconds === 0 ? "the whole beat" : `${imageMotionSeconds.toFixed(1)}s, then holds`}
+                    </p>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={6}
+                    step={0.5}
+                    value={imageMotionSeconds}
+                    disabled={assembling}
+                    onChange={(e) => setImageMotionSeconds(Number(e.target.value))}
+                    className="w-full accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
+                  />
+                  <p className="text-xs mt-1" style={{ color: "var(--c-38)" }}>
+                    Capped at the length of each beat, so a short beat still moves for all of it.
+                  </p>
                 </div>
               )}
-              <div className="grid grid-cols-3 gap-1.5">
-                {IMAGE_MOTIONS.map((m) => (
-                  <button key={m.id} onClick={() => setImageMotion(m.id)} disabled={assembling}
-                    className="py-2 px-3 rounded-xl text-left transition-all disabled:opacity-40"
-                    style={imageMotion === m.id ? {
-                      background: "oklch(0.72 0.25 285 / 0.15)",
-                      border: "1px solid oklch(0.72 0.25 285 / 0.4)",
-                    } : {
-                      background: "var(--bg-input)",
-                      border: "1px solid var(--bd-card)",
-                    }}>
-                    <p className="text-xs font-medium" style={{ color: imageMotion === m.id ? "var(--accent-purple-text)" : "var(--c-60)" }}>{m.label}</p>
-                    <p className="text-xs mt-0.5" style={{ color: "var(--c-38)" }}>{m.hint}</p>
-                  </button>
-                ))}
-              </div>
             </div>
             )}
 
