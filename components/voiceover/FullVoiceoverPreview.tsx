@@ -298,17 +298,17 @@ export function FullVoiceoverPreview({
     >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "oklch(0.35 0 0)" }}>
+          <p className="text-xs font-semibold uppercase tracking-wider truncate" style={{ color: "oklch(0.35 0 0)" }}>
             {title}
           </p>
           {subtitle && (
-            <p className="text-[11px] mt-0.5" style={{ color: "oklch(0.45 0 0)" }}>
+            <p className="text-[11px] mt-0.5 truncate" style={{ color: "oklch(0.45 0 0)" }}>
               {subtitle}
             </p>
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <span className="text-[11px] font-mono tabular-nums" style={{ color: "oklch(0.45 0 0)" }}>
+          <span className={`text-[11px] font-mono tabular-nums ${isLoading || error ? "" : "hidden sm:inline"}`} style={{ color: "oklch(0.45 0 0)" }}>
             {isLoading ? (building ? "Building preview…" : "Loading audio…") : error ? "Failed" : `${orderedCount} beats joined`}
           </span>
           {/* Export the built MP3 — one button per card so the user can

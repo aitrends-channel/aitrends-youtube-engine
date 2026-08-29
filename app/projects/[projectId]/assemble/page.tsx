@@ -1303,7 +1303,7 @@ export default function AssemblePage({ params }: PageProps) {
                 <div className="space-y-2">
                   <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--c-40)" }}>Output</p>
                   <p className="text-sm font-medium" style={{ color: "var(--c-65)" }}>{dimsFor(aspectRatio, selectedResolution).label}</p>
-                  <div className="grid grid-cols-4 gap-1.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                     {RESOLUTION_PRESETS.map((p) => {
                       const isProOnly = PRO_RESOLUTIONS.has(p);
                       const locked = isProOnly && !canUsePro;
@@ -1963,7 +1963,7 @@ export default function AssemblePage({ params }: PageProps) {
                 className={`flex items-center justify-between gap-3 cursor-pointer select-none ${effectsOpen ? "mb-4" : ""}`}
               >
                 <div>
-                  <p className="text-sm font-semibold">Image Effects</p>
+                  <p className="text-sm font-semibold">Preview & Effects</p>
                   <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
                     {imageMotion === "none"
                       ? `${stillBeats} ${stillBeats === 1 ? "still beat" : "still beats"} · no movement`
@@ -1981,17 +1981,20 @@ export default function AssemblePage({ params }: PageProps) {
                   across a row they did not need. The preview is the size of the
                   thing being judged, and the options sit beside it where they
                   can be read as a list. */}
-              <div className="flex gap-4 items-start">
+              <div className="flex flex-col sm:flex-row gap-4 items-start">
                 {stillPreviewUrl && (
                   <div
-                    className="shrink-0 rounded-xl overflow-hidden"
+                    /* 320 is big enough to judge a 15% move on; at 208 the
+                       travel was about thirty pixels, which is a nudge rather
+                       than something you can decide from. On a phone there is
+                       no room for it beside the options, so the preview takes
+                       the width and the options sit under it. */
+                    className={`rounded-xl overflow-hidden w-full sm:shrink-0 ${
+                      aspectRatio === "9:16" ? "max-w-[220px] sm:w-[168px]" : "sm:w-[320px]"
+                    }`}
                     style={{
                       border: "1px solid var(--bd-card)",
                       background: "black",
-                      // Big enough to judge a 15% move on. At 208 the travel
-                      // was about thirty pixels, which is a nudge rather than
-                      // something you can decide from.
-                      width: aspectRatio === "9:16" ? 168 : 320,
                     }}
                   >
                     <div
@@ -2024,7 +2027,7 @@ export default function AssemblePage({ params }: PageProps) {
                   </div>
                 )}
 
-                <div className="flex-1 min-w-0 grid grid-cols-2 gap-1.5">
+                <div className="w-full sm:flex-1 min-w-0 grid grid-cols-2 gap-1.5">
                   {IMAGE_MOTIONS.map((m) => (
                     <button key={m.id} onClick={() => setImageMotion(m.id)} disabled={assembling}
                       className="w-full py-2 px-3 rounded-xl text-left transition-all disabled:opacity-40 flex items-baseline gap-2"
@@ -2115,7 +2118,7 @@ export default function AssemblePage({ params }: PageProps) {
                 that is all it offers. */}
             {beats.length > 0 && (
             <div className="rounded-2xl p-5" style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)" }}>
-              <div className="mb-3 flex items-baseline justify-between">
+              <div className="mb-3 flex items-baseline justify-between flex-wrap gap-y-2 gap-x-3">
                 <div>
                   <p className="text-sm font-semibold">Timeline</p>
                   <p className="text-xs mt-0.5" style={{ color: "var(--c-45)" }}>
@@ -2137,7 +2140,7 @@ export default function AssemblePage({ params }: PageProps) {
                   >
                     {playing ? <Pause size={12} /> : <Play size={12} className="ml-[1px]" />}
                   </button>
-                  <span className="text-xs" style={{ color: "var(--c-38)" }}>Click a beat to set its effect</span>
+                  <span className="text-xs hidden sm:inline" style={{ color: "var(--c-38)" }}>Click a beat to set its effect</span>
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
