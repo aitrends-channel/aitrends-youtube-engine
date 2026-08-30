@@ -9,7 +9,7 @@ import { WizardNav } from "@/components/wizard/WizardNav";
 // import { FreeResourcesButton } from "@/components/wizard/FreeResourcesButton";
 import { useKieActivityStore } from "@/store/kieActivityStore";
 import { useProject } from "@/hooks/useProject";
-import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp, Eye, X, Upload, Info, Download } from "lucide-react";
+import { RotateCcw, RefreshCw, ChevronsRight, Wand2, Pencil, Video, ImageIcon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Eye, X, Upload, Info, Download } from "lucide-react";
 import { ImageSparkle } from "@/components/icons/ImageSparkle";
 import { StepCostCard } from "@/components/StepCostCard";
 import { CostTipsModal } from "@/components/CostTipsModal";
@@ -423,16 +423,6 @@ function ProgressBar({ value, total }: { value: number; total: number }) {
 /** What a single beat can be set to. The first entry clears the override and
  *  returns the beat to the project's setting, which is where every beat starts.
  *  `short` is what fits in an 18px badge on a tile. */
-const BEAT_MOTIONS: { id: string | null; label: string; short: string }[] = [
-  { id: null,        label: "Follow project", short: "FX" },
-  { id: "none",      label: "None",           short: "\u2014" },
-  { id: "zoom-in",   label: "Zoom in",        short: "IN" },
-  { id: "zoom-out",  label: "Zoom out",       short: "OUT" },
-  { id: "pan-right", label: "Pan right",      short: "R" },
-  { id: "pan-left",  label: "Pan left",       short: "L" },
-  { id: "drift",     label: "Drift",          short: "DR" },
-];
-
 export default function GeneratePage({ params }: PageProps) {
   const { projectId } = params;
   const router = useRouter();
@@ -1064,16 +1054,33 @@ export default function GeneratePage({ params }: PageProps) {
   // first render and there's no null-aspect frame to flash. For video we
   // seed from the same source image (the clip follows its ratio); the
   // <video> then refines to the exact ratio via onLoadedMetadata.
-  function openPreview(beat: Beat, type: "image" | "video") {
+  const seedPreviewAspect = useCallback((beat: Beat) => {
     const src = beat.imageUrl;
-    if (src) {
-      const probe = new Image();
-      probe.src = src;
-      if (probe.complete && probe.naturalWidth) {
-        setPreviewAspect(probe.naturalWidth / probe.naturalHeight);
-      }
+    if (!src) return false;
+    const probe = new Image();
+    probe.src = src;
+    if (probe.complete && probe.naturalWidth) {
+      setPreviewAspect(probe.naturalWidth / probe.naturalHeight);
+      return true;
     }
+    return false;
+  }, []);
+
+  function openPreview(beat: Beat, type: "image" | "video") {
+    seedPreviewAspect(beat);
     setPreviewBeat({ beat, type });
+  }
+
+  // Saving one file rather than the whole project. Goes through the API so the
+  // browser is handed a Content-Disposition: R2 is a different origin, and an
+  // <a download> pointing at it navigates rather than downloads.
+  const [savingAsset, setSavingAsset] = useState(false);
+  function downloadBeatAsset(beatNumber: number, type: "image" | "video") {
+    setSavingAsset(true);
+    const kind = type === "video" ? "videos" : "images";
+    window.location.href = `/api/projects/${projectId}/media/download?kind=${kind}&beat=${beatNumber}`;
+    // Nothing to await: the download detaches from the page.
+    setTimeout(() => setSavingAsset(false), 2500);
   }
 
   const beats: Beat[] = project?.beats ?? [];
@@ -1097,6 +1104,39 @@ export default function GeneratePage({ params }: PageProps) {
   const generatedImages = beats.filter((b) => b.imageUrl).length;
   const generatedVideos = beats.filter((b) => b.videoUrl).length;
   const videoBeats = videoBeatList.length;
+
+  // Stepping through the preview. The list is whichever grid the open beat
+  // came from, so an image preview walks every beat and a video preview walks
+  // only the ones with a clip prompt — the same order each grid shows.
+  const previewList = previewBeat?.type === "video" ? videoBeatList : beats;
+  const previewIndex = previewBeat
+    ? previewList.findIndex((b) => b.beatNumber === previewBeat.beat.beatNumber)
+    : -1;
+  const stepPreview = useCallback((delta: number) => {
+    if (!previewBeat || previewIndex < 0) return;
+    const next = previewList[previewIndex + delta];
+    if (!next) return;
+    // Editing state belongs to the beat that was open, not to the next one.
+    setPreviewEditing(false);
+    setPreviewShowPrompt(false);
+    // Seed the next beat's ratio before swapping, and keep the current one if
+    // it is not cached yet: a stale box for a frame is invisible, a box with no
+    // dimensions is the flash this used to have.
+    seedPreviewAspect(next);
+    setPreviewBeat({ beat: next, type: previewBeat.type });
+  }, [previewBeat, previewIndex, previewList, seedPreviewAspect]);
+
+  // Arrow keys, because a lightbox that only steps by clicking is a lightbox
+  // nobody steps through.
+  useEffect(() => {
+    if (!previewBeat) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") { e.preventDefault(); stepPreview(-1); }
+      if (e.key === "ArrowRight") { e.preventDefault(); stepPreview(1); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [previewBeat, stepPreview]);
   // Re-hide the skip-warnings drawer whenever generation progress moves,
   // so a fresh Continue click is required to reveal it again (and the
   // label resets to "Continue" rather than staying "Continue anyway").
@@ -1557,30 +1597,9 @@ export default function GeneratePage({ params }: PageProps) {
 
   // Which tile has its effect picker open, by beat number. One at a time: two
   // open menus over a grid of images is noise.
-  const [motionMenuBeat, setMotionMenuBeat] = useState<number | null>(null);
 
   // Set or clear one beat's effect. Optimistic, because the tile badge is the
   // only feedback and waiting a round trip for a dropdown feels broken.
-  const setBeatMotion = useCallback(async (beatNumber: number, motion: string | null) => {
-    setMotionMenuBeat(null);
-    await mutate((cur: unknown) => {
-      const c = cur as { beats?: Beat[] } | undefined;
-      if (!c?.beats) return cur;
-      return { ...c, beats: c.beats.map((b) => b.beatNumber === beatNumber ? { ...b, imageMotion: motion } : b) };
-    }, { revalidate: false });
-    try {
-      const res = await fetch(`/api/projects/${projectId}/beats/motion`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ beatNumber, motion }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Could not set the effect");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not set the effect");
-      await mutate();
-    }
-  }, [projectId, mutate]);
-
   const markActive = useKieActivityStore((s) => s.markActive);
   const markIdle = useKieActivityStore((s) => s.markIdle);
   useEffect(() => {
@@ -2525,47 +2544,6 @@ export default function GeneratePage({ params }: PageProps) {
                         >
                           {b.beatNumber}
                         </span>
-                        {/* This beat's own effect, overriding the project's.
-                            On a clip that usually means turning the project's
-                            move off again, since the model already animated the
-                            shot. Shown permanently once set, so an override is
-                            visible while scanning the grid rather than hidden
-                            behind a hover. */}
-                        {b.imageUrl && !clearingImages && (
-                          <div className="absolute top-1.5 right-1.5 z-20" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              type="button"
-                              onClick={() => setMotionMenuBeat(motionMenuBeat === b.beatNumber ? null : b.beatNumber)}
-                              title={b.imageMotion
-                                ? `This beat: ${BEAT_MOTIONS.find((m) => m.id === b.imageMotion)?.label ?? b.imageMotion}`
-                                : "Effect for this beat — currently follows the project"}
-                              className={`h-[18px] px-1.5 rounded-full flex items-center justify-center text-[9px] font-semibold transition-opacity ${b.imageMotion ? "" : "opacity-0 group-hover:opacity-100"}`}
-                              style={b.imageMotion ? {
-                                background: "oklch(0.72 0.25 285 / 0.9)", color: "white",
-                              } : {
-                                background: "oklch(0 0 0 / 0.6)", color: "white", border: "1px solid oklch(1 0 0 / 0.15)",
-                              }}
-                            >
-                              {b.imageMotion ? (BEAT_MOTIONS.find((m) => m.id === b.imageMotion)?.short ?? "FX") : "FX"}
-                            </button>
-                            {motionMenuBeat === b.beatNumber && (
-                              <div className="absolute right-0 mt-1 rounded-lg overflow-hidden z-30 min-w-[132px]"
-                                style={{ background: "var(--bg-panel)", border: "1px solid var(--bd-card)", boxShadow: "0 8px 24px oklch(0 0 0 / 0.45)" }}>
-                                {BEAT_MOTIONS.map((m) => (
-                                  <button
-                                    key={m.id ?? "inherit"}
-                                    type="button"
-                                    onClick={() => setBeatMotion(b.beatNumber, m.id)}
-                                    className="w-full text-left px-2.5 py-1.5 text-[11px] transition-colors hover:bg-white/5"
-                                    style={{ color: (b.imageMotion ?? null) === m.id ? "var(--accent-purple-text)" : "var(--c-60)" }}
-                                  >
-                                    {m.label}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        )}
                         {/* Touch-only "view prompt" — desktop uses hover. */}
                         <button
                           type="button"
@@ -3701,6 +3679,22 @@ export default function GeneratePage({ params }: PageProps) {
                 <Upload size={16} strokeWidth={2.4} />
               </button>
             )}
+            {/* Save this one file. The step already exports everything as a
+                zip; this is for the single shot somebody wants, and it goes
+                through the API rather than an <a download> because R2 is a
+                different origin and the browser would navigate to it. */}
+            {(previewBeat?.type === "image" ? previewBeat.beat.imageUrl : previewBeat?.beat.videoUrl) && (
+              <button
+                onClick={() => downloadBeatAsset(previewBeat!.beat.beatNumber, previewBeat!.type)}
+                disabled={savingAsset}
+                title={`Download this ${previewBeat?.type}`}
+                aria-label={`Download this ${previewBeat?.type}`}
+                className="w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110 disabled:opacity-50"
+                style={{ background: "oklch(0 0 0 / 0.65)", color: "white", border: "1px solid oklch(1 0 0 / 0.2)" }}
+              >
+                {savingAsset ? <Spinner size={16} className="text-white" /> : <Download size={16} strokeWidth={2.4} />}
+              </button>
+            )}
             <button
               onClick={() => { if (!previewSubmitting) { setPreviewBeat(null); setPreviewEditing(false); setPreviewShowPrompt(false); setPreviewAspect(null); } }}
               title="Close preview"
@@ -3711,6 +3705,41 @@ export default function GeneratePage({ params }: PageProps) {
               <X size={18} strokeWidth={2.4} />
             </button>
           </div>
+          {/* Previous and next, over the media at either edge. Hidden at the
+              ends rather than disabled: a lightbox with a dead arrow reads as
+              broken, and the count beside them already says where you are. */}
+          {previewBeat && previewList.length > 1 && !isUploadingPreview && (
+            <>
+              {previewIndex > 0 && (
+                <button
+                  onClick={() => stepPreview(-1)}
+                  title="Previous beat"
+                  aria-label="Previous beat"
+                  className="absolute left-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110"
+                  style={{ background: "oklch(0 0 0 / 0.65)", color: "white", border: "1px solid oklch(1 0 0 / 0.2)" }}
+                >
+                  <ChevronLeft size={18} strokeWidth={2.4} />
+                </button>
+              )}
+              {previewIndex >= 0 && previewIndex < previewList.length - 1 && (
+                <button
+                  onClick={() => stepPreview(1)}
+                  title="Next beat"
+                  aria-label="Next beat"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 z-20 w-9 h-9 rounded-full flex items-center justify-center transition-all hover:scale-110"
+                  style={{ background: "oklch(0 0 0 / 0.65)", color: "white", border: "1px solid oklch(1 0 0 / 0.2)" }}
+                >
+                  <ChevronRight size={18} strokeWidth={2.4} />
+                </button>
+              )}
+              <span
+                className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 px-2.5 py-1 rounded-full text-[11px] font-medium tabular-nums pointer-events-none"
+                style={{ background: "oklch(0 0 0 / 0.65)", color: "white", border: "1px solid oklch(1 0 0 / 0.2)" }}
+              >
+                {previewIndex + 1} of {previewList.length}
+              </span>
+            </>
+          )}
           {/* Beat number — top-left corner, over the media, mirroring
               the corner badge on the grid tiles. */}
           {previewBeat && (

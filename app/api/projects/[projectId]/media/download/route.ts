@@ -39,6 +39,39 @@ export async function GET(req: Request, { params }: { params: { projectId: strin
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
   const column = kind === "videos" ? "video_url" : "image_url";
+  // ?beat=N returns that one file rather than the whole project zipped. Same
+  // ownership check, same bucket check: only the shape of the answer differs.
+  const beatParam = new URL(req.url).searchParams.get("beat");
+  if (beatParam !== null) {
+    const beatNumber = Number.parseInt(beatParam, 10);
+    if (!Number.isInteger(beatNumber)) {
+      return NextResponse.json({ error: "beat must be an integer" }, { status: 400 });
+    }
+    const { data: one, error: oneErr } = await supabase
+      .from("project_beats")
+      .select(`beat_number, ${column}`)
+      .eq("project_id", projectId)
+      .eq("beat_number", beatNumber)
+      .maybeSingle();
+    if (oneErr) return NextResponse.json({ error: oneErr.message }, { status: 500 });
+    const url = String((one as Record<string, unknown> | null)?.[column] ?? "");
+    const base = (process.env.R2_PUBLIC_URL ?? "").replace(/\/$/, "");
+    if (!url || (base && !url.startsWith(`${base}/`))) {
+      return NextResponse.json({ error: "Nothing generated for that beat yet." }, { status: 404 });
+    }
+    const upstream = await fetch(url);
+    if (!upstream.ok || !upstream.body) {
+      return NextResponse.json({ error: `Could not fetch that file (${upstream.status})` }, { status: 502 });
+    }
+    const name = `beat-${String(beatNumber).padStart(3, "0")}.${extensionOf(url, kind)}`;
+    return new Response(upstream.body, {
+      headers: {
+        "Content-Type": upstream.headers.get("content-type") ?? "application/octet-stream",
+        "Content-Disposition": `attachment; filename="${name}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
   const { data: beats, error: beatsErr } = await supabase
     .from("project_beats")
     .select(`beat_number, ${column}`)
