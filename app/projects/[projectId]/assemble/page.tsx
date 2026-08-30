@@ -206,6 +206,77 @@ function captionCss(style: string, size: string): React.CSSProperties {
   }
 }
 
+/**
+ * One caption, drawn the way the render will draw it.
+ *
+ * Shared by the captions card and the playback preview, which showed the same
+ * caption two different ways before this existed: one animated, one not. Sizes
+ * itself in container units, so it must sit inside an element with
+ * container-type set and a definite height.
+ */
+function CaptionOverlay({ text, style, size, position, animation, loop = true }: {
+  text: string;
+  style: string;
+  size: string;
+  position: string;
+  animation: string;
+  /** The picker loops so two options can be compared; playback plays each line
+   *  once, because a caption that keeps re-animating on screen reads as stuck. */
+  loop?: boolean;
+}) {
+  const words = text.trim() ? text.trim().split(/\s+/).slice(0, CAPTION_WORDS_PER_LINE) : ["Captions", "appear", "here"];
+  const rep = loop ? "infinite alternate both" : "1 normal both";
+  const lineRep = loop ? "infinite" : "1";
+  const css = captionCss(style, size);
+  const place: React.CSSProperties = position === "top" ? { top: "3%" }
+    : position === "middle" ? { top: "50%", transform: "translateY(-50%)" }
+    : { bottom: "3%" };
+
+  let body: React.ReactNode;
+  if (animation === "typewriter") {
+    // Per letter rather than per word, which is the only difference between
+    // this and reveal.
+    const letters = words.join(" ").split("");
+    const per = 2.6 / letters.length;
+    body = letters.map((ch, i) => (
+      <span key={i} style={{
+        animation: `caption-word-in 0.05s linear ${(i * per).toFixed(2)}s ${rep}`,
+        opacity: 0,
+      }}>{ch}</span>
+    ));
+  } else if (animation === "karaoke" || animation === "reveal") {
+    const per = 2.6 / words.length;
+    body = words.map((word, i) => (
+      <span key={i} style={{
+        animation: `${animation === "karaoke" ? "caption-word-lit" : "caption-word-in"} 0.25s ease-out ${(i * per).toFixed(2)}s ${rep}`,
+        opacity: animation === "karaoke" ? 0.45 : 0,
+      }}>{word}{i < words.length - 1 ? " " : ""}</span>
+    ));
+  } else {
+    body = words.join(" ");
+  }
+
+  const lineAnimation = animation === "fade" ? `caption-fade 3s ease-in-out ${lineRep}`
+    : animation === "pop" ? `caption-pop 3s ease-in-out ${lineRep}`
+    : animation === "slide" ? `caption-slide 3s ease-out ${lineRep}`
+    : animation === "grow" ? `caption-grow 3s ease-in-out ${lineRep} alternate`
+    : animation === "tilt" ? `caption-tilt 3s ease-out ${lineRep}`
+    : animation === "flash" ? `caption-flash 3s ease-out ${lineRep}`
+    : undefined;
+
+  return (
+    <div className="absolute inset-x-0 flex justify-center px-[6%] pointer-events-none" style={place}>
+      {/* Re-keyed on the choice so switching restarts the loop rather than
+          joining it halfway. */}
+      <span key={`${animation}-${text}`} style={{ ...css, animation: lineAnimation }}>{body}</span>
+    </div>
+  );
+}
+
+/** Words per caption line, matching the worker's own grouping. Change one and
+ *  the preview stops showing the lines the render will draw. */
+const CAPTION_WORDS_PER_LINE = 7;
+
 /** The vignette the render draws, approximated for the preview. */
 const VIGNETTE_SHADOW = "radial-gradient(ellipse at center, transparent 45%, oklch(0 0 0 / 0.55) 100%)";
 
@@ -1014,6 +1085,37 @@ export default function AssemblePage({ params }: PageProps) {
     if (t <= 0 || remaining > t || remaining < 0) return null;
     const next = playable[idx + 1];
     return { p: Math.min(1, Math.max(0, (t - remaining) / t)), url: next.imageUrl ?? null };
+  })();
+
+  // The caption the preview should be showing right now.
+  //
+  // A beat's narration is longer than one caption, so holding the first eight
+  // words for its whole length looked stuck. There are no word timings on this
+  // side, so the line advances by the beat's own progress: an approximation,
+  // and a much closer one than not moving at all.
+  const previewCaption = (() => {
+    if (!captionsEnabled) return "";
+    const source = playingBeat !== null
+      ? playable.find((b) => b.beatNumber === playingBeat)
+      : previewBeat;
+    const script = (source?.scriptSegment ?? "").trim();
+    if (!script) return "";
+    const words = script.split(/\s+/);
+    if (playingBeat === null || words.length <= CAPTION_WORDS_PER_LINE) {
+      return words.slice(0, CAPTION_WORDS_PER_LINE).join(" ");
+    }
+    const idx = playable.findIndex((b) => b.beatNumber === playingBeat);
+    const start = playable.slice(0, idx).reduce((sum, b) => sum + beatSeconds(b).seconds, 0);
+    const span = beatSeconds(playable[idx]).seconds || 1;
+    const p = Math.max(0, Math.min(0.999, (playhead - start) / span));
+    // By word position, not by equal slices of the beat. A line of seven words
+    // out of twenty owns seven twentieths of the beat, and the last line is
+    // usually short — dividing the beat into equal chunks left every line
+    // drifting further from the words than the one before it. This is exactly
+    // what the worker does when it has no transcript to work from.
+    const spoken = Math.floor(p * words.length);
+    const line = Math.floor(spoken / CAPTION_WORDS_PER_LINE);
+    return words.slice(line * CAPTION_WORDS_PER_LINE, (line + 1) * CAPTION_WORDS_PER_LINE).join(" ");
   })();
 
   // Select a beat on the timeline and the grid edits that beat; select nothing
@@ -2289,73 +2391,13 @@ export default function AssemblePage({ params }: PageProps) {
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img src={stillPreviewUrl} alt="" className="absolute inset-0 w-full h-full object-cover"
                           style={{ filter: gradeCss(videoFilter, videoFilterStrength) }} />
-                        <div
-                          className="absolute inset-x-0 flex justify-center px-[6%]"
-                          style={captionsPosition === "top" ? { top: "3%" }
-                            : captionsPosition === "middle" ? { top: "50%", transform: "translateY(-50%)" }
-                            : { bottom: "3%" }}
-                        >
-                          {(() => {
-                            const words = (previewBeat?.scriptSegment?.trim().split(/\s+/).slice(0, 8)
-                              ?? "The quick brown fox jumps over the lazy dog".split(" "));
-                            const css = captionCss(captionsStyle, captionsSize);
-                            // Word by word for the two that work that way, one
-                            // block for the rest. Re-keyed on the choice so
-                            // switching restarts the loop rather than joining
-                            // it halfway.
-                            if (captionsAnimation === "typewriter") {
-                              // Per letter rather than per word, which is the
-                              // only difference between this and reveal.
-                              const letters = words.join(" ").split("");
-                              const per = 2.6 / letters.length;
-                              return (
-                                <span key={captionsAnimation} style={css}>
-                                  {letters.map((ch, i) => (
-                                    <span key={i} style={{
-                                      animation: `caption-word-in 0.05s linear ${(i * per).toFixed(2)}s infinite alternate both`,
-                                      opacity: 0,
-                                    }}>{ch}</span>
-                                  ))}
-                                </span>
-                              );
-                            }
-                            if (captionsAnimation === "karaoke" || captionsAnimation === "reveal") {
-                              const per = 2.6 / words.length;
-                              return (
-                                <span key={captionsAnimation} style={css}>
-                                  {words.map((word, i) => (
-                                    <span
-                                      key={i}
-                                      style={{
-                                        animation: `${captionsAnimation === "karaoke" ? "caption-word-lit" : "caption-word-in"} 0.25s ease-out ${(i * per).toFixed(2)}s infinite alternate both`,
-                                        opacity: captionsAnimation === "karaoke" ? 0.45 : 0,
-                                      }}
-                                    >
-                                      {word}{i < words.length - 1 ? " " : ""}
-                                    </span>
-                                  ))}
-                                </span>
-                              );
-                            }
-                            return (
-                              <span
-                                key={captionsAnimation}
-                                style={{
-                                  ...css,
-                                  animation: captionsAnimation === "fade" ? "caption-fade 3s ease-in-out infinite"
-                                    : captionsAnimation === "pop" ? "caption-pop 3s ease-in-out infinite"
-                                    : captionsAnimation === "slide" ? "caption-slide 3s ease-out infinite"
-                                    : captionsAnimation === "grow" ? "caption-grow 3s ease-in-out infinite alternate"
-                                    : captionsAnimation === "tilt" ? "caption-tilt 3s ease-out infinite"
-                                    : captionsAnimation === "flash" ? "caption-flash 3s ease-out infinite"
-                                    : undefined,
-                                }}
-                              >
-                                {words.join(" ")}
-                              </span>
-                            );
-                          })()}
-                        </div>
+                        <CaptionOverlay
+                          text={previewBeat?.scriptSegment ?? ""}
+                          style={captionsStyle}
+                          size={captionsSize}
+                          position={captionsPosition}
+                          animation={captionsAnimation}
+                        />
                       </div>
                     )}
                     <dl className="hidden lg:block lg:flex-1 min-w-0 space-y-1.5 text-xs">
@@ -2616,12 +2658,16 @@ export default function AssemblePage({ params }: PageProps) {
                       className="relative w-full overflow-hidden"
                       style={{
                         aspectRatio: aspectRatio === "9:16" ? "9 / 16" : aspectRatio === "1:1" ? "1 / 1" : "16 / 9",
-                        // On the wrapper, not the frame: the grade is over the
-                        // whole picture, so it survives a seam where two frames
-                        // are on screen at once.
-                        filter: gradeCss(videoFilter, videoFilterStrength),
+                        // The caption sizes itself against this box, so the
+                        // containment goes here where the height is definite.
+                        containerType: "size",
                       }}
                     >
+                      {/* The grade goes on the picture, not on the frame: it
+                          covers both shots through a seam, and the caption and
+                          the logo above it stay ungraded, which is where the
+                          render puts them. */}
+                      <div className="absolute inset-0" style={{ filter: gradeCss(videoFilter, videoFilterStrength) }}>
                       {/* On the transitions tab the preview shows the join
                           rather than the shot: this beat handing over to the
                           next one, at the size the decision is made at. The
@@ -2694,6 +2740,38 @@ export default function AssemblePage({ params }: PageProps) {
                           ["--kb-pan" as string]: `${((MOTION_STRENGTHS.find((x) => x.id === imageMotionStrength)?.travel ?? 0.15) * 40).toFixed(0)}%`,
                         } : undefined}
                       />
+                      )}
+                      </div>
+
+                      {/* What the render will draw over the picture: the
+                          caption, and the logo where it was placed. Both sit
+                          outside the graded layer, and both follow the same
+                          numbers the worker uses — the caption sized as a
+                          fraction of the frame, the logo positioned and sized
+                          as fractions of the width. */}
+                      {captionsEnabled && (
+                        <CaptionOverlay
+                          text={previewCaption}
+                          style={captionsStyle}
+                          size={captionsSize}
+                          position={captionsPosition}
+                          animation={captionsAnimation}
+                          loop={!playing}
+                        />
+                      )}
+                      {(logoUploadedUrl || logoObjectUrl) && (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img
+                          src={logoObjectUrl ?? logoUploadedUrl ?? undefined}
+                          alt=""
+                          className="absolute pointer-events-none"
+                          style={{
+                            left: `${logoX * 100}%`,
+                            top: `${logoY * 100}%`,
+                            width: `${logoSize * 100}%`,
+                            opacity: 0.95,
+                          }}
+                        />
                       )}
                     </div>
                   </div>
