@@ -910,10 +910,11 @@ export default function AssemblePage({ params }: PageProps) {
   /** Hear a sound the way the render will mix it: its own level against the
    *  project's, and its own pitch. preservesPitch off is what makes playback
    *  rate a pitch shift rather than a speed change. */
-  const playSound = useCallback((id: string, volume = 1, pitch = 1, audition = false) => {
+  const playSound = useCallback((id: string, volume = 1, pitch = 1) => {
     const a = new Audio(`/sfx/${id}.mp3`);
-    const level = volume * sfxVolume;
-    a.volume = Math.max(0, Math.min(1, audition ? Math.max(0.5, level) : level));
+    // Exactly what the render mixes: the sound's own level against the
+    // project's. Anything else here is a preview that lies.
+    a.volume = Math.max(0, Math.min(1, volume * sfxVolume));
     type PitchyAudio = HTMLAudioElement & { preservesPitch?: boolean; mozPreservesPitch?: boolean };
     const p = a as PitchyAudio;
     p.preservesPitch = false;
@@ -1053,6 +1054,52 @@ export default function AssemblePage({ params }: PageProps) {
   // down and a chime left alone are two different settings, and coming back to
   // either should find it as it was left.
   const [soundShapes, setSoundShapes] = useState<Record<string, { volume: number; pitch: number }>>({});
+  const [filterStrengths, setFilterStrengths] = useState<Record<string, number>>({});
+  const [transitionLengths, setTransitionLengths] = useState<Record<string, number>>({});
+  const [motionShapes, setMotionShapes] = useState<Record<string, { strength: string; seconds: number }>>({});
+
+  // The effect, transition and filter live on the project, so they come back
+  // on their own. The sound in hand, its untried tuning and which tab was open
+  // are editing state with nowhere on the row to live — and losing them on
+  // every reload made the tab feel like it forgot what you were doing.
+  // Per project, in this browser, which is the scope of the decision.
+  const localKey = `heclus:assemble:${projectId}`;
+  const localLoaded = useRef(false);
+  useEffect(() => {
+    if (localLoaded.current) return;
+    localLoaded.current = true;
+    try {
+      const raw = window.localStorage.getItem(localKey);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as {
+        tab?: string;
+        pickedSound?: string | null;
+        soundShapes?: Record<string, { volume: number; pitch: number }>;
+        filterStrengths?: Record<string, number>;
+        transitionLengths?: Record<string, number>;
+        motionShapes?: Record<string, { strength: string; seconds: number }>;
+      };
+      if (saved.tab && ["effects", "transitions", "filters", "sound"].includes(saved.tab)) {
+        setEffectsTab(saved.tab as typeof effectsTab);
+      }
+      if (typeof saved.pickedSound === "string" || saved.pickedSound === null) {
+        setPickedSound(saved.pickedSound);
+      }
+      if (saved.soundShapes && typeof saved.soundShapes === "object") setSoundShapes(saved.soundShapes);
+      if (saved.filterStrengths && typeof saved.filterStrengths === "object") setFilterStrengths(saved.filterStrengths);
+      if (saved.transitionLengths && typeof saved.transitionLengths === "object") setTransitionLengths(saved.transitionLengths);
+      if (saved.motionShapes && typeof saved.motionShapes === "object") setMotionShapes(saved.motionShapes);
+    } catch { /* private mode, cleared storage, corrupt value: start fresh */ }
+  }, [localKey]);
+
+  useEffect(() => {
+    if (!localLoaded.current) return;
+    try {
+      window.localStorage.setItem(localKey, JSON.stringify({
+        tab: effectsTab, pickedSound, soundShapes, filterStrengths, transitionLengths, motionShapes,
+      }));
+    } catch { /* storage full or blocked: the page still works */ }
+  }, [localKey, effectsTab, pickedSound, soundShapes, filterStrengths, transitionLengths, motionShapes]);
   const shapeOf = (id: string | null) => (id ? soundShapes[id] : undefined) ?? { volume: 1, pitch: 1 };
   const tuneSound = (id: string, patch: { volume?: number; pitch?: number }) =>
     setSoundShapes((cur) => ({ ...cur, [id]: { ...shapeOf(id), ...patch } }));
@@ -1127,12 +1174,36 @@ export default function AssemblePage({ params }: PageProps) {
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error ?? "Could not apply it");
       await mutate();
-      toast.success(sound ? `On every beat` : "Sounds cleared");
+      toast.success(sound ? `On ${out.count ?? 0} transitions` : "Sounds cleared");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not apply it");
     } finally {
       setApplyingSound(false);
     }
+  }, [projectId, mutate]);
+
+  const tuneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tuneEverywhere = useCallback((sound: string, patch: { volume?: number; pitch?: number }) => {
+    // Optimistic, so the sliders and the timeline agree immediately.
+    void mutate((cur: unknown) => {
+      const c = cur as { beats?: Beat[] } | undefined;
+      if (!c?.beats) return cur;
+      return { ...c, beats: c.beats.map((b) => b.soundEffect === sound ? {
+        ...b,
+        soundVolume: patch.volume ?? b.soundVolume ?? null,
+        soundPitch: patch.pitch ?? b.soundPitch ?? null,
+      } : b) };
+    }, { revalidate: false });
+    // Debounced: a slider fires on every pixel and this touches every beat
+    // carrying the sound.
+    if (tuneTimer.current) clearTimeout(tuneTimer.current);
+    tuneTimer.current = setTimeout(() => {
+      void fetch(`/api/projects/${projectId}/beats/sound`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tuneAll: sound, ...patch }),
+      }).catch(() => { /* the next drag re-sends it */ });
+    }, 400);
   }, [projectId, mutate]);
 
   const setBeatSound = useCallback(async (
@@ -1235,6 +1306,13 @@ export default function AssemblePage({ params }: PageProps) {
   // words for its whole length looked stuck. There are no word timings on this
   // side, so the line advances by the beat's own progress: an approximation,
   // and a much closer one than not moving at all.
+  /** The beats a transition sound lands on: the one arriving through each cut
+   *  that has a transition. Mirrors the rule the route applies. */
+  const transitionArrivals = beats
+    .map((b, i) => ({ seam: (b.transition ?? transition), next: beats[i + 1] }))
+    .filter((x) => x.next && x.seam && x.seam !== "none")
+    .map((x) => x.next!);
+
   /** How many beats use each sound, for the counts on the buttons. */
   const usedCounts = beats.reduce<Record<string, number>>((acc, b) => {
     if (b.soundEffect) acc[b.soundEffect] = (acc[b.soundEffect] ?? 0) + 1;
@@ -3004,21 +3082,45 @@ export default function AssemblePage({ params }: PageProps) {
                           : "Click one to hear it"}
                     </p>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => applySoundToAll(
-                          editingBeat?.soundEffect ?? pickedSound,
-                          editingBeat
-                            ? { volume: editingBeat.soundVolume ?? 1, pitch: editingBeat.soundPitch ?? 1 }
-                            : shapeOf(pickedSound),
-                        )}
-                        disabled={assembling || applyingSound || !(editingBeat?.soundEffect ?? pickedSound)}
-                        title="Put this sound at the start of every beat"
-                        className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40"
-                        style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-60)" }}
-                      >
-                        {applyingSound ? "Applying…" : "Apply to all"}
-                      </button>
+                      {(() => {
+                        const inHand = editingBeat?.soundEffect ?? pickedSound;
+                        // Already done when every arrival carries this sound,
+                        // and there is at least one to carry it. Otherwise the
+                        // button is an action rather than a state.
+                        const applied = !!inHand
+                          && transitionArrivals.length > 0
+                          && transitionArrivals.every((b) => b.soundEffect === inHand);
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => applySoundToAll(
+                              inHand,
+                              editingBeat
+                                ? { volume: editingBeat.soundVolume ?? 1, pitch: editingBeat.soundPitch ?? 1 }
+                                : shapeOf(pickedSound),
+                            )}
+                            disabled={assembling || applyingSound || !inHand}
+                            title={transitionArrivals.length === 0
+                              ? "No cuts have a transition yet"
+                              : applied
+                                ? `Already on all ${transitionArrivals.length} transitions`
+                                : `Put this sound on ${transitionArrivals.length} beats that arrive through a transition`}
+                            className="px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all disabled:opacity-40 flex items-center gap-1"
+                            style={applied ? {
+                              background: "oklch(0.72 0.25 285 / 0.18)",
+                              border: "1px solid oklch(0.72 0.25 285 / 0.45)",
+                              color: "var(--accent-purple-text)",
+                            } : {
+                              background: "var(--bg-input)",
+                              border: "1px solid var(--bd-card)",
+                              color: "var(--c-60)",
+                            }}
+                          >
+                            {applied && <Check size={12} />}
+                            {applyingSound ? "Applying…" : "Apply to all transitions"}
+                          </button>
+                        );
+                      })()}
                       <button
                         type="button"
                         onClick={() => applySoundToAll(null)}
@@ -3055,7 +3157,7 @@ export default function AssemblePage({ params }: PageProps) {
                             const onThisBeat = editingBeat?.soundEffect === snd.id;
                             const volume = onThisBeat ? (editingBeat!.soundVolume ?? 1) : own.volume;
                             const pitch = onThisBeat ? (editingBeat!.soundPitch ?? 1) : own.pitch;
-                            playSound(snd.id, volume, pitch, true);
+                            playSound(snd.id, volume, pitch);
                             setPickedSound(active ? null : snd.id);
                             if (editingBeat) {
                               setBeatSound(
@@ -3110,14 +3212,24 @@ export default function AssemblePage({ params }: PageProps) {
                     if (!sound) return null;
                     const onBeat = !!editingBeat?.soundEffect;
                     const own = shapeOf(sound);
-                    const volume = onBeat ? (editingBeat!.soundVolume ?? 1) : own.volume;
-                    const pitch = onBeat ? (editingBeat!.soundPitch ?? 1) : own.pitch;
+                    // Beats already carrying this sound. With any, the panel is
+                    // about them; with none it is a draft waiting to be applied.
+                    const applied = beats.filter((b) => b.soundEffect === sound);
+    const live = !onBeat && applied.length > 0;
+                    // One number for all of them only if they agree; otherwise
+                    // the panel says so rather than picking one at random.
+                    const sameVolume = applied.every((b) => (b.soundVolume ?? 1) === (applied[0]?.soundVolume ?? 1));
+                    const samePitch = applied.every((b) => (b.soundPitch ?? 1) === (applied[0]?.soundPitch ?? 1));
+                    const volume = onBeat ? (editingBeat!.soundVolume ?? 1)
+                      : live ? (applied[0].soundVolume ?? 1) : own.volume;
+                    const pitch = onBeat ? (editingBeat!.soundPitch ?? 1)
+                      : live ? (applied[0].soundPitch ?? 1) : own.pitch;
                     const setVolume = (v: number) => onBeat
                       ? setBeatSound(editingBeat!.beatNumber, sound, { volume: v })
-                      : tuneSound(sound, { volume: v });
+                      : live ? tuneEverywhere(sound, { volume: v }) : tuneSound(sound, { volume: v });
                     const setPitch = (v: number) => onBeat
                       ? setBeatSound(editingBeat!.beatNumber, sound, { pitch: v })
-                      : tuneSound(sound, { pitch: v });
+                      : live ? tuneEverywhere(sound, { pitch: v }) : tuneSound(sound, { pitch: v });
                     const label = SOUND_EFFECTS.find((x) => x.id === sound)?.label ?? sound;
                     return (
                       <div className="mt-3 space-y-2 rounded-xl px-3 py-2.5"
@@ -3128,12 +3240,20 @@ export default function AssemblePage({ params }: PageProps) {
                           <p className="text-xs font-semibold" style={{ color: "var(--accent-purple-text)" }}>
                             {label}
                             <span className="font-normal" style={{ color: "var(--c-40)" }}>
-                              {onBeat ? ` · beat ${editingBeat!.beatNumber}` : " · not applied yet"}
+                              {onBeat
+                                ? ` · beat ${editingBeat!.beatNumber}`
+                                : applied.length
+                                  ? ` · ${applied.length} beats${sameVolume && samePitch ? "" : ", mixed"}`
+                                  : " · not applied yet"}
                             </span>
                           </p>
                           <button
                             type="button"
-                            onClick={() => playSound(sound, volume, pitch, true)}
+                            // No audition floor here: this button exists to
+                            // judge the level, and a floor that quietly lifts
+                            // anything under half made the volume slider look
+                            // like it did nothing.
+                            onClick={() => playSound(sound, volume, pitch)}
                             title="Play it as tuned"
                             aria-label="Play it as tuned"
                             className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center transition-opacity hover:opacity-85"
@@ -3147,7 +3267,7 @@ export default function AssemblePage({ params }: PageProps) {
                             in a column sized to the preview. */}
                         <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
                           {([
-                            ["Level", volume, 0, 2, 0.05, setVolume, `${Math.round(volume * 100)}%`],
+                            ["Volume", volume, 0, 2, 0.05, setVolume, `${Math.round(volume * 100)}%`],
                             ["Pitch", pitch, 0.5, 2, 0.05, setPitch, `${pitch.toFixed(2)}×`],
                           ] as [string, number, number, number, number, (v: number) => void, string][]).map(
                             ([label, value, min, max, step, onSet, shown]) => (
@@ -3172,26 +3292,20 @@ export default function AssemblePage({ params }: PageProps) {
                       </div>
                     );
                   })()}
-                  <div className="mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--c-40)" }}>
-                      Effects level · every beat
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="range"
-                        min={0}
-                        max={1}
-                        step={0.05}
-                        value={sfxVolume}
-                        disabled={assembling}
-                        onChange={(e) => setSfxVolume(Number(e.target.value))}
-                        className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
-                      />
-                      <span className="shrink-0 px-2 py-1 rounded-lg text-[11px] font-mono tabular-nums"
-                        style={{ background: "var(--bg-input)", border: "1px solid var(--bd-card)", color: "var(--c-65)" }}>
-                        {Math.round(sfxVolume * 100)}%
-                      </span>
-                    </div>
+                  <div className="flex items-center gap-2 mt-4 pt-3" style={{ borderTop: "1px solid var(--bd-6)" }}>
+                    <span className="shrink-0 text-[11px] uppercase tracking-wider font-semibold" style={{ color: "var(--c-40)" }}>
+                      Master
+                    </span>
+                    <input
+                      type="range" min={0} max={1} step={0.05}
+                      value={sfxVolume}
+                      disabled={assembling}
+                      onChange={(e) => setSfxVolume(Number(e.target.value))}
+                      className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
+                    />
+                    <span className="shrink-0 text-[11px] font-mono tabular-nums" style={{ color: "var(--c-55)" }}>
+                      {Math.round(sfxVolume * 100)}%
+                    </span>
                   </div>
                 </>
                 ) : effectsTab === "filters" ? (
@@ -3203,7 +3317,12 @@ export default function AssemblePage({ params }: PageProps) {
                     {VIDEO_FILTERS.map((f) => {
                       const active = videoFilter === f.id;
                       return (
-                        <button key={f.id} onClick={() => setVideoFilter(f.id)} disabled={assembling}
+                        <button key={f.id}
+                          onClick={() => {
+                            setVideoFilter(f.id);
+                            setVideoFilterStrength(filterStrengths[f.id] ?? 1);
+                          }}
+                          disabled={assembling}
                           className="text-left transition-all disabled:opacity-40">
                           <span className="block relative w-full aspect-video rounded-lg overflow-hidden"
                             style={{
@@ -3247,7 +3366,11 @@ export default function AssemblePage({ params }: PageProps) {
                           step={0.05}
                           value={videoFilterStrength}
                           disabled={assembling}
-                          onChange={(e) => setVideoFilterStrength(Number(e.target.value))}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setVideoFilterStrength(v);
+                            setFilterStrengths((cur) => ({ ...cur, [videoFilter]: v }));
+                          }}
                           className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
                         />
                         <span className="shrink-0 px-2 py-1 rounded-lg text-[11px] font-mono tabular-nums"
@@ -3321,7 +3444,12 @@ export default function AssemblePage({ params }: PageProps) {
                       const anim = SEAM_ANIMATION[tr.id];
                       return (
                         <button key={tr.id}
-                          onClick={() => editingBeat ? setBeatTransition(editingBeat.beatNumber, tr.id) : setTransition(tr.id)}
+                          onClick={() => {
+                            const remembered = transitionLengths[tr.id];
+                            if (remembered) setTransitionSeconds(remembered);
+                            if (editingBeat) setBeatTransition(editingBeat.beatNumber, tr.id);
+                            else setTransition(tr.id);
+                          }}
                           disabled={assembling}
                           title={tr.hint}
                           className="text-left transition-all disabled:opacity-40">
@@ -3377,7 +3505,11 @@ export default function AssemblePage({ params }: PageProps) {
                           step={0.1}
                           value={transitionSeconds}
                           disabled={assembling}
-                          onChange={(e) => setTransitionSeconds(Number(e.target.value))}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setTransitionSeconds(v);
+                            setTransitionLengths((cur) => ({ ...cur, [editingTransition]: v }));
+                          }}
                           className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
                         />
                         <span className="shrink-0 px-2 py-1 rounded-lg text-[11px] font-mono tabular-nums"
@@ -3437,7 +3569,15 @@ export default function AssemblePage({ params }: PageProps) {
                       : MOTION_ANIMATION[m.id];
                     return (
                       <button key={m.id}
-                        onClick={() => editingBeat ? setBeatMotion(editingBeat.beatNumber, m.id) : setImageMotion(m.id)}
+                        onClick={() => {
+                          const remembered = motionShapes[m.id];
+                          if (remembered) {
+                            setImageMotionStrength(remembered.strength);
+                            setImageMotionSeconds(remembered.seconds);
+                          }
+                          if (editingBeat) setBeatMotion(editingBeat.beatNumber, m.id);
+                          else setImageMotion(m.id);
+                        }}
                         disabled={assembling}
                         title={m.hint}
                         className="group text-left transition-all disabled:opacity-40 flex flex-col">
@@ -3510,7 +3650,12 @@ export default function AssemblePage({ params }: PageProps) {
                     </div>
                     <div className="flex gap-1.5 mb-4">
                       {MOTION_STRENGTHS.map((x) => (
-                        <button key={x.id} onClick={() => setImageMotionStrength(x.id)} disabled={assembling}
+                        <button key={x.id}
+                        onClick={() => {
+                          setImageMotionStrength(x.id);
+                          setMotionShapes((cur) => ({ ...cur, [editingMotion]: { strength: x.id, seconds: imageMotionSeconds } }));
+                        }}
+                        disabled={assembling}
                           className="flex-1 py-1.5 rounded-xl text-xs font-semibold transition-all disabled:opacity-40"
                           style={imageMotionStrength === x.id ? {
                             background: "oklch(0.72 0.25 285 / 0.15)",
@@ -3539,7 +3684,11 @@ export default function AssemblePage({ params }: PageProps) {
                         step={0.5}
                         value={imageMotionSeconds}
                         disabled={assembling}
-                        onChange={(e) => setImageMotionSeconds(Number(e.target.value))}
+                        onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setImageMotionSeconds(v);
+                        setMotionShapes((cur) => ({ ...cur, [editingMotion]: { strength: imageMotionStrength, seconds: v } }));
+                      }}
                         className="flex-1 min-w-0 accent-[oklch(0.72_0.25_285)] disabled:opacity-40"
                       />
                       <span className="shrink-0 px-2 py-1 rounded-lg text-[11px] font-mono tabular-nums"
